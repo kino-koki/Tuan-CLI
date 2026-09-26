@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 新增
 
+- **Agent View / Rewind 增强**:
+  - `qxt agents view` 升级为 rich 表格面板: 列含 Session ID(短)/类型(interactive|background)/
+    状态(running|waiting|done|failed|cancelled)/最后消息摘要(截断 40 字)/创建时间/运行时长;
+    新增 `--watch` 模式 (每 2 秒刷新, 类 top); 新增 `qxt agents kill <id>` 终止后台会话
+    (追加 `job.cancel` 事件并同步 BackgroundStore); `list`/`attach` 保持兼容。
+  - **会话 Rewind** (`qingxiaotuan/core/rewind.py`): 每次用户输入前自动把 messages 快照到
+    `<workspace>/.qxt/snapshots/<时间戳>.json` (保留最近 `rewind.max_snapshots`=20 个);
+    `/rewind` 回退一步、`/rewind list` 列快照、`/rewind to <N>` 回退到指定快照;
+    `qxt rewind <session_id> [--to N] [--list]` CLI 层面离线回退会话 jsonl。
+- **Agent 四层工作边界** (Project/Chat/Subagent/Worktree, 对标 B 站 BV1j3YL6oEvs 理念):
+  - **Project 层** (`qingxiaotuan/core/project_layer.py`): 每个工作目录独立 `.qxt/`
+    (config.yaml/goal.json/memory.db/sessions.json/snapshots/), `qxt project init|info|list`
+    管理; 不同目录的会话不共享记忆/配置/会话索引 (`project.isolation_enabled` 默认 true);
+    已有 `.qxt/` 的项目自动识别。
+  - **Chat 层** (`qingxiaotuan/core/chat_handoff.py`): 上下文超过
+    `chat.auto_handoff_threshold`(默认 0.8×模型窗口) 时提示交接; `/handoff` 手动交接:
+    LLM(或启发式) 生成「目标/已完成/待办/关键文件与决策」摘要 -> 开新会话注入摘要 ->
+    旧会话归档; `qxt chat handoff <session_id>` CLI 交接; 谱系落盘 `.qxt/handoffs.json`。
+  - **Subagent 层** (`core/subagents.py` 增强): 每个子任务在 `.qxt/subagents/<task_id>/`
+    独立工作目录读写 (`subagent.isolated_workdir` 默认 true), 不污染主工作区;
+    超时升级为 `subagent.timeout`(默认 300s) 并追踪任务状态; `/subagent run <任务>`、
+    `/subagent status` 查看; 失败/超时不影响主会话。
+  - **Worktree 层** (`qingxiaotuan/core/worktree_layer.py`): `/worktree create|list|remove|switch`
+    及 `qxt worktree ...` 命令组, 基于 `git worktree` 在 `.qxt/worktrees/` 下开并行实验分支;
+    非 git 仓库时友好提示先 `git init`。
+
 - **Goal 模式增强** (对标 Claude Code `goal` / Kimi Code Goal):
   - 新增 `qingxiaotuan/core/goal_mode.py` Goal 引擎: `/goal <目标描述>` 首次设置时自动拆解为 3~7 个
     可执行子步骤, 每轮对话结束后自动验证当前步骤并续轮推进, 直到目标达成。
