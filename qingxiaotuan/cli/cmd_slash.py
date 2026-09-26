@@ -18,6 +18,12 @@ from .cmd_slash_goal import _cmd_goal
 from .cmd_slash_mcp import _cmd_audit, _cmd_mcp
 from .cmd_slash_offline import _cmd_offline
 from .cmd_slash_sandbox import _cmd_sandbox
+from .cmd_slash_boundary import (
+    _cmd_rewind as _boundary_rewind,
+    _cmd_handoff as _boundary_handoff,
+    _cmd_worktree as _boundary_worktree,
+    _cmd_subagent_enhanced,
+)
 
 
 
@@ -87,6 +93,7 @@ SLASH_COMMAND_NAMES: tuple = (
     "/help", "/hooks", "/image", "/init", "/images", "/impact", "/import", "/log", "/login",
     "/mcp", "/mcp-tools", "/memory", "/mode", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/route", "/sandbox", "/skills", "/stats",
     "/status", "/subagent", "/swarm", "/tools", "/undo", "/usage", "/verify",
+    "/rewind", "/handoff", "/worktree",
     "/web", "/workflow", "/code", "/commands",
 )
 
@@ -120,7 +127,10 @@ _CMD_META: Dict[str, str] = {
     "/code": "代码感知问答: 检索工作区后带上下文执行",
     "/commands": "热插拔命令管理: list/reload/enable/disable",
     "/verify": "编码验证闭环 (test/typecheck/lint 失败自修复)",
-    "/subagent": "派发隔离子代理执行任务",
+    "/subagent": "派发隔离子代理执行任务 (run/status)",
+    "/rewind": "会话时间线回溯 (快照回退)",
+    "/handoff": "会话交接: 摘要压缩后开新会话",
+    "/worktree": "git worktree 并行实验",
     "/workflow": "动态并行工作流管理",
     "/swarm": "多 Agent 协作",
     "/route": "智能模型路由建议",
@@ -223,7 +233,7 @@ def _cmd_permissions(config, arg: str = "") -> None:
     if arg.strip().lower().startswith("test"):
         parts = arg.strip().split(maxsplit=2)
         if len(parts) < 2:
-            ui.info("  用法: /permissions test run_shell {{\"command\":\"rm -rf /\"}}")
+            ui.info("  用法: /permissions test run_shell {\"command\":\"rm -rf /\"}")
             return
         tool = parts[1]
         try:
@@ -234,7 +244,7 @@ def _cmd_permissions(config, arg: str = "") -> None:
         from ..tools.permissions import PermissionPolicy
         policy = PermissionPolicy(_CfgStub(rules))
         result = policy.inspect(tool, call_args)
-        ui.info(f"  测试调用: {tool}({parts[2] if len(parts) > 2 else '{{}}'})")
+        ui.info(f"  测试调用: {tool}({parts[2] if len(parts) > 2 else '{}'})")
         if not result["hits"]:
             ui.info("  无规则命中 → 走默认决策")
             return
@@ -1215,8 +1225,14 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
         _cmd_commands(agent, arg, config, workspace)
     elif head == "/code":
         _cmd_code(agent, arg, config, workspace)
+    elif head == "/rewind":
+        _boundary_rewind(agent, arg, workspace)
+    elif head == "/handoff":
+        _boundary_handoff(agent, config, workspace)
+    elif head == "/worktree":
+        _boundary_worktree(agent, arg, workspace)
     elif head == "/subagent":
-        _cmd_subagent(agent, arg)
+        _cmd_subagent_enhanced(agent, arg)
     elif head == "/workflow":
         _cmd_workflow(agent, arg)
     elif head == "/verify":

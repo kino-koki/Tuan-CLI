@@ -68,7 +68,14 @@ def _resolve_func(name: str):
         mod = importlib.import_module(".cmd_network", __package__)
     elif name == "cmd_others":
         mod = importlib.import_module(".cmd_others", __package__)
-    else:
+    elif name == "cmd_rewind":
+        mod = importlib.import_module(".cmd_rewind", __package__)
+    elif name == "cmd_project":
+        mod = importlib.import_module(".cmd_project", __package__)
+    elif name == "cmd_worktree":
+        mod = importlib.import_module(".cmd_worktree", __package__)
+    elif name == "cmd_chat_handoff":
+        mod = importlib.import_module(".cmd_handoff", __package__)
         mod = importlib.import_module(".commands", __package__)
     return getattr(mod, name)
 
@@ -465,9 +472,49 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("agents", help="Agent View: 多会话管理面板")
     asub = p.add_subparsers(dest="agents_cmd")
-    asub.add_parser("view", help="打开 Agent View 面板 (默认)")
+    av = asub.add_parser("view", help="打开 Agent View 面板 (默认)")
+    av.add_argument("--watch", action="store_true", help="实时刷新模式 (每 2 秒, 类 top)")
     asub.add_parser("list", help="列出所有会话")
+    ak = asub.add_parser("kill", help="终止后台会话")
+    ak.add_argument("session_id", help="会话 ID (可前缀)")
+    at = asub.add_parser("attach", help="附着到某会话 (转 qxt session resume)")
+    at.add_argument("session_id", help="会话 ID (可前缀)")
     p.set_defaults(func="cmd_agents")
+
+    # ---- rewind (会话时间线回溯) ----
+    p = sub.add_parser("rewind", help="会话 Rewind: 回退到之前的快照")
+    p.add_argument("session_id", nargs="?", default="", help="会话 ID (可前缀)")
+    p.add_argument("--to", dest="to", type=int, default=None, help="回退到第 N 个快照 (默认最新)")
+    p.add_argument("--list", action="store_true", help="列出当前工作区快照")
+    p.set_defaults(func="cmd_rewind")
+
+    # ---- project (Project 层: 项目级记忆/配置/工作区隔离) ----
+    p = sub.add_parser("project", help="Project 层: 项目级记忆/配置/工作区隔离")
+    prsub = p.add_subparsers(dest="project_cmd")
+    pi = prsub.add_parser("init", help="在当前目录初始化 .qxt 项目结构 (幂等)")
+    pi.add_argument("--force", action="store_true", help="重建骨架")
+    prsub.add_parser("info", help="显示当前项目信息")
+    prsub.add_parser("list", help="列出已知项目")
+    p.set_defaults(func="cmd_project")
+
+    # ---- chat handoff (Chat 层: 会话交接) ----
+    p = sub.add_parser("chat", help="Chat 层: 会话交接 handoff")
+    chsub = p.add_subparsers(dest="chat_cmd")
+    ch = chsub.add_parser("handoff", help="交接指定会话: 生成摘要 -> 开新会话")
+    ch.add_argument("session_id", help="旧会话 ID (可前缀)")
+    p.set_defaults(func="cmd_chat_handoff")
+
+    # ---- worktree (Worktree 层: git worktree 并行实验) ----
+    p = sub.add_parser("worktree", help="Worktree 层: git worktree 并行实验")
+    wsub = p.add_subparsers(dest="worktree_cmd")
+    wc = wsub.add_parser("create", help="创建 worktree (.qxt/worktrees/<name>)")
+    wc.add_argument("name", help="worktree 名 (= 新分支名)")
+    wsub.add_parser("list", help="列出所有 worktree")
+    wr = wsub.add_parser("remove", help="删除 worktree")
+    wr.add_argument("name", help="worktree 名")
+    ws = wsub.add_parser("switch", help="显示 worktree 路径")
+    ws.add_argument("name", help="worktree 名")
+    p.set_defaults(func="cmd_worktree")
 
     p = sub.add_parser("safe", help="安全总入口: 白名单 / 本地黑名单减负 / 状态 / 更新")
     ssub = p.add_subparsers(dest="safe_cmd", required=False)
@@ -626,6 +673,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("help", help="显示帮助 (qxt help [子命令])")
     p.add_argument("topic", nargs="?", help="子命令名 (省略则显示总览)")
     p.set_defaults(func="cmd_help")
+
     # ---- upgrade (自动更新 qxt 自身) ----
     p = sub.add_parser("upgrade", help="检查并升级 qxt 到最新版 (pip)")
     p.add_argument("--check", action="store_true", help="仅检查是否有新版本, 不安装")
@@ -642,7 +690,6 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("args_json", nargs="?", default="{}",
                     help='工具参数 JSON, 如 \'{"command":"rm -rf /"}\'')
     p.set_defaults(func="cmd_permissions")
-
 
     return parser
 

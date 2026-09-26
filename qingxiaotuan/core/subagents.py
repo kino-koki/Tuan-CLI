@@ -18,15 +18,43 @@ from __future__ import annotations
 
 import concurrent.futures
 import os
+import shutil
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence
 
 from .kernel import Kernel
 
 if TYPE_CHECKING:
     from .agent import Agent
+
+
+# ------------------------------------------------------------ 独立工作目录 (B3)
+
+def prepare_isolated_workdir(workspace: str | Path, task_id: str) -> Path:
+    """为子代理准备独立工作目录: <workspace>/.qxt/subagents/<task_id>/。
+
+    子代理在这个目录里读写文件, 不污染主工作区; 完成后可保留供检查,
+    也可用 :func:`cleanup_isolated_workdir` 清理。
+    """
+    safe_id = "".join(c for c in task_id if c.isalnum() or c in "-_") or uuid.uuid4().hex[:6]
+    wd = Path(workspace) / ".qxt" / "subagents" / safe_id
+    wd.mkdir(parents=True, exist_ok=True)
+    return wd
+
+
+def cleanup_isolated_workdir(workdir: str | Path) -> bool:
+    """删除子代理独立工作目录 (best-effort)。"""
+    p = Path(workdir)
+    try:
+        if p.exists():
+            shutil.rmtree(p, ignore_errors=True)
+        return True
+    except OSError:
+        return False
 
 
 @dataclass
@@ -86,6 +114,7 @@ class SubAgentPool:
         worker_module: str = "qingxiaotuan.core._sandbox_entry",
         model_overrides: Optional[Dict[str, Any]] = None,
         max_retries: int = 1,
+        isolated_workdir: Optional[bool] = None,
     ) -> None:
         self.kernel = kernel
         self.config = config
@@ -107,6 +136,33 @@ class SubAgentPool:
         # 子 Agent 进程内统一的模型覆盖层 (如 herdr 弱模型 provider)
         self.model_overrides = model_overrides or {}
         self._lock = threading.Lock()
+        # ---- B3 四层边界: Subagent 层隔离增强 ----
+        # 独立工作目录: 每个子任务在 .qxt/subagents/<task_id>/ 下干活, 不污染主工作区
+        # 配置项 subagent.isolated_workdir (默认 true)
+        if isolated_workdir is None:
+            try:
+                isolated_workdir = bool(config.get("subagent.isolated_workdir", True))
+            except Exception:  # noqa: BLE001
+                isolated_workdir = True
+        self.isolated_workdir = isolated_workdir
+        # 超时: 配置项 subagent.timeout (默认 300s); 显式传入的 default_timeout 优先
+        if default_timeout == 180.0:
+            try:
+                configured = float(config.get("subagent.timeout", 300))
+                default_timeout = configured
+            except Exception:  # noqa: BLE001
+                pass
+        self.default_timeout = default_timeout
+        # 任务状态追踪 (/subagent status 用)
+        self._task_status: Dict[str, Dict[str, Any]] = {}
+        self._task_workdirs: Dict[str, Path] = {}
+
+    # ------------------------------------------------------------ 状态查询
+
+    def task_status(self) -> List[Dict[str, Any]]:
+        """所有子任务的状态快照 (/subagent status 用)。"""
+        with self._lock:
+            return [dict(v) for v in self._task_status.values()]
 
     # ------------------------------------------------------------ 派发
 
@@ -242,6 +298,11 @@ class SubAgentPool:
         if timeout is None:
             timeout = self.default_timeout
         started = time.time()
+        with self._lock:
+            self._task_status[task.task_id] = {
+                "task_id": task.task_id, "status": "running",
+                "prompt": task.prompt[:120], "started": started,
+            }
 
         def _worker() -> SubResult:
             # 临时热切换的还原上下文: (切换前的 model.* 配置视图, 切换前的内核适配器)。
@@ -259,11 +320,17 @@ class SubAgentPool:
                     prev_adapter = self.kernel.get("model_adapter")
                     switch_ctx = (before, prev_adapter)
                     ModelPlugin.switch_model(self.kernel, ov, persist=False)
+                # B3: 独立工作目录 —— 子代理在 .qxt/subagents/<task_id>/ 下读写, 不污染主工作区
+                run_workspace = self.workspace
+                if self.isolated_workdir:
+                    run_workspace = str(prepare_isolated_workdir(self.workspace, task.task_id))
+                    with self._lock:
+                        self._task_workdirs[task.task_id] = Path(run_workspace)
                 # 隔离的 Agent 实例: 各自的 messages/上下文, 共享内核工具
                 agent = Agent(
                     kernel=self.kernel,
                     config=self.config,
-                    workspace=self.workspace,
+                    workspace=run_workspace,
                     confirm=self.confirm,
                     exclude_tools=tuple(set(self.exclude_tools) | set(task.exclude_tools)),
                     # 类型化子代理: 角色指令经 meta["system_extra"] 注入系统提示
@@ -342,12 +409,23 @@ class SubAgentPool:
 
         def _target() -> None:
             result_holder["r"] = _worker()
+            r = result_holder.get("r")
+            with self._lock:
+                st = self._task_status.setdefault(task.task_id, {"task_id": task.task_id})
+                st["status"] = "done" if r is not None and r.ok else "failed"
+                st["elapsed"] = round(time.time() - started, 2)
+                st["workdir"] = str(self._task_workdirs.get(task.task_id, ""))
 
         t = threading.Thread(target=_target, name=f"subagent-{task.task_id}", daemon=True)
         t.start()
         t.join(timeout=timeout)
         if t.is_alive():
             # 超时: 线程仍在跑 (daemon, 会被进程退出时回收), 这里只返回超时结果
+            with self._lock:
+                st = self._task_status.setdefault(task.task_id, {"task_id": task.task_id})
+                st["status"] = "timeout"
+                st["elapsed"] = round(time.time() - started, 2)
+                st["workdir"] = str(self._task_workdirs.get(task.task_id, ""))
             return SubResult(
                 task_id=task.task_id,
                 prompt=task.prompt,
