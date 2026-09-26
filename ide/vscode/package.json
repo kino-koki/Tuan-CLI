@@ -1,0 +1,148 @@
+{
+  "name": "qingxiaotuan-vscode",
+  "displayName": "青小团 QXT Agent",
+  "description": "青小团 Agent CLI 的 VS Code 集成：侧边栏对话、流式输出、工具调用折叠面板、行内 diff 预览、权限确认。",
+  "version": "0.2.17",
+  "publisher": "qingxiaotuan",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "agent",
+    "ai",
+    "qxt",
+    "qingxiaotuan",
+    "acp",
+    "copilot",
+    "claude"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "qingxiaotuan-view",
+          "title": "青小团 QXT",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "qingxiaotuan-view": [
+        {
+          "id": "qingxiaotuan.sidebar",
+          "name": "Agent 对话",
+          "type": "webview"
+        },
+        {
+          "id": "qingxiaotuan.tools",
+          "name": "工具调用",
+          "type": "tree"
+        },
+        {
+          "id": "qingxiaotuan.mcpStatus",
+          "name": "MCP 服务器",
+          "type": "tree"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "qingxiaotuan.newChat",
+        "title": "青小团: 新建对话",
+        "icon": "$(add)"
+      },
+      {
+        "command": "qingxiaotuan.sendPrompt",
+        "title": "青小团: 发送提示词"
+      },
+      {
+        "command": "qingxiaotuan.cancel",
+        "title": "青小团: 取消当前任务",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "qingxiaotuan.restart",
+        "title": "青小团: 重启 Agent 会话",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "qingxiaotuan.focusInput",
+        "title": "青小团: 聚焦输入框"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "qingxiaotuan.newChat",
+          "when": "view == qingxiaotuan.sidebar",
+          "group": "navigation@1"
+        },
+        {
+          "command": "qingxiaotuan.cancel",
+          "when": "view == qingxiaotuan.sidebar && qingxiaotuan.busy",
+          "group": "navigation@2"
+        },
+        {
+          "command": "qingxiaotuan.restart",
+          "when": "view == qingxiaotuan.sidebar",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "青小团 QXT",
+      "properties": {
+        "qingxiaotuan.command": {
+          "type": "string",
+          "default": "qxt",
+          "description": "启动 ACP 子进程的命令（默认 qxt；若 PATH 中没有，可填 python 或 uv run python）。"
+        },
+        "qingxiaotuan.args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["acp"],
+          "description": "传给上述命令的参数，例如 [\"acp\"]。"
+        },
+        "qingxiaotuan.cwd": {
+          "type": "string",
+          "default": "",
+          "description": "Agent 工作目录；留空则使用当前 workspace 根目录。"
+        },
+        "qingxiaotuan.enableInlineDiff": {
+          "type": "boolean",
+          "default": true,
+          "description": "在编辑器中为代码编辑类工具调用显示行内 diff 装饰。"
+        },
+        "qingxiaotuan.approveAlways": {
+          "type": "boolean",
+          "default": false,
+          "description": "实验性：自动批准所有工具调用（不推荐）。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.4.0",
+    "@vscode/vsce": "^2.24.0"
+  }
+}
