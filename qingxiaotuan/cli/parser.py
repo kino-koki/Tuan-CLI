@@ -626,6 +626,23 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("help", help="显示帮助 (qxt help [子命令])")
     p.add_argument("topic", nargs="?", help="子命令名 (省略则显示总览)")
     p.set_defaults(func="cmd_help")
+    # ---- upgrade (自动更新 qxt 自身) ----
+    p = sub.add_parser("upgrade", help="检查并升级 qxt 到最新版 (pip)")
+    p.add_argument("--check", action="store_true", help="仅检查是否有新版本, 不安装")
+    p.add_argument("--yes", "-y", action="store_true", help="跳过确认直接更新")
+    p.add_argument("--version", help="安装指定版本 (如 0.2.018)")
+    p.set_defaults(func="cmd_upgrade")
+
+    # ---- permissions (权限规则查看 / 命中测试) ----
+    p = sub.add_parser("permissions", help="权限规则查看与命中测试 (对标 Claude Code 三层权限)")
+    psub = p.add_subparsers(dest="permissions_cmd")
+    psub.add_parser("list", help="列出 permissions.rules 全部规则")
+    t = psub.add_parser("test", help="测试某次工具调用会命中哪条规则 (只读, 不执行)")
+    t.add_argument("tool", help="工具名, 如 run_shell")
+    t.add_argument("args_json", nargs="?", default="{}",
+                    help='工具参数 JSON, 如 \'{"command":"rm -rf /"}\'')
+    p.set_defaults(func="cmd_permissions")
+
 
     return parser
 

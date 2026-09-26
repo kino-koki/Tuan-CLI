@@ -206,22 +206,63 @@ def _cmd_image(agent, head: str, arg: str) -> None:
         ui.error(f"挂接图片失败: {exc}")
 
 
-def _cmd_permissions(config) -> None:
-    """/permissions — 展示当前生效的权限策略 (只读)。"""
+class _CfgStub:
+    """最小配置桩: 仅供 /permissions test 把 rules 喂给 PermissionPolicy。"""
+
+    def __init__(self, rules):
+        self._rules = rules
+
+    def get(self, key, default=None):
+        return self._rules if key == "permissions.rules" else default
+
+
+def _cmd_permissions(config, arg: str = "") -> None:
+    """/permissions — 展示当前生效的权限策略; /permissions test <tool> <json> 测试命中。"""
     rules = config.get("permissions.rules", [])
+    # /permissions test <tool> <json参数> — 只读测试某次调用会命中哪条规则
+    if arg.strip().lower().startswith("test"):
+        parts = arg.strip().split(maxsplit=2)
+        if len(parts) < 2:
+            ui.info("  用法: /permissions test run_shell {{\"command\":\"rm -rf /\"}}")
+            return
+        tool = parts[1]
+        try:
+            call_args = json.loads(parts[2]) if len(parts) > 2 else {}
+        except Exception as exc:  # noqa: BLE001
+            ui.error(f"  参数 JSON 解析失败: {exc}")
+            return
+        from ..tools.permissions import PermissionPolicy
+        policy = PermissionPolicy(_CfgStub(rules))
+        result = policy.inspect(tool, call_args)
+        ui.info(f"  测试调用: {tool}({parts[2] if len(parts) > 2 else '{{}}'})")
+        if not result["hits"]:
+            ui.info("  无规则命中 → 走默认决策")
+            return
+        ui.info(f"  命中 {len(result['hits'])} 条, 最终动作: {result['action']}")
+        for hit in result["hits"]:
+            r = hit["rule"]
+            detail = (f"{r.get('tool')}({r.get('param')}={r.get('value', '*')})"
+                      if r.get("param") else str(r.get("tool")))
+            ui.info(f"    #{hit['index']}  {r.get('action')}  {detail}")
+        return
     deny = config.get("permissions.shell.deny_patterns", [])
     net = config.get("permissions.network.allow_domains", [])
     red = config.get("mode.yolo_require_confirm", [])
     ui.info(f"  权限规则 (permissions.rules): {len(rules)} 条")
     for r in rules:
         if isinstance(r, dict):
-            p = f" {r.get('pattern')}" if r.get("pattern") else ""
-            ui.info(f"    {r.get('action')}  {r.get('tool')}{p}")
+            if r.get("param"):
+                detail = f"{r.get('tool')}({r.get('param')}={r.get('value', '*')})"
+            else:
+                p = f" {r.get('pattern')}" if r.get("pattern") else ""
+                detail = f"{r.get('tool')}{p}"
+            ui.info(f"    {r.get('action')}  {detail}")
     ui.info("  Shell 拒绝规则: " + (", ".join(deny) if deny else "(无)"))
     ui.info("  网络域名白名单: " + (", ".join(net) if net else "(不限制)"))
     ui.info("  YOLO 仍需确认的工具: " + (", ".join(sorted(red)) if red else "(无)"))
     ui.info("  生效说明: 内置加固 > deny > ask > allow > 默认决策 (危险工具默认需确认)。")
-    ui.info("  增删规则: qxt config set permissions.rules '[{\"tool\":\"run_shell\",\"action\":\"deny\"}]'")
+    ui.info("  精确粒度示例: qxt config set permissions.rules "
+            "'[{\"tool\":\"run_shell\",\"param\":\"command\",\"value\":\"rm -rf*\",\"action\":\"deny\"}]'")
 
 
 def _cmd_status(agent, config) -> None:
@@ -1159,7 +1200,7 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
     elif head in ("/image", "/images", "/clear-images"):
         _cmd_image(agent, head, arg)
     elif head == "/permissions":
-        _cmd_permissions(config)
+        _cmd_permissions(config, arg)
     elif head == "/status":
         _cmd_status(agent, config)
     elif head == "/stats":

@@ -121,6 +121,9 @@ _CMD_SOURCES = {
     "cmd_harden": ".cmd_harden",
     # ---- cmd_tutorial (任务驱动内置教程) ----
     "cmd_tutorial": ".cmd_tutorial",
+    # ---- cmd_permissions (权限规则查看 / 命中测试) ----
+    "cmd_permissions": ".cmd_permissions",
+    "cmd_upgrade": ".cmd_upgrade",
 }
 
 __all__ = sorted(_CMD_SOURCES) + ["ui"]

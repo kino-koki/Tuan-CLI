@@ -403,6 +403,20 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "block_on_injection": True,       # 检测到注入即阻断
         },
     },
+    # Goal 模式 (对标 Claude Code /goal、Kimi Code Goal):
+    # 设定目标后自动拆解为 3~7 个子步骤, 每轮结束验证并续轮推进, 直到目标达成。
+    # 状态持久化于 <workspace>/.qxt/goal.json, 新会话可恢复进度。
+    "goal": {
+        "enabled": True,                # Goal 引擎总开关
+        "max_auto_iterations": 10,      # 最大自动续轮数 (防死循环), 超出目标标记 failed
+        "auto_continue": True,         # 每轮结束后自动注入"继续推进"提示
+    },
+    # 自动更新 (qxt upgrade):
+    # check_on_startup 默认关闭, 避免每次启动都请求 PyPI 拖慢开屏;
+    # 需要时手动 `qxt upgrade` 或 `qxt upgrade --check`。
+    "upgrade": {
+        "check_on_startup": False,
+    },
     # 自主反思循环 (Reflector): Plan→Execute→Reflect→Re-plan 闭环
     "reflector": {
         "enabled": True,              # 是否启用 Reflector 反思引擎
