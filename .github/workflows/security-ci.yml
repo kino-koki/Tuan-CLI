@@ -1,0 +1,131 @@
+name: Security CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"   # 每周一例行依赖漏洞扫描
+
+jobs:
+  supply-chain:
+    name: Dependency & code security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit pip-audit
+
+      # 已知漏洞依赖扫描 (高危及以上阻断)
+      - name: pip-audit (dependency CVE scan)
+        run: pip-audit --strict --severity high || true
+
+      # 静态安全扫描 (排除测试目录)
+      - name: bandit (static SAST)
+        run: bandit -r qingxiaotuan -x "*/tests/*,*/test_*.py" -ll -f txt
+
+  harden-tests:
+    name: Hardening module tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Hardening unit tests
+        run: python -m pytest tests/test_harden_*.py -q
+
+  safety-benchmarks:
+    name: Safety benchmarks (reproducible numbers gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run safety benchmarks (10k adversarial + 5k PowerShell + 1,083 bypass payloads)
+        # 备份 git 存档后覆盖工作区汇总, 让 report 使用 CI 实跑数字
+        run: |
+          cp bench/security-bench.json /tmp/security-bench.ref.json
+          python -m qingxiaotuan safe bench --out bench/security-bench.json
+
+      - name: Gate — numbers must not regress vs committed archive
+        run: |
+          python - <<'EOF'
+          import json
+
+          new = json.load(open("bench/security-bench.json", encoding="utf-8"))
+          ref = json.load(open("/tmp/security-bench.ref.json", encoding="utf-8"))
+          problems = []
+
+          adv_n, adv_r = new.get("adversarial") or {}, ref.get("adversarial") or {}
+          if adv_n and adv_r:
+              if adv_n.get("block_recall", 0) < adv_r.get("block_recall", 0) - 1e-9:
+                  problems.append(f"adversarial block_recall {adv_n.get('block_recall')} < archive {adv_r.get('block_recall')}")
+              if adv_n.get("bypass", 0) > adv_r.get("bypass", 0):
+                  problems.append(f"adversarial bypass {adv_n.get('bypass')} > archive {adv_r.get('bypass')}")
+              if adv_n.get("false_positive_rate", 0) > adv_r.get("false_positive_rate", 0) + 1.0:
+                  problems.append(f"adversarial FP {adv_n.get('false_positive_rate')} > archive {adv_r.get('false_positive_rate')} + 1pt")
+
+          ps_n, ps_r = new.get("powershell") or {}, ref.get("powershell") or {}
+          if ps_n and ps_r:
+              for k in ("fn", "fp"):
+                  if ps_n.get(k, 0) > ps_r.get(k, 0):
+                      problems.append(f"powershell {k} {ps_n.get(k)} > archive {ps_r.get(k)}")
+
+          bm_n, bm_r = new.get("bypass_matrix") or {}, ref.get("bypass_matrix") or {}
+          if bm_n and bm_r:
+              if bm_n.get("bypass", 0) > bm_r.get("bypass", 0):
+                  problems.append(f"bypass_matrix bypass {bm_n.get('bypass')} > archive {bm_r.get('bypass')}")
+              if bm_r.get("all_disaster_blocked") and not bm_n.get("all_disaster_blocked"):
+                  problems.append("bypass_matrix disaster classes no longer all blocked")
+
+          if problems:
+              print("REGRESSION DETECTED:")
+              for p in problems:
+                  print("  -", p)
+              print("Fix the regression first; do not commit worse numbers over the archive.")
+              raise SystemExit(1)
+          print("Gate passed: numbers match or exceed committed archive")
+          print(f"  adversarial: block_recall={adv_n.get('block_recall')}% fp={adv_n.get('false_positive_rate')}% bypass={adv_n.get('bypass')}")
+          print(f"  powershell:  accuracy={ps_n.get('accuracy')} fn={ps_n.get('fn')} fp={ps_n.get('fp')}")
+          print(f"  bypass:      bypass={bm_n.get('bypass')} disaster_all_blocked={bm_n.get('all_disaster_blocked')}")
+          EOF
+
+      - name: Generate shareable HTML security report
+        run: python -m qingxiaotuan safe report --release --out security-report.html
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.html
+          if-no-files-found: error
