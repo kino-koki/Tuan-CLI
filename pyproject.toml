@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qingxiaotuan"
+version = "0.2.017"
+description = "A safety-first AI agent CLI — blast-radius analysis blocks dangerous commands before execution. Pure Python, model-neutral, 10 capability engines."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["ai", "agent", "cli", "code-agent", "terminal-agent", "safety", "blast-radius", "llm", "deepseek", "claude", "openai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "prompt_toolkit>=3.0",
+    "httpx>=0.27",
+    # Python < 3.11 无内置 tomllib, 旧版本回退用 tomli 解析 pyproject (迁移/探测场景)
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+# openai 仅作 OpenAI 兼容传输层使用, 核心逻辑 (路由/护栏/工具) 不依赖它。
+# 使用本地/Ollama/Anthropic 等非 OpenAI 场景可不安装; 需要 OpenAI 兼容端点时再装。
+openai = ["openai>=1.40"]
+# crypto: AES-GCM 工业级认证加密 (替代纯 Python CTR+HMAC 回退)
+# 不安装时 crypto 引擎自动回退 CTR+HMAC, 功能可用但非工业级。
+crypto = ["cryptography>=41.0"]
+# MCP 子系统仅在真正配置 MCP server 时解析配置 (kernel/mcp/config.py 惰性导入 pydantic),
+# 故 pydantic/typing_extensions 放此处而非核心依赖; 用 MCP 时 `pip install ".[mcp]"`。
+mcp = ["pydantic>=2.0", "typing_extensions>=4.0"]
+# backend_dev 工具启动 FastAPI/Flask 开发服务器时才需要, 默认不安装。
+backend = ["fastapi", "flask", "flask-cors", "uvicorn"]
+# otel: OpenTelemetry 观测 (导出 traces/metrics 到标准 OTLP 后端)。不安装时
+# ports/telemetry/otel.py 自动回退 stdlib urllib 直接 POST OTLP/HTTP JSON。
+otel = [
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-timeout>=2.3",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/kino-koki/Qingxiaotuan-Agent-CLI"
+Repository = "https://github.com/kino-koki/Qingxiaotuan-Agent-CLI"
+Changelog = "https://github.com/kino-koki/Qingxiaotuan-Agent-CLI/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/kino-koki/Qingxiaotuan-Agent-CLI/issues"
+
+[project.scripts]
+qxt = "qingxiaotuan.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["qingxiaotuan*"]
+
+# 把内置技能模板与 SOUL.md 等资源文件打进 wheel (否则 pip install 后首次启动无技能)
+[tool.setuptools.package-data]
+qingxiaotuan = ["resources/**/*.md", "resources/**/*.yaml"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = false  # 逐步收紧: 先强制检查, 再要求所有函数有注解
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+disallow_untyped_defs = false  # 逐步收紧: 先不强制所有函数都有类型注解
+
+# pytest 配置: slow marker 用于「真实 spawn 子进程 / 较重」的隔离验证测试,
+# 默认跳过, 用 `pytest -m slow` 显式运行。
+[tool.pytest.ini_options]
+markers = [
+    "slow: 真实 spawn 子进程或较重, 默认跳过 (pytest -m slow 运行)",
+]
+testpaths = ["tests"]
+timeout = 120           # 每个测试最长 120s, 防挂起拖垮整套件
+timeout_method = "thread"  # 默认用 thread 超时 (兼容 Windows); 挂起测试自动被中断

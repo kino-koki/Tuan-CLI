@@ -1,0 +1,119 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+*.whl
+*.egg
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
+ENV/
+
+# ===== 测试 / 覆盖率 =====
+.pytest_cache/
+.pytest-tmp/
+.pytest_tmp/
+.pt-*/
+.pt-full-*/
+.pt-win-*/
+.pt-e2e-*/
+.pt-list*/
+.pt-sus-*/
+.pt-doc-*/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.tox/
+.nox/
+
+# ===== 类型检查 / Lint =====
+.mypy_cache/
+.ruff_cache/
+.pylint.d/
+.pytype/
+.pyre/
+
+# ===== 调试/临时输出（命令行重定向产物） =====
+*_out*.txt
+*_err*.txt
+mypy_out*.txt
+cli_bench*.txt
+full_test_out*.txt
+test_out*.txt
+regress_out*.txt
+pytest_*.txt
+security-report*.html
+.scratch/
+
+# ===== 截图 / 本地归档（不入库） =====
+_shots/
+_repo_archive/
+
+# ===== 运行时状态 =====
+.qxt/
+~/.qingxiaotuan/
+audit/
+sessions/
+memories/
+cron/
+# 注: 用户技能在 ~/.qingxiaotuan/skills (已由上方 ~/.qingxiaotuan/ 覆盖);
+#     resources/skills/builtin 是随包分发的资源, 必须入库, 故不设 skills/ 全局忽略。
+
+# ===== 敏感信息 =====
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.*
+# 注意: .env.example 是含占位符的模板, 必须保留在版本库中供用户复制,
+# 因此显式豁免 (上面的 .env.* 模式不会匹配 .example, 但此处声明意图以防误加模式)。
+!.env.example
+
+# ===== 日志 =====
+*.log
+logs/
+
+# ===== 系统 / IDE =====
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+.vs/
+*.swp
+*.swo
+*~
+*.user
+*.suo
+
+# ===== 官网（Web）不入库 =====
+# 官网页面与素材保持本地维护，不随 Qingxiaotuan-Agent-CLI 代码仓库提交
+# 仅忽略仓库根级官网目录 /web/, 不影响 qingxiaotuan/web/ 代码包
+/web/
+.trae-html-share-packages/
+
+# ===== 基准产物 =====
+# 保留 bench/security-bench.json 存档供 CI 数字门禁对比 (README/security-ci.yml 依赖),
+# 其余基准生成的 json 一律不入库。
+bench/*.json
+!bench/security-bench.json
+
+# ===== 一次性操作脚本 =====
+scripts/_replace_icons.py
+
+# ===== 临时/内部文件 =====
+.demo-home/
+.demo-patch.yaml
+111.md
