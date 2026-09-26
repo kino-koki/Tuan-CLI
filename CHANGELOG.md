@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.017] - Unreleased
 
 ### 新增
+
+- **Goal 模式增强** (对标 Claude Code `goal` / Kimi Code Goal):
+  - 新增 `qingxiaotuan/core/goal_mode.py` Goal 引擎: `/goal <目标描述>` 首次设置时自动拆解为 3~7 个
+    可执行子步骤, 每轮对话结束后自动验证当前步骤并续轮推进, 直到目标达成。
+  - 状态机: 目标与步骤均有 `pending/in_progress/done/failed`; 测试类步骤优先实际跑 pytest/lint
+    做确定性验证, 其余用 LLM YES/NO 验收; 测试结果自动落盘 `<workspace>/.qxt/goal.json`,
+    新会话可从磁盘恢复进度。
+  - 防死循环: `goal.max_auto_iterations` (默认 10) 限制最大自动续轮, 超出后目标标记 failed 并停止;
+    `/goal status` 查看步骤级进度, `/goal clear` 清除; 配置项 `goal.enabled` / `goal.auto_continue`。
+- **Tool(param:value) 精确权限匹配** (对标 Claude Code 三层权限):
+  - `permissions.rules` 规则新增 `param` / `value` 字段, 按工具参数值 glob 精确匹配, 支持嵌套参数
+    点号路径 (如 `config.model`); 旧式 `tool + pattern` 规则完全向后兼容。
+  - 示例: `{"tool":"run_shell","param":"command","value":"rm -rf*","action":"deny"}` 精确拦截危险命令,
+    而不误伤其他 run_shell 调用。
+  - 新增 `qxt permissions list` 与 `qxt permissions test <tool> '<json>'` (及 `/permissions test ...`)
+    只读测试某次工具调用会被哪条规则命中、最终动作是 allow/ask/deny。
+- **`qxt upgrade` 自动更新**: 检查 PyPI 最新版本并 `pip install --upgrade` 更新自身;
+  `--check` 仅检查不安装, `--yes` 跳过确认, `--version <ver>` 安装指定版本;
+  网络失败时优雅降级并提示手动更新命令; 配置 `upgrade.check_on_startup` (默认关, 不拖慢启动)。
 - **交互效率工具四件套** (对标 Claude Code `!` shell mode / TodoWrite / `/init`、Kimi Code `kimi export`):
   - **`!` Shell 快捷模式**: REPL/TUI 输入 `!命令` 不经 LLM 直接执行, 复用 run_shell 全套
     安全护栏 (硬红线/网络门控/严格模式), 危险命令仍被拦截; 输出显示在对话中并自动以带标记

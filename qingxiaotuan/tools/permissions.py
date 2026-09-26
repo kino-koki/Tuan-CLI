@@ -41,6 +41,17 @@ class PermissionDecision:
     explicit: bool = False  # True = 用户规则表显式 allow (可豁免危险工具确认)
 
 
+def _nested_get(args: dict, dotted: str):
+    """按点号路径从嵌套 dict 取值 (如 config.model); 取不到返回 None。"""
+    cur = args
+    for part in str(dotted).split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        else:
+            return None
+    return cur
+
+
 class PermissionPolicy:
     """集中处理工具权限。对标 Claude Code 2.1.214 的安全加固。"""
 
@@ -116,9 +127,17 @@ class PermissionPolicy:
             tool_pattern = str(rule.get("tool", "*"))
             if not fnmatch.fnmatch(name.lower(), tool_pattern.lower()):
                 continue
-            arg_pattern = rule.get("pattern")
-            if arg_pattern and not fnmatch.fnmatch(target, str(arg_pattern).lower()):
-                continue
+            # Tool(param:value) 精确粒度 (对标 Claude Code 三层权限):
+            # 规则带 param 时按参数值 glob 精确匹配, 优先于旧式 pattern。
+            param = rule.get("param")
+            if param:
+                actual = _nested_get(args, str(param))
+                if actual is None or not fnmatch.fnmatch(str(actual), str(rule.get("value", "*"))):
+                    continue
+            else:
+                arg_pattern = rule.get("pattern")
+                if arg_pattern and not fnmatch.fnmatch(target, str(arg_pattern).lower()):
+                    continue
             action = str(rule.get("action", "")).strip().lower()
             if action in ("allow", "deny", "ask"):
                 hits.append(action)
@@ -126,6 +145,36 @@ class PermissionPolicy:
             if priority in hits:
                 return priority
         return None
+
+    def inspect(self, name: str, args: dict[str, Any]) -> dict:
+        """测试一次工具调用会被哪些规则命中 (供 `qxt permissions test` 使用)。
+
+        Returns:
+            {"action": 最终动作 deny/ask/allow/None, "hits": [{"index", "rule"}...]}
+        """
+        target = self._rule_target(name, args)
+        hits: list[dict] = []
+        for i, rule in enumerate(self.rules):
+            if not isinstance(rule, dict):
+                continue
+            tool_pattern = str(rule.get("tool", "*"))
+            if not fnmatch.fnmatch(name.lower(), tool_pattern.lower()):
+                continue
+            if rule.get("param"):
+                actual = _nested_get(args, str(rule["param"]))
+                matched = actual is not None and fnmatch.fnmatch(
+                    str(actual), str(rule.get("value", "*")))
+            else:
+                p = rule.get("pattern")
+                matched = (not p) or fnmatch.fnmatch(target, str(p).lower())
+            if matched:
+                hits.append({"index": i, "rule": rule})
+        action = None
+        for priority in ("deny", "ask", "allow"):
+            if any(h["rule"].get("action") == priority for h in hits):
+                action = priority
+                break
+        return {"action": action, "hits": hits}
 
     @staticmethod
     def _rule_target(name: str, args: dict[str, Any]) -> str:
