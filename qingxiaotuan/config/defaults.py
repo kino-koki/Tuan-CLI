@@ -351,6 +351,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "memory": {
         "fts_enabled": True,
         "recall_limit": 5,
+        # Auto Memory: 回合结束自动抽取 偏好/纠正/项目决策/参考事实 (规则启发式, 不调 LLM)
+        "auto_extract": True,
     },
     "skills": {
         "enabled": True,

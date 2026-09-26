@@ -8,11 +8,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.017] - Unreleased
 
 ### 新增
+- **交互效率工具四件套** (对标 Claude Code `!` shell mode / TodoWrite / `/init`、Kimi Code `kimi export`):
+  - **`!` Shell 快捷模式**: REPL/TUI 输入 `!命令` 不经 LLM 直接执行, 复用 run_shell 全套
+    安全护栏 (硬红线/网络门控/严格模式), 危险命令仍被拦截; 输出显示在对话中并自动以带标记
+    user 消息注入下一轮上下文 (`!pytest tests/ -q` 跑完测试结果 Agent 直接可见)。
+  - **TodoWrite 持久化工具** (qingxiaotuan/tools/todo_tool.py): todo_write 在原有内存语义上增加
+    落盘 <workspace>/.qxt/todo.json (校验文案与 session_tools 完全一致, 向后兼容), 新增 todo_list
+    工具列出任务与进度; 新 Agent/新会话进入同一工作区可从磁盘恢复清单。
+  - **`/init` 项目引导**: 扫描工作区自动识别语言/包管理器/测试框架/应用框架/目录结构, 生成
+    QXT.md 项目规则文件 (概述/技术栈/常用命令/测试命令/构建命令/目录结构); 已存在时默认不覆盖,
+    交互确认或 `/init force` 后才覆盖。
+  - **会话导出 zip** (`qxt session export <id> -o out.zip`): 打包 session.jsonl + manifest.json +
+    config_snapshot.json (不含密钥) + files_manifest.json (会话中产生/修改的文件清单) + summary.md;
+    不带 .zip 后缀时保持原有 jsonl 拷贝行为。
 - **AI 图片生成** (`/image generate`): DALL-E 3 / Stability AI 多后端, 生成图片自动保存到
   `<workspace>/.qxt/generated/` 并自动挂接供视觉模型查看; `/image list` 列出已生成图片。
 - **仓库卫生企业级整理**: 重写历史清除误入库的调试输出 (mypy/bench/test 重定向产物),
   完善 .gitignore (构建/覆盖率/缓存/密钥/截图归档), `bench/security-bench.json` 存档入库
   (修复 CI 数字门禁依赖), 版本号三处对齐为 0.2.017。
+- **Headless/CI 模式增强** (对标 Claude Code `-p/--print`、`--bare` 与 Kimi Code
+  `--output-format stream-json`):
+  - `qxt run -p/--print`: 简洁 headless 模式, 不进 TUI、不打印横幅/状态行/预算装饰,
+    纯文本流式输出到 stdout, 错误一律走 stderr, 退出码 0=成功 / 1=失败;
+    任务参数可省略, stdin 为管道时自动读取 stdin 作为任务 (`cat file | qxt run -p`)。
+  - `qxt run --output-format {text,json}`: `json` 时每行输出一个 NDJSON 事件
+    (`text`/`thinking`/`tool_call`/`tool_result`/`finish`), 供 CI/评测程序消费。
+  - `--bare` (主命令与 `qxt run` 均可用): CI 纯净模式, 仅用内置默认配置 + 内置工具,
+    跳过用户级 `~/.qingxiaotuan/config.yaml`、skills 自动播种、用户 hooks、MCP server、
+    自定义斜杠命令与记忆/技能自动注入, 保证评测可复现、不受本机用户配置污染。
+- **代码编辑精度增强** (对标 Claude Code Edit multi-cut / /diff 面板、Kimi Code v0.38.0
+  Read-before-Edit):
+  - `edit_file` 支持 multi-cut 多组替换: 新增 `replacements=[{old_string,new_string},...]`
+    参数, 按序应用; 任一组 old_string 未找到或不唯一则整体回滚不写入; 旧的单组
+    `old_string/new_string` 调用方式完全向后兼容。
+  - **Read-before-Edit 守卫** (默认开启): `edit_file` / 覆盖式 `write_file` 前校验本会话
+    是否先 `read_file` 过该路径, 未读先改一律拦截并提示; 新建文件不受限。可用
+    `tools.require_read_before_edit: false` 关闭。
+  - 新增 `diff_preview` 工具: 用 `difflib.unified_diff` 预览替换结果, 不写盘;
+    `edit_file` 返回值末尾附带 unified diff 摘要。
+- **Auto Memory 自动记忆系统** (对标 Claude Code Auto Memory):
+  - 新增 `qingxiaotuan/memory/auto_extractor.py`: 回合结束 (Stop) 时后台线程自动分析用户
+    消息, 用规则+关键词启发式 (不调用额外 LLM, 零成本) 抽取四类记忆 -- `user`(偏好)/
+    `feedback`(纠正)/`project`(项目决策)/`reference`(参考事实链接)。
+  - `MemoryStore` 新增 `mkind` 分类列 (旧行默认 `reference`, 向后兼容), 提供
+    `add_auto_memory` / `search_by_kind` / `list_by_kind` / `delete_by_id` / `find_similar`
+    方法; 写入前去重 (归一化子串 + 3-gram Jaccard); `recall_context` 按
+    user > feedback > project > reference 优先级注入上下文。
+  - 新增 `/memory` 斜杠命令: `list [kind]` / `search <q>` / `add <kind> <text>` /
+    `delete <id>` / `on|off`, rich 表格输出; 替代原先调用不存在 `store.count()` 的占位实现。
+  - 配置 `memory.auto_extract` (默认 `true`) 一键开关; 写入审计事件 `memory.auto_extracted`。
+  - 在 `Agent._teardown_run` 的 Stop hook 之后后台触发, 不阻塞主循环。
 
 ### 重构
 - **system prompt 精简**: 行为准则 20 条精简为核心操作规则, 通用流程/编码规范/安全伦理
@@ -42,6 +87,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 测试
 - tests/test_tui_fixes.py: 桥接转发/横幅回调/补全 meta 9 项
 - tests/test_external_engines.py: IPC 错误响应回显请求 id 回归测试 1 项
+- tests/test_edit_multicut.py: multi-cut 单组兼容/多组成功/缺失回滚/歧义回滚 4 项
+- tests/test_read_before_edit.py: 未读 edit 拦截/读后放行/未读 write 拦截/守卫可关闭/新建文件放行 5 项
+- tests/test_diff_preview.py: unified diff 格式/不写盘/多组预览 3 项
+- tests/test_headless_print.py: -p 无装饰/stdin 管道/NDJSON 事件/--bare 跳用户配置 8 项
+- tests/test_auto_memory.py: 四类提取/去重/按 kind 检索/可关闭/端到端//memory 斜杠命令 12 项
+- tests/test_shell_bang.py: 命令执行/结果注入/危险拦截 3 项
+- tests/test_todo_tool.py: todo_write 写入/todo_list/状态更新/持久化 4 项
+- tests/test_init_command.py: 生成 QXT.md/Python 检测/已存在不覆盖 3 项
+- tests/test_session_export.py: zip 生成/含会话数据 2 项
 
 ## [0.2.016] - 2026-09-19
 

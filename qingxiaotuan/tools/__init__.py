@@ -13,6 +13,7 @@ from .code import CodeToolPlugin
 from .dispatch import DispatchPlugin
 from .task_tool import TaskToolPlugin
 from .session_tools import SessionToolsPlugin
+from .todo_tool import TodoToolPlugin
 from .mcp.plugin import MCPPlugin
 from .pipeline import PipelinePlugin
 from .code_review import CodeReviewPlugin
@@ -54,7 +55,7 @@ def builtin_tool_plugins():
         MemoryToolPlugin(), SkillToolPlugin(), CodeToolPlugin(),
         DispatchPlugin(), PipelinePlugin(), CodeReviewPlugin(),
         ExternalToolsPlugin(), LanguagePlugin(), CheckpointPlugin(),
-        TaskToolPlugin(), SessionToolsPlugin(), CodeGraphPlugin(), BackendDevPlugin(), SandboxPlugin(), DynamicWorkflowPlugin(),
+        TaskToolPlugin(), SessionToolsPlugin(), TodoToolPlugin(), CodeGraphPlugin(), BackendDevPlugin(), SandboxPlugin(), DynamicWorkflowPlugin(),
         ImageGenPlugin(),
     ]
 

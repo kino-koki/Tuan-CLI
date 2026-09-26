@@ -75,6 +75,8 @@ class Agent(GoalMixin, VisionMixin):
         self.turn_count = 0
         self.total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
         self._cancel_event = threading.Event()
+        # 本轮用户原始输入 (供 Auto Memory 在 Stop 事件后分析, 不含系统前缀)
+        self._last_user_input: str = ""
         self.exclude_tools: Set[str] = set(exclude_tools or ())
         # 子代理角色指令 (AgentType.system_extra): 追加到系统提示末尾 (空串则无感)
         self.system_extra = system_extra or ""
@@ -150,7 +152,7 @@ class Agent(GoalMixin, VisionMixin):
         prompt = build_system_prompt(
             home=self.config.home,
             workspace=self.workspace,
-            memory_store=self.kernel.get("memory_store"),
+            memory_store=self.kernel.get("memory_store") if self.config.get("memory.auto_inject", True) else None,
             skill_manager=self.kernel.get("skill_manager") if self.config.get("skills.auto_inject", True) else None,
             skill_limit=self.config.get("skills.inject_limit", 3),
             codebase_map=self._codebase_map,
@@ -566,6 +568,23 @@ class Agent(GoalMixin, VisionMixin):
         except Exception as exc:  # noqa: BLE001
             log.debug("hook %s 执行失败: %s", event, exc)
 
+    def _auto_memory_extract(self, answer: str = "") -> None:
+        """Auto Memory: 后台线程从本轮用户消息抽取偏好/反馈/项目决策/参考事实。
+
+        复用 MemoryStore + 规则启发式 (不调额外 LLM); 配置 memory.auto_extract=false
+        时整体关闭。异常隔离, 绝不影响主循环。
+        """
+        try:
+            from ..memory.auto_extractor import build_extractor
+            extractor = build_extractor(self.kernel)
+            if extractor is None:
+                return
+            user_text = getattr(self, "_last_user_input", "") or ""
+            if not user_text.strip():
+                return
+            extractor.process_turn_async(user_text, answer or "", kernel=self.kernel)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("Auto Memory 触发失败 (已忽略): %s", exc)
     def _run_prompt_submit_hooks(self, prompt: str) -> str:
         """UserPromptSubmit hook: 返回注入本回合的附加上下文 (无则空串)。"""
         hooks = self._hooks()
@@ -694,7 +713,7 @@ class Agent(GoalMixin, VisionMixin):
 
         task_ctx = build_task_context(
             task_hint=user_input,
-            memory_store=self.kernel.get("memory_store"),
+            memory_store=self.kernel.get("memory_store") if self.config.get("memory.auto_inject", True) else None,
             skill_manager=self.kernel.get("skill_manager") if self.config.get("skills.auto_inject", True) else None,
         )
         prefix = "\n\n".join(x for x in (task_ctx, hook_ctx) if x)
@@ -712,6 +731,7 @@ class Agent(GoalMixin, VisionMixin):
             self.pending_images = []
         self.messages.append(user_msg)
         self._session_append("user", message=user_msg)
+        self._last_user_input = _expanded_input
 
         return on_token, run_trace, raw_on_token
 
@@ -726,6 +746,7 @@ class Agent(GoalMixin, VisionMixin):
         """运行后共享收尾: hooks 通知、技能蒸馏、trace 关闭、会话状态落盘。"""
         if answer and not answer.startswith("[模型错误]") and not self._cancel_event.is_set():
             self._notify_hook("Stop", {"reason": "stop", "answer": answer[:1000]})
+            self._auto_memory_extract(answer)
         if nudge and self._should_nudge():
             self._nudge_round(on_token=raw_on_token, on_reason=None, on_error=on_error)
         if run_trace:

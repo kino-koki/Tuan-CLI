@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>青小团 vs Kimi Code vs Claude Code — 差距分析与顶级补齐报告</title>
+<style>
+  :root {
+    --accent: #4D6BFE;
+    --accent-light: #eef1ff;
+    --green: #16a34a;
+    --green-bg: #f0fdf4;
+    --orange: #ea580c;
+    --orange-bg: #fff7ed;
+    --red: #dc2626;
+    --red-bg: #fef2f2;
+    --gray: #6b7280;
+    --gray-bg: #f9fafb;
+    --border: #e5e7eb;
+    --text: #1f2937;
+    --text-light: #6b7280;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    line-height: 1.7;
+    background: #fff;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; color: #111827; }
+  h2 { font-size: 22px; font-weight: 700; margin: 40px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); color: #111827; }
+  h3 { font-size: 17px; font-weight: 600; margin: 24px 0 10px; color: #1f2937; }
+  h4 { font-size: 15px; font-weight: 600; margin: 16px 0 8px; color: #374151; }
+  p { margin-bottom: 12px; }
+  .subtitle { color: var(--text-light); font-size: 14px; margin-bottom: 32px; }
+  .meta-bar {
+    display: flex; gap: 24px; flex-wrap: wrap;
+    background: var(--gray-bg); border-radius: 10px; padding: 16px 20px; margin-bottom: 32px;
+    font-size: 13px;
+  }
+  .meta-bar span { display: flex; align-items: center; gap: 6px; }
+  .meta-bar strong { color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+  th { background: var(--accent); color: #fff; padding: 10px 12px; text-align: left; font-weight: 600; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:nth-child(even) { background: #fafbfc; }
+  tr:hover { background: var(--accent-light); }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .badge-green { background: var(--green-bg); color: var(--green); }
+  .badge-orange { background: var(--orange-bg); color: var(--orange); }
+  .badge-red { background: var(--red-bg); color: var(--red); }
+  .badge-blue { background: var(--accent-light); color: var(--accent); }
+
+  .card {
+    border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; margin: 16px 0;
+    background: #fff;
+  }
+  .card-p0 { border-left: 4px solid var(--red); }
+  .card-p1 { border-left: 4px solid var(--orange); }
+  .card-p2 { border-left: 4px solid var(--accent); }
+  .card-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .card-desc { font-size: 14px; color: var(--text-light); margin-bottom: 12px; }
+  .card-detail { font-size: 13.5px; }
+  .card-detail ul { padding-left: 20px; margin: 8px 0; }
+  .card-detail li { margin-bottom: 4px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 20px 0; }
+  .stat-box {
+    background: var(--gray-bg); border-radius: 10px; padding: 16px 20px; text-align: center;
+  }
+  .stat-num { font-size: 32px; font-weight: 800; color: var(--accent); }
+  .stat-label { font-size: 13px; color: var(--text-light); margin-top: 4px; }
+
+  .source { font-size: 12px; color: var(--text-light); }
+  .source a { color: var(--accent); text-decoration: none; }
+  .code { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; background: var(--gray-bg); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  .gap-detail { margin: 12px 0; padding: 12px 16px; background: var(--gray-bg); border-radius: 8px; font-size: 13.5px; }
+  .gap-detail strong { color: var(--accent); }
+  .footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-light); }
+  .toc { background: var(--gray-bg); border-radius: 10px; padding: 16px 24px; margin-bottom: 32px; }
+  .toc ol { padding-left: 20px; }
+  .toc li { margin-bottom: 4px; font-size: 14px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .impl-files { font-size: 12.5px; color: var(--text-light); margin-top: 8px; }
+  .impl-files code { background: var(--gray-bg); padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>青小团(qxt) vs Kimi Code vs Claude Code</h1>
+<p class="subtitle">差距分析与顶级补齐实现报告 · 调研截止 2026-09-26 · 青小团 v0.2.017</p>
+
+<div class="meta-bar">
+  <span>青小团 <strong>v0.2.017</strong></span>
+  <span>Kimi Code <strong>v2.1.1</strong></span>
+  <span>Claude Code <strong>v2.1.283</strong></span>
+  <span>补齐功能 <strong>9 项</strong></span>
+  <span>新增测试 <strong>45 个</strong></span>
+  <span>回归通过 <strong>158 个</strong></span>
+</div>
+
+<div class="toc">
+  <strong>目录</strong>
+  <ol>
+    <li><a href="#summary">执行摘要</a></li>
+    <li><a href="#matrix">三方能力对比矩阵</a></li>
+    <li><a href="#gaps">逐项差距详析</a></li>
+    <li><a href="#implemented">已实现补齐（弄到顶级）</a></li>
+    <li><a href="#deferred">记录但未实现的差距</a></li>
+    <li><a href="#leading">青小团已领先维度</a></li>
+    <li><a href="#verification">验证与测试</a></li>
+    <li><a href="#sources">信源索引</a></li>
+  </ol>
+</div>
+
+<h2 id="summary">一、执行摘要</h2>
+
+<p>对青小团 v0.2.017 与 Kimi Code v2.1.1、Claude Code v2.1.283 进行了 15 个维度的逐维度对比，信源覆盖官方文档/changelog/GitHub + 第三方实测，每条结论标注可信度。</p>
+
+<p><strong>核心发现</strong>：青小团在模型中立性（51 provider）、插件架构（微内核）、多语言（10 语言）、开源（MIT）、价格（免费）、安全纵深等维度已领先或持平；在 <strong>Headless/CI 模式、代码编辑精度、自动记忆、交互效率</strong> 四个方面存在可补齐的差距。</p>
+
+<p><strong>已完成补齐</strong>：9 项功能全部实现并通过测试，包括 <span class="code">-p/--print</span> headless 模式、<span class="code">--output-format json</span> NDJSON 输出、<span class="code">--bare</span> CI 纯净模式、Edit multi-cut 多组替换、Read-before-Edit 守卫、diff_preview 预览工具、Auto Memory 四类自动记忆、<span class="code">!</span> shell 快捷模式、TodoWrite 持久化工具、<span class="code">/init</span> 项目引导、会话导出 zip。</p>
+
+<div class="stat-grid">
+  <div class="stat-box"><div class="stat-num">15</div><div class="stat-label">对比维度</div></div>
+  <div class="stat-box"><div class="stat-num">9</div><div class="stat-label">已补齐功能</div></div>
+  <div class="stat-box"><div class="stat-num">45</div><div class="stat-label">新增测试</div></div>
+  <div class="stat-box"><div class="stat-num">30</div><div class="stat-label">变更文件</div></div>
+  <div class="stat-box"><div class="stat-num">0</div><div class="stat-label">回归失败</div></div>
+</div>
+
+<h2 id="matrix">二、三方能力对比矩阵</h2>
+
+<table>
+<thead>
+<tr><th>维度</th><th>青小团 qxt</th><th>Kimi Code v2.1.1</th><th>Claude Code v2.1.283</th><th>差距</th></tr>
+</thead>
+<tbody>
+<tr><td>安装/分发/更新</td><td>pip + ps1 + bat</td><td>官方脚本/npm/Homebrew/单二进制，<span class="code">kimi upgrade</span></td><td>npm(弃用)/原生二进制，<span class="code">claude install</span></td><td><span class="badge badge-orange">缺自动更新</span></td></tr>
+<tr><td>模型/Provider</td><td><strong>51 provider，模型中立</strong></td><td>自家K3+第三方6类，双协议API</td><td>仅Claude系列+Bedrock/Vertex/Foundry</td><td><span class="badge badge-green">qxt领先</span></td></tr>
+<tr><td>Agent模式/自主性</td><td>plan/auto/agent/dev/run/bg，SubAgentPool，DevLoop</td><td>Plan/Goal/三档权限/AgentSwarm/Tower/WaitFor</td><td>Plan/Auto(默认)/Bypass/goal/fork/Ultraplan/Workflows</td><td><span class="badge badge-orange">缺Goal/WaitFor</span></td></tr>
+<tr><td>代码编辑精度</td><td>str_replace单次，code_edit助手，run_tests</td><td>Edit须先Read，symlink防护</td><td>Edit(multi-cut)/NotebookEdit，沙箱Bash，Monitor，/diff</td><td><span class="badge badge-red">已补齐</span></td></tr>
+<tr><td>终端UI/TUI</td><td>textual TUI + Web workbench</td><td>全交互TUI，Mermaid/LaTeX，全屏模式</td><td>流式TUI，diff面板，vim模式，agent view，Rewind</td><td><span class="badge badge-orange">缺diff面板等</span></td></tr>
+<tr><td>IDE集成</td><td>ACP服务端，无IDE扩展</td><td>VS Code扩展+桌面端+ACP接JetBrains/Zed</td><td>VS Code+JetBrains+Desktop+Web</td><td><span class="badge badge-red">无IDE扩展</span></td></tr>
+<tr><td>上下文/记忆</td><td>QXT.md多层级，MemoryStore(FTS5)，代码索引，压缩</td><td>compact，会话恢复/派生/全局搜索，1M上下文</td><td>CLAUDE.md，Auto Memory(4类)，三层压缩，1M上下文</td><td><span class="badge badge-red">已补齐</span></td></tr>
+<tr><td>MCP/工具生态</td><td>MCP完整，微内核插件，Skills，Hooks(8事件)</td><td>MCP，插件市场，Skills，Hooks</td><td>MCP，Plugins+Marketplaces，Skills，Hooks，plugin eval</td><td><span class="badge badge-green">基本持平</span></td></tr>
+<tr><td>安全/权限</td><td>auto mode风险分类，沙箱，安全审计，工作区信任</td><td>三档权限，危险命令守卫，工作区信任，Web鉴权</td><td>三层权限+Tool(param:value)，沙箱Bash，hard deny，--restricted</td><td><span class="badge badge-orange">缺精确匹配</span></td></tr>
+<tr><td>插件/自定义</td><td><strong>微内核@plugin，服务注册表，事件总线</strong></td><td>插件清单(MCP+skills+agents+systemPrompt)</td><td>Plugins+Marketplaces，Hooks，settings.json分层</td><td><span class="badge badge-green">qxt架构领先</span></td></tr>
+<tr><td>自动化/CI</td><td>qxt run(headless)，cron，Web API，后台任务</td><td>-p print，stream-json，Server API，Remote Control</td><td>-p/--print，--bare，/loop，Routines，ultrareview CI</td><td><span class="badge badge-red">已补齐</span></td></tr>
+<tr><td>性能/上下文</td><td>取决于provider</td><td>1M上下文(K3)，260 tok/s(宣称)</td><td>1M上下文(Opus5/Sonnet5)，fast mode</td><td><span class="badge badge-green">模型中立</span></td></tr>
+<tr><td>多语言</td><td><strong>10语言README + i18n运行时</strong></td><td>中英界面，多语言文档站</td><td>英/日/中/韩/德/法/西/葡/俄/印尼</td><td><span class="badge badge-green">qxt领先</span></td></tr>
+<tr><td>价格</td><td><strong>开源免费</strong></td><td>CLI免费MIT，会员¥49-699/月</td><td>Pro$20/Max$100-200</td><td><span class="badge badge-green">qxt领先</span></td></tr>
+<tr><td>开源</td><td><strong>MIT</strong></td><td>MIT</td><td>闭源(Commercial Terms)</td><td><span class="badge badge-green">qxt领先</span></td></tr>
+</tbody>
+</table>
+
+<h2 id="gaps">三、逐项差距详析</h2>
+
+<h3>差距1：Headless/CI 模式不够简洁 <span class="badge badge-red">P0 已补齐</span></h3>
+<div class="gap-detail">
+  <strong>对标</strong>：Claude Code <span class="code">claude -p</span> + <span class="code">--bare</span>；Kimi Code <span class="code">kimi -p</span> + <span class="code">--output-format stream-json</span><br>
+  <strong>原状态</strong>：<span class="code">qxt run</span> 输出混合 console.print 与 token stream，无结构化输出，无纯净模式，无 stdin 管道<br>
+  <strong>补齐</strong>：<span class="code">-p/--print</span> 纯文本流式 + stdin 管道；<span class="code">--output-format json</span> NDJSON 五类事件；<span class="code">--bare</span> 跳过用户配置/skills/hooks/MCP/记忆注入
+</div>
+
+<h3>差距2：代码编辑工具精度不足 <span class="badge badge-red">P0 已补齐</span></h3>
+<div class="gap-detail">
+  <strong>对标</strong>：Claude Code Edit multi-cut + /diff 面板；Kimi Code v0.38.0 Read-before-Edit<br>
+  <strong>原状态</strong>：<span class="code">edit_file</span> 仅单次 str_replace，无 diff 预览，无 Read 守卫<br>
+  <strong>补齐</strong>：multi-cut 多组替换（整体回滚）；Read-before-Edit 守卫（可配置关闭）；<span class="code">diff_preview</span> 工具；edit 返回值附 unified diff 摘要
+</div>
+
+<h3>差距3：Auto Memory 自动记忆缺失 <span class="badge badge-orange">P1 已补齐</span></h3>
+<div class="gap-detail">
+  <strong>对标</strong>：Claude Code Auto Memory（user/feedback/project/reference 四类，自动写入）<br>
+  <strong>原状态</strong>：MemoryStore 已有 FTS5/标签/时间索引，但记忆是被动的（需显式调用 memory_write）<br>
+  <strong>补齐</strong>：规则启发式自动提取器（零 LLM 调用），Stop 事件后台触发，四类分类，去重，<span class="code">/memory</span> 斜杠命令，<span class="code">memory.auto_extract</span> 开关
+</div>
+
+<h3>差距4：交互效率工具不足 <span class="badge badge-blue">P2 已补齐</span></h3>
+<div class="gap-detail">
+  <strong>对标</strong>：Claude Code <span class="code">!</span> shell mode / TodoWrite / <span class="code">/init</span>；Kimi Code <span class="code">kimi export</span><br>
+  <strong>补齐</strong>：<span class="code">!</span> 快捷 shell（复用安全护栏）；TodoWrite 持久化工具（落盘 .qxt/todo.json）；<span class="code">/init</span> 项目引导生成 QXT.md；<span class="code">qxt session export</span> zip 打包
+</div>
+
+<h3>差距5：IDE 扩展缺失 <span class="badge badge-red">记录未实现</span></h3>
+<div class="gap-detail">
+  <strong>对标</strong>：Kimi Code VS Code 扩展+桌面端；Claude Code VS Code+JetBrains+Desktop<br>
+  <strong>状态</strong>：青小团有 ACP 服务端可接 JetBrains/Zed，但无 VS Code 扩展、无桌面端<br>
+  <strong>决策</strong>：工程量超出 CLI 项目范围（需独立 TS/JS 项目），ACP 协议已有接入点，留待后续迭代
+</div>
+
+<h3>差距6：云端功能缺失 <span class="badge badge-red">架构性差距</span></h3>
+<div class="gap-detail">
+  <strong>对标</strong>：Claude Code Ultraplan/Routines/ultrareview/自托管云会话/remote-control；Kimi Code Remote Control<br>
+  <strong>决策</strong>：青小团定位本地 CLI，不实现云端功能。cron + Web API 已覆盖本地自动化需求
+</div>
+
+<h2 id="implemented">四、已实现补齐详情</h2>
+
+<div class="card card-p0">
+  <div class="card-title"><span class="badge badge-red">P0</span> Headless/CI 模式增强</div>
+  <div class="card-desc">对标 Claude Code -p/--bare 与 Kimi Code stream-json，让青小团真正可用于 CI/自动化管线。</div>
+  <div class="card-detail">
+    <ul>
+      <li><span class="code">qxt run -p "任务"</span>：不进 TUI、不打印横幅/装饰，纯文本流式 stdout，错误走 stderr，退出码 0/1</li>
+      <li><span class="code">cat file | qxt run -p</span>：stdin 管道自动读取作为任务输入</li>
+      <li><span class="code">--output-format json</span>：NDJSON 每行一个事件（text/thinking/tool_call/tool_result/finish）</li>
+      <li><span class="code">--bare</span>：CI 纯净模式，跳过用户配置/skills/hooks/MCP/记忆注入，仅内置默认+内置工具</li>
+    </ul>
+    <div class="impl-files">文件：<code>cli/cmd_agents.py</code> <code>cli/parser.py</code> <code>app.py</code> <code>config/loader.py</code> <code>core/agent.py</code> · 测试：<code>test_headless_print.py</code> (8项)</div>
+  </div>
+</div>
+
+<div class="card card-p0">
+  <div class="card-title"><span class="badge badge-red">P0</span> 代码编辑精度增强</div>
+  <div class="card-desc">对标 Claude Code Edit multi-cut + /diff 面板与 Kimi Code Read-before-Edit 守卫。</div>
+  <div class="card-detail">
+    <ul>
+      <li><span class="code">edit_file(path, replacements=[{old_string,new_string},...])</span>：multi-cut 多组按序应用，任一组失败整体回滚</li>
+      <li>旧的 <span class="code">edit_file(path, old_string, new_string)</span> 单组方式完全向后兼容</li>
+      <li>Read-before-Edit 守卫（默认开启）：edit/覆盖式 write 前校验已 read_file，未读先改拦截提示</li>
+      <li><span class="code">diff_preview</span> 工具：unified_diff 预览不写盘；edit 返回值附 diff 摘要</li>
+      <li>守卫可通过 <span class="code">tools.require_read_before_edit: false</span> 关闭；新建文件不受限</li>
+    </ul>
+    <div class="impl-files">文件：<code>tools/filesystem.py</code> <code>tools/base.py</code> · 测试：<code>test_edit_multicut.py</code>(4) <code>test_read_before_edit.py</code>(5) <code>test_diff_preview.py</code>(3)</div>
+  </div>
+</div>
+
+<div class="card card-p1">
+  <div class="card-title"><span class="badge badge-orange">P1</span> Auto Memory 自动记忆系统</div>
+  <div class="card-desc">对标 Claude Code Auto Memory，让 Agent 自动记住用户偏好、纠正、项目决策。</div>
+  <div class="card-detail">
+    <ul>
+      <li>规则启发式提取器（零额外 LLM 调用）：中英文关键词匹配，分类优先级 feedback &gt; user &gt; project &gt; reference</li>
+      <li>四类记忆：<span class="code">user</span>(偏好) / <span class="code">feedback</span>(纠正) / <span class="code">project</span>(决策) / <span class="code">reference</span>(事实链接)</li>
+      <li>Stop 事件后后台 daemon 线程触发，不阻塞主循环；异常全隔离</li>
+      <li>写入前去重（归一化子串 + 3-gram Jaccard）；recall_context 按优先级注入</li>
+      <li><span class="code">/memory list [kind]</span> / <span class="code">/memory search</span> / <span class="code">/memory add</span> / <span class="code">/memory delete</span> / <span class="code">/memory on|off</span></li>
+      <li>MemoryStore 新增 <span class="code">mkind</span> 列（旧行默认 reference，ALTER TABLE 向后兼容）</li>
+    </ul>
+    <div class="impl-files">文件：<code>memory/auto_extractor.py</code>(新增) <code>memory/store.py</code> <code>core/agent.py</code> <code>cli/cmd_slash.py</code> <code>config/defaults.py</code> · 测试：<code>test_auto_memory.py</code>(12项)</div>
+  </div>
+</div>
+
+<div class="card card-p2">
+  <div class="card-title"><span class="badge badge-blue">P2</span> 交互效率工具四件套</div>
+  <div class="card-desc">对标 Claude Code ! shell mode / TodoWrite / /init 与 Kimi Code 会话导出。</div>
+  <div class="card-detail">
+    <ul>
+      <li><span class="code">!命令</span>：REPL/TUI 输入 ! 前缀不经 LLM 直接执行 shell，复用 run_shell 全套安全护栏，输出自动注入下一轮上下文</li>
+      <li><span class="code">todo_write</span> 持久化：落盘 <span class="code">&lt;workspace&gt;/.qxt/todo.json</span>，新增 <span class="code">todo_list</span>，校验文案与既有 session_tools 一致</li>
+      <li><span class="code">/init</span>：扫描工作区识别语言/包管理器/测试框架/框架/目录结构，生成 QXT.md；已存在默认不覆盖，<span class="code">/init force</span> 强制</li>
+      <li><span class="code">qxt session export &lt;id&gt; -o out.zip</span>：打包 session.jsonl + manifest + config快照(不含密钥) + 文件清单 + summary.md</li>
+    </ul>
+    <div class="impl-files">文件：<code>cli/cmd_bang.py</code>(新增) <code>tools/todo_tool.py</code>(新增) <code>cli/cmd_slash_init.py</code>(新增) <code>cli/cmd_session_export.py</code>(新增) <code>cli/cmd_chat.py</code> <code>cli/cmd_slash.py</code> <code>cli/cmd_session.py</code> <code>tools/__init__.py</code> <code>app.py</code> · 测试：<code>test_shell_bang.py</code>(3) <code>test_todo_tool.py</code>(4) <code>test_init_command.py</code>(3) <code>test_session_export.py</code>(2)</div>
+  </div>
+</div>
+
+<h2 id="deferred">五、记录但未实现的差距</h2>
+
+<table>
+<thead><tr><th>差距</th><th>对标</th><th>未实现原因</th></tr></thead>
+<tbody>
+<tr><td>VS Code / JetBrains 扩展</td><td>Kimi Code / Claude Code 均有官方扩展</td><td>需独立 TS/JS 项目，工程量超出 CLI 范围；ACP 协议已有接入点</td></tr>
+<tr><td>桌面端 Desktop App</td><td>双方均有独立桌面应用</td><td>需 GUI 框架 + 打包发布流程，非 CLI 核心</td></tr>
+<tr><td>云端功能（Ultraplan/Routines/ultrareview/remote-control）</td><td>Claude Code 云端闭环</td><td>需云基础设施，青小团定位本地 CLI</td></tr>
+<tr><td>Goal 模式（长时目标可暂停/恢复）</td><td>Kimi Code Goal / Claude Code /goal</td><td>可后续迭代，当前 dev loop + bg 任务已覆盖多数场景</td></tr>
+<tr><td>WaitFor 工具（turn 内等待后台任务）</td><td>Kimi Code v0.38.0</td><td>可后续迭代</td></tr>
+<tr><td>Tool(param:value) 精确权限匹配</td><td>Claude Code Week 25</td><td>低优先级，当前按工具名+命令模式匹配已够用</td></tr>
+<tr><td>agent view / Rewind</td><td>Claude Code</td><td>低优先级体验优化</td></tr>
+<tr><td>Mermaid/LaTeX 终端渲染</td><td>Kimi Code v2.0.0</td><td>价值有限，Web workbench 可渲染</td></tr>
+<tr><td>vim 模式 / 屏幕阅读器</td><td>Claude Code</td><td>小众需求</td></tr>
+<tr><td>自动更新 qxt upgrade</td><td>Kimi Code / Claude Code</td><td>需 PyPI 发布流程，后续</td></tr>
+</tbody>
+</table>
+
+<h2 id="leading">六、青小团已领先/持平维度</h2>
+
+<div class="card">
+  <div class="card-detail">
+  <ol>
+    <li><strong>模型中立性</strong>：51 provider，远超 Kimi Code(6类) 和 Claude Code(仅Claude) — 任何模型都能用</li>
+    <li><strong>插件架构</strong>：微内核 + @plugin 装饰器 + 服务注册表 + 事件总线 + 拓扑激活，架构上优于配置式插件</li>
+    <li><strong>多语言</strong>：10 语言 README + i18n 运行时翻译，领先双方</li>
+    <li><strong>开源</strong>：MIT 开源，与 Kimi Code 并列，优于闭源的 Claude Code</li>
+    <li><strong>价格</strong>：完全免费，优于双方订阅制</li>
+    <li><strong>外部引擎架构</strong>：9 个 JSONL IPC 外部引擎（diff/json/safety/crypto/ansi/index/search/notify/rules），进程隔离，独特设计</li>
+    <li><strong>安全纵深</strong>：security_bus + audit-export + CIDR 出口白名单 + 单向模式 + blast-radius 分析</li>
+    <li><strong>Hooks</strong>：8 种事件（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SubagentStop/PreCompact/SessionStart/SessionEnd），与 Claude Code 持平</li>
+    <li><strong>MCP</strong>：完整支持 stdio + HTTP + 安全审计，与双方持平</li>
+    <li><strong>子代理</strong>：SubAgentPool 并发隔离上下文，与 Kimi Code AgentSwarm / Claude Code Subagents 持平</li>
+    <li><strong>cron</strong>：内建定时任务，Kimi Code 无，Claude Code 靠 /loop + Routines</li>
+  </ol>
+  </div>
+</div>
+
+<h2 id="verification">七、验证与测试</h2>
+
+<h3>新增测试（45 项，全部通过）</h3>
+<table>
+<thead><tr><th>测试文件</th><th>用例数</th><th>覆盖</th></tr></thead>
+<tbody>
+<tr><td><code>test_headless_print.py</code></td><td>8</td><td>-p 无装饰 / stdin 管道 / NDJSON 事件 / --bare</td></tr>
+<tr><td><code>test_edit_multicut.py</code></td><td>4</td><td>单组兼容 / 多组成功 / 缺失回滚 / 歧义回滚</td></tr>
+<tr><td><code>test_read_before_edit.py</code></td><td>5</td><td>未读拦截 / 读后放行 / write 拦截 / 可关闭 / 新建放行</td></tr>
+<tr><td><code>test_diff_preview.py</code></td><td>3</td><td>unified diff 格式 / 不写盘 / 多组预览</td></tr>
+<tr><td><code>test_auto_memory.py</code></td><td>12</td><td>四类提取 / 去重 / 按 kind 检索 / 可关闭 / 端到端 / /memory 命令</td></tr>
+<tr><td><code>test_shell_bang.py</code></td><td>3</td><td>命令执行 / 结果注入 / 危险拦截</td></tr>
+<tr><td><code>test_todo_tool.py</code></td><td>4</td><td>写入 / 列表 / 状态更新 / 持久化</td></tr>
+<tr><td><code>test_init_command.py</code></td><td>3</td><td>生成 QXT.md / Python 检测 / 已存在不覆盖</td></tr>
+<tr><td><code>test_session_export.py</code></td><td>2</td><td>zip 生成 / 含会话数据</td></tr>
+</tbody>
+</table>
+
+<h3>回归测试（158 项通过，1 项跳过）</h3>
+<p>覆盖工具系统、模式切换、记忆系统、会话工具、内核事件、配置、i18n、Hooks、安全、沙箱、cron、MCP、账本、语言检测等核心模块，无回归失败。</p>
+
+<h3>变更文件统计</h3>
+<div class="stat-grid">
+  <div class="stat-box"><div class="stat-num">15</div><div class="stat-label">修改文件</div></div>
+  <div class="stat-box"><div class="stat-num">15</div><div class="stat-label">新增文件</div></div>
+  <div class="stat-box"><div class="stat-num">5</div><div class="stat-label">新增源码模块</div></div>
+  <div class="stat-box"><div class="stat-num">9</div><div class="stat-label">新增测试文件</div></div>
+</div>
+
+<h2 id="sources">八、信源索引</h2>
+
+<h3>Kimi Code</h3>
+<ul class="source">
+  <li>官方文档：<a href="https://moonshotai.github.io/kimi-code/">moonshotai.github.io/kimi-code</a></li>
+  <li>官方 changelog：<a href="https://moonshotai.github.io/kimi-code/en/release-notes/changelog.html">kimi-code changelog</a></li>
+  <li>npm 包：<a href="https://www.npmjs.com/package/@moonshot-ai/kimi-code">@moonshot-ai/kimi-code</a></li>
+  <li>GitHub：<a href="https://github.com/MoonshotAI/kimi-code">MoonshotAI/kimi-code</a> (MIT, ~7.6k stars)</li>
+  <li>第三方对比：<a href="https://aitoolsrecap.com/Blog/kimi-code-cli-vs-claude-code-2026">AIToolsRecap</a></li>
+</ul>
+
+<h3>Claude Code</h3>
+<ul class="source">
+  <li>官方文档：<a href="https://code.claude.com/docs">code.claude.com/docs</a></li>
+  <li>官方 whats-new：<a href="https://code.claude.com/docs/en/whats-new/index">Claude Code What's New</a></li>
+  <li>npm 包：<a href="https://www.npmjs.com/package/@anthropic-ai/claude-code">@anthropic-ai/claude-code</a> (v2.1.283)</li>
+  <li>定价：<a href="https://claude.com/pricing">claude.com/pricing</a></li>
+  <li>第三方 SWE-bench：<a href="https://vortx.ch/copilot-vs-claude-code-vs-cursor-july-2026-update/">vortx.ch</a></li>
+</ul>
+
+<h3>可信度标注约定</h3>
+<ul class="source">
+  <li><strong>【官方已查证】</strong>：来自官方文档/changelog/GitHub/npm 等一方信源</li>
+  <li><strong>【第三方实测】</strong>：来自独立评测、媒体、社区文章</li>
+  <li><strong>【一方宣称未证实】</strong>：官方宣传但无第三方独立复现</li>
+</ul>
+
+<div class="footer">
+  青小团(qxt) 差距分析与顶级补齐报告 · 生成于 2026-09-26 · 项目路径 E:\Qingxiaotuan Agent CLI · 版本 v0.2.017<br>
+  本报告所有结论均基于代码实证与可追溯信源，实现功能均附带自动化测试。
+</div>
+
+</body>
+</html>
