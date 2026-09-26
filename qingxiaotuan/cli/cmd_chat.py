@@ -490,6 +490,15 @@ def _run_chat_repl(agent, config: Config, workspace: str, mode: str, effort: str
 def _run_turn(agent, user_input: str, config: Config, stream: bool | None = None,
               session_id: Optional[str] = None):
     """执行一轮对话 (模型 → 工具 → 观察 → 回答)。"""
+    # Rewind (A2): 每次用户输入前自动保存会话快照到 .qxt/snapshots/
+    try:
+        from ..core.rewind import RewindManager
+        _ws = getattr(getattr(agent, "ctx", None), "workspace", None) or os.getcwd()
+        _sid = getattr(getattr(agent, "session", None), "session_id", "")
+        RewindManager(_ws, config=config).snapshot(
+            agent.messages, reason="user_input", session_id=_sid)
+    except Exception:  # noqa: BLE001
+        pass
 
     def on_tool(name: str, arguments: str) -> None:
         ui.tool_call(name, _parse_args(arguments))
