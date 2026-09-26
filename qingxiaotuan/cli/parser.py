@@ -117,6 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="主模型不可用时的备用模型 (对应 Claude Code --fallback-model)")
     parser.add_argument("--yolo", action="store_true", help="无限制模式: 危险操作自动批准 (等同于 --mode yolo)")
     parser.add_argument("--plan", action="store_true", help="Plan 模式: 窗口 Agent 只读, 不修改任何文件 (等同于 --mode plan)")
+    parser.add_argument("--bare", action="store_true",
+                    help="CI/纯净模式: 仅用内置默认配置+内置工具, 跳过用户配置/skills自动加载/hooks/MCP/memory自动注入, 保证评测可复现")
     parser.add_argument("--isolation", action="store_true",
                         help="引擎进程级隔离: 开启后非判定类引擎(diff/crypto/index/ansi/json/search/notify/rules)以真实 JSONL 子进程运行, 子进程崩溃/超时安全回落进程内; safety 引擎恒进程内(fail-closed)。默认关(进程内直调)。持久开启用 `qxt config set engine.isolation true`")
     parser.add_argument("--print", action="store_true", dest="print_mode",
@@ -155,7 +157,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func="cmd_dev")
 
     p = sub.add_parser("run", help="headless 一次性任务")
-    p.add_argument("task", help="任务描述")
+    p.add_argument("task", nargs="?", default="", help="任务描述 (可省略: stdin 为管道时读取 stdin 作为任务)")
+    p.add_argument("-p", "--print", action="store_true", dest="print_mode",
+                   help="简洁 headless 模式: 不进 TUI/不打印横幅装饰, 纯文本流式输出到 stdout (stderr 仅错误), 退出码 0=成功 1=失败")
+    p.add_argument("--output-format", dest="output_format", choices=["text", "json"], default="text",
+                   help="输出格式: text(默认, 纯文本) / json(每行一个 NDJSON 事件: text/tool_call/tool_result/thinking/finish)")
+    p.add_argument("--bare", action="store_true",
+                   help="CI/纯净模式: 仅用内置默认配置+内置工具, 跳过用户配置/skills/hooks/MCP/memory自动注入")
     p.add_argument("--yes", "-y", action="store_true", help="自动批准危险操作 (等同于 --mode yolo)")
     p.add_argument("--no-stream", action="store_true", help="关闭流式输出")
     p.add_argument("--bg", action="store_true", help="后台运行, 不阻塞终端 (用 qxt bg 查看进度)")

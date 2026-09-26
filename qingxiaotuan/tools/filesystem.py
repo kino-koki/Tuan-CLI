@@ -14,6 +14,7 @@ import shutil
 import stat
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from ..core.kernel import Kernel, Plugin
 from .base import Tool, ToolContext, string_prop
@@ -133,27 +134,146 @@ def read_file(ctx: ToolContext, path: str, offset: int = 0, limit: int = 0) -> s
     out = "\n".join(lines)
     if len(out) > MAX_READ_CHARS:
         out = out[:MAX_READ_CHARS] + f"\n...[截断, 全文 {len(text)} 字符]"
+    # 记录为本会话已读, 供 Read-before-Edit 守卫放行后续 edit/write
+    ctx.mark_read(str(p))
     return f"# {p}\n{out}"
+
+
+# ------------------------------------------------------------------ Read-before-Edit 守卫
+# 对标 Kimi Code v0.38.0 "Edit/Write must Read first": 未先 read 就改/覆盖既有文件一律拦截。
+# 通过配置 tools.require_read_before_edit: false 关闭 (默认开启)。
+
+def _guard_enabled(ctx: ToolContext) -> bool:
+    v = ctx.config("tools.require_read_before_edit", True)
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
+
+
+def _read_before_edit_blocked(ctx: ToolContext, p: Path) -> Optional[str]:
+    """返回非空错误串表示应拦截; None 表示放行。
+
+    - edit_file 目标必然存在, 一律要求先 read;
+    - write_file 仅当文件已存在 (覆盖) 时要求先 read, 新建文件放行。
+    """
+    if not _guard_enabled(ctx):
+        return None
+    if ctx.has_read(str(p)):
+        return None
+    return (f"[错误] 请先 read_file 读取该文件后再编辑: {_rel(ctx, p)}\n"
+            "(Read-before-Edit 守卫; 如需关闭可设 tools.require_read_before_edit: false)")
+
+
+# ------------------------------------------------------------------ diff 预览
+
+def _unified_diff_text(old: str, new: str, p: Path, n: int = 3) -> str:
+    """生成 unified diff 文本 (对标 Claude Code /diff 面板), 不写盘。"""
+    import difflib
+    lines = list(difflib.unified_diff(
+        old.splitlines(), new.splitlines(),
+        fromfile=f"a/{p.name}", tofile=f"b/{p.name}", lineterm="", n=n,
+    ))
+    if not lines:
+        return "(无差异)"
+    body = lines[:200]
+    more = len(lines) - len(body)
+    text = "\n".join(body)
+    if more > 0:
+        text += f"\n...[diff 共 {len(lines)} 行, 截断显示前 {len(body)} 行]"
+    return text
+
+
+def _apply_replacements(text: str, replacements: list) -> tuple:
+    """按序应用多组替换。返回 (new_text, errors)。
+
+    任一组 old_string 未找到或不唯一即记错误; 全部成功时 new_text 为替换后全文。
+    调用方据此决定是否写盘 —— 任一失败则整体回滚 (不写)。
+    """
+    working = text
+    errors: list[str] = []
+    for i, rep in enumerate(replacements):
+        old = rep.get("old_string", "") if isinstance(rep, dict) else ""
+        new = rep.get("new_string", "") if isinstance(rep, dict) else ""
+        if not old:
+            errors.append(f"第 {i + 1} 组: old_string 为空")
+            continue
+        count = working.count(old)
+        if count == 0:
+            errors.append(f"第 {i + 1} 组: old_string 未找到")
+        elif count > 1:
+            errors.append(f"第 {i + 1} 组: old_string 出现 {count} 次, 不唯一, 请扩大上下文")
+        else:
+            working = working.replace(old, new, 1)
+    return working, errors
+
+
+def _normalize_replacements(old_string, new_string, replacements) -> Optional[list]:
+    """统一为 replacements 列表; 两种调用方式缺一不可时返回 None (由调用方报错)。"""
+    if replacements is not None:
+        return list(replacements)
+    if old_string is not None and new_string is not None:
+        return [{"old_string": old_string, "new_string": new_string}]
+    return None
 
 
 def write_file(ctx: ToolContext, path: str, content: str) -> str:
     p = _resolve(ctx, path)
+    # 覆盖既有文件前要求先读; 新建文件放行
+    if p.exists():
+        blocked = _read_before_edit_blocked(ctx, p)
+        if blocked is not None:
+            return blocked
     _atomic_write_text(p, content)
     return f"已写入 {p} ({len(content)} 字符)"
 
 
-def edit_file(ctx: ToolContext, path: str, old_string: str, new_string: str) -> str:
+def edit_file(ctx: ToolContext, path: str, old_string: Optional[str] = None,
+              new_string: Optional[str] = None,
+              replacements: Optional[list] = None) -> str:
+    """精确替换文本 (支持单组与 multi-cut 多组替换)。
+
+    - 单组: edit_file(path, old_string, new_string)
+    - 多组: edit_file(path, replacements=[{old_string, new_string}, ...])
+    多组按顺序应用; 任一组未找到或不唯一则整体回滚 (不写入)。
+    """
     p = _resolve(ctx, path)
     if not p.exists():
         return f"[错误] 文件不存在: {p}"
+    blocked = _read_before_edit_blocked(ctx, p)
+    if blocked is not None:
+        return blocked
+    reps = _normalize_replacements(old_string, new_string, replacements)
+    if reps is None:
+        return "[错误] 需提供 old_string/new_string 或 replacements 之一"
     text = p.read_text(encoding="utf-8")
-    count = text.count(old_string)
-    if count == 0:
-        return "[错误] old_string 在文件中未找到"
-    if count > 1:
-        return f"[错误] old_string 出现 {count} 次, 请提供更多上下文使其唯一"
-    _atomic_write_text(p, text.replace(old_string, new_string, 1))
-    return f"已修改 {p}"
+    new_text, errors = _apply_replacements(text, reps)
+    if errors:
+        return ("[错误] 多组替换未全部通过, 已整体回滚 (未写入):\n" + "\n".join(errors))
+    _atomic_write_text(p, new_text)
+    diff = _unified_diff_text(text, new_text, p)
+    n = len(reps)
+    header = f"已修改 {p} ({n} 处替换)" if n > 1 else f"已修改 {p}"
+    return f"{header}\n已应用变更, diff 如下:\n{diff}"
+
+
+def diff_preview(ctx: ToolContext, path: str, old_string: Optional[str] = None,
+                 new_string: Optional[str] = None,
+                 replacements: Optional[list] = None) -> str:
+    """预览对文件执行替换后的 unified diff, 不实际修改文件 (对标 Claude Code /diff 面板)。"""
+    p = _resolve(ctx, path)
+    if not p.exists():
+        return f"[错误] 文件不存在: {p}"
+    reps = _normalize_replacements(old_string, new_string, replacements)
+    if reps is None:
+        return "[错误] 需提供 old_string/new_string 或 replacements 之一"
+    text = p.read_text(encoding="utf-8")
+    new_text, errors = _apply_replacements(text, reps)
+    if errors:
+        return "[错误] 无法生成预览 (替换无法全部应用, 文件未改动):\n" + "\n".join(errors)
+    diff = _unified_diff_text(text, new_text, p)
+    return f"diff 预览 (未修改文件 {_rel(ctx, p)}):\n{diff}"
 
 
 def list_dir(ctx: ToolContext, path: str = ".", depth: int = 2) -> str:
@@ -241,17 +361,60 @@ class FilesystemPlugin(Plugin):
         ))
         registry.register(Tool(
             name="edit_file",
-            description="精确替换文本, old_string 须唯一",
+            description="精确替换文本, old_string 须唯一。两种方式: "
+                        "(1) old_string/new_string 单组替换; "
+                        "(2) replacements=[{old_string,new_string},...] 多组按序替换, "
+                        "任一组未找到或不唯一则整体回滚不写入。覆盖已存在文件前须先 read_file。",
             parameters={
                 "type": "object",
                 "properties": {
                     "path": string_prop("文件路径"),
-                    "old_string": string_prop("被替换原文"),
-                    "new_string": string_prop("新文本"),
+                    "old_string": string_prop("被替换原文 (单组方式)"),
+                    "new_string": string_prop("新文本 (单组方式)"),
+                    "replacements": {
+                        "type": "array",
+                        "description": "多组替换列表, 每项 {old_string, new_string} (multi-cut)",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "old_string": string_prop("被替换原文"),
+                                "new_string": string_prop("新文本"),
+                            },
+                            "required": ["old_string", "new_string"],
+                        },
+                    },
                 },
-                "required": ["path", "old_string", "new_string"],
+                "required": ["path"],
             },
             handler=edit_file, group="filesystem", dangerous=True,
+        ))
+        registry.register(Tool(
+            name="diff_preview",
+            description="预览对文件执行替换后的 unified diff, 不实际修改文件 "
+                        "(对标 Claude Code /diff 面板)。支持单组 old_string/new_string "
+                        "或 replacements 多组。",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": string_prop("文件路径"),
+                    "old_string": string_prop("被替换原文 (单组方式)"),
+                    "new_string": string_prop("新文本 (单组方式)"),
+                    "replacements": {
+                        "type": "array",
+                        "description": "多组替换列表, 每项 {old_string, new_string}",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "old_string": string_prop("被替换原文"),
+                                "new_string": string_prop("新文本"),
+                            },
+                            "required": ["old_string", "new_string"],
+                        },
+                    },
+                },
+                "required": ["path"],
+            },
+            handler=diff_preview, group="filesystem", read_only=True,
         ))
         registry.register(Tool(
             name="list_dir",

@@ -87,16 +87,95 @@ def cmd_dev(args) -> int:
 
 # ===================================================================== cmd_run
 
-def cmd_run(args) -> int:
-    """headless 一次性任务。"""
-    task = getattr(args, "task", "")
-    if not task:
-        console.print("请提供任务描述")
-        return 1
+def _read_stdin_task() -> str:
+    """stdin 管道任务输入: stdin 不是 tty 时读取其内容作为任务描述。
+
+    对标 `cat file | qxt run -p` / `cat file | claude -p "explain"`。
+    """
     try:
-        kernel = build_kernel()
-    except Exception as exc:
-        console.print(f"启动失败: {exc}")
+        if not sys.stdin.isatty():
+            return sys.stdin.read().strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+class _NDJsonEmitter:
+    """把 agent 流式回调转成 NDJSON 事件行 (对标 Kimi Code --output-format stream-json)。
+
+    事件类型: text / thinking / tool_call / tool_result / finish, 每行一个 JSON 对象。
+    sink 可替换为测试 buffer (默认 sys.stdout)。
+    """
+
+    def __init__(self, sink=None):
+        self.lines: list[str] = []
+        self._sink = sink
+        self._n = 0
+        self._last_tid = ""
+
+    def _emit(self, obj: dict) -> None:
+        line = json.dumps(obj, ensure_ascii=False)
+        self.lines.append(line)
+        sink = self._sink if self._sink is not None else sys.stdout
+        try:
+            sink.write(line + "\n")
+            sink.flush()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def on_token(self, delta: str) -> None:
+        if delta:
+            self._emit({"type": "text", "delta": delta})
+
+    def on_reason(self, delta: str) -> None:
+        if delta:
+            self._emit({"type": "thinking", "delta": delta})
+
+    def on_tool(self, name: str, args) -> None:
+        self._n += 1
+        self._last_tid = f"call_{self._n}"
+        if isinstance(args, str):
+            try:
+                parsed = json.loads(args)
+            except Exception:  # noqa: BLE001
+                parsed = {"raw": args}
+        else:
+            parsed = args
+        if not isinstance(parsed, dict):
+            parsed = {"raw": args}
+        self._emit({"type": "tool_call", "id": self._last_tid,
+                    "name": name, "arguments": parsed})
+
+    def on_tool_result(self, name: str, result) -> None:
+        self._emit({"type": "tool_result", "id": self._last_tid or f"call_{self._n}",
+                    "output": str(result)})
+
+    def finish(self, reason: str, usage: Optional[dict] = None) -> None:
+        self._emit({"type": "finish", "reason": reason, "usage": usage or {}})
+
+
+def cmd_run(args) -> int:
+    """headless 一次性任务 (支持 -p/--print 简洁输出、--output-format json、--bare 纯净模式)。"""
+    bare = bool(getattr(args, "bare", False))
+    print_mode = bool(getattr(args, "print_mode", False))
+    out_format = getattr(args, "output_format", "text") or "text"
+    as_json = out_format == "json"
+
+    task = (getattr(args, "task", "") or "").strip()
+    if not task:
+        task = _read_stdin_task()
+    if not task:
+        sys.stderr.write("请提供任务描述 (命令行参数, 或将任务经 stdin 管道传入)\n")
+        return 1
+
+    def _err(msg: str) -> None:
+        # 错误一律走 stderr, 保持 stdout 纯净 (print/json 模式下 stdout 是数据面)。
+        sys.stderr.write(msg.rstrip() + "\n")
+
+    try:
+        kernel = build_kernel(bare=bare)
+    except Exception as exc:  # noqa: BLE001
+        _err(f"启动失败: {exc}")
         return 1
     config = kernel.require("config")
     if getattr(args, "yes", False):
@@ -121,13 +200,16 @@ def cmd_run(args) -> int:
     if mode == "plan":
         agent.plan_mode = True
         agent.ctx.plan_mode = True
-    _setup_security_alerts()
+    if not print_mode and not as_json:
+        _setup_security_alerts()
     _run_session_hooks(agent, "SessionStart", {
         "workspace": workspace,
         "model": config.get("model.model"),
         "provider": config.get("model.provider"),
     })
-    seed_builtin_skills(kernel)
+    # bare 模式 build_kernel 已跳过技能播种, 这里不再补种子 (保持纯净可复现)。
+    if not bare:
+        seed_builtin_skills(kernel)
 
     max_cost = getattr(args, "max_cost", 0.0)
     if max_cost > 0:
@@ -141,27 +223,65 @@ def cmd_run(args) -> int:
         console.print(f"已提交后台任务: {job_id}")
         return 0
 
+    # ---- 输出面: print/json 模式不打印任何横幅/状态行/装饰 ----
+    emitter = _NDJsonEmitter() if as_json else None
+
     def on_token(t: str) -> None:
-        sys.stdout.write(t)
-        sys.stdout.flush()
+        if emitter is not None:
+            emitter.on_token(t)
+        else:
+            sys.stdout.write(t)
+            sys.stdout.flush()
+
+    on_reason = emitter.on_reason if emitter else None
+    on_tool = emitter.on_tool if emitter else None
+    on_tool_result = emitter.on_tool_result if emitter else None
+
+    def on_error(msg: str) -> None:
+        _err(f"[模型错误] {msg}")
 
     json_schema_spec = getattr(args, "json_schema", None)
     if json_schema_spec:
         return _run_json_schema(agent, task, json_schema_spec, args, session_id)
 
-    answer = agent.run(
-        task,
-        stream=not getattr(args, "no_stream", False),
-        on_token=on_token,
-        session_id=session_id,
-        max_iterations=max_turns if max_turns > 0 else None,
-    )
-    if answer:
-        console.print(f"\n{answer}")
-    if max_cost > 0:
-        spent = agent._estimate_total_cost()
-        print(f"\n[预算] 上限 ${max_cost:.2f} | 已用 ${spent:.4f} | 剩余 ${max_cost - spent:.4f}")
-    return 0
+    stream = not getattr(args, "no_stream", False)
+    exit_code = 0
+    try:
+        answer = agent.run(
+            task,
+            stream=stream,
+            on_token=on_token,
+            on_reason=on_reason,
+            on_tool=on_tool,
+            on_tool_result=on_tool_result,
+            on_error=on_error,
+            session_id=session_id,
+            max_iterations=max_turns if max_turns > 0 else None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _err(f"执行失败: {exc}")
+        answer = f"[模型错误] {exc}"
+        exit_code = 1
+
+    failed = bool(answer) and answer.startswith("[模型错误]")
+    if failed:
+        exit_code = 1
+
+    if emitter is not None:
+        emitter.finish("error" if failed else "stop", getattr(agent, "total_usage", None))
+    elif not print_mode:
+        # 交互式 headless 原行为: 流式结束后补打完整回答 + 预算行
+        if answer:
+            console.print(f"\n{answer}")
+        if max_cost > 0:
+            spent = agent._estimate_total_cost()
+            print(f"\n[预算] 上限 ${max_cost:.2f} | 已用 ${spent:.4f} | 剩余 ${max_cost - spent:.4f}")
+    else:
+        # print 模式且非流式: on_token 未被调用, 需把完整回答写到 stdout (流式时已逐段写出)
+        if not stream and answer:
+            sys.stdout.write(answer + "\n")
+            sys.stdout.flush()
+    return exit_code
 
 
 # ===================================================================== cmd_agent

@@ -272,6 +272,12 @@ def cmd_chat(args) -> int:
             agent = state["agent"]
             if agent is None:
                 return t("tui.booting_wait")
+            if text.strip().startswith("!"):
+                # `!` shell 快捷模式: 不经 LLM 直接执行, 输出落日志并注入下一轮上下文
+                from .cmd_bang import run_bang_command
+                out = run_bang_command(agent, text, display=False)
+                tui.append_log(out)
+                return t("tui.cmd_done")
             def on_tool(name: str, arguments: str) -> None:
                 tui.begin_tool(name)
             def on_tool_result(name: str, result: str) -> None:
@@ -467,6 +473,12 @@ def _run_chat_repl(agent, config: Config, workspace: str, mode: str, effort: str
         if user_input.strip().startswith("/"):
             from .cmd_slash import _handle_slash
             _handle_slash(user_input.strip(), agent, config, workspace)
+            ui.status_bar(mode, effort, workspace, plan=agent.plan_mode)
+            continue
+        if user_input.strip().startswith("!"):
+            # `!` shell 快捷模式: 不经 LLM 直接执行, 结果自动注入下一轮上下文
+            from .cmd_bang import run_bang_command
+            run_bang_command(agent, user_input)
             ui.status_bar(mode, effort, workspace, plan=agent.plan_mode)
             continue
         _run_turn(agent, user_input, config, session_id=session_id)

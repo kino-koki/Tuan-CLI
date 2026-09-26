@@ -366,8 +366,10 @@ def to_yaml_str(data: Dict[str, Any]) -> str:
 class Config:
     """组合后的配置视图。"""
 
-    def __init__(self, profile: str = "default", patch_file: Optional[str] = None):
+    def __init__(self, profile: str = "default", patch_file: Optional[str] = None,
+                 bare: bool = False):
         self.profile = profile
+        self.bare = bare
         self.home = home_dir()
         self.user_config_path = self.home / "config.yaml"
         self.profile_dir = self.home / "profiles" / profile
@@ -376,8 +378,11 @@ class Config:
         # 预设 profile 作为基线 (用户可在 profiles/<name>/config.yaml 再覆盖)
         if profile in PRESET_PROFILES:
             merged = deep_merge(merged, PRESET_PROFILES[profile])
-        merged = deep_merge(merged, _load_yaml(self.user_config_path))
-        merged = deep_merge(merged, _load_yaml(self.profile_dir / "config.yaml"))
+        # bare (CI/纯净模式): 仅用内置默认配置, 不叠加用户级 config.yaml 与 profile 覆盖,
+        # 保证 CI/评测可复现, 不受本机用户配置污染。
+        if not bare:
+            merged = deep_merge(merged, _load_yaml(self.user_config_path))
+            merged = deep_merge(merged, _load_yaml(self.profile_dir / "config.yaml"))
         if patch_file:
             merged = patch_replace(merged, _load_yaml(Path(patch_file)))
         self.data = merged
