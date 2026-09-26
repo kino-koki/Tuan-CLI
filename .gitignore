@@ -117,3 +117,4 @@ scripts/_replace_icons.py
 .demo-home/
 .demo-patch.yaml
 111.md
+.git.broken-*/
