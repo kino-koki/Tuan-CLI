@@ -57,6 +57,7 @@ def test_edit_non_unique_rejected(tmp_path):
     registry = k.require("tool_registry")
     ctx = ToolContext(kernel=k, workspace=str(tmp_path), confirm=lambda _p: True)
     (tmp_path / "a.txt").write_text("x x x", encoding="utf-8")
+    registry.dispatch("read_file", json.dumps({"path": "a.txt"}), ctx)  # Read-before-Edit 守卫要求
     out = registry.dispatch("edit_file", json.dumps(
         {"path": "a.txt", "old_string": "x", "new_string": "y"}), ctx)
     assert "唯一" in out
@@ -79,6 +80,7 @@ def test_write_file_atomic_no_tmp_leftover(tmp_path):
     ctx = ToolContext(kernel=k, workspace=str(tmp_path), confirm=lambda _p: True)
     registry.dispatch("write_file", json.dumps(
         {"path": "a.txt", "content": "v1"}), ctx)
+    registry.dispatch("read_file", json.dumps({"path": "a.txt"}), ctx)  # Read-before-Edit 守卫
     registry.dispatch("edit_file", json.dumps(
         {"path": "a.txt", "old_string": "v1", "new_string": "v2"}), ctx)
     leftovers = [p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
@@ -97,6 +99,7 @@ def test_edit_file_preserves_executable_bit(tmp_path):
     script = tmp_path / "run.sh"
     script.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     script.chmod(0o755)
+    registry.dispatch("read_file", json.dumps({"path": "run.sh"}), ctx)  # Read-before-Edit 守卫
     registry.dispatch("edit_file", json.dumps(
         {"path": "run.sh", "old_string": "echo hi", "new_string": "echo v2"}), ctx)
     assert script.stat().st_mode & 0o111 != 0

@@ -17,7 +17,7 @@ from .tools import (
     ToolRegistryPlugin, FilesystemPlugin, ShellPlugin, WebPlugin, CodeToolPlugin,
     MemoryToolPlugin, SkillToolPlugin, LanguagePlugin, ExternalToolsPlugin,
     DispatchPlugin, PipelinePlugin, CodeReviewPlugin, CheckpointPlugin,
-    TaskToolPlugin, SessionToolsPlugin, CodeGraphPlugin, BackendDevPlugin, SandboxPlugin,
+    TaskToolPlugin, SessionToolsPlugin, TodoToolPlugin, CodeGraphPlugin, BackendDevPlugin, SandboxPlugin,
     ImageGenPlugin,
 )
 from .memory.plugin import MemoryPlugin, SessionPlugin
@@ -41,8 +41,14 @@ from .arch.plugin import ArchPlugin
 logger = logging.getLogger(__name__)
 
 
-def build_kernel(profile: str = "default", patch_file: Optional[str] = None) -> Kernel:
-    """构建微内核, 注册所有插件。"""
+def build_kernel(profile: str = "default", patch_file: Optional[str] = None,
+                 bare: bool = False) -> Kernel:
+    """构建微内核, 注册所有插件。
+
+    bare=True (CI/纯净模式): 仅用内置默认配置 + 内置工具, 跳过
+    用户级 config.yaml / skills 自动播种 / MCP server / hooks / 记忆自动注入,
+    保证 CI/评测环境可复现, 不受本机用户配置污染。
+    """
 
     def _kernel_patch_plugin():
         # 惰性: 仅在内核构建层面需要时才 import 补丁层, 避免拖累纯 CLI 冷启动
@@ -50,9 +56,11 @@ def build_kernel(profile: str = "default", patch_file: Optional[str] = None) -> 
         return KernelPatchPlugin()
 
     kernel = Kernel()
+    kernel._bare = bare
 
     # 核心插件: 配置 -> 工具 -> 模型 -> 记忆 -> 技能 -> 上下文 -> 定时 -> 审计 -> 自我改进
-    kernel.register(ConfigPlugin())
+    # bare 模式下使用不带用户配置叠加的 Config (仅内置默认)。
+    kernel.register(ConfigPlugin(Config(profile, patch_file, bare=bare)))
     kernel.register(ToolRegistryPlugin())
     kernel.register(FilesystemPlugin())
     kernel.register(ShellPlugin())
@@ -68,6 +76,7 @@ def build_kernel(profile: str = "default", patch_file: Optional[str] = None) -> 
     kernel.register(CheckpointPlugin())
     kernel.register(TaskToolPlugin())
     kernel.register(SessionToolsPlugin())
+    kernel.register(TodoToolPlugin())
     kernel.register(MemoryPlugin())
     kernel.register(SessionPlugin())
     kernel.register(SkillPlugin())
@@ -76,7 +85,9 @@ def build_kernel(profile: str = "default", patch_file: Optional[str] = None) -> 
     kernel.register(CronPlugin())
     kernel.register(AuditPlugin())
     kernel.register(SelfImprovePlugin())
-    kernel.register(MCPPlugin())
+    # MCP server 桥接: bare 模式下跳过 (外部 server 不可复现)。
+    if not bare:
+        kernel.register(MCPPlugin())
     kernel.register(SubagentPlugin())
     kernel.register(MessagingPlugin())
     kernel.register(WorkflowPlugin())
@@ -101,8 +112,13 @@ def build_kernel(profile: str = "default", patch_file: Optional[str] = None) -> 
     kernel.activate_all()
 
     config: Config = kernel.require("config")
-    # 首次启动播种内置技能 (幂等, 同名不覆盖)
-    seed_builtin_skills(config)
+    if bare:
+        # 关闭技能/记忆的自动注入 (内置工具仍在, 只是不把用户技能/记忆灌进提示词)。
+        config.data.setdefault("skills", {})["auto_inject"] = False
+        config.data.setdefault("memory", {})["auto_inject"] = False
+    else:
+        # 首次启动播种内置技能 (幂等, 同名不覆盖)
+        seed_builtin_skills(config)
 
     return kernel
 
@@ -157,18 +173,25 @@ def create_agent(
         agent.ctx.checkpoint_store = None
     # 用户级 Hooks: 让用户在工具执行前/后挂载脚本, 把 Agent 变成可编排的。
     # 安全: 命令强制 list(argv), 超时强杀, 阻断/改参权需显式声明 (fail-safe, 不阻断)。
-    try:
-        from .hooks.manager import HookManager
-        agent.ctx.hooks = HookManager(config, workspace, kernel=kernel)
-    except Exception:  # noqa: BLE001
+    # bare (CI/纯净模式) 下不挂用户级 hooks, 保证执行路径可复现。
+    bare = getattr(kernel, "_bare", False)
+    if bare:
         agent.ctx.hooks = None
+    else:
+        try:
+            from .hooks.manager import HookManager
+            agent.ctx.hooks = HookManager(config, workspace, kernel=kernel)
+        except Exception:  # noqa: BLE001
+            agent.ctx.hooks = None
     # 自定义斜杠命令: 把 <home>/commands 与 <workspace>/.qxt/commands 挂进分发链
     # (运行期包装 _handle_slash, 幂等; 失败不影响主流程)。延迟导入避免 cli <-> app 环。
-    try:
-        from .cli.user_commands import install_user_commands
-        install_user_commands(agent, config, workspace)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("自定义斜杠命令安装失败: %s", exc)
+    # bare 模式下不安装用户自定义命令。
+    if not bare:
+        try:
+            from .cli.user_commands import install_user_commands
+            install_user_commands(agent, config, workspace)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("自定义斜杠命令安装失败: %s", exc)
     return agent
 
 

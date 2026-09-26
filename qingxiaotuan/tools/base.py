@@ -85,10 +85,31 @@ class ToolContext:
     checkpoint_store: Optional[Any] = None
     # 沙箱提供者 (kernel_executor 为子代理注入, run_shell 使用)
     sandbox_provider: Optional[Any] = None
+    # 本会话已通过 read_file 读取过的文件绝对路径集合 (Read-before-Edit 守卫用)。
+    # read_file 成功后写入; edit_file/write_file(覆盖已存在文件) 前据此拦截未读先改。
+    read_files: Optional[set] = None
 
     def config(self, dotted: str, default: Any = None) -> Any:
         cfg = self.kernel.get("config")
         return cfg.get(dotted, default) if cfg else default
+
+    def mark_read(self, path: str) -> None:
+        """记录本会话已读取过该文件 (read_file 成功后调用)。"""
+        if self.read_files is None:
+            self.read_files = set()
+        try:
+            self.read_files.add(str(Path(path).resolve()))
+        except OSError:
+            self.read_files.add(str(path))
+
+    def has_read(self, path: str) -> bool:
+        """本会话是否已 read_file 过该路径 (Read-before-Edit 守卫查询)。"""
+        if not self.read_files:
+            return False
+        try:
+            return str(Path(path).resolve()) in self.read_files
+        except OSError:
+            return str(path) in self.read_files
 
     def heartbeat(self, tool_name: str, message: str) -> None:
         """进度心跳: 长时间运行的工具调用期间定期调用, 报告进度。"""

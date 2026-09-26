@@ -206,12 +206,18 @@ def cmd_session(args) -> int:
             return 1
         src = targets[0]
         if output:
-            import shutil
-            dest = Path(output).expanduser()
-            if dest.is_dir():
-                dest = dest / src.name
-            shutil.copy2(src, dest)
-            console.print(f"已导出到: {dest}")
+            out_path = Path(output).expanduser()
+            want_zip = str(out_path).endswith(".zip")
+            if out_path.is_dir():
+                out_path = out_path / (src.stem + (".zip" if want_zip else ".jsonl"))
+            if want_zip:
+                from .cmd_session_export import export_session_zip
+                out_path = export_session_zip(src, out_path)
+                console.print(f"已导出会话 zip: {out_path}")
+            else:
+                import shutil
+                shutil.copy2(src, out_path)
+                console.print(f"已导出到: {out_path}")
         else:
             # 输出到 stdout
             try:
