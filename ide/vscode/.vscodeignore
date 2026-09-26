@@ -1,0 +1,9 @@
+.gitignore
+.vscodeignore
+**/*.ts
+!out/**/*.js
+!out/**/*.map
+src/
+tsconfig.json
+node_modules/
+.github/
