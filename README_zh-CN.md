@@ -130,8 +130,13 @@ qxt --print run "你好，一句话介绍你自己"
 | `qxt cron` | 后台定时任务 |
 | `qxt doctor` / `qxt bench` | 体检 / 跑分 |
 | `qxt arch demo` | 一键验证五层架构插件是否就位 |
+| `qxt upgrade` | 检查并升级到最新版（`--check` 只查不装 / `--yes` 免确认 / `--version <ver>` 装指定版） |
+| `qxt permissions list|test` | 查看权限规则，只读测试某次调用命中哪条规则 |
 
 历史最常用的斜杠命令：`/plan`（只读模式）· `/model`（切模型）· `/undo`·`/impact`（回滚+影响半径）· `/swarm`（多 Agent 协作）· `/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help`。完整列表在 TUI 里按 `Ctrl-G`。
+
+> **Goal 增强**：`/goal all tests pass` 会自动拆成 3~7 个子步骤逐步验证续轮推进，进度落盘 `.qxt/goal.json`，`/goal status` 看步骤进度，`/goal clear` 停止。
+> **精确权限**：规则可写到参数级，如 `qxt config set permissions.rules '[{"tool":"run_shell","param":"command","value":"rm -rf*","action":"deny"}]'`，再用 `qxt permissions test run_shell '{"command":"rm -rf /"}'` 验证命中。
 
 ---
 

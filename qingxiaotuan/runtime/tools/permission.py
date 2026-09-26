@@ -168,6 +168,49 @@ def _args_subject(args: Any) -> str:
     return str(args)
 
 
+def _nested_get(args: Any, dotted: str) -> Any:
+    """按点号路径从嵌套 dict 取值, 如 ``config.model``; 取不到返回 None。"""
+    cur = args
+    for part in str(dotted).split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        else:
+            return None
+    return cur
+
+
+def match_param_value(rule: Dict[str, Any], tool_name: str, args: Any) -> Optional[bool]:
+    """``Tool(param:value)`` 精确粒度规则匹配 (对标 Claude Code 三层权限)。
+
+    规则形如::
+
+        {"tool": "run_shell", "param": "command", "value": "rm -rf*", "action": "deny"}
+
+    - tool  : glob 匹配工具名 (与旧规则一致)
+    - param : 在 args 中取参数值, 支持点号嵌套路径 (如 ``config.model``)
+    - value : glob 通配匹配实际参数值
+
+    Returns:
+        None  —— 该规则不是 param:value 形式 (无 param 或无 value 字段),
+                 调用方应回退到旧的 tool+pattern 逻辑;
+        True  —— tool glob 命中且参数值 glob 命中;
+        False —— tool 命中但参数值未命中 (或参数缺失), 规则不生效。
+    """
+    import fnmatch
+
+    param = rule.get("param")
+    if not param or "value" not in rule:
+        return None
+    tool_pattern = str(rule.get("tool", "*"))
+    if not fnmatch.fnmatch(tool_name.lower(), tool_pattern.lower()):
+        return False
+    actual = _nested_get(args if isinstance(args, dict) else {}, str(param))
+    if actual is None:
+        return False
+    expected = str(rule.get("value", "*"))
+    return bool(fnmatch.fnmatch(str(actual), expected))
+
+
 def match_permission_rule(
     rule: Dict[str, Any],
     tool_name: str,
@@ -218,7 +261,12 @@ class UserConfiguredRulePolicy:
             action = str(rule.get("action", "")).lower()
             if action not in ("allow", "deny", "ask"):
                 continue
-            if not match_permission_rule(
+            # Tool(param:value) 精确粒度规则优先判定; 返回 None 表示旧格式, 走 pattern 逻辑
+            pv = match_param_value(rule, context.tool_call.name, context.args)
+            if pv is not None:
+                if not pv:
+                    continue
+            elif not match_permission_rule(
                 rule, context.tool_call.name, context.args, context.execution.accesses
             ):
                 continue
@@ -292,4 +340,5 @@ __all__ = [
     "FallbackAskPolicy",
     "UserConfiguredRulePolicy",
     "match_permission_rule",
+    "match_param_value",
 ]
