@@ -20,10 +20,21 @@ def test_bare_qxt_launches_chat():
     assert args.cmd is None
 
 
-def test_chat_subcommand_removed():
-    """`qxt chat` 已删除: 解析应报错 (invalid choice)。"""
+def test_chat_subcommand_handoff():
+    """`qxt chat` 是会话交接父命令: 裸 chat 不直接进 TUI, 而是路由到 handoff 命令族;
+    `handoff` 缺 session_id 时解析层报错, 带参时正确解析。"""
+    # 裸 `qxt chat` -> 路由到 cmd_chat_handoff (运行时会提示用法, 不进入聊天 TUI)
+    args = build_parser().parse_args(["chat"])
+    assert args.cmd == "chat"
+    assert args.chat_cmd is None
+    assert args.func == "cmd_chat_handoff"
+    # `qxt chat handoff` 缺 session_id -> 解析报错
     with pytest.raises(SystemExit):
-        build_parser().parse_args(["chat"])
+        build_parser().parse_args(["chat", "handoff"])
+    # `qxt chat handoff <id>` -> 正确解析
+    args = build_parser().parse_args(["chat", "handoff", "abc123"])
+    assert args.chat_cmd == "handoff"
+    assert args.session_id == "abc123"
 
 
 def test_plan_flag_parses():

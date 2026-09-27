@@ -66,10 +66,16 @@ class WriteOnceModel(ModelAdapter):
 
 
 def _make_ctx(tmp_path, model):
-    """构造共享内核 + 主 Agent ctx (thread 软隔离, mock 模型进程内)。"""
+    """构造共享内核 + 主 Agent ctx (thread 软隔离, mock 模型进程内)。
+
+    子代理默认在 .qxt/subagents/<task_id>/ 独立目录读写; 本测试的对照断言
+    直接落在主工作区, 因此显式关闭 isolated_workdir, 聚焦"只读类型物理阻断"
+    本身, 而非隔离目录路由。
+    """
     kernel = build_kernel()
     config = kernel.require("config")
     config.set_user("agent.subagent_isolation", "thread")
+    config.set_user("subagent.isolated_workdir", False)
     kernel.unprovide("model_adapter")
     kernel.provide("model_adapter", model, owner="test")
     agent = Agent(kernel=kernel, config=config,
