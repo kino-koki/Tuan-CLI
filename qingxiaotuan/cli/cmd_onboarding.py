@@ -47,6 +47,7 @@ def is_first_run(home: Optional[Path] = None) -> bool:
         cfg = (Path(home) if home else home_dir()) / "config.yaml"
         if cfg.exists():
             import yaml
+
             data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
             ob = data.get("onboarding") or {}
             if isinstance(ob, dict) and ob.get("enabled") is False:
@@ -102,18 +103,25 @@ def _ask_yes_no(prompt: str, default: bool) -> bool:
 def _detect_git_repo(workspace: Path) -> bool:
     try:
         import subprocess
+
         r = subprocess.run(
             ["git", "-C", str(workspace), "rev-parse", "--is-inside-work-tree"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return r.returncode == 0 and r.stdout.strip() == "true"
     except Exception:  # noqa: BLE001
         return False
 
 
-def run_onboarding(workspace: Optional[Path] = None, *,
-                   skip: bool = False, home: Optional[Path] = None,
-                   interactive: Optional[bool] = None) -> int:
+def run_onboarding(
+    workspace: Optional[Path] = None,
+    *,
+    skip: bool = False,
+    home: Optional[Path] = None,
+    interactive: Optional[bool] = None,
+) -> int:
     """运行首次引导。返回 0。
 
     - skip=True: 只写完成标记, 不交互;
@@ -143,7 +151,8 @@ def run_onboarding(workspace: Optional[Path] = None, *,
     print("  第一步: 选择默认模型供应商 (可稍后用 `qxt models set` 改)")
     try:
         from ..models.provider_catalog import PROVIDER_CATEGORIES
-        names = [cat[0] for cat in PROVIDER_CATEGORIES[:8]] if PROVIDER_CATEGORIES else []
+
+        names = list(PROVIDER_CATEGORIES)[:8]
     except Exception:  # noqa: BLE001
         names = []
     if names:
@@ -155,7 +164,9 @@ def run_onboarding(workspace: Optional[Path] = None, *,
         except (EOFError, KeyboardInterrupt):
             pick = "0"
         if pick.isdigit() and 1 <= int(pick) <= len(names):
-            print(f"  已记下偏好: {names[int(pick)-1]} (用 `qxt models set <provider> <model>` 完成配置)")
+            print(
+                f"  已记下偏好: {names[int(pick) - 1]} (用 `qxt models set <provider> <model>` 完成配置)"
+            )
         else:
             print("  已跳过供应商选择。")
     else:
@@ -174,7 +185,7 @@ def run_onboarding(workspace: Optional[Path] = None, *,
     _print_quick_start()
 
     mark_onboarding_done(home)
-    print("  引导完成! 输入 `qxt` 开始对话, 或 `qxt run \"任务\"` 跑一次性任务。")
+    print('  引导完成! 输入 `qxt` 开始对话, 或 `qxt run "任务"` 跑一次性任务。')
     return 0
 
 

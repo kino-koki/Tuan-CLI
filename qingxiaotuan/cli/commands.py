@@ -15,7 +15,6 @@ import importlib
 _CMD_SOURCES = {
     # ---- cmd_chat (交互 / 模型 / 模式) ----
     "cmd_chat": ".cmd_chat",
-    "cmd_mode": ".cmd_chat",
     "cmd_model": ".cmd_chat",
     "_apply_mode_override": ".cmd_chat",
     "_load_session_into_agent": ".cmd_chat",
@@ -113,7 +112,6 @@ _CMD_SOURCES = {
     "cmd_agent": ".cmd_agents",
     "cmd_bg": ".cmd_agents",
     "cmd_undo": ".cmd_agents",
-    "cmd_impact": ".cmd_agents",
     "_cmd_diff": ".cmd_agents",
     "_cmd_undo": ".cmd_agents",
     "_cmd_impact": ".cmd_agents",
@@ -124,11 +122,8 @@ _CMD_SOURCES = {
     "cmd_agents_view": ".cmd_agents_view",
     # ---- cmd_safe (安全总入口: 白名单 / 本地黑名单减负 / 状态 / 更新) ----
     "cmd_safe": ".cmd_safe",
-    # ---- cmd_others (能力目录 / 新手入口) ----
-    "cmd_others": ".cmd_others",
-    # ---- cmd_code_edit (代码编辑助手) ----
-    "cmd_code_edit": ".cmd_code_edit",
     "cmd_harden": ".cmd_harden",
+    "cmd_codedev": ".cmd_codedev",  # dev codedev 子命令组 (原顶级 qxt codedev)
     # ---- cmd_tutorial (任务驱动内置教程) ----
     "cmd_tutorial": ".cmd_tutorial",
     # ---- cmd_permissions (权限规则查看 / 命中测试) ----

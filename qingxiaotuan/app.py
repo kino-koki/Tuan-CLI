@@ -2,6 +2,7 @@
 
 延迟索引: 不在 create_agent 时同步扫描工作区, 避免启动被 KeyboardInterrupt 打断。
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,10 +15,25 @@ from .config import Config
 from .core.agent import Agent
 from .config.plugin import ConfigPlugin
 from .tools import (
-    ToolRegistryPlugin, FilesystemPlugin, ShellPlugin, WebPlugin, CodeToolPlugin,
-    MemoryToolPlugin, SkillToolPlugin, LanguagePlugin, ExternalToolsPlugin,
-    DispatchPlugin, PipelinePlugin, CodeReviewPlugin, CheckpointPlugin,
-    TaskToolPlugin, SessionToolsPlugin, TodoToolPlugin, CodeGraphPlugin, BackendDevPlugin, SandboxPlugin,
+    ToolRegistryPlugin,
+    FilesystemPlugin,
+    ShellPlugin,
+    WebPlugin,
+    CodeToolPlugin,
+    MemoryToolPlugin,
+    SkillToolPlugin,
+    LanguagePlugin,
+    ExternalToolsPlugin,
+    DispatchPlugin,
+    PipelinePlugin,
+    CodeReviewPlugin,
+    CheckpointPlugin,
+    TaskToolPlugin,
+    SessionToolsPlugin,
+    TodoToolPlugin,
+    CodeGraphPlugin,
+    BackendDevPlugin,
+    SandboxPlugin,
     ImageGenPlugin,
 )
 from .memory.plugin import MemoryPlugin, SessionPlugin
@@ -41,8 +57,9 @@ from .arch.plugin import ArchPlugin
 logger = logging.getLogger(__name__)
 
 
-def build_kernel(profile: str = "default", patch_file: Optional[str] = None,
-                 bare: bool = False) -> Kernel:
+def build_kernel(
+    profile: str = "default", patch_file: Optional[str] = None, bare: bool = False
+) -> Kernel:
     """构建微内核, 注册所有插件。
 
     bare=True (CI/纯净模式): 仅用内置默认配置 + 内置工具, 跳过
@@ -53,10 +70,11 @@ def build_kernel(profile: str = "default", patch_file: Optional[str] = None,
     def _kernel_patch_plugin():
         # 惰性: 仅在内核构建层面需要时才 import 补丁层, 避免拖累纯 CLI 冷启动
         from .kernel_patch.plugin import KernelPatchPlugin
+
         return KernelPatchPlugin()
 
     kernel = Kernel()
-    kernel._bare = bare
+    setattr(kernel, "_bare", bare)
 
     # 核心插件: 配置 -> 工具 -> 模型 -> 记忆 -> 技能 -> 上下文 -> 定时 -> 审计 -> 自我改进
     # bare 模式下使用不带用户配置叠加的 Config (仅内置默认)。
@@ -136,6 +154,7 @@ def create_agent(
     if indexer is None and config.get("context.auto_index", True):
         try:
             from .context.indexer import CodebaseIndexer
+
             indexer = CodebaseIndexer(
                 workspace,
                 max_files=config.get("context.index_max_files", 300),
@@ -157,11 +176,13 @@ def create_agent(
     # 事务化操作账本: 给 Agent 的 ToolContext 挂上 MutationLedger,
     # 写类工具执行前自动快照、异常自动回滚、支持精细 undo (最小影响半径的事后可逆闭环)。
     from .core.ledger import MutationLedger
+
     agent.ctx.ledger = MutationLedger(workspace, config)
     # 自动检查点存储: 每次写工具成功后自动建点 (30天TTL / 三恢复模式 / 摘要),
     # 依托账本快照, 跨会话持久化于 .qxt/checkpoints/。注册为内核服务供工具执行器勾取。
     try:
         from .core.checkpoint_store import CheckpointStore
+
         existing = kernel.get("checkpoint_store")
         if existing is None:
             _cps = CheckpointStore(workspace, agent.ctx.ledger, config)
@@ -180,6 +201,7 @@ def create_agent(
     else:
         try:
             from .hooks.manager import HookManager
+
             agent.ctx.hooks = HookManager(config, workspace, kernel=kernel)
         except Exception:  # noqa: BLE001
             agent.ctx.hooks = None
@@ -189,6 +211,7 @@ def create_agent(
     if not bare:
         try:
             from .cli.user_commands import install_user_commands
+
             install_user_commands(agent, config, workspace)
         except Exception as exc:  # noqa: BLE001
             logger.debug("自定义斜杠命令安装失败: %s", exc)

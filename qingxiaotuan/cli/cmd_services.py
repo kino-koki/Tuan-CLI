@@ -8,6 +8,7 @@ cmd_hooks / cmd_session / cmd_usercmd。
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 from ..config import Config
 from ..memory import MemoryStore
@@ -18,7 +19,9 @@ from ._ui_singleton import console
 def build_kernel(*a, **k):
     """惰性构建内核: 仅 plugin 命令等真正需要完整内核时才加载 app 链。"""
     from ..app import build_kernel as _f
+
     return _f(*a, **k)
+
 
 # ---- 拆分出去的子命令: 惰性 re-export (PEP 562)。
 # 避免访问任一子命令时连带加载 cron/mcp/hooks/session/usercmd 全家桶
@@ -59,6 +62,7 @@ def __getattr__(name: str):
 
 # ===================================================================== cmd_plugin
 
+
 def cmd_plugin(args) -> int:
     """插件管理。"""
     try:
@@ -78,14 +82,18 @@ def cmd_plugin(args) -> int:
 
 # ===================================================================== cmd_skill
 
+
 def cmd_skill(args) -> int:
     """技能管理: list/show/import/audit/consolidate/lint。"""
     skill_cmd = getattr(args, "skill_cmd", None)
-    config = Config(profile=getattr(args, "profile", "default"),
-                    patch_file=getattr(args, "patch", None))
+    config = Config(
+        profile=getattr(args, "profile", "default"),
+        patch_file=getattr(args, "patch", None),
+    )
     workspace = getattr(args, "cwd", None) or getattr(args, "workspace", None)
-    manager = SkillManager(config.home, workspace=Path(workspace) if workspace else None,
-                           config=config)
+    manager = SkillManager(
+        config.home, workspace=Path(workspace) if workspace else None, config=config
+    )
 
     if skill_cmd == "list":
         skills = manager.list_all()
@@ -94,8 +102,10 @@ def cmd_skill(args) -> int:
         else:
             console.print(f"{'名称':<28} {'来源':<8} {'次数':<5} 描述")
             for s in skills:
-                console.print(f"{s.ui_name:<28} {s.origin:<8} {s.use_count:<5} "
-                              f"{(s.short_description or s.description)[:40]}")
+                console.print(
+                    f"{s.ui_name:<28} {s.origin:<8} {s.use_count:<5} "
+                    f"{(s.short_description or s.description)[:40]}"
+                )
         return 0
 
     if skill_cmd == "show":
@@ -114,6 +124,7 @@ def cmd_skill(args) -> int:
 
     if skill_cmd == "import":
         from pathlib import Path as _P
+
         src = _P(getattr(args, "path", "")).expanduser()
         skill = manager.import_skill(src)
         if skill:
@@ -125,6 +136,7 @@ def cmd_skill(args) -> int:
 
     if skill_cmd == "audit":
         from ..skills.governance import audit
+
         rows = audit(manager)
         zombies = [r for r in rows if r.is_zombie]
         incomplete = [r for r in rows if r.incomplete]
@@ -138,13 +150,16 @@ def cmd_skill(args) -> int:
             if not r.valid:
                 flags.append("frontmatter非法")
             tag = f"  [{','.join(flags)}]" if flags else ""
-            console.print(f"  {r.slug:<24} {r.origin:<8} use={r.use_count:<3} "
-                          f"闲置{r.days_idle:.0f}天{tag}")
+            console.print(
+                f"  {r.slug:<24} {r.origin:<8} use={r.use_count:<3} "
+                f"闲置{r.days_idle:.0f}天{tag}"
+            )
         console.print(f"\n僵尸技能 {len(zombies)} 个, 元数据不全 {len(incomplete)} 个")
         return 0
 
     if skill_cmd == "consolidate":
         from ..skills.governance import consolidate
+
         dry = not getattr(args, "apply", False)
         thr = float(getattr(args, "threshold", 0.7) or 0.7)
         proposals = consolidate(manager, dry_run=dry, threshold=thr)
@@ -155,12 +170,15 @@ def cmd_skill(args) -> int:
         console.print(f"相似技能合并提议 [{mode}]:")
         for pr in proposals:
             writable = "可写" if pr.writable else "只读(跳过删除)"
-            console.print(f"  相似度 {pr.score}: 保留 `{pr.keeper.slug}` "
-                          f"← 并入 `{pr.loser.slug}` ({writable})")
+            console.print(
+                f"  相似度 {pr.score}: 保留 `{pr.keeper.slug}` "
+                f"← 并入 `{pr.loser.slug}` ({writable})"
+            )
         return 0
 
     if skill_cmd == "lint":
         from ..skills.governance import lint
+
         name = getattr(args, "name", "")
         issues = lint(manager, name)
         if not issues:
@@ -177,11 +195,14 @@ def cmd_skill(args) -> int:
 
 # ===================================================================== cmd_memory
 
+
 def cmd_memory(args) -> int:
     """记忆管理。"""
     memory_cmd = getattr(args, "memory_cmd", None)
-    config = Config(profile=getattr(args, "profile", "default"),
-                    patch_file=getattr(args, "patch", None))
+    config = Config(
+        profile=getattr(args, "profile", "default"),
+        patch_file=getattr(args, "patch", None),
+    )
     store = MemoryStore(config.home)
     if memory_cmd == "list":
         stats = store.get_stats() if hasattr(store, "get_stats") else {}

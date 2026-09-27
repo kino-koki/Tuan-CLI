@@ -23,7 +23,7 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 log = logging.getLogger(__name__)
 
@@ -36,13 +36,15 @@ FAILED = "failed"
 DEFAULT_MAX_AUTO_ITERATIONS = 10
 
 # 步骤描述里出现这些关键词时, 优先用 runner 实际跑命令做确定性验证
-_TEST_HINT_RE = re.compile(r"pytest|test|测试|lint|ruff|mypy|build|编译|构建", re.IGNORECASE)
+_TEST_HINT_RE = re.compile(
+    r"pytest|test|测试|lint|ruff|mypy|build|编译|构建", re.IGNORECASE
+)
 
 # LLM 拆解提示词
 _DECOMPOSE_PROMPT = (
     "你是一个任务拆解专家。请把下面这个目标拆成 3~7 个可执行的子步骤, "
     "按顺序列出, 每步要具体、可验证。\n"
-    "只返回一个 JSON 字符串数组, 例如: [\"第一步\", \"第二步\"]。不要输出任何其他内容。\n"
+    '只返回一个 JSON 字符串数组, 例如: ["第一步", "第二步"]。不要输出任何其他内容。\n'
     "目标: {goal}"
 )
 
@@ -138,7 +140,11 @@ class GoalEngine:
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
-            if isinstance(data, dict) and data.get("description") and isinstance(data.get("steps"), list):
+            if (
+                isinstance(data, dict)
+                and data.get("description")
+                and isinstance(data.get("steps"), list)
+            ):
                 self.state = data
             else:
                 self.state = None
@@ -184,14 +190,18 @@ class GoalEngine:
         """调用 LLM 拆解目标; 无 LLM / 解析失败时退化为启发式切分。"""
         if self.llm is not None:
             try:
-                steps = _parse_steps(self.llm(_DECOMPOSE_PROMPT.format(goal=description)))
+                steps = _parse_steps(
+                    self.llm(_DECOMPOSE_PROMPT.format(goal=description))
+                )
             except Exception as exc:  # noqa: BLE001
                 log.debug("Goal 拆解 LLM 调用失败, 走启发式: %s", exc)
                 steps = []
             if steps:
                 # 规范: 3~7 步最理想; 超出截断, 不足保留
                 return steps[:7]
-        pieces = [p.strip(" -\t") for p in re.split(r"[\n;；]", description) if p.strip()]
+        pieces = [
+            p.strip(" -\t") for p in re.split(r"[\n;；]", description) if p.strip()
+        ]
         return pieces or [description]
 
     def clear(self) -> None:
@@ -213,7 +223,7 @@ class GoalEngine:
         """返回第一个未完成的步骤。"""
         if not self.state:
             return None
-        for step in self.state["steps"]:
+        for step in cast(List[Dict[str, Any]], self.state.get("steps", [])):
             if step["status"] != DONE:
                 return step
         return None
@@ -286,6 +296,7 @@ class GoalEngine:
             return None
 
         self.save()
+        assert prompt_step is not None
         total = len(self.state["steps"])
         idx = self.state["steps"].index(prompt_step) + 1
         return (
@@ -308,7 +319,9 @@ class GoalEngine:
         for i, step in enumerate(st.get("steps", []), 1):
             mark = icon.get(step.get("status", PENDING), "?")
             note = f"  ({step['note']})" if step.get("note") else ""
-            lines.append(f"    {mark} {i}. [{step.get('status', PENDING)}] {step.get('description', '')}{note}")
+            lines.append(
+                f"    {mark} {i}. [{step.get('status', PENDING)}] {step.get('description', '')}{note}"
+            )
         return lines
 
 

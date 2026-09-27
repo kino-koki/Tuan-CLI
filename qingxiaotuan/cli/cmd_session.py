@@ -338,5 +338,64 @@ def cmd_session(args) -> int:
             print(out)
             return 0
 
-    console.print("用法: qxt session list|resume|delete|export|clean|stats|fork|tree|ref")
+    # --- 回放 / 轨迹 (原顶级 qxt replay / qxt trajectory, 已并入 session) ---
+    if session_cmd == "replay":
+        from ..core.replay import list_sessions, load_trajectory, render_replay
+
+        if getattr(args, "list", False) or not getattr(args, "session", None):
+            rows = list_sessions()
+            if not rows:
+                console.print("没有历史会话。先跑一次 `qxt` 或 `qxt run` 即可生成。")
+                return 0
+            console.print(f"{'#':>3}  {'时间':<20}  {'事件':>5}  标题")
+            for i, r in enumerate(rows, 1):
+                console.print(
+                    f"{i:>3}  {r['mtime_str']:<20}  {r['events']:>5}  标题: {r['title'][:48]}"
+                )
+            return 0
+        sid = args.session
+        if getattr(args, "json", False):
+            traj = load_trajectory(sid)
+            if traj is None:
+                console.print(f"[错误] 找不到会话: {sid}")
+                return 1
+            print(traj.to_json())
+            return 0
+        text = render_replay(sid)
+        if getattr(args, "export", None):
+            out = Path(args.export)
+            out.write_text(text, encoding="utf-8")
+            console.print(f"已导出回放: {out}")
+        else:
+            print(text)
+        return 0
+
+    if session_cmd == "trajectory":
+        from ..core.replay import load_trajectory
+
+        sub = getattr(args, "traj_cmd", None)
+        if sub == "export":
+            traj = load_trajectory(args.session)
+            if traj is None:
+                console.print(f"[错误] 找不到会话: {args.session}")
+                return 1
+            out = traj.to_json() if args.format == "json" else traj.to_markdown()
+            if args.out:
+                p = Path(args.out)
+                p.write_text(out, encoding="utf-8")
+                console.print(f"已导出 Trajectory: {p}")
+            else:
+                print(out)
+            return 0
+        # 默认 / show: 指标 + 摘要
+        traj = load_trajectory(args.session)
+        if traj is None:
+            console.print(f"[错误] 找不到会话: {args.session}")
+            return 1
+        print(json.dumps(traj.metrics(), ensure_ascii=False, indent=2))
+        print("─" * 50)
+        print(traj.summary())
+        return 0
+
+    console.print("用法: qxt session list|resume|delete|export|clean|stats|fork|tree|ref|replay|trajectory")
     return 0

@@ -171,6 +171,15 @@ def _prepare_agent(args, workspace: str, session_id: str, on_progress=None):
     异常由调用方处理 (TUI 走加载屏错误态, REPL/print 直接报错)。
     on_progress(pct, status) 可选, 用于 TUI 加载屏进度反馈。
     """
+    # ---- 四层边界 · Project 层自动生效: 会话启动即确保 .qxt/ 存在 (幂等) ----
+    # 在 build_kernel 之前执行, 保证任何交互会话 (REPL/TUI/--print) 启动时工作区已就绪。
+    # bare 模式仍初始化 (.qxt/ 落在工作区内, 不污染用户全局配置)。失败静默, 不阻断启动。
+    try:
+        from ..core.boundary_auto import ensure_project_context
+        ensure_project_context(
+            workspace, config=None, bare=bool(getattr(args, "bare", False)))
+    except Exception:  # noqa: BLE001
+        pass
     if on_progress:
         on_progress(30, "构建内核…")
     kernel = build_kernel()
@@ -401,7 +410,8 @@ def cmd_chat(args) -> int:
         return 1
     kernel, config, agent, mode, effort = prep
     try:
-        rc = _run_chat_repl(agent, config, workspace, mode, effort, session_id=session_id)
+        rc = _run_chat_repl(agent, config, workspace, mode, effort, session_id=session_id,
+                            bare=bool(getattr(args, "bare", False)))
     finally:
         _run_session_hooks(agent, "SessionEnd", {"workspace": workspace})
     return rc
@@ -449,7 +459,7 @@ def _setup_security_alerts() -> None:
 
 
 def _run_chat_repl(agent, config: Config, workspace: str, mode: str, effort: str,
-                   session_id: Optional[str] = None) -> int:
+                   session_id: Optional[str] = None, bare: bool = False) -> int:
     """普通 REPL 对话循环 (cmd_chat 与 session resume 共用)。"""
     ui.banner(config, workspace, f"{config.get('model.provider')}/{config.get('model.model')}",
               mode=mode, effort=effort)
@@ -481,15 +491,26 @@ def _run_chat_repl(agent, config: Config, workspace: str, mode: str, effort: str
             run_bang_command(agent, user_input)
             ui.status_bar(mode, effort, workspace, plan=agent.plan_mode)
             continue
-        _run_turn(agent, user_input, config, session_id=session_id)
+        # 四层边界: 若本轮结束触发自动交接, 用返回的新 session_id 接管后续轮次
+        new_id = _run_turn(agent, user_input, config, session_id=session_id, bare=bare)
+        if new_id:
+            session_id = new_id
         ui.status_bar(mode, effort, workspace, plan=agent.plan_mode)
 
     return 0
 
 
 def _run_turn(agent, user_input: str, config: Config, stream: bool | None = None,
-              session_id: Optional[str] = None):
-    """执行一轮对话 (模型 → 工具 → 观察 → 回答)。"""
+              session_id: Optional[str] = None, bare: bool = False) -> Optional[str]:
+    """执行一轮对话 (模型 → 工具 → 观察 → 回答)。
+
+    四层边界自动 hook (全部附加、可关、失败静默回退):
+    - Worktree 层: 检测到并行实验意图自动开 worktree (非 git 仓库静默跳过);
+    - Subagent 层: 重任务自动隔离执行, 失败回退主会话;
+    - Chat 层: 本轮结束后若上下文超阈值, 自动交接并把新 session_id 返回给 REPL。
+
+    返回: 若发生自动交接, 返回新 session_id (由调用方注入后续轮次); 否则 None。
+    """
     # Rewind (A2): 每次用户输入前自动保存会话快照到 .qxt/snapshots/
     try:
         from ..core.rewind import RewindManager
@@ -498,7 +519,31 @@ def _run_turn(agent, user_input: str, config: Config, stream: bool | None = None
         RewindManager(_ws, config=config).snapshot(
             agent.messages, reason="user_input", session_id=_sid)
     except Exception:  # noqa: BLE001
+        _ws = os.getcwd()
+
+    # ---- 四层边界 · Worktree 层: 并行实验意图自动创建 worktree ----
+    try:
+        from ..core.boundary_auto import auto_create_parallel_worktree
+        wt = auto_create_parallel_worktree(_ws, user_input, config=config, bare=bare)
+        if wt is not None:
+            console.print(f"[四层边界] 检测到并行实验意图, 已为你创建 worktree: {wt.path}")
+    except Exception:  # noqa: BLE001
         pass
+
+    # ---- 四层边界 · Subagent 层: 重任务自动隔离执行; 失败回退主会话 ----
+    try:
+        from ..core.boundary_auto import try_run_isolated
+        isolated = try_run_isolated(agent, user_input, config=config, bare=bare)
+    except Exception:  # noqa: BLE001
+        isolated = None
+    if isolated is not None:
+        # 走了隔离通道: 把子代理摘要作为本轮回答展示, 不再 agent.run (主上下文不被污染)
+        if config.get("ui.markdown", True):
+            ui.answer_md(isolated)
+        else:
+            ui.info(isolated)
+        console.print()
+        return _maybe_auto_handoff(agent, config, _ws, session_id, bare=bare)
 
     def on_tool(name: str, arguments: str) -> None:
         ui.tool_call(name, _parse_args(arguments))
@@ -528,6 +573,41 @@ def _run_turn(agent, user_input: str, config: Config, stream: bool | None = None
     if config.get("ui.show_token_usage", True):
         ui.usage(agent.total_usage)
     console.print()
+    return _maybe_auto_handoff(agent, config, _ws, session_id, bare=bare)
+
+
+def _maybe_auto_handoff(agent, config: Config, workspace: str,
+                        session_id: Optional[str], bare: bool = False) -> Optional[str]:
+    """本轮结束后检查是否达到交接阈值; 达阈值则自动交接并打印报告, 返回新 session_id。
+
+    bare 模式跳过 (评测可复现); 任何异常静默返回 None, 不影响后续对话。
+    """
+    if bare:
+        return None
+    try:
+        st = agent.context_stats()
+        budget = int(st.get("budget_tokens", 0) or 0)
+        estimated = int(st.get("estimated_tokens", 0) or 0)
+        if budget <= 0:
+            return None
+        from ..core.chat_handoff import ChatHandoff
+        # 项目 ID 取 .qxt/project.json (best-effort, 取不到为空串)
+        try:
+            from ..core.project_layer import ProjectLayer
+            proj_id = ProjectLayer(workspace, config).info().project_id
+        except Exception:  # noqa: BLE001
+            proj_id = ""
+        report = ChatHandoff(workspace, config=config).auto_handoff_if_needed(
+            estimated, budget, session_id or "", agent.messages, project_id=proj_id)
+        if report is None:
+            return None
+        console.print("\n[四层边界] 上下文已达交接阈值, 已自动交接:")
+        console.print(f"  旧会话: {report.old_session_id}")
+        console.print(f"  新会话: {report.new_session_id}")
+        console.print(f"  摘要预览: {report.preview(200)}")
+        return report.new_session_id
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _parse_args(a):
@@ -535,22 +615,6 @@ def _parse_args(a):
         return json.loads(a)
     except Exception:
         return a
-
-
-# ===================================================================== cmd_mode
-
-def cmd_mode(args) -> int:
-    """查看/切换默认运行模式。"""
-    config = Config(profile=getattr(args, "profile", "default"),
-                    patch_file=getattr(args, "patch", None))
-    value = getattr(args, "value", None)
-    if value:
-        config.set_user("mode.default", value)
-        console.print(f"默认模式已切换为: {value}")
-    else:
-        current = config.get("mode.default", "standard")
-        console.print(f"  当前默认模式: {current}")
-    return 0
 
 
 # ===================================================================== cmd_model

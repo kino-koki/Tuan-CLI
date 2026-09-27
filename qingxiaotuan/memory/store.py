@@ -46,7 +46,9 @@ def _atomic_write_text(path: Path, text: str) -> None:
     记忆历史全部丢失; 走"临时文件 + 原子替换"则失败时原文件完好无损。
     (与 CronStore 的持久化范式一致)
     """
-    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name, suffix=".tmp")
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=path.name, suffix=".tmp"
+    )
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -90,24 +92,36 @@ class MemoryStore:
     # ------------------------------------------------------------- 文件层
 
     def read_memory(self) -> str:
-        return self.memory_file.read_text(encoding="utf-8") if self.memory_file.exists() else ""
+        return (
+            self.memory_file.read_text(encoding="utf-8")
+            if self.memory_file.exists()
+            else ""
+        )
 
     def read_user(self) -> str:
-        return self.user_file.read_text(encoding="utf-8") if self.user_file.exists() else ""
+        return (
+            self.user_file.read_text(encoding="utf-8")
+            if self.user_file.exists()
+            else ""
+        )
 
-    def append_memory(self, fact: str, section: str = "事实", tags: Optional[List[str]] = None) -> str:
+    def append_memory(
+        self, fact: str, section: str = "事实", tags: Optional[List[str]] = None
+    ) -> str:
         """把一条事实追加进 MEMORY.md, 并同步进 FTS 索引和标签索引。
 
         文件写入与 FTS 索引各自隔离: 任一环节失败都只记日志、不影响主流程
         (记忆是"锦上添花", 绝不能因为 FTS5 不可用而炸掉 Agent 循环)。
         超过 MAX_MEMORY_LINES 时裁剪最旧条目, 防止无限膨胀。
         """
-        timestamp = time.strftime('%Y-%m-%d')
+        timestamp = time.strftime("%Y-%m-%d")
         tag_str = f" [{','.join(tags)}]" if tags else ""
         line = f"- [{timestamp}] ({section}){tag_str} {fact.strip()}"
         with self._lock:
             try:
-                self._append_rotated(self.memory_file, line + "\n", self.MAX_MEMORY_LINES)
+                self._append_rotated(
+                    self.memory_file, line + "\n", self.MAX_MEMORY_LINES
+                )
             except OSError as exc:
                 log.warning("写入 MEMORY.md 失败: %s", exc)
             try:
@@ -136,7 +150,11 @@ class MemoryStore:
         """以 '- key: value' 形式更新 USER.md 中的一条记录。新增键时受轮转上限保护。"""
         with self._lock:
             try:
-                lines = self.user_file.read_text(encoding="utf-8").splitlines() if self.user_file.exists() else []
+                lines = (
+                    self.user_file.read_text(encoding="utf-8").splitlines()
+                    if self.user_file.exists()
+                    else []
+                )
                 prefix = f"- {key}:"
                 replaced = False
                 for i, line in enumerate(lines):
@@ -166,7 +184,9 @@ class MemoryStore:
         """检测 SQLite FTS5 扩展是否可用。部分 Python 发行版未编译此支持。"""
         try:
             conn = sqlite3.connect(":memory:")
-            conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS _test_fts USING fts5(content)")
+            conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS _test_fts USING fts5(content)"
+            )
             conn.execute("DROP TABLE _test_fts")
             conn.close()
             return True
@@ -191,7 +211,9 @@ class MemoryStore:
 
     def _init_tags_db(self) -> None:
         """初始化标签索引数据库。"""
-        self._tags_db = sqlite3.connect(str(self.dir / "tags.db"), check_same_thread=False)
+        self._tags_db = sqlite3.connect(
+            str(self.dir / "tags.db"), check_same_thread=False
+        )
         self._tags_db.execute(
             "CREATE TABLE IF NOT EXISTS memory_tags ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -205,7 +227,9 @@ class MemoryStore:
         # Auto Memory 四类分类 (user/feedback/project/reference)。
         # 旧库无此列 → ALTER TABLE 补列, 旧行默认 reference (向后兼容)。
         try:
-            self._tags_db.execute("ALTER TABLE memory_tags ADD COLUMN mkind TEXT NOT NULL DEFAULT 'reference'")
+            self._tags_db.execute(
+                "ALTER TABLE memory_tags ADD COLUMN mkind TEXT NOT NULL DEFAULT 'reference'"
+            )
         except sqlite3.OperationalError:
             pass  # 列已存在
         self._tags_db.execute(
@@ -219,7 +243,13 @@ class MemoryStore:
         )
         self._tags_db.commit()
 
-    def index(self, kind: str, content: str, source: str = "", tags: Optional[List[str]] = None) -> None:
+    def index(
+        self,
+        kind: str,
+        content: str,
+        source: str = "",
+        tags: Optional[List[str]] = None,
+    ) -> None:
         """索引一条记忆到 FTS 和标签数据库。"""
         now = str(int(time.time()))
 
@@ -266,7 +296,9 @@ class MemoryStore:
                         "WHERE memory_fts MATCH ? ORDER BY rank LIMIT ?",
                         (fts_query, limit),
                     ).fetchall()
-                    hits = [{"kind": r[0], "content": r[1], "source": r[2]} for r in rows]
+                    hits = [
+                        {"kind": r[0], "content": r[1], "source": r[2]} for r in rows
+                    ]
                 except sqlite3.OperationalError:
                     hits = []
             if not hits:
@@ -296,10 +328,15 @@ class MemoryStore:
                         (f'%"{tag}"%', limit),
                     ).fetchall()
                     for r in rows:
-                        results.append({
-                            "kind": r[0], "content": r[1], "source": r[2],
-                            "tags": r[3], "created_at": r[4],
-                        })
+                        results.append(
+                            {
+                                "kind": r[0],
+                                "content": r[1],
+                                "source": r[2],
+                                "tags": r[3],
+                                "created_at": r[4],
+                            }
+                        )
                 except sqlite3.Error as exc:
                     log.warning("标签检索失败 (已忽略): %s", exc)
 
@@ -339,7 +376,13 @@ class MemoryStore:
                         (since, limit),
                     ).fetchall()
                 return [
-                    {"kind": r[0], "content": r[1], "source": r[2], "tags": r[3], "created_at": r[4]}
+                    {
+                        "kind": r[0],
+                        "content": r[1],
+                        "source": r[2],
+                        "tags": r[3],
+                        "created_at": r[4],
+                    }
                     for r in rows
                 ]
             except sqlite3.Error as exc:
@@ -352,6 +395,7 @@ class MemoryStore:
     def _normalize_text(text: str) -> str:
         """归一化文本用于相似度去重: 去空白、小写、去标点。"""
         import re
+
         t = (text or "").strip().lower()
         t = re.sub(r"\s+", "", t)
         t = re.sub(r"[，。,.!！?？;；:：、\"'`()（）\[\]【】<>《》]", "", t)
@@ -398,12 +442,14 @@ class MemoryStore:
                         ("auto", text, source, tags_json, now, kind, kind),
                     )
                     self._tags_db.commit()
-                    return int(cur.lastrowid)
+                    return int(cur.lastrowid or 0)
                 except sqlite3.Error as exc:
                     log.warning("Auto Memory 标签索引写入失败 (已忽略): %s", exc)
         return None
 
-    def find_similar(self, text: str, kind: Optional[str] = None, threshold: float = 0.8) -> Optional[Dict[str, Any]]:
+    def find_similar(
+        self, text: str, kind: Optional[str] = None, threshold: float = 0.8
+    ) -> Optional[Dict[str, Any]]:
         """在同类记忆中查找相似条目 (用于去重)。
 
         策略: 归一化后子串包含 + Jaccard 字符 n-gram 相似度, 命中阈值即视为重复。
@@ -442,15 +488,17 @@ class MemoryStore:
 
     @staticmethod
     def _ngram_jaccard(a: str, b: str, n: int = 3) -> float:
-        sa = {a[i:i + n] for i in range(max(0, len(a) - n + 1))}
-        sb = {b[i:i + n] for i in range(max(0, len(b) - n + 1))}
+        sa = {a[i : i + n] for i in range(max(0, len(a) - n + 1))}
+        sb = {b[i : i + n] for i in range(max(0, len(b) - n + 1))}
         if not sa or not sb:
             return 0.0
         inter = len(sa & sb)
         union = len(sa | sb)
         return inter / union if union else 0.0
 
-    def search_by_kind(self, kind: str, query: str = "", limit: int = 10) -> List[Dict[str, Any]]:
+    def search_by_kind(
+        self, kind: str, query: str = "", limit: int = 10
+    ) -> List[Dict[str, Any]]:
         """按 Auto Memory 分类检索记忆; query 非空时叠加内容 LIKE 过滤。"""
         if not self._tags_db or kind not in MEMORY_KINDS:
             return []
@@ -473,12 +521,20 @@ class MemoryStore:
                 log.warning("search_by_kind 失败 (已忽略): %s", exc)
                 return []
         return [
-            {"id": r[0], "kind": r[6], "content": r[2], "source": r[3],
-             "tags": r[4], "created_at": r[5]}
+            {
+                "id": r[0],
+                "kind": r[6],
+                "content": r[2],
+                "source": r[3],
+                "tags": r[4],
+                "created_at": r[5],
+            }
             for r in rows
         ]
 
-    def list_by_kind(self, kind: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_by_kind(
+        self, kind: Optional[str] = None, limit: int = 50
+    ) -> List[Dict[str, Any]]:
         """列出记忆条目 (可按 kind 过滤), 供 /memory list 使用。"""
         if not self._tags_db:
             return []
@@ -502,8 +558,14 @@ class MemoryStore:
                 log.warning("list_by_kind 失败 (已忽略): %s", exc)
                 return []
         return [
-            {"id": r[0], "kind": r[6], "content": r[2], "source": r[3],
-             "tags": r[4], "created_at": r[5]}
+            {
+                "id": r[0],
+                "kind": r[6],
+                "content": r[2],
+                "source": r[3],
+                "tags": r[4],
+                "created_at": r[5],
+            }
             for r in rows
         ]
 
@@ -518,7 +580,9 @@ class MemoryStore:
                 ).fetchone()
                 if not row:
                     return False
-                self._tags_db.execute("DELETE FROM memory_tags WHERE id = ?", (entry_id,))
+                self._tags_db.execute(
+                    "DELETE FROM memory_tags WHERE id = ?", (entry_id,)
+                )
                 self._tags_db.commit()
                 # FTS 按内容删除 (FTS5 rowid 不直接映射, 按 content 精确删)
                 if self._db:
@@ -550,18 +614,24 @@ class MemoryStore:
             if key in seen_contents:
                 return
             seen_contents.add(key)
-            recalled.append({
-                "content": content[:200],
-                "kind": kind if kind in MEMORY_KINDS else DEFAULT_MEMORY_KIND,
-                "label": label,
-            })
+            recalled.append(
+                {
+                    "content": content[:200],
+                    "kind": kind if kind in MEMORY_KINDS else DEFAULT_MEMORY_KIND,
+                    "label": label,
+                }
+            )
 
         # 全文检索
         fts_hits = self.search(task, limit=limit)
         for h in fts_hits:
             # FTS kind 列可能是 "memory"/"user" (文件源) 或 "auto:<kind>"; 归一化到分类
             raw_kind = h.get("kind", "")
-            mk = raw_kind.split(":", 1)[1] if raw_kind.startswith("auto:") else DEFAULT_MEMORY_KIND
+            mk = (
+                raw_kind.split(":", 1)[1]
+                if raw_kind.startswith("auto:")
+                else DEFAULT_MEMORY_KIND
+            )
             if mk not in MEMORY_KINDS:
                 mk = DEFAULT_MEMORY_KIND
             _push(h["content"], mk, "记忆")
@@ -582,12 +652,18 @@ class MemoryStore:
             return ""
 
         # 按 kind 优先级排序 (user > feedback > project > reference)
-        recalled.sort(key=lambda x: (MEMORY_KIND_PRIORITY.get(x["kind"], 9), x["label"] != "记忆"))
+        recalled.sort(
+            key=lambda x: (MEMORY_KIND_PRIORITY.get(x["kind"], 9), x["label"] != "记忆")
+        )
 
         picked = recalled[:limit]
         header = f"[上下文召回] 找到 {len(picked)} 条相关记忆:"
-        return header + "\n" + "\n".join(
-            f"  {i+1}. [{r['kind']}] {r['content']}" for i, r in enumerate(picked)
+        return (
+            header
+            + "\n"
+            + "\n".join(
+                f"  {i + 1}. [{r['kind']}] {r['content']}" for i, r in enumerate(picked)
+            )
         )
 
     def get_stats(self) -> Dict[str, Any]:
@@ -602,13 +678,17 @@ class MemoryStore:
 
             if self.memory_file.exists():
                 try:
-                    stats["memory_lines"] = len(self.memory_file.read_text(encoding="utf-8").splitlines())
+                    stats["memory_lines"] = len(
+                        self.memory_file.read_text(encoding="utf-8").splitlines()
+                    )
                 except OSError:
                     pass
 
             if self.user_file.exists():
                 try:
-                    stats["user_lines"] = len(self.user_file.read_text(encoding="utf-8").splitlines())
+                    stats["user_lines"] = len(
+                        self.user_file.read_text(encoding="utf-8").splitlines()
+                    )
                 except OSError:
                     pass
 
@@ -621,7 +701,9 @@ class MemoryStore:
 
             if self._tags_db:
                 try:
-                    row = self._tags_db.execute("SELECT COUNT(*) FROM memory_tags").fetchone()
+                    row = self._tags_db.execute(
+                        "SELECT COUNT(*) FROM memory_tags"
+                    ).fetchone()
                     stats["tag_entries"] = row[0] if row else 0
                 except sqlite3.Error:
                     pass
