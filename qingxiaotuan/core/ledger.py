@@ -209,9 +209,14 @@ class MutationLedger:
                             self._seq = max(self._seq, int(rid[1:]))
                         except ValueError:
                             pass
-            return len(self._records)
         except Exception:
             return 0
+        # 内存有 max_records 上限, 但 journal 是 append-only、可能跨会话累积了远多于
+        # 上限的记录。无上限地全量灌进内存会让长期运行的进程内存只增不减;
+        # 只保留最近 max_records 条 (undo 只关心最近的变更, 更早的历史仍留在 journal 文件里)。
+        if len(self._records) > self.max_records:
+            self._records = self._records[-self.max_records:]
+        return len(self._records)
 
     def persist(self) -> None:
         """把当前内存账本重写回 journal (跨进程 undo 后保持一致性)。"""
@@ -298,6 +303,10 @@ class MutationLedger:
             finally:
                 self._cleanup_snaps(rec.get("snaps") or [])
             done.append(f"已撤销 [{rec['id']}] {rec['tool']}: " + ", ".join(rec.get("targets", [])))
+        # 撤销会改写"可撤销集合", 必须同步重写 journal, 否则下次 load_journal 会把
+        # 已撤销的记录又加载回来 (跨进程 undo 列表残留 / 用旧快照覆盖新编辑)。
+        # 调用方若再调 persist() 是幂等的多余写, 无害。
+        self.persist()
         return done
 
     def undo_file(self, rel: str) -> Optional[str]:
@@ -311,6 +320,7 @@ class MutationLedger:
                 finally:
                     self._cleanup_snaps(rec.get("snaps") or [])
                 self._records.pop(idx)
+                self.persist()  # 与 undo_last 同理: 撤销即落盘, 防 journal 回流
                 return f"已撤销 [{rec['id']}] {rec['tool']} 对 {rel} 的变更"
         return None
 
@@ -324,6 +334,7 @@ class MutationLedger:
                 self._cleanup_snaps(rec.get("snaps") or [])
             done.append(f"已撤销 [{rec['id']}] {rec['tool']}: " + ", ".join(rec.get("targets", [])))
         self._records.clear()
+        self.persist()  # 已全部撤销: journal 应被重写为空, 否则跨进程 undo 仍列出旧记录
         return done
 
     def mark(self) -> int:
@@ -343,6 +354,9 @@ class MutationLedger:
             finally:
                 self._cleanup_snaps(rec.get("snaps") or [])
             done.append(f"已撤销 [{rec['id']}] {rec['tool']}: " + ", ".join(rec.get("targets", [])))
+        # 会话内 checkpoint_restore 走这条路径且历史上漏调 persist(); 在此自落盘,
+        # 保证 journal 与内存一致, 不依赖调用方记得补一步。
+        self.persist()
         return done
 
     def history(self) -> List[Dict[str, Any]]:

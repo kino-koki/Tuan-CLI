@@ -227,3 +227,74 @@ def test_run_due_jobs_skips_while_another_sweep_holds_lock(tmp_path, monkeypatch
     # 锁释放后恢复正常执行
     n = run_due_jobs(kernel, config=None, workspace=str(tmp_path), home=tmp_path)
     assert n == 1
+
+
+def test_run_due_jobs_rereads_due_inside_lock(tmp_path, monkeypatch):
+    """回归: due 列表必须在拿到调度锁之后再读, 不能在锁外快照。
+
+    此前 run_due_jobs 在锁外先调 store.due() 拿到一份到期列表, 拿锁后直接遍历这份
+    陈旧列表。当另一调度进程已经执行并 mark_run 了这批任务后, 本进程拿锁时仍会
+    重跑同一批任务 (重复执行)。修复后: 进入锁内重新 due(), 已被别人跑过的任务
+    自然不再到期。
+    """
+    import qingxiaotuan.cron.runner as runner_mod
+
+    executed = []
+
+    class _CountingAgent:
+        def run(self, prompt, stream=False):
+            executed.append(prompt)
+            return "done"
+
+    monkeypatch.setattr(runner_mod, "Agent", lambda *a, **k: _CountingAgent())
+    store = CronStore(tmp_path)
+    j = store.add("任务A", "pA", interval_minutes=60)
+    jobs = store._read()
+    for x in jobs:
+        if x["id"] == j["id"]:
+            x["last_run"] = 0
+    store._write(jobs)
+    kernel = _FakeKernel(store, "done")
+
+    # 模拟竞态: 第一次调 due() (锁外, 陈旧快照) 仍看到任务到期;
+    # 但在拿锁前后, 任务已被"另一进程" mark_run (now), 锁内重新 due() 应为空。
+    real_due = store.due
+    state = {"calls": 0}
+
+    def fake_due():
+        state["calls"] += 1
+        if state["calls"] == 1:
+            return real_due()          # 陈旧快照: [任务A]
+        return []                      # 锁内重读: 已被别人跑完
+    monkeypatch.setattr(store, "due", fake_due)
+
+    n = run_due_jobs(kernel, config=None, workspace=str(tmp_path), home=tmp_path)
+    # 修复后 due() 至少被调用两次 (锁外预检 + 锁内重读), 且任务不会被陈旧列表重跑
+    assert state["calls"] >= 2, "修复后应在锁内重新 due(), 实际 due() 调用次数过少"
+    assert n == 0, f"任务已被其他进程执行, 不应再跑, 实际跑了 {n} 次"
+    assert executed == [], "陈旧 due 列表不应导致任务重复执行"
+
+
+def test_store_due_skips_malformed_job(tmp_path):
+    """回归: jobs.json 里缺 interval_minutes 的畸形条目不应让整个调度崩掉。
+
+    此前 due() 直接下标 j["interval_minutes"], 手工编辑/旧版本残留的缺字段条目
+    会抛 KeyError, 让 qxt cron tick / daemon 整轮失败。
+    """
+    store = CronStore(tmp_path)
+    good = store.add("正常任务", "p", interval_minutes=60)
+    # 手写一份含畸形条目的 jobs.json (缺 interval_minutes / enabled)
+    malformed = [
+        {"id": good["id"], "name": "正常任务", "prompt": "p",
+         "interval_minutes": 60, "last_run": 0, "enabled": True},
+        {"id": "broken1", "name": "缺字段任务", "prompt": "x", "last_run": 0, "enabled": True},
+        {"id": "broken2", "name": "非数字间隔", "prompt": "x",
+         "interval_minutes": "not-a-number", "last_run": 0, "enabled": True},
+    ]
+    store._write(malformed)
+
+    due = store.due()  # 不应抛 KeyError / TypeError
+    ids = [j["id"] for j in due]
+    assert good["id"] in ids
+    assert "broken1" not in ids
+    assert "broken2" not in ids
