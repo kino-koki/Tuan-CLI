@@ -363,9 +363,11 @@ def cmd_session(args) -> int:
             return 0
         text = render_replay(sid)
         if getattr(args, "export", None):
-            out = Path(args.export)
-            out.write_text(text, encoding="utf-8")
-            console.print(f"已导出回放: {out}")
+            # 注意: 本函数作用域内 out 已被推断为 str (render 分支), 此处
+            # 不能复用同名变量存 Path, 否则 mypy 报 incompatible types。
+            p = Path(args.export)
+            p.write_text(text, encoding="utf-8")
+            console.print(f"已导出回放: {p}")
         else:
             print(text)
         return 0
