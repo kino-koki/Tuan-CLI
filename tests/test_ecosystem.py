@@ -73,6 +73,30 @@ def test_probe_without_paths_is_empty(tmp_path: Path):
     assert probe.summarize()["claude_code"].skills == 0
 
 
+def test_probe_ignores_hidden_staging_skill_dirs(tmp_path: Path):
+    """Claude 官方安装的 .xxx-stage-* 暂存目录不应被计为用户技能 (真实机 bug 回归)。"""
+    cc_home = tmp_path / "cc"
+    _write(cc_home / "skills" / "tabbit" / "SKILL.md",
+           "---\nname: Tabbit\ndescription: t\n---\nb\n")
+    _write(cc_home / "skills" / ".tabbit-stage-BFD2E9FE83F7C6E96" / "SKILL.md",
+           "---\nname: TabbitStage\ndescription: 暂存\n---\nb\n")
+    probe = EcosystemProbe.probe(None, claude_home=str(cc_home), hermes_home=str(tmp_path / "h"))
+    assert probe.summarize()["claude_code"].skills == 1
+
+
+def test_probe_mcp_servers_counted_per_ecosystem(tmp_path: Path):
+    """MCP servers 应分生态统计: claude 只计项目 .mcp.json, hermes 只计 config.yaml (真实机 bug 回归)。"""
+    ws = tmp_path / "ws"
+    hermes_home = tmp_path / "hermes"
+    _write(ws / ".mcp.json", '{"mcpServers": {"qxt": {"command": "qxt", "args": []}}}')
+    _write(hermes_home / "config.yaml",
+           "mcp:\n  servers:\n    zhipu:\n      command: \"zhipu-mcp\"\n      args: []\n")
+    probe = EcosystemProbe.probe(str(ws), claude_home=str(tmp_path / "cc"), hermes_home=str(hermes_home))
+    summary = probe.summarize()
+    assert summary["claude_code"].mcp_servers == 1
+    assert summary["hermes"].mcp_servers == 1
+
+
 def test_find_skill_files_both_forms(tmp_path: Path):
     d = tmp_path / "skills"
     _write(d / "single.md", "---\nname: Single\ndescription: s\n---\nb\n")
@@ -245,6 +269,22 @@ def test_import_mcp_servers_merge_and_skip():
     # overwrite 时替换同名
     r2 = import_mcp_servers(cfg, [{"name": "existing", "command": "python3", "args": []}], overwrite=True)
     assert r2.imported == ["existing"]
+
+
+def test_import_mcp_servers_with_real_config(tmp_path: Path, monkeypatch):
+    """真实 Config 走 set_user 写用户层配置 (真实机 bug 回归: Config 无 set 属性)。"""
+    monkeypatch.setenv("QXT_HOME", str(tmp_path / "qxt_home"))
+    from qingxiaotuan.config import Config
+
+    cfg = Config(profile="e2e", bare=False)
+    result = import_mcp_servers(cfg, [{"name": "zhipu", "command": "zhipu-mcp", "args": []}])
+    assert result.imported == ["zhipu"]
+    assert not result.errors
+    stored = cfg.get("mcp.servers", [])
+    assert stored[0]["name"] == "zhipu"
+    # 落盘可回读
+    cfg2 = Config(profile="e2e", bare=False)
+    assert cfg2.get("mcp.servers", [])[0]["name"] == "zhipu"
 
 
 def test_export_redacts_secrets(tmp_path: Path):

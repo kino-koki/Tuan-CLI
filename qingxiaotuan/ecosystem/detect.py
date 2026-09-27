@@ -184,7 +184,11 @@ class EcosystemProbe:
 
     @staticmethod
     def _count_skills(dirs: List[Path]) -> int:
-        """统计目录里的技能数: 单文件 <slug>.md 与目录包 <slug>/SKILL.md。"""
+        """统计目录里的技能数: 单文件 <slug>.md 与目录包 <slug>/SKILL.md。
+
+        隐藏目录 (如 Claude 官方安装的 ``.tabbit-stage-*`` 暂存目录) 不计入,
+        避免把安装中间产物误认为用户技能。
+        """
         n = 0
         seen: set = set()
         for d in dirs:
@@ -197,6 +201,8 @@ class EcosystemProbe:
                     seen.add(md.stem)
                     n += 1
             for child in sorted(d.iterdir()):
+                if child.name.startswith("."):
+                    continue
                 if child.is_dir() and (child / "SKILL.md").exists() and child.name not in seen:
                     seen.add(child.name)
                     n += 1
@@ -213,8 +219,8 @@ class EcosystemProbe:
                     seen.add(md.stem)
         return len(seen)
 
-    def _count_mcp_servers(self) -> int:
-        """统计 Claude 项目 .mcp.json 与 Hermes config.yaml 的 server 数。"""
+    def _count_claude_mcp(self) -> int:
+        """统计 Claude 项目 .mcp.json 的 server 数 (claude_code 生态口径)。"""
         n = 0
         if self.workspace is not None:
             mcp_json = self.workspace / ".mcp.json"
@@ -226,6 +232,11 @@ class EcosystemProbe:
                     n += len(servers) if isinstance(servers, dict) else 0
                 except Exception:  # noqa: BLE001 - 畸形 JSON 只计 0
                     pass
+        return n
+
+    def _count_hermes_mcp(self) -> int:
+        """统计 Hermes config.yaml 的 mcp.servers 数 (hermes 生态口径)。"""
+        n = 0
         if self.hermes_home is not None:
             cfg = self.hermes_home / HERMES_CONFIG
             if cfg.exists():
@@ -248,7 +259,7 @@ class EcosystemProbe:
         )
         if self.claude_home is not None and (self.claude_home / CLAUDE_PLUGIN).exists():
             claude.plugins = 1
-        claude.mcp_servers = self._count_mcp_servers()
+        claude.mcp_servers = self._count_claude_mcp()
 
         hermes = AssetSummary()
         hermes.skills = self._count_skills(self.hermes_skills_dirs)
@@ -259,7 +270,7 @@ class EcosystemProbe:
                 hermes.memories += 1
         if self.hermes_home is not None and (self.hermes_home / HERMES_SOUL).exists():
             hermes.soul = True
-        hermes.mcp_servers = self._count_mcp_servers()
+        hermes.mcp_servers = self._count_hermes_mcp()
         return {"claude_code": claude, "hermes": hermes}
 
 

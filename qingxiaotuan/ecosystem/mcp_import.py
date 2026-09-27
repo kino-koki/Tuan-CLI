@@ -125,7 +125,11 @@ def import_mcp_servers(
         merged[name] = s
         result.imported.append(name)
     try:
-        config_setter.set("mcp.servers", list(merged.values()))
+        if hasattr(config_setter, "set_user"):
+            # 真实 Config: 写用户层配置并落盘 (自动类型转换)
+            config_setter.set_user("mcp.servers", list(merged.values()))
+        else:
+            config_setter.set("mcp.servers", list(merged.values()))
     except Exception as exc:  # noqa: BLE001
         result.errors.append(f"写入配置: {exc}")
     return result

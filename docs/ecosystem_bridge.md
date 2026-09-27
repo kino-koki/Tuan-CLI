@@ -166,4 +166,44 @@ qingxiaotuan/ecosystem/
 └── invoke.py            # 委派工具插件（claude_code_run / hermes_run）
 ```
 
-测试：`tests/test_ecosystem.py`（21 项：探测/桥接/协议/门禁）+ `tests/test_ecosystem_cli.py`。
+测试：`tests/test_ecosystem.py`（24 项：探测/桥接/协议/门禁）+ `tests/test_ecosystem_cli.py`。
+
+## 真实机端到端验证（2026-09-27，Windows）
+
+本机（Claude Code 2.1.239 + `D:\dev\hermes` 资产目录）实测通过：
+
+| 方向 | 命令 | 结果 |
+| --- | --- | --- |
+| 盘点 | `qxt ecosystem scan` | claude_code: 技能 1 (tabbit)/MCP 0；hermes: 技能 1/记忆 2/SOUL 有/MCP 2 |
+| 导入 | `qxt ecosystem import all --from hermes` | 技能 1 + 记忆 2 + MCP 2 全部并入 qxt |
+| 导出 | `qxt ecosystem export skills --to hermes` | qxt 全部 25 个技能导出为 Hermes 可加载的 `<slug>/SKILL.md` 目录包 |
+| 导出 | `qxt ecosystem export memory --to hermes` | qxt 记忆合并进 Hermes `MEMORY.md`（按 Hermes 格式，含日期标签） |
+| 挂载 | `qxt ecosystem link --apply` | Claude `.mcp.json` 写入 + Hermes `config.yaml` 追加 `qxt` server（保留原有 zhipu/notes） |
+
+过程中发现并修复 4 个真实 bug（均有回归测试）：
+
+1. **隐藏暂存目录误计技能**：Claude 官方安装遗留的 `.tabbit-stage-*` 暂存目录被
+   `_count_skills` 计为用户技能 → 跳过 `.` 开头的子目录。
+2. **MCP servers 跨生态加总**：`_count_mcp_servers` 把 Claude `.mcp.json` 与 Hermes
+   `config.yaml` 的 server 数加总后同时赋给两侧 → 拆成 `_count_claude_mcp` /
+   `_count_hermes_mcp` 分生态统计。
+3. **真实 Config 无 `set` 属性**：`import_mcp_servers` 调 `config_setter.set(...)`，
+   而真实 `Config` 只有 `set_user`（写用户层并落盘）；测试替身比真实接口宽，单测
+   全绿、真实 CLI 报错 → 按能力探测走 `set_user`，加真实 Config 集成测试。
+4. **link 找不到 Hermes**：`qxt ecosystem link` 只查配置、不回退 `$HERMES_HOME` /
+   `~/.hermes`（与 probe 不一致）→ 补齐回退链。
+
+## 已知限制（诚实声明）
+
+- **Hermes CLI 未安装**：本机 `hermes` 命令不在 PATH（官方安装器的 `python-deps`
+  阶段因网络不可用放弃）。以上验证是**资产级端到端**——qxt 与 Hermes 的资产
+  （SKILL.md / MEMORY.md / SOUL.md / config.yaml）按开放标准直接互通，但没有用
+  Hermes CLI 真实发起一次会话。Hermes 侧加载 qxt 技能/记忆的最终验收需装好
+  Hermes CLI 后人工确认。
+- **Claude 会话内被调用未实测**：本机 `~/.claude/settings.json` 的
+  `ANTHROPIC_AUTH_TOKEN` 是占位符（无有效 API key），无法发起真实 Claude Code
+  会话。`.mcp.json` 与 MCP 协议（initialize → tools/list → tools/call）已由
+  测试与 `qxt ecosystem serve` 子进程实测覆盖，但 Claude 客户端实际挂载未验。
+- **委派工具未实测**：`claude_code_run` / `hermes_run` 需要对方 CLI 可用
+  （Claude 无 key、Hermes 未装），当前仅注册逻辑有测试。配置好密钥/装好 CLI 后
+  即自动生效。
