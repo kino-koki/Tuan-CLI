@@ -476,9 +476,11 @@ def build_parser() -> argparse.ArgumentParser:
     msub.add_parser(
         "list-providers", help="列出内置已知供应商与自定义网关提示"
     ).set_defaults(model_cmd="list-providers")
-    mf = msub.add_parser("find", help="跨供应商搜索模型 (关键词)")
-    mf.add_argument("query", help="关键词: 模型名 / 供应商名 (如 deepseek / qwen / 7b)")
-    mf.set_defaults(model_cmd="find")
+    up = msub.add_parser("update", help="本地更新模型/供应商目录 (内置清单合并写入本地 JSON, 离线)")
+    up.add_argument("--check", action="store_true", help="只报告内置与本地差异, 不写盘")
+    up.add_argument("--background", "--bg", dest="background", action="store_true",
+                    help="后台线程执行, 立即返回")
+    up.set_defaults(model_cmd="update")
     sw = msub.add_parser("switch", help="运行时热切换 (当前会话立即换脑子, 不写盘)")
     sw.add_argument(
         "provider",
@@ -619,6 +621,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pms.add_argument("server", nargs="?", default=None, help="只显示该 server 的策略")
     p.set_defaults(func="cmd_mcp")
+
+    # ---- qxt ecosystem: 生态互操作 (Claude Code / Hermes Agent) ----
+    p = sub.add_parser(
+        "ecosystem",
+        help="生态互操作: Claude Code / Hermes Agent 资产双向搬运 + MCP 暴露",
+    )
+    esub = p.add_subparsers(dest="ecosystem_cmd", required=True)
+    esub.add_parser("scan", help="探测本机 Claude Code / Hermes 及其资产").set_defaults(
+        ecosystem_cmd="scan"
+    )
+    esub.add_parser("status", help="连接状态 + 资产计数 + 开关").set_defaults(
+        ecosystem_cmd="status"
+    )
+    ei = esub.add_parser("import", help="导入对方生态资产到青小团")
+    ei.add_argument(
+        "kind", choices=["skills", "memory", "agents", "context", "mcp", "all"],
+        help="skills|memory|agents|context|mcp|all",
+    )
+    ei.add_argument(
+        "--from", dest="ecosystem_from", choices=["claude", "hermes", "all"],
+        default="all", help="来源生态 (默认 all)",
+    )
+    ei.add_argument("--force", action="store_true", help="覆盖同名资产 (默认跳过)")
+    ee = esub.add_parser("export", help="导出青小团资产到对方生态")
+    ee.add_argument("kind", choices=["skills", "agents", "memory"],
+                    help="skills|agents|memory")
+    ee.add_argument(
+        "--to", dest="ecosystem_to", choices=["claude", "hermes", "all"],
+        default="all", help="目标生态 (默认 all)",
+    )
+    el = esub.add_parser("link", help="把 qxt 注册为外部 Agent 的 MCP server")
+    el.add_argument(
+        "--apply", action="store_true",
+        help="同时写入 Hermes config.yaml (默认只打印接入命令)",
+    )
+    esub.add_parser(
+        "serve", help="以 MCP stdio server 运行, 供 Claude Code / Hermes 挂载"
+    ).set_defaults(ecosystem_cmd="serve")
+    p.set_defaults(func="cmd_ecosystem")
 
     p = sub.add_parser("hooks", help="用户级 Hooks: 在工具执行前/后挂载自己的脚本")
     hsub = p.add_subparsers(dest="hook_cmd", required=True)

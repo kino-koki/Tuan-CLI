@@ -219,7 +219,46 @@ ModelRouter.decide(task, difficulty, available_providers)
 
 ---
 
-## 6. 扩展点（贡献指南）
+## 6. 生态互操作层（Ecosystem Bridge）
+
+> 把青小团从「一个 Agent」变成「Agent 生态的互操作枢纽」：Claude Code / Hermes Agent
+> 在本机积累的技能、命名 Agent、记忆、SOUL 人格与 MCP 配置，三方直接互相复用。
+
+实现落在 `qingxiaotuan/ecosystem/`（`v0.2.018` 新增），CLI 入口 `qxt ecosystem`：
+
+| 模块 | 职责 | 关键接口 |
+| --- | --- | --- |
+| `detect.py` | 探测本机 Claude Code / Hermes 安装状态与全部资产（只读） | `EcosystemProbe.probe(workspace, hermes_home=)` · `render_probe()` |
+| `skills_bridge.py` | 技能双向搬运（SKILL.md 开放标准；导出为可移植 `<slug>/SKILL.md` 目录包，跳过 qxt 专有字段） | `import_skills()` · `export_skills()` |
+| `memory_bridge.py` | 记忆/人格互通（Hermes `§` 记忆解析、去重导入、SOUL.md 不覆盖复制、按字符预算导出） | `import_hermes_memory()` · `export_to_hermes()` |
+| `agents_bridge.py` | 命名 Agent 双向同步（`.claude/agents/*.md` ⇄ qxt） | `import_claude_agents()` · `export_to_claude()` |
+| `mcp_import.py` | MCP 配置互导（`.mcp.json` / Hermes `config.yaml` ⇄ qxt；密钥 env 脱敏为占位符） | `import_mcp_servers()` · `export_to_claude_mcp_json()` · `export_to_hermes_config()` |
+| `mcp_server.py` | MCP Server（`qxt ecosystem serve`）：纯标准库 stdio、JSON-RPC 2.0 换行帧 | `McpToolServer.handle_line()` · `serve_stdio()` |
+| `invoke.py` | 委派工具插件（`claude_code_run` / `hermes_run`），CLI 存在才注册 | `EcosystemPlugin` |
+
+**运行时接线（零配置即生效）**：
+- `skills/manager.py::_build_search_dirs` 把 `项目/.claude/skills`、`~/.claude/skills`、
+  `~/.hermes/skills`、`~/.hermes/profiles/*/skills` 按优先级并入技能搜索目录
+  （受 `ecosystem.claude_code.enabled` / `ecosystem.hermes.enabled` 开关控制）——
+  对方生态装过的技能，青小团会话直接可用。
+- `agents_registry` 三层发现本就覆盖 `.claude/agents`（项目级与用户级）——
+  Claude Code 的子代理在青小团里就是同名 Agent。
+- `app.py::build_kernel` 非 bare 模式注册 `EcosystemPlugin`，注入委派工具
+  `claude_code_run`（`claude -p --output-format text`）与 `hermes_run`（`hermes chat -q`）。
+
+**反向挂载（被对方调用）**：`qxt ecosystem serve` 以 MCP stdio server 运行，
+暴露 `qxt_status` / `qxt_run` / `memory_search` / `memory_write` / `skill_list` /
+`skill_read` / `agent_list` / `context_files` 八个受控工具；危险工具 `run_shell`
+默认 fail-closed 不暴露（`ecosystem.mcp.allow_dangerous_tools=true` 时才开放，
+且仍由安全引擎判定）。`qxt ecosystem link` 写 Claude Code 项目 `.mcp.json`
+或 Hermes `config.yaml` 的 `mcp.servers`。
+
+**安全设计**：危险工具 fail-closed；MCP 配置互导时含 `secret/token/password/api_key/key`
+的 env 一律脱敏；导入按名去重幂等（`--force` 覆盖）；`scan/status` 纯只读。
+
+---
+
+## 7. 扩展点（贡献指南）
 
 | 想加什么 | 怎么做 | 入口文件 |
 | --- | --- | --- |
@@ -232,7 +271,7 @@ ModelRouter.decide(task, difficulty, available_providers)
 
 ---
 
-## 7. 本地化与配置
+## 8. 本地化与配置
 
 - 主目录：`~/.qingxiaotuan`（可用环境变量 `QXT_HOME` 覆盖，便于测试隔离）。
 - 关键文件：
@@ -245,11 +284,13 @@ ModelRouter.decide(task, difficulty, available_providers)
 
 ---
 
-## 8. 相关文档
+## 9. 相关文档
 - `qxt help` — 完整子命令与参数。
 - `qxt others` — 友好能力目录（新手入口）。
 - `qxt safe` — 安全总入口（状态 / 白名单 / 黑名单减负 / 更新）。
 - `qxt models` — 模型与本地 LLM 管理。
+- `qxt ecosystem` — 生态互操作（Claude Code / Hermes 资产双向搬运）。
+- `docs/ecosystem_bridge.md` — 生态互操作层详解（格式对照 / 安全设计 / 目录结构）。
 - `SECURITY.md` · `CONTRIBUTING.md` · `CHANGELOG.md` — 安全策略 / 贡献规范 / 变更记录。
 - `HARDENING.md` — 加固模块启用与配置速查。
 - `SUPPORTED_MODELS.md` — 支持的模型与供应商清单。

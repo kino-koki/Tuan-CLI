@@ -1,7 +1,7 @@
 # 青小團 · Qingxiaotuan Agent CLI
 
 > **「Model + Harness = Agent」** —— 把「會思考」跟「能穩穩跑」拆開，兩把鑰匙都交到你手上。
-> 一個安全第一、模型不挑、純 Python 的 AI Agent Harness。`v0.2.017` · MIT · Python ≥ 3.10
+> 一個安全第一、模型不挑、純 Python 的 AI Agent Harness。`v0.2.018` · MIT · Python ≥ 3.10
 
 **語言/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · **繁體中文** · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
@@ -155,7 +155,7 @@ qxt --print run "你好，一句話。"   # 冒煙
 
 - **多語文檔紀律**：以 `README_zh-CN.md` 為權威母本，全部 10 份同步；對譯求「生動、零漂移」，**禁機械直譯**。
 - **規模**：~412 `.py` / ~7.9 萬行 / 41 包 / 插件 36。
-- **版本**：`v0.2.017`（0.x/Beta）；破壞性變更小版本先預告 + 給遷移提示。
+- **版本**：`v0.2.018`（0.x/Beta）；破壞性變更小版本先預告 + 給遷移提示。
 - **深挖**：九大引擎簽名、新增工具走查，附錄在 `README_zh-CN.md` 尾段。
 
 ---

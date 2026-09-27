@@ -911,10 +911,10 @@ class Agent(GoalMixin, VisionMixin):
                 break
 
             n_tool_msgs_before = len(self.messages)
+            def _do_execute_tools(tc=tool_calls) -> None:
+                self._execute_tools(tc, on_tool=on_tool, on_tool_result=on_tool_result)
             retry_step(
-                lambda: self._execute_tools(
-                    tool_calls, on_tool=on_tool, on_tool_result=on_tool_result
-                ),
+                _do_execute_tools,
                 is_transient=classify_transient,
             )
             self._run_verify_loop(tool_calls, on_token=on_token)

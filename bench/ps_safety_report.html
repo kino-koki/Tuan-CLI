@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PowerShell 命令安全性能基准报告</title>
+<style>
+:root{--bg:#0f1220;--card:#1a1f33;--line:#2a3050;--txt:#e6e9f2;--mut:#9aa3bd;--green:#2ecc71;--red:#e74c3c;--org:#e67e22;--blue:#3498db}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:"Segoe UI",system-ui,sans-serif;line-height:1.6}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+h1{font-size:26px;margin:0 0 6px} h2{font-size:19px;margin:36px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.sub{color:var(--mut);font-size:14px;margin-bottom:8px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:24px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.card .v{font-size:28px;font-weight:700;margin-top:4px}
+.card .l{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+.green{color:var(--green)}.red{color:var(--red)}.org{color:var(--org)}.blue{color:var(--blue)}
+.bar{background:#242a45;border-radius:8px;overflow:hidden;height:26px;margin-top:8px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--green),#58d68d)}
+table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border-radius:10px;overflow:hidden}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+th{background:#202640;color:var(--mut);font-weight:600}
+td.m{word-break:break-all} code{background:#11141f;padding:1px 5px;border-radius:4px;font-size:12px;color:#dfe9ff}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.v-big{font-size:30px;font-weight:700}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}}
+</style></head><body><div class="wrap">
+
+<h1>PowerShell 命令安全性能基准</h1>
+<div class="sub">青小团 Agent CLI · 安全引擎分层判定评估 · 生成于 2026-09-05 · 语料 5000 条 (危险 2300 / 安全 2700)</div>
+
+<div class="cards">
+  <div class="card"><div class="l">正确判定</div><div class="v green">5000</div></div>
+  <div class="card"><div class="l">危险检出 TP</div><div class="v green">2300</div></div>
+  <div class="card"><div class="l">危险漏放 FN</div><div class="v red">0</div></div>
+  <div class="card"><div class="l">安全误杀 FP</div><div class="v org">0</div></div>
+  <div class="card"><div class="l">安全放行 TN</div><div class="v blue">2700</div></div>
+</div>
+
+<h2>核心指标</h2>
+<div class="grid2">
+  <div>
+    <div class="sub">整体正确率 (Accuracy)</div><div class="v-big">100.0%</div>
+    <div class="bar"><i style="width:100.0%"></i></div>
+    <div class="sub" style="margin-top:18px">危险检出率 (召回率 Recall)</div><div class="v-big blue">100.0%</div>
+    <div class="sub" style="margin-top:18px">误杀率 (假阳性率 FPR)</div><div class="v-big red">0.0%</div>
+    <div class="sub" style="margin-top:18px">危险漏放率 (1 - Recall)</div><div class="v-big red">0.0%</div>
+  </div>
+  <div class="cards" style="grid-template-columns:1fr 1fr;margin:0">
+    <div class="card"><div class="l">检出 TP</div><div class="v green">2300</div><div class="sub">正确拦截</div></div>
+    <div class="card"><div class="l">漏放 FN</div><div class="v red">0</div><div class="sub">危险未拦截</div></div>
+    <div class="card"><div class="l">误杀 FP</div><div class="v org">0</div><div class="sub">误拦安全命令</div></div>
+    <div class="card"><div class="l">放行 TN</div><div class="v blue">2700</div><div class="sub">正确放行</div></div>
+  </div>
+</div>
+
+<h2>判定结果分布</h2>
+<table><tr><th>单元格</th><th>数量</th></tr><tr><td>TP</td><td>2300</td></tr><tr><td>TN</td><td>2700</td></tr></table>
+
+<h2>风险等级分布</h2>
+<table><tr><th>风险等级</th><th>数量</th></tr><tr><td>none</td><td>2700</td></tr><tr><td>critical</td><td>1780</td></tr><tr><td>high</td><td>520</td></tr></table>
+
+<h2>危险类别漏放率 (按命令模板聚合)</h2>
+<table><tr><th>危险场景</th><th>语料数</th><th>漏放数</th><th>漏放率</th></tr><tr><td>t_invoke_expression</td><td>600</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_iwr_download</td><td>300</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_remove_recursive</td><td>218</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_iex_download_exec</td><td>120</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_downloadstring</td><td>120</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_schtask</td><td>60</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_amsi_bypass</td><td>60</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_reg_add</td><td>60</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_backtick_iex</td><td>60</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_stop_process</td><td>60</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_registry_persistence</td><td>60</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_dotnet_reflect</td><td>40</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_encoded_nested</td><td>40</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_register_scheduletask</td><td>40</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_startup_dir</td><td>40</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_new_service</td><td>40</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_shell_exec_proc</td><td>40</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_disable_av</td><td>40</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_clear_audit_evlog</td><td>30</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_remove_hklm</td><td>30</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_default_creds</td><td>20</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_disable_firewall</td><td>20</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_format_volume</td><td>20</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_new_localadmin</td><td>20</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_av_exclusion</td><td>20</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_sc_create</td><td>20</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_kill_critical_svc</td><td>20</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_uninstall_defender</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_disable_wu_ps</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_enable_rdp</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_extract_creds</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_static_payload</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_vssadmin_delete</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_bcdedit_debug</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_exec_tool</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_pwntool_download</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_wbadmin_delete</td><td>10</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr><tr><td>t_encoded_command</td><td>2</td><td>0</td><td style='color:#27ae60'>0.0%</td></tr></table>
+
+<h2>漏放样本 (危险命令未被拦截，前 30)</h2>
+<table><tr><th>命令</th><th>场景</th></tr></table>
+
+<h2>误杀样本 (安全命令被拦截，前 20)</h2>
+<table><tr><th>命令</th><th>判定</th></tr></table>
+
+<p class="sub" style="margin-top:24px">说明：判定采用「任一风险层命中即标记为危险」的多层策略，模拟 shell 护栏 _pre_exec_guard 决策流。安全/危险标签由语料生成器预置；本报告只做离线判定，未真实执行命令。</p>
+</div></body></html>

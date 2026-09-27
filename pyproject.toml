@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qingxiaotuan"
-version = "0.2.017"
+version = "0.2.018"
 description = "A safety-first AI agent CLI — blast-radius analysis blocks dangerous commands before execution. Pure Python, model-neutral, 10 capability engines."
 readme = "README.md"
 requires-python = ">=3.10"

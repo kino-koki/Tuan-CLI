@@ -33,15 +33,15 @@ def _write_config(home: Path, text: str) -> Path:
 
 # ------------------------------------------------------------------ 正常环境
 
-def test_clean_env_warns_no_config_returns_1(tmp_path, monkeypatch):
-    """干净环境 (无 config) -> 有警告 (未配置), 退出码 1。"""
+def test_clean_env_warns_no_config_returns_0(tmp_path, monkeypatch):
+    """干净环境 (无 config) -> 有提示性警告 (未配置), 退出码 0。"""
     monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
     findings = cmd_doctor.run_checks(tmp_path)
     # 无 config.yaml -> config 分类至少一条 warn
     cfg = [f for f in findings if f["category"] == "config"]
     assert any(f["status"] == "warn" for f in cfg)
-    # 退出码: 有警告无错误 -> 1
-    assert cmd_doctor._exit_code(findings) == 1
+    # 退出码: 警告不算故障, 仅有错误才非零 -> 0
+    assert cmd_doctor._exit_code(findings) == 0
 
 
 def test_valid_config_no_error(tmp_path, monkeypatch):
@@ -178,14 +178,14 @@ def test_project_doc_non_utf8_warning(tmp_path, monkeypatch):
 # ------------------------------------------------------------------ 退出码语义
 
 def test_exit_code_semantics(tmp_path, monkeypatch):
-    """0=全通过, 1=仅警告, 2=有错误。"""
+    """0=全通过或仅警告, 2=有错误 (警告不算故障)。"""
     monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
     home = tmp_path / "home"
     home.mkdir(parents=True)
 
     # 全 ok 的 findings 手工构造验证 _exit_code
     assert cmd_doctor._exit_code([{"status": "ok"}]) == 0
-    assert cmd_doctor._exit_code([{"status": "ok"}, {"status": "warn"}]) == 1
+    assert cmd_doctor._exit_code([{"status": "ok"}, {"status": "warn"}]) == 0
     assert cmd_doctor._exit_code([{"status": "warn"}, {"status": "error"}]) == 2
 
 

@@ -19,7 +19,7 @@ from .base import ModelAdapter, ModelCapabilities, ModelResponse, ToolCall
 from .openai_compat import OpenAICompatAdapter
 from .provider_catalog import (
     ALL_PROVIDERS, ALL_PROVIDER_NAMES, PROVIDER_CATEGORIES,
-    ProviderPreset, get_provider, get_provider_models, search_providers,
+    ProviderPreset, get_provider, get_provider_models,
     get_free_providers, get_cn_providers, get_global_providers,
 )
 
@@ -28,7 +28,7 @@ __all__ = [
     "OpenAICompatAdapter", "AnthropicAdapter", "KernelModelAdapter",
     "create_adapter", "create_kernel_adapter", "KNOWN_PROVIDERS", "is_known_provider", "PROVIDER_PRESETS",
     "ALL_PROVIDERS", "ALL_PROVIDER_NAMES", "PROVIDER_CATEGORIES",
-    "ProviderPreset", "get_provider", "get_provider_models", "search_providers",
+    "ProviderPreset", "get_provider", "get_provider_models",
     "get_free_providers", "get_cn_providers", "get_global_providers",
 ]
 

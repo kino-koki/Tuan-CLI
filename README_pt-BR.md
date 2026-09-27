@@ -1,7 +1,7 @@
 # Qingxiaotuan Agent CLI (青小团)
 
 > **«Model + Harness = Agent»** — separa o «pensar» do «rodar em segurança» e entrega as duas chaves pra você.
-> Um harness de agentes de IA em Python puro, seguro por padrão e agnóstico de modelo. `v0.2.017` · MIT · Python ≥ 3.10
+> Um harness de agentes de IA em Python puro, seguro por padrão e agnóstico de modelo. `v0.2.018` · MIT · Python ≥ 3.10
 
 **Idioma/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · **Português (Brasil)** · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
@@ -155,7 +155,7 @@ qxt --print run "Oi. Uma linha."  # smoke
 
 - **Disciplina i18n**: README_zh-CN é o mestre autoritativo; cada idioma é uma localização viva, sem deriva — **nada de tradução mecânica.**
 - **Escala**: ~412 `.py` / ~79 k linhas / 41 pacotes / 36 plugins.
-- **Versão**: `v0.2.017` (0.x/Beta); mudanças que quebram avisam na minor + notas de migração.
+- **Versão**: `v0.2.018` (0.x/Beta); mudanças que quebram avisam na minor + notas de migração.
 - **A fundo**: assinaturas dos nove motores e um tutorial de ferramenta nova moram no apêndice de `README_zh-CN.md`.
 
 ---

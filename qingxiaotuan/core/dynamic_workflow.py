@@ -340,7 +340,9 @@ class DynamicWorkflowEngine:
             self._mark_running(wf_id, step_idx)
             self._execute_step(wf_id, step_idx, stop)
             if stop.is_set():
-                self._mutate(wf_id, lambda r: set_step_status(r["steps"][step_idx], "cancelled"))
+                def _do_cancel(r: Dict[str, Any], _idx: int = step_idx) -> None:
+                    set_step_status(r["steps"][_idx], "cancelled")
+                self._mutate(wf_id, _do_cancel)
                 return
             # 一步结束, 循环重读清单以拾取动态追加步骤
 
@@ -365,15 +367,21 @@ class DynamicWorkflowEngine:
         parallel = bool(rec.get("parallel", True))
         subtasks = _to_subtasks(tasks_rec)
         if not subtasks:
-            self._mutate(wf_id, lambda r: set_step_status(r["steps"][step_idx], "done"))
+            def _do_done(r: Dict[str, Any], _idx: int = step_idx) -> None:
+                set_step_status(r["steps"][_idx], "done")
+            self._mutate(wf_id, _do_done)
             return
 
         try:
             pool = self._make_pool()
         except Exception as exc:  # noqa: BLE001 - 池初始化失败按整步失败处理
+            # Python 会在 except 块结束时删除异常变量, 闭包内引用 exc 会 NameError;
+            # 先取出错误文本, 闭包只引用普通字符串。
+            err_msg = str(exc)
+
             def _fail_pool(r):
                 set_step_status(r["steps"][step_idx], "failed")
-                set_task_results(r["steps"][step_idx], [], force_error=str(exc))
+                set_task_results(r["steps"][step_idx], [], force_error=err_msg)
                 r["status"] = "failed"
                 r["updated_at"] = time.time()
             self._mutate(wf_id, _fail_pool)

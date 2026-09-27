@@ -3,7 +3,7 @@
 本目录含两类基准：
 
 1. **安全基准（安全优先路线的核心证据）**：`safety_bench_10k.py`（10k 对抗样本）、
-   `bench_powershell_safety.py`（5k PowerShell 样本）、`bypass_matrix.py`（1083 手工绕过载荷 + 灾难后果级断言）。
+   `bench_powershell_safety.py`（5k PowerShell 样本）、`bypass_matrix.py`（2310 手工绕过载荷 + 灾难后果级断言）。
    全部**本地可复现**：`qxt safe bench` 一条命令串跑三套件并汇总，`qxt safe report` 生成自包含 HTML 报告。
    第三方可在本仓库原样复现，不依赖网络与模型。
 2. **SWE 能力基准**：`run.py` + `tasks.yaml`，用本地 SWE 任务量化「真实编程能力」，可与 Claude Code 横向对比。
@@ -13,7 +13,7 @@
 ## 安全基准（一键复现）
 
 ```bash
-qxt safe bench            # 全量 (~3 分钟): 10k 对抗 + 5k PS + 1083 绕过矩阵
+qxt safe bench            # 全量 (~3 分钟): 10k 对抗 + 5k PS + 2310 绕过矩阵
 qxt safe bench --quick    # 快速自检 (~30 秒, 对抗样本 2000 条)
 qxt safe report           # 自包含 HTML 安全报告 (可分享/存档)
 ```
@@ -23,7 +23,7 @@ qxt safe report           # 自包含 HTML 安全报告 (可分享/存档)
 - `bypass_matrix.py --json-out X.json`：手工对抗载荷 + 按灾难后果类别断言实际拦截率。
 
 当前代码实测（2026-09-19）：对抗 10k → 拦截召回 100% / 标记召回 100% / 误杀率 1.87% / 绕过 0；
-PS 5k → 正确率 100% / 漏放 0 / 误杀 0；绕过矩阵 1083 → 绕过 0 / 误杀 1 / 灾难类别 100% 拦截。
+PS 5k → 正确率 100% / 漏放 0 / 误杀 0；绕过矩阵 2310 → 绕过 0 / 误杀 1 / 灾难类别 100% 拦截。
 数字以 `qxt safe bench` 本地重跑为准。
 
 ## 快速开始

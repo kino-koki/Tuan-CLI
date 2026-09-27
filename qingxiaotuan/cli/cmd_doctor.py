@@ -604,11 +604,12 @@ def run_checks(
 
 
 def _exit_code(findings: List[Dict[str, Any]]) -> int:
-    """0=全部通过, 1=有警告, 2=有错误。"""
+    """0=通过或仅有提示性警告, 2=有错误。
+    警告类型 (config 未配置 / 技能缺字段等) 不算故障,
+    脚本化集成 qxt doctor && ... 不应因提示而失败;
+    警告详情仍可从 rich 输出 / JSON summary 获取。"""
     if any(f["status"] == "error" for f in findings):
         return 2
-    if any(f["status"] == "warn" for f in findings):
-        return 1
     return 0
 
 

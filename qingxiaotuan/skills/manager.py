@@ -10,7 +10,9 @@
 多仓库技能发现 (v0.2.017, 对标 Codex/Claude Code 可移植性):
   按优先级从高到低合并多个技能目录, 同名技能高优先级覆盖低优先级:
     1. 项目级: <workspace>/.qxt/skills/, <workspace>/.agents/skills/
+       (生态: <workspace>/.claude/skills/, 即 Claude Code 项目技能)
     2. 用户级: <home>/skills/, <home>/.agents/skills/
+       (生态: ~/.claude/skills/, ~/.hermes/skills/ 及其 profiles, 随 ecosystem.* 开关)
     3. 额外级: 配置 skills.extra_dirs 列出的目录
     4. 内置级: qingxiaotuan/resources/skills/builtin/
   写入始终落到用户级 <home>/skills/ (同名 refine 语义不变)。
@@ -112,6 +114,30 @@ class SkillManager:
         # 2. 用户级 (写入目标也在这一层)
         dirs.append((self.home / "skills", "user"))
         dirs.append((self.home / ".agents" / "skills", "user"))
+        # 2.5 生态级: Claude Code / Hermes Agent 本机技能 (随 ecosystem.* 开关发现;
+        #     目录不存在时 _discover 自动跳过 —— 这是"直接使用对方生态积累"的运行时通道)
+        cc_enabled, hermes_enabled, hermes_home = True, True, ""
+        if self.config is not None:
+            try:
+                cc_enabled = bool(self.config.get("ecosystem.claude_code.enabled", True))
+                hermes_enabled = bool(self.config.get("ecosystem.hermes.enabled", True))
+                hermes_home = str(self.config.get("ecosystem.hermes.home", "") or "")
+            except Exception:  # noqa: BLE001 - 配置损坏时按默认开启
+                pass
+        if cc_enabled:
+            if self.workspace is not None:
+                dirs.append((self.workspace / ".claude" / "skills", "project"))
+            dirs.append((Path.home() / ".claude" / "skills", "user"))
+        if hermes_enabled:
+            if not hermes_home:
+                hermes_home = os.environ.get("HERMES_HOME", "")
+            hh = Path(hermes_home).expanduser() if hermes_home else Path.home() / ".hermes"
+            dirs.append((hh / "skills", "user"))
+            prof = hh / "profiles"
+            if prof.is_dir():
+                for prof_dir in sorted(prof.iterdir()):
+                    if prof_dir.is_dir():
+                        dirs.append((prof_dir / "skills", "user"))
         # 3. 额外级 (配置 skills.extra_dirs)
         extra: List[str] = []
         if self.config is not None:
@@ -121,8 +147,8 @@ class SkillManager:
                     extra = [str(p) for p in val]
             except Exception:
                 extra = []
-        for p in extra:
-            dirs.append((Path(p), "extra"))
+        for extra_str in extra:
+            dirs.append((Path(extra_str), "extra"))
         # 4. 内置级 (最低优先级)
         if _BUILTIN_DIR.exists():
             dirs.append((_BUILTIN_DIR, "builtin"))

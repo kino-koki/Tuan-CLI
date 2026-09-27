@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>青小团 qxt 全面测评 · 2026-09-27</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232f6f5e'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='white' font-family='monospace'%3Eq%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#1a2230; --ink2:#3c4658; --mut:#6b7688; --line:#e3e7ee;
+    --bg:#f6f7f9; --card:#ffffff; --accent:#2f6f5e; --accent-soft:#e6f0ed;
+    --bad:#b3402f; --bad-soft:#fbeae6; --warn:#9a6b1a; --warn-soft:#fbf1dd;
+    --ok:#2f6f5e; --ok-soft:#e6f0ed; --code:#f0f2f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",Roboto,sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 22px 80px;}
+  header.mast{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:26px;}
+  .kicker{font:600 12px/1 ui-monospace,Consolas,monospace;letter-spacing:.12em;color:var(--accent);text-transform:uppercase;}
+  h1{font-size:28px;margin:6px 0 8px;letter-spacing:-.01em;}
+  .sub{color:var(--mut);font-size:14px;}
+  h2{font-size:20px;margin:42px 0 4px;padding-top:10px;border-top:1px solid var(--line);}
+  h2 .no{color:var(--mut);font:600 13px ui-monospace,Consolas,monospace;margin-right:8px;}
+  h3{font-size:15px;margin:22px 0 6px;color:var(--ink2);}
+  p{margin:8px 0;}
+  .verdict{font-size:16px;background:var(--card);border:1px solid var(--line);
+    border-left:4px solid var(--accent);padding:14px 16px;border-radius:4px;}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px 14px;}
+  .stat .n{font:700 24px/1.1 ui-monospace,Consolas,monospace;}
+  .stat .l{font-size:12px;color:var(--mut);margin-top:4px;}
+  .stat.bad .n{color:var(--bad)} .stat.ok .n{color:var(--ok)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.5px;background:var(--card);table-layout:fixed;}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top;word-break:break-word;}
+  th{background:#eef1f5;font-weight:600;}
+  td.num,th.num{text-align:right;font-family:ui-monospace,Consolas,monospace;}
+  code{background:var(--code);padding:1px 5px;border-radius:3px;font:12.5px ui-monospace,Consolas,monospace;overflow-wrap:anywhere;}
+  .tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11.5px;font-weight:600;}
+  .tag.ok{background:var(--ok-soft);color:var(--ok);}
+  .tag.bad{background:var(--bad-soft);color:var(--bad);}
+  .tag.warn{background:var(--warn-soft);color:var(--warn);}
+  .tag.mut{background:var(--code);color:var(--ink2);}
+  .note{font-size:12.5px;color:var(--mut);}
+  .chart{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:14px 16px;margin:14px 0;}
+  .chart h4{margin:0 0 4px;font-size:14px;}
+  .chart .cap{font-size:12px;color:var(--mut);margin-bottom:10px;}
+  .bar-row{display:grid;grid-template-columns:150px 1fr 70px;align-items:center;gap:8px;margin:4px 0;font-size:12.5px;}
+  .bar-track{background:#eef1f5;border-radius:3px;height:16px;position:relative;}
+  .bar-fill{height:100%;border-radius:3px;background:var(--accent);}
+  .bar-fill.bad{background:var(--bad);} .bar-fill.warn{background:var(--warn);}
+  .bar-val{text-align:right;font-family:ui-monospace,Consolas,monospace;color:var(--ink2);}
+  ul{margin:6px 0;padding-left:22px;} li{margin:3px 0;}
+  .issue{border:1px solid var(--line);border-radius:6px;padding:10px 14px;margin:8px 0;background:var(--card);}
+  .issue .t{font-weight:600;}
+  .foot{margin-top:50px;padding-top:14px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px;}
+  @media(max-width:760px){.cards{grid-template-columns:repeat(2,1fr)}.bar-row{grid-template-columns:96px 1fr 56px}body{font-size:14.5px}table{font-size:12.5px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <div class="kicker">从 0 实测 · 独立测评 · 不沿用既往结论</div>
+  <h1>青小团 Qingxiaotuan Agent CLI 全面测评</h1>
+  <div class="sub">版本 v0.2.017 · 测量时间 2026-09-27 · Windows 本机 · Python 3.13.14（项目 .venv）· 全程只读，未改一行项目代码</div>
+</header>
+
+<div class="verdict">
+<b>一句话结论：</b>这是一个工程完成度明显高于个人玩具项目的终端 Agent——微内核干净、测试 3037 全绿、安全基准在本地复现出来的数字和 README 宣传基本对得上（召回/绕过/漏放都是 0 折扣）。真正的扣分项不在"能不能跑"，而在几处：3 处闭包晚绑定 + 1 个失败路径上可能 NameError 的真实 bug、doctor 无错也返回非零退出码、以及 README/CI 里绕过载荷数还停在 1083（实际已 2310）。安全数字我信，因为它一条命令就能本地复现；但别把"100% 拦截"当成对外承诺，1.5% 左右的误杀和 fail-closed 保守项是它自己也承认的代价。
+</div>
+
+<div class="cards">
+  <div class="stat ok"><div class="n">3037</div><div class="l">pytest 通过（7 跳过 / 0 失败 / 11m42s）</div></div>
+  <div class="stat ok"><div class="n">0</div><div class="l">mypy 报错（443 文件）</div></div>
+  <div class="stat ok"><div class="n">0</div><div class="l">安全绕过（2000+5000+2310 条实测）</div></div>
+  <div class="stat"><div class="n">1.3s</div><div class="l">冷启动到 --help（3 次均值）</div></div>
+</div>
+
+<h2><span class="no">0</span>怎么测的，测了什么</h2>
+<p>所有数字都是我这次亲手跑出来的，不是读 README 抄的。方法如下：</p>
+<table>
+<colgroup><col style="width:22%"><col style="width:48%"><col style="width:30%"></colgroup>
+<tr><th>维度</th><th>本次实际执行</th><th>口径/说明</th></tr>
+<tr><td>测试</td><td><code>.venv\Scripts\python.exe -m pytest tests/ -q --timeout=120</code>，完整跑完</td><td>未加 <code>-m slow</code>，slow 标记用例按 pyproject 默认跳过（7 条）</td></tr>
+<tr><td>类型/静态</td><td><code>mypy qingxiaotuan</code>、<code>ruff check .</code></td><td>mypy 为宽松配置（不强制注解）</td></tr>
+<tr><td>安全</td><td><code>qxt safe bench --quick --out &lt;临时&gt;</code>（2000 对抗 / 5000 PowerShell / 全量绕过矩阵）</td><td>种子 20260906，离线不调模型；<code>bench/security-bench.json</code> 跑完用 git diff 确认未动</td></tr>
+<tr><td>性能</td><td>同一命令连跑 3 次取均值（<code>python -m qingxiaotuan</code>）</td><td>QXT_HOME 指到临时目录，不污染用户配置</td></tr>
+<tr><td>功能</td><td>逐个跑可无密钥执行的子命令 + <code>qxt commands</code></td><td>需要 API key 的真实对话一律标"需凭证未测"</td></tr>
+</table>
+<p class="note">未测项：所有需要真实 LLM 的链路（<code>qxt</code> 交互聊天、<code>qxt run</code>、<code>dev</code>/<code>agent</code> 自主循环、TUI 交互手感、真实工具调用结果）——本机没配 API key，不装懂。TUI 只看了入口和帮助，没法交互体验。</p>
+
+<h2><span class="no">1</span>功能完整性</h2>
+<p>顶层命令实测 <b>38 个入口</b>（含 1 个隐藏 <code>__dev_codedev</code>、1 个 <code>net</code> 别名，去掉后 36 个常规）；斜杠命令 <code>qxt commands</code> 实测 <b>52 个</b>。README 写"53 子命令 / 50 斜杠"，数量级对得上。</p>
+<table>
+<colgroup><col style="width:26%"><col style="width:14%"><col style="width:60%"></colgroup>
+<tr><th>命令（无密钥冒烟）</th><th>结果</th><th>备注</th></tr>
+<tr><td><code>qxt --help</code> / <code>--version</code></td><td><span class="tag ok">通过</span></td><td>帮助完整，全局选项 30+，含 yolo/plan/bare/isolation/permission-mode</td></tr>
+<tr><td><code>qxt doctor</code></td><td><span class="tag warn">通过*</span></td><td>输出 config/skills/env/cache 全检；但"无错误仅 2 警告"时退出码仍是 1，脚本化集成会误判失败</td></tr>
+<tr><td><code>qxt models list-providers</code></td><td><span class="tag ok">通过</span></td><td>实测列出 <b>51 家</b>供应商，分 6 组；精选模型清单 <b>1165 个</b></td></tr>
+<tr><td><code>qxt commands</code></td><td><span class="tag ok">通过</span></td><td>JSON 输出 52 个斜杠命令 + 键盘快捷键，供 IDE 消费</td></tr>
+<tr><td><code>qxt safe status</code></td><td><span class="tag ok">通过</span></td><td>白名单/黑名单减负/安全引擎版本/审计总线一览</td></tr>
+<tr><td><code>qxt safe bench --quick</code></td><td><span class="tag ok">通过</span></td><td>一键复现三段基准，~46s（详见第 4 节）</td></tr>
+<tr><td>聊天/run/dev/agent/session 实际对话</td><td><span class="tag mut">需凭证未测</span></td><td>无 API key，不编造结果</td></tr>
+<tr><td>TUI / web / acp 交互</td><td><span class="tag mut">未交互</span></td><td>入口存在，TUI 1304 行，无法在本环境点按体验</td></tr>
+</table>
+<p>供应商口径核对：<code>list-providers</code> 里 51 家与 README"51 家"一致；<code>MODEL_LISTS</code> 只给 16 家维护了精选列表，合计 1165 个模型 id，README 说"1100+"成立。其余供应商走 API 自由模型名，不算在清单里。</p>
+
+<h2><span class="no">2</span>代码质量与架构</h2>
+<p>实测源码 <b>443 个 .py / 103,070 行</b>，测试 <b>250 个文件 / 40,542 行</b>（测试/源码行比约 39%）。顶层包 30 个，比任务给的清单多——实际还有 <code>ports</code>、<code>runtime</code>、<code>arch</code>、<code>codedev</code>、<code>self_improve</code>、<code>sandbox</code>、<code>harden</code> 等。</p>
+
+<div class="chart">
+  <h4>模块规模排行（按源码行数，实测）</h4>
+  <div class="cap">口径：qingxiaotuan/ 下各顶层包的 .py 行数合计；最大单文件 ext/safety_engine.py = 2305 行</div>
+  <div class="bar-row"><div>core</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-val">24,778</div></div>
+  <div class="bar-row"><div>cli</div><div class="bar-track"><div class="bar-fill" style="width:50%"></div></div><div class="bar-val">12,326</div></div>
+  <div class="bar-row"><div>ports</div><div class="bar-track"><div class="bar-fill" style="width:47%"></div></div><div class="bar-val">11,702</div></div>
+  <div class="bar-row"><div>tools</div><div class="bar-track"><div class="bar-fill" style="width:42%"></div></div><div class="bar-val">10,498</div></div>
+  <div class="bar-row"><div>runtime</div><div class="bar-track"><div class="bar-fill" style="width:42%"></div></div><div class="bar-val">10,358</div></div>
+  <div class="bar-row"><div>ext</div><div class="bar-track"><div class="bar-fill" style="width:20%"></div></div><div class="bar-val">5,035</div></div>
+  <div class="bar-row"><div>models</div><div class="bar-track"><div class="bar-fill" style="width:15%"></div></div><div class="bar-val">3,836</div></div>
+  <div class="bar-row"><div>arch</div><div class="bar-track"><div class="bar-fill" style="width:10%"></div></div><div class="bar-val">2,575</div></div>
+  <div class="bar-row"><div>skills</div><div class="bar-track"><div class="bar-fill" style="width:9.5%"></div></div><div class="bar-val">2,355</div></div>
+  <div class="bar-row"><div>其余 21 包合计</div><div class="bar-track"><div class="bar-fill" style="width:63%"></div></div><div class="bar-val">21,707</div></div>
+</div>
+
+<p>架构上读了 <code>core/kernel.py</code>：确实是微内核——内核自己不带 Agent 能力，只做插件注册/激活、服务注册表（插件按服务名互相发现而非直接 import）、append-only 事件总线（带 <code>_MAX_EVENTS=2000</code> 上限防内存膨胀）。注释里明确写了理念源自 DeepSeek Harness/Cordis，这点 README 也没藏。这种分层让 <code>core</code> 占了将近四分之一代码量但职责清晰，不是一锅粥。</p>
+
+<p>依赖健康度不错：核心运行时只硬依赖 <code>pyyaml / rich / prompt_toolkit / httpx</code>，重家伙（openai SDK、cryptography、pydantic、fastapi、opentelemetry）全是 optional extras，且每个都写了"不装时自动回退"的策略（crypto 退到 CTR+HMAC、otel 退到 urllib 直 POST）。这是成熟项目的做法。</p>
+
+<h3>mypy 与 ruff</h3>
+<p><b>mypy：0 issue（443 文件）</b>。但要看清配置——<code>disallow_untyped_defs=false</code>、<code>check_untyped_defs=false</code>，等于"有注解的地方查准，没注解的地方不查"。所以 0 报错是真的，但不代表全量类型覆盖，只是存量注解质量过关。</p>
+<p><b>ruff：7431 条</b>，看着吓人，分类后发现大头是可自动修的现代化升级，不是真 bug：</p>
+<div class="chart">
+  <h4>ruff 7431 条违规分类（实测 --statistics 汇总）</h4>
+  <div class="cap">5823 条可 <code>ruff --fix</code> 自动修；红底为值得人工看的真问题</div>
+  <div class="bar-row"><div>UP 现代化写法</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-val">~5231</div></div>
+  <div class="bar-row"><div>导入/未用符号</div><div class="bar-track"><div class="bar-fill" style="width:18%"></div></div><div class="bar-val">~959</div></div>
+  <div class="bar-row"><div>异常处理卫生</div><div class="bar-track"><div class="bar-fill" style="width:12%"></div></div><div class="bar-val">627</div></div>
+  <div class="bar-row"><div>其他</div><div class="bar-track"><div class="bar-fill warn" style="width:12%"></div></div><div class="bar-val">~614</div></div>
+</div>
+<table>
+<colgroup><col style="width:30%"><col style="width:12%"><col style="width:58%"></colgroup>
+<tr><th>类别</th><th class="num">条数</th><th>性质</th></tr>
+<tr><td>UP006/UP045 等 PEP585/604</td><td class="num">~5231</td><td>用 <code>Dict/Optional</code> 而非 <code>dict[]/|None</code>，纯风格，自动修</td></tr>
+<tr><td>F401 未用 import / I001 导入排序</td><td class="num">522 / 340</td><td>整洁性，自动修</td></tr>
+<tr><td>BLE001 盲 except / S110 try-pass</td><td class="num">354 / 248</td><td>错误吞得太宽，是真实的可维护性问题，但多在兜底路径</td></tr>
+<tr><td>真问题（见下）</td><td class="num">少量</td><td>见第 9 节问题清单</td></tr>
+</table>
+
+<h2><span class="no">3</span>测试质量</h2>
+<p>全量跑完：<b>3037 passed, 7 skipped, 0 failed, 0 error，用时 702.68s（11 分 42 秒）</b>。收集到 3044 条，数字对得上。这是这次测评最硬的一项——11 分钟的套件不是摆设，且全绿。</p>
+<p>7 条跳过全部来自 <code>slow</code> marker（pyproject 里声明默认不跑，需 <code>pytest -m slow</code> 显式开）。这是合理的隔离策略，不是藏测试。</p>
+<p>没装 pytest-cov，没跑覆盖率（避免额外装依赖）。用行比估算：测试 40,542 行 / 源码 103,070 行 ≈ 39%，对一个含 TUI/CLI/安全引擎的项目来说密度不低。关键模块 <code>core/</code>（24.7k 行源码）对应的测试文件数最多，安全引擎有专门的 bench 套件反向背书。</p>
+<p>但测试里也抓到一个真问题：<code>tests/test_security_enhancement.py</code> 里 <code>test_search_no_results</code> 定义了两次（210 行和 217 行），第二个覆盖第一个，第一个用例永远跑不到——测试绿不代表这条路径被验证了。</p>
+
+<h2><span class="no">4</span>安全（重点实测）</h2>
+<p>这是项目的主打卖点，所以我单独把 README 的声明和我本地重跑的数字摆在一起。我跑的是 <code>--quick</code>（对抗样本 2000 条而非全量 10000，同一种子 20260906），PowerShell 和绕过矩阵是全量。</p>
+
+<div class="chart">
+  <h4>三段基准 · 我本次实测结果（2026-09-27）</h4>
+  <div class="cap">引擎 v1.1.0-python；离线、不调模型、种子固定可复现</div>
+  <div class="bar-row"><div>对抗样本·拦截召回</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-val">100%</div></div>
+  <div class="bar-row"><div>对抗样本·绕过</div><div class="bar-track"><div class="bar-fill" style="width:0.5%"></div></div><div class="bar-val">0</div></div>
+  <div class="bar-row"><div>对抗样本·误杀率</div><div class="bar-track"><div class="bar-fill warn" style="width:76%"></div></div><div class="bar-val">1.52%</div></div>
+  <div class="bar-row"><div>PowerShell·正确率</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-val">100%</div></div>
+  <div class="bar-row"><div>PowerShell·漏放/误杀</div><div class="bar-track"><div class="bar-fill" style="width:0.5%"></div></div><div class="bar-val">0/0</div></div>
+  <div class="bar-row"><div>绕过矩阵·绕过</div><div class="bar-track"><div class="bar-fill" style="width:0.5%"></div></div><div class="bar-val">0</div></div>
+  <div class="bar-row"><div>绕过矩阵·灾难类全拦</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-val">100%</div></div>
+</div>
+
+<table>
+<colgroup><col style="width:26%"><col style="width:26%"><col style="width:24%"><col style="width:24%"></colgroup>
+<tr><th>指标</th><th>README 声明（10k 全量口径）</th><th>我本次实测</th><th>对照</th></tr>
+<tr><td>对抗样本拦截召回</td><td>100%</td><td>100%（2000 条）</td><td><span class="tag ok">一致</span></td></tr>
+<tr><td>对抗样本标记召回</td><td>100%</td><td>100%</td><td><span class="tag ok">一致</span></td></tr>
+<tr><td>对抗样本误杀率</td><td>1.87%</td><td>1.52%（3/197 良性）</td><td><span class="tag ok">同量级</span> 样本量不同</td></tr>
+<tr><td>对抗样本绕过</td><td>0</td><td>0</td><td><span class="tag ok">一致</span></td></tr>
+<tr><td>PowerShell 正确率 / 漏放 / 误杀</td><td>100% / 0 / 0</td><td>100% / 0 / 0（5000 条）</td><td><span class="tag ok">一致</span></td></tr>
+<tr><td>绕过矩阵载荷数</td><td>1083 条</td><td><b>2310 条</b>（1978 拦/144 标/188 放）</td><td><span class="tag bad">README 过时</span></td></tr>
+<tr><td>绕过矩阵·绕过 / 灾难类拦截</td><td>0 / 100%</td><td>0 / 100%（误杀 1）</td><td><span class="tag ok">一致</span></td></tr>
+</table>
+<p>结论：安全数字不是吹的——<b>拦截、漏放、绕过、灾难类拦截这几个硬指标我本地跑出来和声明完全一致</b>。唯一对不上的是绕过载荷数量：README 正文和 CI 注释都还写 1083，实际矩阵已经长到 2310 条，文档没跟上代码。误杀 1.5%~1.9% 这个区间项目自己也认，来源是 <code>nc</code> 端口探测、<code>tar|ssh</code> 外传这类 fail-closed 保守升级，不是 bug。</p>
+<p>威胁模型走查：<code>SECURITY.md</code> 列了域名 allow-list、网络出口管控、密钥脱敏、事务账本 <code>/undo</code>；代码侧 <code>ext/safety_engine.py</code>（2305 行，全项目最大单文件）做风险评分+命令分析+SQL分析+影响半径，<code>core/network_guard.py</code>、<code>core/path_safety.py</code> 存在且有对应测试。四道闸（静态评分→影响半径预拦→YOLO 红线兜底→账本回滚）的代码路径对得上文档说法。</p>
+
+<h2><span class="no">5</span>性能</h2>
+<table>
+<colgroup><col style="width:34%"><col style="width:22%"><col style="width:44%"></colgroup>
+<tr><th>操作</th><th class="num">3 次均值</th><th>三次实测</th></tr>
+<tr><td><code>qxt --help</code>（冷启动+导入）</td><td class="num">1.30s</td><td>0.77 / 1.59 / 1.55 s（首次含 OS 页缓存命中偏差）</td></tr>
+<tr><td><code>qxt doctor</code></td><td class="num">1.72s</td><td>1.71 / 1.80 / 1.65 s</td></tr>
+<tr><td><code>qxt models list-providers</code></td><td class="num">1.67s</td><td>1.61 / 1.64 / 1.77 s</td></tr>
+<tr><td>对抗基准 2000 条</td><td class="num">22.9s</td><td>纯本地规则判定，不联网</td></tr>
+</table>
+<p>冷启动 1.3~1.7 秒对一个 import 了 rich/httpx/prompt_toolkit 的 Python CLI 来说属于正常偏快，不丢人。真正的延迟大头必然在 LLM 往返，那部分需凭证未测。引擎 IPC 粗看是进程内直调（<code>--isolation</code> 才起子进程 JSONL 通道，safety 引擎恒进程内 fail-closed），默认无 IPC 开销。</p>
+
+<h2><span class="no">6</span>可用性与体验</h2>
+<ul>
+<li><b>帮助系统</b>做得细：<code>--help</code> 把每个全局选项的用途和副作用都写了人话（如 <code>--bare</code> 明说"跳过用户配置/hooks/MCP 以保证评测可复现"），不是 argparse 默认生成的干巴巴一行。</li>
+<li><b>onboarding/setup</b> 存在（<code>qxt setup</code> 快速/完整/空白三档、<code>qxt onboarding</code> 首次引导），<code>qxt doctor</code> 输出是带通过/警告标记的表格，缺配置会直接告诉你下一步敲什么命令。</li>
+<li><b>安全拦截附带建议</b>是个亮点：README 说拦截时会给安全替代（<code>push --force</code>→<code>--force-with-lease</code>、<code>rm -rf</code>→回收站），<code>qxt safe suggest</code> 可单独查。不只拦你，还告诉你怎么安全做完。</li>
+<li><b>小毛病</b>：<code>doctor</code> 在"无错误、仅 2 警告"时仍返回 exit 1（见第 9 节）；README 用了不少 emoji 做表格图标，技术文档里见仁见智。</li>
+<li>TUI 1304 行、配色手感对齐 Kimi Code（NOTICE 里如实署名了）——但我没法交互体验，这条不打分。</li>
+</ul>
+
+<h2><span class="no">7</span>发布准备度</h2>
+<table>
+<colgroup><col style="width:26%"><col style="width:14%"><col style="width:60%"></colgroup>
+<tr><th>项</th><th>状态</th><th>实测</th></tr>
+<tr><td>pyproject 打包</td><td><span class="tag ok">健全</span></td><td>v0.2.017，entry point <code>qxt=qingxiaotuan.cli:main</code>，<code>package-data</code> 把 skills 模板/SOUL.md 打进 wheel，requires-python ≥3.10</td></tr>
+<tr><td>install.ps1</td><td><span class="tag ok">健全</span></td><td>建隔离 venv、只加用户级 PATH、还专门探测"带 pip 的 python"避免 uv venv 静默崩</td></tr>
+<tr><td>CI：ci.yml / publish.yml / security-ci.yml</td><td><span class="tag ok">存在</span></td><td>security-ci 有真数字门禁（跑基准对比存档，召回降/绕过增就 fail）+ bandit + harden 测试矩阵 3.11/3.12/3.13</td></tr>
+<tr><td>pip-audit 依赖扫描</td><td><span class="tag warn">不阻断</span></td><td>命令尾巴是 <code>|| true</code>，扫出高危也不会让 CI 红——门禁形同虚设</td></tr>
+<tr><td>README 数字核实</td><td><span class="tag warn">部分过时</span></td><td>51 供应商一致、1165 模型（1100+ 达成）、但绕过载荷 1083 不符（实际 2310）</td></tr>
+</table>
+
+<h2><span class="no">8</span>发现的问题清单（按严重度）</h2>
+<div class="issue"><div class="t"><span class="tag bad">高</span> <code>core/dynamic_workflow.py:376</code> 闭包里引用未定义的 <code>exc</code></div>
+<p class="note">ruff F821 报 <code>str(exc)</code>，而 <code>exc</code> 在那个 <code>_fail_pool</code> 闭包作用域里不存在。走到动态工作流失败分支时大概率抛 NameError——本应上报失败，结果变成二次异常。这条建议优先复现确认。</p></div>
+<div class="issue"><div class="t"><span class="tag warn">中</span> 三处闭包晚绑定（ruff B023）</div>
+<p class="note"><code>core/agent.py:916</code>（lambda 抓 <code>tool_calls</code>）、<code>core/dynamic_workflow.py:343</code>（<code>step_idx</code>）、<code>ports/transcript/history.py:251</code>（<code>step</code>）。Python 闭包按名字晚绑定，循环里建的 lambda 实际取调用时的值，多步重试/动态加步骤时可能拿到错的那一轮。</p></div>
+<div class="issue"><div class="t"><span class="tag warn">中</span> <code>qxt doctor</code> 无错误也返回 exit 1</div>
+<p class="note">实测"发现 2 个警告，无错误"时退出码是 1。CI/脚本里 <code>qxt doctor && ...</code> 会把"只是缺配置"当成失败。</p></div>
+<div class="issue"><div class="t"><span class="tag warn">中</span> 文档数字滞后</div>
+<p class="note">README 正文 + security-ci.yml 注释都写"1083 个绕过载荷"，实际矩阵 2310。不影响功能，但对外引用会被人抓把柄。</p></div>
+<div class="issue"><div class="t"><span class="tag mut">低</span> 测试里重复定义用例</div>
+<p class="note"><code>tests/test_security_enhancement.py</code> 的 <code>test_search_no_results</code> 写了两遍（210/217），第一个永远跑不到；<code>codedev/verify.py:95</code> 字典重复 key <code>"E501"</code>（后者覆盖前者，死配置）。</p></div>
+<div class="issue"><div class="t"><span class="tag mut">低</span> ruff 存量 7431 条</div>
+<p class="note">95% 是 PEP585/604 现代化写法，<code>ruff --fix</code> 一把能修掉 5823 条。不是债的利息高，是一直没还。</p></div>
+
+<h2><span class="no">9</span>总评</h2>
+<p>把它当成一个"认真做安全的开源终端 Agent"来看，完成度是够的：微内核架构干净、依赖策略克制、11 分钟的测试套件全绿、安全基准真能一条命令本地复现且数字不注水。这几点放在同类项目里是上游水准。</p>
+<p>但它还不是可以闭眼发 1.0 的状态。上面那几处真 bug（尤其 <code>exc</code> 未定义和三个闭包晚绑定）是会在生产失败路径上咬人的；文档和 CI 数字没同步、pip-audit 不阻断，属于"工程纪律已经有了，最后一公里没踩实"。建议发布前先修第 8 节里高/中那 4 条，跑一遍 <code>ruff --fix</code>，再把 README 的 1083 改成 2310——都是半天的活，改完这个项目的可信度会上一个台阶。</p>
+<p class="note">一句话给选型的人：如果你要的是"危险命令执行前真敢拦、拦了还能撤、换模型不锁死"的本地 Agent，它值得试；安全数字我验过，是真的。但别在没修那几个失败路径 bug 之前，把它接进自动化流水线上跑无人值守任务。</p>
+
+<div class="foot">
+测评：从 0 实测，未沿用任何既往结论。所有命令、计时、测试与安全数字均为本日本机实际运行产出。
+产物校验：跑完 <code>git diff bench/security-bench.json</code> 为空，CI 门禁存档未被覆盖；仓库 git status 除用户原有的 <code>bench/ps_safety_report.html</code> 外无新增改动（本报告 html 本身除外）。
+未测：一切需 API key 的 LLM 对话/自主循环/TUI 交互，均如实标注，未编造。
+</div>
+
+
+
+</div>
+</body>
+</html>
