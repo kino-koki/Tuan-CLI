@@ -331,10 +331,12 @@ def _cmd_bench(args) -> int:
     count = 2000 if quick else 10000
     out_arg = getattr(args, "out", None)
     check = bool(getattr(args, "check", False))
+    full = bool(getattr(args, "full", False))
     if out_arg:
         out_path = Path(out_arg)
-    elif check and quick:
-        # quick 自检不覆盖全量存档 (全量数字才是宣传口径)
+    elif quick:
+        # quick 自检绝不覆盖全量存档 (全量数字才是宣传口径 / CI 门禁参照):
+        # 原实现仅在 check 时走此分支, 单独 --quick 会误覆盖 security-bench.json。
         out_path = bench_dir / "security-bench.quick.json"
     else:
         out_path = bench_dir / "security-bench.json"
@@ -342,7 +344,7 @@ def _cmd_bench(args) -> int:
     # --check 固定与全量存档 (bench/security-bench.json) 对比
     ref_path = bench_dir / "security-bench.json"
     prev_archive: dict[str, Any] | None = None
-    if check and ref_path.exists():
+    if (check or full) and ref_path.exists():
         try:
             prev_archive = json.loads(ref_path.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
@@ -456,7 +458,55 @@ def _cmd_bench(args) -> int:
                 rc = 1
             else:
                 console.print("[green]✓ 数字回归门禁通过 (与存档一致或更好)[/green]")
+    if full and prev_archive is not None:
+        _render_drift_report(results, prev_archive)
+    elif full:
+        console.print("[yellow]⚠ --full: 未找到可对比的存档 (先不带 --full 跑一次生成基准)[/yellow]")
     return rc
+
+
+_DRIFT_FIELDS = [
+    ("adversarial", "block_recall", "拦截召回%", 1),
+    ("adversarial", "flag_catch", "标记召回%", 1),
+    ("adversarial", "false_positive_rate", "误杀率%", 1),
+    ("adversarial", "bypass", "绕过", 0),
+    ("powershell", "accuracy", "正确率%", 1),
+    ("powershell", "fn", "漏放", 0),
+    ("powershell", "fp", "误杀", 0),
+    ("bypass_matrix", "bypass", "绕过", 0),
+    ("bypass_matrix", "false_pos", "误杀", 0),
+]
+
+def _render_drift_report(new: dict[str, Any], ref: dict[str, Any]) -> None:
+    """输出本跑 vs 存档的数字漂移表: 旧值→新值→Δ, 显著变差标红。"""
+    console.print("\n[bold]── 数字漂移报告 (本跑 vs 存档) ──[/bold]")
+    console.print("[dim]口径: 存档 = " + str(ref.get("generated_at", "?"))[:19] + "; 本跑 = " + str(new.get("generated_at", "?"))[:19] + "[/dim]")
+    rows = []
+    for section, key, label, nd in _DRIFT_FIELDS:
+        old_v = (ref.get(section) or {}).get(key)
+        new_v = (new.get(section) or {}).get(key)
+        if old_v is None or new_v is None:
+            continue
+        if isinstance(old_v, (int, float)) and isinstance(new_v, (int, float)):
+            delta = new_v - old_v
+            if nd == 1 and abs(old_v) <= 1:  # 比例转百分数 (0.x -> x.x%)
+                old_v, new_v, delta = old_v * 100, new_v * 100, delta * 100
+            delta_s = f"{delta:+.2f}"
+            worse = delta > 0 if key in ("false_positive_rate", "false_pos", "fp", "fn", "bypass") else delta < 0
+        else:
+            delta_s, worse = "n/a", False
+        rows.append((section + "." + key, f"{old_v}", f"{new_v}", delta_s, worse))
+    if not rows:
+        console.print("  (无可对比字段)")
+        return
+    w1 = max(len(r[0]) for r in rows)
+    w2 = max(len(r[1]) for r in rows)
+    w3 = max(len(r[2]) for r in rows)
+    console.print(f"  {'指标':<{w1}}  {'存档':>{w2}}  {'本跑':>{w3}}  Δ")
+    for name, old_s, new_s, delta_s, worse in rows:
+        marker = "  [red]▲ 变差[/red]" if worse else ""
+        console.print(f"  {name:<{w1}}  {old_s:>{w2}}  {new_s:>{w3}}  {delta_s:<8}{marker}")
+    console.print("[dim]注: 误杀/漏放/绕过上升、召回下降均标红; fail-closed 优先, 误杀小幅上升可接受。[/dim]")
 
 
 def _check_no_regression(new: dict[str, Any], ref: dict[str, Any]) -> list[str]:
