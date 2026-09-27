@@ -353,6 +353,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "recall_limit": 5,
         # Auto Memory: 回合结束自动抽取 偏好/纠正/项目决策/参考事实 (规则启发式, 不调 LLM)
         "auto_extract": True,
+        # 文件型记忆笔记 MEMORY.md (对标 Claude Code projects/<slug>/memory/MEMORY.md):
+        # Agent 用 memory_note_append 直接写, 下次会话注入 system 动态段。
+        "notes_enabled": True,
+        "notes_max_lines": 200,
+    },
+    "prompt": {
+        # 稳定前缀 / 动态后缀分段: true 时 stable 段可做 prompt cache (对标 Claude Code)。
+        "cache_stable_prefix": True,
+        # 单项目指令文件大小上限 (对标 Codex project_doc_max_bytes), 超过截断。
+        "project_doc_max_bytes": 32768,
     },
     "skills": {
         "enabled": True,
