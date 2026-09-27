@@ -1,7 +1,7 @@
 # 青小團 / Qingxiaotuan Agent CLI
 
 > **「Model + Harness = Agent」** — "생각"과 "안전하게 굴리기"를 갈라서, 둘 다 열쇠를 손에 쥐여줍니다.
-> 안전 우선 · 모델 무관 · 순수 Python AI Agent Harness. `v0.2.017` · MIT · Python ≥ 3.10
+> 안전 우선 · 모델 무관 · 순수 Python AI Agent Harness. `v0.2.018` · MIT · Python ≥ 3.10
 
 **언어/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · **한국어** · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
@@ -155,7 +155,7 @@ qxt --print run "안녕."            # 스모크
 
 - **다국어 문서 규율**: `README_zh-CN.md`가 권위 있는 마스터. 각 언어는 "생생하고, 드리프트 없이" 로컬라이즈, **기계 번역 금지**.
 - **규모**: 약 412 `.py` / 약 7.9만 줄 / 41 패키지 / 플러그인 36.
-- **버전**: `v0.2.017`（0.x/Beta）; 파괴적 변경은 마이너 버전에서 사전 공지 + 마이그레이션 힌트.
+- **버전**: `v0.2.018`（0.x/Beta）; 파괴적 변경은 마이너 버전에서 사전 공지 + 마이그레이션 힌트.
 - **딥다이브**: 9대 엔진 시그니처와 새 도구 워크스루는 `README_zh-CN.md` 부록.
 
 ---

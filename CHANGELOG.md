@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.018] - Unreleased
+
+### 生态互操作层 (Ecosystem Bridge, 全新 `qingxiaotuan/ecosystem/` 包)
+
+> 定位: 青小团从「一个 Agent」升级为「Agent 生态互操作枢纽」—— 本机 Claude Code /
+> Hermes Agent 积累的技能、命名 Agent、记忆、SOUL 人格、MCP 配置, 三方直接复用。
+
+- **生态探测 (`ecosystem/detect.py`)**: `EcosystemProbe` 只读盘点双方 CLI / 主目录 /
+  技能 / agents / commands / 记忆 / SOUL / MCP servers; `qxt ecosystem scan|status` 展示。
+- **技能双向搬运 (`ecosystem/skills_bridge.py`)**: 基于 SKILL.md 开放标准, 把
+  `~/.claude/skills` / `~/.hermes/skills` 导入 qxt, 或把 qxt 技能导出为可移植
+  `<slug>/SKILL.md` 目录包 (跳过 qxt 专有字段, 对方可直接加载)。
+- **记忆/人格互通 (`ecosystem/memory_bridge.py`)**: 解析 Hermes `§` 分隔记忆去重导入
+  qxt; SOUL.md 复制采用不覆盖策略; 按 Hermes 字符预算 (MEMORY.md 2200 / USER.md 1375)
+  导出并提示超限。
+- **命名 Agent 双向同步 (`ecosystem/agents_bridge.py`)**: `.claude/agents/*.md` ⇄ qxt
+  `agents/` (复用 `agents_registry.parse_agent_md` 同一解析器, 无 frontmatter 按文件名兜底)。
+- **MCP 配置互导 (`ecosystem/mcp_import.py`)**: `.mcp.json` / Hermes `config.yaml` 的
+  `mcp.servers` ⇄ qxt 配置; 含 `secret/token/password/api_key/key` 的 env 导出一律脱敏为
+  `<redacted: 请手动填写>`, 不搬运密钥明文; 按名去重合并 (`--force` 覆盖)。
+- **MCP Server (`ecosystem/mcp_server.py`)**: `qxt ecosystem serve` 纯标准库 stdio
+  server (JSON-RPC 2.0 换行帧, PROTOCOL_VERSION 2024-11-05), 默认暴露 8 个只读/受控工具
+  (`qxt_status/qxt_run/memory_search/memory_write/skill_list/skill_read/agent_list/
+  context_files`); 危险工具 `run_shell` 默认 fail-closed 不暴露
+  (`ecosystem.mcp.allow_dangerous_tools=true` 才开放, 且仍经安全引擎 is_hard_redline/
+  is_redline 判定); 输出截断 4000 字符。
+- **委派工具 (`ecosystem/invoke.py`)**: `EcosystemPlugin` 注入 `claude_code_run` /
+  `hermes_run` (对应 CLI 存在才注册), 参数数组直传不经 shell、超时上限、输出截断。
+- **运行时接线**: `skills/manager.py::_build_search_dirs` 新增生态级搜索目录
+  (`项目/.claude/skills`、`~/.claude/skills`、`~/.hermes/skills`、`~/.hermes/profiles/*/skills`,
+  受 `ecosystem.claude_code.enabled` / `ecosystem.hermes.enabled` 开关控制) ——
+  对方生态技能会话内直接可用; `app.py::build_kernel` 非 bare 注册 EcosystemPlugin;
+  CLI 新增 `qxt ecosystem` 子命令组 (scan/status/import/export/link/serve)。
+- **配置**: `config/defaults.py` 新增 `ecosystem.*` 段 (claude_code.enabled /
+  hermes.enabled / hermes.home / mcp.allow_dangerous_tools, 默认均安全)。
+- **测试与验证**: 新增 `tests/test_ecosystem.py` (21 项) + `tests/test_ecosystem_cli.py`
+  (parser/link/import e2e), 全部通过; MCP server 子进程真实握手 (initialize →
+  tools/list 8 工具 → qxt_status JSON → skill_list → 未知工具 -32602) 通过;
+  mypy 全项目 0 错误。本机实测: Claude Code 2.1.239 + `~/.claude` 1 技能 (tabbit)
+  探测正确; Hermes CLI 未安装 (HERMES_HOME 存在) 时优雅降级。
+- **文档**: 新增 `docs/ecosystem_bridge.md`; README 中/英文、ARCHITECTURE.md 同步。
+
 ## [0.2.017] - Unreleased
 
 ### 安全加固 (深度加固, 加深不拓宽 / fail-closed)
@@ -26,6 +68,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prev_archive`, 漂移报告永远报"无存档", 现 `--check`/`--full` 任一即加载。
 - **mypy 残留修复** (`cli/cmd_session.py`): `session replay export` 分支 `out` 变量名与函数内
   str 推断冲突 (mypy 2 errors), 改用独立变量名 `p`; 全项目 443 源文件 mypy 0 错误。
+
+### 2026-09-27 二次评审问题修复 + 模型目录本地更新
+- **修复评审报告第 8 节问题**:
+  - `core/dynamic_workflow.py`: 池初始化失败路径 `_fail_pool` 闭包引用 except 变量 `exc`
+    (Python 在 except 块结束即删除异常变量, 延迟调用会 NameError) -> 提前取 `err_msg`;
+    两处闭包晚绑定 (B023) 改为默认参数绑定 + 显式命名函数, mypy 不再报 Cannot infer。
+  - `core/agent.py` / `ports/transcript/history.py`: B023 闭包晚绑定 (lambda 抓循环变量) 修复。
+  - `qxt doctor`: 仅警告 (config 未配置/技能缺字段等提示) 不再返回 exit 1, 只有真错误返回 2;
+    脚本集成 `qxt doctor && ...` 不再被提示性警告误判失败 (测试同步更新)。
+  - 文档数字同步: README 母本/英文/bench/CI 注释的绕过载荷数 1083 -> 2310 (含误杀 1 口径)。
+  - `tests/test_security_enhancement.py`: 删除重复定义的 `test_search_no_results` (第一个永不执行);
+    `codedev/verify.py`: 删除 `_HINTS` 字典重复 key `E501`。
+  - `.github/workflows/security-ci.yml`: `pip-audit` 去掉 `|| true`, 高危依赖漏洞真实阻断 CI。
+- **模型/供应商目录本地更新** (`models/local_catalog.py` + `qxt models update`):
+  内置 51 供应商/1165 模型清单可合并写入 `~/.qingxiaotuan/models_catalog.json`, 离线、无需密钥;
+  合并规则: 内置为基线、用户自建条目保留、同名条目本地优先; `--check` 只报差异、
+  `--background` 后台线程执行; 清单类命令 (list/info/list-providers/交互选择) 优先读本地, 回退内置。
+- **删除搜索模型功能**: `qxt models find` 子命令、交互里的 search 分支、
+  `search_models`/`search_providers` 函数与相关测试/导出全部移除 (实测无用的冗余入口)。
 
 ### 变更
 - **CLI 命令保守精简 (删除冗余/实验性/低价值入口, 保留 36 个核心命令)**:

@@ -658,6 +658,9 @@ for _p in ALL_PROVIDERS:
 # 名称集合, 用于快速查找
 ALL_PROVIDER_NAMES: List[str] = [p.name for p in ALL_PROVIDERS]
 
+# 名称 -> 预设 索引 (O(1) 查找, 用于同名覆盖/自定义编辑后的本地视图)
+PROVIDER_BY_NAME: Dict[str, "ProviderPreset"] = {p.name: p for p in ALL_PROVIDERS}
+
 # 按分类组织
 PROVIDER_CATEGORIES: Dict[str, List[ProviderPreset]] = {}
 for _p in ALL_PROVIDERS:
@@ -667,10 +670,7 @@ for _p in ALL_PROVIDERS:
 
 def get_provider(name: str) -> Optional[ProviderPreset]:
     """按名称获取供应商预设。"""
-    for p in ALL_PROVIDERS:
-        if p.name == name:
-            return p
-    return None
+    return PROVIDER_BY_NAME.get(name)
 
 
 def get_provider_models(name: str) -> List[str]:
@@ -681,28 +681,34 @@ def get_provider_models(name: str) -> List[str]:
     return list(preset.recommended_models)
 
 
-def search_providers(query: str) -> List[ProviderPreset]:
-    """按关键词搜索供应商 (支持中英文模糊匹配)。"""
-    q = query.lower()
-    return [p for p in ALL_PROVIDERS
-            if q in p.name.lower() or q in p.desc.lower() or q in p.category.lower()]
+def presets_from_catalog(data) -> List[ProviderPreset]:
+    """从本地目录 JSON (见 local_catalog.load_catalog) 重建供应商预设列表。
 
-
-def search_models(query: str) -> List[tuple]:
-    """按关键词跨供应商搜索模型, 返回 [(provider, model_id, free)]。
-
-    匹配范围: 模型 ID / 供应商名 / 供应商描述。模型清单项带 |free/|paid 标注,
-    free 表示该模型有免费额度。
+    仅提取结构合法的条目; 欠字段/错误类型的条目跳过,
+    由呼叫方回退内置目录。
     """
-    q = query.lower()
-    results: List[tuple] = []
-    for p in ALL_PROVIDERS:
-        for m in p.recommended_models:
-            label = m.split("|")[0]
-            free = "|free" in m
-            if q in label.lower() or q in p.name.lower() or q in p.desc.lower():
-                results.append((p.name, label, free))
-    return results
+    out: List[ProviderPreset] = []
+    for p in data.get("providers") or []:
+        if not isinstance(p, dict) or not isinstance(p.get("name"), str):
+            continue
+        try:
+            out.append(ProviderPreset(
+                name=p["name"],
+                base_url=p.get("base_url", ""),
+                model=p.get("model", ""),
+                api_key_env=p.get("api_key_env", ""),
+                desc=p.get("desc", ""),
+                tier=int(p.get("tier", 2) or 2),
+                free_tier=bool(p.get("free_tier", False)),
+                region=p.get("region", "global"),
+                category=p.get("category", ""),
+                recommended_models=list(p.get("recommended_models") or []),
+                docs_url=p.get("docs_url", ""),
+                key_hint=p.get("key_hint", ""),
+            ))
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def get_free_providers() -> List[ProviderPreset]:

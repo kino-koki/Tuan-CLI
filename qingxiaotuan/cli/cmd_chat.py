@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, cast
 from .. import __version__
 from ..config import Config, home_dir, normalize_api_key, persist_api_key, read_api_key, remove_api_key
 from ..models.provider_catalog import (
-    PROVIDER_CATEGORIES, get_provider,
+    get_provider,
 )
 from ..logging_conf import log
 from ..i18n import ensure_language, t
@@ -619,9 +619,11 @@ def _parse_args(a):
 
 # ===================================================================== cmd_model
 
-def _show_provider_models(name: str) -> None:
-    """打印某供应商的可选模型清单。"""
-    info = get_provider(name)
+def _show_provider_models(name: str, by_name=None) -> None:
+    """打印某供应商的可选模型清单。
+    by_name: 本地目录视图 (呼叫方传入); 缺省内置 get_provider。
+    """
+    info = by_name.get(name) if by_name is not None else get_provider(name)
     if info is None:
         console.print(f"未知供应商: {name}")
         return
@@ -713,18 +715,10 @@ def _pick_model_interactive(preset) -> tuple:
     console.print(f"\n  选择模型 ({preset.name}, 共 {len(models)} 个):")
     for i, m in enumerate(models, 1):
         console.print(f"    {i:3d}. {m}")
-    console.print("    提示: 输入 search <关键词> 可跨供应商搜索模型")
     try:
-        raw = input("    选择编号 [1] (或输入自定义模型名 / search <关键词>): ").strip()
+        raw = input("    选择编号 [1] (或输入自定义模型名): ").strip()
     except (EOFError, KeyboardInterrupt):
         raw = ""
-    low = raw.lower()
-    if low.startswith("search ") or low.startswith("s:"):
-        query = raw[7:].strip() if low.startswith("search ") else raw[2:].strip()
-        picked = _search_and_pick_model(query)
-        if picked:
-            return picked
-        return preset.name, _strip_model_label(models[0])
     if not raw:
         return preset.name, _strip_model_label(models[0])
     if raw.isdigit():
@@ -734,66 +728,6 @@ def _pick_model_interactive(preset) -> tuple:
         console.print(f"  编号超出范围, 已选默认 {models[0]}")
         return preset.name, _strip_model_label(models[0])
     return preset.name, raw
-
-
-def _search_and_pick_model(query: str) -> Optional[tuple]:
-    """跨供应商搜索模型。"""
-    from ..models.provider_catalog import search_models
-    results = search_models(query)
-    if not results:
-        console.print(f"  未找到匹配的模型: {query}")
-        return None
-    console.print(f"\n  搜索结果 ({len(results)}):")
-    for i, (prov, m, free) in enumerate(results[:20], 1):
-        tag = "免费" if free else ""
-        console.print(f"    {i:3d}. {prov:<16s} {m} {tag}")
-    if len(results) > 20:
-        console.print(f"    … 还有 {len(results) - 20} 条, 请用更精确的关键词")
-    try:
-        raw = input("    选择编号 (回车取消): ").strip()
-    except (EOFError, KeyboardInterrupt):
-        raw = ""
-    if raw.isdigit():
-        idx = int(raw) - 1
-        if 0 <= idx < len(results):
-            return results[idx][0], results[idx][1]
-    return None
-
-
-def _find_models(query: str, config) -> int:
-    """跨供应商搜索模型, 选择后写入配置。"""
-    from ..models.provider_catalog import search_models
-    results = search_models(query)
-    if not results:
-        console.print(f"未找到匹配的模型: {query}")
-        return 1
-    console.print(f"\n搜索结果 ({len(results)}):")
-    for i, (prov, m, free) in enumerate(results[:20], 1):
-        tag = "免费" if free else ""
-        console.print(f"  {i:3d}. {prov:<16s} {m} {tag}")
-    if len(results) > 20:
-        console.print(f"  … 还有 {len(results) - 20} 条, 请用更精确的关键词")
-    try:
-        raw = input("  选择编号 (回车取消): ").strip()
-    except (EOFError, KeyboardInterrupt):
-        raw = ""
-    if not raw.isdigit():
-        console.print("已取消")
-        return 0
-    idx = int(raw) - 1
-    if not (0 <= idx < len(results)):
-        console.print("编号超出范围")
-        return 1
-    prov, m, _ = results[idx]
-    preset = get_provider(prov)
-    config.set_user("model.provider", prov)
-    config.set_user("model.model", m)
-    if preset and preset.base_url:
-        config.set_user("model.base_url", preset.base_url)
-    if preset and preset.api_key_env:
-        config.set_user("model.api_key_env", preset.api_key_env)
-    console.print(f"已选择: {prov}/{m}")
-    return 0
 
 
 class _ConfigOverride:
@@ -900,11 +834,63 @@ def _model_local() -> int:
     return 0
 
 
+def _model_update(args, config) -> int:
+    """qxt models update: 本地更新模型/供应商目录。
+    全程离线: 把内置最新清单合并写入本地 JSON,
+    保留用户自建条目; --check 只报告不写盘; --background 后台执行。
+    """
+    from ..models import local_catalog
+    home = getattr(config, "home", None)
+    if getattr(args, "check", False):
+        d = local_catalog.diff_catalog(home)
+        if not d["local_exists"]:
+            console.print(f"本地目录不存在 — 内置 {d['missing_providers']} 供应商 / {d['missing_models']} 模型待写入 (qxt models update)")
+        else:
+            console.print(f"本地目录: {d['total_providers']} 供应商 / {d['total_models']} 模型")
+            if d["missing_providers"] or d["missing_models"]:
+                console.print(f"  内置新增未合并: {d['missing_providers']} 供应商 / {d['missing_models']} 模型 (qxt models update 合并)")
+            else:
+                console.print("  已是最新。")
+        return 0
+    if getattr(args, "background", False):
+        local_catalog.refresh_in_background(home, on_done=_print_update_done)
+        console.print("后台更新已启动 (模型/供应商目录, 本地离线写入)。")
+        return 0
+    n_p, n_m = local_catalog.refresh_catalog(home)
+    console.print(f"模型/供应商目录已更新: {n_p} 供应商 / {n_m} 模型 -> {local_catalog.catalog_file(home)}")
+    return 0
+
+
+def _print_update_done(n_p, n_m, error=None) -> None:
+    """后台更新完成回调。"""
+    if error:
+        console.print(f"[后台更新失败] {error}")
+    else:
+        console.print(f"[后台更新完成] 模型/供应商目录: {n_p} 供应商 / {n_m} 模型")
+
+
 def cmd_model(args) -> int:
     """配置/热切换模型供应商。"""
     model_cmd = getattr(args, "model_cmd", None)
     config = Config(profile=getattr(args, "profile", "default"),
                     patch_file=getattr(args, "patch", None))
+
+    # 本地目录视图: 存在时优先用本地 (用户可本地更新供应商/模型),
+    # 仅影响展示类命令 (list/info/list-providers/交互); set/switch 仍用内置预设。
+    from ..models import provider_catalog as _pc
+    from ..models.local_catalog import load_catalog
+    _local = load_catalog(config.home)
+    if _local is not None:
+        _view = _pc.presets_from_catalog(_local)
+        if not _view:  # 本地文件存在但无合法条目 -> 回退内置
+            _view = _pc.ALL_PROVIDERS
+        _by_name = {_p.name: _p for _p in _view}
+        _categories: Dict[str, List[Any]] = {}
+        for _p in _view:
+            _categories.setdefault(_p.category or "其他", []).append(_p)
+    else:
+        _by_name = _pc.PROVIDER_BY_NAME
+        _categories = _pc.PROVIDER_CATEGORIES
 
     if model_cmd == "current":
         provider = config.get("model.provider", "?")
@@ -964,10 +950,10 @@ def cmd_model(args) -> int:
         config.set_user("router.auto_switch", False)
         console.print("模型已热切换 (当前会话生效, 自动路由已暂停)。")
     elif model_cmd == "list":
-        _show_provider_models(getattr(args, "provider_name", ""))
+        _show_provider_models(getattr(args, "provider_name", ""), _by_name)
     elif model_cmd == "info":
         name = getattr(args, "provider_name", "")
-        info = get_provider(name)
+        info = _by_name.get(name)
         if info:
             console.print(f"  {info.name}: {info.desc}")
             console.print(f"  默认模型: {info.model}")
@@ -981,17 +967,17 @@ def cmd_model(args) -> int:
                 console.print("  可选模型: (未收录, 可手动输入)")
         else:
             console.print(f"未知供应商: {name}")
-    elif model_cmd == "find":
-        return _find_models(getattr(args, "query", ""), config)
+    elif model_cmd == "update":
+        return _model_update(args, config)
     elif model_cmd == "list-providers":
-        for cat_name, providers in PROVIDER_CATEGORIES.items():
+        for cat_name, providers in _categories.items():
             console.print(f"\n{cat_name}")
             for p in providers:
                 console.print(f"  {p.name:<20s} {p.desc[:50]}")
     else:
         # 无子命令: 交互式选择
         console.print("选择模型供应商")
-        categories = list(PROVIDER_CATEGORIES.keys())
+        categories = list(_categories.keys())
         for i, cat in enumerate(categories, 1):
             console.print(f"  {i}. {cat}")
         try:
@@ -1000,7 +986,7 @@ def cmd_model(args) -> int:
             cat_idx = -1
         if 0 <= cat_idx < len(categories):
             cat = categories[cat_idx]
-            providers = PROVIDER_CATEGORIES[cat]
+            providers = _categories[cat]
             for i, p in enumerate(providers, 1):
                 console.print(f"    {i}. {p.name:<20s} {p.desc[:40]}")
             try:

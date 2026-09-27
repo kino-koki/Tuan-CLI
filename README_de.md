@@ -1,7 +1,7 @@
 # Qingxiaotuan Agent CLI (青小团)
 
 > **»Model + Harness = Agent«** — »Denken« und »Sicher laufen« getrennt, und du bekommst beide Schlüssel.
-> Ein sicherheitsorientiertes, modellneutrales, reines-Python-Agenten-Harness. `v0.2.017` · MIT · Python ≥ 3.10
+> Ein sicherheitsorientiertes, modellneutrales, reines-Python-Agenten-Harness. `v0.2.018` · MIT · Python ≥ 3.10
 
 **Sprache/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · **Deutsch** · [Русский](README_ru.md)
 
@@ -155,7 +155,7 @@ qxt --print run "Hallo. Eine Zeile." # Smoke
 
 - **i18n-Disziplin**: README_zh-CN ist die maßgebliche Master-Version; jede Sprache ist eine lebendige, driftfreie Lokalisierung — **keine maschinelle Übersetzung.**
 - **Umfang**: ~412 `.py` / ~79 k Zeilen / 41 Pakete / 36 Plugins.
-- **Version**: `v0.2.017` (0.x/Beta); breaking Changes kündigen sich in der Minor an + Migrationshinweise.
+- **Version**: `v0.2.018` (0.x/Beta); breaking Changes kündigen sich in der Minor an + Migrationshinweise.
 - **Tiefgang**: Signaturen der neun Engines und ein Tool-Tutorial stehen im Anhang von `README_zh-CN.md`.
 
 ---

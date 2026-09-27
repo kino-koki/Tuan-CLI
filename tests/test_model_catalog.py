@@ -154,31 +154,3 @@ def test_pick_interactive_strips_label(monkeypatch):
     assert model == _strip(p.recommended_models[0])
 
 
-def test_pick_interactive_search_returns_other_provider(monkeypatch):
-    """输入 search <关键词> 可跨供应商搜索并返回 (provider, model)。"""
-    p = get_provider("deepseek")
-    inputs = iter(["search deepseek-v4", "1"])
-    monkeypatch.setattr("builtins.input", lambda *a, **k: next(inputs))
-    prov, model = _pick_model_interactive(p)
-    assert "deepseek-v4" in model
-
-
-def test_search_models_by_model_id():
-    from qingxiaotuan.models.provider_catalog import search_models
-    results = search_models("deepseek-v4")
-    assert results
-    for prov, m, free in results:
-        assert "deepseek-v4" in m.lower()
-        assert isinstance(free, bool)
-
-
-def test_search_models_by_provider_name():
-    from qingxiaotuan.models.provider_catalog import search_models
-    results = search_models("openrouter")
-    assert results
-    assert all(prov == "openrouter" for prov, _, _ in results)
-
-
-def test_search_models_no_match_returns_empty():
-    from qingxiaotuan.models.provider_catalog import search_models
-    assert search_models("zzz-no-such-model-xyz") == []

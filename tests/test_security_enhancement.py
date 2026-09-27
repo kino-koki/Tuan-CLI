@@ -211,13 +211,6 @@ class TestCrossSessionSearch:
         with tempfile.TemporaryDirectory() as tmpdir:
             resolver = self._make_resolver(tmpdir)
             results = resolver.search("不存在的关键词xyz")
-            assert isinstance(results, list)
-            assert len(results) == 0
-
-    def test_search_no_results(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            resolver = self._make_resolver(tmpdir)
-            results = resolver.search("不存在的关键词xyz")
             assert len(results) == 0
 
 

@@ -26,7 +26,7 @@ jobs:
 
       # 已知漏洞依赖扫描 (高危及以上阻断)
       - name: pip-audit (dependency CVE scan)
-        run: pip-audit --strict --severity high || true
+        run: pip-audit --strict --severity high   # 去掉 || true: 高危漏洞真实阻断 CI
 
       # 静态安全扫描 (排除测试目录)
       - name: bandit (static SAST)
@@ -71,7 +71,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run safety benchmarks (10k adversarial + 5k PowerShell + 1,083 bypass payloads)
+      - name: Run safety benchmarks (10k adversarial + 5k PowerShell + 2,310 bypass payloads)
         # 备份 git 存档后覆盖工作区汇总, 让 report 使用 CI 实跑数字
         run: |
           cp bench/security-bench.json /tmp/security-bench.ref.json

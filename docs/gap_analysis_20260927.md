@@ -26,9 +26,15 @@
 | B2 懒加载（name/desc 先入） | 4 | 5 | 4.5 | 4.5 | ✅ |
 | B3 技能激活策略 | 4.5 | 4 | 4 | 3.5 | 🏆（四档激活） |
 | B4 自动蒸馏/学习闭环 | 4.5 | 2 | 3 | 2 | 🏆（SkillDistiller） |
-| B5 跨厂商可移植性 | 2 | 4.5 | 3.5 | 5 | ❌ |
+| B5 跨厂商可移植性 | 4.5 | 4.5 | 3.5 | 5 | 🏆（三方桥） |
 | B6 技能治理（review/consolidate） | 2.5 | 3.5 | 4.5 | 3.5 | ⚠️ |
 | B7 插件打包（skill+MCP+cmd+agent） | 2 | 4.5 | 5 | 4 | ❌ |
+| **D. 生态互操作**（v0.2.018 新增维度） | **5.0** | **3.5** | **2.0** | **3.0** | 🏆 **第一且唯一** |
+| D1 技能双向搬运（Claude/Hermes ⇄ qxt） | 5 | 2 | 1 | 2.5 | 🏆 |
+| D2 记忆/人格互通（MEMORY.md/SOUL.md） | 5 | 2 | 1 | 1.5 | 🏆 |
+| D3 MCP 配置互导（.mcp.json / config.yaml） | 4.5 | 2 | 1 | 2 | 🏆 |
+| D4 以 MCP server 被对方调用（serve/link） | 5 | 1 | 1 | 2 | 🏆 |
+| D5 会话内委派对方（claude_code_run/hermes_run） | 4.5 | 2 | 1 | 2.5 | 🏆 |
 | **C. 用户体验** | **3.7** | **5.0** | **4.5** | **4.5** | 落后一线 |
 | C1 全屏 transcript 渲染 | 3 | 5 | 4 | 5 | ⚠️ |
 | C2 会话搜索 / 切换 / fork | 3 | 4.5 | 4.5 | 4.5 | ⚠️ |
@@ -38,7 +44,7 @@
 | C6 诊断 / onboarding | 2.5 | 4.5 | 4.5 | 4 | ❌ |
 | C7 非交互 headless | 4.5 | 5 | 4.5 | 5 | ✅ |
 
-**加权结论**：qxt 在"身份分层 + Windows 原生 + 技能激活策略 + 自动蒸馏"四个点上有真实差异点；但在"系统提示词工程化（缓存分段/自动记忆/压缩契约）"和"Skills 可移植性 + 插件打包"以及"全屏 TUI 细节 + 诊断工具"上明显落后于 Claude Code，部分落后于 Kimi Code 与 Codex。
+**加权结论**：qxt 在"生态互操作枢纽（Claude Code / Hermes 资产三方双向复用，v0.2.018 落地）"上是**第一且唯一**的差异点；在"身份分层 + Windows 原生 + 技能激活策略 + 自动蒸馏"四个点上也有真实差异；在"系统提示词工程化（缓存分段/自动记忆/压缩契约）"、"Skills 可移植性（现已部分反超）"与"全屏 TUI 细节 + 诊断工具"上仍落后于 Claude Code。
 
 ---
 
@@ -83,11 +89,10 @@
 
 ### B. Skills 系统
 
-#### B1. SKILL.md 格式 — ⚠️ 明显差距
+#### B1. SKILL.md 格式 — ✅ 持平（v0.2.017 已补齐）
 - **竞品做法**：Codex 与 Claude Code 已事实统一为 YAML frontmatter（name/description）+ Markdown 正文，Codex 额外有 `display_name`/`short_description`/`default_prompt`/`policy.allow_implicit_invocation`。
-- **qxt 现状**：Markdown + frontmatter 已对齐，但字段集未对齐开放标准。
-- **可补齐性**：高。
-- **建议**：frontmatter 超集兼容——保留 qxt 自有字段（激活模式/热度标签），同时识别 name/description/default_prompt/policy。
+- **qxt 现状**：frontmatter 超集已对齐——识别并存储 `display_name`/`short_description`/`default_prompt`/`policy.allow_implicit_invocation`，同时保留 qxt 自有字段（激活档/热度/标签/版本），写入输出全部字段、旧文件向后兼容。
+- **可补齐性**：已补齐。
 
 #### B2. 懒加载 — ✅ 持平
 - qxt 已有 lazy 激活档；与 Claude Code "name+description 先入、正文按需"一致。
@@ -103,11 +108,10 @@
 - **可验证的超越点**：一次成功的重复工作流结束后，qxt 能主动提议"要不要把它存成技能？"并写出带 frontmatter 的 SKILL.md；再次遇到相似任务时按热度自动激活。
 - **建议**：P0 把这条链路做端到端可演示（蒸馏提议 → 人工确认 → 下次自动命中），作为官网 demo 视频主线。
 
-#### B5. 跨厂商可移植性 — ❌ 显著差距
+#### B5. 跨厂商可移植性 — 🏆 三方桥（v0.2.017 基础 + v0.2.018 反超）
 - **竞品做法**：Codex 明确支持 `.agents/skills/SKILL.md` 四档路径（REPO/USER/ADMIN/SYSTEM），Claude Code 技能可"最小改动搬到 Codex"。【第三方实测】
-- **qxt 现状**：技能目录形态未公开声明与 `.agents/skills/` 的映射。
-- **可补齐性**：高。
-- **建议**：qxt 技能加载器增加对 `.agents/skills/`、`~/.agents/skills/` 的读取；写一份"如何把 Claude Code 技能一键搬到 qxt"的迁移指南。
+- **qxt 现状**：搜索目录已含 `.qxt/skills`、`.agents/skills`、`.claude/skills`、`~/.claude/skills`、`~/.hermes/skills`（含 profiles），按优先级合并；v0.2.018 新增 `qxt ecosystem import/export skills` 双向搬运与可移植目录包导出——不再只是"单向读取竞品目录"，而是三方互写。
+- **建议**：已超越"最小改动搬运"（qxt 是零改动直接可用 + 双向同步）。
 
 #### B6. 技能治理 — ⚠️ 明显差距
 - **竞品**：Kimi Code 有 `sub-skill.review`（审计）与 `sub-skill.consolidate`（合并层级）。
@@ -163,6 +167,15 @@
 ## 3. 「超越点」清单（qxt 可以做得比所有竞品都好）
 
 > 每条都附"可验证方式"，避免营销话术。
+
+### 超越点 7：生态互操作枢纽（Claude Code / Hermes Agent 三方桥）⭐ 新王者
+- **事实**：Claude Code / Kimi Code / Codex 各自只认自家资产目录，彼此默认不互通；Hermes Agent 的记忆/技能/SOUL 与 Claude Code 的 `.claude/skills`/`.claude/agents` 更是互不认识。qxt `v0.2.018` 把它们全部打通——**双向搬运 + 双向被调用**：
+  - **拿来**（`qxt ecosystem import`）：把 `~/.claude/skills`、`~/.hermes/skills`（含 profiles）导入 qxt；Hermes 的 `MEMORY.md`/`USER.md`/`SOUL.md` 并入 qxt 记忆与人格；`.claude/agents` 子代理原样可用；对方配好的 MCP server（`.mcp.json`/`config.yaml`）并入 qxt 配置（密钥脱敏）。
+  - **给出去**（`qxt ecosystem export`）：qxt 技能导出为对方可直接加载的可移植 SKILL.md 目录包；agents 同步到 `.claude/agents`；记忆导出回 Hermes（按字符预算）。
+  - **被调用**（`qxt ecosystem link` + `serve`）：qxt 以 MCP stdio server 挂进 Claude Code / Hermes，对方会话里直接多出 `qxt_*` 工具（记忆检索/写入、技能清单/读取、headless 任务派发）。
+  - **调用对方**（会话内 `claude_code_run`/`hermes_run` 委派工具）：把任务交给对方完整环境执行。
+- **可验证**（本机 2026-09-27 实测）：`qxt ecosystem scan` 正确探测 Claude Code 2.1.239 + `~/.claude` 内技能 `tabbit`；MCP server 子进程真实握手（initialize → tools/list 8 工具 → qxt_status JSON → skill_list 列出 tabbit → 未知工具 -32602）；`tests/test_ecosystem.py` 21 项 + CLI e2e 全绿。Hermes CLI 未安装时优雅降级（HERMES_HOME 存在即探测）。
+- **价值排序**：**#1**（超越"Windows 原生"，成为最能一句话讲清的选型理由："装一个，三个生态的积累共用"）。
 
 ### 超越点 1：Windows 原生、零 bash 依赖的 Agent CLI
 - **事实**：Codex 在 Windows 需三 exe 沙箱；Kimi Code 缺 Git Bash 直接 fail；Claude Code 原生二进制但设计以 POSIX 为中心。qxt 把 PowerShell 5.1 作为一等公民。
@@ -221,4 +234,4 @@
 
 ## 5. 一句话结论
 
-qxt 不需要在"系统提示词工程化"和"Skills 可移植性"上硬追 Claude Code 第一，而应该把 **Windows 原生 + SkillDistiller 自动蒸馏 + 三读项目指令** 这三个真实差异点做成可演示的护城河，同时用 P0 的低成本项（cache 分段、自动记忆、compact 契约、`qxt doctor`）把"看起来专业"的基础补齐。
+qxt 不需要在"系统提示词工程化"和"全屏 TUI"上硬追 Claude Code 第一。真正的护城河组合是：**生态互操作枢纽（唯一） + Windows 原生（唯一） + SkillDistiller 自动蒸馏（唯一） + 三读项目指令**——其中生态互操作已落地为 `qxt ecosystem` 一条命令级能力，是选型时最能一句话讲清、竞品全部做不到的差异点；同时用 P0 的低成本项（cache 分段、自动记忆、compact 契约、`qxt doctor`）把"看起来专业"的基础补齐。

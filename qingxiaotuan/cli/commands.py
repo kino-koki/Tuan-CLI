@@ -28,8 +28,7 @@ _CMD_SOURCES = {
     "_pick_api_key_interactive": ".cmd_chat",
     "_pick_model_interactive": ".cmd_chat",
     "_offer_keep_original_config": ".cmd_chat",
-    "_search_and_pick_model": ".cmd_chat",
-    "_find_models": ".cmd_chat",
+    "_model_update": ".cmd_chat",
     "_parse_args": ".cmd_chat",
     "_model_test": ".cmd_chat",
     "_run_session_hooks": ".cmd_chat",
@@ -129,6 +128,8 @@ _CMD_SOURCES = {
     # ---- cmd_permissions (权限规则查看 / 命中测试) ----
     "cmd_permissions": ".cmd_permissions",
     "cmd_upgrade": ".cmd_upgrade",
+    # ---- cmd_ecosystem (生态互操作: Claude Code / Hermes 资产双向搬运) ----
+    "cmd_ecosystem": ".cmd_ecosystem",
 }
 
 __all__ = sorted(_CMD_SOURCES) + ["ui"]

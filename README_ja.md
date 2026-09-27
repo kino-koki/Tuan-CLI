@@ -1,7 +1,7 @@
 # 青小团 / Qingxiaotuan Agent CLI
 
 > **「Model + Harness = Agent」** —— 「考えること」と「安全に走らせること」を分離して、両方の鍵をあなたに。
-> 安全第一・モデル非依存・純 Python の AI Agent Harness。`v0.2.017` · MIT · Python ≥ 3.10
+> 安全第一・モデル非依存・純 Python の AI Agent Harness。`v0.2.018` · MIT · Python ≥ 3.10
 
 **言語/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · **日本語** · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
@@ -155,7 +155,7 @@ qxt --print run "こんにちは。"     # スモーク
 
 - **多言語文書規律**：`README_zh-CN.md` が権威あるマスター。各言語版は「生き生き、ドリフトなし」のローカライズで、**機械翻訳禁止**。
 - **規模**：約 412 `.py` / 約 7.9 万行 / 41 パッケージ / プラグイン 36。
-- **バージョン**：`v0.2.017`（0.x/Beta）；破壊的変更はマイナーバージョンで事前告知 + 移行ヒント。
+- **バージョン**：`v0.2.018`（0.x/Beta）；破壊的変更はマイナーバージョンで事前告知 + 移行ヒント。
 - **深掘り**：九大エンジンのシグネチャと新規ツールのチュートリアルは `README_zh-CN.md` 末尾の付録。
 
 ---

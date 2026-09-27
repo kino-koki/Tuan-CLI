@@ -1,7 +1,7 @@
 # Qingxiaotuan Agent CLI (青小团)
 
 > **"Model + Harness = Agent."** — Split "how to think" from "how to run it safely," and hand you both keys.
-> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.2.017` · MIT · Python ≥ 3.10
+> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.2.018` · MIT · Python ≥ 3.10
 
 > ### Positioning: a safety-first agent — without sacrificing developer experience
 >
@@ -9,7 +9,8 @@
 >
 > - **Safety first**: dangerous commands are blocked *before* they run (blast-radius preview → hard redline → multi-stage confirmation). Every write is journaled in a transactional ledger for exact `/undo`. YOLO mode still cannot cross a hard redline.
 > - **Developer experience preserved**: file reads/writes, routine `git` operations, package installs, test runs and linters are scored `none` — **zero confirmation, zero blocking** (`safety_engine.is_benign_dev_command`). Only genuinely dangerous actions escalate to advice or blocking.
-> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 1,083 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `qxt safe bench`, reproduces everything locally** (no network, no model); `qxt safe report` emits a self-contained HTML security report. Current code measured (2026-09): adversarial 10k → block recall 100% / flag recall 100% / false-positive 1.87% / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 1,083 payloads → bypass 0 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
+> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,310 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `qxt safe bench`, reproduces everything locally** (no network, no model); `qxt safe report` emits a self-contained HTML security report. Current code measured (2026-09): adversarial 10k → block recall 100% / flag recall 100% / false-positive 1.87% / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 2,310 payloads → bypass 0 / false positive 1 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
+> - **Ecosystem interop**: we don't rebuild ecosystems — we **reuse what Claude Code / Hermes Agent already accumulated** on this machine (skills, named agents, memory, SOUL persona, MCP configs). `qxt ecosystem` moves assets both ways in one command; `qxt ecosystem link` mounts qxt back into them over MCP. One harness, three ecosystems' worth of assets.
 
 **Language:** **English** · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
@@ -35,7 +36,7 @@ The core idea: **the model does the thinking; the harness makes that thinking ru
 | 🧠 **Three main loops** | ReAct / Planner-Execute / DevLoop — pluggable; one kernel, different "thinking rhythms" |
 | 🔧 **Microkernel** | One-line `@plugin`, service registry, append-only event bus, hook middleware |
 | 🗂️ **Memory** | SQLite FTS5 + session event stream; three-tier memory, `/undo`, checkpoint, replay, Trajectory export |
-| 🧩 **Ecosystem** | MCP + ACP — plug tools in, or let your IDE drive it |
+| 🧩 **Ecosystem** | MCP + ACP + **Claude Code / Hermes Agent interop**: skills / named agents / memory / SOUL / MCP configs move both ways (`qxt ecosystem`), out-of-the-box |
 | 🌍 **Ten languages** | zh-CN default, native localization of the whole UI |
 | 🐍 **Pure Python** | Large `.py` codebase, MIT-licensed |
 
@@ -86,6 +87,7 @@ Qingxiaotuan isn't born from nothing — its design explicitly builds on the fol
 | **DeepSeek Harness / Cordis** | Microkernel + service registry + append-only event bus architecture (annotated in `core/kernel.py`) |
 | **Kimi Code** | Terminal TUI interaction feel & palette (see [NOTICE](NOTICE)) |
 | **Claude Code** | `/` slash-command system, named agents (`.claude/agents`-compatible), Goal mode, DevLoop — interface alignment |
+| **Hermes Agent** | Three-tier memory, skill self-evolution loop, SOUL identity, self-registering tools, cron semantics — aligned; `qxt ecosystem` two-way-syncs memory/skills/SOUL with it |
 | **ACP (Agent Client Protocol)** | As client/server, aligned message & handshake semantics so an IDE can drive Qingxiaotuan |
 | **MCP (Model Context Protocol)** | As a client, aligned protocol to plug into the tools ecosystem |
 | **OpenAI / Anthropic / Google etc. APIs** | Provider adapters implemented per official REST semantics — protocol adaptation only, no internal replication |
@@ -123,13 +125,32 @@ qxt --print run "Hi, describe yourself in one sentence."
 |---|---|
 | `qxt` | Interactive TUI (Kimi Code skin) |
 | `qxt setup` / `qxt models` | Configure providers / list 51 providers & 1100+ models |
+| `qxt models update` | Update the model/provider catalog locally: merge the built-in lists into `~/.qingxiaotuan/models_catalog.json` (offline, preserves user-added entries; `--check` reports diffs only, `--background` runs async) |
 | `qxt agent` | Named agents (`.claude/agents`-compatible, 3-tier discovery) |
 | `qxt acp` | Run an ACP server so VSCode / Zed / JetBrains can drive you |
+| `qxt ecosystem` | **Ecosystem interop**: `scan` probes Claude Code / Hermes; `import` pulls their skills/agents/memory/SOUL/MCP configs into qxt; `export` pushes back; `link` mounts qxt into them over MCP; `serve` runs the MCP server (see [docs/ecosystem_bridge.md](docs/ecosystem_bridge.md)) |
 | `qxt cron` | Scheduled background tasks |
 | `qxt doctor [--compact]` | Health check (add `--compact` for context-compaction survival self-check) |
 | `qxt dev codedev ...` | Code-dev subsystem (retrieval / verification / decomposition) |
 
 Slash commands you'll live in: `/plan` · `/model` · `/undo`·`/impact` · `/swarm` · `/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help` — full list via `Ctrl-G` in the TUI.
+
+---
+
+## Ecosystem interop: Claude Code / Hermes Agent out of the box
+
+Beyond "safety-first" and "model-agnostic", the third leg is: **don't rebuild ecosystems — reuse what the other agent ecosystems already accumulated.** Skills (the SKILL.md open standard), named agents (`.claude/agents`), memory & persona (Hermes' `MEMORY.md` / `USER.md` / `SOUL.md`), context files (`AGENTS.md` / `CLAUDE.md`) and MCP server configs are structurally near-identical across the three — qxt bridges them:
+
+```bash
+qxt ecosystem scan                        # probe Claude Code / Hermes + their assets (read-only)
+qxt ecosystem import all                  # pull both sides' skills/agents/memory/SOUL/MCP configs into qxt
+qxt ecosystem export skills --to claude   # qxt skills → .claude/skills (Hermes: --to hermes)
+qxt ecosystem link                        # reverse-mount: Claude Code/Hermes call qxt over MCP
+```
+
+- **Automatic in-session**: skills Claude Code or Hermes already installed are usable in qxt immediately (`~/.claude/skills`, `~/.hermes/skills` are on the search path); `qxt ecosystem serve` exposes qxt as an MCP server so Claude Code / Hermes sessions gain `qxt_*` tools (memory search/write, skill list/read, headless task dispatch).
+- **Delegate, don't migrate**: `claude_code_run` / `hermes_run` tools hand tasks to the other agent's full native environment (their own config, memory, skills, MCP).
+- Full doc: [`docs/ecosystem_bridge.md`](docs/ecosystem_bridge.md) (format map / security design / layout).
 
 ---
 
@@ -158,7 +179,7 @@ Rules always resolve `deny > ask > allow`. Whitelist with `qxt safe allow <cmd>`
 
 - **Adversarial corpus** `bench/safety_bench_10k.py` — 10,000 bash/generic commands (seeded 20260906, reproducible); reports block recall / flag recall / false-positive rate / bypasses.
 - **PowerShell corpus** `bench/bench_powershell_safety.py` — 5,000 samples (2,300 dangerous / 2,700 benign); reports accuracy / misses / false positives.
-- **Bypass matrix** `bench/bypass_matrix.py` — 1,083 hand-crafted adversarial payloads; beyond pattern matching, it asserts **per disaster-consequence class** whether every class of catastrophic intent was actually blocked.
+- **Bypass matrix** `bench/bypass_matrix.py` — 2,310 hand-crafted adversarial payloads; beyond pattern matching, it asserts **per disaster-consequence class** whether every class of catastrophic intent was actually blocked.
 
 ```bash
 qxt safe bench                 # full run (~3 min)
@@ -174,7 +195,7 @@ Measured on current code (2026-09-19, reproducible via `qxt safe bench`):
 |---|---|---|---|---|
 | Adversarial | 10,000 | block recall 100% · flag recall 100% · FP 1.87% | 0 | — |
 | PowerShell | 5,000 | accuracy 100% · misses 0 | 0 | 0 |
-| Bypass matrix | 1,083 | disaster-intent classes 100% blocked | 0 | 1 |
+| Bypass matrix | 2,310 | disaster-intent classes 100% blocked | 0 | 1 |
 
 Caveat: the bypass matrix is deliberately fail-closed and keeps a few conservative escalations (`nc` Unicode-variant probes, `tar|ssh` exfil-shaped payloads), which produce "benign-but-flagged" false positives; the 1.87% FP in the adversarial suite comes from the same conservatism. Numbers are authoritative as re-run locally with `qxt safe bench`.
 
@@ -202,7 +223,7 @@ qxt --print run "Hi, one line."   # smoke
 ```
 
 - **i18n discipline**: README_zh-CN is the authoritative master; every locale is a vivid, zero-drift localization — **no mechanical translation.**
-- **Version**: `v0.2.017` (0.x / Beta); breaking changes get a minor-version heads-up + migration notes.
+- **Version**: `v0.2.018` (0.x / Beta); breaking changes get a minor-version heads-up + migration notes.
 - **Deep dive**: engine signatures & a step-by-step tool walkthrough live in the appendix of `README_zh-CN.md`.
 
 ---
