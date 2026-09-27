@@ -207,7 +207,7 @@
 <tr><td>会话内委派</td><td>调用对方</td><td><span class="tag ok">代码注册</span><code>claude_code_run</code> / <code>hermes_run</code> 工具（对应 CLI 存在才注册，参数数组直传不经 shell）</td></tr>
 <tr><td>运行时自动发现</td><td>零配置</td><td><span class="tag ok">测试覆盖</span>技能搜索目录已并入 `项目/.claude/skills`、`~/.claude/skills`、`~/.hermes/skills`（含 profiles），对方装过的技能会话内直接可用</td></tr>
 </table>
-<p class="note"><b>验证证据</b>：新增 <code>tests/test_ecosystem.py</code> 24 项 + <code>tests/test_ecosystem_cli.py</code> e2e，全部通过（含 3 项真实机 bug 回归测试）；MCP server 子进程真实握手通过；<b>Hermes 资产级端到端本机实测通过</b>——<code>import all --from hermes</code>（技能 1 / 记忆 2 / MCP 2 全部并入 qxt）、<code>export skills --to hermes</code>（qxt 全部 25 个技能导出为 Hermes 可直接加载的 SKILL.md 目录包）、<code>export memory --to hermes</code>（记忆合并进 Hermes MEMORY.md）、<code>link --apply</code>（Claude 项目 .mcp.json 写入 + Hermes config.yaml 追加 qxt server、保留原有 zhipu/notes）。实测过程修复 4 个真实 bug：隐藏暂存目录误计技能、MCP servers 跨生态加总、真实 Config 无 <code>set</code> 属性、link 不回退 <code>$HERMES_HOME</code>。<b>已知限制</b>：Hermes 真实 CLI 会话（CLI 因网络限制未安装）与 Claude 会话内被调用（本机 <code>ANTHROPIC_AUTH_TOKEN</code> 为占位符、无有效 API key）仍未做真实 LLM 会话验证。</p>
+<p class="note"><b>验证证据</b>：新增 <code>tests/test_ecosystem.py</code> 27 项 + <code>tests/test_ecosystem_cli.py</code> e2e，全部通过（含 5 项真实机 bug 回归测试）；MCP server 子进程真实握手通过；<b>Hermes 资产级端到端本机实测通过</b>——<code>import all --from hermes</code>（技能 1 / 记忆 2 / MCP 2 全部并入 qxt）、<code>export skills --to hermes</code>（qxt 全部 24 个用户技能导出为 Hermes 可直接加载的 SKILL.md 目录包，计数与实际落盘一一对应）、<code>export memory --to hermes</code>（记忆合并进 Hermes MEMORY.md）、<code>link --apply</code>（Claude 项目 .mcp.json 写入 + Hermes config.yaml 追加 qxt server、保留原有 zhipu/notes）。实测过程修复 6 个真实 bug：隐藏暂存目录误计技能（盘点 + 运行时两处）、MCP servers 跨生态加总、真实 Config 无 <code>set</code> 属性、link 不回退 <code>$HERMES_HOME</code>、中文技能名导出 slug 冲突丢技能（改取文件 slug）。<b>已知限制</b>：Hermes 真实 CLI 会话（CLI 因网络限制未安装）与 Claude 会话内被调用（本机 <code>ANTHROPIC_AUTH_TOKEN</code> 为占位符、无有效 API key）仍未做真实 LLM 会话验证。</p>
 <div class="chart">
   <h4>生态互操作维度 · 竞品相对位置（本报告口径，5 分制）</h4>
   <div class="cap">qxt 各子项全为领先：竞品各自封闭在自己生态内，无三方桥对等物（详见 docs/gap_analysis_20260927.md 新增 D 维度）</div>
@@ -241,7 +241,7 @@
 <div class="issue"><div class="t"><span class="tag ok">已修复</span> 第一版报告的 6 项问题（v0.2.017 修复轮，git 67c329b 前已处理）</div>
 <p class="note"><code>core/dynamic_workflow.py</code> 闭包 <code>exc</code> 未定义（F821）→ 提前取 <code>err_msg</code>；三处闭包晚绑定（B023，core/agent.py、dynamic_workflow.py、ports/transcript/history.py）→ 默认参数绑定；<code>qxt doctor</code> 仅警告时误返回 exit 1 → 仅真错误返回 2；README/CI 绕过载荷数 1083 → 2310；<code>tests/test_security_enhancement.py</code> 重复用例与 <code>codedev/verify.py</code> 重复 key E501 → 已删。回归：全量 pytest 3065 passed / 7 skipped。</p></div>
 <div class="issue"><div class="t"><span class="tag warn">中</span> 生态互操作的真实 LLM 会话端到端仍待补</div>
-<p class="note">资产级端到端已本机实测通过（import/export/link 双向搬运全部成功，实测中修复 4 个真实 bug）；剩余缺口是<b>真实模型会话</b>证据——Hermes CLI 因本机网络限制未装上、Claude 无有效 API key，均无法发起真实会话调用 <code>qxt_*</code> 工具；需对方 CLI 可用后补一次演示，已如实标注于 docs/ecosystem_bridge.md。</p></div>
+<p class="note">资产级端到端已本机实测通过（import/export/link 双向搬运全部成功，实测中修复 6 个真实 bug）；剩余缺口是<b>真实模型会话</b>证据——Hermes CLI 因本机网络限制未装上、Claude 无有效 API key，均无法发起真实会话调用 <code>qxt_*</code> 工具；需对方 CLI 可用后补一次演示，已如实标注于 docs/ecosystem_bridge.md。</p></div>
 <div class="issue"><div class="t"><span class="tag warn">中</span> pip-audit 门禁不阻断</div>
 <p class="note">security-ci.yml 里 pip-audit 命令尾巴是 <code>|| true</code>，扫出高危也不会让 CI 红——门禁形同虚设。</p></div>
 <div class="issue"><div class="t"><span class="tag mut">低</span> ruff 存量 7431 条</div>
@@ -255,8 +255,7 @@
 
 <div class="foot">
 测评：从 0 实测，未沿用任何既往结论。所有命令、计时、测试与安全数字均为本日本机实际运行产出。v0.2.018 修订：补生态互操作章节（含 Hermes 资产级端到端实测与 4 个真实 bug 修复）、问题清单标注已修复、测试/版本同步。
-产物校验：跑完 <code>git diff bench/security-bench.json</code> 为空，CI 门禁存档未被覆盖；仓库 git 已提交（67c329b + 本轮生态 e2e 修复提交），工作区干净（本报告 html 属提交内容）。
-未测：一切需 API key 的 LLM 对话/自主循环/TUI 交互、Hermes 真实 CLI 会话（网络限制未装 CLI）、Claude 会话内被调用（无有效 key），均如实标注，未编造。
+产物校验：跑完 <code>git diff bench/security-bench.json</code> 为空，CI 门禁存档未被覆盖；仓库 git 已提交（67c329b + 本轮生态 e2e 修复提交），工作区干净（本报告 html 属提交内容）。未测：一切需 API key 的 LLM 对话/自主循环/TUI 交互、Hermes 真实 CLI 会话（网络限制未装 CLI）、Claude 会话内被调用（无有效 key），均如实标注，未编造。
 </div>
 
 

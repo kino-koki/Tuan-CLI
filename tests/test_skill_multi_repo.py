@@ -87,9 +87,20 @@ def test_extra_dirs_config(tmp_path: Path):
 
 
 def test_builtin_discovered_without_workspace(tmp_path: Path):
-    """无 workspace 时仍能发现内置技能 (origin=builtin)。"""
+    """无 workspace 时仍能发现内置技能 (origin=builtin)。
+
+    显式关闭生态发现: 本机 Claude/Hermes 生态目录可能已有同名技能
+    (origin=user, 优先级高于 builtin), 测试不依赖真实机生态状态。
+    """
+
+    class _NoEcoConfig:
+        def get(self, key, default=None):
+            if key in ("ecosystem.claude_code.enabled", "ecosystem.hermes.enabled"):
+                return False
+            return default
+
     home = tmp_path / "home"
-    mgr = SkillManager(home)
+    mgr = SkillManager(home, config=_NoEcoConfig())
     origins = {s.slug: s.origin for s in mgr.list_all()}
     # 内置技能目录存在, 至少能发现一批 builtin
     assert origins, "应发现内置技能"
