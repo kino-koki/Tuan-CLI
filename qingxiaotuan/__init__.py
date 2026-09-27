@@ -5,6 +5,6 @@
 - Hermes Agent: 三层记忆, 技能自进化闭环, SOUL 身份, 自注册工具
 """
 
-__version__ = "0.2.017"
+__version__ = "0.2.018"
 APP_NAME = "qingxiaotuan"
 CLI_NAME = "qxt"

@@ -393,6 +393,21 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "audit_enabled": True,        # 启用审计日志
         },
     },
+    # 生态互操作 (qxt ecosystem): 青小团 ⇄ Claude Code ⇄ Hermes Agent
+    # 开启后, 会话运行期自动发现对方生态的本机资产 (技能/命名Agent/记忆/上下文),
+    # 并提供 qxt ecosystem 命令做双向搬运与 MCP 暴露。
+    "ecosystem": {
+        "claude_code": {
+            "enabled": True,              # 发现项目/用户级 .claude/skills 与 .claude/agents
+        },
+        "hermes": {
+            "enabled": True,              # 发现 ~/.hermes (skills/memories/SOUL)
+            "home": "",                   # 显式指定 Hermes 主目录 (空=自动探测 ~/.hermes 或 $HERMES_HOME)
+        },
+        "mcp": {
+            "allow_dangerous_tools": False,  # 对外部 MCP 暴露 run_shell 等危险工具 (默认关, fail-closed)
+        },
+    },
     # 安全加固 (harden) 配置: 审计加密后端 / 网络出口策略 / MCP 加固
     # 这些项此前仅靠 security_plugin 内联默认值读取, 现集中于此以便发现与覆盖。
     "security": {

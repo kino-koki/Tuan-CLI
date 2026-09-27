@@ -122,6 +122,16 @@ def build_kernel(
     kernel.register(SecurityPlugin())
     # 多 Agent 协作子系统插件: 协作协议/角色注册/结果聚合
     kernel.register(CollaborationPlugin())
+    # 生态互操作插件: 委派工具 claude_code_run / hermes_run (CLI 存在才注册),
+    # 让青小团在会话里直接把任务委派给 Claude Code / Hermes Agent 原生环境。
+    # bare (CI/纯净模式) 下不注册, 保证执行路径可复现。
+    if not bare:
+        try:
+            from .ecosystem.invoke import EcosystemPlugin
+
+            kernel.register(EcosystemPlugin())
+        except Exception:  # noqa: BLE001 - 生态插件失败不影响核心启动
+            logger.debug("EcosystemPlugin 注册失败", exc_info=True)
     # 五层架构插件: 安全/执行/编排/上下文/可观测 (可插拔, 一等公民服务)
     kernel.register(ArchPlugin())
     # 内核补丁层 (扩展增强模块层): 对现有实现注入可回滚/可审计补丁

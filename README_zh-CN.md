@@ -1,7 +1,7 @@
 # 青小团 · Qingxiaotuan Agent CLI
 
 > **「Model + Harness = Agent」** —— 把「会思考」和「靠谱地跑」拆开，两者都交到你手里。
-> 一个安全优先、模型无关、纯 Python 的 AI Agent Harness。`v0.2.017` · MIT · Python ≥ 3.10
+> 一个安全优先、模型无关、纯 Python 的 AI Agent Harness。`v0.2.018` · MIT · Python ≥ 3.10
 
 > ### 定位：安全优先的 Agent，尽量不牺牲开发体验
 >
@@ -9,7 +9,8 @@
 >
 > - **安全优先**：危险命令在**执行前**被拦（影响半径预演 → 硬红线 → 多阶段确认才放行），每一次写操作进事务账本，`/undo` 精确回滚；YOLO 模式也绕不过硬红线。
 > - **保留开发体验**：文件读写、`git` 常规操作、包管理、跑测试、lint 等良性开发命令判定为 `none` —— **零确认、零拦截**（`safety_engine.is_benign_dev_command`）。只有真正危险的才升级为提示或拦截。
-> - **可复现的度量**：我们的目标是「危险命令少放行、良性命令少打扰」，数字**必须由第三方可复现**，不卖无法验证的绝对承诺。内部基准见 [`bench/`](bench/README.md)：1 万条 bash/通用对抗样本 + 5 千条 PowerShell 对抗样本 + 1083 个手工绕过载荷（含灾难后果级断言）。**一条命令 `qxt safe bench` 全程本地复现**（不依赖网络与模型），`qxt safe report` 生成自包含 HTML 安全报告。当前代码实测（2026-09）：对抗样本 10k → 拦截召回 100% / 标记召回 100% / 误杀率 1.87% / 绕过 0；PowerShell 5k → 正确率 100% / 漏放 0 / 误杀 0；绕过矩阵 1083 载荷 → 绕过 0 / 灾难意图类别 100% 拦截。其中刻意保留了一些 fail-closed 的保守升级（如 `nc` 端口探测、`tar|ssh` 外传形态），误杀数字即来自这类保守判定，请以本地重跑为准。
+> - **可复现的度量**：我们的目标是「危险命令少放行、良性命令少打扰」，数字**必须由第三方可复现**，不卖无法验证的绝对承诺。内部基准见 [`bench/`](bench/README.md)：1 万条 bash/通用对抗样本 + 5 千条 PowerShell 对抗样本 + 2310 个手工绕过载荷（含灾难后果级断言）。**一条命令 `qxt safe bench` 全程本地复现**（不依赖网络与模型），`qxt safe report` 生成自包含 HTML 安全报告。当前代码实测（2026-09）：对抗样本 10k → 拦截召回 100% / 标记召回 100% / 误杀率 1.87% / 绕过 0；PowerShell 5k → 正确率 100% / 漏放 0 / 误杀 0；绕过矩阵 2310 载荷 → 绕过 0 / 误杀 1 / 灾难意图类别 100% 拦截。其中刻意保留了一些 fail-closed 的保守升级（如 `nc` 端口探测、`tar|ssh` 外传形态），误杀数字即来自这类保守判定，请以本地重跑为准。
+> - **生态互操作**：不重复造生态，把 Claude Code / Hermes Agent 在本机积累的技能、命名 Agent、记忆、SOUL 人格与 MCP 配置**直接拿来用**（`qxt ecosystem`，一条命令双向搬运）；反向用 MCP 把自己挂进它们（`qxt ecosystem link`）——一个 Harness，三个生态的积累共用。
 
 **语言/Language:** [English](README.md) · **简体中文** · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
@@ -35,7 +36,7 @@
 | 🧠 **三种主循环** | ReAct / Planner-Execute / DevLoop，可插拔，"同一个内核跑不同的思考节奏" |
 | 🔧 **微内核** | `@plugin` 一行声明，服务注册表、append-only 事件总线、hook 中间件 |
 | 🗂️ **记忆** | SQLite FTS5 + 会话事件流；三层记忆、`/undo`、checkpoint、replay、Trajectory 导出 |
-| 🧩 **生态** | MCP（Model Context Protocol）+ ACP（Agent Client Protocol），能插工具也能被 IDE 驱动 |
+| 🧩 **生态** | MCP + ACP + **Claude Code / Hermes Agent 互操作**：技能 / 命名 Agent / 记忆 / SOUL / MCP 配置三方双向搬运（`qxt ecosystem`），彼此开箱即用 |
 | 🌍 **十种语言** | 默认简体中文，界面随机给你换语种，接口也本地化 |
 | 🐍 **纯 Python** | 大面积 `.py` 实现，MIT，想怎么啃怎么啃 |
 
@@ -77,6 +78,23 @@ class MyTool(Plugin):
 
 ---
 
+## 生态互操作：Claude Code / Hermes Agent 开箱互用
+
+青小团的第三条腿（在「安全优先」与「模型无关」之外）：**不重复造生态，直接把另外两个 Agent 生态的积累拿来用**。技能（SKILL.md 开放标准）、命名 Agent（`.claude/agents`）、记忆与人格（Hermes 的 `MEMORY.md`/`USER.md`/`SOUL.md`）、上下文文件（`AGENTS.md`/`CLAUDE.md`）、MCP server 配置——三方格式高度同构，青小团把它们打通：
+
+```bash
+qxt ecosystem scan                        # 探测本机 Claude Code / Hermes 及其资产（只读）
+qxt ecosystem import all                  # 双方技能/子代理/记忆/SOUL/MCP 配置并入 qxt
+qxt ecosystem export skills --to claude   # qxt 技能 → .claude/skills（Hermes 同款 --to hermes）
+qxt ecosystem link                        # 反向挂载：让 Claude Code/Hermes 经 MCP 直接调 qxt
+```
+
+- **会话内自动生效**：Claude Code 装过的技能、Hermes 蒸馏出的技能，青小团直接可用（`~/.claude/skills`、`~/.hermes/skills` 已进搜索目录）；`qxt ecosystem serve` 把 qxt 的能力以 MCP server 暴露，Claude Code / Hermes 会话里直接多出 `qxt_*` 工具（记忆检索/写入、技能清单/读取、headless 任务派发）。
+- **委派不搬家**：`claude_code_run` / `hermes_run` 两个工具让青小团把任务交给对方完整环境执行（对方用自己的配置/记忆/技能/MCP）。
+- 完整文档：[`docs/ecosystem_bridge.md`](docs/ecosystem_bridge.md)（格式对照表 / 安全设计 / 目录结构）。
+
+---
+
 ## 受借鉴与融合
 
 青小团不是从石头里蹦出来的，设计上明确借鉴、以下几种「已知 Agent 项目与协议」，在此如实列出（并尽可能在源码注释中标注原始出处）：
@@ -86,6 +104,7 @@ class MyTool(Plugin):
 | **DeepSeek Harness / Cordis** | 微内核 + 服务注册表 + append-only 事件总线的架构理念（`core/kernel.py` 有注释标注） |
 | **Kimi Code** | 终端 TUI 的交互手感与配色风格（见 [NOTICE](NOTICE)） |
 | **Claude Code** | `/` 斜杠命令体系、命名 Agents（`.claude/agents` 兼容）、Goal 模式、DevLoop 等交互范式的接口对齐 |
+| **Hermes Agent** | 三层记忆、技能自进化闭环、SOUL 身份、自注册工具、cron 机制的语义对齐；`qxt ecosystem` 把双方记忆/技能/SOUL 双向同步 |
 | **ACP（Agent Client Protocol）** | 作为 server/client 对齐其消息与握手语义，让 IDE 能驱动青小团 |
 | **MCP（Model Context Protocol）** | 作为 client 对齐其协议，接入工具生态 |
 | **OpenAI / Anthropic / Google 等厂商 API** | provider 适配器按官方 REST 语义实现，只做协议适配、不复刻内部实现 |
@@ -125,8 +144,10 @@ qxt --print run "你好，一句话介绍你自己"
 |---|---|
 | `qxt` | 交互式 TUI（Kimi Code 皮肤） |
 | `qxt setup` / `qxt models` | 配供应商 / 列出模型（51 家供应商、1100+ 内置模型） |
+| `qxt models update` | 本地更新模型/供应商目录：把内置最新清单合并写入 `~/.qingxiaotuan/models_catalog.json`（离线、保留用户自建条目；`--check` 只报差异、`--background` 后台执行） |
 | `qxt agent` | 命名 Agents（`.claude/agents` 兼容 + 三层发现） |
 | `qxt acp` | 启动 ACP server，让 VS Code / Zed / JetBrains 来驱动你 |
+| `qxt ecosystem` | **生态互操作**：`scan` 探测 Claude Code / Hermes；`import` 把双方技能/Agent/记忆/SOUL/MCP 配置并入 qxt；`export` 反向导出；`link` 让它们经 MCP 直接调用 qxt；`serve` 以 MCP server 运行（详见 [docs/ecosystem_bridge.md](docs/ecosystem_bridge.md)） |
 | `qxt cron` | 后台定时任务 |
 | `qxt doctor` / `qxt bench` | 体检 / 跑分 |
 | `qxt arch demo` | 一键验证五层架构插件是否就位 |
@@ -165,7 +186,7 @@ qxt --print run "你好，一句话介绍你自己"
 
 - **对抗样本基准** `bench/safety_bench_10k.py`：10,000 条 bash/通用命令（随机种子 20260906，可复现），输出拦截召回 / 标记召回 / 误杀率 / 绕过。
 - **PowerShell 基准** `bench/bench_powershell_safety.py`：5,000 条（危险 2,300 / 安全 2,700），输出正确率 / 漏放 / 误杀。
-- **绕过矩阵** `bench/bypass_matrix.py`：1,083 个手工对抗载荷，除模式匹配外还按**灾难后果类别**断言「每一类可怕后果是否全部实际拦截」。
+- **绕过矩阵** `bench/bypass_matrix.py`：2,310 个手工对抗载荷，除模式匹配外还按**灾难后果类别**断言「每一类可怕后果是否全部实际拦截」。
 
 ```bash
 qxt safe bench                 # 全量 (~3 分钟)
@@ -181,7 +202,7 @@ qxt safe report --release      # RELEASE 版: 数字 + 时间戳 + git 提交三
 |---|---|---|---|---|
 | 对抗样本 | 10,000 条 | 拦截召回 100% · 标记召回 100% · 误杀率 1.87% | 0 | — |
 | PowerShell | 5,000 条 | 正确率 100% · 漏放 0 | 0 | 0 |
-| 绕过矩阵 | 1,083 载荷 | 灾难意图类别 100% 拦截 | 0 | 1 |
+| 绕过矩阵 | 2,310 载荷 | 灾难意图类别 100% 拦截 | 0 | 1 |
 
 口径说明：绕过矩阵刻意 fail-closed，保留少量保守升级（如 `nc` Unicode 变形探测、`tar|ssh` 外传形态），故存在「语义良性但被标记」的误杀；对抗样本的 1.87% 误杀率同样来自这类保守判定。数字以 `qxt safe bench` 本地重跑为准。
 
@@ -209,7 +230,7 @@ qxt --print run "你好，一句话介绍你自己"     # 冒烟
 ```
 
 - **多语言文档纪律**：以 `README_zh-CN.md`（本文件）为权威母本，新增内容同步到全部 10 份，对译求「生动、零漂移」，**禁机械直译**。
-- **版本**：`v0.2.017`（0.x/Beta），破坏性变更会在小版本预告并提供迁移提示。
+- **版本**：`v0.2.018`（0.x/Beta），破坏性变更会在小版本预告并提供迁移提示。
 - **深挖**：九大引擎签名与新增工具走查见文末「附录」，插桩/二开/调试党请直接翻 `README_zh-CN.md` 尾部。
 
 ---

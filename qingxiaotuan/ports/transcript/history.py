@@ -245,10 +245,10 @@ def group_messages_into_snapshot(messages: list, options: Optional[dict] = None)
             current.steps.append(step)
             frame_count = 0
 
-            def next_frame_id():
+            def next_frame_id(_sid=step.step_id):
                 nonlocal frame_count
                 frame_count += 1
-                return f"{step.step_id}.f{frame_count}"
+                return f"{_sid}.f{frame_count}"
 
             for p in pending:
                 step.frames.append(_text_frame(next_frame_id(), "user", p.text, p.task_id, p.attachment_ids, p.prompt_ids))
