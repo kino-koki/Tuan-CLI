@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.kernel import Kernel, Plugin
 from .base import Tool, ToolContext, string_prop
@@ -24,6 +24,7 @@ TODO_FILE_NAME = Path(".qxt") / "todo.json"
 
 
 # ------------------------------------------------------------------ 持久化层
+
 
 def todo_file_path(workspace: Path) -> Path:
     """任务清单持久化路径: <workspace>/.qxt/todo.json。"""
@@ -57,7 +58,8 @@ def save_disk_todos(workspace: Path, todos: List[Dict[str, Any]]) -> Path:
 
 # ------------------------------------------------------------------ 校验 (与 session_tools 同语义)
 
-def _validate_todos(todos: Any) -> tuple:
+
+def _validate_todos(todos: Any) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
     """返回 (cleaned, error_msg)。cleaned 与 error_msg 互斥。"""
     if not isinstance(todos, list) or not todos:
         return None, "[错误] todo_write 需要非空的 todos 数组 (全量覆盖语义)"
@@ -70,8 +72,10 @@ def _validate_todos(todos: Any) -> tuple:
         if not content:
             return None, f"[错误] 第 {i} 项缺少 content"
         if status not in TODO_STATUSES:
-            return None, (f"[错误] 第 {i} 项 status 非法: {status} "
-                          f"(允许: {'/'.join(TODO_STATUSES)})")
+            return None, (
+                f"[错误] 第 {i} 项 status 非法: {status} "
+                f"(允许: {'/'.join(TODO_STATUSES)})"
+            )
         cleaned.append({"content": content, "status": status})
     if sum(1 for t in cleaned if t["status"] == "in_progress") > 1:
         return None, "[错误] 同时只能有一项 in_progress (请先完成当前项)"
@@ -80,14 +84,16 @@ def _validate_todos(todos: Any) -> tuple:
 
 # ------------------------------------------------------------------ handlers
 
+
 def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs) -> str:
     cleaned, err = _validate_todos(todos)
     if err is not None:
         return err
+    assert cleaned is not None
     ctx.todos = cleaned
     # 持久化到工作区 (失败不阻断: 内存态已生效)
     try:
-        save_disk_todos(ctx.workspace, cleaned)
+        save_disk_todos(Path(ctx.workspace or "."), cleaned)
     except Exception as exc:  # noqa: BLE001
         return f"任务清单已更新 ({sum(1 for t in cleaned if t['status'] == 'completed')}/{len(cleaned)} 完成)。(警告: 持久化失败: {exc})"
     try:
@@ -102,20 +108,22 @@ def _todo_list_handler(ctx: ToolContext, **_kwargs) -> str:
     todos: List[Dict[str, Any]] = list(getattr(ctx, "todos", None) or [])
     if not todos:
         # 内存态为空时从工作区恢复 (跨会话/新 Agent 场景)
-        todos = load_disk_todos(getattr(ctx, "workspace", "."))
+        todos = load_disk_todos(Path(getattr(ctx, "workspace", ".") or "."))
         if todos:
             ctx.todos = todos
     if not todos:
         return "(任务清单为空) 用 todo_write 先列出本任务的步骤。"
     icons = {"pending": "☐", "in_progress": "◔", "completed": "☑"}
-    lines = [f"{icons.get(t['status'], '☐')} [{t['status']}] {t['content']}"
-             for t in todos]
+    lines = [
+        f"{icons.get(t['status'], '☐')} [{t['status']}] {t['content']}" for t in todos
+    ]
     done = sum(1 for t in todos if t["status"] == "completed")
     lines.append(f"进度: {done}/{len(todos)}")
     return "\n".join(lines)
 
 
 # ------------------------------------------------------------------ 工具定义
+
 
 def build_todo_write_tool() -> Tool:
     return Tool(
@@ -136,9 +144,11 @@ def build_todo_write_tool() -> Tool:
                         "type": "object",
                         "properties": {
                             "content": string_prop("步骤内容"),
-                            "status": {"type": "string",
-                                       "enum": list(TODO_STATUSES),
-                                       "description": "该步骤当前状态"},
+                            "status": {
+                                "type": "string",
+                                "enum": list(TODO_STATUSES),
+                                "description": "该步骤当前状态",
+                            },
                         },
                         "required": ["content", "status"],
                     },

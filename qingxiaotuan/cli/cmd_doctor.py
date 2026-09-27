@@ -43,16 +43,37 @@ _PROJECT_DOC_NAMES = ("QXT.md", "AGENTS.md", "CLAUDE.md")
 
 # 配置文件里允许出现的顶层键 (未知键 -> 警告而非错误)
 _KNOWN_TOP_KEYS = {
-    "model", "mode", "skills", "memory", "hooks", "permissions", "language",
-    "ui", "network", "mcp", "engine", "fusion", "acp", "onboarding", "version",
+    "model",
+    "mode",
+    "skills",
+    "memory",
+    "hooks",
+    "permissions",
+    "language",
+    "ui",
+    "network",
+    "mcp",
+    "engine",
+    "fusion",
+    "acp",
+    "onboarding",
+    "version",
 }
 
 
 # ------------------------------------------------------------------ finding 构造
 
-def _f(category: str, status: str, message: str, *,
-      detail: str = "", fixable: bool = False, fixed: bool = False,
-      path: str = "") -> Dict[str, Any]:
+
+def _f(
+    category: str,
+    status: str,
+    message: str,
+    *,
+    detail: str = "",
+    fixable: bool = False,
+    fixed: bool = False,
+    path: str = "",
+) -> Dict[str, Any]:
     """构造一条结构化 finding。status ∈ {"ok","warn","error"}。"""
     return {
         "category": category,
@@ -67,16 +88,21 @@ def _f(category: str, status: str, message: str, *,
 
 # ------------------------------------------------------------------ 配置检查
 
+
 def _check_config(home: Path, fix: bool) -> List[Dict[str, Any]]:
     """检查 ~/.qingxiaotuan/config.yaml 语法 / 必填字段 / 未知字段 / 版本。"""
     findings: List[Dict[str, Any]] = []
     cfg_path = home / "config.yaml"
     if not cfg_path.exists():
-        findings.append(_f(
-            "config", "warn", "未找到用户配置文件 config.yaml",
-            detail="首次运行属正常; 运行 `qxt setup` 或 `qxt onboarding` 初始化。",
-            path=str(cfg_path),
-        ))
+        findings.append(
+            _f(
+                "config",
+                "warn",
+                "未找到用户配置文件 config.yaml",
+                detail="首次运行属正常; 运行 `qxt setup` 或 `qxt onboarding` 初始化。",
+                path=str(cfg_path),
+            )
+        )
         return findings
 
     raw = cfg_path.read_text(encoding="utf-8", errors="replace")
@@ -93,20 +119,28 @@ def _check_config(home: Path, fix: bool) -> List[Dict[str, Any]]:
         line = getattr(exc, "problem_mark", None)
         line_no = line.line + 1 if line is not None else None
         loc = f"第 {line_no} 行" if line_no else "未知位置"
-        findings.append(_f(
-            "config", "error", f"config.yaml 语法错误 ({loc})",
-            detail=str(exc).splitlines()[0] if str(exc) else "",
-            path=str(cfg_path),
-        ))
+        findings.append(
+            _f(
+                "config",
+                "error",
+                f"config.yaml 语法错误 ({loc})",
+                detail=str(exc).splitlines()[0] if str(exc) else "",
+                path=str(cfg_path),
+            )
+        )
         return findings
 
     if data is None:
         data = {}
     if not isinstance(data, dict):
-        findings.append(_f(
-            "config", "error", "config.yaml 顶层必须是键值映射 (mapping)",
-            path=str(cfg_path),
-        ))
+        findings.append(
+            _f(
+                "config",
+                "error",
+                "config.yaml 顶层必须是键值映射 (mapping)",
+                path=str(cfg_path),
+            )
+        )
         return findings
 
     findings.append(_f("config", "ok", "config.yaml 语法合法", path=str(cfg_path)))
@@ -114,41 +148,60 @@ def _check_config(home: Path, fix: bool) -> List[Dict[str, Any]]:
     # ---- 必填字段 (仅当文件存在且非空时才要求, 避免对全新安装误报) ----
     model = data.get("model") or {}
     if not isinstance(model, dict):
-        findings.append(_f("config", "error", "config.model 必须是映射", path=str(cfg_path)))
+        findings.append(
+            _f("config", "error", "config.model 必须是映射", path=str(cfg_path))
+        )
     else:
         if not model.get("provider"):
-            findings.append(_f(
-                "config", "warn", "config.model.provider 未设置",
-                detail="运行 `qxt models set <provider> <model>` 选择供应商。",
-                path=str(cfg_path),
-            ))
+            findings.append(
+                _f(
+                    "config",
+                    "warn",
+                    "config.model.provider 未设置",
+                    detail="运行 `qxt models set <provider> <model>` 选择供应商。",
+                    path=str(cfg_path),
+                )
+            )
         if not model.get("model"):
-            findings.append(_f(
-                "config", "warn", "config.model.model 未设置",
-                detail="运行 `qxt models set <provider> <model>` 选择模型。",
-                path=str(cfg_path),
-            ))
+            findings.append(
+                _f(
+                    "config",
+                    "warn",
+                    "config.model.model 未设置",
+                    detail="运行 `qxt models set <provider> <model>` 选择模型。",
+                    path=str(cfg_path),
+                )
+            )
 
     # ---- 未知顶层字段 (警告, 不阻塞) ----
     unknown = sorted(k for k in data.keys() if k not in _KNOWN_TOP_KEYS)
     if unknown:
-        findings.append(_f(
-            "config", "warn", f"config.yaml 含未知顶层字段: {', '.join(unknown)}",
-            detail="拼写错误或废弃配置; qxt 会忽略它们。",
-            path=str(cfg_path),
-        ))
+        findings.append(
+            _f(
+                "config",
+                "warn",
+                f"config.yaml 含未知顶层字段: {', '.join(unknown)}",
+                detail="拼写错误或废弃配置; qxt 会忽略它们。",
+                path=str(cfg_path),
+            )
+        )
 
     # ---- 版本兼容性: config 里若带 version 字段, 不应高于当前运行版本 ----
     cfg_ver = data.get("version")
     if isinstance(cfg_ver, str) and cfg_ver:
         try:
-            from packaging.version import Version  # type: ignore
+            from packaging.version import Version
+
             if Version(cfg_ver) > Version(__version__):
-                findings.append(_f(
-                    "config", "warn", f"配置版本 {cfg_ver} 高于当前 qxt {__version__}",
-                    detail="可能来自更新版本; 建议 `qxt upgrade` 或降级配置。",
-                    path=str(cfg_path),
-                ))
+                findings.append(
+                    _f(
+                        "config",
+                        "warn",
+                        f"配置版本 {cfg_ver} 高于当前 qxt {__version__}",
+                        detail="可能来自更新版本; 建议 `qxt upgrade` 或降级配置。",
+                        path=str(cfg_path),
+                    )
+                )
         except Exception:  # noqa: BLE001 - packaging 可选 / 版本号解析失败
             pass
 
@@ -156,6 +209,7 @@ def _check_config(home: Path, fix: bool) -> List[Dict[str, Any]]:
 
 
 # ------------------------------------------------------------------ 技能检查
+
 
 def _parse_frontmatter(path: Path) -> Tuple[Dict[str, Any], str, Optional[str]]:
     """读取技能文件, 返回 (meta_dict, body, error)。error 非 None 表示解析失败。"""
@@ -167,9 +221,10 @@ def _parse_frontmatter(path: Path) -> Tuple[Dict[str, Any], str, Optional[str]]:
     if not m:
         return {}, text, "缺少 YAML frontmatter (开头应为 --- )"
     fm_text = m.group(1)
-    body = text[m.end():]
+    body = text[m.end() :]
     try:
         import yaml
+
         meta = yaml.safe_load(fm_text) or {}
     except yaml.YAMLError as exc:
         return {}, body, f"frontmatter YAML 语法错误: {str(exc).splitlines()[0]}"
@@ -204,13 +259,17 @@ def _check_skills(home: Path, workspace: Path, fix: bool) -> List[Dict[str, Any]
                 findings.extend(_check_one_skill(sk, seen_slugs, fix))
 
     if scanned == 0:
-        findings.append(_f("skills", "ok", "未发现用户/项目技能 (正常, 可后续用 / 蒸馏沉淀)"))
+        findings.append(
+            _f("skills", "ok", "未发现用户/项目技能 (正常, 可后续用 / 蒸馏沉淀)")
+        )
     else:
         findings.append(_f("skills", "ok", f"共扫描 {scanned} 个技能文件"))
     return findings
 
 
-def _check_one_skill(path: Path, seen_slugs: Dict[str, Path], fix: bool) -> List[Dict[str, Any]]:
+def _check_one_skill(
+    path: Path, seen_slugs: Dict[str, Path], fix: bool
+) -> List[Dict[str, Any]]:
     """校验单个技能文件: name/description 必填, 正文非空, slug 不重复。"""
     out: List[Dict[str, Any]] = []
     slug = path.parent.name if path.name == "SKILL.md" else path.stem
@@ -223,26 +282,39 @@ def _check_one_skill(path: Path, seen_slugs: Dict[str, Path], fix: bool) -> List
 
     # 重复 slug
     if slug in seen_slugs:
-        out.append(_f(
-            "skills", "warn", f"技能 slug 重复: {slug}",
-            detail=f"{seen_slugs[slug]} 与 {rel} 同名, 后者被忽略。",
-            path=rel,
-        ))
+        out.append(
+            _f(
+                "skills",
+                "warn",
+                f"技能 slug 重复: {slug}",
+                detail=f"{seen_slugs[slug]} 与 {rel} 同名, 后者被忽略。",
+                path=rel,
+            )
+        )
     else:
         seen_slugs[slug] = path
 
     missing = [k for k in ("name", "description") if not str(meta.get(k, "")).strip()]
     if missing:
-        out.append(_f(
-            "skills", "error", f"技能 {slug}: frontmatter 缺少必填字段 {', '.join(missing)}",
-            detail="必填: name, description。",
-            path=rel, fixable=True,
-        ))
+        out.append(
+            _f(
+                "skills",
+                "error",
+                f"技能 {slug}: frontmatter 缺少必填字段 {', '.join(missing)}",
+                detail="必填: name, description。",
+                path=rel,
+                fixable=True,
+            )
+        )
         if fix:
             fixed = _fix_skill_frontmatter(path, meta, missing)
             if fixed:
-                out[-1] = {**out[-1], "status": "warn", "fixed": True,
-                           "message": f"技能 {slug}: 已补占位字段 {', '.join(missing)} (请改成真实内容)"}
+                out[-1] = {
+                    **out[-1],
+                    "status": "warn",
+                    "fixed": True,
+                    "message": f"技能 {slug}: 已补占位字段 {', '.join(missing)} (请改成真实内容)",
+                }
     elif not body.strip():
         out.append(_f("skills", "warn", f"技能 {slug}: 正文为空", path=rel))
     else:
@@ -250,7 +322,9 @@ def _check_one_skill(path: Path, seen_slugs: Dict[str, Path], fix: bool) -> List
     return out
 
 
-def _fix_skill_frontmatter(path: Path, meta: Dict[str, Any], missing: List[str]) -> bool:
+def _fix_skill_frontmatter(
+    path: Path, meta: Dict[str, Any], missing: List[str]
+) -> bool:
     """给缺字段的技能 frontmatter 补占位值 (安全可逆: 仅追加行, 不改正文)。"""
     try:
         text = path.read_text(encoding="utf-8")
@@ -262,7 +336,7 @@ def _fix_skill_frontmatter(path: Path, meta: Dict[str, Any], missing: List[str])
             placeholder = f"TODO-{key}"
             lines.append(f"{key}: {placeholder}")
         new_fm = "\n".join(lines)
-        new_text = text[:m.start(1)] + new_fm + text[m.end(1):]
+        new_text = text[: m.start(1)] + new_fm + text[m.end(1) :]
         path.write_text(new_text, encoding="utf-8")
         return True
     except OSError:
@@ -270,6 +344,7 @@ def _fix_skill_frontmatter(path: Path, meta: Dict[str, Any], missing: List[str])
 
 
 # ------------------------------------------------------------------ 项目指令检查
+
 
 def _check_project_docs(workspace: Path) -> List[Dict[str, Any]]:
     """检查 QXT.md / AGENTS.md / CLAUDE.md 可读性 / 体积 / 编码。"""
@@ -283,7 +358,9 @@ def _check_project_docs(workspace: Path) -> List[Dict[str, Any]]:
         try:
             raw = p.read_bytes()
         except OSError as exc:
-            findings.append(_f("project", "error", f"{name}: 无法读取 ({exc})", path=str(p)))
+            findings.append(
+                _f("project", "error", f"{name}: 无法读取 ({exc})", path=str(p))
+            )
             continue
         size = len(raw)
         # 编码检测: 严格 UTF-8 解码, 失败即警告
@@ -294,21 +371,36 @@ def _check_project_docs(workspace: Path) -> List[Dict[str, Any]]:
             enc_ok = False
         item = _f("project", "ok", f"{name}: 可读 ({size} 字节)", path=str(p))
         if not enc_ok:
-            item = _f("project", "warn", f"{name}: 非 UTF-8 编码",
-                      detail="建议转存为 UTF-8 (无 BOM), 否则 Agent 可能误读。", path=str(p))
+            item = _f(
+                "project",
+                "warn",
+                f"{name}: 非 UTF-8 编码",
+                detail="建议转存为 UTF-8 (无 BOM), 否则 Agent 可能误读。",
+                path=str(p),
+            )
         elif size > _PROJECT_DOC_MAX:
-            item = _f("project", "warn", f"{name}: 体积 {size//1024}KB 超过 32KB 建议上限",
-                      detail="过长会占用上下文; 建议拆分或精简。", path=str(p))
+            item = _f(
+                "project",
+                "warn",
+                f"{name}: 体积 {size // 1024}KB 超过 32KB 建议上限",
+                detail="过长会占用上下文; 建议拆分或精简。",
+                path=str(p),
+            )
         findings.append(item)
     if not found_any:
-        findings.append(_f(
-            "project", "ok", "未发现 QXT.md / AGENTS.md / CLAUDE.md (可用 /init 生成)",
-            path=str(workspace),
-        ))
+        findings.append(
+            _f(
+                "project",
+                "ok",
+                "未发现 QXT.md / AGENTS.md / CLAUDE.md (可用 /init 生成)",
+                path=str(workspace),
+            )
+        )
     return findings
 
 
 # ------------------------------------------------------------------ 环境检查
+
 
 def _check_env(home: Path, workspace: Path, fix: bool) -> List[Dict[str, Any]]:
     """Python 版本 / git / 工作区可写 / venv 检测。"""
@@ -317,23 +409,34 @@ def _check_env(home: Path, workspace: Path, fix: bool) -> List[Dict[str, Any]]:
     # Python 版本 >= 3.10
     v = sys.version_info
     if v >= (3, 10):
-        findings.append(_f("env", "ok", f"Python {v.major}.{v.minor}.{v.micro} (≥3.10)"))
+        findings.append(
+            _f("env", "ok", f"Python {v.major}.{v.minor}.{v.micro} (≥3.10)")
+        )
     else:
-        findings.append(_f(
-            "env", "error", f"Python {v.major}.{v.minor} 过低",
-            detail="qxt 需要 Python ≥ 3.10, 请升级解释器。",
-        ))
+        findings.append(
+            _f(
+                "env",
+                "error",
+                f"Python {v.major}.{v.minor} 过低",
+                detail="qxt 需要 Python ≥ 3.10, 请升级解释器。",
+            )
+        )
 
     # git 可用性
     import shutil
+
     git_path = shutil.which("git")
     if git_path:
         findings.append(_f("env", "ok", f"git 可用 ({git_path})"))
     else:
-        findings.append(_f(
-            "env", "warn", "未检测到 git",
-            detail="版本感知 / /diff / /undo 等功能需要 git; 建议安装 Git for Windows。",
-        ))
+        findings.append(
+            _f(
+                "env",
+                "warn",
+                "未检测到 git",
+                detail="版本感知 / /diff / /undo 等功能需要 git; 建议安装 Git for Windows。",
+            )
+        )
 
     # 工作区可写
     probe = workspace / ".qxt_write_probe"
@@ -348,10 +451,18 @@ def _check_env(home: Path, workspace: Path, fix: bool) -> List[Dict[str, Any]]:
     # venv 检测
     in_venv = bool(os.environ.get("VIRTUAL_ENV"))
     if in_venv:
-        findings.append(_f("env", "ok", f"运行于虚拟环境 ({os.environ['VIRTUAL_ENV']})"))
+        findings.append(
+            _f("env", "ok", f"运行于虚拟环境 ({os.environ['VIRTUAL_ENV']})")
+        )
     else:
-        findings.append(_f("env", "warn", "未检测到虚拟环境 (VIRTUAL_ENV 未设置)",
-                           detail="建议在项目 venv 内运行, 避免污染全局解释器。"))
+        findings.append(
+            _f(
+                "env",
+                "warn",
+                "未检测到虚拟环境 (VIRTUAL_ENV 未设置)",
+                detail="建议在项目 venv 内运行, 避免污染全局解释器。",
+            )
+        )
 
     # --fix: 确保 home 与 skills 目录存在
     if fix:
@@ -364,12 +475,19 @@ def _check_env(home: Path, workspace: Path, fix: bool) -> List[Dict[str, Any]]:
                 except OSError:
                     pass
         if created:
-            findings.append(_f("env", "ok", f"--fix: 已创建缺失目录 {len(created)} 个",
-                               detail="; ".join(created)))
+            findings.append(
+                _f(
+                    "env",
+                    "ok",
+                    f"--fix: 已创建缺失目录 {len(created)} 个",
+                    detail="; ".join(created),
+                )
+            )
     return findings
 
 
 # ------------------------------------------------------------------ 缓存自检
+
 
 def _check_cache(home: Path) -> List[Dict[str, Any]]:
     """system prompt 稳定段哈希 + 记忆存储可读写。"""
@@ -380,13 +498,18 @@ def _check_cache(home: Path) -> List[Dict[str, Any]]:
     # 仅证明它可被导入且哈希稳定, 不报错。
     try:
         from ..core import prompts as _prompts  # noqa: PLC0415
+
         src = getattr(_prompts, "__file__", None)
         if src and Path(src).exists():
             digest = hashlib.sha256(Path(src).read_bytes()).hexdigest()[:12]
-            findings.append(_f(
-                "cache", "ok", f"system prompt 模块可导入 (sha256:{digest})",
-                detail="稳定段缓存边界见 docs/gap_analysis (A1)。",
-            ))
+            findings.append(
+                _f(
+                    "cache",
+                    "ok",
+                    f"system prompt 模块可导入 (sha256:{digest})",
+                    detail="稳定段缓存边界见 docs/gap_analysis (A1)。",
+                )
+            )
         else:
             findings.append(_f("cache", "ok", "system prompt 模块可导入"))
     except Exception as exc:  # noqa: BLE001
@@ -403,13 +526,18 @@ def _check_cache(home: Path) -> List[Dict[str, Any]]:
         if back == "ok":
             findings.append(_f("cache", "ok", f"记忆存储可读写 ({mem_dir})"))
         else:
-            findings.append(_f("cache", "error", "记忆存储读写不一致", path=str(mem_dir)))
+            findings.append(
+                _f("cache", "error", "记忆存储读写不一致", path=str(mem_dir))
+            )
     except OSError as exc:
-        findings.append(_f("cache", "error", f"记忆存储不可写: {exc}", path=str(mem_dir)))
+        findings.append(
+            _f("cache", "error", f"记忆存储不可写: {exc}", path=str(mem_dir))
+        )
     return findings
 
 
 # ------------------------------------------------------------------ 网络检查 (可选)
+
 
 def _check_network(home: Path) -> List[Dict[str, Any]]:
     """--network: 探测已配置 API endpoint 的可达性。"""
@@ -419,6 +547,7 @@ def _check_network(home: Path) -> List[Dict[str, Any]]:
     if cfg_path.exists():
         try:
             import yaml
+
             data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
             model = data.get("model") or {}
             base_url = model.get("base_url") or ""
@@ -430,6 +559,7 @@ def _check_network(home: Path) -> List[Dict[str, Any]]:
     try:
         import ssl
         import urllib.request
+
         t0 = time.time()
         req = urllib.request.Request(base_url, method="HEAD")
         ctx = ssl.create_default_context()
@@ -438,15 +568,27 @@ def _check_network(home: Path) -> List[Dict[str, Any]]:
         ms = (time.time() - t0) * 1000
         findings.append(_f("network", "ok", f"{base_url} 可达 ({ms:.0f}ms)"))
     except Exception as exc:  # noqa: BLE001
-        findings.append(_f("network", "warn", f"{base_url} 不可达: {exc}",
-                           detail="检查代理 / --offline / 网络连接。"))
+        findings.append(
+            _f(
+                "network",
+                "warn",
+                f"{base_url} 不可达: {exc}",
+                detail="检查代理 / --offline / 网络连接。",
+            )
+        )
     return findings
 
 
 # ------------------------------------------------------------------ 主编排
 
-def run_checks(workspace: Optional[Path] = None, *, fix: bool = False,
-               network: bool = False, home: Optional[Path] = None) -> List[Dict[str, Any]]:
+
+def run_checks(
+    workspace: Optional[Path] = None,
+    *,
+    fix: bool = False,
+    network: bool = False,
+    home: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
     """运行全部诊断, 返回结构化 findings (纯函数, 不打印)。"""
     home = Path(home) if home else home_dir()
     workspace = Path(workspace) if workspace else Path.cwd()
@@ -513,7 +655,8 @@ def _render_rich(findings: List[Dict[str, Any]]) -> None:
 
 def _render_json(findings: List[Dict[str, Any]]) -> int:
     import json
-    payload = {
+
+    payload: Dict[str, Any] = {
         "version": __version__,
         "exit_code": _exit_code(findings),
         "summary": {
@@ -524,20 +667,38 @@ def _render_json(findings: List[Dict[str, Any]]) -> int:
         "findings": findings,
     }
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
-    return payload["exit_code"]
+    return int(payload["exit_code"])
 
 
 # ------------------------------------------------------------------ CLI 入口
 
+
 def cmd_doctor(args) -> int:
-    """`qxt doctor` 入口: 运行诊断, 按 --json/--fix/--network 分发。"""
+    """`qxt doctor` 入口: 运行诊断, 按 --json/--fix/--network/--compact 分发。"""
     fix = bool(getattr(args, "fix", False))
     as_json = bool(getattr(args, "json", False))
     network = bool(getattr(args, "network", False))
+    compact = bool(getattr(args, "compact", False))
     workspace = getattr(args, "workspace", None) or os.getcwd()
 
     findings = run_checks(Path(workspace), fix=fix, network=network)
+    exit_code = _exit_code(findings)
     if as_json:
         return _render_json(findings)
     _render_rich(findings)
-    return _exit_code(findings)
+    # --compact: 追加上下文压缩存活自检报告 (原 `qxt compact --verify`, 已并入 doctor)。
+    # 只读: 不执行压缩, 只检查哪些状态能从磁盘/服务重建。
+    if compact:
+        from ..runtime.session.compact_survival import build_survival_report
+        from ..config.loader import Config as _Cfg
+
+        cfg = _Cfg()
+        report = build_survival_report(
+            home=cfg.home,
+            workspace=str(Path(workspace).resolve()),
+            config=cfg,
+            memory_store=None,
+            skill_manager=None,
+        )
+        print("\n" + report)
+    return exit_code

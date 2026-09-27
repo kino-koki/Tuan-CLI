@@ -1,4 +1,4 @@
-"""Cron CLI + 守护 + 精确引用跳转 (qxt open) 的离线测试。"""
+"""Cron CLI + 守护的离线测试。"""
 import os
 import sys
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from qingxiaotuan.cron.store import CronStore
-from qingxiaotuan.cli.commands import cmd_cron, cmd_open
+from qingxiaotuan.cli.commands import cmd_cron
 from qingxiaotuan.cli.parser import build_parser
 
 
@@ -143,32 +143,3 @@ def test_daemon_heartbeat_path(tmp_path):
     assert _heartbeat_path(tmp_path) == tmp_path / "cron" / "daemon.heartbeat"
 
 
-# ------------------------------------------------------------------ qxt open (精确引用跳转)
-
-def test_cmd_open_parses_file_line(tmp_path, monkeypatch):
-    f = tmp_path / "demo.py"
-    f.write_text("line1\nline2\nline3\n", encoding="utf-8")
-    opened = {}
-    import qingxiaotuan.tools.code as code_mod
-    monkeypatch.setattr(code_mod, "_open_in_editor",
-                        lambda p, ln, editor="": opened.update(path=str(p), line=ln) or "opened")
-    parser = build_parser()
-    args = parser.parse_args(["open", f"{f}:2"])
-    assert args.target == f"{f}:2"
-    assert cmd_open(args) == 0
-    assert opened["line"] == 2
-    assert opened["path"].endswith("demo.py")
-
-
-def test_cmd_open_missing_file(tmp_path):
-    parser = build_parser()
-    args = parser.parse_args(["open", "nonexistent.py:3"])
-    assert cmd_open(args) == 1
-
-
-def test_cmd_open_bad_line(tmp_path):
-    f = tmp_path / "a.py"
-    f.write_text("x\n", encoding="utf-8")
-    parser = build_parser()
-    args = parser.parse_args(["open", f"{f}:abc"])
-    assert cmd_open(args) == 1

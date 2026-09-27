@@ -57,8 +57,14 @@ def test_quick_start_card_has_key_commands(tmp_path, monkeypatch, capsys):
 
 
 def test_interactive_welcome_and_mark(tmp_path, monkeypatch, capsys):
-    """交互模式 (模拟输入): 走完整流程并写标记。"""
+    """交互模式 (模拟输入): 走完整流程并写标记。
+
+    tmp_path 可能位于任意 git 仓库内 (如仓库内 basetemp 时),
+    _detect_git_repo 会因此多问一个 QXT.md 生成问题, 导致输入耗尽。
+    此处钉死 "非 git 仓库", 让交互固定为: 供应商选择 + 自动记忆 两个提问。
+    """
     monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(cmd_onboarding, "_detect_git_repo", lambda ws: False)
     home = tmp_path / "home"
     inputs = iter(["0", "n"])  # 跳过供应商, 关闭自动记忆
     with mock.patch("builtins.input", side_effect=lambda *a: next(inputs)):
@@ -74,5 +80,7 @@ def test_onboarding_disabled_config(tmp_path, monkeypatch):
     monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
     home = tmp_path / "home"
     home.mkdir(parents=True)
-    (home / "config.yaml").write_text("onboarding:\n  enabled: false\n", encoding="utf-8")
+    (home / "config.yaml").write_text(
+        "onboarding:\n  enabled: false\n", encoding="utf-8"
+    )
     assert cmd_onboarding.is_first_run(home) is False

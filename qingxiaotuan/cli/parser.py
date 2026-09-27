@@ -10,22 +10,21 @@
 
 子命令一览:
     qxt dev "任务"            进入自主开发循环 (分析→实现→自测→核实→汇报, 直到你满意)
+    qxt dev codedev demo|doctor|retrieve|verify   代码开发子系统 (检索/验证/分解)
     qxt run "任务"            headless 一次性任务, 跑完退出 (适合脚本/CI)
     qxt agent "任务"          后台自主任务 (终端不阻塞)
     qxt setup                 初始化向导 (API Key 等)
-    qxt doctor                环境健康检查
+    qxt doctor [--compact]    环境健康检查 (--compact 额外跑上下文压缩存活自检)
     qxt models                配置/热切换模型供应商 (51 家开箱即用, 含本地 Ollama/llama.cpp)
-    qxt config get/set/dump   配置管理
+    qxt config get/set/dump   配置管理 (含 mode: qxt config get mode / qxt config set mode yolo)
     qxt plugin list           查看微内核插件与服务
     qxt skill list/show       技能管理
     qxt memory list/search    记忆管理
     qxt cron add/list/remove/enable/disable/edit/run/logs/tick/start/stop/status  定时任务 (含常驻守护)
-    qxt open <file>[:<line>]  精确引用跳转 (在编辑器中打开指定行)
-    qxt ext engines/call/selftest/info  外部能力引擎 (纯 Python) 调试
     qxt improve summarize/apply      自我改进闭环 (从执行历史提炼规则与技能草稿)
     qxt tutorial list/run <name>     任务驱动内置教程 (安全/撤销/协作/成本)
-    qxt session list/resume/delete   会话管理 (列出/恢复/删除)
-    qxt bench cache/latency          基准测试 (缓存命中率 / 响应延迟)
+    qxt session list/resume/delete/replay/trajectory  会话管理 (回放/轨迹已并入 session)
+    qxt undo [--impact]       事务化回滚 (--impact 展示操作账本影响半径)
     qxt migrate detect/run/status    旧版 ~/.kimi 配置/会话 → 新版 一键迁移
     qxt network configuration      联网/搜索配置 (搜索上限/默认条数/截断/top_k/超时; 短写 qxt net con)
 """
@@ -50,14 +49,6 @@ def _resolve_func(name: str):
         mod = importlib.import_module(".cmd_gh", __package__)
     elif name == "cmd_acp":
         mod = importlib.import_module(".cmd_acp", __package__)
-    elif name == "cmd_replay":
-        mod = importlib.import_module(".cmd_replay", __package__)
-    elif name == "cmd_trajectory":
-        mod = importlib.import_module(".cmd_trajectory", __package__)
-    elif name == "cmd_arch":
-        mod = importlib.import_module(".cmd_arch", __package__)
-    elif name == "cmd_codedev":
-        mod = importlib.import_module(".cmd_codedev", __package__)
     elif name == "cmd_safe":
         mod = importlib.import_module(".cmd_safe", __package__)
     elif name == "cmd_harden":
@@ -66,21 +57,17 @@ def _resolve_func(name: str):
         mod = importlib.import_module(".cmd_migrate", __package__)
     elif name == "cmd_network":
         mod = importlib.import_module(".cmd_network", __package__)
-    elif name == "cmd_others":
-        mod = importlib.import_module(".cmd_others", __package__)
     elif name == "cmd_rewind":
         mod = importlib.import_module(".cmd_rewind", __package__)
     elif name == "cmd_project":
         mod = importlib.import_module(".cmd_project", __package__)
     elif name == "cmd_worktree":
         mod = importlib.import_module(".cmd_worktree", __package__)
-    elif name == "cmd_compact":
-        mod = importlib.import_module(".cmd_compact", __package__)
     elif name == "cmd_chat_handoff":
         mod = importlib.import_module(".cmd_handoff", __package__)
     else:
         # 其余命令 (cmd_run / cmd_chat / cmd_dev / cmd_config / cmd_doctor /
-        # cmd_onboarding / cmd_commands / ...) 统一走 commands 的 PEP 562 惰性路由,
+        # cmd_onboarding / cmd_commands / cmd_session / ...) 统一走 commands 的 PEP 562 惰性路由,
         # 其 _CMD_SOURCES 覆盖所有已注册 func; 不可再漏分支 (否则 UnboundLocalError)。
         mod = importlib.import_module(".commands", __package__)
     return getattr(mod, name)
@@ -399,23 +386,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func="cmd_bg")
 
-    p = sub.add_parser("bench", help="基准测试 (缓存命中率 / 延迟)")
-    bsub = p.add_subparsers(dest="bench_cmd", required=True)
-    bc = bsub.add_parser("cache", help="用固定长对话脚本实测 prompt cache 命中率")
-    bc.add_argument("--rounds", type=int, default=8, help="对话轮数 (默认 8)")
-    bc.add_argument("--task", default="解释一下当前工作区的结构", help="首轮任务描述")
-    bl = bsub.add_parser("latency", help="多轮实测模型响应延迟与吞吐")
-    bl.add_argument("--rounds", type=int, default=5, help="请求轮数 (默认 5)")
-    bl.add_argument("--task", default="ping", help="请求内容 (默认 ping)")
-    p.set_defaults(func="cmd_bench")
-
     p = sub.add_parser("setup", help="初始化向导 (Hermes 风格: 快速/完整/空白)")
     p.add_argument(
         "--quick", action="store_true", help="跳过模式选择, 直接进入快速设置"
     )
     p.set_defaults(func="cmd_setup")
     pd = sub.add_parser(
-        "doctor", help="环境健康检查 (配置/技能/项目指令/环境/缓存/网络)"
+        "doctor", help="环境健康检查 (配置/技能/项目指令/环境/缓存/网络/压缩存活)"
     )
     pd.add_argument(
         "--fix",
@@ -428,17 +405,15 @@ def build_parser() -> argparse.ArgumentParser:
     pd.add_argument(
         "--network", action="store_true", help="额外探测 API endpoint 可达性"
     )
-    pd.set_defaults(func="cmd_doctor")
-    pc = sub.add_parser(
-        "compact", help="上下文压缩自检: 检查压缩后哪些状态能从磁盘重建"
-    )
-    pc.add_argument(
-        "--verify",
+    pd.add_argument(
+        "--compact",
         action="store_true",
-        help="输出 compact 存活状态检查报告 (SOUL/项目指令/MEMORY.md/Git/技能/todo/goal)",
+        help="额外跑上下文压缩存活自检 (SOUL/项目指令/MEMORY.md/Git/技能/todo/goal 能否从磁盘重建)",
     )
-    pc.add_argument("--workspace", default=None, help="指定工作区 (默认当前目录)")
-    pc.set_defaults(func="cmd_compact")
+    pdcw = pd.add_argument(
+        "--workspace", default=None, help="指定工作区 (默认当前目录, --compact 时用)"
+    )
+    pd.set_defaults(func="cmd_doctor")
 
     p = sub.add_parser(
         "onboarding", help="首次运行引导 (欢迎/选模型/生成 QXT.md/快速上手)"
@@ -450,15 +425,6 @@ def build_parser() -> argparse.ArgumentParser:
         "commands", help="以 JSON 输出所有可用斜杠命令及其元数据 (供 IDE/外部工具消费)"
     )
     p.set_defaults(func="cmd_commands")
-
-    p = sub.add_parser("mode", help="查看/切换默认运行模式 (standard/yolo)")
-    p.add_argument(
-        "value",
-        nargs="?",
-        choices=["standard", "yolo"],
-        help="可选: 指定则切换默认模式",
-    )
-    p.set_defaults(func="cmd_mode")
 
     p = sub.add_parser(
         "models", help="配置/热切换模型供应商 (开箱支持51家, 含 Ollama/llama.cpp 本地)"
@@ -613,10 +579,6 @@ def build_parser() -> argparse.ArgumentParser:
     crsub.add_parser("status", help="查看守护与任务状态")
     p.set_defaults(func="cmd_cron")
 
-    p = sub.add_parser("open", help="打开文件并定位到行 (精确引用跳转)")
-    p.add_argument("target", help="文件路径, 可带行号: <file>[:<line>]")
-    p.set_defaults(func="cmd_open")
-
     p = sub.add_parser("mcp", help="MCP 协议: 接入外部 MCP Server 工具")
     psub = p.add_subparsers(dest="mcp_cmd", required=True)
     psub.add_parser("list", help="列出已配置的 MCP server 与桥接工具")
@@ -676,31 +638,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func="cmd_hooks")
 
-    p = sub.add_parser("arch", help="五层架构: 安全/执行/编排/上下文/可观测 自检与演示")
-    asub = p.add_subparsers(dest="arch_cmd", required=True)
-    asub.add_parser("demo", help="端到端跑一遍五层, 打印自检结果")
-    asub.add_parser("status", help="查看五层组件可用性与内核注册状态")
-    ap = asub.add_parser("policy", help="生成一个示例不可变安全策略 (seal 后落盘)")
-    ap.add_argument("--out", default="immutable-policy.json", help="输出文件路径")
-    ap.add_argument(
-        "--master-key", default="demo-master-key-change-me", help="签名主密钥"
-    )
-    p.set_defaults(func="cmd_arch")
-
-    p = sub.add_parser(
-        "codedev",
-        help="代码开发子系统: 检索增强 + 验证闸门 + 规格分解 (对标 Claude Code)",
-    )
-    csub = p.add_subparsers(dest="codedev_cmd", required=True)
-    csub.add_parser("demo", help="造一个临时项目, 端到端演示检索/验证/分解/编排")
-    csub.add_parser("doctor", help="检查子系统健康度 (索引/检测器/编排可用性)")
-    cp = csub.add_parser("retrieve", help="对给定任务在项目里检索相关代码上下文")
+    # ---- dev codedev 子命令组 (原顶级 `qxt codedev`, 已并入 dev) ----
+    # dev 的 task 是自由文本位置参数, 无法在其 parser 上直接挂 argparse subparsers
+    # (否则任意任务首词会被当成子命令而报 invalid choice)。这里注册一个隐藏顶层
+    # 解析器承载 codedev 的子命令与参数; main() 会把 `dev codedev ...` 透明改写过来,
+    # 对用户而言仍是 `qxt dev codedev demo|doctor|retrieve|verify`。
+    pcd = sub.add_parser("__dev_codedev", help=argparse.SUPPRESS)
+    cdsub = pcd.add_subparsers(dest="codedev_cmd", required=True)
+    cdsub.add_parser("demo", help="造一个临时项目, 端到端演示检索/验证/分解/编排")
+    cdsub.add_parser("doctor", help="检查子系统健康度 (索引/检测器/编排可用性)")
+    cp = cdsub.add_parser("retrieve", help="对给定任务在项目里检索相关代码上下文")
     cp.add_argument("task", help="自然语言任务 (支持中文)")
     cp.add_argument("--root", default=".", help="待检索的项目根目录")
     cp.add_argument("--top-k", type=int, default=8, help="返回的相关符号数")
-    cv = csub.add_parser("verify", help="在给定目录运行验证闸门 (build/test/lint)")
+    cv = cdsub.add_parser("verify", help="在给定目录运行验证闸门 (build/test/lint)")
     cv.add_argument("--cwd", default=".", help="运行目录")
-    p.set_defaults(func="cmd_codedev")
+    pcd.set_defaults(func="cmd_codedev")
 
     p = sub.add_parser(
         "undo", help="事务化精确回滚 (账本持久化于 .qxt/ledger, 可跨进程)"
@@ -708,30 +661,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "target", nargs="?", default="", help="可选: N(步数) / <file> / all / --safe"
     )
-    p.set_defaults(func="cmd_undo")
-
-    p = sub.add_parser("impact", help="展示操作账本与影响半径 (哪些文件被改、改了几步)")
-    p.set_defaults(func="cmd_impact")
-
-    p = sub.add_parser("ext", help="外部能力引擎 (纯 Python) 调试与自检")
-    exsub = p.add_subparsers(dest="ext_cmd", required=True)
-    exsub.add_parser("engines", help="列出环境中真正可用的引擎").set_defaults(
-        func="cmd_ext"
+    p.add_argument(
+        "--impact",
+        action="store_true",
+        help="只展示操作账本与影响半径 (原 `qxt impact`), 不执行回滚",
     )
-    ec = exsub.add_parser("call", help="调用某引擎的某方法 (参数用 JSON)")
-    ec.add_argument("engine", help="引擎名, 如 crypto / rules / search")
-    ec.add_argument("method", help="方法名, 如 selftest / load / search")
-    ec.add_argument("params", nargs="?", default="{}", help="JSON 对象参数 (默认 {})")
-    ec.add_argument("--timeout", type=float, default=60.0, help="请求超时秒数")
-    ec.set_defaults(func="cmd_ext")
-    est = exsub.add_parser("selftest", help="逐个启动引擎跑 list/ping, 报告健康度")
-    est.add_argument("engines", nargs="*", help="可选: 只测指定的引擎名")
-    est.add_argument("--timeout", type=float, default=15.0, help="单引擎超时秒数")
-    est.set_defaults(func="cmd_ext")
-    ei = exsub.add_parser("info", help="显示某引擎的元信息 (方法/版本)")
-    ei.add_argument("engine", help="引擎名")
-    ei.add_argument("--timeout", type=float, default=15.0, help="请求超时秒数")
-    ei.set_defaults(func="cmd_ext")
+    p.set_defaults(func="cmd_undo")
 
     p = sub.add_parser("improve", help="自我改进闭环: 从执行历史提炼规则与技能草稿")
     impsub = p.add_subparsers(dest="improve_cmd", required=True)
@@ -776,6 +711,28 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("root", nargs="?", help="根会话序号或会话ID (省略取最近根)")
     rf = sesub.add_parser("ref", help="把 @session / @# 引用展开为内容")
     rf.add_argument("text", nargs="+", help="含引用的文本 (如 '参考 @session:<id>')")
+    # --- 回放 / 轨迹 (原顶级 qxt replay / qxt trajectory, 已并入 session) ---
+    rp = sesub.add_parser("replay", help="回放历史会话 (事件溯源重建时间线)")
+    rp.add_argument(
+        "session", nargs="?", default=None, help="会话 ID 或前缀 (默认列出最近会话)"
+    )
+    rp.add_argument("--json", action="store_true", help="以 JSON 输出 Trajectory")
+    rp.add_argument(
+        "--export", metavar="PATH", default=None, help="把回放导出为 Markdown 文件"
+    )
+    rp.add_argument("--list", action="store_true", help="列出最近会话")
+    tj = sesub.add_parser("trajectory", help="Trajectory 轨迹: 结构化导出/查看会话")
+    tjsub = tj.add_subparsers(dest="traj_cmd")
+    tjs = tjsub.add_parser("show", help="查看会话的 Trajectory 摘要")
+    tjs.add_argument("session", help="会话 ID 或前缀")
+    tje = tjsub.add_parser("export", help="导出 Trajectory 为 JSON / Markdown")
+    tje.add_argument("session", help="会话 ID 或前缀")
+    tje.add_argument(
+        "--format", choices=["json", "md"], default="md", help="导出格式 (默认 md)"
+    )
+    tje.add_argument(
+        "--out", metavar="PATH", default=None, help="输出文件路径 (默认 stdout)"
+    )
     p.set_defaults(func="cmd_session")
 
     p = sub.add_parser("usercmd", help="用户自定义斜杠命令 (列出)")
@@ -898,10 +855,6 @@ def build_parser() -> argparse.ArgumentParser:
     srp.set_defaults(safe_cmd="report")
     p.set_defaults(func="cmd_safe")
 
-    p = sub.add_parser("others", help="能力目录: 一句话看懂 qxt 能做什么 (新手入口)")
-    p.add_argument("--show", action="store_true", help="同时显示每条对应的真实命令")
-    p.set_defaults(func="cmd_others")
-
     p = sub.add_parser(
         "gh",
         help="GitHub 原生绑定: 调用本机 gh CLI (原生体验), 带不可绕过的安全沙箱",
@@ -915,32 +868,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="随 gh 的命令与参数, 原样透传本机 gh (可含 repo view/rclone/search/api 等)",
     )
     p.set_defaults(func="cmd_gh")
-
-    # ---- A4 事件溯源 / Trajectory 回放 ----
-    p = sub.add_parser("replay", help="回放历史会话 (事件溯源重建)")
-    p.add_argument(
-        "session", nargs="?", default=None, help="会话 ID 或前缀 (默认列出最近会话)"
-    )
-    p.add_argument("--json", action="store_true", help="以 JSON 输出 Trajectory")
-    p.add_argument(
-        "--export", metavar="PATH", default=None, help="把回放/轨迹导出为 Markdown 文件"
-    )
-    p.add_argument("--list", action="store_true", help="列出最近会话")
-    p.set_defaults(func="cmd_replay")
-
-    p = sub.add_parser("trajectory", help="Trajectory 轨迹: 结构化导出/查看会话")
-    trsub = p.add_subparsers(dest="traj_cmd")
-    trs = trsub.add_parser("show", help="查看会话的 Trajectory 摘要")
-    trs.add_argument("session", help="会话 ID 或前缀")
-    tre = trsub.add_parser("export", help="导出 Trajectory 为 JSON / Markdown")
-    tre.add_argument("session", help="会话 ID 或前缀")
-    tre.add_argument(
-        "--format", choices=["json", "md"], default="md", help="导出格式 (默认 md)"
-    )
-    tre.add_argument(
-        "--out", metavar="PATH", default=None, help="输出文件路径 (默认 stdout)"
-    )
-    p.set_defaults(func="cmd_trajectory")
 
     # ---- tutorial (任务驱动内置教程, onboarding 核心能力) ----
     p = sub.add_parser(
@@ -964,46 +891,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="步骤间不暂停, 一口气跑完",
     )
     p.set_defaults(func="cmd_tutorial")
-
-    # ---- code-edit (代码编辑助手) ----
-    p = sub.add_parser(
-        "code-edit", help="代码编辑助手: 标准化任务输入 / 验证闭环 / 五层安全闸门"
-    )
-    ces = p.add_subparsers(dest="code_edit_cmd", required=True)
-    ce = ces.add_parser(
-        "parse", help="解析任务为四要素简报 (Goal/Context/Constraints/Done)"
-    )
-    ce.add_argument("task", help="任务文本，或含模板的文件路径")
-    ce.add_argument("--no-ask", action="store_true", help="缺失项不交互补全")
-    ces.add_parser(
-        "rules", help="加载并展示项目级规则 (.qingxiaotuan/rules.md / AGENTS.md)"
-    )
-    cv = ces.add_parser("verify", help="运行测试命令并走预测—反馈闭环")
-    cv.add_argument("command", help="测试命令 (如 'pytest -q')")
-    cv.add_argument("--timeout", type=int, default=600, help="超时秒数")
-    ckv = ces.add_parser(
-        "check-version", help="校验版本变更是否符合迭代策略 (版本锁死)"
-    )
-    ckv.add_argument("old")
-    ckv.add_argument("new")
-    ckv.add_argument("--strategy", default="semver", help="迭代策略 (默认 semver)")
-    cg = ces.add_parser("gate", help="对一个动作做风险分级与五层闸门判定")
-    cg.add_argument(
-        "kind", help="动作类型 (edit_code/delete_files/run_command/bump_version/...)"
-    )
-    cg.add_argument("--description", default=None)
-    cg.add_argument("--target", action="append", default=[], help="目标 (可多次)")
-    cg.add_argument("--command", default=None)
-    cg.add_argument("--uncommitted", action="store_true", help="目标含未提交改动")
-    ce2 = ces.add_parser(
-        "edit", help="解析+补全+加载规则+(可选)验证, 输出标准化任务简报"
-    )
-    ce2.add_argument("task", help="任务文本，或含模板的文件路径")
-    ce2.add_argument("--test", default=None, help="验证所用的测试命令")
-    ce2.add_argument("--gate", action="store_true", help="走五层安全闸门预览")
-    ce2.add_argument("--version-strategy", default="semver")
-    ce2.add_argument("--max-retries", type=int, default=3)
-    p.set_defaults(func="cmd_code_edit")
 
     # ---- harden (安全加固工具集) ----
     p = sub.add_parser(
@@ -1125,12 +1012,26 @@ def build_parser() -> argparse.ArgumentParser:
 # 启动路径, 仅保留下方纯 Python TUI。不再有任何 Node 进程被 qxt 拉起。
 
 
+def _rewrite_dev_codedev(argv):
+    """把 `dev codedev <rest>` 透明改写为 `__dev_codedev <rest>`。
+
+    ``dev`` 的 task 是自由文本位置参数, 无法在其 ArgumentParser 上直接挂
+    subparsers (否则任意任务首词会被 argparse 当作未知子命令而报 invalid choice)。
+    codedev 子命令组因此由隐藏顶层解析器 ``__dev_codedev`` 承载; 仅在 main() 入口
+    对 argv 做这一次无感知改写, 用户侧仍是 `qxt dev codedev demo|doctor|...`。
+    """
+    if len(argv) >= 2 and argv[0] == "dev" and argv[1] == "codedev":
+        return ["__dev_codedev", *argv[2:]]
+    return argv
+
+
 def main() -> int:
     # 先把 ~/.qingxiaotuan/.env 里的密钥加载进环境 (所有子命令共用)
     from ..config import load_dotenv
 
     load_dotenv()
     parser = build_parser()
+    sys.argv[1:] = _rewrite_dev_codedev(sys.argv[1:])
     args = parser.parse_args()
     # 交互式/计划/免确认启动形态 (无子命令且非 --print) 直接走内置 Python TUI
     # (qingxiaotuan/tui/tui.py::QxtTUI, 仅依赖 rich + prompt_toolkit, 开箱即用,

@@ -26,7 +26,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from ..config import home_dir
 
@@ -118,7 +118,9 @@ class ProjectLayer:
         }
         self._write_json(self.dir / "project.json", meta)
         self._write_json(self.dir / "goal.json", {"goal": "", "updated_at": created_at})
-        self._write_json(self.dir / "sessions.json", {"project_id": project_id, "sessions": []})
+        self._write_json(
+            self.dir / "sessions.json", {"project_id": project_id, "sessions": []}
+        )
         # 项目级配置骨架 (yaml 注释占位)
         cfg_file = self.dir / "config.yaml"
         if not cfg_file.exists():
@@ -141,8 +143,12 @@ class ProjectLayer:
     def info(self) -> ProjectInfo:
         """读取当前项目信息。未初始化时返回 initialized=False。"""
         if not self.exists():
-            return ProjectInfo(project_id="", path=str(self.workspace), created_at=0.0,
-                               initialized=False)
+            return ProjectInfo(
+                project_id="",
+                path=str(self.workspace),
+                created_at=0.0,
+                initialized=False,
+            )
         meta = self._read_json(self.dir / "project.json")
         goal = self._read_json(self.dir / "goal.json")
         sessions = self._read_json(self.dir / "sessions.json")
@@ -163,6 +169,7 @@ class ProjectLayer:
             return 0
         try:
             import sqlite3
+
             con = sqlite3.connect(str(db))
             try:
                 return int(con.execute("SELECT COUNT(*) FROM memories").fetchone()[0])
@@ -176,11 +183,13 @@ class ProjectLayer:
         f = self.dir / "sessions.json"
         data = self._read_json(f) if f.exists() else {"sessions": []}
         data.setdefault("project_id", self.info().project_id)
-        data.setdefault("sessions", []).append({
-            "session_id": session_id,
-            "task": task[:200],
-            "ts": time.time(),
-        })
+        data.setdefault("sessions", []).append(
+            {
+                "session_id": session_id,
+                "task": task[:200],
+                "ts": time.time(),
+            }
+        )
         self._write_json(f, data)
 
     # ------------------------------------------------------------ 全局索引
@@ -198,11 +207,13 @@ class ProjectLayer:
             data = {"projects": []}
         items = data.setdefault("projects", [])
         items = [p for p in items if p.get("path") != str(self.workspace)]
-        items.append({
-            "project_id": meta["project_id"],
-            "path": str(self.workspace),
-            "created_at": meta["created_at"],
-        })
+        items.append(
+            {
+                "project_id": meta["project_id"],
+                "path": str(self.workspace),
+                "created_at": meta["created_at"],
+            }
+        )
         self._write_json(f, {"projects": items})
 
     def list_projects(self) -> List[Dict[str, Any]]:
@@ -230,7 +241,7 @@ class ProjectLayer:
     def _read_json(path: Path) -> Dict[str, Any]:
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                return cast(Dict[str, Any], json.load(f))
         except (OSError, json.JSONDecodeError):
             return {}
 
