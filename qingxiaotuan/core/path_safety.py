@@ -70,6 +70,15 @@ _FORBIDDEN_WRITE_DIRS = {
     "C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)",
 }
 
+# Windows 保留设备名 (无论是否带扩展名都禁止操作): CON/PRN/AUX/NUL/
+# COM1-9/LPT1-9 (如 CON.txt、NUL.log 在 Windows 上仍映射到设备)。
+# 对这些路径做 open() 可能挂起/写入设备而非普通文件, fail-closed 一律拒绝。
+_RESERVED_DEVICE_RE = re.compile(
+    r"^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)",
+    re.IGNORECASE,
+)
+
+
 # 路径遍历攻击特征
 _TRAVERSAL_PATTERNS = [
     re.compile(r"(^|[/\\])\.\.([/\\]|$)"),        # ../ 或 ..\\
@@ -159,6 +168,17 @@ class PathSafety:
                 risk_level="critical",
                 original_path=original,
                 violations=["traversal_attack"],
+            )
+
+        # 1.5) Windows 保留设备名 (CON/NUL/COM1/LPT1..., 含扩展名) 一律拒绝
+        base = os.path.basename(path.replace("\\", "/")).rstrip("/")
+        if _RESERVED_DEVICE_RE.match(base):
+            return PathViolation(
+                safe=False, denied=True,
+                reason=f"路径命中 Windows 保留设备名 (CON/NUL/COM1/LPT1 等), 已拒绝: {base}",
+                risk_level="high",
+                original_path=original,
+                violations=["reserved_device_name"],
             )
 
         # 2) 规范化路径

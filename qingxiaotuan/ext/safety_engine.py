@@ -180,7 +180,17 @@ def _try_decode_ps_encoded(text: str) -> str:
     m = _PS_ENCODED_RE.search(text)
     if not m:
         return text
+    # \\S+ 会连同收尾引号/分号/括号一起吞进来 (如 powershell -enc "b64"; cmd),
+    # 这里只取开头连续的 base64 字符, 解码失败概率大降; 引号包裹的编码串 (cmd /c
+    # "powershell -enc ...") 此前因尾引号导致 decode 失败而原样漏放。
     b64_str = m.group(1)
+    # 先剥前导/收尾引号 (powershell -enc "b64" 或 'b64'), 再取连续 base64 字符
+    # (吞掉分号/括号等尾随分隔符)。此前引号包裹的编码串因 decode 失败而原样漏放。
+    b64_str = b64_str.strip().strip("'").strip('"')
+    b64_match = re.match(r"[A-Za-z0-9+/=]+", b64_str)
+    if not b64_match:
+        return text
+    b64_str = b64_match.group(0)
     try:
         decoded_bytes = base64.b64decode(b64_str, validate=True)
         # 优先尝试 UTF-8 (纯 ASCII 命令更常见), 失败则回退 UTF-16LE
@@ -322,13 +332,20 @@ def _unwrap_indirection(text: str) -> str:
     PowerShell -Command/-c; cmd /c。
 
     安全修复: 循环直到文本不再变化 (不再限制 6 层), 防止深层嵌套绕过。
-    """
-    # 安全修复: 先解码 PowerShell -EncodedCommand 的 Base64 内容
-    text = _try_decode_ps_encoded(text)
 
+    加固 (递归编码解壳): PowerShell -EncodedCommand 解码从「循环外只做一次」
+    改为「每层循环都尝试解码」。对抗嵌套编码 `powershell -enc <b64-of-(powershell
+    -enc <b64-of-payload>)>`: 旧实现只剥最外层, 内层 `powershell -enc <b64>`
+    的密文永远不再解码, `Remove-Item -Recurse -Force C:\\` 等致命载荷浮出不来
+    (实测漏放)。现在每层剥壳后若新文本仍含 `powershell -enc`, 继续剥开直到收敛;
+    base64/hex 管道链另有保守拦截兜底 (见 _is_base64_pipeline_dangerous)。
+    """
     cur = text
     for _ in range(32):  # 安全上限 32 层, 实际通常 2-3 层就稳定
         nxt = cur
+        # 递归解码 PowerShell -EncodedCommand (可能嵌套多层编码); 放在各间接层
+        # 剥离之前: 解码出的明文可能含 cmd /c、sh -c 等, 供后续步骤继续剥开。
+        nxt = _try_decode_ps_encoded(nxt)
         # 先处理 find -exec: 提取命令体并用 " ; " 隔离成独立段。
         # 必须在解释器展开之前, 否则 sh -c 会被先剥掉导致 -exec 失去锚点。
         nxt = _FIND_EXEC_RE.sub(lambda m: " ; " + m.group(1) + " ; ", nxt)

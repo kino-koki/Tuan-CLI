@@ -713,6 +713,32 @@ add("AK.持久化与日志-良性", [
     "logger 'deploy finished'",
 ], "allow")
 
+# === AL. recursive encoding nesting (2026-09 hardening) ===
+_PS_DEL = base64.b64encode("Remove-Item C:\\ -Recurse -Force".encode("utf-16-le")).decode()
+_PS_L2 = base64.b64encode(("powershell -enc " + _PS_DEL).encode("utf-16-le")).decode()
+_PS_L3 = base64.b64encode(("powershell -enc " + _PS_L2).encode("utf-16-le")).decode()
+add("AL.recursive-enc", [
+    f"powershell -enc {_PS_L2}",
+    f"powershell -enc {_PS_L3}",
+    f'powershell -enc "{_PS_DEL}"',
+    f"powershell -nop -w hidden -enc {_PS_DEL}",
+    f'cmd /c "powershell -enc {_PS_DEL}"',
+    f'cmd.exe /c "powershell -enc {_PS_L2}"',
+    f'pwsh -enc "{_PS_L2}"',
+], "block")
+
+# === AM. cloud metadata SSRF (2026-09 hardening) ===
+add("AM.cloud-metadata", [
+    "curl http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+    "curl -H Metadata:true http://169.254.169.254/metadata/instance",
+    "wget -qO- http://100.100.100.200/latest/",
+    "curl http://metadata.google.internal/computeMetadata/v1/",
+    "curl http://[fd00:ec2::254]/latest/meta-data/",
+], "block")
+add("AM.cloud-metadata-benign", [
+    "curl https://api.github.com/zen",
+    "ping -c1 8.8.8.8",
+], "allow")
 
 # ============================================================ 自动大规模对抗语料 (attack_gen)
 # 由 bench/attack_gen.py 生成 200~450+ 条真实绕过尝试 (Unicode/不可见字符/IFS/编码管道/
