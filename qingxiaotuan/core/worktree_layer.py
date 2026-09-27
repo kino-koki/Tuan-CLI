@@ -43,11 +43,31 @@ class WorktreeLayer:
     # ------------------------------------------------------------ 前置检查
 
     def is_git_repo(self) -> bool:
-        """当前工作区是否为 git 仓库。"""
+        """当前工作区是否为 git 仓库根目录。
+
+        判定标准: ``git rev-parse --show-toplevel`` 返回的仓库根路径必须与
+        ``self.workspace`` 解析后的绝对路径一致 —— 即"工作区自身就是仓库根",
+        而非"工作区只是某个仓库的子目录"。后者 (例如 pytest 临时目录落在
+        项目根下) 不应被当作仓库根去创建 worktree。
+
+        git 不存在 / 超时 / 其他异常时按"非仓库"处理 (返回 False):
+        worktree 属于可选增强, 探针失败应优雅跳过, 不应让异常冒泡打断主流程。
+        """
         if not self.workspace.exists():
             return False
-        r = self._git(["rev-parse", "--is-inside-work-tree"], check=False)
-        return r.returncode == 0 and r.stdout.strip() == "true"
+        try:
+            r = self._git(["rev-parse", "--show-toplevel"], check=False)
+        except Exception:  # noqa: BLE001  (TimeoutExpired / FileNotFoundError 等)
+            return False
+        if r.returncode != 0:
+            return False
+        toplevel = r.stdout.strip()
+        if not toplevel:
+            return False
+        try:
+            return Path(toplevel).resolve() == self.workspace
+        except Exception:  # noqa: BLE001  (路径解析异常兜底)
+            return False
 
     def _require_git(self) -> None:
         if not self.is_git_repo():
@@ -77,7 +97,9 @@ class WorktreeLayer:
             cmd.append(base)
         r = self._git(cmd)
         if r.returncode != 0:
-            raise WorktreeError(f"git worktree add 失败: {r.stderr.strip() or r.stdout.strip()}")
+            raise WorktreeError(
+                f"git worktree add 失败: {r.stderr.strip() or r.stdout.strip()}"
+            )
         return WorktreeInfo(name=name, path=str(target), branch=name)
 
     def list(self) -> List[WorktreeInfo]:
@@ -96,18 +118,20 @@ class WorktreeLayer:
                     cur = {}
                 continue
             if line.startswith("worktree "):
-                cur["path"] = line[len("worktree "):]
+                cur["path"] = line[len("worktree ") :]
             elif line.startswith("HEAD "):
-                cur["head"] = line[len("HEAD "):][:8]
+                cur["head"] = line[len("HEAD ") :][:8]
             elif line.startswith("branch "):
-                cur["branch"] = line[len("branch refs/heads/"):]
+                cur["branch"] = line[len("branch refs/heads/") :]
         if cur:
             out.append(self._parse(cur))
         return out
 
     def _parse(self, cur: dict) -> WorktreeInfo:
         path = cur.get("path", "")
-        name = Path(path).name if Path(path).resolve() != self.workspace else "(主工作区)"
+        name = (
+            Path(path).name if Path(path).resolve() != self.workspace else "(主工作区)"
+        )
         return WorktreeInfo(
             name=name,
             path=path,
@@ -134,16 +158,22 @@ class WorktreeLayer:
         self._require_git()
         target = self._wt_path(name)
         if not target.exists():
-            raise WorktreeError(f"worktree 不存在: {target} (先 /worktree create {name})")
+            raise WorktreeError(
+                f"worktree 不存在: {target} (先 /worktree create {name})"
+            )
         return str(target)
 
     # ------------------------------------------------------------ git 封装
 
-    def _git(self, args: List[str], check: bool = True) -> "subprocess.CompletedProcess":
+    def _git(
+        self, args: List[str], check: bool = True
+    ) -> "subprocess.CompletedProcess":
         r = subprocess.run(
             ["git"] + args,
             cwd=str(self.workspace),
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if check and r.returncode != 0:
             # 让调用方决定怎么报错; 这里抛一次便于快速失败
