@@ -176,14 +176,14 @@ qingxiaotuan/ecosystem/
 | --- | --- | --- |
 | 盘点 | `qxt ecosystem scan` | claude_code: 技能 1 (tabbit)/MCP 0；hermes: 技能 1/记忆 2/SOUL 有/MCP 2 |
 | 导入 | `qxt ecosystem import all --from hermes` | 技能 1 + 记忆 2 + MCP 2 全部并入 qxt |
-| 导出 | `qxt ecosystem export skills --to hermes` | qxt 全部 25 个技能导出为 Hermes 可加载的 `<slug>/SKILL.md` 目录包 |
+| 导出 | `qxt ecosystem export skills --to hermes` | qxt 全部 24 个用户技能导出为 Hermes 可加载的 `<slug>/SKILL.md` 目录包（计数与实际落盘一一对应） |
 | 导出 | `qxt ecosystem export memory --to hermes` | qxt 记忆合并进 Hermes `MEMORY.md`（按 Hermes 格式，含日期标签） |
 | 挂载 | `qxt ecosystem link --apply` | Claude `.mcp.json` 写入 + Hermes `config.yaml` 追加 `qxt` server（保留原有 zhipu/notes） |
 
-过程中发现并修复 4 个真实 bug（均有回归测试）：
+过程中发现并修复 6 个真实 bug（均有回归测试）：
 
 1. **隐藏暂存目录误计技能**：Claude 官方安装遗留的 `.tabbit-stage-*` 暂存目录被
-   `_count_skills` 计为用户技能 → 跳过 `.` 开头的子目录。
+   `detect._count_skills` 计为用户技能 → 盘点跳过 `.` 开头的子目录。
 2. **MCP servers 跨生态加总**：`_count_mcp_servers` 把 Claude `.mcp.json` 与 Hermes
    `config.yaml` 的 server 数加总后同时赋给两侧 → 拆成 `_count_claude_mcp` /
    `_count_hermes_mcp` 分生态统计。
@@ -192,6 +192,12 @@ qingxiaotuan/ecosystem/
    全绿、真实 CLI 报错 → 按能力探测走 `set_user`，加真实 Config 集成测试。
 4. **link 找不到 Hermes**：`qxt ecosystem link` 只查配置、不回退 `$HERMES_HOME` /
    `~/.hermes`（与 probe 不一致）→ 补齐回退链。
+5. **导出丢技能（中文名 slug 冲突）**：`export_skills` 用 `slugify(技能名)` 生成目录名，
+   中文名全部退化为 `skill` 互相覆盖（报告 25 个、落盘 9 个）→ 改取技能文件 slug
+   （`Skill.slug` = 文件名 stem），目录名与真实技能一一对应。
+6. **运行时发现混入暂存目录**：`SkillManager._discover` 未跳过 `.` 开头隐藏目录，
+   暂存技能被加载并随导出混入目标生态（与 bug 1 同根，盘点已修、运行时未修）→
+   发现与盘点口径一致跳过。
 
 ## 已知限制（诚实声明）
 

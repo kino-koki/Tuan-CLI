@@ -52,10 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test_probe_mcp_servers_counted_per_ecosystem`); ③ `import_mcp_servers` 兼容真实
   `Config.set_user` (真实 Config 无 `set` 属性, 回归测试
   `test_import_mcp_servers_with_real_config`); ④ `qxt ecosystem link` 的 Hermes home
-  解析链补齐 `$HERMES_HOME` / `~/.hermes` 回退 (与 probe 一致)。实测通过: `import all
-  --from hermes` 技能/记忆/MCP 全部并入; `export skills --to hermes` 25 个技能、
-  `export memory --to hermes` 记忆合并; `link --apply` 双向挂载 (Claude `.mcp.json` +
-  Hermes `config.yaml` 追加 qxt server)。
+  解析链补齐 `$HERMES_HOME` / `~/.hermes` 回退 (与 probe 一致); ⑤ `export_skills`
+  目录名改取**技能文件 slug** (`Skill.slug`, 文件名 stem) 而非对中文 name 做
+  `slugify` —— 中文技能名全退化 `skill` 互相覆盖丢技能 (回归测试
+  `test_export_skills_uses_file_slug_not_name_slugify`); ⑥ `SkillManager._discover`
+  跳过 `.` 开头隐藏目录, 运行时发现与盘点口径一致 (回归测试
+  `test_discover_skips_hidden_staging_skill_dirs`)。实测通过: `import all
+  --from hermes` 技能/记忆/MCP 全部并入; `export skills --to hermes` 24 个技能
+  (计数与实际落盘一一对应); `export memory --to hermes` 记忆合并; `link --apply`
+  双向挂载 (Claude `.mcp.json` + Hermes `config.yaml` 追加 qxt server)。
 - **文档**: 新增 `docs/ecosystem_bridge.md`; README 中/英文、ARCHITECTURE.md 同步。
 
 ## [0.2.017] - Unreleased

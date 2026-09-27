@@ -179,6 +179,8 @@ class SkillManager:
             for child in sorted(dpath.iterdir()):
                 if not child.is_dir():
                     continue
+                if child.name.startswith("."):
+                    continue  # 隐藏目录 (如 Claude 安装暂存 .xxx-stage-*) 不是技能包
                 skill_md = child / "SKILL.md"
                 if skill_md.exists():
                     slug = self.slugify(child.name)
