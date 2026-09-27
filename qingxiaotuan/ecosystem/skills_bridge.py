@@ -113,7 +113,15 @@ def export_skills(skill_manager: object, dest_dir: Path) -> SkillImportResult:
 
     目标形态: ``<dest>/<slug>/SKILL.md`` —— Claude Code 的 ``.claude/skills`` 与
     Hermes 的 ``~/.hermes/skills`` 均原生识别这一形态。
+
+    slug 唯一化: 目录名取**技能文件 slug** (``Skill.slug``, 文件名 stem) 而不是
+    对 name 做 ``slugify`` —— 中文技能名经 slugify 会全部退化为 ``skill``, 互相
+    覆盖丢技能 (真实机 bug); 仅当 slug 缺失/为空时回退 slugify(name), 仍冲突则
+    附加确定性短哈希。同 slug 的重复条目 (技能库跨目录同技能) 只导一次,
+    imported 计数与实际落盘一一对应。
     """
+    import hashlib
+
     result = SkillImportResult()
     try:
         skills = skill_manager.list_all()  # type: ignore[attr-defined]
@@ -121,8 +129,14 @@ def export_skills(skill_manager: object, dest_dir: Path) -> SkillImportResult:
         result.errors.append(f"读取技能失败: {exc}")
         return result
     user_skills = [s for s in skills if getattr(s, "origin", "") == "user"]
+    used_slugs: set = set()
     for s in user_skills:
-        slug = skill_manager.slugify(s.name)  # type: ignore[attr-defined]
+        slug = getattr(s, "slug", "") or ""
+        if not slug:
+            slug = skill_manager.slugify(s.name)  # type: ignore[attr-defined]
+        if slug in used_slugs:
+            continue  # 同 slug 重复条目只导一次
+        used_slugs.add(slug)
         pkg_dir = dest_dir / slug
         try:
             pkg_dir.mkdir(parents=True, exist_ok=True)

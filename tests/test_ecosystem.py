@@ -148,6 +148,76 @@ def test_export_skills_portable_package(tmp_path: Path):
     assert "use_count" not in text
 
 
+def test_export_skills_uses_file_slug_not_name_slugify(tmp_path: Path):
+    """导出目录名必须用技能文件 slug (文件名 stem), 而不是对中文 name 做 slugify
+    (中文 name 全退化 'skill' 互相覆盖, 真实机 bug 回归)。"""
+
+    class _NoEcoConfig:
+        def get(self, key, default=None):
+            if key in ("ecosystem.claude_code.enabled", "ecosystem.hermes.enabled"):
+                return False
+            return default
+
+    home = tmp_path / "qxt"
+    # 真实形态: 文件名英文 slug, name 是中文 (与 qxt 用户技能库一致)
+    _write(home / "skills" / "anthropomorphic-comments.md",
+           "---\nname: 拟人化注释风格\ndescription: a\n---\n正文A\n")
+    _write(home / "skills" / "understanding-legacy-code.md",
+           "---\nname: 理解陌生代码库\ndescription: b\n---\n正文B\n")
+    mgr = SkillManager(home, config=_NoEcoConfig())
+    dest = tmp_path / "out"
+    result = export_skills(mgr, dest)
+    assert len(result.imported) == 2
+    assert set(result.imported) == {"anthropomorphic-comments", "understanding-legacy-code"}
+    dirs = sorted(p.name for p in dest.iterdir() if p.is_dir())
+    assert dirs == ["anthropomorphic-comments", "understanding-legacy-code"]
+    # 无中文 name 退化的 'skill' 目录
+    assert "skill" not in dirs
+
+
+def test_export_skills_duplicate_slug_export_once(tmp_path: Path):
+    """同 slug 的重复条目 (跨目录同技能) 只导一次, imported 与实际落盘一一对应。"""
+
+    class _NoEcoConfig:
+        def get(self, key, default=None):
+            if key in ("ecosystem.claude_code.enabled", "ecosystem.hermes.enabled"):
+                return False
+            return default
+
+    home = tmp_path / "qxt"
+    _write(home / "skills" / "dup.md",
+           "---\nname: 重复技能\ndescription: x\n---\n正文\n")
+    _write(home / ".agents" / "skills" / "dup.md",
+           "---\nname: 重复技能\ndescription: x\n---\n正文\n")
+    mgr = SkillManager(home, config=_NoEcoConfig())
+    dest = tmp_path / "out"
+    result = export_skills(mgr, dest)
+    assert len(result.imported) == 1
+    dirs = [p.name for p in dest.iterdir() if p.is_dir()]
+    assert dirs == ["dup"]
+
+
+def test_discover_skips_hidden_staging_skill_dirs(tmp_path: Path):
+    """SkillManager 运行时发现也要跳过 . 开头隐藏目录 (Claude 安装暂存 .xxx-stage-*),
+    否则会被当技能加载/导出 (真实机 bug 回归, detect 已修盘点、此处修运行时)。"""
+
+    class _NoEcoConfig:
+        def get(self, key, default=None):
+            if key in ("ecosystem.claude_code.enabled", "ecosystem.hermes.enabled"):
+                return False
+            return default
+
+    home = tmp_path / "qxt"
+    _write(home / "skills" / "real.md",
+           "---\nname: 真技能\ndescription: r\n---\n正文\n")
+    _write(home / "skills" / ".tabbit-stage-ABC123" / "SKILL.md",
+           "---\nname: 暂存技能\ndescription: s\n---\n正文\n")
+    mgr = SkillManager(home, config=_NoEcoConfig())
+    slugs = [s.slug for s in mgr.list_all()]
+    assert "real" in slugs
+    assert not any(slug.startswith(".tabbit") or "tabbit-stage" in slug for slug in slugs)
+
+
 # ---------------------------------------------------------------- memory bridge
 
 def test_parse_hermes_entries_splits_sections():
