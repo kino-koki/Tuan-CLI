@@ -14,6 +14,7 @@ Claude Code / Hermes Agent 资产的双向搬运、MCP 暴露与委派。
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -345,7 +346,14 @@ def _cmd_link(args) -> int:
         console.print(f"         claude mcp add qxt -- {cmd[0]} {' '.join(cmd[1:])} ecosystem serve")
 
     # ---- Hermes: 打印接入命令 / --apply 时写入 config.yaml ----
+    # 与 EcosystemProbe 一致的解析链: 配置 → $HERMES_HOME → ~/.hermes。
     hermes_home = config.get("ecosystem.hermes.home") or None
+    if hermes_home is None and os.environ.get("HERMES_HOME"):
+        hermes_home = os.environ["HERMES_HOME"]
+    if hermes_home is None:
+        default_home = Path.home() / ".hermes"
+        if default_home.exists():
+            hermes_home = str(default_home)
     if hermes_home:
         hermes_config = Path(hermes_home) / "config.yaml"
         if getattr(args, "apply", False):

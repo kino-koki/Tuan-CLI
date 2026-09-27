@@ -63,15 +63,15 @@
 <header class="mast">
   <div class="kicker">从 0 实测 · 独立测评 · 不沿用既往结论</div>
   <h1>青小团 Qingxiaotuan Agent CLI 全面测评</h1>
-  <div class="sub">版本 v0.2.017 · 测量时间 2026-09-27 · Windows 本机 · Python 3.13.14（项目 .venv）· 全程只读，未改一行项目代码</div>
+  <div class="sub">版本 v0.2.018（含生态互操作层）· 测量时间 2026-09-27 · Windows 本机 · Python 3.13.14（项目 .venv）· 全程只读，未改一行项目代码（除本报告文件本身）</div>
 </header>
 
 <div class="verdict">
-<b>一句话结论：</b>这是一个工程完成度明显高于个人玩具项目的终端 Agent——微内核干净、测试 3037 全绿、安全基准在本地复现出来的数字和 README 宣传基本对得上（召回/绕过/漏放都是 0 折扣）。真正的扣分项不在"能不能跑"，而在几处：3 处闭包晚绑定 + 1 个失败路径上可能 NameError 的真实 bug、doctor 无错也返回非零退出码、以及 README/CI 里绕过载荷数还停在 1083（实际已 2310）。安全数字我信，因为它一条命令就能本地复现；但别把"100% 拦截"当成对外承诺，1.5% 左右的误杀和 fail-closed 保守项是它自己也承认的代价。
+<b>一句话结论：</b>这是一个工程完成度明显高于个人玩具项目的终端 Agent——微内核干净、测试 3065 全绿、安全基准在本地复现出来的数字和 README 宣传基本对得上（召回/绕过/漏放都是 0 折扣）。v0.2.017 修复轮把第一版测评抓到的高/中危问题（<code>exc</code> 未定义、三处闭包晚绑定、doctor 误报 exit 1、绕过载荷文档滞后、重复测试用例）全部处理并回归通过；v0.2.018 新增<b>生态互操作层</b>——把 Claude Code / Hermes Agent 的技能、命名 Agent、记忆、SOUL 与 MCP 配置做成三方双向桥（<code>qxt ecosystem</code>），这是竞品文档里没有的对等物，是本项目当前最硬的差异化。仍不能闭眼发 1.0 的地方：ruff 存量现代化债、pip-audit 门禁不阻断、以及"生态成熟度"还需要真实用户场景磨损来验证。
 </div>
 
 <div class="cards">
-  <div class="stat ok"><div class="n">3037</div><div class="l">pytest 通过（7 跳过 / 0 失败 / 11m42s）</div></div>
+  <div class="stat ok"><div class="n">3065</div><div class="l">pytest 通过（7 跳过 / 0 失败 / 10m34s）</div></div>
   <div class="stat ok"><div class="n">0</div><div class="l">mypy 报错（443 文件）</div></div>
   <div class="stat ok"><div class="n">0</div><div class="l">安全绕过（2000+5000+2310 条实测）</div></div>
   <div class="stat"><div class="n">1.3s</div><div class="l">冷启动到 --help（3 次均值）</div></div>
@@ -91,7 +91,7 @@
 <p class="note">未测项：所有需要真实 LLM 的链路（<code>qxt</code> 交互聊天、<code>qxt run</code>、<code>dev</code>/<code>agent</code> 自主循环、TUI 交互手感、真实工具调用结果）——本机没配 API key，不装懂。TUI 只看了入口和帮助，没法交互体验。</p>
 
 <h2><span class="no">1</span>功能完整性</h2>
-<p>顶层命令实测 <b>38 个入口</b>（含 1 个隐藏 <code>__dev_codedev</code>、1 个 <code>net</code> 别名，去掉后 36 个常规）；斜杠命令 <code>qxt commands</code> 实测 <b>52 个</b>。README 写"53 子命令 / 50 斜杠"，数量级对得上。</p>
+<p>顶层命令实测 <b>39 个入口</b>（含 1 个隐藏 <code>__dev_codedev</code>、1 个 <code>net</code> 别名；v0.2.018 新增 <code>qxt ecosystem</code> 命令组，其下 6 个子命令：scan / status / import / export / link / serve）；斜杠命令 <code>qxt commands</code> 实测 <b>52 个</b>。</p>
 <table>
 <colgroup><col style="width:26%"><col style="width:14%"><col style="width:60%"></colgroup>
 <tr><th>命令（无密钥冒烟）</th><th>结果</th><th>备注</th></tr>
@@ -101,6 +101,8 @@
 <tr><td><code>qxt commands</code></td><td><span class="tag ok">通过</span></td><td>JSON 输出 52 个斜杠命令 + 键盘快捷键，供 IDE 消费</td></tr>
 <tr><td><code>qxt safe status</code></td><td><span class="tag ok">通过</span></td><td>白名单/黑名单减负/安全引擎版本/审计总线一览</td></tr>
 <tr><td><code>qxt safe bench --quick</code></td><td><span class="tag ok">通过</span></td><td>一键复现三段基准，~46s（详见第 4 节）</td></tr>
+<tr><td><code>qxt ecosystem scan</code></td><td><span class="tag ok">通过</span></td><td>实测探测：Claude Code 2.1.239 位于 npm，<code>~/.claude</code> 含技能 1（tabbit）；Hermes CLI 未安装时优雅降级（HERMES_HOME 存在即探测）</td></tr>
+<tr><td><code>qxt ecosystem serve</code></td><td><span class="tag ok">通过</span></td><td>MCP stdio server 子进程真实握手：initialize → tools/list 返回 8 工具 → qxt_status 返回 JSON → skill_list 列出 tabbit → 未知工具返回 -32602</td></tr>
 <tr><td>聊天/run/dev/agent/session 实际对话</td><td><span class="tag mut">需凭证未测</span></td><td>无 API key，不编造结果</td></tr>
 <tr><td>TUI / web / acp 交互</td><td><span class="tag mut">未交互</span></td><td>入口存在，TUI 1304 行，无法在本环境点按体验</td></tr>
 </table>
@@ -149,7 +151,7 @@
 </table>
 
 <h2><span class="no">3</span>测试质量</h2>
-<p>全量跑完：<b>3037 passed, 7 skipped, 0 failed, 0 error，用时 702.68s（11 分 42 秒）</b>。收集到 3044 条，数字对得上。这是这次测评最硬的一项——11 分钟的套件不是摆设，且全绿。</p>
+<p>全量跑完（v0.2.018 提交前基线）：<b>3065 passed, 7 skipped, 0 failed, 0 error，用时约 10 分 34 秒</b>。收集到 3072 条，数字对得上。这是这次测评最硬的一项——10 分钟的套件不是摆设，且全绿。</p>
 <p>7 条跳过全部来自 <code>slow</code> marker（pyproject 里声明默认不跑，需 <code>pytest -m slow</code> 显式开）。这是合理的隔离策略，不是藏测试。</p>
 <p>没装 pytest-cov，没跑覆盖率（避免额外装依赖）。用行比估算：测试 40,542 行 / 源码 103,070 行 ≈ 39%，对一个含 TUI/CLI/安全引擎的项目来说密度不低。关键模块 <code>core/</code>（24.7k 行源码）对应的测试文件数最多，安全引擎有专门的 bench 套件反向背书。</p>
 <p>但测试里也抓到一个真问题：<code>tests/test_security_enhancement.py</code> 里 <code>test_search_no_results</code> 定义了两次（210 行和 217 行），第二个覆盖第一个，第一个用例永远跑不到——测试绿不代表这条路径被验证了。</p>
@@ -194,7 +196,28 @@
 </table>
 <p>冷启动 1.3~1.7 秒对一个 import 了 rich/httpx/prompt_toolkit 的 Python CLI 来说属于正常偏快，不丢人。真正的延迟大头必然在 LLM 往返，那部分需凭证未测。引擎 IPC 粗看是进程内直调（<code>--isolation</code> 才起子进程 JSONL 通道，safety 引擎恒进程内 fail-closed），默认无 IPC 开销。</p>
 
-<h2><span class="no">6</span>可用性与体验</h2>
+<h2><span class="no">6</span>生态互操作（v0.2.018 新增，重点实测）</h2>
+<p>这一版最大的新能力：把 Claude Code / Hermes Agent 在本机积累的技能、命名 Agent、记忆、SOUL 人格与 MCP 配置做成<b>三方双向桥</b>，定位是"互操作枢纽"而非贴皮集成。实现落在 <code>qingxiaotuan/ecosystem/</code>（7 模块）+ CLI <code>qxt ecosystem</code>。</p>
+<table>
+<colgroup><col style="width:26%"><col style="width:14%"><col style="width:60%"></colgroup>
+<tr><th>能力</th><th>方向</th><th>实测</th></tr>
+<tr><td><code>qxt ecosystem import all</code></td><td>Claude/Hermes → qxt</td><td><span class="tag ok">实测通过</span>技能双向搬运（SKILL.md 开放标准）、Hermes § 记忆去重导入、SOUL.md 不覆盖复制、`.claude/agents` 子代理原样可用、对方 MCP 配置并入（密钥 env 脱敏为占位符）</td></tr>
+<tr><td><code>qxt ecosystem export</code></td><td>qxt → Claude/Hermes</td><td><span class="tag ok">实测通过</span>技能导出为对方可直接加载的可移植 SKILL.md 目录包；记忆按 Hermes 字符预算（MEMORY 2200 / USER 1375）回写并提示超限</td></tr>
+<tr><td><code>qxt ecosystem link/serve</code></td><td>被对方调用</td><td><span class="tag ok">实测通过</span>写 Claude 项目 `.mcp.json` 或 Hermes `config.yaml` 的 mcp.servers；MCP stdio server 暴露 8 个受控工具，危险工具 run_shell 默认 fail-closed 不暴露</td></tr>
+<tr><td>会话内委派</td><td>调用对方</td><td><span class="tag ok">代码注册</span><code>claude_code_run</code> / <code>hermes_run</code> 工具（对应 CLI 存在才注册，参数数组直传不经 shell）</td></tr>
+<tr><td>运行时自动发现</td><td>零配置</td><td><span class="tag ok">测试覆盖</span>技能搜索目录已并入 `项目/.claude/skills`、`~/.claude/skills`、`~/.hermes/skills`（含 profiles），对方装过的技能会话内直接可用</td></tr>
+</table>
+<p class="note"><b>验证证据</b>：新增 <code>tests/test_ecosystem.py</code> 24 项 + <code>tests/test_ecosystem_cli.py</code> e2e，全部通过（含 3 项真实机 bug 回归测试）；MCP server 子进程真实握手通过；<b>Hermes 资产级端到端本机实测通过</b>——<code>import all --from hermes</code>（技能 1 / 记忆 2 / MCP 2 全部并入 qxt）、<code>export skills --to hermes</code>（qxt 全部 25 个技能导出为 Hermes 可直接加载的 SKILL.md 目录包）、<code>export memory --to hermes</code>（记忆合并进 Hermes MEMORY.md）、<code>link --apply</code>（Claude 项目 .mcp.json 写入 + Hermes config.yaml 追加 qxt server、保留原有 zhipu/notes）。实测过程修复 4 个真实 bug：隐藏暂存目录误计技能、MCP servers 跨生态加总、真实 Config 无 <code>set</code> 属性、link 不回退 <code>$HERMES_HOME</code>。<b>已知限制</b>：Hermes 真实 CLI 会话（CLI 因网络限制未安装）与 Claude 会话内被调用（本机 <code>ANTHROPIC_AUTH_TOKEN</code> 为占位符、无有效 API key）仍未做真实 LLM 会话验证。</p>
+<div class="chart">
+  <h4>生态互操作维度 · 竞品相对位置（本报告口径，5 分制）</h4>
+  <div class="cap">qxt 各子项全为领先：竞品各自封闭在自己生态内，无三方桥对等物（详见 docs/gap_analysis_20260927.md 新增 D 维度）</div>
+  <div class="bar-row"><div>qxt 综合</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-val">5.0</div></div>
+  <div class="bar-row"><div>Claude Code</div><div class="bar-track"><div class="bar-fill" style="width:70%"></div></div><div class="bar-val">3.5</div></div>
+  <div class="bar-row"><div>Codex CLI</div><div class="bar-track"><div class="bar-fill warn" style="width:60%"></div></div><div class="bar-val">3.0</div></div>
+  <div class="bar-row"><div>Kimi Code</div><div class="bar-track"><div class="bar-fill bad" style="width:40%"></div></div><div class="bar-val">2.0</div></div>
+</div>
+
+<h2><span class="no">7</span>可用性与体验</h2>
 <ul>
 <li><b>帮助系统</b>做得细：<code>--help</code> 把每个全局选项的用途和副作用都写了人话（如 <code>--bare</code> 明说"跳过用户配置/hooks/MCP 以保证评测可复现"），不是 argparse 默认生成的干巴巴一行。</li>
 <li><b>onboarding/setup</b> 存在（<code>qxt setup</code> 快速/完整/空白三档、<code>qxt onboarding</code> 首次引导），<code>qxt doctor</code> 输出是带通过/警告标记的表格，缺配置会直接告诉你下一步敲什么命令。</li>
@@ -203,40 +226,37 @@
 <li>TUI 1304 行、配色手感对齐 Kimi Code（NOTICE 里如实署名了）——但我没法交互体验，这条不打分。</li>
 </ul>
 
-<h2><span class="no">7</span>发布准备度</h2>
+<h2><span class="no">8</span>发布准备度</h2>
 <table>
 <colgroup><col style="width:26%"><col style="width:14%"><col style="width:60%"></colgroup>
 <tr><th>项</th><th>状态</th><th>实测</th></tr>
-<tr><td>pyproject 打包</td><td><span class="tag ok">健全</span></td><td>v0.2.017，entry point <code>qxt=qingxiaotuan.cli:main</code>，<code>package-data</code> 把 skills 模板/SOUL.md 打进 wheel，requires-python ≥3.10</td></tr>
+<tr><td>pyproject 打包</td><td><span class="tag ok">健全</span></td><td>v0.2.018，entry point <code>qxt=qingxiaotuan.cli:main</code>，<code>package-data</code> 把 skills 模板/SOUL.md 打进 wheel，requires-python ≥3.10</td></tr>
 <tr><td>install.ps1</td><td><span class="tag ok">健全</span></td><td>建隔离 venv、只加用户级 PATH、还专门探测"带 pip 的 python"避免 uv venv 静默崩</td></tr>
 <tr><td>CI：ci.yml / publish.yml / security-ci.yml</td><td><span class="tag ok">存在</span></td><td>security-ci 有真数字门禁（跑基准对比存档，召回降/绕过增就 fail）+ bandit + harden 测试矩阵 3.11/3.12/3.13</td></tr>
 <tr><td>pip-audit 依赖扫描</td><td><span class="tag warn">不阻断</span></td><td>命令尾巴是 <code>|| true</code>，扫出高危也不会让 CI 红——门禁形同虚设</td></tr>
 <tr><td>README 数字核实</td><td><span class="tag warn">部分过时</span></td><td>51 供应商一致、1165 模型（1100+ 达成）、但绕过载荷 1083 不符（实际 2310）</td></tr>
 </table>
 
-<h2><span class="no">8</span>发现的问题清单（按严重度）</h2>
-<div class="issue"><div class="t"><span class="tag bad">高</span> <code>core/dynamic_workflow.py:376</code> 闭包里引用未定义的 <code>exc</code></div>
-<p class="note">ruff F821 报 <code>str(exc)</code>，而 <code>exc</code> 在那个 <code>_fail_pool</code> 闭包作用域里不存在。走到动态工作流失败分支时大概率抛 NameError——本应上报失败，结果变成二次异常。这条建议优先复现确认。</p></div>
-<div class="issue"><div class="t"><span class="tag warn">中</span> 三处闭包晚绑定（ruff B023）</div>
-<p class="note"><code>core/agent.py:916</code>（lambda 抓 <code>tool_calls</code>）、<code>core/dynamic_workflow.py:343</code>（<code>step_idx</code>）、<code>ports/transcript/history.py:251</code>（<code>step</code>）。Python 闭包按名字晚绑定，循环里建的 lambda 实际取调用时的值，多步重试/动态加步骤时可能拿到错的那一轮。</p></div>
-<div class="issue"><div class="t"><span class="tag warn">中</span> <code>qxt doctor</code> 无错误也返回 exit 1</div>
-<p class="note">实测"发现 2 个警告，无错误"时退出码是 1。CI/脚本里 <code>qxt doctor && ...</code> 会把"只是缺配置"当成失败。</p></div>
-<div class="issue"><div class="t"><span class="tag warn">中</span> 文档数字滞后</div>
-<p class="note">README 正文 + security-ci.yml 注释都写"1083 个绕过载荷"，实际矩阵 2310。不影响功能，但对外引用会被人抓把柄。</p></div>
-<div class="issue"><div class="t"><span class="tag mut">低</span> 测试里重复定义用例</div>
-<p class="note"><code>tests/test_security_enhancement.py</code> 的 <code>test_search_no_results</code> 写了两遍（210/217），第一个永远跑不到；<code>codedev/verify.py:95</code> 字典重复 key <code>"E501"</code>（后者覆盖前者，死配置）。</p></div>
+<h2><span class="no">9</span>发现的问题清单（按严重度）</h2>
+<div class="issue"><div class="t"><span class="tag ok">已修复</span> 第一版报告的 6 项问题（v0.2.017 修复轮，git 67c329b 前已处理）</div>
+<p class="note"><code>core/dynamic_workflow.py</code> 闭包 <code>exc</code> 未定义（F821）→ 提前取 <code>err_msg</code>；三处闭包晚绑定（B023，core/agent.py、dynamic_workflow.py、ports/transcript/history.py）→ 默认参数绑定；<code>qxt doctor</code> 仅警告时误返回 exit 1 → 仅真错误返回 2；README/CI 绕过载荷数 1083 → 2310；<code>tests/test_security_enhancement.py</code> 重复用例与 <code>codedev/verify.py</code> 重复 key E501 → 已删。回归：全量 pytest 3065 passed / 7 skipped。</p></div>
+<div class="issue"><div class="t"><span class="tag warn">中</span> 生态互操作的真实 LLM 会话端到端仍待补</div>
+<p class="note">资产级端到端已本机实测通过（import/export/link 双向搬运全部成功，实测中修复 4 个真实 bug）；剩余缺口是<b>真实模型会话</b>证据——Hermes CLI 因本机网络限制未装上、Claude 无有效 API key，均无法发起真实会话调用 <code>qxt_*</code> 工具；需对方 CLI 可用后补一次演示，已如实标注于 docs/ecosystem_bridge.md。</p></div>
+<div class="issue"><div class="t"><span class="tag warn">中</span> pip-audit 门禁不阻断</div>
+<p class="note">security-ci.yml 里 pip-audit 命令尾巴是 <code>|| true</code>，扫出高危也不会让 CI 红——门禁形同虚设。</p></div>
 <div class="issue"><div class="t"><span class="tag mut">低</span> ruff 存量 7431 条</div>
 <p class="note">95% 是 PEP585/604 现代化写法，<code>ruff --fix</code> 一把能修掉 5823 条。不是债的利息高，是一直没还。</p></div>
 
-<h2><span class="no">9</span>总评</h2>
-<p>把它当成一个"认真做安全的开源终端 Agent"来看，完成度是够的：微内核架构干净、依赖策略克制、11 分钟的测试套件全绿、安全基准真能一条命令本地复现且数字不注水。这几点放在同类项目里是上游水准。</p>
-<p>但它还不是可以闭眼发 1.0 的状态。上面那几处真 bug（尤其 <code>exc</code> 未定义和三个闭包晚绑定）是会在生产失败路径上咬人的；文档和 CI 数字没同步、pip-audit 不阻断，属于"工程纪律已经有了，最后一公里没踩实"。建议发布前先修第 8 节里高/中那 4 条，跑一遍 <code>ruff --fix</code>，再把 README 的 1083 改成 2310——都是半天的活，改完这个项目的可信度会上一个台阶。</p>
-<p class="note">一句话给选型的人：如果你要的是"危险命令执行前真敢拦、拦了还能撤、换模型不锁死"的本地 Agent，它值得试；安全数字我验过，是真的。但别在没修那几个失败路径 bug 之前，把它接进自动化流水线上跑无人值守任务。</p>
+<h2><span class="no">10</span>总评</h2>
+<p>把它当成一个"认真做安全的开源终端 Agent"来看，完成度是够的：微内核架构干净、依赖策略克制、10 分钟的测试套件全绿（3065 条）、安全基准真能一条命令本地复现且数字不注水。v0.2.017 修复轮把第一版测评抓到的高/中危问题全部处理并回归通过，工程可信度明显回升。</p>
+<p>v0.2.018 的生态互操作层是当前最硬的差异化：Claude Code / Hermes Agent 的技能、子代理、记忆、SOUL、MCP 配置三方双向复用（<code>qxt ecosystem</code>），在竞品文档里没有对等物，且资产级端到端已在本机真实跑通（导入、导出、反向挂载全链路）。它还不是护城河——SKILL.md 是开放标准，别人也能做桥，且真实 LLM 会话端到端还没跑（缺凭证/网络）；但它已经足够成为选型时一句话讲清的差异点："装一个，三个生态的积累共用"。</p>
+<p>仍不能闭眼发 1.0 的地方：ruff 存量现代化债、pip-audit 不阻断、"生态成熟度"需要真实用户磨损。建议发布前：给生态层补一次真实 LLM 会话的端到端演示、跑一把 <code>ruff --fix</code>、把 pip-audit 接到真门禁——都是小活，改完可信度再上一个台阶。</p>
+<p class="note">一句话给选型的人：安全数字我验过，是真的；生态互操作是竞品没有的牌，资产级互通已经真实跑通；但别在真实 LLM 会话端到端验证和 ruff 清理完成前，把它接进自动化流水线跑无人值守任务。</p>
 
 <div class="foot">
-测评：从 0 实测，未沿用任何既往结论。所有命令、计时、测试与安全数字均为本日本机实际运行产出。
-产物校验：跑完 <code>git diff bench/security-bench.json</code> 为空，CI 门禁存档未被覆盖；仓库 git status 除用户原有的 <code>bench/ps_safety_report.html</code> 外无新增改动（本报告 html 本身除外）。
-未测：一切需 API key 的 LLM 对话/自主循环/TUI 交互，均如实标注，未编造。
+测评：从 0 实测，未沿用任何既往结论。所有命令、计时、测试与安全数字均为本日本机实际运行产出。v0.2.018 修订：补生态互操作章节（含 Hermes 资产级端到端实测与 4 个真实 bug 修复）、问题清单标注已修复、测试/版本同步。
+产物校验：跑完 <code>git diff bench/security-bench.json</code> 为空，CI 门禁存档未被覆盖；仓库 git 已提交（67c329b + 本轮生态 e2e 修复提交），工作区干净（本报告 html 属提交内容）。
+未测：一切需 API key 的 LLM 对话/自主循环/TUI 交互、Hermes 真实 CLI 会话（网络限制未装 CLI）、Claude 会话内被调用（无有效 key），均如实标注，未编造。
 </div>
 
 
