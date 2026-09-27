@@ -432,67 +432,24 @@ def test_bench_latency_success(tmp_path, monkeypatch, capsys):
 
 
 # ------------------------------------------------------------------ doctor
+# 注: qxt doctor 的完整诊断逻辑已迁移到 qingxiaotuan/cli/cmd_doctor.py,
+# 全面用例见 tests/test_doctor.py。这里只做 CLI 入口冒烟测试 (返回合法退出码)。
 
-def test_doctor_reports_config_errors(tmp_path, monkeypatch, capsys):
-    """doctor 复用 _validate_config, 有 err 返回 1。"""
+def test_doctor_entrypoint_smoke(tmp_path, monkeypatch, capsys):
+    """commands.cmd_doctor 可调用, 返回 0/1/2 之一, 并打印报告。"""
     monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
-    args = mock.Mock(workspace=str(tmp_path))
-    with mock.patch.object(cmd_chat, "build_kernel") as bk, \
-         mock.patch.object(cmd_chat, "_validate_config", return_value=[
-             ("ok", "model.provider", "deepseek"),
-             ("err", "model.model", "未设置模型名"),
-         ]), \
-         mock.patch("qingxiaotuan.ext.registry.engine_healthcheck",
-                    return_value={"diff": {"ok": True}}), \
-         mock.patch("httpx.Client") as hc, \
-         mock.patch.object(cmd_chat.subprocess, "run") as sp:
-        kernel = mock.Mock()
-        config = mock.Mock()
-        config.get = lambda k, d=None: None
-        config.api_key = lambda: None
-        kernel.require = lambda s: config
-        bk.return_value = kernel
-        fake_client = mock.MagicMock()
-        fake_client.__enter__.return_value = fake_client
-        hc.return_value = fake_client
-        sp.return_value = mock.Mock(returncode=0, stdout="")
-        assert commands.cmd_doctor(args) == 1
+    args = mock.Mock(workspace=str(tmp_path), fix=False, json=False, network=False)
+    code = commands.cmd_doctor(args)
+    assert code in (0, 1, 2)
     out = capsys.readouterr().out
-    assert "✗" in out
-    assert "发现 1 个错误" in out
+    assert "doctor" in out.lower() or "诊断" in out
 
 
-def test_doctor_all_ok(tmp_path, monkeypatch, capsys):
-    """全部正常时返回 0 并显示「全部正常」。"""
+def test_doctor_json_exit_code(tmp_path, monkeypatch, capsys):
+    """--json 输出 JSON 且退出码与报告一致。"""
     monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
-    args = mock.Mock(workspace=str(tmp_path))
-    with mock.patch.object(cmd_chat, "build_kernel") as bk, \
-         mock.patch.object(cmd_chat, "_validate_config", return_value=[
-             ("ok", "model.provider", "deepseek"),
-             ("ok", "model.model", "deepseek-chat"),
-         ]), \
-         mock.patch("qingxiaotuan.ext.registry.engine_healthcheck",
-                    return_value={"diff": {"ok": True}}), \
-         mock.patch("httpx.Client") as hc, \
-         mock.patch("qingxiaotuan.models.create_adapter") as ca, \
-         mock.patch("urllib.request.urlopen") as urlopen, \
-         mock.patch.object(cmd_chat.subprocess, "run") as sp:
-        kernel = mock.Mock()
-        config = mock.Mock()
-        config.get = lambda k, d=None: {
-            "model.base_url": "https://api.deepseek.com"
-        }.get(k, d)
-        config.api_key = lambda: "sk-x"
-        kernel.require = lambda s: config
-        bk.return_value = kernel
-        fake_client = mock.MagicMock()
-        fake_client.__enter__.return_value = fake_client
-        hc.return_value = fake_client
-        urlopen.return_value.__enter__.return_value = mock.Mock()
-        adapter = mock.Mock()
-        adapter.chat.return_value = mock.Mock()
-        ca.return_value = adapter
-        sp.return_value = mock.Mock(returncode=0, stdout="")
-        assert commands.cmd_doctor(args) == 0
+    args = mock.Mock(workspace=str(tmp_path), fix=False, json=True, network=False)
+    code = commands.cmd_doctor(args)
+    assert code in (0, 1, 2)
     out = capsys.readouterr().out
-    assert "全部正常" in out
+    assert json.loads(out)["exit_code"] == code

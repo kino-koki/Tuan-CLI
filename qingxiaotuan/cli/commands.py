@@ -13,11 +13,10 @@ from __future__ import annotations
 import importlib
 
 _CMD_SOURCES = {
-    # ---- cmd_chat (交互 / 模型 / 模式 / 医生) ----
+    # ---- cmd_chat (交互 / 模型 / 模式) ----
     "cmd_chat": ".cmd_chat",
     "cmd_mode": ".cmd_chat",
     "cmd_model": ".cmd_chat",
-    "cmd_doctor": ".cmd_chat",
     "_apply_mode_override": ".cmd_chat",
     "_load_session_into_agent": ".cmd_chat",
     "_resume_session": ".cmd_chat",
@@ -36,6 +35,17 @@ _CMD_SOURCES = {
     "_model_test": ".cmd_chat",
     "_run_session_hooks": ".cmd_chat",
     "_ConfigOverride": ".cmd_chat",
+    # ---- cmd_doctor (结构化诊断: 配置/技能/项目指令/环境/缓存/网络) ----
+    "cmd_doctor": ".cmd_doctor",
+    "run_checks": ".cmd_doctor",
+    # ---- cmd_onboarding (首次运行引导) ----
+    "cmd_onboarding": ".cmd_onboarding",
+    "onboarding_done_marker": ".cmd_onboarding",
+    "is_first_run": ".cmd_onboarding",
+    # ---- cmd_help (分类帮助 / qxt commands JSON) ----
+    "cmd_commands": ".cmd_help",
+    "CATEGORIZED_HELP": ".cmd_help",
+    "help_for_command": ".cmd_help",
     # ---- cmd_config (轻量配置管理) ----
     "cmd_config": ".cmd_config",
     "_validate_config": ".cmd_config",

@@ -613,7 +613,18 @@ def _cmd_diff(workspace: str, arg: str) -> None:
         if parts:
             ui.info("\n".join(parts))
         else:
-            ui.info("  工作区干净, 没有变更。")
+            # git 无变更时, 回退到操作账本里最近一次 edit_file 的 diff (REPL 彩色)
+            try:
+                from ..core.diff_view import last_edit_diff, format_no_diff
+                last = last_edit_diff(workspace)
+                if last:
+                    path, colored = last
+                    ui.info(f"  最近一次编辑 ({path}):")
+                    sys.stdout.write(colored + "\n")
+                else:
+                    ui.info("  " + format_no_diff())
+            except Exception:  # noqa: BLE001
+                ui.info("  工作区干净, 没有变更。")
     except Exception as exc:  # noqa: BLE001
         ui.error(f"git 状态查询失败: {exc}")
 
