@@ -88,8 +88,11 @@ def test_run_in_sandbox_timeout(tmp_path):
     start = time.time()
     result = run_in_sandbox(task, workspace=str(tmp_path), worker_module=worker, timeout=1.0)
     elapsed = time.time() - start
-    # 不应等满 5s (留给 Windows 下 kill+清理一些开销, 放宽到 8s)
-    assert elapsed < 8.0, "不应等满 5s 的子进程睡眠"
+    # 不应等满 5s (留给 Windows 下 kill+清理开销; 全量测试高负载时
+    # 子进程 terminate + 沙箱目录清理实测可达 9s, 放宽到 12s ——
+    # 核心验证仍是 not result.ok + 错误含"超时": 若 timeout 失效,
+    # worker 会睡满 5s 正常完成并返回 ok=True, 断言照样失败。
+    assert elapsed < 12.0, "不应等满 5s 的子进程睡眠"
     assert not result.ok
     assert "超时" in (result.error or "")
 
