@@ -158,6 +158,10 @@ class Agent(GoalMixin, VisionMixin):
             codebase_map=self._codebase_map,
             reply_language=self.config.get("language", "") or "zh-CN",
             output_style=self.config.get("ui.output_style", "default"),
+            cache_stable_prefix=self.config.get("prompt.cache_stable_prefix", True),
+            memory_notes_enabled=self.config.get("memory.notes_enabled", True),
+            memory_notes_max_lines=self.config.get("memory.notes_max_lines", 200),
+            project_doc_max_bytes=self.config.get("prompt.project_doc_max_bytes", 32768),
         )
         # 类型化子代理的角色指令 (task 工具的 AgentType.system_extra)
         if self.system_extra:
