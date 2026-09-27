@@ -832,6 +832,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="跑完后与存档对比: 安全指标变差即退出码 1 (回归门禁)",
     )
     sb.add_argument(
+        "--full",
+        action="store_true",
+        help="全量跑完后输出数字漂移报告 (本跑 vs 存档, 每个指标旧值→新值→Δ)",
+    )
+    sb.add_argument(
         "--out",
         metavar="PATH",
         default=None,
