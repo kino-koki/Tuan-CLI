@@ -297,3 +297,77 @@ def test_snapshot_tags_unique_across_ledger_instances(tmp_path):
     assert ledger3.load_journal() == 2
     assert len(ledger3.undo_all()) == 2
     assert f.read_text(encoding="utf-8") == "v1"
+
+
+# ------------------------------------------------------------------ undo 与 journal 的一致性 (回归)
+
+def test_undo_self_persists_journal(tmp_path):
+    """回归: 撤销(undo_last/undo_file/undo_all/undo_since)必须同步把内存账本重写回 journal。
+
+    此前 undo 方法只改内存, 不落盘; 会话内 checkpoint_restore 走 undo_since 时
+    忘记调 persist(), 导致 journal 仍记录已撤销的变更。下次进程 load_journal()
+    会把"已撤销"的记录又加载回来, 再次 undo 会用旧快照覆盖用户后续的新编辑。
+    """
+    ws = str(tmp_path)
+    cfg = {"ledger": {"enabled": True, "keep_snapshots": True}}
+    ledger1 = MutationLedger(ws, cfg)
+    f = tmp_path / "a.txt"
+    f.write_text("v1", encoding="utf-8")
+    snaps = ledger1.snapshot(["a.txt"])
+    ledger1.record("edit_file", ["a.txt"], snaps, summary="edit")
+    assert ledger1.journal_path.exists()
+    with open(ledger1.journal_path, encoding="utf-8") as fh:
+        assert sum(1 for _ in fh) == 1
+
+    # 模拟会话内回滚路径: 不手动调 persist() (checkpoint_restore 当年就漏了这一步)
+    ledger1.undo_last(1)
+    assert ledger1.empty()
+
+    # 新进程重新加载: 已撤销的记录不应再从磁盘 journal 复活
+    ledger2 = MutationLedger(ws, cfg)
+    n = ledger2.load_journal()
+    assert n == 0, f"已撤销的记录不应回流, 实际加载了 {n} 条"
+
+
+def test_undo_file_self_persists_journal(tmp_path):
+    """回归: undo_file 命中后也必须落盘, 否则跨进程 undo 列表里残留已撤销项。"""
+    ws = str(tmp_path)
+    cfg = {"ledger": {"enabled": True, "keep_snapshots": True}}
+    ledger = MutationLedger(ws, cfg)
+    fa, fb = tmp_path / "a.txt", tmp_path / "b.txt"
+    fa.write_text("A", encoding="utf-8"); fb.write_text("B", encoding="utf-8")
+    sa = ledger.snapshot(["a.txt"]); ledger.record("edit_file", ["a.txt"], sa)
+    sb = ledger.snapshot(["b.txt"]); ledger.record("edit_file", ["b.txt"], sb)
+
+    assert ledger.undo_file("a.txt") is not None
+
+    ledger2 = MutationLedger(ws, cfg)
+    loaded = ledger2.load_journal()
+    assert loaded == 1, f"undo_file 后 journal 应只剩未撤销的 b 记录, 实际 {loaded}"
+    assert ledger2.history()[0]["targets"] == ["b.txt"]
+
+
+def test_load_journal_respects_max_records(tmp_path):
+    """回归: load_journal 不应无上限地把整个 journal 灌进内存。
+
+    跨多个会话累积后 journal 可能有几千行; 此前 load_journal 全量加载,
+    无视 max_records 上限, 长期运行内存只增不减。
+    """
+    ws = str(tmp_path)
+    # _cfg_get 对 dict 按扁平点号键读取, 故用 "ledger.max_records" 而非嵌套 dict
+    cfg = {"ledger.enabled": True, "ledger.keep_snapshots": True, "ledger.max_records": 2}
+    ledger1 = MutationLedger(ws, cfg)
+    f = tmp_path / "a.txt"
+    f.write_text("seed", encoding="utf-8")
+    # 手工往 journal 追加 5 条记录 (绕过内存上限, 模拟历史累积)
+    for i in range(5):
+        snaps = ledger1.snapshot(["a.txt"])
+        ledger1.record("edit_file", ["a.txt"], snaps, summary=f"edit{i}")
+    # record 会因 max_records 丢弃最旧, 但 journal 已追加 5 行
+    journal_lines = ledger1.journal_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(journal_lines) == 5
+
+    ledger2 = MutationLedger(ws, cfg)
+    n = ledger2.load_journal()
+    assert n == 2, f"加载应只保留最近 max_records=2 条, 实际 {n}"
+    assert len(ledger2.history()) == 2
