@@ -740,6 +740,52 @@ add("AM.cloud-metadata-benign", [
     "ping -c1 8.8.8.8",
 ], "allow")
 
+# === AN. 程序化等义变体 (2026-09: 从手写样本扩到确定性大规模变体) ===
+# 从既有 block 载荷中自动筛选"无引号/无命令替换"的危险种子, 施加 shell 等义
+# 变换 (前缀/后缀/空白/flag 花括号/换行), 语义仍执行原危险操作, 期望全部
+# block。任何 allow 都意味着引擎存在可绕过窗口 —— 该组是"发现窗口"的探针。
+def _synthesize_variants():
+    seed = []
+    for p, c, e in CASES:
+        if e != "block":
+            continue
+        if any(ch in p for ch in "'\"$(`&|"):
+            continue  # 引号/命令替换/管道会让通用变换破坏执行语义
+        if len(p) > 80:
+            continue
+        seed.append((p, c))
+    # 每类最多取 8 条种子, 控制总量与多样性
+    by_cat = {}
+    for p, c in seed:
+        by_cat.setdefault(c, []).append(p)
+    picked = []
+    for c in sorted(by_cat):
+        for _p in by_cat[c][:8]:
+            picked.append((_p, c))
+
+    existing = {x[0] for x in CASES}
+    variants = []
+    for p, c in picked:
+        base = [
+            ("AN.变体-前缀true", "true && " + p),
+            ("AN.变体-前缀echo", "echo x; " + p),
+            ("AN.变体-后缀注释", p + " # done"),
+            ("AN.变体-双空格", p.replace(" ", "  ")),
+            ("AN.变体-tab分隔", p.replace(" ", "\t")),
+            ("AN.变体-flag花括号", p.replace("-rf", "-{r,f}").replace("-fr", "-{f,r}")),
+            ("AN.变体-换行拆分", p.replace(" && ", " &&\n")),
+            ("AN.变体-前缀env", "env " + p),
+        ]
+        for name, v in base:
+            if v != p and v not in existing:
+                variants.append((v, name, "block"))
+    return variants
+
+_N1 = len(CASES)
+for _v, _vc, _ve in _synthesize_variants():
+    CASES.append((_v, _vc, _ve))
+print(f"[variant-gen] 已注入 {len(CASES) - _N1} 条程序化等义变体")
+
 # ============================================================ 自动大规模对抗语料 (attack_gen)
 # 由 bench/attack_gen.py 生成 200~450+ 条真实绕过尝试 (Unicode/不可见字符/IFS/编码管道/
 # 全解释器包裹/PowerShell 编码/find -exec/命令替换/heredoc ...), 用于高强度实际测试。
