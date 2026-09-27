@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.017] - Unreleased
 
-### 变更
+### 安全加固 (深度加固, 加深不拓宽 / fail-closed)
 
+- **递归 PowerShell -EncodedCommand 解壳 (ext/safety_engine.py)**: _try_decode_ps_encoded 此前只在解壳循环外调用一次, 双层/三层嵌套编码 powershell -enc <b64-of-(powershell -enc <b64-of-payload>)> 以及引号包裹 (powershell -enc "<b64>")、cmd /c "powershell -enc ..." 外套会让内层致命载荷 (如 Remove-Item -Recurse -Force C:\) 永远浮不出来, 实测漏放。现改为每层剥壳循环内递归解码直到收敛, 并在解码前剥离前导/收尾引号与尾随分隔符。
+- **Windows 保留设备名拦截 (core/path_safety.py)**: 新增 _RESERVED_DEVICE_RE, 对 CON/PRN/AUX/NUL/COM1-9/LPT1-9 (含 CON.txt 等扩展名变体) 一律拒绝, 避免 open() 挂起或写入设备而非普通文件。
+- **云元数据 SSRF 拦截 (core/network_guard.py)**: 新增 _CLOUD_METADATA_RE 与 _SENSITIVE_DOMAINS 条目, 对 169.254.169.254/100.100.100.200/metadata.google.internal/[fd00:ec2::254] 一律 deny (无论是否配置白名单), 防 IAM 凭据/实例配置泄漏。
+- **对抗基准扩充**: bench/bypass_matrix.py 新增 AL.递归编码嵌套 (双层/三层 -enc、引号包裹、cmd 外套) 与 AM.云元数据SSRF 共 14 条载荷; bench/bench_powershell_safety.py 新增 AMSI 绕过、.NET 反射加载、反引号混淆 IEX、双层 -enc 四个危险模板。
+- 基准 (--quick): 对抗样本召回仍 100%、绕过 0; PowerShell 正确率仍 100%/漏放 0; 绕过矩阵 1097 条、绕过 0、灾难类别 100% 拦截; 误杀率 0.81% -> 0.85% (+0.04pp, 可接受)。
+
+### 变更
 - **CLI 命令保守精简 (删除冗余/实验性/低价值入口, 保留 36 个核心命令)**:
   - 删除 12 个顶级命令: `arch`/`ext`/`others`/`code-edit`/`impact`/`mode`/`open`/`replay`/`trajectory`/`compact`/`bench`/`codedev`。
   - 合并: `qxt replay`/`qxt trajectory` -> `qxt session replay`/`qxt session trajectory`; `qxt impact` -> `qxt undo --impact`; `qxt compact --verify` -> `qxt doctor --compact`; `qxt codedev` -> `qxt dev codedev demo|doctor|retrieve|verify`; `qxt mode` -> `qxt config get/set mode`。
@@ -23,6 +30,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Rewind**: 输入前自动快照保持现状, `/rewind` 回退命令保留。
   - 编排集中在 `qingxiaotuan/core/boundary_auto.py` (纯函数+轻量类, hook 在 CLI 层不侵入内核); bare 模式下仅 project init 执行, 其余自动行为跳过。
   - 新增测试 `tests/test_boundary_auto_enabled.py` (11 用例); 详见 `docs/four_layer_boundary_auto.md`。
+
+### 修复
+
+- **操作账本 undo 与 journal 持久层一致性 (core/ledger.py)**:
+  - `undo_last`/`undo_file`/`undo_all`/`undo_since` 此前只改内存记录、不重写 journal; 会话内 `checkpoint_restore`/`CheckpointStore.restore` 走 `undo_since` 又漏调 `persist()`, 导致已撤销的变更凭证仍留在磁盘 `ledger.jsonl`, 下次进程 `load_journal()` 把「已撤销」的记录重新加载回来, 再次 undo 会用旧快照覆盖用户后续新编辑。现 undo 方法内部自落盘 (幂等, CLI 额外 `persist()` 无害)。
+  - `load_journal()` 此前把整个 append-only journal 无上限灌进内存, 跨会话累积后内存只增不减; 现加载后只保留最近 `max_records` 条 (更早历史仍留在 journal 文件供审计)。
+  - 回归测试: `test_undo_self_persists_journal` / `test_undo_file_self_persists_journal` / `test_load_journal_respects_max_records`。
+
+- **cron 调度并发与健壮性 (cron/runner.py, cron/store.py)**:
+  - `run_due_jobs` 此前在跨进程调度锁之外先读一份 due 列表, 拿锁后直接遍历这份陈旧清单; 当另一调度进程已跑完并 `mark_run` 后, 本进程仍会把同一批任务重复执行一遍。现改为: 锁外仅做「是否值得抢锁」的快速预检, 真正执行哪批任务一律在锁内重读 `due()`。
+  - `CronStore.due()` 此前直接下标 `j["interval_minutes"]`, 手工编辑/旧版本残留的缺字段或非数字条目会抛 `KeyError`/`TypeError`, 让整轮 `qxt cron tick`/daemon 失败。现对畸形条目 (缺字段/bool 伪装/非数字) 一律跳过, `interval=0` (每 tick 触发) 语义保留。
+  - 回归测试: `test_run_due_jobs_rereads_due_inside_lock` / `test_store_due_skips_malformed_job`。
+
+- **Worktree 层误判仓库内子目录为仓库根** (`core/worktree_layer.py`):
+  `is_git_repo()` 原用 `git rev-parse --is-inside-work-tree`, 对仓库内任意子目录均返回 true,
+  导致 pytest 临时目录 (落在项目 git 仓库根下) 被误判为仓库, `auto_create_parallel_worktree`
+  误开 worktree。改为 `git rev-parse --show-toplevel` 取仓库根并与 workspace 绝对路径比对,
+  仅当 workspace 自身即仓库根时才返回 True; git 缺失/超时/异常仍 fail-open 返回 False。
+  新增回归测试 `test_subdirectory_of_git_repo_is_not_root`。
+
+- **时间敏感测试 flaky 修复** (`tests/test_dynamic_workflow_tool.py`, `tests/test_sandbox.py`):
+  - `test_emit_event_on_complete`: `_finish` 先落盘 `status=done`、随后才发 `workflow.completed` 事件,
+    主线程轮询到 done 即退出可能早于 emit 到达, 偶发断言失败 (全量 8 次重跑 3 挂 5 过);
+    等待条件改为同时覆盖"状态完成"与"事件已到达"两者。
+  - `test_run_in_sandbox_timeout`: Windows 高负载 (全量测试) 下子进程 terminate + 沙箱目录清理
+    实测可达 9s, 8s 阈值偶发超时; 放宽到 12s —— 核心验证仍是 `not result.ok` + 错误含"超时",
+    timeout 失效时 worker 会睡满 5s 正常完成返回 ok=True, 断言照样失败, 验证意图不受影响。
 
 ### 新增
 
