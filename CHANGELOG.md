@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.017] - Unreleased
 
 ### 新增
+- **身份提示词升级 + 自动记忆笔记系统 (对标 Claude Code, P0)**:
+  - **系统提示词缓存分段**: `prompts.py` 显式拆为 `build_system_prompt_stable()`
+    (SOUL 身份/行为准则/Windows 外骨骼/上网指引/编码流程/安全/技能规范, 可做 prompt cache)
+    与 `build_system_prompt_dynamic()` (环境/Git/项目指令/用户画像/长期记忆/MEMORY.md/代码库地图/技能快照/输出风格, 不缓存);
+    `build_system_prompt()` 保留为兼容入口 = stable + dynamic; 新增 `system_prompt_stable_hash()`/
+    `system_prompt_dynamic_hash()` 自检; 配置 `prompt.cache_stable_prefix` (默认 true)。
+  - **文件型记忆笔记 MEMORY.md** (`memory/memory_notes.py`): `<home>/projects/<slug>/memory/MEMORY.md`,
+    原子写入(临时文件+os.replace), 200 行注入上限; 新增 `memory_note_append` 工具供 Agent 直接写
+    用户偏好/纠正/项目决策, 下次会话自动注入 system 动态段; 配置 `memory.notes_enabled`/`memory.notes_max_lines`;
+    与既有 FTS5 `memory_write` 互补并存。
+  - **compact 存活契约**: 新增 `docs/compact_survival_guide.md` 与 `runtime/session/compact_survival.py`,
+    列出压缩后必须从磁盘重建的 9 类状态 (SOUL/项目指令/MEMORY.md/FTS5/Git/技能/todo/goal/输出风格);
+    新增 `qxt compact --verify` 输出重建检查报告。
+  - **SOUL.md 模板升级**: 新增「思考预算协议」(超 20 步拆分、每 5 步自检)、「错误处理协议」
+    (重试一次→换方案→上报, 不静默吞错)、「模型自我认知」(API/token/压缩)、「工作协议」(先理解再动手/验证驱动);
+    prompts.py 内置回退文案同步。
+  - **项目指令文件大小上限** (对标 Codex `project_doc_max_bytes`): 单文件默认 32KiB 截断并附提示,
+    配置 `prompt.project_doc_max_bytes` (默认 32768)。
 
 - **Agent View / Rewind 增强**:
   - `qxt agents view` 升级为 rich 表格面板: 列含 Session ID(短)/类型(interactive|background)/
