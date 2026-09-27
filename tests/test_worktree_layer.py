@@ -33,6 +33,21 @@ def test_not_git_repo(tmp_path):
         layer.create("exp")
 
 
+def test_subdirectory_of_git_repo_is_not_root(git_repo):
+    """回归: git 仓库内的子目录不应被误判为仓库根。
+
+    ``git rev-parse --is-inside-work-tree`` 对仓库内任意子目录都返回 true,
+    会导致把"仓库内子目录"误判为仓库根。修复后用 ``--show-toplevel`` 与
+    workspace 绝对路径比对, 仅当 workspace 自身就是仓库根时才返回 True。
+    """
+    sub = git_repo / "subdir"
+    sub.mkdir()
+    # 仓库根本身: 是仓库
+    assert WorktreeLayer(git_repo).is_git_repo() is True
+    # 仓库内子目录: 不是仓库根, 应返回 False
+    assert WorktreeLayer(sub).is_git_repo() is False
+
+
 def test_create_list_remove(git_repo):
     layer = WorktreeLayer(git_repo)
     assert layer.is_git_repo() is True
