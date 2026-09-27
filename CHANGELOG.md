@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.017] - Unreleased
 
 ### 新增
+
+- **UX 优化: doctor 诊断 / onboarding / help 系统 / 友好错误 / diff 面板 (P0-P2, 对标 Claude Code / Kimi Code)**:
+  - **`qxt doctor` 结构化诊断** (`cli/cmd_doctor.py`): 配置语法/必填字段/未知字段、
+    技能 frontmatter 合法性 (name/description 必填/正文非空/重复 slug)、项目指令
+    (QXT.md/AGENTS.md/CLAUDE.md 可读性/32KB 体积/UTF-8 编码)、环境 (Python≥3.10/git/工作区可写/venv)、
+    system prompt 稳定段哈希与记忆存储读写、可选 `--network` 端点探测;
+    `--fix` 自动补 frontmatter 占位字段并建目录; `--json` 供脚本消费;
+    退出码 0=全通过 / 1=仅警告 / 2=有错误。
+  - **首次运行 Onboarding 引导** (`cli/cmd_onboarding.py`): `<home>/.qxt_onboarding_done`
+    标记; 欢迎语→选 provider→git 仓库提议生成 QXT.md→自动记忆开关→5 条快速上手卡片;
+    `qxt onboarding [--skip]`; 非交互 (CI/管道) 自动跳过只打印指南; 配置 `onboarding.enabled`。
+  - **`/help` 增强 + `qxt commands`** (`cli/cmd_help.py`): `/help` 按「对话管理/代码与工程/
+    技能与记忆/系统与权限」四类列出; `/help <命令>` 显示用法/参数/示例; `/help keyboard`
+    列 TUI 快捷键; `qxt commands` 以 JSON 输出全部命令元数据; ACP `initialize` 的
+    `slash_commands` 升级为 `{name, description, category}` 供 IDE 补全展示。
+  - **友好错误提示** (`core/error_handler.py`): `friendly_error()` 把 API 认证失败/超时限流/
+    文件不存在/权限拒绝/网络不可达/配置语法错误转成中文「❌ 标题 + 原因 + 建议」;
+    `--verbose` 附完整 traceback; 配置 `ui.friendly_errors` (默认 true) 关闭则回退原始异常;
+    提供 `install_top_level_handler()` 作全局兜底。
+  - **REPL diff 美化** (`core/diff_view.py`): 统一 diff 按行着色 (新增绿/删除红/块头灰);
+    `/diff` 在 git 无变更时回退展示操作账本里最近一次 edit_file 的彩色 diff; 无编辑时提示。
+    TUI (textual) 内联可折叠 diff 块列为后续工作。
 - **身份提示词升级 + 自动记忆笔记系统 (对标 Claude Code, P0)**:
   - **系统提示词缓存分段**: `prompts.py` 显式拆为 `build_system_prompt_stable()`
     (SOUL 身份/行为准则/Windows 外骨骼/上网指引/编码流程/安全/技能规范, 可做 prompt cache)

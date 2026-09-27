@@ -40,11 +40,21 @@ def seed_builtin_skills(*a, **k):
 
 
 def _get_slash_commands() -> list:
-    """尽力列举内置 + 用户斜杠命令 (失败则降级为空列表)。"""
-    try:
-        from .cmd_slash import list_slash_commands
+    """列举斜杠命令为 [{name, description, category}], 供 IDE 补全展示。
 
-        return list_slash_commands()
+    兼容旧客户端: 即便只想要名字, dict 也含 ``name`` 字段; 失败降级为空列表。
+    """
+    try:
+        from .cmd_help import all_commands_metadata
+
+        return all_commands_metadata()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from .cmd_slash import list_slash_commands, slash_command_meta
+
+        meta = slash_command_meta()
+        return [{"name": n, "description": meta.get(n, "")} for n in list_slash_commands()]
     except Exception as exc:  # noqa: BLE001
         log.debug("ACP 列举斜杠命令失败: %s", exc)
         return []
