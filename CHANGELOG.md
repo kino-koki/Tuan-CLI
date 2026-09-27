@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 新增
 
+- **Skills 系统升级: 蒸馏闭环 + 多仓库可移植 + frontmatter 超集 + 技能治理 (P0/P1/P2, 对标 Codex / Claude Code / Kimi Code)**:
+  - **端到端蒸馏闭环** (`self_improve/distill_loop.py`): 多步任务结束后自动检测可复用模式, 产出「技能提议」(名称+描述+正文草稿+标签); 质量门控 (名称非空/描述≥10字/正文≥3步); 用户确认后经 skill_save 写入用户级技能库 (source=auto-distill, 同名=refine); 下次相似任务因标签匹配+热度被 `activate_for_task` 自动命中; 新增 `/distill` 斜杠命令手动触发; 配置 `self_improve.auto_propose`(默认 true)、`self_improve.min_tool_calls`(默认 3)。
+  - **多仓库技能发现** (`skills/manager.py`): 按优先级合并项目级 `<workspace>/.qxt/skills/`、`<workspace>/.agents/skills/` → 用户级 `<home>/skills/`、`<home>/.agents/skills/` → 配置 `skills.extra_dirs` → 内置 `resources/skills/builtin/`; 同名高优先级覆盖低优先级; 支持目录型技能包 `<slug>/SKILL.md`; 新增 `qxt skills import <path>` 从 Claude Code/Codex 技能目录一键导入到用户级。
+  - **frontmatter 超集兼容** (对齐 Codex/Claude Code 开放标准): 识别并存储 `display_name`/`short_description`/`default_prompt`/`policy.allow_implicit_invocation`, 保留 qxt 自有字段 (activation/tags/priority/use_count/version/source/triggers); 写入输出全部字段, 旧文件完全向后兼容; `render_for_prompt` 优先 short_description; `/skill-name` 无参数时自动取 default_prompt 作为任务。
+  - **技能治理** (`skills/governance.py`): `qxt skills audit` 与 `/skills audit` 标注 僵尸技能(30天未用且 use_count=0)/元数据不全/frontmatter 合法性; `qxt skills consolidate [--apply] [--threshold 0.7]` 检测相似技能 (标签Jaccard+描述token) 并提议合并, 默认 dry-run 不改盘; `qxt skills lint <name>` 检查 frontmatter 合法性、正文步骤结构与相对链接有效性。
+
 - **UX 优化: doctor 诊断 / onboarding / help 系统 / 友好错误 / diff 面板 (P0-P2, 对标 Claude Code / Kimi Code)**:
   - **`qxt doctor` 结构化诊断** (`cli/cmd_doctor.py`): 配置语法/必填字段/未知字段、
     技能 frontmatter 合法性 (name/description 必填/正文非空/重复 slug)、项目指令
