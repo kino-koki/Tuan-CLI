@@ -19,6 +19,7 @@ from qingxiaotuan.tools.checkpoint import checkpoint_tool
 
 # ------------------------------------------------------------------ ledger 单元
 
+
 def test_ledger_mark_and_undo_since(tmp_path):
     led = MutationLedger(str(tmp_path))
     f = tmp_path / "a.txt"
@@ -37,6 +38,7 @@ def test_ledger_mark_and_undo_since(tmp_path):
 
 # ------------------------------------------------------------------ handler 单元
 
+
 def _ctx(**kw) -> ToolContext:
     return ToolContext(kernel=None, workspace=".", **kw)
 
@@ -47,8 +49,12 @@ def test_restore_without_checkpoints():
 
 
 def test_save_list_restore_basic():
-    ctx = _ctx(conversation=[{"role": "system", "content": "s"},
-                             {"role": "user", "content": "hi"}])
+    ctx = _ctx(
+        conversation=[
+            {"role": "system", "content": "s"},
+            {"role": "user", "content": "hi"},
+        ]
+    )
     out = checkpoint_tool(ctx, "save", note="改动前")
     assert "cp1" in out
     assert "没有已保存" not in checkpoint_tool(ctx, "list")
@@ -61,7 +67,10 @@ def test_save_list_restore_basic():
 
 
 def test_unknown_checkpoint_id():
-    ctx = _ctx(conversation=[], checkpoints=[{"id": "cp9", "msg_len": 0, "mark": -1, "note": ""}])
+    ctx = _ctx(
+        conversation=[],
+        checkpoints=[{"id": "cp9", "msg_len": 0, "mark": -1, "note": ""}],
+    )
     out = checkpoint_tool(ctx, "restore", checkpoint_id="nope")
     assert "未找到" in out
     assert "cp9" in out
@@ -75,14 +84,17 @@ def test_truncate_walks_back_over_dangling_tool_calls():
         {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}]},
         {"role": "tool", "content": "r"},
     ]
-    ctx = _ctx(conversation=msgs,
-               checkpoints=[{"id": "cp1", "msg_len": 3, "mark": -1, "note": ""}])
+    ctx = _ctx(
+        conversation=msgs,
+        checkpoints=[{"id": "cp1", "msg_len": 3, "mark": -1, "note": ""}],
+    )
     out = checkpoint_tool(ctx, "restore")
     assert "截回" in out
     assert len(msgs) == 2  # 从 3 回退到 2, 不悬着未回应的调用
 
 
 # ------------------------------------------------------------------ 全循环集成
+
 
 class MockModel(ModelAdapter):
     name = "mock"
@@ -102,27 +114,72 @@ def test_checkpoint_roundtrip_in_agent_loop(tmp_path, qxt_home):
     config.data["agent"]["skill_nudge_interval"] = 0
     config.data["skills"]["auto_inject"] = False
     kernel.unprovide("model_adapter")
-    model = MockModel([
-        # 回合1: 写初版
-        ModelResponse(tool_calls=[ToolCall(id="c1", name="write_file", arguments=json.dumps(
-            {"path": "doc.txt", "content": "v1"}))]),
-        ModelResponse(content="初版写好"),
-        # 回合2: 打检查点
-        ModelResponse(tool_calls=[ToolCall(id="c2", name="checkpoint", arguments='{"action":"save","note":"改动前"}')]),
-        ModelResponse(content="已保存"),
-        # 回合3: 改坏它 + 新增文件
-        ModelResponse(tool_calls=[ToolCall(id="c3", name="write_file", arguments=json.dumps(
-            {"path": "doc.txt", "content": "v2-broken"})),
-            ToolCall(id="c4", name="write_file", arguments=json.dumps(
-                {"path": "extra.txt", "content": "junk"}))]),
-        ModelResponse(content="改完了"),
-        # 回合4: 一键回滚
-        ModelResponse(tool_calls=[ToolCall(id="c5", name="checkpoint", arguments='{"action":"restore"}')]),
-        ModelResponse(content="已回滚"),
-    ])
+    model = MockModel(
+        [
+            # 回合1: 写初版
+            ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="write_file",
+                        arguments=json.dumps({"path": "doc.txt", "content": "v1"}),
+                    )
+                ]
+            ),
+            ModelResponse(content="初版写好"),
+            # 回合2: 打检查点
+            ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="c2",
+                        name="checkpoint",
+                        arguments='{"action":"save","note":"改动前"}',
+                    )
+                ]
+            ),
+            ModelResponse(content="已保存"),
+            # 回合3: 先读再改 (Read-before-Edit 守卫) + 新增文件
+            ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="c3",
+                        name="read_file",
+                        arguments=json.dumps({"path": "doc.txt"}),
+                    )
+                ]
+            ),
+            ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="c4",
+                        name="write_file",
+                        arguments=json.dumps(
+                            {"path": "doc.txt", "content": "v2-broken"}
+                        ),
+                    ),
+                    ToolCall(
+                        id="c5",
+                        name="write_file",
+                        arguments=json.dumps({"path": "extra.txt", "content": "junk"}),
+                    ),
+                ]
+            ),
+            ModelResponse(content="改完了"),
+            # 回合4: 一键回滚
+            ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="c6", name="checkpoint", arguments='{"action":"restore"}'
+                    )
+                ]
+            ),
+            ModelResponse(content="已回滚"),
+        ]
+    )
     kernel.provide("model_adapter", model, owner="test")
-    agent = Agent(kernel=kernel, config=config, workspace=str(tmp_path),
-                  confirm=lambda _p: True)
+    agent = Agent(
+        kernel=kernel, config=config, workspace=str(tmp_path), confirm=lambda _p: True
+    )
     agent.ctx.ledger = MutationLedger(str(tmp_path), config)
 
     agent.run("写初版", stream=False)
@@ -137,5 +194,7 @@ def test_checkpoint_roundtrip_in_agent_loop(tmp_path, qxt_home):
     assert not (tmp_path / "extra.txt").exists()
     # 对话流截回检查点: 改坏回合与回滚指令本身都从历史中消失
     # (restore 在工具执行期截断, 本回合收尾的 tool 结果与最终回复仍会正常追加)
-    user_texts = [m.get("content", "") for m in agent.messages if m.get("role") == "user"]
+    user_texts = [
+        m.get("content", "") for m in agent.messages if m.get("role") == "user"
+    ]
     assert user_texts == ["写初版", "打检查点"]
