@@ -1,4 +1,5 @@
 """UI 增强: 长输出折叠预览 + token/上下文状态栏回写。"""
+
 from qingxiaotuan.ui.repl import UI
 from qingxiaotuan.ui.mascot import IDLE
 
@@ -79,25 +80,31 @@ def test_status_bar_reflects_tokens():
     # (单行: 左 model/cwd/branch, 右 context 占用; 无占用时右侧回退 /help)
     import io
     from contextlib import redirect_stdout
+
     buf = io.StringIO()
     with redirect_stdout(buf):
         u.status_bar("standard", "high", "/workspace")
     rendered = buf.getvalue()
     assert "context: 33% (33k/100k)" in rendered
-    assert "context:" in rendered   # 有上下文占用时右侧显示占用
+    assert "context:" in rendered  # 有上下文占用时右侧显示占用
     # git 分支 (仓库默认分支可能是 master/main, 动态获取避免硬编码)
     import subprocess
+
     try:
         branch = subprocess.check_output(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            stderr=subprocess.DEVNULL, text=True,
+            stderr=subprocess.DEVNULL,
+            text=True,
         ).strip()
     except Exception:
-        branch = "master"
-    assert branch in rendered   # git 分支
+        # 与 qingxiaotuan/ui/repl.py 的 _detect_branch 回退值保持一致:
+        # git 不可用/超时时状态栏回退显示 main
+        branch = "main"
+    assert branch in rendered  # git 分支
 
 
 # ----------------------------------------------------- 快捷键面板
+
 
 def test_keymap_groups_have_slash_and_keys():
     u = _ui()
@@ -115,6 +122,7 @@ def test_keymap_fallback_prints_without_tty():
     u = _ui()
     import io
     from contextlib import redirect_stdout
+
     buf = io.StringIO()
     with redirect_stdout(buf):
         u._print_keymap_fallback()
@@ -132,15 +140,23 @@ def test_keymap_panel_safe_in_headless():
 
 # ----------------------------------------------------- Kimi 风格 banner
 
+
 def test_banner_renders_box_art():
     u = _ui()
     import io
     from contextlib import redirect_stdout
+
     buf = io.StringIO()
     cfg = {"session_id": None}
     with redirect_stdout(buf):
-        u.banner(cfg, "C:/Users/28726", "deepseek-chat", "default",
-                 mode="standard", effort="high")
+        u.banner(
+            cfg,
+            "C:/Users/28726",
+            "deepseek-chat",
+            "default",
+            mode="standard",
+            effort="high",
+        )
     out = buf.getvalue()
     # 关键元素: 蓝色圆角框 + 原始 box-art 吉祥物 + 欢迎语 + 4 个字段行
     assert "Welcome to 青小团 CLI!" in out
@@ -155,4 +171,3 @@ def test_banner_renders_box_art():
     assert "╭" in out and "╮" in out and "╰" in out and "╯" in out
     # 状态栏提示区
     assert "/help" in out
-

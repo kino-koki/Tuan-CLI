@@ -185,7 +185,12 @@ def test_emit_event_on_complete(tmp_path):
                   workspace=str(tmp_path))
     wf_id = eng.create("evt", [[{"title": "a", "prompt": "p"}]])
     deadline = time.time() + 3
-    while time.time() < deadline and eng.status(wf_id)["status"] != "done":
+    # _finish 先落盘 status=done、随后才发 workflow.completed 事件 (worker 线程顺序执行);
+    # 主线程轮询到 done 即退出, 可能早于 emit 到达, 造成偶发断言失败 (flaky)。
+    # 等待条件必须同时覆盖"状态完成"与"事件已到达"两者。
+    while time.time() < deadline and (
+        eng.status(wf_id)["status"] != "done" or not events
+    ):
         time.sleep(0.02)
     names = [name for name, _ in events]
     assert "workflow.completed" in names
