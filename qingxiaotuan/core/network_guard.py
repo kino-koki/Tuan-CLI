@@ -97,7 +97,17 @@ _SENSITIVE_DOMAINS = frozenset({
     "rentry.co", "ix.io", "0x0.st", "transfer.sh", "file.io",
     "ngrok.io", "localtunnel.me", "serveo.net",
     "requestbin.com", "webhook.site", "pipedream.com",
+    # 云元数据端点 (SSRF 高价值目标): 命中即 deny, 防 IAM 凭据/实例配置泄漏。
+    "169.254.169.254", "100.100.100.200", "metadata.google.internal",
 })
+
+# 云元数据/链路本地地址字面量 (含 IPv6), URL 解析正则抓不全, 单独兜底。
+# AWS/GCP/Azure/阿里云实例元数据均落在 169.254.0.0/16 链路本地段。
+_CLOUD_METADATA_RE = re.compile(
+    r"\b(?:169\.254\.169\.254|100\.100\.100\.200|metadata\.google\.internal"
+    r"|\[?fd00:ec2::254\]?)\b",
+    re.IGNORECASE,
+)
 
 # 数据编码外泄通道
 _DATA_EXFIL_PATTERNS = re.compile(
@@ -285,6 +295,14 @@ class NetworkGuard:
             return NetworkDecision(
                 action="allow", risk_level="none",
                 reasons=["非网络命令"],
+            )
+
+        # 云元数据端点 (SSRF): 无论是否配置白名单, 一律 deny —— 这类地址被访问
+        # 通常意味着 SSRF/凭据窃取, 而非正常业务。
+        if _CLOUD_METADATA_RE.search(command):
+            return NetworkDecision(
+                action="deny", risk_level="high",
+                reasons=["检测到云元数据端点访问 (SSRF/凭据窃取风险), 已拒绝"],
             )
 
         # 2. 检测数据外泄通道 (编码+管道到网络)
