@@ -40,11 +40,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI 新增 `qxt ecosystem` 子命令组 (scan/status/import/export/link/serve)。
 - **配置**: `config/defaults.py` 新增 `ecosystem.*` 段 (claude_code.enabled /
   hermes.enabled / hermes.home / mcp.allow_dangerous_tools, 默认均安全)。
-- **测试与验证**: 新增 `tests/test_ecosystem.py` (21 项) + `tests/test_ecosystem_cli.py`
+- **测试与验证**: 新增 `tests/test_ecosystem.py` (24 项) + `tests/test_ecosystem_cli.py`
   (parser/link/import e2e), 全部通过; MCP server 子进程真实握手 (initialize →
   tools/list 8 工具 → qxt_status JSON → skill_list → 未知工具 -32602) 通过;
   mypy 全项目 0 错误。本机实测: Claude Code 2.1.239 + `~/.claude` 1 技能 (tabbit)
   探测正确; Hermes CLI 未安装 (HERMES_HOME 存在) 时优雅降级。
+- **真实机端到端修复 (2026-09-27)**: ① `detect._count_skills` 跳过 `.` 开头的隐藏
+  暂存目录 (Claude 官方安装遗留 `.tabbit-stage-*` 不再误计, 回归测试
+  `test_probe_ignores_hidden_staging_skill_dirs`); ② MCP servers 分生态统计
+  (`_count_claude_mcp` / `_count_hermes_mcp`, 回归测试
+  `test_probe_mcp_servers_counted_per_ecosystem`); ③ `import_mcp_servers` 兼容真实
+  `Config.set_user` (真实 Config 无 `set` 属性, 回归测试
+  `test_import_mcp_servers_with_real_config`); ④ `qxt ecosystem link` 的 Hermes home
+  解析链补齐 `$HERMES_HOME` / `~/.hermes` 回退 (与 probe 一致)。实测通过: `import all
+  --from hermes` 技能/记忆/MCP 全部并入; `export skills --to hermes` 25 个技能、
+  `export memory --to hermes` 记忆合并; `link --apply` 双向挂载 (Claude `.mcp.json` +
+  Hermes `config.yaml` 追加 qxt server)。
 - **文档**: 新增 `docs/ecosystem_bridge.md`; README 中/英文、ARCHITECTURE.md 同步。
 
 ## [0.2.017] - Unreleased
