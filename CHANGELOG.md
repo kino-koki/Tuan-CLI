@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.017] - Unreleased
 
+### 变更
+
+- **CLI 命令保守精简 (删除冗余/实验性/低价值入口, 保留 36 个核心命令)**:
+  - 删除 12 个顶级命令: `arch`/`ext`/`others`/`code-edit`/`impact`/`mode`/`open`/`replay`/`trajectory`/`compact`/`bench`/`codedev`。
+  - 合并: `qxt replay`/`qxt trajectory` -> `qxt session replay`/`qxt session trajectory`; `qxt impact` -> `qxt undo --impact`; `qxt compact --verify` -> `qxt doctor --compact`; `qxt codedev` -> `qxt dev codedev demo|doctor|retrieve|verify`; `qxt mode` -> `qxt config get/set mode`。
+  - 只删 CLI 入口, 底层模块 (arch 插件/codedev 子系统/replay 核心/compact 存活检查) 全部保留; 详见 `docs/command_consolidation_20260927.md`。
+  - 新增回归测试 `tests/test_command_consolidation.py`。
+
+- **Agent 四层工作边界改为内置必须使用 (默认自动生效, 对标 B 站 BV1j3YL6oEvs)**:
+  - **Project 层**: 会话/headless 任务启动时自动幂等初始化 `.qxt/` (原 `qxt project init` 变为内置), 配置 `project.auto_init`(默认 true)。
+  - **Chat 层**: 上下文达 80% 阈值时自动执行交接 (生成摘要→新会话继承→旧会话归档), 原仅提示; 配置 `chat.auto_handoff_enabled`(默认 true)。
+  - **Subagent 层**: 长任务(>500字)或多任务并行意图(含「同时/并行/分别/独立」)自动走隔离子代理执行, 失败优雅回退主会话; 配置 `subagent.auto_isolate`(默认 true)。
+  - **Worktree 层**: 检测到并行实验意图(「方案A/B」「对比」「另一种」)自动创建独立 worktree, 非 git 仓库静默跳过; 配置 `worktree.auto_create`(默认 true)。
+  - **Rewind**: 输入前自动快照保持现状, `/rewind` 回退命令保留。
+  - 编排集中在 `qingxiaotuan/core/boundary_auto.py` (纯函数+轻量类, hook 在 CLI 层不侵入内核); bare 模式下仅 project init 执行, 其余自动行为跳过。
+  - 新增测试 `tests/test_boundary_auto_enabled.py` (11 用例); 详见 `docs/four_layer_boundary_auto.md`。
+
 ### 新增
 
 - **Skills 系统升级: 蒸馏闭环 + 多仓库可移植 + frontmatter 超集 + 技能治理 (P0/P1/P2, 对标 Codex / Claude Code / Kimi Code)**:

@@ -117,7 +117,7 @@ qxt --print run "Hi, describe yourself in one sentence."
 
 ---
 
-## The command surface: 53 subcommands (201 including nested) + 50 slash commands
+## The command surface: 36 core subcommands + slash commands
 
 | Command | What it's for |
 |---|---|
@@ -126,8 +126,8 @@ qxt --print run "Hi, describe yourself in one sentence."
 | `qxt agent` | Named agents (`.claude/agents`-compatible, 3-tier discovery) |
 | `qxt acp` | Run an ACP server so VSCode / Zed / JetBrains can drive you |
 | `qxt cron` | Scheduled background tasks |
-| `qxt doctor` / `qxt bench` | Health check / benchmark |
-| `qxt arch demo` | One-command verify of the 5-layer architecture |
+| `qxt doctor [--compact]` | Health check (add `--compact` for context-compaction survival self-check) |
+| `qxt dev codedev ...` | Code-dev subsystem (retrieval / verification / decomposition) |
 
 Slash commands you'll live in: `/plan` · `/model` · `/undo`·`/impact` · `/swarm` · `/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help` — full list via `Ctrl-G` in the TUI.
 

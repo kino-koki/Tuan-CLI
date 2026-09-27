@@ -190,6 +190,13 @@ def cmd_run(args) -> int:
     if getattr(args, "model", None):
         config.set_user("model.model", args.model)
     workspace = getattr(args, "workspace", None) or os.getcwd()
+    # ---- 四层边界 · Project 层自动生效: headless 任务启动即确保 .qxt/ 存在 (幂等) ----
+    # bare 模式仍初始化 (.qxt/ 落在工作区内, 不污染用户全局配置); 失败静默不阻断任务。
+    try:
+        from ..core.boundary_auto import ensure_project_context
+        ensure_project_context(workspace, config=config, bare=bare)
+    except Exception:  # noqa: BLE001
+        pass
     agent = create_agent(kernel, workspace)
     # 会话级 allowedTools (--allowed-tools): 命中者免确认, 仅本会话生效
     at = getattr(args, "allowed_tools", None)
@@ -420,7 +427,10 @@ def _cli_bg_shell(args) -> None:
 # ===================================================================== cmd_undo / cmd_impact
 
 def cmd_undo(args) -> int:
-    """CLI: qxt undo [target] — 跨进程精确回滚。"""
+    """CLI: qxt undo [target] [--impact] — 跨进程精确回滚 / 展示账本影响半径。"""
+    # `--impact` (原顶级 qxt impact): 只展示操作账本与影响半径, 不执行回滚。
+    if getattr(args, "impact", False):
+        return cmd_impact(args)
     from ..core.ledger import MutationLedger
     workspace = str(Path(getattr(args, "workspace", None) or os.getcwd()).resolve())
     kernel = build_kernel(getattr(args, "profile", "default"))

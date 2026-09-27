@@ -25,7 +25,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 
 @dataclass
@@ -53,6 +53,7 @@ class HandoffReport:
 
 
 # ------------------------------------------------------------ 阈值检测
+
 
 def should_handoff(
     estimated_tokens: int,
@@ -91,7 +92,7 @@ def build_summary(
     if generate_fn is not None:
         try:
             transcript = "\n".join(
-                f"[{m.get('role','?')}] {str(m.get('content',''))[:500]}"
+                f"[{m.get('role', '?')}] {str(m.get('content', ''))[:500]}"
                 for m in messages[-40:]
             )
             prompt = (
@@ -109,8 +110,16 @@ def build_summary(
 
 def _heuristic_summary(messages: List[Dict[str, Any]]) -> str:
     """启发式摘要: 不调 LLM, 从消息里提取目标/已完成/待办/关键文件。"""
-    users = [str(m.get("content", "")) for m in messages if m.get("role") == "user" and m.get("content")]
-    assistants = [str(m.get("content", "")) for m in messages if m.get("role") == "assistant" and m.get("content")]
+    users = [
+        str(m.get("content", ""))
+        for m in messages
+        if m.get("role") == "user" and m.get("content")
+    ]
+    assistants = [
+        str(m.get("content", ""))
+        for m in messages
+        if m.get("role") == "assistant" and m.get("content")
+    ]
 
     # 目标 = 第一条用户消息
     goal = users[0].strip()[:300] if users else "(未记录)"
@@ -137,6 +146,7 @@ def _heuristic_summary(messages: List[Dict[str, Any]]) -> str:
 
 # ------------------------------------------------------------ 交接编排
 
+
 class ChatHandoff:
     """会话交接器 (每个工作区一份)。"""
 
@@ -161,6 +171,37 @@ class ChatHandoff:
         if not self.enabled:
             return False
         return should_handoff(estimated_tokens, model_max_tokens, self.threshold)
+
+    def auto_handoff_if_needed(
+        self,
+        estimated_tokens: int,
+        model_max_tokens: int,
+        old_session_id: str,
+        messages: List[Dict[str, Any]],
+        generate_fn: Optional[Callable[[str], str]] = None,
+        project_id: str = "",
+    ) -> Optional[HandoffReport]:
+        """超阈值时**自动执行交接** (而非仅提示), 返回交接报告; 未达阈值 / 未开启返回 None。
+
+        与 :meth:`maybe_prompt` 的区别: ``maybe_prompt`` 只提醒用户手动 ``/handoff``;
+        本方法在达到阈值时**直接调用 :meth:`handoff` 完成交班** (生成摘要 → 开新会话 →
+        旧会话归档 → 落谱系), 由 CLI 层把报告打印到 UI。
+
+        双重开关:
+        - ``chat.handoff_enabled`` (本类 ``self.enabled``) 交接总开关;
+        - ``chat.auto_handoff_enabled`` (默认 ``true``) 是否「自动执行」而非仅提示。
+
+        任一关闭 / 未达阈值 / 模型窗口未知时返回 None, 不做任何副作用。
+        """
+        if not self.enabled:
+            return None
+        if not bool(self._cfg("chat.auto_handoff_enabled", True)):
+            return None
+        if not should_handoff(estimated_tokens, model_max_tokens, self.threshold):
+            return None
+        return self.handoff(
+            old_session_id, messages, generate_fn=generate_fn, project_id=project_id
+        )
 
     def handoff(
         self,
@@ -187,7 +228,11 @@ class ChatHandoff:
         """把交接记录落到 .qxt/handoffs.json (谱系可查)。"""
         f = self.qxt_dir / "handoffs.json"
         try:
-            data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {"handoffs": []}
+            data = (
+                json.loads(f.read_text(encoding="utf-8"))
+                if f.exists()
+                else {"handoffs": []}
+            )
         except (OSError, json.JSONDecodeError):
             data = {"handoffs": []}
         data.setdefault("handoffs", []).append(report.to_dict())
@@ -200,6 +245,9 @@ class ChatHandoff:
         if not f.exists():
             return []
         try:
-            return json.loads(f.read_text(encoding="utf-8")).get("handoffs", [])
+            return cast(
+                List[Dict[str, Any]],
+                json.loads(f.read_text(encoding="utf-8")).get("handoffs", []),
+            )
         except (OSError, json.JSONDecodeError):
             return []

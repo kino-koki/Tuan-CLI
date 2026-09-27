@@ -75,9 +75,9 @@ class TestSurvivalReport:
         assert items["输出风格 / 语言"].ok is True
 
     def test_verify_cli_entry_exists(self):
-        """`qxt compact --verify` 子命令已注册 (parser 可解析)。"""
+        """`qxt doctor --compact` 已注册 (压缩存活自检入口已并入 doctor)。"""
         from qingxiaotuan.cli.parser import build_parser
         parser = build_parser()
-        args = parser.parse_args(["compact", "--verify"])
-        assert getattr(args, "verify") is True
-        assert getattr(args, "func") == "cmd_compact"
+        args = parser.parse_args(["doctor", "--compact"])
+        assert getattr(args, "compact") is True
+        assert getattr(args, "func") == "cmd_doctor"

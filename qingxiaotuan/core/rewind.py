@@ -24,7 +24,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 
 class RewindError(Exception):
@@ -150,7 +150,7 @@ class RewindManager:
 
     def _load(self, info: SnapshotInfo) -> Dict[str, Any]:
         with open(info.path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return cast(Dict[str, Any], json.load(f))
 
     def restore(self, messages: List[Dict[str, Any]], index: int = -1) -> int:
         """把 messages 原位替换为指定快照的内容 (丢弃之后的对话)。
