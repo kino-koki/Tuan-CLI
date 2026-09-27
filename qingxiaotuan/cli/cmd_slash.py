@@ -1027,7 +1027,15 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
     arg = parts[1] if len(parts) > 1 else ""
 
     if head == "/help":
-        ui.info(_HELP)
+        # 增强帮助: /help 分类列出; /help <命令> 详细用法; /help keyboard 快捷键
+        try:
+            from .cmd_help import categorized_help_text, help_for_command
+            if arg.strip():
+                ui.info(help_for_command(arg.strip()))
+            else:
+                ui.info(categorized_help_text())
+        except Exception:  # noqa: BLE001 - 回退到静态帮助文本
+            ui.info(_HELP)
     elif head == "/tools":
         tools = agent.registry.tools
         for tool in tools:
