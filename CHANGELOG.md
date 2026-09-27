@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **云元数据 SSRF 拦截 (core/network_guard.py)**: 新增 _CLOUD_METADATA_RE 与 _SENSITIVE_DOMAINS 条目, 对 169.254.169.254/100.100.100.200/metadata.google.internal/[fd00:ec2::254] 一律 deny (无论是否配置白名单), 防 IAM 凭据/实例配置泄漏。
 - **对抗基准扩充**: bench/bypass_matrix.py 新增 AL.递归编码嵌套 (双层/三层 -enc、引号包裹、cmd 外套) 与 AM.云元数据SSRF 共 14 条载荷; bench/bench_powershell_safety.py 新增 AMSI 绕过、.NET 反射加载、反引号混淆 IEX、双层 -enc 四个危险模板。
 - 基准 (--quick): 对抗样本召回仍 100%、绕过 0; PowerShell 正确率仍 100%/漏放 0; 绕过矩阵 1097 条、绕过 0、灾难类别 100% 拦截; 误杀率 0.81% -> 0.85% (+0.04pp, 可接受)。
+- **绕过矩阵扩容: 手写样本 -> 确定性大规模变体** (`bench/bypass_matrix.py`): 新增程序化等义变体生成器
+  `_synthesize_variants()`, 从既有 block 载荷自动筛选"无引号/无命令替换"的危险种子 (每类 ≤8 条),
+  施加 8 种 shell 等义变换 (前缀 true&&/echo/后缀注释/双空格/tab/flag 花括号/换行/env), 语义仍执行
+  原危险操作, 期望全部 block —— 任何 allow 都暴露引擎可绕过窗口。绕过矩阵总载荷 1097 -> **2310 条**
+  (variant-gen +1213, attack_gen +538), 实测绕过 0、误杀 1 (预存 tar|ssh 保守升级)、灾难类别 100% 拦截。
+- **`qxt safe bench --full` 数字漂移报告** (`cli/cmd_safe.py` + `cli/parser.py`): 跑完后输出
+  本跑 vs 存档的逐指标漂移表 (旧值→新值→Δ, 误杀/漏放/绕过上升与召回下降标红)。顺带修复两个真实 bug:
+  ① 单独 `--quick` (无 `--check`) 会把全量存档 `security-bench.json` 覆盖成 2000 条 quick 数字 ——
+  CI 门禁参照被污染的隐患, 现 quick 模式一律写 `security-bench.quick.json`; ② `--full` 此前不加载
+  `prev_archive`, 漂移报告永远报"无存档", 现 `--check`/`--full` 任一即加载。
+- **mypy 残留修复** (`cli/cmd_session.py`): `session replay export` 分支 `out` 变量名与函数内
+  str 推断冲突 (mypy 2 errors), 改用独立变量名 `p`; 全项目 443 源文件 mypy 0 错误。
 
 ### 变更
 - **CLI 命令保守精简 (删除冗余/实验性/低价值入口, 保留 36 个核心命令)**:
