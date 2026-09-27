@@ -79,28 +79,100 @@ def cmd_plugin(args) -> int:
 # ===================================================================== cmd_skill
 
 def cmd_skill(args) -> int:
-    """技能管理。"""
+    """技能管理: list/show/import/audit/consolidate/lint。"""
     skill_cmd = getattr(args, "skill_cmd", None)
     config = Config(profile=getattr(args, "profile", "default"),
                     patch_file=getattr(args, "patch", None))
-    manager = SkillManager(config.home)
+    workspace = getattr(args, "cwd", None) or getattr(args, "workspace", None)
+    manager = SkillManager(config.home, workspace=Path(workspace) if workspace else None,
+                           config=config)
+
     if skill_cmd == "list":
         skills = manager.list_all()
         if not skills:
             console.print("没有技能")
         else:
+            console.print(f"{'名称':<28} {'来源':<8} {'次数':<5} 描述")
             for s in skills:
-                console.print(f"  {s.name:<30s} {s.description[:50]}")
-    elif skill_cmd == "show":
+                console.print(f"{s.ui_name:<28} {s.origin:<8} {s.use_count:<5} "
+                              f"{(s.short_description or s.description)[:40]}")
+        return 0
+
+    if skill_cmd == "show":
         name = getattr(args, "name", "")
         skill = manager.load(name)
         if skill:
-            console.print(f"  名称: {skill.name}")
+            console.print(f"  名称: {skill.ui_name}")
+            console.print(f"  slug: {skill.slug}  来源: {skill.origin}")
             console.print(f"  描述: {skill.description}")
+            if skill.default_prompt:
+                console.print(f"  默认提示: {skill.default_prompt}")
             console.print(f"\n{skill.body}")
         else:
             console.print(f"技能不存在: {name}")
-    return 0
+        return 0
+
+    if skill_cmd == "import":
+        from pathlib import Path as _P
+        src = _P(getattr(args, "path", "")).expanduser()
+        skill = manager.import_skill(src)
+        if skill:
+            console.print(f"已导入技能: {skill.ui_name} → {skill.path}")
+        else:
+            console.print(f"导入失败 (未找到 SKILL.md): {src}")
+            return 1
+        return 0
+
+    if skill_cmd == "audit":
+        from ..skills.governance import audit
+        rows = audit(manager)
+        zombies = [r for r in rows if r.is_zombie]
+        incomplete = [r for r in rows if r.incomplete]
+        console.print(f"技能审计: 共 {len(rows)} 个技能")
+        for r in rows:
+            flags = []
+            if r.is_zombie:
+                flags.append("僵尸")
+            if r.incomplete:
+                flags.append("元数据不全")
+            if not r.valid:
+                flags.append("frontmatter非法")
+            tag = f"  [{','.join(flags)}]" if flags else ""
+            console.print(f"  {r.slug:<24} {r.origin:<8} use={r.use_count:<3} "
+                          f"闲置{r.days_idle:.0f}天{tag}")
+        console.print(f"\n僵尸技能 {len(zombies)} 个, 元数据不全 {len(incomplete)} 个")
+        return 0
+
+    if skill_cmd == "consolidate":
+        from ..skills.governance import consolidate
+        dry = not getattr(args, "apply", False)
+        thr = float(getattr(args, "threshold", 0.7) or 0.7)
+        proposals = consolidate(manager, dry_run=dry, threshold=thr)
+        if not proposals:
+            console.print("未发现相似技能对 (无需合并)")
+            return 0
+        mode = "dry-run (未改盘)" if dry else "已执行合并"
+        console.print(f"相似技能合并提议 [{mode}]:")
+        for pr in proposals:
+            writable = "可写" if pr.writable else "只读(跳过删除)"
+            console.print(f"  相似度 {pr.score}: 保留 `{pr.keeper.slug}` "
+                          f"← 并入 `{pr.loser.slug}` ({writable})")
+        return 0
+
+    if skill_cmd == "lint":
+        from ..skills.governance import lint
+        name = getattr(args, "name", "")
+        issues = lint(manager, name)
+        if not issues:
+            console.print(f"✓ 技能 `{name}` 通过检查")
+        else:
+            console.print(f"技能 `{name}` 发现 {len(issues)} 个问题:")
+            for it in issues:
+                console.print(f"  - {it}")
+        return 0
+
+    console.print(f"未知 skill 子命令: {skill_cmd}")
+    return 1
 
 
 # ===================================================================== cmd_memory

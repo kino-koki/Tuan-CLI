@@ -63,7 +63,11 @@ _HELP = """
   /status    会话状态摘要 (模型/模式/上下文/用量/韧性)
   /stats     Agent 可观测性面板 (trace/span/延迟/错误率, 需开启 telemetry)
   /budget    查看/设置成本预算上限 ( /budget <USD> )
-  /checkpoint  会话检查点 ( /checkpoint save 保存;  restore [id] 回滚; list 查看 )
+/checkpoint  会话检查点 ( /checkpoint save 保存;  restore [id] 回滚; list 查看 )
+  /rewind    会话时间线回溯 ( /rewind 回退一步; /rewind list 列快照; /rewind to <N> )
+  /handoff   会话交接 ( /handoff 生成摘要 -> 开新会话继续 )
+  /worktree  git worktree 并行实验 ( create/list/remove/switch )
+  /init      扫描工作区生成 QXT.md 项目规则
   /web       启动本地 Web 工作台 (无参数) 或快捷联网 ( /web <URL> 或  /web search <关键词> )
   /code      代码感知问答: ContextForge 检索工作区后带上下文执行 ( /code <任务> )
   /commands  热插拔命令管理: list / reload / enable <名> / disable <名>
@@ -1043,8 +1047,36 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
     elif head == "/skills":
         manager = agent.kernel.get("skill_manager")
         if manager:
-            for s in manager.list_all():
-                ui.info(f"  {s.name}: {s.description[:60]}")
+            sub = arg.strip().lower()
+            if sub in ("audit", ""):
+                from ..skills.governance import audit
+                rows = audit(manager)
+                ui.info(f"技能审计: 共 {len(rows)} 个")
+                for r in rows:
+                    flags = []
+                    if r.is_zombie:
+                        flags.append("僵尸")
+                    if r.incomplete:
+                        flags.append("元数据不全")
+                    tag = f" [{','.join(flags)}]" if flags else ""
+                    ui.info(f"  {r.slug} ({r.origin}) use={r.use_count}"
+                            f" 闲置{r.days_idle:.0f}天{tag}")
+            elif sub == "consolidate":
+                from ..skills.governance import consolidate
+                props = consolidate(manager, dry_run=True)
+                if not props:
+                    ui.info("未发现相似技能对 (dry-run)")
+                for pr in props:
+                    ui.info(f"  相似度{pr.score}: 保留 {pr.keeper.slug} <- 并入 {pr.loser.slug}")
+            else:
+                for s in manager.list_all():
+                    ui.info(f"  {s.ui_name} ({s.origin}): {(s.short_description or s.description)[:50]}")
+    elif head == "/distill":
+        svc = agent.kernel.get("self_improve")
+        if svc is not None and hasattr(svc, "distill"):
+            ui.info(f"蒸馏完成: {svc.distill()}")
+        else:
+            ui.info("蒸馏服务不可用 (self_improve 未启用)")
     elif head == "/memory":
         _cmd_memory(agent, config, arg)
     elif head == "/usage":
