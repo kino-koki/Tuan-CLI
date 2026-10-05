@@ -7,6 +7,7 @@ TRANSLATIONS = {
     "banner.directory": "Каталог",
     "banner.session": "Сессия",
     "banner.model": "Модель",
+    "banner.account": "Аккаунт",
     "banner.version": "Версия",
     "tip.fullscreen": "✦ Попробуйте полноэкранную мастерскую — наглядный прогресс задач и управление сессиями",
     "tip.fullscreen_cmd": "Запустите qxt --tui для полноэкранного режима",

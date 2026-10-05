@@ -7,6 +7,7 @@ TRANSLATIONS = {
     "banner.directory": "目錄",
     "banner.session": "會話",
     "banner.model": "模型",
+    "banner.account": "帳號",
     "banner.version": "版本",
     "tip.fullscreen": "✦ 試試全螢幕工作台 - 更清晰的任務進度、視覺化會話與設定管理",
     "tip.fullscreen_cmd": "執行 qxt --tui 進入全螢幕模式",

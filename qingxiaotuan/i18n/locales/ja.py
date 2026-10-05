@@ -7,6 +7,7 @@ TRANSLATIONS = {
     "banner.directory": "ディレクトリ",
     "banner.session": "セッション",
     "banner.model": "モデル",
+    "banner.account": "アカウント",
     "banner.version": "バージョン",
     "tip.fullscreen": "✦ フルスクリーンワークベンチを試そう - タスク進行・セッション・設定が見やすく",
     "tip.fullscreen_cmd": "qxt --tui でフルスクリーンモードへ",
