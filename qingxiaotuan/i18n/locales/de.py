@@ -7,6 +7,7 @@ TRANSLATIONS = {
     "banner.directory": "Verzeichnis",
     "banner.session": "Sitzung",
     "banner.model": "Modell",
+    "banner.account": "Account",
     "banner.version": "Version",
     "tip.fullscreen": "✦ Probiere die Vollbild-Werkbank - klarerer Aufgabenfortschritt und Sitzungsverwaltung",
     "tip.fullscreen_cmd": "Starte qxt --tui für den Vollbildmodus",

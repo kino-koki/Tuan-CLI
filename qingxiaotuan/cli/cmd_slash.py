@@ -51,6 +51,7 @@ _HELP = """
   /model     切换/查看模型
   /provider  查看/设置/清除 API Key 与供应商 ( /provider set <ENV> <KEY> · /provider clear [ENV] )
   /login     快捷保存当前供应商 API Key ( /login <KEY> )
+  /account   账户登录: 离线 / GitHub / Apple 账户 / DeepSeek 账户 (交互选择)
   /effort    切换推理投入 low/medium/high
   /mode      切换运行模式 standard/yolo
   /plan      切换 Plan 模式 (只读分析, 修改类工具被拦截)
@@ -92,7 +93,7 @@ TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执�
 # 权威命令清单: 与 _handle_slash 的 elif 分支一一对应。
 # 供 TUI / REPL 的补全词表、命令发现、ACP/IDE 能力清单共用, 避免多处维护漂移。
 SLASH_COMMAND_NAMES: tuple = (
-    "/audit", "/blast", "/budget", "/checkpoint", "/clear", "/clear-images", "/compact",
+    "/account", "/audit", "/blast", "/budget", "/checkpoint", "/clear", "/clear-images", "/compact",
     "/context", "/cost", "/diff", "/effort", "/exit", "/export", "/gh-borrow", "/goal",
     "/help", "/hooks", "/image", "/init", "/images", "/impact", "/import", "/log", "/login",
     "/mcp", "/mcp-tools", "/memory", "/mode", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/route", "/sandbox", "/skills", "/stats",
@@ -110,6 +111,7 @@ _CMD_META: Dict[str, str] = {
     "/memory": "查看记忆",
     "/model": "切换模型",
     "/provider": "查看/设置/清除 API Key",
+    "/account": "账户登录: 离线 / GitHub / Apple 账户 / DeepSeek 账户",
     "/login": "为当前供应商保存 API Key",
     "/usage": "本次会话 token 用量",
     "/cost": "本次会话花费",
@@ -866,6 +868,73 @@ def _cmd_provider(agent, config, head: str, arg: str) -> None:
     ui.success(t("slash.provider_set_done", env=env))
 
 
+def _cmd_account(agent, config, arg: str) -> bool:
+    """/account —— 账户登录菜单: 离线 / GitHub / Apple 账户 / DeepSeek 账户。
+
+    与 `/login` (保存 API Key) 不同, 本命令管理「第三方账户登录态」:
+    选择后调用对应 AuthProvider.login() (GitHub/Apple 走浏览器 OAuth,
+    DeepSeek 打开 chat.deepseek.com 取会话令牌; 无需 API Key)。
+    """
+    import sys
+
+    from ..auth import AuthError, AuthStore, ProviderNotConfigured, get_provider, list_providers
+
+    if not sys.stdin.isatty():
+        ui.info("TUI 账户菜单需要交互终端: 请在会话中输入 /account; 或命令行运行 `qxt login <provider>`")
+        return True
+
+    store = AuthStore()
+    choices: list = [("offline", "离线", "不登录, 本地功能照常 (可随时 /account 再登录)")]
+    choices += [(p["name"], p["display_name"], p["description"]) for p in list_providers()]
+
+    ui.info("账户登录 (输入序号或名称, 回车取消):")
+    for i, (key, label, desc) in enumerate(choices, 1):
+        acc = store.get(key) if key != "offline" else None
+        tag = f"  [已登录: {acc.get('login', '')}]" if (acc and acc.get("token")) else "  [未登录]"
+        ui.info(f"  {i}. {label} — {desc}{tag}")
+    try:
+        raw = input("选择: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ui.info("已取消 (保持当前状态)。")
+        return True
+    if not raw:
+        ui.info("已取消 (保持当前状态)。")
+        return True
+    if raw.isdigit():
+        idx = int(raw)
+        if not (1 <= idx <= len(choices)):
+            ui.info(f"无效选择: {raw}")
+            return True
+        key, label, desc = choices[idx - 1]
+    else:
+        matched = [c for c in choices if c[0] == raw]
+        if not matched:
+            ui.info(f"无效选择: {raw}")
+            return True
+        key, label, desc = matched[0]
+
+    if key == "offline":
+        ui.success("离线模式: 不登录第三方账户, 本地功能照常。")
+        return True
+
+    try:
+        provider = get_provider(key)
+        result = provider.login()
+    except ProviderNotConfigured as exc:
+        ui.error(f"[未配置] {exc}")
+        return True
+    except AuthError as exc:
+        ui.error(f"[登录失败] {exc}")
+        return True
+    except KeyboardInterrupt:
+        ui.error("登录已取消。")
+        return True
+    ui.success(f"已通过 {provider.display_name} 登录: {result.login}")
+    for k, v in (result.extra or {}).items():
+        ui.info(f"  {k}: {v}")
+    return True
+
+
 def _cmd_image_generate(agent, arg: str) -> None:
     """/image generate <描述> — AI 图片生成。"""
     if not arg:
@@ -1169,6 +1238,8 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
                 ui.success("Plan 模式已关闭: 可以正常执行修改操作。")
     elif head in ("/provider", "/login"):
         _cmd_provider(agent, config, head, arg)
+    elif head == "/account":
+        _cmd_account(agent, config, arg)
     elif head == "/goal":
         _cmd_goal(agent, arg)
     elif head == "/blast":

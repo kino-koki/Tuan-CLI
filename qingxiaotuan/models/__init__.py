@@ -57,6 +57,28 @@ def is_known_provider(provider: str) -> bool:
     return provider in KNOWN_PROVIDERS
 
 
+def _deepseek_web_token() -> str:
+    """deepseek-web 的会话令牌: 环境变量优先, 其次 qxt login deepseek 保存的登录态。"""
+    import os
+
+    env = os.environ.get("QXT_DEEPSEEK_WEB_TOKEN", "").strip()
+    if env:
+        return env
+    try:
+        from ..auth import AuthStore  # 延迟导入: 避免 auth 依赖进入模型层启动路径
+
+        acc = AuthStore().get("deepseek") or {}
+        token = str(acc.get("token", "") or "").strip()
+    except Exception:
+        token = ""
+    if not token:
+        raise ValueError(
+            "deepseek-web 需要 DeepSeek 网页登录态: 请先运行 `qxt login deepseek` "
+            "(从浏览器开发者工具粘贴会话令牌, 无需 API Key)。"
+        )
+    return token
+
+
 def get_provider_info(provider: str):
     """获取供应商详细信息 (结构化数据), 未知供应商返回 None。"""
     return get_provider(provider)
@@ -108,6 +130,15 @@ def create_adapter(config) -> ModelAdapter:
     if provider == "anthropic":
         from .anthropic import AnthropicAdapter  # 延迟导入: 避免启动时加载 httpx
         adapter_cls = AnthropicAdapter
+    elif provider == "deepseek-web":
+        # DeepSeek 网页登录 (实验性): 用 qxt login deepseek 保存的会话令牌直连网页接口。
+        from .deepseek_web import DeepSeekWebAdapter  # 延迟导入: 保持轻启动
+        return DeepSeekWebAdapter(
+            token=_deepseek_web_token(),
+            model=config.get("model.model") or "deepseek-chat",
+            timeout=float(config.get("model.timeout", 120)),
+            read_timeout=read_timeout,
+        )
     else:
         adapter_cls = OpenAICompatAdapter
     return adapter_cls(

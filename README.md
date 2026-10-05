@@ -282,6 +282,26 @@ The OAuth callback runs on a local loopback server (`127.0.0.1:8765`) — no
 public endpoint needed. The `/web` workbench mirrors the same three providers
 (account panel in the sidebar), and the official site lists them too.
 
+### Using your DeepSeek web session as the model backend (experimental)
+
+After `qxt login deepseek`, the saved web-session token can drive model calls
+directly — no API key, quota drawn from your web account:
+
+```bash
+qxt models set deepseek-web deepseek-chat   # switch the model provider
+qxt                                        # chat as usual
+```
+
+- The token is read from `~/.qingxiaotuan/auth.json` (or env
+  `QXT_DEEPSEEK_WEB_TOKEN`), and requests go to the `chat.deepseek.com` web
+  endpoint (`https://chat.deepseek.com/api/v0`).
+- **Experimental**: the web endpoint is private and may change at any time. If
+  calls fail with 401/403, re-run `qxt login deepseek` for a fresh token; if the
+  endpoint itself changed (404/405), fall back to the official API —
+  `qxt models set deepseek` + `DEEPSEEK_API_KEY`. Tool/function calling is not
+  supported on the web path (pure chat); agent features that need tools should
+  use the official API or offline mode.
+
 > **Security note**: `~/.qingxiaotuan/auth.json` stores login state with tokens
 > in plaintext (best-effort chmod 600). Treat it like an SSH key: protect your
 > home directory, and log out on shared machines.
