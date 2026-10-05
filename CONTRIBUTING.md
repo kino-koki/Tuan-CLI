@@ -1,6 +1,6 @@
 # 贡献指南 (Contributing)
 
-感谢你对 **青小团 (Qingxiaotuan)** 感兴趣！
+感谢你对 **青小团 (Tuan-CLI)** 感兴趣！
 
 青小团是一个以「最小影响半径」为核心理念的纯 Python Agent CLI：shell 执行前静态风险拦截、自我改进闭环、10 个进程内外部能力引擎。设计上借鉴了 DeepSeek Harness 的插件化微内核与 Hermes Agent 的自进化技能蒸馏思路，并在此基础上有自己的工程取舍。
 
@@ -10,7 +10,7 @@
 
 ```bash
 git clone <your-fork>
-cd Qingxiaotuan-Agent
+cd Tuan-CLI
 python -m venv .venv && source .venv/Scripts/activate   # Windows (Git Bash); PowerShell 用 .venv\Scripts\Activate.ps1
 # macOS/Linux: python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"

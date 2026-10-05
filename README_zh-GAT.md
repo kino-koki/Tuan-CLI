@@ -1,4 +1,4 @@
-# 青小團 · Qingxiaotuan Agent CLI
+# 青小團 · Tuan-CLI
 
 > **「Model + Harness = Agent」** —— 把「會思考」跟「能穩穩跑」拆開，兩把鑰匙都交到你手上。
 > 一個安全第一、模型不挑、純 Python 的 AI Agent Harness。`v0.2.018` · MIT · Python ≥ 3.10
@@ -65,6 +65,19 @@ class MyTool(Plugin):
 
 ---
 
+## 版本號與倉庫歷史（透明披露）
+
+**為什麼版本號停在 `0.x`？** Tuan-CLI 的版本號遵循 [SemVer](https://semver.org/) 語義：`0.x` 表示 **API 尚未凍結**——破壞性變更會提前預告並提供遷移提示（見 [VERSION_POLICY.md](VERSION_POLICY.md)）。**版本號反映的是介面穩定度，不是功能完成度**：就功能面而言，目前 `0.2.x` 的實際能力對標同類 Agent CLI 競品的 **2.x 級功能完整度**——安全攔截/交易回滾、模型無關熱切換（51 家供應商 + 本地 Ollama）、三種主迴圈、微核心外掛架構、三層記憶、生態互操作（MCP/ACP/Claude Code/Hermes 三方橋）、子代理與 Swarm、cron 與背景任務、Goal 模式與精確權限等均已落地並配有測試。一句話：**功能成熟度已到「2.x」，版本號停在「0.x」是因為我們堅持 API 凍結後才升 1.0**，而不是能力不足。
+
+| 版本號語義 | 說明 |
+|---|---|
+| `0.x`（當前） | API 未凍結：破壞性變更預告 + 遷移提示；功能完整度對標競品 2.x |
+| `1.0`（計畫） | API 凍結後發布，此後版本號直接反映介面穩定性 |
+
+**Git 歷史說明（開源透明披露）**：本倉庫的 Git 提交歷史於 **2026-09-26 因本地倉庫損壞而重建**，此前逐次提交的演進記錄已不可追溯（舊 `.git` 物件遺失）。目前程式碼從架構到實作完整可審查；2026-09-26 之前的功能演進請以 [CHANGELOG.md](CHANGELOG.md) 的版本記錄為準（版本紀律不受影響）。我們選擇如實披露這一點，不修飾、不隱藏。
+
+---
+
 ## 受借鑒與融合
 
 青小團不是從石頭裡蹦出來的，設計上明確借鑒、融合了以下幾種「已知 Agent 專案與協定」，在此如實列出（並盡可能在原始碼註解標註出處）：
@@ -85,7 +98,7 @@ class MyTool(Plugin):
 ## 快速上手
 
 ```bash
-git clone <此倉庫> && cd qingxiaotuan-agent-cli
+git clone <此倉庫> && cd tuan-cli
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
@@ -157,6 +170,16 @@ qxt --print run "你好，一句話。"   # 冒煙
 - **規模**：~412 `.py` / ~7.9 萬行 / 41 包 / 插件 36。
 - **版本**：`v0.2.018`（0.x/Beta）；破壞性變更小版本先預告 + 給遷移提示。
 - **深挖**：九大引擎簽名、新增工具走查，附錄在 `README_zh-CN.md` 尾段。
+
+---
+
+## 帳戶登入：GitHub / Apple / DeepSeek（可選 · 預設離線）
+
+- 不登入即可完整離線使用；登入只是可選增強層。
+- `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`。
+- 憑證寫入 `~/.qingxiaotuan/auth-config.toml` 或環境變數 `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*`（環境變數優先）。
+- OAuth 回調預設 `http://127.0.0.1:8765/callback`；`auth.json` 為明文令牌，請保護主目錄、公共機器用完登出。
+- 詳見 README_zh-CN.md（母本）與 README.md。
 
 ---
 

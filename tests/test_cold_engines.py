@@ -284,8 +284,21 @@ def test_crypto_open_invalid_utf8_friendly_error():
 
 
 def test_crypto_open_requires_mac_fail_closed():
-    """fail-closed: 缺少 MAC 校验标签时拒绝解密, 杜绝无完整性保护的静默解密。"""
+    """fail-closed: 缺少完整性保护时拒绝解密。
+
+    - AES-GCM (cryptography 已装): 认证标签内建于密文, 无需独立 MAC,
+      open 无需 mac_b64 即可成功, 且篡改密文仍被拒绝 (见 tampered 测试)。
+    - CTR+HMAC 回退: 缺少 MAC 校验标签必须拒绝, 杜绝无完整性保护的静默解密。
+    """
     sealed = CryptoEngine().seal({"plaintext": "secret", "passphrase": "pw"})
+    if sealed.get("cipher") == "aes-gcm":
+        out = CryptoEngine().open({"passphrase": "pw",
+                                   "salt_b64": sealed["salt_b64"],
+                                   "iv_b64": sealed["iv_b64"],
+                                   "ciphertext_b64": sealed["ciphertext_b64"],
+                                   "cipher": "aes-gcm"})
+        assert out["plaintext"] == "secret"
+        return
     with pytest.raises(ValueError) as excinfo:
         CryptoEngine().open({"passphrase": "pw",
                              "salt_b64": sealed["salt_b64"],
@@ -306,7 +319,8 @@ def test_crypto_seal_open_roundtrip_regression():
     opened = eng.open({"passphrase": "pw", "salt_b64": sealed["salt_b64"],
                        "iv_b64": sealed["iv_b64"],
                        "ciphertext_b64": sealed["ciphertext_b64"],
-                       "mac_b64": sealed["mac_b64"],
+                       "mac_b64": sealed.get("mac_b64", ""),
+                       "cipher": sealed.get("cipher", ""),
                        "iterations": sealed["iterations"]})
     assert opened["plaintext"] == "青小团秘密"
     wrong = eng.handle(json.dumps({
@@ -314,9 +328,10 @@ def test_crypto_seal_open_roundtrip_regression():
         "params": {"passphrase": "bad", "salt_b64": sealed["salt_b64"],
                    "iv_b64": sealed["iv_b64"],
                    "ciphertext_b64": sealed["ciphertext_b64"],
-                   "mac_b64": sealed["mac_b64"]}}))
+                   "mac_b64": sealed.get("mac_b64", ""),
+                   "cipher": sealed.get("cipher", "")}}))
     body = json.loads(wrong)
-    assert body["ok"] is False and "tag mismatch" in body["error"]
+    assert body["ok"] is False and ("tag mismatch" in body["error"] or "认证失败" in body["error"])
 
 
 # ---------------------------------------------------------------- ansi

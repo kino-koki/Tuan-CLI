@@ -1,4 +1,4 @@
-# Qingxiaotuan Agent CLI (青小团)
+# Tuan-CLI
 
 > **«Model + Harness = Agent»** — separa o «pensar» do «rodar em segurança» e entrega as duas chaves pra você.
 > Um harness de agentes de IA em Python puro, seguro por padrão e agnóstico de modelo. `v0.2.018` · MIT · Python ≥ 3.10
@@ -65,16 +65,29 @@ class MyTool(Plugin):
 
 ---
 
+## Número de versão e histórico do repositório (divulgação transparente)
+
+**Por que a versão fica em `0.x`?** O Tuan-CLI segue [SemVer](https://semver.org/): `0.x` significa que **a API ainda não está congelada** — mudanças que quebram são anunciadas com antecedência e dicas de migração são fornecidas (veja [VERSION_POLICY.md](VERSION_POLICY.md)). **O número de versão reflete a estabilidade da interface, não a completude de recursos.** Em capacidade, o `0.2.x` atual entrega o que produtos comparáveis de Agent CLI chamam de **conjunto de recursos de nível 2.x** — controle de segurança/rollback transacional, troca a quente independente de modelo (51 provedores + Ollama local), três loops principais, arquitetura de microkernel com plugins, memória de três níveis, interoperabilidade de ecossistemas (ponte MCP/ACP/Claude Code/Hermes), subagentes e Swarm, cron e tarefas em segundo plano, modo Goal e permissões precisas — tudo publicado e coberto por testes. Em uma frase: **a maturidade funcional está em "2.x"; a versão fica em "0.x" porque mantemos o critério de que 1.0 só chega após congelar a API** — não por falta de capacidade.
+
+| Semântica de versão | Significado |
+|---|---|
+| `0.x` (atual) | API não congelada: mudanças que quebram anunciadas + dicas de migração; completude funcional à altura de concorrentes 2.x |
+| `1.0` (planejado) | Lançado ao congelar a API; a partir daí o número reflete diretamente a estabilidade da interface |
+
+**Nota sobre o histórico do Git (transparência de código aberto):** O histórico de commits deste repositório foi **reconstruído em 2026-09-26 após o repositório local ser corrompido**; a evolução commit a commit anterior a essa data não é mais recuperável (os objetos antigos do `.git` foram perdidos). O código atual é totalmente revisável, da arquitetura à implementação; para a evolução de recursos anterior a 2026-09-26, confie nos registros de versão do [CHANGELOG.md](CHANGELOG.md) (a disciplina de versões não é afetada). Escolhemos divulgar isso claramente — sem polir, sem esconder.
+
+---
+
 ## Inspiração e atribuição
 
-Qingxiaotuan não nasceu do nada: o design se apoia explicitamente nos seguintes projetos e protocolos de agentes conhecidos. Listamos sem esconder nada (e anotamos a fonte original nos comentários do código onde fizer sentido):
+Tuan-CLI não nasceu do nada: o design se apoia explicitamente nos seguintes projetos e protocolos de agentes conhecidos. Listamos sem esconder nada (e anotamos a fonte original nos comentários do código onde fizer sentido):
 
 | Fonte | O que pegamos emprestado |
 |---|---|
 | **DeepSeek Harness / Cordis** | Arquitetura de microkernel + registro de serviços + barramento de eventos append-only (anotado em `core/kernel.py`) |
 | **Kimi Code** | O toque e a paleta do TUI de terminal (ver [NOTICE](NOTICE)) |
 | **Claude Code** | Sistema de comandos `/`, agentes nomeados (compatível `.claude/agents`), modo Goal, DevLoop — alinhamento de interface |
-| **ACP (Agent Client Protocol)** | Como server/client, alinhado à semântica de mensagens e handshake pra um IDE pilotar o Qingxiaotuan |
+| **ACP (Agent Client Protocol)** | Como server/client, alinhado à semântica de mensagens e handshake pra um IDE pilotar o Tuan-CLI |
 | **MCP (Model Context Protocol)** | Como client, alinhado ao protocolo pra plugar no ecossistema de ferramentas |
 | **APIs da OpenAI / Anthropic / Google etc.** | Adaptadores de provedor implementados pela semântica REST oficial — só adaptação de protocolo, sem copiar o interior |
 
@@ -85,7 +98,7 @@ Qingxiaotuan não nasceu do nada: o design se apoia explicitamente nos seguintes
 ## Começo rápido
 
 ```bash
-git clone <este repo> && cd qingxiaotuan-agent-cli
+git clone <este repo> && cd tuan-cli
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
@@ -157,6 +170,16 @@ qxt --print run "Oi. Uma linha."  # smoke
 - **Escala**: ~412 `.py` / ~79 k linhas / 41 pacotes / 36 plugins.
 - **Versão**: `v0.2.018` (0.x/Beta); mudanças que quebram avisam na minor + notas de migração.
 - **A fundo**: assinaturas dos nove motores e um tutorial de ferramenta nova moram no apêndice de `README_zh-CN.md`.
+
+---
+
+## Login: GitHub / Apple / DeepSeek (opcional · offline por padrão)
+
+- Tuan-CLI funciona offline sem conta alguma. O login é uma camada opcional.
+- `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`.
+- Credenciais em `~/.qingxiaotuan/auth-config.toml` ou variáveis de ambiente `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*` (variáveis vencem).
+- Callback OAuth padrão `http://127.0.0.1:8765/callback`; `auth.json` guarda tokens em texto puro — proteja seu diretório home e saia em máquinas compartilhadas.
+- Detalhes em README_zh-CN.md (mestre) e README.md.
 
 ---
 

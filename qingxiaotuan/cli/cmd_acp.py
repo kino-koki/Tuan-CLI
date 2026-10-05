@@ -85,7 +85,7 @@ def cmd_acp(args) -> int:
     seed_builtin_skills(kernel)
 
     workspace = getattr(args, "workspace", None) or os.getcwd()
-    agent_info = {"name": "青小团 Qingxiaotuan CLI", "version": __version__}
+    agent_info = {"name": "青小团 Tuan-CLI", "version": __version__}
 
     # 鉴权开关（内部密钥）：`acp.auth_secret` 配置项或环境变量 QXT_ACP_AUTH_TOKEN。
     # 配置后启用新内核 ACP 子系统：客户端须先调用 authenticate 提交共享密钥，

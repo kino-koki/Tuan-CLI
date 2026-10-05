@@ -1,4 +1,4 @@
-# Qingxiaotuan Agent CLI (青小团)
+# Tuan-CLI
 
 > **"Model + Harness = Agent."** — Split "how to think" from "how to run it safely," and hand you both keys.
 > A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.2.018` · MIT · Python ≥ 3.10
@@ -20,7 +20,7 @@
 
 ## TL;DR
 
-The core idea: **the model does the thinking; the harness makes that thinking run safely and controllably.** Qingxiaotuan decouples "the model" from "the host": hot-swap across many providers, run fully offline, roll back destructive mistakes, and see the blast radius *before* the command fires. It aims to be a reasonably neutral, self-hostable terminal agent host — not a captive wrapper around a single vendor.
+The core idea: **the model does the thinking; the harness makes that thinking run safely and controllably.** Tuan-CLI decouples "the model" from "the host": hot-swap across many providers, run fully offline, roll back destructive mistakes, and see the blast radius *before* the command fires. It aims to be a reasonably neutral, self-hostable terminal agent host — not a captive wrapper around a single vendor.
 
 **What it is not**: a captive wrapper around one model (hot-swap / self-host / offline, your call); an IDE sidekick (it's a plain terminal tool, drivable via ACP by VSCode/Zed/JetBrains); or a single leaky abstraction (microkernel plugin architecture for builders, plus a one-shot `setup` for everyone else).
 
@@ -78,9 +78,22 @@ class MyTool(Plugin):
 
 ---
 
+## Version number & repository history (transparent disclosure)
+
+**Why does the version stay at `0.x`?** Tuan-CLI follows [SemVer](https://semver.org/): `0.x` means **the API is not frozen yet** — breaking changes are announced in advance with migration hints (see [VERSION_POLICY.md](VERSION_POLICY.md)). **The version number reflects interface stability, not feature completeness.** In terms of capability, the current `0.2.x` delivers what comparable Agent CLI products call a **2.x-level feature set** — safety gating / transactional rollback, model-neutral hot-swap (51 providers + local Ollama), three main loops, microkernel plugin architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all shipped and covered by tests. In one sentence: **feature maturity is at "2.x"; the version stays at "0.x" because we hold the line that 1.0 only comes after the API is frozen** — not because of missing capability.
+
+| Version semantics | Meaning |
+|---|---|
+| `0.x` (current) | API not frozen: breaking changes announced + migration hints; feature completeness on par with 2.x competitors |
+| `1.0` (planned) | Released once the API freezes; from then on the version number directly reflects interface stability |
+
+**Git history note (open-source transparency):** This repository's Git commit history was **rebuilt on 2026-09-26 after the local repository was corrupted**; the per-commit evolution before that date is no longer recoverable (the old `.git` objects were lost). The current code is fully reviewable from architecture to implementation; for feature evolution before 2026-09-26, please rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We choose to disclose this plainly — no polishing, no hiding.
+
+---
+
 ## Inspiration & attribution
 
-Qingxiaotuan isn't born from nothing — its design explicitly builds on the following known agent projects and protocols. We list them plainly (and annotate the original sources in code comments where relevant):
+Tuan-CLI isn't born from nothing — its design explicitly builds on the following known agent projects and protocols. We list them plainly (and annotate the original sources in code comments where relevant):
 
 | Source | What we borrowed |
 |---|---|
@@ -88,7 +101,7 @@ Qingxiaotuan isn't born from nothing — its design explicitly builds on the fol
 | **Kimi Code** | Terminal TUI interaction feel & palette (see [NOTICE](NOTICE)) |
 | **Claude Code** | `/` slash-command system, named agents (`.claude/agents`-compatible), Goal mode, DevLoop — interface alignment |
 | **Hermes Agent** | Three-tier memory, skill self-evolution loop, SOUL identity, self-registering tools, cron semantics — aligned; `qxt ecosystem` two-way-syncs memory/skills/SOUL with it |
-| **ACP (Agent Client Protocol)** | As client/server, aligned message & handshake semantics so an IDE can drive Qingxiaotuan |
+| **ACP (Agent Client Protocol)** | As client/server, aligned message & handshake semantics so an IDE can drive Tuan-CLI |
 | **MCP (Model Context Protocol)** | As a client, aligned protocol to plug into the tools ecosystem |
 | **OpenAI / Anthropic / Google etc. APIs** | Provider adapters implemented per official REST semantics — protocol adaptation only, no internal replication |
 
@@ -100,7 +113,7 @@ Qingxiaotuan isn't born from nothing — its design explicitly builds on the fol
 
 ```bash
 # 1) Install (—[dev] is the full stack; drop to [openai]/[mcp] if you only need APIs)
-git clone <this repo> && cd qingxiaotuan-agent-cli
+git clone <this repo> && cd tuan-cli
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
@@ -228,6 +241,52 @@ qxt --print run "Hi, one line."   # smoke
 
 ---
 
+## Account login: GitHub / Apple / DeepSeek (optional · offline by default)
+
+Tuan-CLI runs fully offline without any account. Login is an optional layer on
+top — three identity providers are supported, all optional, none required:
+
+| Provider | Flow | What you prepare |
+| --- | --- | --- |
+| GitHub | OAuth 2.0 authorization-code + PKCE | OAuth App `client_id` (`client_secret` optional) |
+| Apple | Sign in with Apple (authorization code + ES256 `client_secret`) | Service ID + Sign in with Apple Key (`.p8`) |
+| DeepSeek | Web-session token injection (no API Key, uses web quota) | Session token from chat.deepseek.com devtools |
+
+```bash
+qxt login          # pick a provider interactively
+qxt login github   # or name one directly
+qxt logout         # clear all; qxt logout github clears one
+qxt whoami         # per-provider login status
+```
+
+Credentials go into `~/.qingxiaotuan/auth-config.toml` (or env vars
+`QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*`, which win over TOML):
+
+```toml
+[github]
+client_id = "Ov23li..."          # OAuth App: Settings → Developer settings → OAuth Apps
+redirect_uri = "http://127.0.0.1:8765/callback"
+
+[apple]
+team_id = "TEAMID"
+client_id = "com.example.service"   # Service ID
+key_id = "KID"
+private_key_path = "~/.qingxiaotuan/AuthKey.p8"
+redirect_uri = "http://127.0.0.1:8765/callback"
+
+[deepseek]
+# optional pre-seed: session_token = "..."   (else pasted at login time)
+```
+
+The OAuth callback runs on a local loopback server (`127.0.0.1:8765`) — no
+public endpoint needed. The `/web` workbench mirrors the same three providers
+(account panel in the sidebar), and the official site lists them too.
+
+> **Security note**: `~/.qingxiaotuan/auth.json` stores login state with tokens
+> in plaintext (best-effort chmod 600). Treat it like an SSH key: protect your
+> home directory, and log out on shared machines.
+
+---
 ## License & links
 
 - **License**: MIT (use/modify/redistribute freely, keep the notice)

@@ -2,7 +2,7 @@
 
 TRANSLATIONS = {
     # ---- Баннер / подсказки
-    "banner.welcome": "Добро пожаловать в Qingxiaotuan CLI!",
+    "banner.welcome": "Добро пожаловать в Туан-CLI!",
     "banner.help_hint": "Отправьте /help для справки.",
     "banner.directory": "Каталог",
     "banner.session": "Сессия",
@@ -23,7 +23,7 @@ TRANSLATIONS = {
     "repl.usage": "usage: {pt} вход / {ct} выход токенов",
     "repl.context_bar": "Контекст {pct}% [{bar}]",
     # ---- Панель горячих клавиш
-    "keymap.title": "Qingxiaotuan · Клавиши и команды   (↑↓ выбор · Enter выполнить команду · Esc отмена)",
+    "keymap.title": "Туан-CLI · Клавиши и команды   (↑↓ выбор · Enter выполнить команду · Esc отмена)",
     "keymap.group.input": "Ввод",
     "keymap.group.commands": "Слэш-команды",
     "keys.enter": "Отправить текущий ввод",
@@ -87,16 +87,16 @@ TRANSLATIONS = {
     "tui.cmd_meta": "Команда",
     "tui.cmd_hint": "+/Команда",
     # ---- Рабочий стол TUI (tui.py / QxtTUI)
-    "tui.boot_starting": "Запуск Qingxiaotuan…",
+    "tui.boot_starting": "Запуск Туан-CLI…",
     "tui.boot_error_title": "[Ошибка запуска]",
     "tui.boot_error_hint": "Нажмите Ctrl-Q для выхода; проверьте ~/.qingxiaotuan/config.yaml и логи, затем повторите.",
     "tui.readonly_hint": "Введите сообщение для начала, /help — все команды.",
     "tui.no_key_hint": "● API-ключ для {env} не настроен — выполните /login или /provider.",
-    "tui.booting_wait": "Qingxiaotuan ещё запускается, подождите…",
-    "tui.busy_wait": "Qingxiaotuan работает, подождите…",
+    "tui.booting_wait": "Туан-CLI ещё запускается, подождите…",
+    "tui.busy_wait": "Туан-CLI работает, подождите…",
     "tui.thinking": "Размышление…",
-    "tui.ready_empty": "Qingxiaotuan готов. Введите сообщение для начала, /help — команды.",
-    "tui.welcome_title": "Добро пожаловать в Qingxiaotuan!",
+    "tui.ready_empty": "Туан-CLI готов. Введите сообщение для начала, /help — команды.",
+    "tui.welcome_title": "Добро пожаловать в Туан-CLI!",
     "tui.welcome_subtitle": "Ваш терминальный агент кодирования",
     "tui.plan_badge": "plan",
     "tui.tools_count": "инструменты {n}",
@@ -106,7 +106,7 @@ TRANSLATIONS = {
     "tui.exit_ctrl_c": "Ctrl-C выход",
     "tui.resume_fail": "Не удалось возобновить сессию (сессия не найдена)",
     # ---- Мастер настройки
-    "setup.title": "Мастер настройки Qingxiaotuan",
+    "setup.title": "Мастер настройки Туан-CLI",
     "setup.opt_quick": "Быстрая настройка (рекомендуется)",
     "setup.opt_full": "Полная настройка",
     "setup.opt_blank": "Пустая настройка",

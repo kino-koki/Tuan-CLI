@@ -97,7 +97,7 @@ class NotifyEngine:
 
     def notify(self, params):
         """发送桌面通知; params.dry_run=true 时只报告将使用的后端, 不实际发送"""
-        title = str(params.get("title", "Qingxiaotuan"))[:200]
+        title = str(params.get("title", "Tuan-CLI"))[:200]
         message = str(params.get("message", ""))[:500]
         system = platform.system()
 

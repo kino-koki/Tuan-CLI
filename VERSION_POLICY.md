@@ -679,4 +679,4 @@ Jeder PR muss vor dem Einreichen bestätigen:
 ---
 
 *最后修订 / Last revised: 2026-09-06*
-*适用于 / Applies to: Qingxiaotuan Agent CLI 及 kino-koki 所有Python/Node项目 / and all kino-koki Python/Node projects*
+*适用于 / Applies to: Tuan-CLI 及 kino-koki 所有Python/Node项目 / and all kino-koki Python/Node projects*

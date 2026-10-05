@@ -2,7 +2,7 @@
 
 TRANSLATIONS = {
     # ---- Bannière / astuces
-    "banner.welcome": "Bienvenue dans Qingxiaotuan CLI !",
+    "banner.welcome": "Bienvenue dans Tuan-CLI !",
     "banner.help_hint": "Envoyez /help pour l'aide.",
     "banner.directory": "Répertoire",
     "banner.session": "Session",
@@ -23,7 +23,7 @@ TRANSLATIONS = {
     "repl.usage": "usage : {pt} entrée / {ct} sortie tokens",
     "repl.context_bar": "Contexte {pct}% [{bar}]",
     # ---- Panneau des raccourcis
-    "keymap.title": "Qingxiaotuan · Raccourcis et Commandes   (↑↓ choisir · Enter exécuter · Esc annuler)",
+    "keymap.title": "Tuan-CLI · Raccourcis et Commandes   (↑↓ choisir · Enter exécuter · Esc annuler)",
     "keymap.group.input": "Saisie",
     "keymap.group.commands": "Commandes slash",
     "keys.enter": "Envoyer la saisie courante",
@@ -87,16 +87,16 @@ TRANSLATIONS = {
     "tui.cmd_meta": "Commande",
     "tui.cmd_hint": "+/Commande",
     # ---- Atelier TUI (tui.py / QxtTUI)
-    "tui.boot_starting": "Démarrage de Qingxiaotuan…",
+    "tui.boot_starting": "Démarrage de Tuan-CLI…",
     "tui.boot_error_title": "[Échec du démarrage]",
     "tui.boot_error_hint": "Appuyez sur Ctrl-Q pour quitter; vérifiez ~/.qingxiaotuan/config.yaml et les journaux, puis réessayez.",
     "tui.readonly_hint": "Saisissez un message pour commencer, /help pour toutes les commandes.",
     "tui.no_key_hint": "● Aucune clé API configurée pour {env} — exécutez /login ou /provider.",
-    "tui.booting_wait": "Qingxiaotuan démarre encore, patientez…",
-    "tui.busy_wait": "Qingxiaotuan travaille, patientez…",
+    "tui.booting_wait": "Tuan-CLI démarre encore, patientez…",
+    "tui.busy_wait": "Tuan-CLI travaille, patientez…",
     "tui.thinking": "Réflexion…",
-    "tui.ready_empty": "Qingxiaotuan est prêt. Saisissez un message pour commencer, /help pour les commandes.",
-    "tui.welcome_title": "Bienvenue sur Qingxiaotuan !",
+    "tui.ready_empty": "Tuan-CLI est prêt. Saisissez un message pour commencer, /help pour les commandes.",
+    "tui.welcome_title": "Bienvenue sur Tuan-CLI !",
     "tui.welcome_subtitle": "Votre agent de codage dans le terminal",
     "tui.plan_badge": "plan",
     "tui.tools_count": "outils {n}",
@@ -106,7 +106,7 @@ TRANSLATIONS = {
     "tui.exit_ctrl_c": "Ctrl-C quitter",
     "tui.resume_fail": "Échec de la reprise de session (session introuvable)",
     # ---- Assistant de configuration
-    "setup.title": "Assistant de configuration Qingxiaotuan",
+    "setup.title": "Assistant de configuration Tuan-CLI",
     "setup.opt_quick": "Configuration rapide (recommandé)",
     "setup.opt_full": "Configuration complète",
     "setup.opt_blank": "Configuration vierge",

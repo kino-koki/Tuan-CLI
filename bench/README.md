@@ -61,10 +61,10 @@ python bench/run.py --json
 ## 对比 Claude Code
 
 1. 用同一组 `tasks.yaml` 在 Claude Code 上跑（指令 + 验收脚本一致）。
-2. 两边各记录：通过数、总耗时、估算成本（青小团用 `/cost`，Claude Code 用 `--cost`）。
+2. 两边各记录：通过数、总耗时、估算成本（用 `/cost`，Claude Code 用 `--cost`）。
 3. 填入下面的对比表，作为「超越」的量化证据：
 
-| 任务 | 青小团(通过/耗时/成本) | Claude Code(通过/耗时/成本) |
+| 任务 | (通过/耗时/成本) | Claude Code(通过/耗时/成本) |
 | --- | --- | --- |
 | understand_api |  |  |
 | fix_bug |  |  |
@@ -75,4 +75,4 @@ python bench/run.py --json
 
 - 真实跑测需要可用的模型端点（OpenAI 兼容 / Anthropic / 本地）。无端点时请用 `--dry` 校验框架。
 - 验收脚本越「行为化」（跑 pytest / 断言真实输出）越能反映真实能力；不要只用「文件存在」做验收。
-- `check` 在青小团改完代码后的临时工作区执行，与 CI 语义一致。
+- `check` 在改完代码后的临时工作区执行，与 CI 语义一致。

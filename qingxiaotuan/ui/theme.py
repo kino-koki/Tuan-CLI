@@ -25,7 +25,7 @@ import os
 # 产品身份保留青小团, TUI 视觉令牌采用 Kimi Code 原版。
 BRAND = {
     "name": "青小团",
-    "name_en": "Qingxiaotuan",
+    "name_en": "Tuan-CLI",
     "tagline": "终端智能体 · 自主借鉴 · 安全可控",
     "primary": "#4FA8FF",   # Kimi Code 原版品牌主色
     "accent": "#5BC0BE",    # Kimi Code 原版次要高亮

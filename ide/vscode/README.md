@@ -1,6 +1,6 @@
-# 青小团 QXT — VS Code 扩展
+#  QXT — VS Code 扩展
 
-> 把 [青小团 Agent CLI](https://github.com/your-org/qingxiaotuan) 接进 VS Code：在侧边栏里和 Agent 对话、看它流式输出、观察它调用工具、批准它做危险操作。
+> 把 [ Agent CLI](https://github.com/your-org/qingxiaotuan) 接进 VS Code：在侧边栏里和 Agent 对话、看它流式输出、观察它调用工具、批准它做危险操作。
 
 ![badge](https://img.shields.io/badge/license-MIT-green)
 ![vscode](https://img.shields.io/badge/vscode-%5E1.80.0-blue)
@@ -24,7 +24,7 @@
 
 本扩展的视觉与交互刻意对齐两款业界标杆产品：
 
-- **配色**：深色底（`#1e1e1e` / `#252526`），强调色用青小团品牌青绿 `#00d4aa` / `#4ec9b0`，**避免 heavy indigo / purple**。
+- **配色**：深色底（`#1e1e1e` / `#252526`），强调色用品牌青绿 `#00d4aa` / `#4ec9b0`，**避免 heavy indigo / purple**。
 - **布局**：参考 Claude Code 侧边栏——顶部窄条放模型名，中间滚动消息流，底部固定输入区；消息气泡左右对齐区分角色。
 - **工具卡片**：参考 Qoder——工具调用以"内联小卡片"嵌入 Agent 消息流，默认折叠只显示 `工具名 + 参数摘要 + 状态图标`，展开才看完整 payload；状态用图标而不是文字，节省纵向空间。
 - **diff 预览**：参考 Claude Code 的 inline diff——编辑类工具完成后，直接在原编辑器里用绿/红行背景高亮，而不是强制打开双栏 diff。
@@ -79,7 +79,7 @@ ide/vscode/
 前置：Node.js ≥ 22（开发环境已验证 v22.23.2 / npm 10.9.8），且 `qxt` 已在 PATH 中（或在 VS Code 设置里改 `qingxiaotuan.command`）。
 
 ```powershell
-cd "E:\Qingxiaotuan Agent CLI\ide\vscode"
+cd "E:\Tuan-CLI\ide\vscode"
 npm install
 npx tsc --noEmit        # 类型检查，零错误即通过
 npx tsc                 # 编译到 out/
@@ -102,7 +102,7 @@ code --install-extension qingxiaotuan-vscode-0.2.017.vsix
 ## 6. 使用说明
 
 1. 在 VS Code 里打开你的项目根目录（工作区根目录会作为 Agent 的 cwd）。
-2. 左侧 Activity Bar 点青小团图标，打开侧边栏。
+2. 左侧 Activity Bar 点图标，打开侧边栏。
 3. 第一次激活会自动 `qxt acp`；看到顶部出现模型名即连接成功。
 4. 在底部输入框输入任务，`Enter` 发送，`Shift+Enter` 换行。
 5. Agent 跑起来后：

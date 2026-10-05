@@ -1,6 +1,6 @@
-# 青小团 Agent CLI（Qingxiaotuan Agent CLI）代码实现评价报告
+# 青小团 Agent CLI（Tuan-CLI）代码实现评价报告
 
-> 评审对象：`E:\Qingxiaotuan Agent CLI`（版本 0.2.014, MIT）
+> 评审对象：`E:\Tuan-CLI`（版本 0.2.014, MIT）
 > 评审方式：对 `qingxiaotuan/` 下 412 个 `.py` 源文件（约 79,000 行）逐模块静态阅读 + 跨模块集成核对，并直接复读关键源码确认若干重大结论。
 > 评审范围：`core/`、`models/`、`cli/`、`ext/`（9 引擎）、`tools/`、`skills/`、`self_improve/`、`i18n/`、`ui/`、`config/`、`hooks/`、`context/`、`memory/`、`cron/`、`audit/`、`vision/`。
 > 结论先行：**架构水准高、子系统工程扎实、测试覆盖广；但"安全优先"这一核心卖点的若干实现存在真实缺陷（尤其是 crypto 与 safety 引擎），须在对外宣称"生产可用"前修复。**
