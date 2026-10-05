@@ -286,6 +286,23 @@ redirect_uri = "http://127.0.0.1:8765/callback"
 OAuth 回调跑在本机回环地址（`127.0.0.1:8765`），无需公网端点。
 `/web` 工作台侧栏有同款账户面板，官网亦列出三家登录入口。
 
+### 用 DeepSeek 网页登录态直接驱动模型（实验性）
+
+`qxt login deepseek` 之后，保存的网页会话令牌可直接作为模型后端调用——
+无需 API Key，额度走网页账号：
+
+```bash
+qxt models set deepseek-web deepseek-chat   # 切换模型提供方
+qxt                                        # 正常对话
+```
+
+- 令牌从 `~/.qingxiaotuan/auth.json` 读取（或环境变量 `QXT_DEEPSEEK_WEB_TOKEN`），
+  请求发往 chat.deepseek.com 网页端点（`https://chat.deepseek.com/api/v0`）。
+- **实验性**：网页端点属私有接口，可能随时变化。401/403 时重跑
+  `qxt login deepseek` 取新令牌；端点本身变更（404/405）时回退官方 API——
+  `qxt models set deepseek` + `DEEPSEEK_API_KEY`。网页路径不支持工具调用
+  （纯对话）；需要工具能力的 agent 功能请用官方 API 或离线模式。
+
 > **安全提示**：`~/.qingxiaotuan/auth.json` 以明文保存登录态令牌（尽力 chmod 600）。
 > 请像对待 SSH 私钥一样保护主目录；公共机器上用完请登出。
 

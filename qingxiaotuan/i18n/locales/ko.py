@@ -7,6 +7,7 @@ TRANSLATIONS = {
     "banner.directory": "디렉터리",
     "banner.session": "세션",
     "banner.model": "모델",
+    "banner.account": "계정",
     "banner.version": "버전",
     "tip.fullscreen": "✦ 전체 화면 워크벤치를 사용해 보세요 - 작업 진행률·세션·설정이 더 명확합니다",
     "tip.fullscreen_cmd": "qxt --tui 로 전체 화면 모드 실행",

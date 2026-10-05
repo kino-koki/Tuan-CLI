@@ -7,6 +7,7 @@ TRANSLATIONS = {
     "banner.directory": "Diretório",
     "banner.session": "Sessão",
     "banner.model": "Modelo",
+    "banner.account": "Conta",
     "banner.version": "Versão",
     "tip.fullscreen": "✦ Experimente a bancada em tela cheia - progresso das tarefas e sessões mais claros",
     "tip.fullscreen_cmd": "Execute qxt --tui para o modo de tela cheia",

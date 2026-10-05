@@ -58,7 +58,7 @@ _ERROR = "#E85454"
 _ROLEUSER = "#FFCB6B"
 _SHELL = "#BD93F9"
 
-VERSION = "v0.2.017"      # 与 pyproject.toml 保持一致的真实版本
+VERSION = "v0.2.018"      # 与 pyproject.toml 保持一致的真实版本
 
 # 加载屏转圈帧
 _SPLASH_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -1281,8 +1281,24 @@ class QxtTUI:
         self._git_branch_ts = now
         return self._git_branch_cache or ""
 
+    def _account_status_line(self) -> str:
+        """欢迎盒账户行: 当前登录状态 + 四登录选项提示 (离线/GitHub/Apple/DeepSeek)。"""
+        try:
+            from ..auth import AuthStore, list_providers
+
+            store = AuthStore()
+            logged = [
+                p["display_name"]
+                for p in list_providers()
+                if (store.get(p["name"]) or {}).get("token")
+            ]
+            state = "、".join(logged) if logged else "离线"
+        except Exception:
+            state = "离线"
+        return f"{state} · /account: 离线/GitHub/Apple/DeepSeek"
+
     def _show_welcome(self) -> None:
-        """就绪后展示欢迎盒 (吉祥物/模型/项目目录)。
+        """就绪后展示欢迎盒 (吉祥物/模型/项目目录/账户)。
 
         盒子逐行作为事件 (分段列表) 追加, 由 _render_conversation 按行渲染,
         保证 CJK/绘图形字符下右边框仍对齐。
@@ -1294,6 +1310,7 @@ class QxtTUI:
             (f"{t('banner.directory')}: ", cwd),
             (f"{t('banner.session')}:   ", session),
             (f"{t('banner.model')}:     ", model),
+            (f"{t('banner.account')}:    ", self._account_status_line()),
             (f"{t('banner.version')}:   ", VERSION),
         ]
         for row in self._kimi_box(

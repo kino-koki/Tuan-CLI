@@ -179,6 +179,7 @@ qxt --print run "你好，一句話。"   # 冒煙
 - `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`。
 - 憑證寫入 `~/.qingxiaotuan/auth-config.toml` 或環境變數 `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*`（環境變數優先）。
 - OAuth 回調預設 `http://127.0.0.1:8765/callback`；`auth.json` 為明文令牌，請保護主目錄、公共機器用完登出。
+- DeepSeek 网页登录态可作为模型后端：`qxt models set deepseek-web`（实验性）。
 - 詳見 README_zh-CN.md（母本）與 README.md。
 
 ---
