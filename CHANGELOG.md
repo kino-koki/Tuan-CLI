@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.018] - Unreleased
 
+### 品牌更名：Qingxiaotuan Agent CLI → Tuan-CLI (2026-10-05)
+
+- **对外名称统一改为 `Tuan-CLI`**：README（10 语言）、GitHub 仓库 URL、代码与网页署名、VS Code 扩展显示名等所有出现过项目英文名的地方全部更新。
+- **多语言名称规则**：简体中文 / 繁體中文 / 日本語 保留「青小团 / 青小團」汉字；其余语言一律使用 `Tuan-CLI`。
+- **内部标识不变**：Python 包名 `qingxiaotuan`、CLI 命令 `qxt`、配置目录 `~/.qingxiaotuan` 保持原样（包名变更会破坏全部 import 与已安装用户配置，故不随品牌更名）。
+- **README 新增「版本号与仓库历史（透明披露）」章节**（同步 10 语言）：说明 `0.x` 版本号语义（API 未冻结，功能成熟度对标竞品 2.x）并如实披露 Git 历史于 2026-09-26 因本地仓库损坏重建、早期逐次提交记录不可追溯。
+
 ### 生态互操作层 (Ecosystem Bridge, 全新 `qingxiaotuan/ecosystem/` 包)
 
 > 定位: 青小团从「一个 Agent」升级为「Agent 生态互操作枢纽」—— 本机 Claude Code /
@@ -588,4 +595,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/push.sh` no longer disables TLS verification (`http.sslVerify=false` removed); the Windows schannel revocation-check workaround is now opt-in guidance shown on failure instead of a silent default.
 - The script also no longer deletes and recreates the `origin` remote destructively; it updates the URL only when it differs.
 
-[0.2.011]: https://github.com/kino-koki/Qingxiaotuan-Agent-CLI/releases/tag/v0.2.011
+[0.2.011]: https://github.com/kino-koki/Tuan-CLI/releases/tag/v0.2.011

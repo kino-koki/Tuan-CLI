@@ -33,7 +33,7 @@ _TEXT = "#E0E0E0"
 _SPLASH_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 _LOGO = [
     "  ▐█▛█▛█▌  青小团",
-    "  ▐█████▌  Qingxiaotuan CLI",
+    "  ▐█████▌  Tuan-CLI",
 ]
 
 
@@ -200,7 +200,7 @@ class SplashTUI:
         return lines
 
     def _run_fallback(self) -> None:
-        print("青小团 Qingxiaotuan CLI")
+        print("青小团 Tuan-CLI")
         print("加载中...")
         self._kernel_ready.wait(timeout=30)
         if self._error:

@@ -1,10 +1,10 @@
-# Qingxiaotuan (qxt) Architecture Documentation
+# Tuan-CLI (qxt) Architecture Documentation
 
 > Goal: Help new contributors understand "how the kernel works, how safety blocks, how loops switch, how models route" in 10 minutes, lowering the barrier to onboarding and contribution. Companion commands: `qxt others` (capability catalog), `qxt safe` (safety entry), `qxt models` (models and local LLM).
 
-Qingxiaotuan is a **microkernel + plugin** architecture Agent CLI. The kernel itself carries no Agent capabilities, only responsible for "plugin registration / service discovery / lifecycle events"; all capabilities (tools, model adapters, memory, skills, safety, routing, loops) are mounted as **plugins**.
+Tuan-CLI is a **microkernel + plugin** architecture Agent CLI. The kernel itself carries no Agent capabilities, only responsible for "plugin registration / service discovery / lifecycle events"; all capabilities (tools, model adapters, memory, skills, safety, routing, loops) are mounted as **plugins**.
 
-Formula: **The model is responsible for thinking, the Harness (Qingxiaotuan) is responsible for making thinking run in a controlled way.**
+Formula: **The model is responsible for thinking, the Harness (Tuan-CLI) is responsible for making thinking run in a controlled way.**
 
 ---
 

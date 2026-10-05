@@ -1,8 +1,8 @@
-青小团 Qingxiaotuan CLI
+青小团 Tuan-CLI
 Copyright (c) 2026 kino-koki
-(Lu'An Qingxiaotuan-Technology Co.,LTD)
+(Lu'An Tuan-CLI-Technology Co.,LTD)
 
-This product is developed independently by Lu'An Qingxiaotuan-Technology Co.,LTD.
+This product is developed independently by Lu'An Tuan-CLI-Technology Co.,LTD.
 It contains visual assets derived from a third-party project, attributed below
 in accordance with the respective license.
 
@@ -19,7 +19,7 @@ THIRD-PARTY COMPONENTS
 
    Note: only the visual tokens are reused; all functional logic in the TUI
    (command completion, audit panel, status bar, mascot state machine) is
-   implemented by the Qingxiaotuan project.
+   implemented by the Tuan-CLI project.
 
 2) Runtime third-party libraries (installed via pip, not vendored):
    pyyaml, rich, prompt_toolkit, httpx — each under its own license

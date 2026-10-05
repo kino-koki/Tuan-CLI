@@ -130,7 +130,7 @@ class DesktopNotifier:
             "$xml.LoadXml($template)",
             "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)",
             "[Windows.UI.Notifications.ToastNotificationManager]"
-            "::CreateToastNotifier('Qingxiaotuan Security').Show($toast)",
+            "::CreateToastNotifier('Tuan-CLI Security').Show($toast)",
         ]
         ps_script = "; ".join(ps_lines)
         return DesktopNotifier._run_with_timeout(

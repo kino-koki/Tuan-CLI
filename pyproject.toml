@@ -59,10 +59,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kino-koki/Qingxiaotuan-Agent-CLI"
-Repository = "https://github.com/kino-koki/Qingxiaotuan-Agent-CLI"
-Changelog = "https://github.com/kino-koki/Qingxiaotuan-Agent-CLI/blob/main/CHANGELOG.md"
-"Bug Tracker" = "https://github.com/kino-koki/Qingxiaotuan-Agent-CLI/issues"
+Homepage = "https://github.com/kino-koki/Tuan-CLI"
+Repository = "https://github.com/kino-koki/Tuan-CLI"
+Changelog = "https://github.com/kino-koki/Tuan-CLI/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/kino-koki/Tuan-CLI/issues"
 
 [project.scripts]
 qxt = "qingxiaotuan.cli:main"

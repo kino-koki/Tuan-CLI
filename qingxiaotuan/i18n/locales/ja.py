@@ -96,7 +96,7 @@ TRANSLATIONS = {
     "tui.busy_wait": "青小団が処理中です。お待ちください…",
     "tui.thinking": "思考中…",
     "tui.ready_empty": "青小団は準備完了です。メッセージを入力して開始、/help でコマンド表示。",
-    "tui.welcome_title": "Welcome to Qingxiaotuan!",
+    "tui.welcome_title": "Welcome to Tuan-CLI!",
     "tui.welcome_subtitle": "あなた専用のターミナルエージェント",
     "tui.plan_badge": "plan",
     "tui.tools_count": "ツール {n}",

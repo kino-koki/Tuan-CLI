@@ -2,7 +2,7 @@
 
 TRANSLATIONS = {
     # ---- Banner / tips
-    "banner.welcome": "Welcome to Qingxiaotuan CLI!",
+    "banner.welcome": "Welcome to Tuan-CLI!",
     "banner.help_hint": "Send /help for help information.",
     "banner.directory": "Directory",
     "banner.session": "Session",
@@ -23,7 +23,7 @@ TRANSLATIONS = {
     "repl.usage": "usage: {pt} in / {ct} out tokens",
     "repl.context_bar": "Context {pct}% [{bar}]",
     # ---- Keymap panel
-    "keymap.title": "Qingxiaotuan · Keys & Commands   (↑↓ select · Enter run slash command · Esc cancel)",
+    "keymap.title": "Tuan-CLI · Keys & Commands   (↑↓ select · Enter run slash command · Esc cancel)",
     "keymap.group.input": "Input",
     "keymap.group.commands": "Slash commands",
     "keys.enter": "Send current input",
@@ -83,16 +83,16 @@ TRANSLATIONS = {
     "tui.result_event": "[Result] {name}: {result}",
     "tui.no_output": "(no output)",
     # ---- TUI workbench (tui.py / QxtTUI)
-    "tui.boot_starting": "Starting Qingxiaotuan…",
+    "tui.boot_starting": "Starting Tuan-CLI…",
     "tui.boot_error_title": "[Startup failed]",
     "tui.boot_error_hint": "Press Ctrl-Q to exit; check ~/.qingxiaotuan/config.yaml and the logs, then retry.",
     "tui.readonly_hint": "Type a message to start, /help for all commands.",
     "tui.no_key_hint": "● No API Key configured for {env} — run /login or /provider to set it up.",
-    "tui.booting_wait": "Qingxiaotuan is still starting, please wait…",
-    "tui.busy_wait": "Qingxiaotuan is working, please wait…",
+    "tui.booting_wait": "Tuan-CLI is still starting, please wait…",
+    "tui.busy_wait": "Tuan-CLI is working, please wait…",
     "tui.thinking": "Thinking…",
-    "tui.ready_empty": "Qingxiaotuan is ready. Type a message to start, /help for commands.",
-    "tui.welcome_title": "Welcome to Qingxiaotuan!",
+    "tui.ready_empty": "Tuan-CLI is ready. Type a message to start, /help for commands.",
+    "tui.welcome_title": "Welcome to Tuan-CLI!",
     "tui.welcome_subtitle": "Your terminal coding agent",
     "tui.plan_badge": "plan",
     "tui.tools_count": "tools {n}",
@@ -106,7 +106,7 @@ TRANSLATIONS = {
     "tui.cmd_hint": "+/cmd",
     "tui.resume_fail": "Session resume failed (session not found)",
     # ---- Setup wizard
-    "setup.title": "Qingxiaotuan Setup Wizard",
+    "setup.title": "Tuan-CLI Setup Wizard",
     "setup.opt_quick": "Quick setup (recommended)",
     "setup.opt_full": "Full setup",
     "setup.opt_blank": "Blank setup",
