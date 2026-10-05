@@ -77,8 +77,9 @@ def _crypto_seal(ctx, plaintext: str, password: str, salt: str = "") -> str:
         blob = json.dumps({
             "ciphertext_b64": res["ciphertext_b64"],
             "iv_b64": res["iv_b64"],
-            "mac_b64": res["mac_b64"],
+            "mac_b64": res.get("mac_b64", ""),
             "iterations": res.get("iterations", 100000),
+            "cipher": res.get("cipher", ""),
         }, ensure_ascii=False)
         return _fmt({"blob": blob, "salt_b64": res["salt_b64"]})
     return _fmt(res)
@@ -96,6 +97,7 @@ def _crypto_unseal(ctx, blob: str, salt: str, password: str) -> str:
         "iv_b64": data.get("iv_b64", ""),
         "mac_b64": data.get("mac_b64", ""),
         "iterations": data.get("iterations", 100000),
+        "cipher": data.get("cipher", ""),
     })
     return _fmt(res)
 

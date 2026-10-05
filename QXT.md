@@ -1,4 +1,4 @@
-# Qingxiaotuan 项目规则（规则外置）
+# Tuan-CLI 项目规则（规则外置）
 
 > 本文件由 kino-koki 制定，青小团 Agent 必须遵守。修改需董事长/CEO 审批。
 > 辅助参考: Claude Code (Anthropic) 系统提示词模式 — 仅作为工程最佳实践补充。

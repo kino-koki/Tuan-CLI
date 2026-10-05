@@ -159,7 +159,7 @@ def test_banner_renders_box_art():
         )
     out = buf.getvalue()
     # 关键元素: 蓝色圆角框 + 原始 box-art 吉祥物 + 欢迎语 + 4 个字段行
-    assert "Welcome to 青小团 CLI!" in out
+    assert "Welcome to 青小团 · Tuan-CLI!" in out
     assert "Directory:" in out
     assert "Session:" in out
     assert "Model:" in out

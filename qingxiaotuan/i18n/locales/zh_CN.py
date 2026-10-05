@@ -2,7 +2,7 @@
 
 TRANSLATIONS = {
     # ---- 横幅 / 提示区
-    "banner.welcome": "Welcome to 青小团 CLI!",
+    "banner.welcome": "Welcome to 青小团 · Tuan-CLI!",
     "banner.help_hint": "Send /help for help information.",
     "banner.directory": "Directory",
     "banner.session": "Session",
@@ -92,7 +92,7 @@ TRANSLATIONS = {
     "tui.busy_wait": "青小团正在处理中，请稍候…",
     "tui.thinking": "思考中…",
     "tui.ready_empty": "青小团已就绪。输入消息开始对话，/help 查看命令。",
-    "tui.welcome_title": "Welcome to 青小团 · Qingxiaotuan!",
+    "tui.welcome_title": "Welcome to 青小团 · Tuan-CLI!",
     "tui.welcome_subtitle": "你的专属终端智能体",
     "tui.plan_badge": "plan",
     "tui.tools_count": "{n} 项工具",

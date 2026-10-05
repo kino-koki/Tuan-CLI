@@ -166,7 +166,7 @@ class SoftwareProvider(CryptoProvider):
             kdf = PBKDF2HMAC(
                 algorithm=_crypto_hashes.SHA256(), length=32, salt=salt, iterations=iterations,
             )
-            return kdf.derive(passphrase.encode())  # type: ignore[no-any-return]  # cryptography stubs 未标注
+            return kdf.derive(passphrase.encode())  # cryptography stubs 未标注
         return hashlib.pbkdf2_hmac("sha256", passphrase.encode(), salt, iterations)
 
     # ---------- seal / open ----------
@@ -210,7 +210,7 @@ class SoftwareProvider(CryptoProvider):
                 raise ValueError("密文为 aes-gcm 但 cryptography 未安装, 无法解密")
             key = self._derive(passphrase, salt, iterations)
             try:
-                return AESGCM(key).decrypt(iv, ct, None)  # type: ignore[no-any-return]  # cryptography stubs 未标注
+                return AESGCM(key).decrypt(iv, ct, None)  # cryptography stubs 未标注
             except Exception as exc:  # noqa: BLE001
                 raise ValueError("AES-GCM 认证失败: 密码错误或密文被篡改") from exc
         # CTR+HMAC 路径
@@ -244,11 +244,8 @@ class SoftwareProvider(CryptoProvider):
     # 二进制 blob = nonce + ciphertext [+ mac], 与旧 _AeadCrypto 字节级兼容
     # (AES-GCM 派生密钥用 _aesgcm_audit_key, CTR 回退用 _audit_encrypt/_audit_decrypt)。
     def seal_raw(self, plaintext: bytes, key: bytes) -> bytes:
-        if _HAS_CRYPTOGRAPHY:
-            aes_key = _aesgcm_audit_key(key)
-            nonce = os.urandom(12)
-            ct = AESGCM(aes_key).encrypt(nonce, plaintext, None)
-            return nonce + ct  # type: ignore[no-any-return]  # ct 来自 cryptography stubs (Any)
+        # 恒用旧 CTR+HMAC 格式: 保证与旧 _AeadCrypto 字节级双向兼容。
+        # (AES-GCM 仅用于信封 seal/open; open_raw 仍可读取历史上的 AES-GCM blob。)
         return _audit_encrypt(plaintext, key)
 
     def open_raw(self, blob: bytes, key: bytes) -> bytes:
@@ -257,9 +254,9 @@ class SoftwareProvider(CryptoProvider):
             nonce = blob[:12]
             ct = blob[12:]
             try:
-                return AESGCM(aes_key).decrypt(nonce, ct, None)  # type: ignore[no-any-return]  # cryptography stubs 未标注
-            except Exception as exc:  # noqa: BLE001
-                raise ValueError("审计日志 AEAD 认证失败 (可能被篡改)") from exc
+                return AESGCM(aes_key).decrypt(nonce, ct, None)  # cryptography stubs 未标注
+            except Exception:  # 非新格式 (12B nonce + AES-GCM) → 回退旧 CTR+HMAC blob
+                return _audit_decrypt(blob, key)
         return _audit_decrypt(blob, key)
 
 

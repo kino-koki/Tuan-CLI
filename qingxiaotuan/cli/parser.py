@@ -65,6 +65,8 @@ def _resolve_func(name: str):
         mod = importlib.import_module(".cmd_worktree", __package__)
     elif name == "cmd_chat_handoff":
         mod = importlib.import_module(".cmd_handoff", __package__)
+    elif name in ("cmd_login", "cmd_logout", "cmd_whoami"):
+        mod = importlib.import_module(".cmd_login", __package__)
     else:
         # 其余命令 (cmd_run / cmd_chat / cmd_dev / cmd_config / cmd_doctor /
         # cmd_onboarding / cmd_commands / cmd_session / ...) 统一走 commands 的 PEP 562 惰性路由,
@@ -914,6 +916,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="随 gh 的命令与参数, 原样透传本机 gh (可含 repo view/rclone/search/api 等)",
     )
     p.set_defaults(func="cmd_gh")
+
+    # ---- login / logout / whoami (第三方账户登录: GitHub / Apple / DeepSeek 网页) ----
+    p = sub.add_parser(
+        "login", help="登录第三方账户 (GitHub / Apple / DeepSeek 网页; 也可离线不登录)"
+    )
+    p.add_argument(
+        "provider",
+        nargs="?",
+        default=None,
+        help="github|apple|deepseek (省略则交互选择)",
+    )
+    p.set_defaults(func="cmd_login")
+
+    p = sub.add_parser("logout", help="登出第三方账户 (省略 provider = 全部)")
+    p.add_argument("provider", nargs="?", default=None, help="github|apple|deepseek")
+    p.set_defaults(func="cmd_logout")
+
+    p = sub.add_parser("whoami", help="显示当前已登录的账户")
+    p.set_defaults(func="cmd_whoami")
 
     # ---- tutorial (任务驱动内置教程, onboarding 核心能力) ----
     p = sub.add_parser(

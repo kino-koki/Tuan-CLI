@@ -1,4 +1,4 @@
-# Qingxiaotuan Agent Safety Subsystem
+# Tuan-CLI Safety Subsystem
 
 > This document is the authoritative description of the safety subsystem: architecture, module boundaries, decision tree, audit loop, threat model, and enhancement roadmap.
 > Goal: Make "what is allowed, what is rejected, and why" quickly verifiable outside the code, and provide a consistency anchor for future enhancements.

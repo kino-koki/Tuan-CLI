@@ -1,4 +1,4 @@
-# 青小团 · Qingxiaotuan Agent CLI
+# 青小团 · Tuan-CLI
 
 > **「Model + Harness = Agent」** —— 把「会思考」和「靠谱地跑」拆开，两者都交到你手里。
 > 一个安全优先、模型无关、纯 Python 的 AI Agent Harness。`v0.2.018` · MIT · Python ≥ 3.10
@@ -95,6 +95,19 @@ qxt ecosystem link                        # 反向挂载：让 Claude Code/Herme
 
 ---
 
+## 版本号与仓库历史（透明披露）
+
+**为什么版本号停在 `0.x`？** Tuan-CLI 的版本号遵循 [SemVer](https://semver.org/) 语义：`0.x` 表示 **API 尚未冻结**——破坏性变更会提前预告并提供迁移提示（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。**版本号反映的是接口稳定度，不是功能完成度**：就功能面而言，当前 `0.2.x` 的实际能力对标同类 Agent CLI 竞品的 **2.x 级功能完整度**——安全拦截/事务回滚、模型无关热切换（51 家供应商 + 本地 Ollama）、三种主循环、微内核插件架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等均已落地并配有测试。一句话：**功能成熟度已到「2.x」，版本号停在「0.x」是因为我们坚持 API 冻结后才升 1.0**，而不是能力不足。
+
+| 版本号语义 | 说明 |
+|---|---|
+| `0.x`（当前） | API 未冻结：破坏性变更预告 + 迁移提示；功能完整度对标竞品 2.x |
+| `1.0`（计划） | API 冻结后发布，此后版本号直接反映接口稳定性 |
+
+**Git 历史说明（开源透明披露）**：本仓库的 Git 提交历史于 **2026-09-26 因本地仓库损坏而重建**，此前逐次提交的演进记录已不可追溯（旧 `.git` 对象丢失）。当前代码从架构到实现完整可审查；2026-09-26 之前的功能演进请以 [CHANGELOG.md](CHANGELOG.md) 的版本记录为准（版本纪律不受影响）。我们选择如实披露这一点，不修饰、不隐藏。
+
+---
+
 ## 受借鉴与融合
 
 青小团不是从石头里蹦出来的，设计上明确借鉴、以下几种「已知 Agent 项目与协议」，在此如实列出（并尽可能在源码注释中标注原始出处）：
@@ -117,7 +130,7 @@ qxt ecosystem link                        # 反向挂载：让 Claude Code/Herme
 
 ```bash
 # 1) 装（自带 [dev] 全套餐；只要 API 可省 [openai] [mcp]）
-git clone <此仓库> && cd qingxiaotuan-agent-cli
+git clone <此仓库> && cd tuan-cli
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
@@ -235,6 +248,48 @@ qxt --print run "你好，一句话介绍你自己"     # 冒烟
 
 ---
 
+## 账户登录：GitHub / Apple / DeepSeek（可选 · 默认离线）
+
+Tuan-CLI 不登录即可完整离线使用。登录只是可选增强层，支持三家身份提供方，全部可选、全部非必需：
+
+| 提供方 | 流程 | 需要准备 |
+| --- | --- | --- |
+| GitHub | OAuth 2.0 授权码 + PKCE | OAuth App 的 `client_id`（`client_secret` 可选） |
+| Apple | Sign in with Apple（授权码 + ES256 `client_secret`） | Service ID + Sign in with Apple Key（`.p8`） |
+| DeepSeek | 网页会话令牌注入（无需 API Key，用网页额度） | 从 chat.deepseek.com 开发者工具取会话令牌 |
+
+```bash
+qxt login          # 交互选择提供方
+qxt login github   # 或直接指定
+qxt logout         # 全部登出；qxt logout github 只登出一个
+qxt whoami         # 逐提供方查看登录状态
+```
+
+凭证写入 `~/.qingxiaotuan/auth-config.toml`（或环境变量 `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*`，环境变量优先于 TOML）：
+
+```toml
+[github]
+client_id = "Ov23li..."          # OAuth App：Settings → Developer settings → OAuth Apps
+redirect_uri = "http://127.0.0.1:8765/callback"
+
+[apple]
+team_id = "TEAMID"
+client_id = "com.example.service"   # Service ID
+key_id = "KID"
+private_key_path = "~/.qingxiaotuan/AuthKey.p8"
+redirect_uri = "http://127.0.0.1:8765/callback"
+
+[deepseek]
+# 可选预置: session_token = "..."   （否则登录时粘贴）
+```
+
+OAuth 回调跑在本机回环地址（`127.0.0.1:8765`），无需公网端点。
+`/web` 工作台侧栏有同款账户面板，官网亦列出三家登录入口。
+
+> **安全提示**：`~/.qingxiaotuan/auth.json` 以明文保存登录态令牌（尽力 chmod 600）。
+> 请像对待 SSH 私钥一样保护主目录；公共机器上用完请登出。
+
+---
 ## License & 关联阅读
 
 - **License**：MIT（自由使用/修改/分发，保留版权声明）

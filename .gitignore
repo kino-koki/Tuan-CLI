@@ -99,7 +99,7 @@ desktop.ini
 *.suo
 
 # ===== 官网（Web）不入库 =====
-# 官网页面与素材保持本地维护，不随 Qingxiaotuan-Agent-CLI 代码仓库提交
+# 官网页面与素材保持本地维护，不随 Tuan-CLI 代码仓库提交
 # 仅忽略仓库根级官网目录 /web/, 不影响 qingxiaotuan/web/ 代码包
 /web/
 .trae-html-share-packages/

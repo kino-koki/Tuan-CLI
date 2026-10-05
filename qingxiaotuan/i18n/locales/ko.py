@@ -2,7 +2,7 @@
 
 TRANSLATIONS = {
     # ---- 배너 / 힌트
-    "banner.welcome": "Qingxiaotuan CLI에 오신 것을 환영합니다!",
+    "banner.welcome": "투안-CLI에 오신 것을 환영합니다!",
     "banner.help_hint": "/help 를 입력하면 도움말을 볼 수 있습니다.",
     "banner.directory": "디렉터리",
     "banner.session": "세션",
@@ -23,7 +23,7 @@ TRANSLATIONS = {
     "repl.usage": "usage: 입력 {pt} / 출력 {ct} tokens",
     "repl.context_bar": "컨텍스트 {pct}% [{bar}]",
     # ---- 단축키 패널
-    "keymap.title": "Qingxiaotuan · 단축키 / 명령 패널   (↑↓ 선택 · Enter 슬래시 명령 실행 · Esc 취소)",
+    "keymap.title": "투안-CLI · 단축키 / 명령 패널   (↑↓ 선택 · Enter 슬래시 명령 실행 · Esc 취소)",
     "keymap.group.input": "입력",
     "keymap.group.commands": "슬래시 명령",
     "keys.enter": "현재 입력 전송",
@@ -87,16 +87,16 @@ TRANSLATIONS = {
     "tui.cmd_meta": "명령",
     "tui.cmd_hint": "+/명령",
     # ---- TUI 작업대 (tui.py / QxtTUI)
-    "tui.boot_starting": "Qingxiaotuan 시작 중…",
+    "tui.boot_starting": "투안-CLI 시작 중…",
     "tui.boot_error_title": "[시작 실패]",
     "tui.boot_error_hint": "Ctrl-Q 로 종료; ~/.qingxiaotuan/config.yaml 과 로그를 확인한 후 다시 시도하세요.",
     "tui.readonly_hint": "메시지를 입력하여 시작, /help 로 전체 명령 보기.",
     "tui.no_key_hint": "● {env} 가 설정되지 않음 — /login 또는 /provider 로 설정하세요.",
-    "tui.booting_wait": "Qingxiaotuan이 아직 시작 중입니다. 잠시 기다려 주세요…",
-    "tui.busy_wait": "Qingxiaotuan이 처리 중입니다. 잠시 기다려 주세요…",
+    "tui.booting_wait": "투안-CLI이 아직 시작 중입니다. 잠시 기다려 주세요…",
+    "tui.busy_wait": "투안-CLI이 처리 중입니다. 잠시 기다려 주세요…",
     "tui.thinking": "생각 중…",
-    "tui.ready_empty": "Qingxiaotuan이 준비되었습니다. 메시지를 입력하여 시작, /help 로 명령 보기.",
-    "tui.welcome_title": "Welcome to Qingxiaotuan!",
+    "tui.ready_empty": "투안-CLI이 준비되었습니다. 메시지를 입력하여 시작, /help 로 명령 보기.",
+    "tui.welcome_title": "Welcome to 투안-CLI!",
     "tui.welcome_subtitle": "당신을 위한 터미널 에이전트",
     "tui.plan_badge": "plan",
     "tui.tools_count": "도구 {n}",
@@ -106,7 +106,7 @@ TRANSLATIONS = {
     "tui.exit_ctrl_c": "Ctrl-C 종료",
     "tui.resume_fail": "세션 복원 실패 (세션을 찾을 수 없음)",
     # ---- 설정 마법사
-    "setup.title": "Qingxiaotuan 설정 마법사",
+    "setup.title": "투안-CLI 설정 마법사",
     "setup.opt_quick": "빠른 설정 (권장)",
     "setup.opt_full": "전체 설정",
     "setup.opt_blank": "빈 설정",

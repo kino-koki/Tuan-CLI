@@ -119,7 +119,7 @@ html_doc = f"""<!DOCTYPE html>
 <body><div class="wrap">
 
 <header>
-  <h1>青小团 (Qingxiaotuan) 安全模块实测报告</h1>
+  <h1>青小团 (Tuan-CLI) 安全模块实测报告</h1>
   <div class="sub">10,000 条命令对抗评测 · seed={d['seed']} · 耗时 {d['seconds']}s · 三层判定 (规则引擎 + 网络门控 + 语义分类器) · 修补后复测</div>
 </header>
 
@@ -206,7 +206,7 @@ html_doc = f"""<!DOCTYPE html>
   </ul>
 </div>
 
-<div class="foot">青小团 Qingxiaotuan · 安全模块 10,000 条命令实测 · 生成于 2026-09-06</div>
+<div class="foot">青小团 Tuan-CLI · 安全模块 10,000 条命令实测 · 生成于 2026-09-06</div>
 </div></body></html>"""
 
 out = ROOT / "bench" / "safety_10k_report.html"

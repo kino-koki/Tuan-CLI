@@ -1,4 +1,4 @@
-# 青小團 / Qingxiaotuan Agent CLI
+# Tuan-CLI
 
 > **「Model + Harness = Agent」** — "생각"과 "안전하게 굴리기"를 갈라서, 둘 다 열쇠를 손에 쥐여줍니다.
 > 안전 우선 · 모델 무관 · 순수 Python AI Agent Harness. `v0.2.018` · MIT · Python ≥ 3.10
@@ -65,6 +65,19 @@ class MyTool(Plugin):
 
 ---
 
+## 버전 번호와 저장소 이력 (투명 공개)
+
+**버전 번호가 왜 `0.x`에 머물러 있나요?** Tuan-CLI는 [SemVer](https://semver.org/)를 따릅니다. `0.x`는 **API가 아직 동결되지 않았음**을 의미합니다 — 파괴적 변경은 사전에 공지되고 마이그레이션 힌트가 제공됩니다 ([VERSION_POLICY.md](VERSION_POLICY.md) 참조). **버전 번호는 인터페이스 안정성을 반영할 뿐, 기능 완성도를 반영하지 않습니다.** 기능 면에서 현재 `0.2.x`는 유사한 Agent CLI 경쟁 제품의 **2.x급 기능 완성도**에 해당합니다 — 안전 게이팅/트랜잭션 롤백, 모델 무관 핫스왑(51개 프로바이더 + 로컬 Ollama), 세 가지 메인 루프, 마이크로커널 플러그인 아키텍처, 3계층 메모리, 에코시스템 상호운용(MCP/ACP/Claude Code/Hermes 브리지), 서브에이전트와 Swarm, cron과 백그라운드 작업, Goal 모드와 정밀 권한 — 모두 구현되었고 테스트로 검증되었습니다. 한마디로: **기능 성숙도는 "2.x"에 도달했지만, API 동결 후에야 1.0으로 올린다는 원칙을 지키고 있어 버전 번호는 "0.x"에 머무는 것**입니다.
+
+| 버전 번호 의미 | 설명 |
+|---|---|
+| `0.x`(현재) | API 미동결: 파괴적 변경 공지 + 마이그레이션 힌트; 기능 완성도는 경쟁사 2.x 수준 |
+| `1.0`(예정) | API 동결 후 릴리스. 이후 버전 번호는 인터페이스 안정성을 직접 반영 |
+
+**Git 이력 공지 (오픈소스 투명성):** 본 저장소의 Git 커밋 이력은 **2026-09-26 로컬 저장소 손상으로 인해 재구축**되었으며, 그 이전의 커밋별 진화 기록은 더 이상 추적할 수 없습니다(이전 `.git` 객체 소실). 현재 코드는 아키텍처부터 구현까지 완전히 검토 가능합니다. 2026-09-26 이전의 기능 진화는 [CHANGELOG.md](CHANGELOG.md)의 버전 기록을 기준으로 삼아 주세요 (버전 규율에는 영향이 없습니다). 우리는 이 사실을 꾸밈없이 공개합니다.
+
+---
+
 ## 영감과 출처 표기
 
 칭샤오퇀은 돌에서 튀어나온 게 아닙니다. 설계는 명시적으로 아래 '알려진 에이전트 프로젝트와 프로토콜'에 기대고 있습니다. 숨기지 않고 나열합니다(가능하면 소스 주석에도 원출처를 명시):
@@ -85,7 +98,7 @@ class MyTool(Plugin):
 ## 퀵스타트
 
 ```bash
-git clone <이 레포> && cd qingxiaotuan-agent-cli
+git clone <이 레포> && cd tuan-cli
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
@@ -157,6 +170,16 @@ qxt --print run "안녕."            # 스모크
 - **규모**: 약 412 `.py` / 약 7.9만 줄 / 41 패키지 / 플러그인 36.
 - **버전**: `v0.2.018`（0.x/Beta）; 파괴적 변경은 마이너 버전에서 사전 공지 + 마이그레이션 힌트.
 - **딥다이브**: 9대 엔진 시그니처와 새 도구 워크스루는 `README_zh-CN.md` 부록.
+
+---
+
+## 계정 로그인: GitHub / Apple / DeepSeek (선택 · 기본 오프라인)
+
+- 로그인 없이도 완전한 오프라인 사용이 가능합니다. 로그인은 선택적 기능입니다.
+- `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`.
+- 자격 증명은 `~/.qingxiaotuan/auth-config.toml` 또는 환경 변수 `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*` (환경 변수 우선).
+- OAuth 콜백 기본값은 `http://127.0.0.1:8765/callback`. `auth.json`의 토큰은 평문이므로 홈 디렉터리를 보호하고 공용 기기에서는 로그아웃하세요.
+- 자세한 내용은 README_zh-CN.md(마스터)와 README.md 참조.
 
 ---
 

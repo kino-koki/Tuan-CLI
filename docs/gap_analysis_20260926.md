@@ -271,6 +271,6 @@
 - 第三方 SWE-bench：https://vortx.ch/copilot-vs-claude-code-vs-cursor-july-2026-update/
 
 ### 青小团
-- 项目根：E:\Qingxiaotuan Agent CLI
+- 项目根：E:\Tuan-CLI
 - 版本：v0.2.017（qingxiaotuan/__init__.py）
 - 测试：210 文件 / 2545 用例

@@ -18,10 +18,25 @@ def _open(params):
     return CryptoEngine().open(params)
 
 
+def _open_from(sealed, passphrase):
+    """从 seal 输出构造 open 参数 (AES-GCM 无 mac_b64, 需 cipher 字段路由)。"""
+    params = {
+        "passphrase": passphrase,
+        "ciphertext_b64": sealed["ciphertext_b64"],
+        "iv_b64": sealed["iv_b64"],
+        "salt_b64": sealed["salt_b64"],
+        "iterations": sealed.get("iterations", 100000),
+    }
+    if sealed.get("cipher"):
+        params["cipher"] = sealed["cipher"]
+    if sealed.get("mac_b64"):
+        params["mac_b64"] = sealed["mac_b64"]
+    return params
+
+
 def test_seal_open_roundtrip():
     r = _seal({"passphrase": "pw", "plaintext": "hello 青小团 🔐"})
-    out = _open({"passphrase": "pw", "ciphertext_b64": r["ciphertext_b64"],
-                 "iv_b64": r["iv_b64"], "salt_b64": r["salt_b64"], "mac_b64": r["mac_b64"]})
+    out = _open(_open_from(r, "pw"))
     assert out["plaintext"] == "hello 青小团 🔐"
 
 
@@ -53,11 +68,10 @@ def test_known_plaintext_cannot_decrypt_other_messages():
 def test_wrong_passphrase_rejected_by_mac():
     r = _seal({"passphrase": "pw", "plaintext": "secret"})
     try:
-        _open({"passphrase": "WRONG", "ciphertext_b64": r["ciphertext_b64"],
-               "iv_b64": r["iv_b64"], "salt_b64": r["salt_b64"], "mac_b64": r["mac_b64"]})
+        _open(_open_from(r, "WRONG"))
         raise AssertionError("错误密码未被 MAC 拒绝")
     except ValueError as e:
-        assert "tag mismatch" in str(e)
+        assert "tag mismatch" in str(e) or "认证失败" in str(e)
 
 
 def test_tampered_ciphertext_rejected():
@@ -65,11 +79,12 @@ def test_tampered_ciphertext_rejected():
     ct = bytearray(base64.b64decode(r["ciphertext_b64"]))
     ct[0] ^= 0xFF  # 篡改一个字节
     try:
-        _open({"passphrase": "pw", "ciphertext_b64": base64.b64encode(bytes(ct)).decode(),
-               "iv_b64": r["iv_b64"], "salt_b64": r["salt_b64"], "mac_b64": r["mac_b64"]})
+        p = _open_from(r, "pw")
+        p["ciphertext_b64"] = base64.b64encode(bytes(ct)).decode()
+        _open(p)
         raise AssertionError("被篡改的密文未被 MAC 拒绝")
     except ValueError as e:
-        assert "tag mismatch" in str(e)
+        assert "tag mismatch" in str(e) or "认证失败" in str(e)
 
 
 def test_hmac_sign_verify_roundtrip():

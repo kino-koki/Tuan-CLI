@@ -51,7 +51,7 @@ def to_jsonl(event: SecurityEvent) -> str:
     return json.dumps(data, ensure_ascii=False, default=str)
 
 
-def to_cef(event: SecurityEvent, vendor: str = "kino-koki", product: str = "Qingxiaotuan") -> str:
+def to_cef(event: SecurityEvent, vendor: str = "kino-koki", product: str = "Tuan-CLI") -> str:
     sev = _event_severity(event)
     score = _CEF_SEVERITY.get(sev, 1)
     # 签名 ID / 名称取自 event_type, 去掉前缀安全化
