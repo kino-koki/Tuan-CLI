@@ -89,7 +89,7 @@ def _resolve_adapter():
 
 
 # =================================================================== 版本锚定演示补丁
-# 该补丁要求内核 >= 9.x, 当前为 0.2.x → 会被版本检查跳过并广播 patch.bypass。
+# 该补丁要求内核 >= 9.x, 当前为 1.0 → 会被版本检查跳过并广播 patch.bypass。
 # 它用于演示"版本感知跳过"能力, 不作为实际生效补丁。
 
 @patch_impl("qingxiaotuan.core.retry.retry_after_seconds", priority=999,

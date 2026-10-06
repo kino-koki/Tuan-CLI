@@ -34,7 +34,7 @@ CATEGORIZED_HELP: "Dict[str, List[str]]" = {
         "/skills", "/memory", "/commands", "/subagent", "/swarm", "/route",
     ],
     "系统与权限": [
-        "/model", "/provider", "/login", "/effort", "/mode", "/plan",
+        "/model", "/provider", "/effort", "/mode", "/plan",
         "/permissions", "/sandbox", "/offline", "/audit", "/status", "/stats",
         "/hooks", "/mcp", "/mcp-tools", "/image", "/images", "/clear-images",
         "/init", "/goal", "/blast",

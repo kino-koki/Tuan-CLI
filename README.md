@@ -1,7 +1,7 @@
 # Tuan-CLI
 
 > **"Model + Harness = Agent."** — Split "how to think" from "how to run it safely," and hand you both keys.
-> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.2.018` · MIT · Python ≥ 3.10
+> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.3.0` · MIT · Python ≥ 3.10
 
 > ### Positioning: a safety-first agent — without sacrificing developer experience
 >
@@ -32,7 +32,7 @@ The core idea: **the model does the thinking; the harness makes that thinking ru
 |---|---|
 | 🛡️ **Safety-first** | Four gates: static risk scoring, blast-radius pre-blocking, YOLO-redline floor, transactional ledger with exact `/undo` |
 | 🎯 **Developer experience** | Benign dev commands pass with zero confirmation, `/undo` has your back, 40+ slash commands, `qxt safe allow` for explicit opt-outs, YOLO to skip repeat prompts |
-| 🔌 **Model-agnostic** | 51 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
+| 🔌 **Model-agnostic** | 55 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
 | 🧠 **Three main loops** | ReAct / Planner-Execute / DevLoop — pluggable; one kernel, different "thinking rhythms" |
 | 🔧 **Microkernel** | One-line `@plugin`, service registry, append-only event bus, hook middleware |
 | 🗂️ **Memory** | SQLite FTS5 + session event stream; three-tier memory, `/undo`, checkpoint, replay, Trajectory export |
@@ -80,14 +80,14 @@ class MyTool(Plugin):
 
 ## Version number & repository history (transparent disclosure)
 
-**Why does the version stay at `0.x`?** Tuan-CLI follows [SemVer](https://semver.org/): `0.x` means **the API is not frozen yet** — breaking changes are announced in advance with migration hints (see [VERSION_POLICY.md](VERSION_POLICY.md)). **The version number reflects interface stability, not feature completeness.** In terms of capability, the current `0.2.x` delivers what comparable Agent CLI products call a **2.x-level feature set** — safety gating / transactional rollback, model-neutral hot-swap (51 providers + local Ollama), three main loops, microkernel plugin architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all shipped and covered by tests. In one sentence: **feature maturity is at "2.x"; the version stays at "0.x" because we hold the line that 1.0 only comes after the API is frozen** — not because of missing capability.
+**Why `0.3.0` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (55 providers + local Ollama), three main loops, microkernel plugin architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Version semantics | Meaning |
 |---|---|
-| `0.x` (current) | API not frozen: breaking changes announced + migration hints; feature completeness on par with 2.x competitors |
-| `1.0` (planned) | Released once the API freezes; from then on the version number directly reflects interface stability |
+| `0.3.0` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
+| `1.0` (reserved) | Enabled once the public API is frozen and backward compatibility is promised; only then do breaking changes bump MAJOR (`2.0`) |
 
-**Git history note (open-source transparency):** This repository's Git commit history was **rebuilt on 2026-09-26 after the local repository was corrupted**; the per-commit evolution before that date is no longer recoverable (the old `.git` objects were lost). The current code is fully reviewable from architecture to implementation; for feature evolution before 2026-09-26, please rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We choose to disclose this plainly — no polishing, no hiding.
+**Git history note (open-source transparency):** This repository's Git commit history was **deliberately rebuilt on 2026-09-26 — the early commit history was intentionally overwritten by the author**; the per-commit evolution before that date is no longer preserved. The current code is fully reviewable from architecture to implementation; for feature evolution before 2026-09-26, please rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We choose to disclose this plainly — no polishing, no hiding.
 
 ---
 
@@ -137,7 +137,7 @@ qxt --print run "Hi, describe yourself in one sentence."
 | Command | What it's for |
 |---|---|
 | `qxt` | Interactive TUI (Kimi Code skin) |
-| `qxt setup` / `qxt models` | Configure providers / list 51 providers & 1100+ models |
+| `qxt setup` / `qxt models` | Configure providers / list 55 providers & 1100+ models |
 | `qxt models update` | Update the model/provider catalog locally: merge the built-in lists into `~/.qingxiaotuan/models_catalog.json` (offline, preserves user-added entries; `--check` reports diffs only, `--background` runs async) |
 | `qxt agent` | Named agents (`.claude/agents`-compatible, 3-tier discovery) |
 | `qxt acp` | Run an ACP server so VSCode / Zed / JetBrains can drive you |
@@ -177,7 +177,7 @@ qxt ecosystem link                        # reverse-mount: Claude Code/Hermes ca
 
 ## The safety model: four gates + ledgered undo
 
-1. **Static scoring** — every shell command scored `none→critical` by `safety_engine.score()`, with indirect-expansion unfolding (IFS, `$VAR`, command substitution, ANSI-C/octal/hex escapes, PowerShell Base64, NFKC; ≤32 recursion).
+1. **Static scoring** — every shell command scored `none→critical` via the `SafetyEngine.score(params)` facade, with indirect-expansion unfolding (IFS, `$VAR`, command substitution, ANSI-C/octal/hex escapes, PowerShell Base64, NFKC; ≤32 recursion).
 2. **Blast-radius pre-block** — you see what it'll touch *before* it fires (`--impact`).
 3. **YOLO-redline floor** — YOLO kills per-step confirmations but **cannot** touch hard redlines (recursive `rm`, force-push, `chmod -R 000 /`… never auto-run).
 4. **Transactional ledger** — every write has an audit trail; `/undo` restores via diff `reverse_transform` + snapshots.
@@ -253,78 +253,30 @@ qxt --print run "Hi, one line."   # smoke
 ```
 
 - **i18n discipline**: README_zh-CN is the authoritative master; every locale is a vivid, zero-drift localization — **no mechanical translation.**
-- **Version**: `v0.2.018` (0.x / Beta); breaking changes get a minor-version heads-up + migration notes.
+- **Version**: `v0.3.0` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
 - **Deep dive**: engine signatures & a step-by-step tool walkthrough live in the appendix of `README_zh-CN.md`.
 
 ---
 
-## Account login: GitHub / Apple / DeepSeek (optional · offline by default)
+## Fully local & offline · no account login
 
-Tuan-CLI runs fully offline without any account. Login is an optional layer on
-top — three identity providers are supported, all optional, none required:
+Tuan-CLI **offers no account login**: no GitHub / Apple / DeepSeek binding, no OAuth callback, no login token on disk. That is deliberate — **everything runs locally except the model API you configure yourself**.
 
-| Provider | Flow | What you prepare |
-| --- | --- | --- |
-| GitHub | OAuth 2.0 authorization-code + PKCE | OAuth App `client_id` (`client_secret` optional) |
-| Apple | Sign in with Apple (authorization code + ES256 `client_secret`) | Service ID + Sign in with Apple Key (`.p8`) |
-| DeepSeek | Official Open Platform API Key (`sk-`) | API Key from platform.deepseek.com (new accounts get free tokens) |
+- **Fully usable without signing in**: file I/O, command execution, memory, skills, subagents and the safety guard are all local.
+- **The only "cloud" is your model API**: the key is yours, sent only to that endpoint, with no third-party relay.
+- **Want a zero-network pipeline**: install Ollama or llama.cpp — `qxt models local` to detect, `qxt models set ollama <model>` to use it.
 
-```bash
-qxt login          # pick a provider interactively
-qxt login github   # or name one directly
-qxt logout         # clear all; qxt logout github clears one
-qxt whoami         # per-provider login status
-```
-
-Credentials go into `~/.qingxiaotuan/auth-config.toml` (or env vars
-`QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*`, which win over TOML):
-
-```toml
-[github]
-client_id = "Ov23li..."          # OAuth App: Settings → Developer settings → OAuth Apps
-redirect_uri = "http://127.0.0.1:8765/callback"
-
-[apple]
-team_id = "TEAMID"
-client_id = "com.example.service"   # Service ID
-key_id = "KID"
-private_key_path = "~/.qingxiaotuan/AuthKey.p8"
-redirect_uri = "http://127.0.0.1:8765/callback"
-
-[deepseek]
-# optional pre-seed: api_key = "sk-..."   (else pasted at login time)
-```
-
-The OAuth callback runs on a local loopback server (`127.0.0.1:8765`) — no
-public endpoint needed. The `/web` workbench mirrors the same three providers
-(account panel in the sidebar), and the official site lists them too.
-
-### Using the official DeepSeek API as the model backend
-
-After `qxt login deepseek` (or just exporting `DEEPSEEK_API_KEY`), the official
-Open Platform endpoint drives model calls — OpenAI-compatible, zero risk of
-web-account restrictions:
+### Configure a model API key
 
 ```bash
-qxt models set deepseek deepseek-chat   # switch the model provider
-qxt                                      # chat as usual
+qxt models set deepseek deepseek-chat   # pick provider & model
+qxt models                              # interactive setup (key written to ~/.qingxiaotuan/.env)
 ```
 
-- Model calls go to `https://api.deepseek.com` (official API; new accounts get
-  a free token grant — no credit card needed).
-- **Why not the web endpoint**: an earlier implementation routed calls through
-  `chat.deepseek.com/api/v0` using a web-session token (the community
-  "DSH-webtokens" approach). That uses a private, unsupported endpoint and
-  triggers DeepSeek's automated risk control on the *web account* (temporary
-  suspension/muting). It has been **removed entirely**. The web account and the
-  API platform are separate systems: the official API path does not touch your
-  web account at all.
+Keys live in `~/.qingxiaotuan/.env` (chmod 600, never commit); environment variables (e.g. `DEEPSEEK_API_KEY`) work too.
 
-> **Security note**: `~/.qingxiaotuan/auth.json` stores login state with tokens
-> in plaintext (best-effort chmod 600). Treat it like an SSH key: protect your
-> home directory, and log out on shared machines.
+> **Transparency**: earlier versions shipped GitHub / Apple / DeepSeek account login (including a web-session token path). It conflicted with the "fully local & offline" positioning, and the web endpoint was a private, unsupported interface that triggered risk controls — so the whole capability has been **removed**. Model calls go through official APIs with your own key.
 
----
 ## License & links
 
 - **License**: MIT (use/modify/redistribute freely, keep the notice)

@@ -4,13 +4,13 @@
 直接切到 Claude / Gemini / 本地网关 (Ollama / vLLM / LM Studio 等) 即可 ——
 只要端点是 OpenAI 兼容协议 (chat/completions + tools), 一套适配器通吃。
 
-51 家开箱即用供应商, 按分类覆盖:
-  A. 中国主流 (14 家): DeepSeek, 通义千问, Kimi, GLM, 豆包, 百度文心, 讯飞星火 等
-  B. 国际主流 (12 家): OpenAI, Anthropic, Gemini, Mistral, xAI, Cohere 等
-  C. 聚合网关 (6 家): OpenRouter, SiliconFlow, Novita, Lepton, Cloudflare, GitHub Models
-  D. 云平台 (6 家): 火山引擎, 百度千帆, 腾讯混元, 华为盘古, AWS Bedrock, Azure
-  E. 免费/低门槛 (6 家): Groq, Together, Fireworks, Novita, GitHub Models, Cloudflare
-  F. 自托管/本地 (4 家): Ollama, LM Studio, vLLM, 通用本地网关
+55 家开箱即用供应商, 按分类覆盖:
+  A. 中国主流 (13 家): DeepSeek, 通义千问, Kimi, GLM, 豆包, 百度文心, 讯飞星火 等
+  B. 国际主流 (19 家): OpenAI, Anthropic, Gemini, Mistral, xAI, Cohere, DeepInfra 等
+  C. 聚合网关 (8 家): OpenRouter, SiliconFlow, Novita, Lepton, Cloudflare, GitHub Models 等
+  D. 云平台 (8 家): 火山引擎, 百度千帆, 腾讯混元, 华为盘古, AWS Bedrock, Azure, Nebius 等
+  E. 免费层 (2 家): OpenCode Zen, NVIDIA NIM
+  F. 本地部署 (5 家): Ollama, LM Studio, vLLM, llama.cpp, 通用本地网关
 """
 
 from typing import Dict, Type
@@ -34,10 +34,10 @@ __all__ = [
 
 # 所有"已知" provider (仅用于友好提示与文档; 实际一律走 OpenAI 兼容适配器)。
 # 未知 provider 不再报错, 而是按 openai-compatible 网关处理 —— 极大放开扩展性。
-# 51 家开箱即用供应商 (详见 provider_catalog.py); 外加通用网关 openai-compatible。
+# 55 家开箱即用供应商 (详见 provider_catalog.py); 外加通用网关 openai-compatible。
 KNOWN_PROVIDERS = tuple(list(ALL_PROVIDER_NAMES) + ["openai-compatible", "anthropic-gw"])
 
-# 51 家开箱即用的供应商预设: 选了就自动带好 base_url / 推荐模型 / 密钥变量。
+# 55 家开箱即用的供应商预设: 选了就自动带好 base_url / 推荐模型 / 密钥变量。
 # 用户 `qxt models` 直接挑一家即可, 不用手填任何地址。
 # 保持向后兼容: 旧代码中 `PROVIDER_PRESETS["deepseek"]` 仍可工作。
 PROVIDER_PRESETS: Dict[str, Dict[str, str]] = {

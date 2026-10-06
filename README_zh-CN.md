@@ -1,7 +1,7 @@
 # 青小团 · Tuan-CLI
 
 > **「Model + Harness = Agent」** —— 把「会思考」和「靠谱地跑」拆开，两者都交到你手里。
-> 一个安全优先、模型无关、纯 Python 的 AI Agent Harness。`v0.2.018` · MIT · Python ≥ 3.10
+> 一个安全优先、模型无关、纯 Python 的 AI Agent Harness。`v0.3.0` · MIT · Python ≥ 3.10
 
 > ### 定位：安全优先的 Agent，尽量不牺牲开发体验
 >
@@ -32,7 +32,7 @@
 |---|---|
 | 🛡️ **安全优先** | 四道闸：静态评分、影响半径预拦截、YOLO 红线兜底、事务化账本 `/undo` 精确回滚 |
 | 🎯 **开发体验** | 良性开发命令零确认零拦截、`/undo` 兜底、40+ 斜杠命令、`qxt safe allow` 显式放行、YOLO 一键省掉重复确认 |
-| 🔌 **模型无关** | 51 家供应商 + 本地 Ollama + 运行时热切换 + 自动路由（`router.*`） |
+| 🔌 **模型无关** | 55 家供应商 + 本地 Ollama + 运行时热切换 + 自动路由（`router.*`） |
 | 🧠 **三种主循环** | ReAct / Planner-Execute / DevLoop，可插拔，"同一个内核跑不同的思考节奏" |
 | 🔧 **微内核** | `@plugin` 一行声明，服务注册表、append-only 事件总线、hook 中间件 |
 | 🗂️ **记忆** | SQLite FTS5 + 会话事件流；三层记忆、`/undo`、checkpoint、replay、Trajectory 导出 |
@@ -97,14 +97,14 @@ qxt ecosystem link                        # 反向挂载：让 Claude Code/Herme
 
 ## 版本号与仓库历史（透明披露）
 
-**为什么版本号停在 `0.x`？** Tuan-CLI 的版本号遵循 [SemVer](https://semver.org/) 语义：`0.x` 表示 **API 尚未冻结**——破坏性变更会提前预告并提供迁移提示（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。**版本号反映的是接口稳定度，不是功能完成度**：就功能面而言，当前 `0.2.x` 的实际能力对标同类 Agent CLI 竞品的 **2.x 级功能完整度**——安全拦截/事务回滚、模型无关热切换（51 家供应商 + 本地 Ollama）、三种主循环、微内核插件架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等均已落地并配有测试。一句话：**功能成熟度已到「2.x」，版本号停在「0.x」是因为我们坚持 API 冻结后才升 1.0**，而不是能力不足。
+**为什么现在是 `0.3.0`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的诚实口径：**`0.x` 阶段意味着公共 API（CLI 接口、配置 schema、工具协议、插件契约）尚未冻结**，仍可能随迭代调整。Tuan-CLI 功能面已相当完整（安全拦截/事务回滚、模型无关热切换（55 家供应商 + 本地 Ollama）、三种主循环、微内核插件架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等，均配有测试），但**版本号反映的是接口稳定度，不是功能完成度**——功能齐全 ≠ API 该冻结。`1.0` 预留给公共 API 真正稳定、敢于承诺向后兼容之时。此前：破坏性变更在 `0.x` 内升 MINOR（并附迁移提示）、兼容功能升 MINOR、修复升 PATCH（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。
 
 | 版本号语义 | 说明 |
 |---|---|
-| `0.x`（当前） | API 未冻结：破坏性变更预告 + 迁移提示；功能完整度对标竞品 2.x |
-| `1.0`（计划） | API 冻结后发布，此后版本号直接反映接口稳定性 |
+| `0.3.0`（当前） | **API 尚未冻结**：`0.x` 阶段允许破坏性调整，会预告 + 给迁移提示；不承诺向后兼容 |
+| `1.0`（预留） | 公共 API 冻结、承诺向后兼容时启用；此后破坏性变更才升 MAJOR（2.0） |
 
-**Git 历史说明（开源透明披露）**：本仓库的 Git 提交历史于 **2026-09-26 因本地仓库损坏而重建**，此前逐次提交的演进记录已不可追溯（旧 `.git` 对象丢失）。当前代码从架构到实现完整可审查；2026-09-26 之前的功能演进请以 [CHANGELOG.md](CHANGELOG.md) 的版本记录为准（版本纪律不受影响）。我们选择如实披露这一点，不修饰、不隐藏。
+**Git 历史说明（开源透明披露）**：本仓库的 Git 提交历史于 **2026-09-26 由作者有意重建——早期提交历史被作者主动覆盖**，此前逐次提交的演进记录不再保留。当前代码从架构到实现完整可审查；2026-09-26 之前的功能演进请以 [CHANGELOG.md](CHANGELOG.md) 的版本记录为准（版本纪律不受影响）。我们选择如实披露这一点，不修饰、不隐藏。
 
 ---
 
@@ -156,7 +156,7 @@ qxt --print run "你好，一句话介绍你自己"
 | 命令 | 干啥 |
 |---|---|
 | `qxt` | 交互式 TUI（Kimi Code 皮肤） |
-| `qxt setup` / `qxt models` | 配供应商 / 列出模型（51 家供应商、1100+ 内置模型） |
+| `qxt setup` / `qxt models` | 配供应商 / 列出模型（55 家供应商、1100+ 内置模型） |
 | `qxt models update` | 本地更新模型/供应商目录：把内置最新清单合并写入 `~/.qingxiaotuan/models_catalog.json`（离线、保留用户自建条目；`--check` 只报差异、`--background` 后台执行） |
 | `qxt agent` | 命名 Agents（`.claude/agents` 兼容 + 三层发现） |
 | `qxt acp` | 启动 ACP server，让 VS Code / Zed / JetBrains 来驱动你 |
@@ -184,7 +184,7 @@ qxt --print run "你好，一句话介绍你自己"
 
 ## 安全模型：四道闸 + 记账撤销
 
-1. **闸一 · 静态评分**：每个 shell 命令执行前用 `safety_engine.score()` 判风险（none→critical），含间接调用展开（IFS、`$VAR`、命令替换、ANSI-C/八/十六进转义、PowerShell Base64、Unicode NFKC，递归 ≤32 层）。
+1. **闸一 · 静态评分**：每个 shell 命令执行前经安全引擎门面 `SafetyEngine.score(params)` 判风险（none→critical），含间接调用展开（IFS、`$VAR`、命令替换、ANSI-C/八/十六进转义、PowerShell Base64、Unicode NFKC，递归 ≤32 层）。
 2. **闸二 · 影响半径预拦截**：危险命令在**执行前**就告诉你它会碰到啥，`--impact` 可视化。
 3. **闸三 · YOLO 红线兜底**：YOLO 可关闭逐条确认，但**关不掉**硬红线——文件系统/OS 级破坏（递归 `rm`、force-push、`chmod -R 000 /`…）不可自动执行。
 4. **闸四 · 事务化账本**：一切写操作记账，`/undo` 用 diff `reverse_transform` + 快照精确还原。
@@ -243,68 +243,32 @@ qxt --print run "你好，一句话介绍你自己"     # 冒烟
 ```
 
 - **多语言文档纪律**：以 `README_zh-CN.md`（本文件）为权威母本，新增内容同步到全部 10 份，对译求「生动、零漂移」，**禁机械直译**。
-- **版本**：`v0.2.018`（0.x/Beta），破坏性变更会在小版本预告并提供迁移提示。
+- **版本**：`v0.3.0`（`0.x` 阶段 API 未冻结）；破坏性调整提前预告 + 迁移提示，`1.0` 预留给 API 冻结。
 - **深挖**：九大引擎签名与新增工具走查见文末「附录」，插桩/二开/调试党请直接翻 `README_zh-CN.md` 尾部。
 
 ---
 
-## 账户登录：GitHub / Apple / DeepSeek（可选 · 默认离线）
+## 完全本地离线 · 无账户登录
 
-Tuan-CLI 不登录即可完整离线使用。登录只是可选增强层，支持三家身份提供方，全部可选、全部非必需：
+Tuan-CLI **不提供任何账户登录**：没有 GitHub / Apple / DeepSeek 账号绑定，没有 OAuth 回调，没有登录态令牌落盘。
+这是刻意的设计选择——**除了你自己配置的模型 API，一切都跑在本地**。
 
-| 提供方 | 流程 | 需要准备 |
-| --- | --- | --- |
-| GitHub | OAuth 2.0 授权码 + PKCE | OAuth App 的 `client_id`（`client_secret` 可选） |
-| Apple | Sign in with Apple（授权码 + ES256 `client_secret`） | Service ID + Sign in with Apple Key（`.p8`） |
-| DeepSeek | 官方开放平台 API Key（`sk-`） | platform.deepseek.com 创建（新账号送免费 token 额度） |
+- **不登录即可完整使用**：文件读写、命令执行、记忆、技能、子代理、安全护栏全部本地。
+- **唯一的「云端」是你选的模型 API**：密钥由你掌握，只用于向该端点发起模型请求，不经过任何第三方中转。
+- **想整条链路零联网**：装 Ollama 或 llama.cpp，`qxt models local` 探测、`qxt models set ollama <模型>` 接入，全程不出网。
 
-```bash
-qxt login          # 交互选择提供方
-qxt login github   # 或直接指定
-qxt logout         # 全部登出；qxt logout github 只登出一个
-qxt whoami         # 逐提供方查看登录状态
-```
-
-凭证写入 `~/.qingxiaotuan/auth-config.toml`（或环境变量 `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*`，环境变量优先于 TOML）：
-
-```toml
-[github]
-client_id = "Ov23li..."          # OAuth App：Settings → Developer settings → OAuth Apps
-redirect_uri = "http://127.0.0.1:8765/callback"
-
-[apple]
-team_id = "TEAMID"
-client_id = "com.example.service"   # Service ID
-key_id = "KID"
-private_key_path = "~/.qingxiaotuan/AuthKey.p8"
-redirect_uri = "http://127.0.0.1:8765/callback"
-
-[deepseek]
-# 可选预置: api_key = "sk-..."   （否则登录时粘贴）
-```
-
-OAuth 回调跑在本机回环地址（`127.0.0.1:8765`），无需公网端点。
-`/web` 工作台侧栏有同款账户面板，官网亦列出三家登录入口。
-
-### 用官方 DeepSeek API 驱动模型
-
-`qxt login deepseek`（或直接导出 `DEEPSEEK_API_KEY`）之后，官方开放平台端点即可驱动模型调用——OpenAI 兼容，不碰网页账号、零风控风险：
+### 配置模型 API Key
 
 ```bash
-qxt models set deepseek deepseek-chat   # 切换模型提供方
-qxt                                     # 正常对话
+qxt models set deepseek deepseek-chat   # 选择供应商与模型
+qxt models                              # 交互式配置 (API Key 写入 ~/.qingxiaotuan/.env)
 ```
 
-- 模型请求发往 `https://api.deepseek.com`（官方 API；新注册账号送免费 token
-  额度，无需信用卡）。
-- **为什么不走网页端点**：早期实现曾用网页会话令牌直连
-  `chat.deepseek.com/api/v0`（社区 DSH-webtokens 同源思路）。该端点属私有
-  非受支持接口，会触发 DeepSeek 对**网页账号**的自动化风控（临时停用/禁言）。
-  该路径已**整体移除**。网页账号与开放平台是两套独立体系：官方 API 路径
-  完全不触碰你的网页账号。
+密钥集中存放于 `~/.qingxiaotuan/.env`（建议权限 600、勿入库），也可直接用环境变量（如 `DEEPSEEK_API_KEY`）。
 
-> **安全提示**：`~/.qingxiaotuan/auth.json` 以明文保存登录态令牌（尽力 chmod 600）。
-> 请像对待 SSH 私钥一样保护主目录；公共机器上用完请登出。
+> **透明披露**：早期版本曾提供 GitHub / Apple / DeepSeek 三家账号登录（含网页会话令牌路径）。
+> 这与「完全本地离线」的定位冲突，且网页端点属私有非受支持接口、会触发风控，
+> 该能力已**整体移除**。模型调用请走官方 API + 你自己的 Key。
 
 ---
 ## License & 关联阅读

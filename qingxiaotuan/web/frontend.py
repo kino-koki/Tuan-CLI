@@ -110,18 +110,6 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   #safety .t{font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--gold-dark);display:block;margin-bottom:2px}
   #safety b{color:var(--ink);font-weight:500}
   #safety .ok{color:var(--gold-dark);font-weight:500}
-  #auth{margin:8px 18px 6px;padding:11px 13px;border:1px solid var(--line-soft);
-        border-left:2px solid var(--gold);background:var(--cream);font-size:11px;
-        color:var(--ink-soft);letter-spacing:.02em}
-  #auth .t{font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--gold-dark);display:block;margin-bottom:4px}
-  .auth-row{display:flex;align-items:center;gap:6px;padding:2px 0;min-height:20px}
-  .auth-row .n{width:74px;color:var(--ink);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .auth-row .s{flex:1;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .auth-row .s.ok{color:var(--gold-dark);font-weight:500}
-  .auth-row .a-btn{border:1px solid var(--line-soft);background:transparent;color:var(--ink-soft);
-                   border-radius:6px;font-size:10px;padding:1px 8px;cursor:pointer;line-height:1.5}
-  .auth-row .a-btn:hover{border-color:var(--gold-dark);color:var(--gold-dark)}
-  .auth-row .a-btn:disabled{opacity:.5;cursor:wait}
   #sidebar .foot{padding:12px 18px 16px;font-size:10.5px;color:var(--ink-faint);border-top:1px solid var(--line-soft);
                  word-break:break-all;letter-spacing:.03em;line-height:1.7}
 
@@ -262,7 +250,6 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     <input id="searchbox" type="text" placeholder="搜索会话… (Ctrl+K)">
     <div id="sessions"></div>
     <div id="safety"></div>
-    <div id="auth"><span class="t">账户</span><div id="auth-rows"></div></div>
     <div class="foot" id="sidefoot">…</div>
   </aside>
   <main id="main">
@@ -535,46 +522,6 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   function fmtPct(v){ return v==null?'-':(Math.round(Number(v)*100)+'%'); }
   function fmtNum(v){ return v==null?'-':v; }
 
-  /* ---- 账户登录区 (GitHub / Apple / DeepSeek 网页) ---- */
-  function loadAuth(){
-    fetch('/api/auth/status').then(function(r){return r.json();}).then(function(j){
-      var box=document.getElementById('auth-rows');box.innerHTML='';
-      var accs=(j.accounts)||{};
-      Object.keys(accs).forEach(function(k){
-        var a=accs[k];
-        var row=document.createElement('div');row.className='auth-row';
-        var st=a.logged_in?('已登录 '+a.login):'未登录';
-        var btn=document.createElement('button');btn.className='a-btn';
-        btn.textContent=a.logged_in?'登出':'登录';
-        btn.dataset.p=k;btn.dataset.act=a.logged_in?'logout':'login';
-        var n=document.createElement('span');n.className='n';n.textContent=a.display_name;n.title=a.description||'';
-        var s=document.createElement('span');s.className='s'+(a.logged_in?' ok':'');
-        s.textContent=st;s.title=(a.logged_in?'':'离线可用, 登录可选 · ')+(a.description||'');
-        row.appendChild(n);row.appendChild(s);row.appendChild(btn);
-        box.appendChild(row);
-      });
-      box.querySelectorAll('.a-btn').forEach(function(b){
-        b.addEventListener('click',function(){
-          var p=b.dataset.p,act=b.dataset.act;
-          b.disabled=true;b.textContent='…';
-          if(act==='login'){
-            fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({provider:p})})
-            .then(function(r){return r.json();}).then(function(jj){
-              if(jj.ok){alert('已通过 '+p+' 登录: '+(jj.login||''));}
-              else{alert(jj.error||'登录失败');}
-            }).catch(function(){alert('网络错误');})
-            .then(function(){loadAuth();});
-          }else{
-            fetch('/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({provider:p})})
-            .then(function(){loadAuth();}).catch(function(){loadAuth();});
-          }
-        });
-      });
-    }).catch(function(){});
-  }
-
   function sendMsg(){
     var msg=inp.value.trim();if(!msg||running)return;
     if(msg==='/clear'){
@@ -659,7 +606,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   });
   document.getElementById('newbtn').addEventListener('click',function(){current=null;msgsEl.innerHTML='';loadSessions();});
 
-  loadInfo();loadSessions();loadAuth();
+  loadInfo();loadSessions();
 })();
 </script>
 </body>

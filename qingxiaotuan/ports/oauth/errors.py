@@ -4,7 +4,7 @@ All errors derive from :class:`OAuthError`. The distinguishing subclasses let
 callers react appropriately:
 
 - ``OAuthUnauthorizedError``: 401/403 from token endpoint -> refresh_token or
-  credentials are bad; drive the user through /login again.
+  credentials are bad; re-authenticate the user.
 - ``OAuthAccessDeniedError``: user denied the authorization request on the
   consent page (``access_denied``); surface as a user-initiated cancel.
 - ``OAuthConnectionError``: transport-level OAuth request failure; callers may

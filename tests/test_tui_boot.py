@@ -160,7 +160,7 @@ def test_tool_calls_collapse_to_see_and_expand():
     # 折叠态: 三条工具记录不进 _events 逐条滚动, 只在对话区显示一行摘要
     assert len(tui._turn_tool_lines) == 3
     assert not any("read_file done" in str(e) for e in tui._events)
-    assert "see 3 tool calls" in _flat(tui)
+    assert "▸ 已调用 3 项工具 (Ctrl+O 展开)" in _flat(tui)
     # Ctrl+O 展开
     tui.toggle_audit()
     assert tui._tool_detail is True

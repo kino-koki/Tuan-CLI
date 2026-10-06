@@ -61,10 +61,14 @@
 <div class="wrap">
 
 <header class="mast">
-  <div class="kicker">从 0 实测 · 独立测评 · 不沿用既往结论</div>
+  <div class="kicker">从 0 实测 · 项目自评 · 不沿用既往结论</div>
   <h1>青小团 Tuan-CLI 全面测评</h1>
   <div class="sub">版本 v0.2.018（含生态互操作层）· 测量时间 2026-09-27 · Windows 本机 · Python 3.13.14（项目 .venv）· 全程只读，未改一行项目代码（除本报告文件本身）</div>
 </header>
+
+<div class="notice" style="border:1px solid var(--warn);background:var(--warn-soft);padding:12px 16px;border-radius:8px;margin-bottom:22px;color:var(--ink2);font-size:14px;line-height:1.7">
+<b>自评声明：</b>本报告由项目维护者自行生成，属<b>项目自评</b>，<b>非第三方独立评测</b>。所有数字均可在本机复现（命令见正文），但结论可能高估本项目；引用前请自行核实。
+</div>
 
 <div class="verdict">
 <b>一句话结论：</b>这是一个工程完成度明显高于个人玩具项目的终端 Agent——微内核干净、测试 3065 全绿、安全基准在本地复现出来的数字和 README 宣传基本对得上（召回/绕过/漏放都是 0 折扣）。v0.2.017 修复轮把第一版测评抓到的高/中危问题（<code>exc</code> 未定义、三处闭包晚绑定、doctor 误报 exit 1、绕过载荷文档滞后、重复测试用例）全部处理并回归通过；v0.2.018 新增<b>生态互操作层</b>——把 Claude Code / Hermes Agent 的技能、命名 Agent、记忆、SOUL 与 MCP 配置做成三方双向桥（<code>qxt ecosystem</code>），这是竞品文档里没有的对等物，是本项目当前最硬的差异化。仍不能闭眼发 1.0 的地方：ruff 存量现代化债、pip-audit 门禁不阻断、以及"生态成熟度"还需要真实用户场景磨损来验证。

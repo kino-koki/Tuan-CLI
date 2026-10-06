@@ -144,8 +144,15 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
 
 ### 4.4 Security（安全子系统）
 - 文件：
-  - `ext/safety_engine.py` — 红线判定（`is_redline` / `is_hard_redline` / `score`）
-    与模式库（`_CRITICAL_PATTERNS` / `_HIGH_PATTERNS` / `_MEDIUM_PATTERNS`）。
+  - **安全引擎（2026-10-06 按职责拆为四个模块）**：
+    - `ext/safety_engine.py` — **兼容转发层**：原模块路径保持不变，仅 re-export 各符号
+      与 IPC 入口（`SafetyEngine().run()`）。外部按旧路径导入不受影响。
+    - `ext/safety_normalize.py`（~700 行）— **归一化 / 混淆还原**：`_normalize`、
+      间接调用展开（`_unwrap_indirection`）、ANSI-C/Base64/Unicode 还原、tokenize、段切分。
+    - `ext/safety_redline.py`（~1439 行）— **红线模式库与判定**：`is_redline` /
+      `is_hard_redline` / `is_benign_dev_command` 及 `_CRITICAL/_HIGH/_MEDIUM_PATTERNS`。
+    - `ext/safety_score.py`（~201 行）— **`SafetyEngine` IPC 门面**：`score` / `analyze`
+      方法；`SafetyEngine.score(params)` 是静态评分入口（旧文档中的模块级 `score()` 已收敛至此）。
   - `core/whitelist.py` — `WhitelistManager`：用户本地自主添加的放行名单。
   - `core/security_bus.py` — `SecurityEventBus`：事件总线 + JSONL 持久化
     （默认落盘 `~/.qingxiaotuan/security-audit.jsonl`）。
@@ -161,13 +168,20 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
   `security-audit.jsonl`，可用 `qxt safe status` 查看路径与统计。
 - **用户本地黑名单减负（`blacklist_override`）**：某些内置模式在用户环境属误杀或可信。
   用户在 `~/.qingxiaotuan/blacklist-override.json` 声明要抑制的模式 label 关键字，
-  `is_redline` / `is_hard_redline` / `score` 即跳过这些模式。
+  `is_redline` / `is_hard_redline` / `SafetyEngine.score` 即跳过这些模式。
   - 安全边界：**只抑制正则模式库条目**；不可逆/OS 级的 token 化硬红线（rm -rf / force push /
     shutdown …）走独立判定，**永不**受减负影响。
   - 用法：`qxt safe reduce <关键字>`（如 `qxt safe reduce format`）、
     `qxt safe restore <关键字>`、`qxt safe blacklist` 查看清单。
+  - 提示：README 中提到的 `nc` 端口探测、`tar|ssh` 外传等 **fail-closed 保守误杀**，
+    同样可经 `qxt safe reduce` 按 label 关键字调回，无需改代码。
 - 白名单：`qxt safe allow <命令>` 把可信命令加入（红线命令拒绝加入）；`qxt safe deny` 移除。
 - 多阶段确认：极高风险 5 次、高风险 3 次确认（见 `ext/security_gate.py`），含 TOCTOU 脚本检测。
+- **系统级沙箱强隔离（`sandbox/`）**：`SandboxManager` 提供 L0 意图 / L1 信任 / L2 资源 /
+  L3 强隔离四层滤网。L3 强隔离依赖后端可用性（Windows jobobject、Linux landlock、Docker 等）；
+  **默认 `enforce_required=False`** —— 即缺少强后端时**降级**为过滤 + 副本 diff 执行，而非拒绝。
+  需要"无强后端即拒绝"的严格语义时，将 `enforce_required` 置为 `True`，此时无强后端会
+  fail-closed 拒绝执行。选型时请按威胁模型决定是否开启严格模式。
 
 ### 4.5 Router（模型路由）
 - 文件：`models/router.py` · `core/auto_route.py` · `models/provider_catalog.py`
@@ -186,6 +200,26 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
   自托管供应商；`models/openai_compat.py` 对 localhost 端点放通空 key（本地 LLM 无需密钥）；
   `models/offline.py` 的 `detect_local_models()` 探测本机 Ollama + llama.cpp 模型
   （`qxt models local` 调用）。
+
+### 4.6 分层封装层（`arch/`）—— 门面层，被生产路径复用
+
+`arch/` 把安全 / 执行 / 编排 / 上下文 / 可观测五个关注点封装成统一的"五层架构"门面，
+并复用 `core/`、`ext/` 的既有基建。
+
+**`arch/` 的两个身份，请分开看：**
+
+1. **作为内核插件（生产路径）**：`app.py::build_kernel` 会 `kernel.register(ArchPlugin())`
+   把五层门面注册为一等公民服务；`codedev/engine.py` 的编排阶段直接复用
+   `arch.orchestration.Orchestrator` / `AgentSpec` 并发派发子代理；
+   `sandbox/manager.py` 复用 `arch.platform.run_syscall_sandboxed`。
+   这些是**实际生效**的调用，修改 `arch/orchestration.py`、`arch/platform.py` 会影响生产行为。
+2. **作为参考实现（测试/原型）**：`arch/execution.py` 的 `ReActLoop`、`context.py`、
+   `observability.py` 等主要供单元测试与原型验证使用——**生产环境的 Agent 循环、上下文与
+   事件总线由 `core/loop_provider`、`core/context`、`core/event_sourcer` 承载**，
+   不要以 `arch/` 中的这些同名实现为权威。
+
+> 结论：**新增功能请接入 `core/`**；改 `arch/` 时请先确认它是被 `codedev` / `sandbox` 复用的
+> 生产件（orchestration / platform），还是仅供测试的参考件（execution / context / observability）。
 
 ---
 

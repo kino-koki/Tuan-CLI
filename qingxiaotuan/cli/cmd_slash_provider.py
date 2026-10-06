@@ -1,8 +1,7 @@
-"""斜杠命令 —— 账户与密钥域 (/provider /login /account)。
+"""斜杠命令 —— API Key 域 (/provider)。
 
 拆分自 cmd_slash.py:
-- /provider /login  管理 API Key (持久化到 ~/.qingxiaotuan/.env);
-- /account          管理第三方账户登录态 (GitHub / Apple / DeepSeek 网页)。
+- /provider  管理模型 API Key (持久化到 ~/.qingxiaotuan/.env)。
 """
 
 from __future__ import annotations
@@ -14,13 +13,13 @@ from ._ui_singleton import ui
 
 
 def _cmd_provider(agent, config, head: str, arg: str) -> None:
-    """`/provider` 与 `/login` (别名): 查看/设置/清除当前 API Key 与供应商。
+    """`/provider`: 查看/设置/清除当前 API Key 与供应商。
 
     用法:
         /provider [show]            查看当前供应商 / 模型 / 密钥环境变量
         /provider set <ENV> <KEY>   把 API Key 持久化到 ~/.qingxiaotuan/.env
         /provider clear [ENV]       删除某供应商密钥 (默认当前供应商), 保留原文件其余内容
-        /login <KEY>                为当前供应商的 api_key_env 保存密钥
+        /provider <KEY>             快捷: 为当前供应商的 api_key_env 保存密钥
     """
     from ..config import normalize_api_key, persist_api_key, remove_api_key
 
@@ -54,7 +53,7 @@ def _cmd_provider(agent, config, head: str, arg: str) -> None:
         ui.success(t("slash.provider_cleared", env=env))
         return
     else:
-        # /login <KEY>: 未显式给 env 名时取当前 provider 的 api_key_env
+        # /provider <KEY>: 未显式给 env 名时取当前 provider 的 api_key_env
         env, key = env_name, arg.strip()
 
     key = normalize_api_key(key)

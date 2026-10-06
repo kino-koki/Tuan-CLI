@@ -32,6 +32,9 @@ mod = _load()
 def test_parse_version():
     assert mod.parse_version("0.2.014") == (0, 2, 14)
     assert mod.parse_version("1.10.7") == (1, 10, 7)
+    # 1.0 起支持两段写法, 缺省补丁段按 0 处理
+    assert mod.parse_version("1.0") == (1, 0, 0)
+    assert mod.parse_version("2.0") == (2, 0, 0)
 
 
 def test_parse_version_rejects_garbage():
@@ -40,19 +43,20 @@ def test_parse_version_rejects_garbage():
 
 
 def test_to_units_matches_0001_increment():
-    # 0.0.001 是政策规定的递增单位
+    # 0.0.001 是数值化比较的最小单位 (to_units 仅用于比大小, 不再作为递增上限)
     assert mod.to_units((0, 2, 15)) - mod.to_units((0, 2, 14)) == 1
     assert mod.to_units((0, 3, 0)) - mod.to_units((0, 2, 999)) == 1
 
 
-# ---------------------------------------------------------------- 规则: 递增上限
+# ---------------------------------------------------------------- 规则: 禁止回退 / CHANGELOG 对齐
 def test_single_increment_passes():
     assert mod.check("0.2.014", "0.2.013", "0.2.014") == []
 
 
-def test_bump_beyond_limit_blocked():
-    problems = mod.check("0.2.016", "0.2.013", "0.2.016")
-    assert any("增幅超限" in p for p in problems)
+def test_large_jump_allowed():
+    # 1.0 起采用 SemVer, 递增幅度不限 (破坏性变更升 MAJOR)
+    assert mod.check("0.2.016", "0.2.013", "0.2.016") == []
+    assert mod.check("1.0", "0.2.018", "1.0") == []
 
 
 def test_downgrade_blocked():
@@ -60,9 +64,9 @@ def test_downgrade_blocked():
     assert any("回退" in p for p in problems)
 
 
-def test_missing_bump_blocked():
-    problems = mod.check("0.2.014", "0.2.014", "0.2.014")
-    assert any("未递增" in p for p in problems)
+def test_same_version_allowed():
+    # 未发版重复 push 属正常情况, 同版本不再判违规
+    assert mod.check("0.2.014", "0.2.014", "0.2.014") == []
 
 
 def test_changelog_mismatch_blocked():
@@ -92,7 +96,7 @@ def _changelog_versions() -> list[str]:
     import re
 
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    return re.findall(r"(?m)^##\s*\[([0-9]+\.[0-9]+\.[0-9]{1,3})\]", text)
+    return re.findall(r"(?m)^##\s*\[([0-9]+\.[0-9]+(?:\.[0-9]{1,3})?)\]", text)
 
 
 def test_current_repo_state_passes_policy():
@@ -119,8 +123,8 @@ def test_git_drift_is_reported_not_silently_ignored():
     if base is None:
         pytest.skip("无 git 历史")
     delta = mod.to_units(mod.parse_version(pv)) - mod.to_units(mod.parse_version(base))
-    # 漂移存在是事实, 这里仅记录; 超过 1 个单位说明有多次迭代未提交
-    print(f"\n[版本漂移] git HEAD={base} -> 工作区={pv}, 累积 +0.0.{delta:03d} ({delta} 次迭代未提交)")
+    # 漂移存在是事实, 这里仅记录; 折算单位 0.0.001, 值越大说明未提交的迭代越多
+    print(f"\n[版本漂移] git HEAD={base} -> 工作区={pv}, 折算 +0.0.{delta:03d} (数值化差值 {delta})")
     assert delta >= 0, "工作区版本不应低于 git HEAD"
 
 
