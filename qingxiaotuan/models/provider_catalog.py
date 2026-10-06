@@ -67,18 +67,6 @@ _A_CHINA_MAINSTREAM: List[ProviderPreset] = [
         recommended_models=["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash"],
         docs_url="https://platform.deepseek.com/api-docs",
     ),
-    # DeepSeek 网页登录 (实验性): 免 API Key, 用 qxt login deepseek 保存的网页会话令牌
-    ProviderPreset(
-        name="deepseek-web",
-        base_url="https://chat.deepseek.com/api/v0",
-        model="deepseek-chat",
-        api_key_env="QXT_DEEPSEEK_WEB_TOKEN",
-        desc="DeepSeek 网页登录 (实验性: 免 API Key, 用网页账号额度; 网页改版可能失效)",
-        tier=2, free_tier=False, region="cn", category="中国主流",
-        recommended_models=["deepseek-chat", "deepseek-reasoner"],
-        docs_url="https://chat.deepseek.com",
-        key_hint="先运行 qxt login deepseek 保存网页会话令牌, 无需 API Key",
-    ),
     # OpenCode Zen (AI SDK 网关, 需自填 API Key; 免费层实测仅 DeepSeek V4 免费档可用)
     ProviderPreset(
         name="opencode-zen",

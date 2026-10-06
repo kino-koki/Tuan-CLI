@@ -179,7 +179,7 @@ qxt --print run "안녕."            # 스모크
 - `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`.
 - 자격 증명은 `~/.qingxiaotuan/auth-config.toml` 또는 환경 변수 `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*` (환경 변수 우선).
 - OAuth 콜백 기본값은 `http://127.0.0.1:8765/callback`. `auth.json`의 토큰은 평문이므로 홈 디렉터리를 보호하고 공용 기기에서는 로그아웃하세요.
-- DeepSeek 웹 로그인을 모델 백엔드로: `qxt models set deepseek-web`（실험적）。
+- DeepSeek 공식 API를 모델 백엔드로: `qxt models set deepseek`（공식 API 키, sk-）。
 - 자세한 내용은 README_zh-CN.md(마스터)와 README.md 참조.
 
 ---

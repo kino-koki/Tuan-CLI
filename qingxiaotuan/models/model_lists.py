@@ -1008,10 +1008,6 @@ MODEL_LISTS: Dict[str, List[str]] = {
         "deepseek-v4-pro-0813|paid",
         "deepseek-v4-flash-vision-exp|paid",
     ],
-    "deepseek-web": [
-        "deepseek-chat|paid",
-        "deepseek-reasoner|paid",
-    ],
     "anthropic": [
         "claude-sonnet-5|paid",
         "claude-opus-5|paid",

@@ -183,7 +183,7 @@ cli (commands) ──▶ kernel (микроядро + шина событий + 
 - `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`.
 - Учётные данные в `~/.qingxiaotuan/auth-config.toml` или переменных окружения `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*` (переменные важнее).
 - OAuth-колбэк по умолчанию `http://127.0.0.1:8765/callback`; в `auth.json` токены хранятся открыто — защитите домашний каталог и выходите на общих машинах.
-- Веб-логин DeepSeek как бэкенд модели: `qxt models set deepseek-web` (экспериментально).
+- Официальный API DeepSeek как бэкенд модели: `qxt models set deepseek` (официальный ключ sk-).
 - Подробности — в README_zh-CN.md (основной) и README.md.
 
 ---
