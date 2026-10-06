@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.018] - Unreleased
 
+### 提示词超越层 + SKILL 注入完善 (2026-10-06)
+
+- **执行协议段（超越层, 稳定前缀）**：`prompts.py::_execution_protocol_block`
+  新增六条执行协议——工具调用理由化 / 上下文预算 / 验证闭环 / 副作用自检 /
+  不确定性分级 / 审计友好；与既有「操作纪律」互补（纪律管信息怎么来，协议管动作
+  怎么做）。同步 `resources/SOUL.md`「执行协议」章节与 `_FALLBACK_SOUL` 兜底。
+  设计依据：第一梯队系统提示词（Claude Code / Kimi Code / Codex）均未完整覆盖
+  此六条的组合。
+- **SKILL 注入语义修正**（`skills/manager.py` + `core/prompts.py`）：
+  - **always 技能保底注入**：不受 top-N 热度排序挤占（此前 priority 低的 always
+    技能会被挤出快照，违反「始终需要」语义）；
+  - **正文注入只限 always**：auto/lazy/proactive 只给注册表条目（名称+激活档+
+    描述+触发词），正文按需 `skill_read`——修复此前 auto 技能无条件全文注入的
+    上下文膨胀；
+  - **注册表条目带激活档标记** + 尾部固定**决策规则**一行（何时读全文 / always
+    无需再读）；
+  - **always 正文行数预算**（60 行，超限截断并提示）；
+  - `render_for_prompt(skills, full_body=True)`：子代理显式预加载指定技能时
+    全文注入（语义=已加载），不破坏既有加载链路。
+- **测试**：新增 `tests/test_prompt_execution.py`（执行协议六条 / stable 哈希 /
+  SOUL 同步 / always 保底 / auto 不注入正文 / 激活档标记与决策规则 / 行数预算 /
+  full_body 显式加载）；策略文档 `docs/agent_prompt_strategy.md` 增补
+  「执行协议」「SKILL 注入完善」章节。
+
 ### 与 Claude Code 同任务双跑对比基准 (bench/vs_claude.py, 2026-10-06)
 
 - **同一任务集双跑自动化**：`bench/tasks.yaml`（understand_api / fix_bug / add_test /

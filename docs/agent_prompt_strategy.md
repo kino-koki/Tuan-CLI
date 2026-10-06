@@ -35,7 +35,8 @@ base policy + product info + user prefs + memory policy
 | --- | --- | --- | --- |
 | SOUL 身份 | `_build_soul_block` | stable | 身份信条 / 需求先行 / 工作协议 |
 | 行为准则 | `build_system_prompt_stable` 段2 | stable | 语言 / MCP / plan / TodoWrite / 记忆证据阈值 |
-| **操作纪律** | `_discipline_block` (新增) | stable | 检索 / 引用 / 拒绝与信任 / 记忆负面规则 / 工件判定 |
+| **操作纪律** | `_discipline_block` | stable | 检索 / 引用 / 拒绝与信任 / 记忆负面规则 / 工件判定 |
+| **执行协议** | `_execution_protocol_block` (新增) | stable | 工具理由化 / 上下文预算 / 验证闭环 / 副作用自检 / 不确定性分级 / 审计友好 |
 | Windows 外骨骼 | 段4 | stable | Windows 命令可靠性 |
 | 上网查证 | 段5 | stable | 何时搜索 / 引用注明 |
 | 代码流程 / 安全 / 技能 / 记忆笔记 | 段6-9 | stable | 工程规范 |
@@ -73,6 +74,35 @@ base policy + product info + user prefs + memory policy
 
 ### 6. 防误贴 / 来源纪律 (自增)
 - 借鉴外部提示词时只取理念, 不复制原文; 保留来源说明与防误贴测试。
+
+## 执行协议 (Execution protocol, 超越层)
+
+> 与操作纪律互补: 纪律管「信息怎么来」(检索/引用/拒绝), 协议管「动作怎么做」
+> (调工具/管上下文/改文件)。第一梯队系统提示词 (Claude Code / Kimi Code /
+> Codex) 均未完整覆盖此六条的组合 —— 这是青小团执行层的差异点。
+
+1. **工具调用理由化**: 每次调用工具前一句话说明为什么选它 (可审计); 只读优先,
+   不为「显得忙碌」重复调用。
+2. **上下文预算**: 大文件分块读; 长输出落盘; 过大结果先摘要; 小检查合并。
+3. **验证闭环**: 修改必须用可执行方式验证, 验证方式写进回复; 失败先诊断根因再修。
+4. **副作用自检**: 阶段末回顾改动了哪些状态 (文件/记忆/技能/外部), 明说改动清单。
+5. **不确定性分级**: 事实与推断分开表述; 没把握先查文档, 不拿猜测当结论。
+6. **审计友好**: 关键动作前给一行理由, 让 /audit /impact 可追溯。
+
+同步落点: `qingxiaotuan/core/prompts.py::_execution_protocol_block` (稳定段) +
+`qingxiaotuan/resources/SOUL.md`「执行协议」章节 + `_FALLBACK_SOUL` 兜底一句。
+
+## SKILL 注入完善 (Injection semantics)
+
+| 机制 | 现状 | 本轮修正 |
+| --- | --- | --- |
+| 会话级注入 (动态段) | top-N 热度排序取 3 个技能 | **always 技能保底注入** (不受 top-N 挤占), 其余按优先级+热度补足到 limit |
+| 正文注入范围 | always/auto 都全文注入 (上下文膨胀) | **仅 always 全文注入** (行数预算 60 行, 超限截断); auto/lazy/proactive 只给注册表条目, 正文按需 `skill_read` |
+| 注册表条目 | 名称+描述+触发词 | **+ 激活档标记** (`(name, auto)`) + 尾部固定**决策规则**一行 (何时读全文 / always 无需再读) |
+| 显式加载 | — | `render_for_prompt(skills, full_body=True)`: 子代理预加载指定技能时全文注入 (语义=已加载) |
+
+验证: `tests/test_prompt_execution.py` 覆盖 always 保底 / auto 不注入正文 /
+激活档标记与决策规则 / 行数预算 / full_body 显式加载。
 
 ## 权限与安全: 代码层强制, 不靠提示词
 
