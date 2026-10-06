@@ -18,11 +18,10 @@
 from __future__ import annotations
 
 import inspect
-import json
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, cast
 
 from ..config import Config
 from ..context.manager import ContextManager, estimate_messages
@@ -30,8 +29,7 @@ from .kernel import Kernel
 from .model_router import AgentModelRouter
 from .resilience import AgentResilience
 from .observability import AgentObservability
-from .retry import classify_error as _classify_error, retry_after_seconds as _retry_after_seconds
-from .prompts import build_system_prompt, build_task_context, is_short_task
+from .prompts import build_system_prompt, build_task_context
 from .tool_executor import ToolExecutor
 from .auto_route import AutoRouter, RouteSession, tool_messages_of_turn
 from .agent_helpers import (
@@ -46,14 +44,16 @@ from .agent_loop_fusion import (
 )
 from .agent_goal import GoalMixin
 from .agent_vision import VisionMixin
-from ..tools.base import ToolContext, ToolResult
-from ..vision import encode_image_source, build_user_content, build_tool_content
+from .agent_compat import CompatMixin
+from .agent_hooks import HooksMixin
+from ..tools.base import ToolContext
+from ..vision import build_user_content
 from ..vision.blocks import ImageRef
 
 log = logging.getLogger(__name__)
 
 
-class Agent(GoalMixin, VisionMixin):
+class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
     def __init__(
         self,
         kernel: Kernel,
@@ -219,7 +219,7 @@ class Agent(GoalMixin, VisionMixin):
 
     def cache_hit_rate(self) -> Optional[float]:
         """DeepSeek 前缀缓存命中率 —— 委托给 AgentObservability。"""
-        return self._obs.cache_hit_rate()
+        return cast(Optional[float], self._obs.cache_hit_rate())
 
     # ------------------------------------------------------------ 技能蒸馏 (Hermes 闭环)
 
@@ -439,166 +439,8 @@ class Agent(GoalMixin, VisionMixin):
         self.messages.append({"role": "user", "content": note})
         self._session_append("verify.failed", summary=summary)
 
-    # ---- 向后兼容属性: 统一 fallback 辅助 ----
-    # 测试可能用 Agent.__new__ 绕过 __init__, 直接设置这些属性。
-    # property 只在 __init__ 完成后生效; __new__ 绕过时仍可直接赋值。
-    # 统一用 _get_fallback / _set_fallback 消除重复的 if/else 模式。
-
-    def _get_fallback(self, component: str, attr: str, fallback_key: str):
-        """从子组件读取属性, 组件不存在时回退到 __dict__ fallback。"""
-        comp = self.__dict__.get(component)
-        if comp is not None:
-            return getattr(comp, attr)
-        return self.__dict__.get(fallback_key)
-
-    def _set_fallback(self, component: str, attr: str, fallback_key: str, value):
-        """向子组件设置属性, 组件不存在时写入 __dict__ fallback。"""
-        comp = self.__dict__.get(component)
-        if comp is not None:
-            setattr(comp, attr, value)
-        else:
-            self.__dict__[fallback_key] = value
-
-    @property
-    def _last_route(self):
-        return self._router.last_route
-
-    @_last_route.setter
-    def _last_route(self, v):
-        self._router.last_route = v
-
-    @property
-    def _model_switcher(self):
-        return self._router._model_switcher
-
-    @_model_switcher.setter
-    def _model_switcher(self, v):
-        self._router._model_switcher = v
-
-    @property
-    def _circuit_breaker(self):
-        return self._get_fallback('_resilience', '_circuit_breaker', '_cb_fallback')
-
-    @_circuit_breaker.setter
-    def _circuit_breaker(self, v):
-        self._set_fallback('_resilience', '_circuit_breaker', '_cb_fallback', v)
-
-    @property
-    def _rate_limiter(self):
-        return self._get_fallback('_resilience', '_rate_limiter', '_rl_fallback')
-
-    @_rate_limiter.setter
-    def _rate_limiter(self, v):
-        self._set_fallback('_resilience', '_rate_limiter', '_rl_fallback', v)
-
-    @property
-    def _telemetry(self):
-        return self._get_fallback('_obs', 'telemetry', '_tel_fallback')
-
-    @_telemetry.setter
-    def _telemetry(self, v):
-        self._set_fallback('_obs', '_telemetry', '_tel_fallback', v)
-
-    @property
-    def _telemetry_trace(self):
-        return self._get_fallback('_obs', 'trace_id', '_trace_fallback')
-
-    @_telemetry_trace.setter
-    def _telemetry_trace(self, v):
-        self._set_fallback('_obs', 'trace_id', '_trace_fallback', v)
-
-    @property
-    def retry_policy(self):
-        return self._get_fallback('_resilience', 'retry_policy', 'retry_policy')
-
-    @retry_policy.setter
-    def retry_policy(self, v):
-        self._set_fallback('_resilience', 'retry_policy', 'retry_policy', v)
-
-    @property
-    def max_retries(self) -> int:
-        return self._resilience.max_retries
-
-    @max_retries.setter
-    def max_retries(self, v) -> None:
-        self._resilience.max_retries = int(v)
-
-    @property
-    def retry_backoff(self) -> float:
-        return self._resilience.retry_backoff
-
-    @retry_backoff.setter
-    def retry_backoff(self, v) -> None:
-        self._resilience.retry_backoff = float(v)
-
-    @property
-    def retry_jitter(self) -> float:
-        return self._resilience.retry_jitter
-
-    @retry_jitter.setter
-    def retry_jitter(self, v) -> None:
-        self._resilience.retry_jitter = float(v)
-
-    @property
-    def retry_on(self) -> set:
-        return self._resilience.retry_on
-
-    @retry_on.setter
-    def retry_on(self, v) -> None:
-        self._resilience.retry_on = set(v)
-
-    @staticmethod
-    def _classify(exc: Exception):
-        return _classify_error(exc)
-
-    @staticmethod
-    def _retry_after(exc: Exception) -> Optional[float]:
-        return _retry_after_seconds(exc)
-
-    # ------------------------------------------------------ 用户级 Hooks
-
-    def _hooks(self):
-        """取用户级 HookManager (create_agent 时注入到 agent.ctx.hooks), 无则 None。"""
-        ctx = getattr(self, "ctx", None)
-        return getattr(ctx, "hooks", None) if ctx is not None else None
-
-    def _notify_hook(self, event: str, payload: Dict[str, Any]) -> None:
-        """触发通知类 hook (Stop/SubagentStop/PreCompact), 异常隔离、不阻断主流程。"""
-        hooks = self._hooks()
-        if hooks is None or not hooks.enabled_for(event):
-            return
-        try:
-            hooks.run_notify(event, payload)
-        except Exception as exc:  # noqa: BLE001
-            log.debug("hook %s 执行失败: %s", event, exc)
-
-    def _auto_memory_extract(self, answer: str = "") -> None:
-        """Auto Memory: 后台线程从本轮用户消息抽取偏好/反馈/项目决策/参考事实。
-
-        复用 MemoryStore + 规则启发式 (不调额外 LLM); 配置 memory.auto_extract=false
-        时整体关闭。异常隔离, 绝不影响主循环。
-        """
-        try:
-            from ..memory.auto_extractor import build_extractor
-            extractor = build_extractor(self.kernel)
-            if extractor is None:
-                return
-            user_text = getattr(self, "_last_user_input", "") or ""
-            if not user_text.strip():
-                return
-            extractor.process_turn_async(user_text, answer or "", kernel=self.kernel)
-        except Exception as exc:  # noqa: BLE001
-            log.debug("Auto Memory 触发失败 (已忽略): %s", exc)
-    def _run_prompt_submit_hooks(self, prompt: str) -> str:
-        """UserPromptSubmit hook: 返回注入本回合的附加上下文 (无则空串)。"""
-        hooks = self._hooks()
-        if hooks is None or not hooks.enabled_for("UserPromptSubmit"):
-            return ""
-        try:
-            return hooks.run_user_prompt_submit(prompt) or ""
-        except Exception as exc:  # noqa: BLE001
-            log.debug("UserPromptSubmit hook 执行失败: %s", exc)
-            return ""
+    # ---- 向后兼容属性 (CompatMixin) 与用户级 Hooks (HooksMixin) 已提取 ----
+    # 见 core/agent_compat.py 与 core/agent_hooks.py。
 
     # ------------------------------------------------------------ 主循环
 
@@ -947,7 +789,7 @@ class Agent(GoalMixin, VisionMixin):
 
     def resilience_status(self) -> Dict[str, Any]:
         """返回韧性组件 (熔断/限流/重试) 的运行状态 —— 委托给 AgentResilience。"""
-        return self._resilience.status()
+        return cast(Dict[str, Any], self._resilience.status())
 
     def _compress_if_needed(self) -> None:
         """压缩上下文 (如需要)。"""

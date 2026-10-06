@@ -5,11 +5,8 @@
 
 from __future__ import annotations
 
-import argparse
 import json
-import os
-import time
-from typing import Any, Dict, Optional
+from typing import Dict
 
 from ..i18n import t
 from ._ui_singleton import ui
@@ -24,8 +21,10 @@ from .cmd_slash_boundary import (
     _cmd_worktree as _boundary_worktree,
     _cmd_subagent_enhanced,
 )
-
-
+from .cmd_slash_image import _cmd_image
+from .cmd_slash_memory import _cmd_memory
+from .cmd_slash_provider import _cmd_provider
+from .cmd_slash_session import _cmd_export, _cmd_import
 
 
 _HELP = """
@@ -50,8 +49,6 @@ _HELP = """
   /hooks     用户级 Hooks ( /hooks 列出已配置脚本; /hooks test 触发一次)
   /model     切换/查看模型
   /provider  查看/设置/清除 API Key 与供应商 ( /provider set <ENV> <KEY> · /provider clear [ENV] )
-  /login     快捷保存当前供应商 API Key ( /login <KEY> )
-  /account   账户登录: 离线 / GitHub / Apple 账户 / DeepSeek 账户 (交互选择)
   /effort    切换推理投入 low/medium/high
   /mode      切换运行模式 standard/yolo
   /plan      切换 Plan 模式 (只读分析, 修改类工具被拦截)
@@ -93,9 +90,9 @@ TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执�
 # 权威命令清单: 与 _handle_slash 的 elif 分支一一对应。
 # 供 TUI / REPL 的补全词表、命令发现、ACP/IDE 能力清单共用, 避免多处维护漂移。
 SLASH_COMMAND_NAMES: tuple = (
-    "/account", "/audit", "/blast", "/budget", "/checkpoint", "/clear", "/clear-images", "/compact",
+    "/audit", "/blast", "/budget", "/checkpoint", "/clear", "/clear-images", "/compact",
     "/context", "/cost", "/diff", "/effort", "/exit", "/export", "/gh-borrow", "/goal",
-    "/help", "/hooks", "/image", "/init", "/images", "/impact", "/import", "/log", "/login",
+    "/help", "/hooks", "/image", "/init", "/images", "/impact", "/import", "/log",
     "/mcp", "/mcp-tools", "/memory", "/mode", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/route", "/sandbox", "/skills", "/stats",
     "/status", "/subagent", "/swarm", "/tools", "/undo", "/usage", "/verify",
     "/rewind", "/handoff", "/worktree",
@@ -111,8 +108,6 @@ _CMD_META: Dict[str, str] = {
     "/memory": "查看记忆",
     "/model": "切换模型",
     "/provider": "查看/设置/清除 API Key",
-    "/account": "账户登录: 离线 / GitHub / Apple 账户 / DeepSeek 账户",
-    "/login": "为当前供应商保存 API Key",
     "/usage": "本次会话 token 用量",
     "/cost": "本次会话花费",
     "/mode": "切换运行模式 (standard/yolo/plan)",
@@ -181,45 +176,6 @@ def list_slash_commands() -> list:
     except Exception:  # noqa: BLE001
         pass
     return names
-
-
-def _cmd_image(agent, head: str, arg: str) -> None:
-    """/image /images /clear-images /image generate: 多模态图片管理 + AI 生成。"""
-    if head == "/images":
-        if not getattr(agent, "pending_images", None):
-            ui.info("当前没有待发送的图片。")
-            return
-        for i, ref in enumerate(agent.pending_images, 1):
-            loc = ref.path or ref.url or "<data>"
-            ui.success(f"{i}. {loc} ({ref.byte_size() // 1024}KB, {ref.media_type})")
-        return
-    if head == "/clear-images":
-        n = agent.clear_pending_images()
-        ui.info(f"已清除 {n} 张待发送图片。")
-        return
-    # /image generate <描述> — AI 图片生成
-    if arg and arg.strip().lower().startswith("generate"):
-        _cmd_image_generate(agent, arg.strip()[len("generate"):].strip())
-        return
-    # /image list — 已生成图片列表
-    if arg and arg.strip().lower() == "list":
-        from ..tools.image_gen import list_generated
-        workspace = getattr(getattr(agent, "ctx", None), "workspace", ".") or "."
-        ui.info(list_generated(workspace))
-        return
-    if not arg:
-        ui.info("用法:")
-        ui.info("  /image <本地路径 | http(s) URL>       挂接图片随下轮发送")
-        ui.info("  /image generate <描述>                 AI 生成图片")
-        ui.info("  /image list                           已生成图片列表")
-        ui.info("  /images                              查看待发送图片")
-        ui.info("  /clear-images                        清除待发送图片")
-        return
-    try:
-        msg = agent.attach_image(arg.strip())
-        ui.success(msg)
-    except Exception as exc:  # noqa: BLE001
-        ui.error(f"挂接图片失败: {exc}")
 
 
 class _CfgStub:
@@ -580,101 +536,6 @@ def _cmd_workflow(agent, arg: str) -> None:
     ui.info("用法: /workflow [list|status <wf>|result <wf>|cancel <wf>|retry <wf>]")
 
 
-def _cmd_export(agent, arg: str) -> None:
-    """/export [filename] — 导出会话为 Markdown 文件。"""
-    import os
-    from datetime import datetime
-
-    if not agent.messages:
-        ui.info("当前会话为空, 无法导出。")
-        return
-
-    # 默认文件名: 会话标题 + 时间戳
-    default_name = f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-    filename = arg.strip() if arg.strip() else default_name
-    if not filename.endswith(".md"):
-        filename += ".md"
-
-    # 生成 Markdown
-    lines = ["# 青小团会话记录", ""]
-    lines.append(f"> 导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"> 消息数: {len(agent.messages)}")
-    lines.append("")
-    lines.append("---")
-    lines.append("")
-
-    for msg in agent.messages:
-        role = msg.get("role", "")
-        content = msg.get("content", "")
-        if role == "user":
-            lines.append("## 你")
-            lines.append("")
-            lines.append(content)
-            lines.append("")
-        elif role == "assistant":
-            lines.append("## 青小团")
-            lines.append("")
-            lines.append(content)
-            lines.append("")
-
-    # 写入文件
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        ui.success(f"已导出到: {os.path.abspath(filename)} ({len(agent.messages)} 条消息)")
-    except Exception as exc:  # noqa: BLE001
-        ui.error(f"导出失败: {exc}")
-
-
-def _cmd_import(agent, arg: str) -> None:
-    """/import <file> — 导入 Markdown 对话。"""
-    import os
-
-    if not arg.strip():
-        ui.info("用法: /import <文件路径> — 导入 Markdown 格式的对话记录")
-        return
-
-    filepath = arg.strip()
-    if not os.path.exists(filepath):
-        ui.error(f"文件不存在: {filepath}")
-        return
-
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            content = f.read()
-    except Exception as exc:  # noqa: BLE001
-        ui.error(f"读取文件失败: {exc}")
-        return
-
-    # 简单解析 Markdown: 按 ## 角色 分割
-    import re
-    parts = re.split(r"^## (你|青小团)", content, flags=re.MULTILINE)
-
-    imported = 0
-    i = 1  # 跳过文件头
-    while i < len(parts) - 1:
-        role_label = parts[i].strip()
-        body = parts[i + 1].strip() if i + 1 < len(parts) else ""
-
-        if role_label == "你":
-            role = "user"
-        elif role_label == "青小团":
-            role = "assistant"
-        else:
-            i += 2
-            continue
-
-        if body:
-            agent.messages.append({"role": role, "content": body})
-            imported += 1
-        i += 2
-
-    if imported > 0:
-        ui.success(f"已导入 {imported} 条消息到当前会话。")
-    else:
-        ui.info("未解析到有效消息。文件格式应为: ## 你 / ## 青小团 交替的 Markdown。")
-
-
 def _cmd_verify(workspace: str, arg: str, agent, config) -> None:
     """/verify — 编码验证闭环。"""
     from ..core.verify_loop import (
@@ -810,288 +671,6 @@ def _cmd_mcp_tools(agent, arg: str) -> None:
     ui.info(f"  累计检索 {rep['search_calls']} 次")
     ui.info("  切换: /mcp-tools on|off · 检索: /mcp-tools search <关键词>")
 
-
-def _cmd_provider(agent, config, head: str, arg: str) -> None:
-    """`/provider` 与 `/login` (别名): 查看/设置/清除当前 API Key 与供应商。
-
-    用法:
-        /provider [show]            查看当前供应商 / 模型 / 密钥环境变量
-        /provider set <ENV> <KEY>   把 API Key 持久化到 ~/.qingxiaotuan/.env
-        /provider clear [ENV]       删除某供应商密钥 (默认当前供应商), 保留原文件其余内容
-        /login <KEY>                为当前供应商的 api_key_env 保存密钥
-    """
-    from ..config import normalize_api_key, persist_api_key, remove_api_key
-
-    provider = config.get("model.provider", "?")
-    model = config.get("model.model", "?")
-    env_name = config.get("model.api_key_env", "DEEPSEEK_API_KEY")
-    low = (arg or "").strip()
-    action, rest = (low.split(None, 1) + [""])[:2] if low else ("", "")
-
-    if low in ("show", "status", ""):
-        ui.info(f"  provider: {provider}")
-        ui.info(f"  model: {model}")
-        ui.info(f"  api_key_env: {env_name} ({'已配置' if os.environ.get(env_name) else '未配置'})")
-        if not os.environ.get(env_name):
-            ui.info(t("slash.provider_usage", env=env_name))
-        return
-
-    if action == "set":
-        kv = (rest or "").split(None, 1)
-        if len(kv) < 2:
-            ui.info(t("slash.provider_usage", env=env_name))
-            return
-        env, key = kv[0], kv[1]
-    elif action == "clear":
-        # /provider clear [ENV]: 删除该 env 的密钥 (默认当前供应商), 幂等且不影响其他密钥
-        env = rest or env_name
-        try:
-            remove_api_key(env)
-        finally:
-            os.environ.pop(env, None)
-        ui.success(t("slash.provider_cleared", env=env))
-        return
-    else:
-        # /login <KEY>: 未显式给 env 名时取当前 provider 的 api_key_env
-        env, key = env_name, arg.strip()
-
-    key = normalize_api_key(key)
-    if not key:
-        ui.info(t("slash.provider_usage", env=env_name))
-        return
-    try:
-        persist_api_key(env, key)
-    except ValueError:
-        ui.error(t("slash.provider_invalid_env", env=env))
-        return
-    os.environ[env] = key
-    ui.success(t("slash.provider_set_done", env=env))
-
-
-def _cmd_account(agent, config, arg: str) -> bool:
-    """/account —— 账户登录菜单: 离线 / GitHub / Apple 账户 / DeepSeek 账户。
-
-    与 `/login` (保存 API Key) 不同, 本命令管理「第三方账户登录态」:
-    选择后调用对应 AuthProvider.login() (GitHub/Apple 走浏览器 OAuth,
-    DeepSeek 打开 chat.deepseek.com 取会话令牌; 无需 API Key)。
-    """
-    import sys
-
-    from ..auth import AuthError, AuthStore, ProviderNotConfigured, get_provider, list_providers
-
-    if not sys.stdin.isatty():
-        ui.info("TUI 账户菜单需要交互终端: 请在会话中输入 /account; 或命令行运行 `qxt login <provider>`")
-        return True
-
-    store = AuthStore()
-    choices: list = [("offline", "离线", "不登录, 本地功能照常 (可随时 /account 再登录)")]
-    choices += [(p["name"], p["display_name"], p["description"]) for p in list_providers()]
-
-    ui.info("账户登录 (输入序号或名称, 回车取消):")
-    for i, (key, label, desc) in enumerate(choices, 1):
-        acc = store.get(key) if key != "offline" else None
-        tag = f"  [已登录: {acc.get('login', '')}]" if (acc and acc.get("token")) else "  [未登录]"
-        ui.info(f"  {i}. {label} — {desc}{tag}")
-    try:
-        raw = input("选择: ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        ui.info("已取消 (保持当前状态)。")
-        return True
-    if not raw:
-        ui.info("已取消 (保持当前状态)。")
-        return True
-    if raw.isdigit():
-        idx = int(raw)
-        if not (1 <= idx <= len(choices)):
-            ui.info(f"无效选择: {raw}")
-            return True
-        key, label, desc = choices[idx - 1]
-    else:
-        matched = [c for c in choices if c[0] == raw]
-        if not matched:
-            ui.info(f"无效选择: {raw}")
-            return True
-        key, label, desc = matched[0]
-
-    if key == "offline":
-        ui.success("离线模式: 不登录第三方账户, 本地功能照常。")
-        return True
-
-    try:
-        provider = get_provider(key)
-        result = provider.login()
-    except ProviderNotConfigured as exc:
-        ui.error(f"[未配置] {exc}")
-        return True
-    except AuthError as exc:
-        ui.error(f"[登录失败] {exc}")
-        return True
-    except KeyboardInterrupt:
-        ui.error("登录已取消。")
-        return True
-    ui.success(f"已通过 {provider.display_name} 登录: {result.login}")
-    for k, v in (result.extra or {}).items():
-        ui.info(f"  {k}: {v}")
-    return True
-
-
-def _cmd_image_generate(agent, arg: str) -> None:
-    """/image generate <描述> — AI 图片生成。"""
-    if not arg:
-        ui.info("用法: /image generate <图片描述>")
-        ui.info("示例: /image generate 一只穿着太空服的猫在月球上跳跃")
-        ui.info("选项: --provider openai|stability --size 1024x1024 --quality hd")
-        return
-    # 解析简单参数
-    provider = "auto"
-    size = "1024x1024"
-    quality = "standard"
-    parts = arg.split(" --")
-    prompt_parts = []
-    for part in parts:
-        if part.startswith("provider "):
-            provider = part.split(" ", 1)[1].strip()
-        elif part.startswith("size "):
-            size = part.split(" ", 1)[1].strip()
-        elif part.startswith("quality "):
-            quality = part.split(" ", 1)[1].strip()
-        else:
-            prompt_parts.append(part)
-    prompt = " ".join(prompt_parts).strip()
-    if not prompt:
-        ui.info("请输入图片描述。")
-        return
-    workspace = getattr(getattr(agent, "ctx", None), "workspace", ".") or "."
-    ui.info(f"[AI 绘图] 正在生成: {prompt[:60]}{'...' if len(prompt) > 60 else ''}")
-    try:
-        from ..tools.image_gen import generate_image
-        from ..tools.base import ToolContext
-        kernel = getattr(agent, "kernel", None)
-        ctx = ToolContext(
-            kernel=kernel,
-            workspace=workspace,
-            on_progress=lambda name, msg: ui.info(f"  {msg}"),
-        )
-        result = generate_image(ctx, prompt, provider=provider, size=size, quality=quality)
-        if result.startswith("[image_gen] 生成失败") or result.startswith("[image_gen] 未检测到"):
-            ui.error(result)
-        else:
-            ui.success(result)
-            # 自动挂接生成的图片, 方便视觉模型查看
-            import re
-            m = re.search(r"已保存: (.+)$", result, re.MULTILINE)
-            if m:
-                try:
-                    agent.attach_image(m.group(1).strip())
-                    ui.info("(已自动挂接, 视觉模型下轮可查看)")
-                except Exception:  # noqa: BLE001
-                    pass
-    except Exception as exc:  # noqa: BLE001
-        ui.error(f"图片生成失败: {exc}")
-
-
-def _cmd_memory(agent, config, arg: str) -> None:
-    """/memory — Auto Memory 管理: list/search/add/delete/on/off。
-
-    子命令:
-      /memory list [kind]   列出记忆 (kind=user/feedback/project/reference)
-      /memory search <q>    全文搜索
-      /memory add <kind> <text>   手动写一条记忆
-      /memory delete <id>   按 id 删除
-      /memory on|off        开关自动提取
-    """
-    from rich.console import Console
-    from rich.table import Table
-    from ..memory.store import MEMORY_KINDS
-
-    store = agent.kernel.get("memory_store") if agent.kernel else None
-    if store is None:
-        ui.error("记忆存储未初始化。")
-        return
-
-    parts = arg.strip().split(None, 1)
-    sub = parts[0].lower() if parts else "list"
-    rest = parts[1] if len(parts) > 1 else ""
-
-    console = Console()
-
-    if sub in ("on", "off"):
-        on = (sub == "on")
-        config.set_user("memory.auto_extract", on)
-        state = "已开启 (回合结束自动抽取)" if on else "已关闭"
-        ui.success(f"自动记忆提取: {state}")
-        return
-
-    if sub == "list":
-        kind = rest.strip().lower() or None
-        if kind and kind not in MEMORY_KINDS:
-            ui.info(f"用法: /memory list [{'|'.join(MEMORY_KINDS)}]")
-            return
-        items = store.list_by_kind(kind=kind, limit=50)
-        if not items:
-            ui.info("(暂无记忆)")
-            return
-        table = Table(title="Auto Memory 记忆库", show_lines=False)
-        table.add_column("ID", style="cyan", justify="right")
-        table.add_column("分类", style="magenta")
-        table.add_column("内容", style="white", overflow="fold")
-        for it in items:
-            table.add_row(str(it["id"]), it["kind"], it["content"])
-        console.print(table)
-        return
-
-    if sub == "search":
-        if not rest.strip():
-            ui.info("用法: /memory search <关键词>")
-            return
-        hits = store.search(rest.strip(), limit=10)
-        if not hits:
-            ui.info("(无命中)")
-            return
-        table = Table(title=f"搜索: {rest.strip()}")
-        table.add_column("分类", style="magenta")
-        table.add_column("内容", overflow="fold")
-        for h in hits:
-            k = h.get("kind", "").split(":", 1)[-1]
-            table.add_row(k, h["content"][:200])
-        console.print(table)
-        return
-
-    if sub == "add":
-        kv = rest.strip().split(None, 1)
-        if len(kv) < 2 or kv[0].lower() not in MEMORY_KINDS:
-            ui.info(f"用法: /memory add <{'|'.join(MEMORY_KINDS)}> <内容>")
-            return
-        kind = kv[0].lower()
-        text = kv[1].strip()
-        new_id = store.add_auto_memory(text, kind=kind, source="manual")
-        if new_id is None:
-            ui.info("该记忆与已有条目相似, 已跳过 (去重)。")
-        else:
-            ui.success(f"已写入记忆 [id={new_id}] [{kind}] {text}")
-        return
-
-    if sub == "delete":
-        rid = rest.strip()
-        if not rid.isdigit():
-            ui.info("用法: /memory delete <id>  (id 来自 /memory list)")
-            return
-        ok = store.delete_by_id(int(rid))
-        if ok:
-            ui.success(f"已删除记忆 id={rid}")
-        else:
-            ui.error(f"未找到记忆 id={rid}")
-        return
-
-    # 默认帮助
-    ui.info(
-        "Auto Memory 用法:\n"
-        "  /memory list [kind]        列出记忆 (kind: " + "/".join(MEMORY_KINDS) + ")\n"
-        "  /memory search <关键词>    全文搜索\n"
-        "  /memory add <kind> <内容>  手动写一条\n"
-        "  /memory delete <id>        按 id 删除\n"
-        "  /memory on|off             开关自动提取"
-    )
 
 def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
     """处理斜杠命令。返回 True 表示已处理。"""
@@ -1236,10 +815,8 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
                 ui.success("Plan 模式已开启: 只读分析, 修改类工具将被拦截。")
             else:
                 ui.success("Plan 模式已关闭: 可以正常执行修改操作。")
-    elif head in ("/provider", "/login"):
+    elif head == "/provider":
         _cmd_provider(agent, config, head, arg)
-    elif head == "/account":
-        _cmd_account(agent, config, arg)
     elif head == "/goal":
         _cmd_goal(agent, arg)
     elif head == "/blast":
