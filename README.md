@@ -216,6 +216,23 @@ Caveat: the bypass matrix is deliberately fail-closed and keeps a few conservati
 
 ---
 
+## Head-to-head vs Claude Code: one command
+
+Beyond self-measured security suites, `bench/vs_claude.py` runs **the same task set on both agents** and renders an honest side-by-side: same `bench/tasks.yaml`, same acceptance scripts, isolated workspaces, `qxt run -p` vs `claude -p --output-format json`.
+
+```bash
+python bench/vs_claude.py --dry --qxt .venv/Scripts/qxt.exe   # framework-only check, no model calls
+python bench/vs_claude.py --qxt .venv/Scripts/qxt.exe         # real run (needs working endpoints on both sides)
+python bench/vs_claude.py --task fix_bug --model openrouter/deepseek/deepseek-chat
+python bench/vs_claude.py --claude "C:\path\claude.cmd" --json
+```
+
+Outputs `bench/vs_report.md` / `.json` / `.html` with pass rate, wall time, cost and permission-rejection counts per task.
+
+**Honesty contract**: the runner first probes whether `claude -p` can actually complete one turn; if the probe fails, the Claude column is marked **N/A with the exact reason** — it never pretends a comparison happened. Numbers become meaningful only once both endpoints work on your machine; that is the point of reproducible measurement. Windows note: npm-installed `claude` is a `.ps1`/`.cmd` shim — the script auto-resolves the real executable, and old versions that reject `--no-input` are handled via stdin redirection.
+
+---
+
 ## Where your ideas go to run
 
 - **Memory** — three tiers (user/project/session) + SQLite FTS5 (trigram), auto-degrades to plaintext if unavailable.

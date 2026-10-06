@@ -58,11 +58,36 @@ python bench/run.py --json
 
 四类覆盖：理解 / 修 bug / 补测试 / 多文件重构。
 
-## 对比 Claude Code
+## 对比 Claude Code（自动双跑）
 
-1. 用同一组 `tasks.yaml` 在 Claude Code 上跑（指令 + 验收脚本一致）。
-2. 两边各记录：通过数、总耗时、估算成本（用 `/cost`，Claude Code 用 `--cost`）。
-3. 填入下面的对比表，作为「超越」的量化证据：
+**`vs_claude.py` 把「同一任务集双跑」自动化**：同一份 `tasks.yaml`、同一组验收脚本，
+在隔离工作区分别用 `qxt run -p` 与 `claude -p --output-format json` 执行，输出
+通过率 / 耗时 / 成本 / 权限拒绝数对比，并渲染 md / json / html 三份报告。
+
+```bash
+# 1) 校验框架与任务定义 (不调用模型, 不探测 claude)
+python bench/vs_claude.py --dry --qxt .venv/Scripts/qxt.exe
+
+# 2) 真实双跑 (需 qxt 配好可用模型端点; claude 需可用)
+python bench/vs_claude.py --qxt .venv/Scripts/qxt.exe
+
+# 3) 只跑单任务 / 指定模型 / 指定 claude 可执行
+python bench/vs_claude.py --task fix_bug --model openrouter/deepseek/deepseek-chat
+python bench/vs_claude.py --claude "C:\Users\me\claude.cmd"
+
+# 4) 机器可读 / 跳过 claude 探测
+python bench/vs_claude.py --json --no-html
+python bench/vs_claude.py --skip-probe          # 不探测 claude, 直接逐任务真跑
+```
+
+**诚实性约定（可复验）**：双跑前先探测 claude 是否真能完成一轮调用；探测失败时
+Claude 侧如实标注 **N/A** 并写明原因，绝不假装跑过。报告里的数字只有在你本机
+跑通两端点后才有意义——这也正是「可复现测量」的一部分。
+
+**Windows 注意**：npm 安装的 claude 是 `.ps1`/`.cmd` shim，脚本会自动解析真实
+可执行路径；老版本 claude 不支持 `--no-input`，脚本已统一用 stdin 重定向替代。
+
+旧的手工流程（`qxt /cost` + `claude --cost` 填表）保留如下，供无自动化环境的场合：
 
 | 任务 | (通过/耗时/成本) | Claude Code(通过/耗时/成本) |
 | --- | --- | --- |

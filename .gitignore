@@ -106,9 +106,12 @@ desktop.ini
 
 # ===== 基准产物 =====
 # 保留 bench/security-bench.json 存档供 CI 数字门禁对比 (README/security-ci.yml 依赖),
-# 其余基准生成的 json 一律不入库。
+# 其余基准生成的 json 一律不入库。双跑对比报告是本地运行产物, 不入库
+# (数字只有在两端点都可用时才有意义, 由使用者本地重跑生成)。
 bench/*.json
 !bench/security-bench.json
+bench/vs_report.md
+bench/vs_report.html
 
 # ===== 一次性操作脚本 =====
 scripts/_replace_icons.py
