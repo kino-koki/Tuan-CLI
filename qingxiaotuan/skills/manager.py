@@ -44,6 +44,19 @@ _BUILTIN_DIR = Path(__file__).resolve().parent.parent / "resources" / "skills" /
 # 僵尸技能判定: 超过该天数未使用且 use_count=0 视为僵尸
 ZOMBIE_DAYS = 30
 
+# always 技能注入正文的行数预算: 常驻守则总量受控, 超限截断并提示
+# (防止多个 always 技能正文吃掉整个上下文窗口)。
+_ALWAYS_BODY_MAX_LINES = 60
+
+
+def _cap_lines(text: str, max_lines: int) -> str:
+    """截断技能正文到 max_lines 行; 超限附加提示, 保证注入预算可执行。"""
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text.strip()
+    return "\n".join(lines[:max_lines]) + (
+        f"\n…(正文过长已截断至 {max_lines} 行, 完整内容请用 skill_read 读取)")
+
 
 @dataclass
 class Skill:
@@ -572,23 +585,35 @@ class SkillManager:
             return []
         return results
 
-    def render_for_prompt(self, skills: List[Skill]) -> str:
+    def render_for_prompt(self, skills: List[Skill], full_body: bool = False) -> str:
         """渲染技能上下文 —— 注册表模式 (提到才读, 防上下文膨胀)。
 
-        - activation=always/auto 的技能: 渲染完整正文 (始终需要的操作守则);
-        - 其余 (lazy/proactive): 只渲染注册表条目 (名称 + 描述 + 触发词),
-          并提示相关时先用 skill_read 读取完整 SKILL.md —— 正文按需加载。
-        - 描述优先用 short_description (超集字段), 否则用 description。
+        - activation=always 的技能: 渲染完整正文 (始终需要的操作守则),
+          正文总量受 _ALWAYS_BODY_MAX_LINES 行数预算约束 (超限截断并提示);
+        - 其余 (auto/lazy/proactive): 默认只渲染注册表条目
+          (名称 + 激活档 + 描述 + 触发词), 正文按需 skill_read 加载;
+          full_body=True 时 (显式加载场景, 如子代理预加载指定技能) 渲染完整正文。
+        - 尾部固定一行决策规则: 明确「何时读全文 / always 无需再读」,
+          消除 agent 对注入深度判断的不确定性。
         """
         if not skills:
             return ""
         parts = ["## 可复用技能 (按需加载: 相关技能先用 skill_read 读取完整步骤再执行)"]
         for s in skills:
             desc = s.short_description or s.description
-            entry = f"- **{s.ui_name}** ({s.slug}): {desc}"
-            if s.triggers:
-                entry += f" 触发: {', '.join(s.triggers[:6])}"
-            if s.activation in ("always", "auto"):
-                entry += f"\n\n{s.body}"
+            if s.activation == "always" or full_body:
+                body = _cap_lines(s.body, _ALWAYS_BODY_MAX_LINES)
+                entry = (
+                    f"- **{s.ui_name}** ({s.slug}, {s.activation}): {desc}"
+                    f"  [正文已注入]\n\n{body}"
+                )
+            else:
+                entry = f"- **{s.ui_name}** ({s.slug}, {s.activation}): {desc}"
+                if s.triggers:
+                    entry += f" 触发: {', '.join(s.triggers[:6])}"
             parts.append(entry)
+        parts.append(
+            "决策规则: 任务相关时才 skill_read 读取全文并按其步骤执行; "
+            "always 技能正文已注入, 直接遵守无需再读; 无关技能一律不读。"
+        )
         return "\n\n".join(parts)

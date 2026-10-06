@@ -130,7 +130,7 @@ def _run_subagent(
                 try:
                     skill = sm.get(name)
                     if skill:
-                        content = sm.render_for_prompt([skill])
+                        content = sm.render_for_prompt([skill], full_body=True)
                         if content:
                             sub_agent.messages.append({
                                 "role": "user",
