@@ -5,11 +5,14 @@
 1. 环境变量 (优先级高)::
      QXT_GITHUB_CLIENT_ID / QXT_GITHUB_CLIENT_SECRET
      QXT_APPLE_TEAM_ID / QXT_APPLE_CLIENT_ID / QXT_APPLE_KEY_ID / QXT_APPLE_PRIVATE_KEY_PATH
-     QXT_DEEPSEEK_SESSION_TOKEN
+     QXT_DEEPSEEK_API_KEY
 2. 配置文件 (默认 <QXT_HOME>/auth-config.toml)::
      [github]    client_id / client_secret / redirect_uri
      [apple]     team_id / client_id / key_id / private_key_path / redirect_uri
-     [deepseek]  session_token
+     [deepseek]  api_key
+
+DeepSeek 仅支持官方开放平台 API Key; 曾存在的网页会话令牌
+(session_token) 路径因触发平台风控已整体移除。
 
 优先级: 环境变量 > TOML 文件。
 """

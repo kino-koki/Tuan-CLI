@@ -256,7 +256,7 @@ Tuan-CLI 不登录即可完整离线使用。登录只是可选增强层，支�
 | --- | --- | --- |
 | GitHub | OAuth 2.0 授权码 + PKCE | OAuth App 的 `client_id`（`client_secret` 可选） |
 | Apple | Sign in with Apple（授权码 + ES256 `client_secret`） | Service ID + Sign in with Apple Key（`.p8`） |
-| DeepSeek | 网页会话令牌注入（无需 API Key，用网页额度） | 从 chat.deepseek.com 开发者工具取会话令牌 |
+| DeepSeek | 官方开放平台 API Key（`sk-`） | platform.deepseek.com 创建（新账号送免费 token 额度） |
 
 ```bash
 qxt login          # 交互选择提供方
@@ -280,28 +280,28 @@ private_key_path = "~/.qingxiaotuan/AuthKey.p8"
 redirect_uri = "http://127.0.0.1:8765/callback"
 
 [deepseek]
-# 可选预置: session_token = "..."   （否则登录时粘贴）
+# 可选预置: api_key = "sk-..."   （否则登录时粘贴）
 ```
 
 OAuth 回调跑在本机回环地址（`127.0.0.1:8765`），无需公网端点。
 `/web` 工作台侧栏有同款账户面板，官网亦列出三家登录入口。
 
-### 用 DeepSeek 网页登录态直接驱动模型（实验性）
+### 用官方 DeepSeek API 驱动模型
 
-`qxt login deepseek` 之后，保存的网页会话令牌可直接作为模型后端调用——
-无需 API Key，额度走网页账号：
+`qxt login deepseek`（或直接导出 `DEEPSEEK_API_KEY`）之后，官方开放平台端点即可驱动模型调用——OpenAI 兼容，不碰网页账号、零风控风险：
 
 ```bash
-qxt models set deepseek-web deepseek-chat   # 切换模型提供方
-qxt                                        # 正常对话
+qxt models set deepseek deepseek-chat   # 切换模型提供方
+qxt                                     # 正常对话
 ```
 
-- 令牌从 `~/.qingxiaotuan/auth.json` 读取（或环境变量 `QXT_DEEPSEEK_WEB_TOKEN`），
-  请求发往 chat.deepseek.com 网页端点（`https://chat.deepseek.com/api/v0`）。
-- **实验性**：网页端点属私有接口，可能随时变化。401/403 时重跑
-  `qxt login deepseek` 取新令牌；端点本身变更（404/405）时回退官方 API——
-  `qxt models set deepseek` + `DEEPSEEK_API_KEY`。网页路径不支持工具调用
-  （纯对话）；需要工具能力的 agent 功能请用官方 API 或离线模式。
+- 模型请求发往 `https://api.deepseek.com`（官方 API；新注册账号送免费 token
+  额度，无需信用卡）。
+- **为什么不走网页端点**：早期实现曾用网页会话令牌直连
+  `chat.deepseek.com/api/v0`（社区 DSH-webtokens 同源思路）。该端点属私有
+  非受支持接口，会触发 DeepSeek 对**网页账号**的自动化风控（临时停用/禁言）。
+  该路径已**整体移除**。网页账号与开放平台是两套独立体系：官方 API 路径
+  完全不触碰你的网页账号。
 
 > **安全提示**：`~/.qingxiaotuan/auth.json` 以明文保存登录态令牌（尽力 chmod 600）。
 > 请像对待 SSH 私钥一样保护主目录；公共机器上用完请登出。

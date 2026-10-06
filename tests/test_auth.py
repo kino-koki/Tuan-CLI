@@ -305,37 +305,37 @@ def test_apple_not_configured(tmp_path: Path) -> None:
         provider.login()
 
 
-# ------------------------------------------------------------- DeepSeek 网页 (mock)
+# ------------------------------------------------------------- DeepSeek 官方 API (mock)
 
 
-def test_deepseek_login_paste_token(monkeypatch, tmp_path: Path) -> None:
+def test_deepseek_login_paste_api_key(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(ds_mod.webbrowser, "open", lambda url: True)
     monkeypatch.setattr(
-        ds_mod.DeepSeekWebProvider, "_ask_token", lambda self, prompt: "web-token-abc"
+        ds_mod.DeepSeekAPIProvider, "_ask_api_key", lambda self, prompt: "sk-test-abc"
     )
     provider = get_provider("deepseek", home=tmp_path)
     result = provider.login()
     assert result.provider == "deepseek"
     acc = provider.store.get("deepseek")
     assert acc is not None
-    assert acc["token"] == "web-token-abc"
-    assert provider.status()["login"] == "deepseek-web"
+    assert acc["token"] == "sk-test-abc"
+    assert provider.status()["login"] == "deepseek-api"
 
 
 def test_deepseek_login_from_toml(tmp_path: Path) -> None:
     (tmp_path / "auth-config.toml").write_text(
-        '[deepseek]\nsession_token = "pre-token"\nlogin = "me@deepseek"\n',
+        '[deepseek]\napi_key = "sk-pre-token"\nlogin = "me@deepseek"\n',
         encoding="utf-8",
     )
     provider = get_provider("deepseek", home=tmp_path)
     result = provider.login()
     assert result.login == "me@deepseek"
-    assert provider.store.get("deepseek")["token"] == "pre-token"
+    assert provider.store.get("deepseek")["token"] == "sk-pre-token"
 
 
 def test_deepseek_login_cancel(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(ds_mod.webbrowser, "open", lambda url: True)
-    monkeypatch.setattr(ds_mod.DeepSeekWebProvider, "_ask_token", lambda self, p: "")
+    monkeypatch.setattr(ds_mod.DeepSeekAPIProvider, "_ask_api_key", lambda self, p: "")
     provider = get_provider("deepseek", home=tmp_path)
     with pytest.raises(AuthError, match="取消"):
         provider.login()

@@ -22,8 +22,8 @@ _PROVIDERS = [
     },
     {
         "name": "deepseek",
-        "display_name": "DeepSeek (网页)",
-        "description": "DeepSeek 网页账号登录 (会话令牌)",
+        "display_name": "DeepSeek (官方 API)",
+        "description": "DeepSeek 官方 API Key (sk- 开头; 官方渠道, 无封号风险)",
     },
 ]
 
@@ -32,7 +32,7 @@ class FakeProvider:
     display_name = "GitHub"
 
     def __init__(self, name: str) -> None:
-        self.display_name = {"github": "GitHub", "apple": "Apple 账户", "deepseek": "DeepSeek (网页)"}[name]
+        self.display_name = {"github": "GitHub", "apple": "Apple 账户", "deepseek": "DeepSeek (官方 API)"}[name]
 
     def login(self):
         from qingxiaotuan.auth import AuthResult
@@ -110,7 +110,7 @@ def test_account_menu_by_name(monkeypatch, capsys) -> None:
     _login_spy(monkeypatch, called)
     monkeypatch.setattr("builtins.input", lambda _: "deepseek")
     assert _cmd_account(None, None, "") is True
-    assert called == ["DeepSeek (网页)"]
+    assert called == ["DeepSeek (官方 API)"]
 
 
 def test_account_menu_shows_logged_state(monkeypatch, capsys) -> None:

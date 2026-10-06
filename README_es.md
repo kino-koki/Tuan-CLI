@@ -179,7 +179,7 @@ qxt --print run "Hola. Una línea."  # humo
 - `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`.
 - Credenciales en `~/.qingxiaotuan/auth-config.toml` o variables de entorno `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*` (las variables ganan).
 - Callback OAuth por defecto `http://127.0.0.1:8765/callback`; `auth.json` guarda tokens en texto plano — protege tu directorio personal y cierra sesión en equipos compartidos.
-- Inicio de sesión web de DeepSeek como backend del modelo: `qxt models set deepseek-web` (experimental).
+- API oficial de DeepSeek como backend del modelo: `qxt models set deepseek` (clave oficial sk-).
 - Detalles en README_zh-CN.md (maestro) y README.md.
 
 ---
