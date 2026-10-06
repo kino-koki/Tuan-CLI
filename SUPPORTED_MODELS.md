@@ -5,7 +5,7 @@
 
 ---
 
-## 1. 为什么一份适配器能覆盖 51 家 Provider？
+## 1. 为什么一份适配器能覆盖 55 家 Provider？
 
 所有 OpenAI 兼容端点（无论背后是 DeepSeek、OpenAI、OpenRouter、Moonshot 还是本地 Ollama）都暴露同一个 `/v1/chat/completions` 协议。青小团的 `OpenAICompatAdapter` 只依赖这个稳定的接口表面：
 

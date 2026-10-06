@@ -12,6 +12,7 @@ from qingxiaotuan.ext.safety_engine import (
     SafetyEngine,
     is_benign_dev_command,
     is_hard_redline,
+    is_redline,
 )
 
 
@@ -115,9 +116,49 @@ def test_destructive_not_benign():
 
 def test_destructive_hard_redline_holds():
     assert is_hard_redline("rm -rf /")
-    assert is_hard_redline("rm -rf ./build")
     assert is_hard_redline("git push --force")
     assert is_hard_redline("dd if=/dev/zero of=/dev/sda")
+
+
+# ------------------------------------------------------------ rm 目标危险度分级
+def test_rm_relative_target_not_hard_redline():
+    """清构建产物的相对路径 rm -rf 不再构成硬红线, 但仍属综合红线 (需确认)。
+
+    区分 `rm -rf /`(删除即灾难) 与 `rm -rf ./dist`(常规清理): 后者不应被当成
+    硬红线拦截/YOLO 拒执行, 否则把安全做成骚扰。
+    """
+    safe_targets = [
+        "rm -rf ./build",
+        "rm -rf ./dist",
+        "rm -rf node_modules",
+        "rm -rf dist/",
+        "rm -rf build/*",
+        "rm -rf ./dist/*",
+        "rm -rf node_modules/*",
+    ]
+    for cmd in safe_targets:
+        assert not is_hard_redline(cmd), f"相对路径目标不应是硬红线: {cmd!r}"
+        # 但仍是「需确认」级别的危险操作
+        assert is_redline(cmd), f"递归强删仍应命中综合红线: {cmd!r}"
+
+
+def test_rm_dangerous_target_is_hard_redline():
+    """灾难级目标 (根/家目录/系统路径/通配) 仍必须是硬红线。"""
+    dangerous = [
+        "rm -rf /",
+        "rm -rf ~",
+        "rm -rf ~/",
+        "rm -rf /etc",
+        "rm -rf /usr/local",
+        "rm -rf /tmp/x",
+        "rm -rf *",
+        "rm -rf ./*",
+        "rm -rf ..",
+        "rm -rf $HOME",
+        "sudo rm -rf /var/log",
+    ]
+    for cmd in dangerous:
+        assert is_hard_redline(cmd), f"灾难级目标必须是硬红线: {cmd!r}"
 
 
 # ------------------------------------------------------------ 跨 workspace / 引号路径

@@ -21,11 +21,11 @@ from qingxiaotuan.cli import cmd_upgrade
 # ----------------------------------------------------------------- 版本比较
 
 def test_compare_versions():
-    assert cmd_upgrade.compare_versions("0.2.017", "0.2.017") == 0
-    assert cmd_upgrade.compare_versions("0.2.017", "0.2.018") == -1
-    assert cmd_upgrade.compare_versions("0.2.018", "0.2.017") == 1
+    assert cmd_upgrade.compare_versions("1.0", "1.0") == 0
+    assert cmd_upgrade.compare_versions("1.0", "1.0.1") == -1
+    assert cmd_upgrade.compare_versions("1.0.1", "1.0") == 1
     assert cmd_upgrade.compare_versions("0.2.9", "0.2.10") == -1
-    assert cmd_upgrade.compare_versions("0.3.0", "0.2.99") == 1
+    assert cmd_upgrade.compare_versions("2.0.0", "1.99.99") == 1
     # 自身版本不大于 latest
     assert cmd_upgrade.compare_versions(__version__, __version__) == 0
 
@@ -67,7 +67,7 @@ def test_yes_upgrade_invokes_pip():
 
 
 def test_version_skips_pypi_and_installs():
-    args = SimpleNamespace(check=False, yes=True, version="0.2.018")
+    args = SimpleNamespace(check=False, yes=True, version="1.0")
     fake = mock.Mock(returncode=0, stdout="ok", stderr="")
     with mock.patch.object(cmd_upgrade, "fetch_latest") as fetch, \
          mock.patch.object(cmd_upgrade.subprocess, "run", return_value=fake) as run:
@@ -75,7 +75,7 @@ def test_version_skips_pypi_and_installs():
     assert rc == 0
     fetch.assert_not_called()  # 指定版本不查 PyPI
     cmd = run.call_args[0][0]
-    assert "qingxiaotuan==0.2.018" in cmd
+    assert "qingxiaotuan==1.0" in cmd
 
 
 # ----------------------------------------------------------------- 网络失败

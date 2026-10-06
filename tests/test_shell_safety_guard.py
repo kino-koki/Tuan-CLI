@@ -199,14 +199,20 @@ def test_redline_covers_trailing_flags():
 
 
 def test_redline_tokens_cover_critical():
-    """红线名单应覆盖 safety 引擎判为 critical 的典型命令 (文件系统/OS 级毁灭操作)。"""
+    """红线名单应覆盖 safety 引擎判为 critical 的典型命令 (文件系统/OS 级毁灭操作)。
+
+    注: `rm -rf build/`(相对路径目标) 已按目标危险度降为 high, 不再属 critical,
+    故不在本名单; 其 token `rm` 仍被 YOLO_REDLINE 覆盖 (见下)。
+    """
     critical_cmds = [
-        "rm -rf build/", "git push --force",
+        "rm -rf /", "git push --force",
         "sudo rm -rf /", "del /s /q tmp",
     ]
     for cmd in critical_cmds:
         lowered = cmd.lower()
         assert any(tok in lowered for tok in YOLO_REDLINE), f"红线未覆盖: {cmd}"
+    # 相对路径 rm -rf: 虽非 critical, 其 rm token 仍应在红线名单中 (走确认而非静默放行)
+    assert any(tok in "rm -rf build/" for tok in YOLO_REDLINE)
 
 
 def test_readonly_blocks_piped_writes():
@@ -734,9 +740,21 @@ def test_destructive_not_benign():
 
 def test_destructive_hard_redline_holds():
     assert is_hard_redline("rm -rf /")
-    assert is_hard_redline("rm -rf ./build")
     assert is_hard_redline("git push --force")
     assert is_hard_redline("dd if=/dev/zero of=/dev/sda")
+
+
+def test_rm_relative_target_not_hard_redline():
+    """清构建产物的相对路径 rm -rf 不是硬红线, 但仍是综合红线 (需确认)。"""
+    for cmd in ("rm -rf ./build", "rm -rf ./dist", "rm -rf node_modules", "rm -rf build/"):
+        assert not is_hard_redline(cmd), f"相对路径目标不应是硬红线: {cmd!r}"
+        assert is_redline(cmd), f"递归强删仍应命中综合红线: {cmd!r}"
+
+
+def test_rm_dangerous_target_is_hard_redline():
+    """灾难级 rm 目标 (根/家目录/系统路径/通配) 必须仍是硬红线。"""
+    for cmd in ("rm -rf /", "rm -rf ~", "rm -rf /etc", "rm -rf /tmp/x", "rm -rf *", "rm -rf .."):
+        assert is_hard_redline(cmd), f"灾难级目标必须是硬红线: {cmd!r}"
 
 
 def test_benign_with_quoted_spaces():
@@ -834,3 +852,92 @@ def test_embedded_exec_benign_hits_do_not_false_positive():
     ]
     for cmd in ok:
         assert is_benign_dev_command(cmd), f"良性命中误判: {cmd!r}"
+
+
+# ================================================================ 执行路径不变量 (旁路回归)
+# 锁定: tools/shell.py 中「真正执行用户命令」的路径都必须先经 _pre_exec_guard。
+# 用 spy 记录调用顺序做结构性断言, 不依赖 safety 引擎是否可用 —— 即便未来有人
+# 新增一条执行路径 (新 Popen / 新后台入口) 而忘记加护栏, 这些测试会失败。
+
+def _make_ctx(tmp_path):
+    kernel = MagicMock()
+    config = MagicMock()
+    config.get = lambda k, d=None: {"tools.shell.timeout": 10}.get(k, d)
+    kernel.get = lambda s: config if s == "config" else None
+    return ToolContext(kernel=kernel, workspace=str(tmp_path), yolo=False)
+
+
+class _FakeProc:
+    returncode = 0
+
+    def communicate(self, timeout=None):
+        return ("ok", "")
+
+
+def test_foreground_exec_calls_guard_before_popen(monkeypatch, tmp_path):
+    """前台路径: _pre_exec_guard 必须先于 subprocess.Popen 调用。"""
+    from qingxiaotuan.tools.shell import run_shell
+
+    events = []
+    monkeypatch.setattr(
+        "qingxiaotuan.tools.shell._pre_exec_guard",
+        lambda ctx, cmd: events.append(("guard", cmd)) or None,
+    )
+    monkeypatch.setattr(
+        "qingxiaotuan.tools.shell.subprocess.Popen",
+        lambda *a, **k: events.append(("popen", a[0] if a else k.get("command"))) or _FakeProc(),
+    )
+
+    run_shell(_make_ctx(tmp_path), "echo hi")
+
+    assert [e[0] for e in events] == ["guard", "popen"], f"执行路径绕过护栏: {events}"
+    assert events[0][1] == "echo hi"
+
+
+def test_background_exec_calls_guard_before_start(monkeypatch, tmp_path):
+    """后台 `! cmd` 路径: _pre_exec_guard 必须先于 run_in_background 调用。"""
+    from qingxiaotuan.tools.shell import run_shell
+
+    class _Job:
+        job_id = "j1"
+        pid = 123
+
+    events = []
+    monkeypatch.setattr(
+        "qingxiaotuan.tools.shell._pre_exec_guard",
+        lambda ctx, cmd: events.append(("guard", cmd)) or None,
+    )
+    monkeypatch.setattr(
+        "qingxiaotuan.tools.shell.run_in_background",
+        lambda *a, **k: events.append(("start", a[0])) or _Job(),
+    )
+
+    res = run_shell(_make_ctx(tmp_path), "! echo hi")
+
+    assert [e[0] for e in events] == ["guard", "start"], f"后台路径绕过护栏: {events}"
+    assert events[0][1] == "echo hi"  # 去掉 `!` 前缀后的真实命令体
+    assert "job=j1" in res
+
+
+def test_guard_block_prevents_any_execution(monkeypatch, tmp_path):
+    """护栏返回拦截原因时: 前台/后台都不得触发任何执行。"""
+    from qingxiaotuan.tools.shell import run_shell
+
+    monkeypatch.setattr(
+        "qingxiaotuan.tools.shell._pre_exec_guard",
+        lambda ctx, cmd: "[已拦截] 测试拦截",
+    )
+    called = []
+    monkeypatch.setattr(
+        "qingxiaotuan.tools.shell.subprocess.Popen",
+        lambda *a, **k: called.append("popen"),
+    )
+    monkeypatch.setattr(
+        "qingxiaotuan.tools.shell.run_in_background",
+        lambda *a, **k: called.append("start"),
+    )
+
+    ctx = _make_ctx(tmp_path)
+    assert run_shell(ctx, "rm -rf /") == "[已拦截] 测试拦截"
+    assert run_shell(ctx, "! rm -rf /") == "[已拦截] 测试拦截"
+    assert called == [], f"拦截后仍发生执行: {called}"

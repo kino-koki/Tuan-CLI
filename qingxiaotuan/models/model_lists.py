@@ -686,6 +686,16 @@ MODEL_LISTS: Dict[str, List[str]] = {
         "sao10k/l31-70b-euryale-v2.2|paid",
         "qwen/qwen-2-7b-instruct|paid",
     ],
+    "qiniu": [
+        "deepseek-v4-pro|paid",
+        "deepseek-v3|paid",
+        "qwen3.7-max|paid",
+        "qwen3.7-plus|paid",
+        "glm-5.2|paid",
+        "moonshot-v1-128k|paid",
+        "doubao-2.0-pro-256k|paid",
+        "minimax-m3|paid",
+    ],
     "siliconflow": [
         "deepseek-ai/DeepSeek-V4-Flash|paid",
         "deepseek-ai/DeepSeek-V4-Pro|paid",
@@ -1215,5 +1225,21 @@ MODEL_LISTS: Dict[str, List[str]] = {
         "nemotron-3-ultra-free|free",
         "nemotron-3.5-lightning-free|free",
         "muse-spark-1.3-contributor-free|free",
+    ],
+    "deepinfra": [
+        "deepseek-ai/DeepSeek-V3|paid",
+        "meta-llama/Llama-3.3-70B-Instruct|paid",
+        "Qwen/Qwen2.5-72B-Instruct|paid",
+        "openai/gpt-oss-20b|paid",
+    ],
+    "nebius": [
+        "meta-llama/Meta-Llama-3.1-70B-Instruct|paid",
+        "openai/gpt-oss-120b|paid",
+        "Qwen/Qwen2.5-72B-Instruct|paid",
+    ],
+    "hyperbolic": [
+        "meta-llama/Llama-3.3-70B-Instruct|paid",
+        "Qwen/Qwen2.5-72B-Instruct|paid",
+        "deepseek-ai/DeepSeek-V3|paid",
     ],
 }

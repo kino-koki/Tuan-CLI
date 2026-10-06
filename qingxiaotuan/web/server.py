@@ -40,49 +40,6 @@ def _serializable(s: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _auth_status_all() -> Dict[str, Any]:
-    """汇总各提供方登录状态 (供 /api/auth/status, 不含原始令牌)。"""
-    try:
-        from ..auth import list_providers, AuthStore
-
-        store = AuthStore()
-        accounts: Dict[str, Any] = {}
-        for p in list_providers():
-            name = p["name"]
-            acc = store.get(name)
-            accounts[name] = {
-                "provider": name,
-                "display_name": p["display_name"],
-                "description": p["description"],
-                "logged_in": bool(acc and acc.get("token")),
-                "login": (acc or {}).get("login", ""),
-                "avatar_url": (acc or {}).get("avatar_url", ""),
-            }
-        return {"accounts": accounts}
-    except Exception:  # noqa: BLE001
-        return {"accounts": {}}
-
-
-def _auth_login_provider(name: str) -> Dict[str, Any]:
-    """执行一次登录 (本地浏览器授权 + 回调), 返回 {ok, provider, login} 或错误。"""
-    from ..auth import AuthError, ProviderNotConfigured, get_provider, list_providers
-
-    if name not in {p["name"] for p in list_providers()}:
-        return {"ok": False, "error": f"未知提供方: {name}"}
-    try:
-        provider = get_provider(name)
-        result = provider.login()
-        return {"ok": True, "provider": result.provider, "login": result.login}
-    except ProviderNotConfigured as exc:
-        return {"ok": False, "error": str(exc)}
-    except AuthError as exc:
-        return {"ok": False, "error": str(exc)}
-    except KeyboardInterrupt:
-        return {"ok": False, "error": "登录已取消"}
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": f"登录失败: {exc}"}
-
-
 class _WebHTTPServer(ThreadingHTTPServer):
     """绑定 WebServer owner, 供 handler 经 self.server.owner 访问配置。"""
 
@@ -159,35 +116,11 @@ class _WebHandler(BaseHTTPRequestHandler):
                              "engine": self._owner.engine_label,
                              "security": self._owner.security_info()})
             return
-        if path == "/api/auth/status":
-            self._json(200, {"ok": True, **_auth_status_all()})
-            return
         self._json(404, {"ok": False, "error": "not found"})
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
-        if path == "/api/auth/login":
-            body = self._read_body()
-            provider_name = (body.get("provider") or "").strip()
-            self._json(200, _auth_login_provider(provider_name))
-            return
-        if path == "/api/auth/logout":
-            body = self._read_body()
-            provider_name = (body.get("provider") or "").strip()
-            try:
-                from ..auth import AuthStore
-
-                store = AuthStore()
-                if provider_name:
-                    ok = store.remove(provider_name)
-                    self._json(200, {"ok": True, "removed": ok, "provider": provider_name})
-                else:
-                    store.clear()
-                    self._json(200, {"ok": True, "removed": True})
-            except Exception as exc:  # noqa: BLE001
-                self._json(400, {"ok": False, "error": str(exc)})
-            return
         if path == "/api/chat":
             self._chat()
             return
