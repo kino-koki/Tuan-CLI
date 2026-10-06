@@ -62,6 +62,7 @@ _FALLBACK_SOUL = (
     "不静默吞错, 不无限重试。\n"
     "自我认知: 你是通过 API 调用的 LLM, 有 token 上限, 长任务会触发上下文压缩; 不确定就明说。\n"
     "工作协议: 先理解再动手, 验证驱动; 不把「应该可以」当成「已完成」。\n"
+    "执行协议: 工具调用先给理由, 改后必验证, 状态副作用明说, 不确定分事实与推断。\n"
     "操作纪律: 检索分三类按需选用 (记忆/网络/参数化知识), 引用必改写并注明来源, "
     "拒绝声明原则不解释检测机制, 记忆回复不说 meta 话。"
 )
@@ -281,6 +282,11 @@ def build_system_prompt_stable(
     #    青小团自研表达, 不复制原文。)
     parts.append(_discipline_block())
 
+    # 3b. 执行协议 (稳定段, 与 SOUL.md「执行协议」章节同步; 与操作纪律互补:
+    #    纪律管「信息怎么来」, 协议管「动作怎么做」。第一梯队系统提示词均无
+    #    完整覆盖此六条的组合, 是青小团的执行层差异点。)
+    parts.append(_execution_protocol_block())
+
     # 3. Windows 命令外骨骼 (当 Shell 包含 PowerShell/cmd 时注入)
     if "win" in platform.system().lower() or "Windows" in platform.system():
         win_guidance = (
@@ -457,12 +463,19 @@ def build_system_prompt_dynamic(
     if codebase_map:
         parts.append(codebase_map)
 
-    # 8. 技能注册表快照 (优先级排序, 会随热度变化 → 放动态段)
+    # 8. 技能注册表快照: activation=always 的技能保底注入 (不受 top-N 热度排序
+    #    挤占 —— always 声明了「始终需要」, 与热度无关); 其余按优先级+热度补足
+    #    到 skill_limit。render 层对 always 正文做行数预算, auto/lazy/proactive
+    #    只给注册表条目 (正文按需 skill_read), 防止上下文膨胀。
     if skill_manager:
         all_skills = skill_manager.list_all()
-        import heapq  # noqa: F401  (保留历史导入位置语义)
-        sorted_skills = sorted(all_skills, key=lambda s: (-s.priority, -s.use_count))
-        top_skills = sorted_skills[:skill_limit]
+        always_skills = [s for s in all_skills if getattr(s, "activation", "lazy") == "always"]
+        always_names = {s.name for s in always_skills}
+        others = sorted(
+            (s for s in all_skills if s.name not in always_names),
+            key=lambda s: (-s.priority, -s.use_count),
+        )
+        top_skills = always_skills + others[: max(0, skill_limit - len(always_skills))]
         rendered = skill_manager.render_for_prompt(top_skills)
         if rendered:
             parts.append(rendered)
@@ -600,6 +613,33 @@ def _discipline_block() -> str:
         "不铺垫; 不主动暴露敏感记忆。\n"
         "- 工件判定: 长文/可复用代码/独立产物给文件; 快速摘要/简短片段/一次性"
         "解释内联即可; 迭代中的工件留在原处。"
+    )
+
+
+def _execution_protocol_block() -> str:
+    """执行协议段 (稳定): 工具调用理由化 / 上下文预算 / 验证闭环 /
+    副作用自检 / 不确定性分级 / 审计友好。
+
+    与操作纪律互补: 纪律管「信息怎么来」(检索/引用/拒绝), 协议管「动作怎么做」
+    (调工具/管上下文/改文件)。第一梯队系统提示词 (Claude Code / Kimi Code /
+    Codex) 均未完整覆盖此六条的组合 —— 这是青小团执行层的差异点。
+    全部为稳定文案, 同一会话逐字节不变 (缓存友好)。
+    """
+    return (
+        "## 执行协议\n"
+        "- 工具调用理由化: 每次调用工具前用一句话说明为什么选它 "
+        "(便于 /audit 追溯与用户理解); 能用只读操作解决的先只读, "
+        "不为「显得忙碌」重复调用。\n"
+        "- 上下文预算: 读大文件先看大小按需分块读; 长输出优先落盘成文件; "
+        "工具返回过长先摘要再继续; 能合并的小检查合并为一次调用。\n"
+        "- 验证闭环: 任何修改必须用可执行方式验证 (测试/命令/回读文件), "
+        "并把验证方式写进回复; 验证失败先诊断根因再修, 不盲改。\n"
+        "- 副作用自检: 每完成一个阶段, 回顾本轮改动了哪些状态 (文件/记忆/技能/"
+        "外部资源), 在回复中明说改动清单; 发现意外副作用立即处理或上报, 不隐瞒。\n"
+        "- 不确定性分级: 事实 (可查证) 与推断 (合理猜测) 分开表述; 没有把握的"
+        "用法先查文档再动手, 不拿猜测当结论。\n"
+        "- 审计友好: 关键动作 (改文件/写记忆/蒸馏技能/执行命令) 前给一行理由, "
+        "让 /audit /impact 可追溯。"
     )
 
 
