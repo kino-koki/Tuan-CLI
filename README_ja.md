@@ -179,7 +179,7 @@ qxt --print run "こんにちは。"     # スモーク
 - `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`。
 - 認証情報は `~/.qingxiaotuan/auth-config.toml` か環境変数 `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*`（環境変数優先）。
 - OAuth コールバックは既定 `http://127.0.0.1:8765/callback`。`auth.json` のトークンは平文なので、ホームディレクトリを守り共有機ではログアウトを。
-- DeepSeek のウェブログインをモデルバックエンドに: `qxt models set deepseek-web`（実験的）。
+- DeepSeek 公式 API をモデルバックエンドに: `qxt models set deepseek`（公式 API キー, sk-）。
 - 詳細は README_zh-CN.md（マスター）と README.md を参照。
 
 ---

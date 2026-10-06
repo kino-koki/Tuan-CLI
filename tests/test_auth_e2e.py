@@ -2,7 +2,7 @@
 """三提供方登录的端到端状态机测试 (不依赖真实网络/浏览器)。
 
 验证「理论上第三方服务器登录验证功能正常」:
-- DeepSeek: 打开 chat.deepseek.com → 粘贴会话令牌 → 写入 AuthStore;
+- DeepSeek: 打开 platform.deepseek.com → 粘贴官方 API Key (sk-) → 写入 AuthStore;
 - GitHub:   授权 URL 生成 (PKCE) → 浏览器授权 → 回调 code → 令牌交换 → 用户查询 → 写入;
 - Apple:    ES256 client_secret 生成 → 浏览器授权 → 回调 code → id_token 解析 → 写入。
 """
@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from qingxiaotuan.auth.apple import AppleSignInProvider, _decode_jwt_payload, _make_client_secret
-from qingxiaotuan.auth.deepseek import DeepSeekWebProvider
+from qingxiaotuan.auth.deepseek import DeepSeekAPIProvider
 from qingxiaotuan.auth.github import GitHubOAuthProvider
 from qingxiaotuan.auth.store import AuthStore
 
@@ -47,53 +47,55 @@ class FakeCallbackServer:
         return self.code
 
 
-# ------------------------------------------------------------- DeepSeek
+# ------------------------------------------------------------- DeepSeek 官方 API
 
 
-def test_deepseek_login_opens_web_and_saves_token(tmp_path, monkeypatch) -> None:
-    """实测链接: login 打开 chat.deepseek.com; 粘贴令牌后写入 AuthStore。"""
+def test_deepseek_login_opens_platform_and_saves_api_key(tmp_path, monkeypatch) -> None:
+    """实测链接: login 打开 platform.deepseek.com; 粘贴 API Key 后写入 AuthStore。"""
     opened = OpenedUrls()
     monkeypatch.setattr("qingxiaotuan.auth.deepseek.webbrowser.open", opened.open)
     store = AuthStore(home=tmp_path)
-    provider = DeepSeekWebProvider(home=tmp_path, store=store)
-    monkeypatch.setattr(provider, "_ask_token", lambda prompt: "ds-web-token-xyz")
+    provider = DeepSeekAPIProvider(home=tmp_path, store=store)
+    monkeypatch.setattr(provider, "_ask_api_key", lambda prompt: "sk-ds-key-xyz")
 
     result = provider.login()
 
-    assert opened.urls == ["https://chat.deepseek.com"]
+    assert opened.urls == ["https://platform.deepseek.com"]
     acc = store.get("deepseek")
     assert acc is not None
-    assert acc["token"] == "ds-web-token-xyz"
-    assert acc["login"] == "deepseek-web"
+    assert acc["token"] == "sk-ds-key-xyz"
+    assert acc["login"] == "deepseek-api"
     assert result.provider == "deepseek"
     # auth.json 落盘可复读
-    assert AuthStore(home=tmp_path).get("deepseek")["token"] == "ds-web-token-xyz"
+    assert AuthStore(home=tmp_path).get("deepseek")["token"] == "sk-ds-key-xyz"
 
 
-def test_deepseek_login_uses_presaved_session_token(tmp_path, monkeypatch) -> None:
-    """TOML 预写 session_token: 免交互直接登录, 不打开浏览器。"""
+def test_deepseek_login_uses_presaved_api_key(tmp_path, monkeypatch) -> None:
+    """TOML 预写 api_key: 免交互直接登录, 不打开浏览器。"""
     opened = OpenedUrls()
     monkeypatch.setattr("qingxiaotuan.auth.deepseek.webbrowser.open", opened.open)
     cfg = tmp_path / "auth-config.toml"
-    cfg.write_text('[deepseek]\nsession_token = "from-toml"\nlogin = "me@deepseek"\n', encoding="utf-8")
+    cfg.write_text('[deepseek]\napi_key = "sk-from-toml"\nlogin = "me@deepseek"\n', encoding="utf-8")
     store = AuthStore(home=tmp_path)
-    provider = DeepSeekWebProvider(home=tmp_path, store=store)
-    monkeypatch.setattr(provider, "_ask_token", lambda prompt: (_ for _ in ()).throw(AssertionError("不应询问")))
+    provider = DeepSeekAPIProvider(home=tmp_path, store=store)
+    monkeypatch.setattr(
+        provider, "_ask_api_key", lambda prompt: (_ for _ in ()).throw(AssertionError("不应询问"))
+    )
 
     result = provider.login()
 
     assert opened.urls == []
-    assert store.get("deepseek")["token"] == "from-toml"
+    assert store.get("deepseek")["token"] == "sk-from-toml"
     assert store.get("deepseek")["login"] == "me@deepseek"
     assert result.login == "me@deepseek"
 
 
 def test_deepseek_login_cancel(tmp_path, monkeypatch) -> None:
-    """不输入令牌: 明确报错, 不写入登录态。"""
+    """不输入 API Key: 明确报错, 不写入登录态。"""
     monkeypatch.setattr("qingxiaotuan.auth.deepseek.webbrowser.open", lambda url: True)
     store = AuthStore(home=tmp_path)
-    provider = DeepSeekWebProvider(home=tmp_path, store=store)
-    monkeypatch.setattr(provider, "_ask_token", lambda prompt: "")
+    provider = DeepSeekAPIProvider(home=tmp_path, store=store)
+    monkeypatch.setattr(provider, "_ask_api_key", lambda prompt: "")
 
     from qingxiaotuan.auth.base import AuthError
 
