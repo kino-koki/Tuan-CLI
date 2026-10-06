@@ -10,7 +10,7 @@
 - nvidia 系 provider 在请求发出前必须剔除 `prompt_cache_key`（见 providers/_openai_base.py 的 strip 逻辑），
   其它 provider 的请求结构不得改变。空值保护：请求体为空/非对象/字段不存在时直接跳过。
 
-本包用 httpx 直连各厂商 REST（不引入官方 SDK），以零新依赖覆盖 51 家 OpenAI 兼容供应商 + Anthropic + Google。
+本包用 httpx 直连各厂商 REST（不引入官方 SDK），以零新依赖覆盖 55 家 OpenAI 兼容供应商 + Anthropic + Google。
 """
 
 from .contract import (

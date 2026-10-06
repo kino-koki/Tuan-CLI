@@ -80,7 +80,7 @@ class UI:
         self._pt_disabled = not _HAS_PT
         self._cwd = os.getcwd()
         self._session_name = "No session yet"
-        self._model = "not set, run /login or /provider"
+        self._model = "not set, run /provider"
         self._version = _PKG_VERSION
         self._context_pct = 0.0
         self._ctx_pct = 0.0

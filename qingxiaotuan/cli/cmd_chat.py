@@ -331,7 +331,7 @@ def cmd_chat(args) -> int:
             handled = _handle_slash(text, agent,
                                     state["config"], workspace)
             tui.set_plan_mode(agent.plan_mode)
-            # 若刚通过 /provider 或 /login 设置密钥, 立即清除"未配置"横幅 (无需重启)
+            # 若刚通过 /provider 设置密钥, 立即清除"未配置"横幅 (无需重启)
             try:
                 tui.set_no_key(not state["config"].api_key(),
                                    env=_no_key_env(state["config"]))
@@ -361,9 +361,39 @@ def cmd_chat(args) -> int:
                     _names = [t.name for t in _reg.tools]
                 except Exception:
                     _names = []
-                tui.set_ready(config, agent, workspace, tools=_names,
-                              no_key=not config.api_key(),
-                              no_key_env=_no_key_env(config), mode=mode)
+
+                def _finish_ready() -> None:
+                    tui.set_ready(config, agent, workspace, tools=_names,
+                                  no_key=not config.api_key(),
+                                  no_key_env=_no_key_env(config), mode=mode)
+
+                # 首次访问新文件夹: Kimi/Claude Code 风格信任确认。
+                # 未知目录挂起确认卡片, 用户 y=信任 / n=只读, 结果写回
+                # workspace_trust.json 并注入 ctx.workspace_trust_level 门禁后继续就绪。
+                try:
+                    from ..config.loader import home_dir
+                    from ..core.workspace_trust import TrustLevel, WorkspaceTrust
+                    _trust = WorkspaceTrust(home_dir())
+                    _level = _trust.check_trust(workspace)
+                    if _level == TrustLevel.UNKNOWN:
+                        def _on_trust(trusted: bool) -> None:
+                            try:
+                                _trust.set_trust(
+                                    workspace,
+                                    TrustLevel.TRUSTED if trusted else TrustLevel.UNTRUSTED,
+                                    project_name=os.path.basename(os.path.normpath(workspace)),
+                                )
+                                setattr(agent.ctx, "workspace_trust_level",
+                                        TrustLevel.TRUSTED if trusted else TrustLevel.UNTRUSTED)
+                            except Exception:  # noqa: BLE001
+                                pass
+                            _finish_ready()
+                        tui.prompt_trust(workspace, on_confirm=_on_trust)
+                        return
+                    setattr(agent.ctx, "workspace_trust_level", _level)
+                except Exception:  # noqa: BLE001
+                    pass
+                _finish_ready()
             except Exception as exc:
                 import traceback as _tb
                 _tb.print_exc()

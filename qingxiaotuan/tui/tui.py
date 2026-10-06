@@ -26,7 +26,7 @@ try:
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import (ConditionalContainer, Dimension, HSplit,
                                         Layout, VSplit, Window)
-    from prompt_toolkit.filters import to_filter
+    from prompt_toolkit.filters import to_filter, Condition
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.data_structures import Point
     from prompt_toolkit.styles import Style
@@ -58,7 +58,7 @@ _ERROR = "#E85454"
 _ROLEUSER = "#FFCB6B"
 _SHELL = "#BD93F9"
 
-VERSION = "v0.2.018"      # 与 pyproject.toml 保持一致的真实版本
+VERSION = "v0.3.0"          # 与 pyproject.toml 保持一致的真实版本
 
 # 加载屏转圈帧
 _SPLASH_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -221,6 +221,9 @@ class QxtTUI:
         self._boot_status = t("tui.boot_starting")
         self._boot_error: Optional[str] = None
         self._agent: Any = None
+        # 启动信任确认 (Kimi/Claude Code 风格): 首次访问未知目录时挂起等待
+        # 用户输入 y/n, 确认结果通过 on_confirm 回调写回 workspace_trust.json。
+        self._trust_pending: Optional[Dict[str, Any]] = None
         self._frame = 0
         self._moon_frame = 0
 
@@ -316,15 +319,23 @@ class QxtTUI:
             ]),
             filter=to_filter(self._audit_visible),
         )
+        # 就绪前 (booting / 启动失败) 隐藏输入框与底栏: 加载屏只显示盒子+进度条,
+        # 避免"输入框空悬 + 底栏信息残缺"的杂乱观感 (启动失败时也隐藏, 只留错误提示)。
+        _ready = Condition(lambda: not self._booting and not self._boot_error)
+        bottom = ConditionalContainer(
+            HSplit([
+                input_frame,
+                # 底部状态栏: 一行塞满所有信息
+                Window(self._footer_control, height=1),
+            ]),
+            filter=_ready,
+        )
         layout = Layout(
             HSplit([
                 conversation,
                 # 审计面板: 仅当展开时占空间
                 audit_wrap,
-                # 输入框: 细边框, 单行高度
-                input_frame,
-                # 底部状态栏: 一行塞满所有信息
-                Window(self._footer_control, height=1),
+                bottom,
             ])
         )
 
@@ -495,18 +506,18 @@ class QxtTUI:
 
     def _render_audit(self):
         """审计面板内容: 顶部标题 + 思考全文 + 审计日志 (kimi 折叠思考)。"""
-        line: List[Tuple[str, str]] = [("class:primary", t("tui.audit_title"))]
+        line: List[Tuple[str, str]] = [("class:primary", "  " + t("tui.audit_title"))]
         if not self._audit_visible:
             return line
-        line.append(("class:textdim", "  Ctrl+O 收起"))
+        line.append(("class:textdim", "   Ctrl+O 收起"))
         out: List[List[Tuple[str, str]]] = [line]
         # 进行中的思考 (实时)
         if self._reason_full:
-            out.append([("class:textdim", self._reason_full)])
+            out.append([("class:textdim", "  " + self._reason_full)])
         for cls, text in self._audit_log[-40:]:
-            out.append([(cls, text)])
+            out.append([(cls, "  " + text)])
         if len(out) == 1:
-            out.append([("class:textdim", t("tui.audit_empty"))])
+            out.append([("class:textdim", "  " + t("tui.audit_empty"))])
         flat: List[Tuple[str, str]] = []
         for i, r in enumerate(out):
             for cls, seg in r:
@@ -538,6 +549,12 @@ class QxtTUI:
     def _handle_enter(self, event) -> None:
         text = self._input.text.strip()
         if not text:
+            return
+        # 信任确认态: 输入框只接受 y/n, 确认后回调继续就绪流程
+        if self._trust_pending:
+            self._resolve_trust(text)
+            self._input.buffer.reset()
+            event.app.invalidate()
             return
         if self._booting or self._boot_error:
             self.append_log(t("tui.booting_wait"))
@@ -576,6 +593,33 @@ class QxtTUI:
             target=self._run_submit, args=(text,),
             name="qxt-submit", daemon=True,
         ).start()
+
+    def _resolve_trust(self, text: str) -> None:
+        """解析信任确认输入: y/Y/yes → 信任 (trusted); n/N/no → 只读 (untrusted)。
+
+        结果通过 on_confirm 回调写回 workspace_trust.json, 随后由 cmd_chat._boot
+        的回调里调用 set_ready 完成就绪切换 (确认期间对话输入被挂起)。
+        """
+        pending = self._trust_pending or {}
+        cb = pending.get("on_confirm")
+        choice = text.strip().lower()
+        if choice in ("y", "yes", "1", "是", "信任", "trust"):
+            trusted = True
+            self.append_log(f"{SUCCESS_MARK} {t('tui.trust_ok')} {pending.get('workspace', '')}",
+                            cls="class:success")
+        elif choice in ("n", "no", "2", "否", "只读", "readonly"):
+            trusted = False
+            self.append_log(f"{FAILURE_MARK} {t('tui.trust_no')} {pending.get('workspace', '')}",
+                            cls="class:warning")
+        else:
+            self.append_log(t("tui.trust_invalid"), cls="class:textdim")
+            return
+        self._trust_pending = None
+        if callable(cb):
+            try:
+                cb(trusted)
+            except Exception as exc:  # noqa: BLE001
+                self.append_log(f"[信任确认回调] {type(exc).__name__}: {exc}", cls="class:error")
 
     # ============================================================ 启动引导 (加载屏)
 
@@ -705,18 +749,34 @@ class QxtTUI:
             seg.append(("class:primary", "│"))
             head.append(seg)
 
-        # 信息行: 标签(蓝次级) + 值(浅色)
+        # 信息行: 标签列右对齐 (标签宽按实际显示宽度计算, 值从统一列开始) + 值(浅色)
         info_rows: List[List[Tuple[str, str]]] = []
-        for label, value in info_pairs:
-            seg = []
-            seg.append(("class:primary", "│"))
-            seg.append(("", pad))
-            seg.append(("class:boxsub", label))
-            seg.append(("class:text", value))
-            rp = max(0, info_w - _disp_width(label) - _disp_width(value))
-            seg.append(("", " " * rp))
-            seg.append(("class:primary", "│"))
-            info_rows.append(seg)
+        if info_pairs:
+            max_lw = max(_disp_width(label) for label, _ in info_pairs)
+
+            def _clip_value(v: str, n: int) -> str:
+                """值超宽时按显示宽度截断, 末尾补省略号, 防止挤掉右边框。"""
+                if _disp_width(v) <= n:
+                    return v
+                res = ""
+                for ch in v:
+                    if _disp_width(res) + _disp_width(ch) > n - 1:
+                        break
+                    res += ch
+                return res + "…"
+
+            for label, value in info_pairs:
+                v = _clip_value(value, max(1, info_w - max_lw - 2))
+                seg = []
+                seg.append(("class:primary", "│"))
+                seg.append(("", pad))
+                seg.append(("class:boxsub", label + " " * (max_lw - _disp_width(label))))
+                seg.append(("class:text", ": "))
+                seg.append(("class:text", v))
+                rp = max(0, info_w - max_lw - 2 - _disp_width(v))
+                seg.append(("", " " * rp))
+                seg.append(("class:primary", "│"))
+                info_rows.append(seg)
 
         blank = [("class:primary", "│" + " " * (width - 2) + "│")]
         rows: List[List[Tuple[str, str]]] = [
@@ -730,12 +790,20 @@ class QxtTUI:
 
     def _render_boot(self) -> List[Tuple[str, str]]:
         frame = _SPLASH_FRAMES[self._frame % len(_SPLASH_FRAMES)]
-        out: List[Tuple[str, str]] = []
+        width = self._box_width()
+        # boot 期输入框/底栏隐藏, 对话区即全屏: 欢迎盒贴顶, 不做垂直居中,
+        # 状态/进度条/退出提示水平居中跟随在盒子下方 (视觉整齐不悬空)。
+        def _center(text: str) -> str:
+            """水平居中: 返回该行文本前应补的空格数。"""
+            return " " * max(0, (width - _disp_width(text)) // 2)
+
         box_rows = self._kimi_box(
             title=t("tui.welcome_title"),
             subtitle=t("tui.welcome_subtitle"),
             info_pairs=[],
         )
+
+        out: List[Tuple[str, str]] = []
         for i, row in enumerate(box_rows):
             for cls, seg in row:
                 out.append((cls, seg))
@@ -743,18 +811,24 @@ class QxtTUI:
                 out.append(("", "\n"))
         out.append(("", "\n"))
         if self._boot_error:
-            out.append(("class:error", f"  ✗ {self._boot_error}\n"))
-            out.append(("class:textdim", f"  {t('tui.exit_ctrl_c')}\n"))
+            err_line = f"✗ {self._boot_error}"
+            out.append(("class:error", _center(err_line) + err_line + "\n"))
+            hint = t("tui.exit_ctrl_c")
+            out.append(("class:textdim", _center(hint) + hint + "\n"))
         elif self._boot_progress >= 100:
-            out.append(("class:success", f"  {SUCCESS_MARK} {t('fs.ready')}\n"))
+            ok = f"{SUCCESS_MARK} {t('fs.ready')}"
+            out.append(("class:success", _center(ok) + ok + "\n"))
         else:
-            out.append(("class:text", f"  {frame} {self._boot_status}\n"))
+            status = f"{frame} {self._boot_status}"
+            out.append(("class:text", _center(status) + status + "\n"))
         bar_len = 30
         filled = int(self._boot_progress / 100 * bar_len)
         bar = "█" * filled + "░" * (bar_len - filled)
-        out.append(("class:dim", f"  [{bar}] {self._boot_progress}%\n"))
+        pct = f"[{bar}] {self._boot_progress}%"
+        out.append(("class:dim", _center(pct) + pct + "\n"))
         out.append(("", "\n"))
-        out.append(("class:dim", f"  {t('tui.exit_ctrl_c')}\n"))
+        hint = t("tui.exit_ctrl_c")
+        out.append(("class:dim", _center(hint) + hint + "\n"))
         return out
 
     # ============================================================ 流式 / 工具
@@ -1071,6 +1145,7 @@ class QxtTUI:
     def _msg_to_lines(self, role: str, text: str) -> List[List[Tuple[str, str]]]:
         # 用户消息: 整块暖金底 (气泡感) + 金色正文; log: 弱化前缀 + 常规正文。
         # 事件可能已带 bullet 前缀 (写入时角色标记), 渲染时防重复叠加 (修复双 ✨)。
+        # 统一左缩进 2 格: 与欢迎盒内边距同列, 消息不再顶格贴边。
         if role == "user":
             bullet = USER_MESSAGE_BULLET
             userbg = "class:roleuser bg:#2b2416"
@@ -1084,14 +1159,15 @@ class QxtTUI:
         out: List[List[Tuple[str, str]]] = []
         for i, ln in enumerate(lines):
             if i == 0:
-                seg: List[Tuple[str, str]] = []
+                seg: List[Tuple[str, str]] = [("", "  ")]
                 if bullet and not ln.startswith(bullet):
                     seg.append((bcls, bullet))
                 if ln:
                     seg.append((ccls, ln))
                 out.append(seg)
             else:
-                out.append([(cont, "  " + ln)])
+                # 续行与首行正文同列 (2 缩进 + 2 对齐 bullet 后)
+                out.append([(cont, "    " + ln)])
         return out
 
     def _colored_lines(self, cls: str, text: str) -> List[List[Tuple[str, str]]]:
@@ -1106,6 +1182,13 @@ class QxtTUI:
         - 工具完成记录默认折叠为一行 "see N tool calls", Ctrl+O 展开逐条;
         - 返回的 list 每项是一行 (list[ (cls,text) ])。
         """
+        if self._trust_pending:
+            paste = self._render_trust_confirm()
+            if logic_only:
+                return [[seg for seg in line] for line in _split_flat_lines(paste)]
+            self._cursor_line = 0
+            return _split_flat_lines(paste)
+
         if self._booting or self._boot_error:
             paste = self._render_boot()
             if logic_only:
@@ -1126,29 +1209,32 @@ class QxtTUI:
                 role = "user" if ev.startswith(USER_MESSAGE_BULLET) else "log"
                 screen.extend(self._msg_to_lines(role, ev))
 
-        # 本轮工具调用: 折叠成一行摘要 (see N), 展开时逐条; 始终镜像进审计面板
+        # 本轮工具调用: 折叠成一行摘要 (see N), 展开时逐条; 始终镜像进审计面板。
+        # 折叠行前补空行, 与上方消息块形成段落分隔 (与 str 事件的空行规则一致)。
         if self._turn_tool_lines:
+            if screen and screen[-1]:
+                screen.append([])
             if self._tool_detail:
                 for ln in self._turn_tool_lines:
-                    screen.append([("class:textdim", ln)])
+                    screen.append([("class:textdim", "  " + ln)])
             else:
                 n = len(self._turn_tool_lines)
-                screen.append([("class:primary", f"▸ see {n} tool calls (Ctrl+O)")])
+                screen.append([("class:primary", "  " + t("tui.tool_fold", n=n))])
 
         # 流式
         if self._streaming and self._stream_buf:
-            screen.append([("class:text", STATUS_BULLET + self._stream_buf)])
+            screen.append([("class:text", "  " + STATUS_BULLET + self._stream_buf)])
         elif self._busy and not self._running and not self._streaming and not self._moon_suppressed:
             moon = _MOON_FRAMES[self._moon_frame % len(_MOON_FRAMES)]
-            screen.append([("class:primary", f"{moon} {t('tui.thinking')}")])
+            screen.append([("class:primary", "  " + f"{moon} {t('tui.thinking')}")])
         # 在途工具
         for name in self._running:
             elapsed = self._tool_start_times.get(name)
             elapsed_str = f" ({time.monotonic() - elapsed:.1f}s)" if elapsed else ""
-            screen.append([("class:textdim", t("tui.tool_run", name=name, time=elapsed_str))])
+            screen.append([("class:textdim", "  " + t("tui.tool_run", name=name, time=elapsed_str))])
 
         if not screen:
-            screen.append([("class:textdim", t("tui.ready_empty"))])
+            screen.append([("class:textdim", "  " + t("tui.ready_empty"))])
 
         if not logic_only:
             # 滚动定位: follow -> 钉在最后一行 (Window 自动滚到底); 否则钉在 _pin
@@ -1177,6 +1263,9 @@ class QxtTUI:
     def _render_header(self):
         """顶部状态 HUD: 实时状态(启动转圈/思考月亮/就绪勾) + 模式 + 模型。"""
         parts: List[Tuple[str, str]] = []
+        if self._trust_pending:
+            parts.append(("class:warning", f"? {t('tui.trust_title')}"))
+            return parts
         if self._booting:
             frame = _SPLASH_FRAMES[self._frame % len(_SPLASH_FRAMES)]
             parts.append(("class:primary", f"{frame} {t('tui.boot_starting')}"))
@@ -1192,13 +1281,22 @@ class QxtTUI:
         return parts
 
     def _render_footer(self):
-        """单行底部状态栏: 模式 + 模型 + 状态 + 目录 + git + context。
+        """单行底部状态栏: 左段(模式/模型/状态/目录/git) + 右段(context), 真右对齐。
 
-        格式: standard/yolo/plan  model thinking  /path/to/wd  main [±]    context: 5% (3.0k/60.0k)
+        右侧 context 通过剩余宽度填充空格推到右边界; 内容总宽超出终端宽度时,
+        按优先级丢弃低价值片段 (cmd_hint → git → 目录), 保证 context 永远可见,
+        避免以前"一行塞满后 context 被挤出屏幕"的截断乱象。
         """
-        parts: List[Tuple[str, str]] = []
+        width = self._box_width()
 
-        # 模式徽标 (standard / yolo / plan)
+        # ---- 信任确认期: 底栏只显示确认提示 (不展示模型/状态/目录) ----
+        if self._trust_pending:
+            prompt = t("tui.trust_footer")
+            return [("class:warning", " " + prompt),
+                    ("", " " * max(0, width - 1 - _disp_width(prompt))),
+                    ("class:textdim", "")]
+
+        # ---- 左段: 模式徽标 + 命令提示 (可裁) ----
         mode_label = self._mode or "standard"
         if mode_label == "yolo":
             mode_cls = "class:error"
@@ -1206,13 +1304,11 @@ class QxtTUI:
             mode_cls = "class:primary"
         else:
             mode_cls = "class:warning"
-        parts.append((mode_cls, mode_label))
-
-        # Kimi 同款命令行提示: 仅当启用了命令补全且空闲时展示, 保持简短
+        left: List[Tuple[str, str]] = [(mode_cls, f" {mode_label}")]
         if self._commands and not self._busy and not self._streaming:
-            parts.append(("class:textdim", f"  {t('tui.cmd_hint')}"))
+            left.append(("class:textdim", f" {t('tui.cmd_hint')}"))
 
-        # 模型名 + 状态 (未配 key / thinking / ready / running tool)
+        # ---- 左段: 模型 + 状态 ----
         model = self._model_label or "default"
         if self._no_key and not self._booting:
             status = t("tui.no_key_hint", env=self._no_key_env or "API Key")
@@ -1230,26 +1326,39 @@ class QxtTUI:
         else:
             status = t("fs.ready")
             status_cls = "class:success"
-        parts.append(("class:text", f"  {model} "))
-        parts.append((status_cls, status))
+        left.append(("class:text", f" {model}"))
+        left.append((status_cls, f" {status}"))
 
-        # 工作目录
+        # ---- 左段尾部: 目录 + git 分支 (可裁) ----
         cwd = os.path.basename(os.path.normpath(self.workspace)) or self.workspace
-        parts.append(("class:textdim", f"  {cwd}"))
-
-        # git 分支 (探测)
         git_branch = self._git_branch()
+        tail: List[Tuple[str, str]] = []
         if git_branch:
-            parts.append(("class:textdim", f"  {git_branch}"))
+            tail.append(("class:textdim", f" {cwd} {git_branch}"))
+        else:
+            tail.append(("class:textdim", f" {cwd}"))
 
-        # 右侧: context 占用
+        # ---- 右段: context (不可裁) ----
         ctx_str = self._context_string()
-        # 用空格推到右边: 估算剩余宽度, 用空格填充
-        # 简化: 直接放后面, 前面加足够空格让它靠右
-        parts.append(("class:textdim", "    "))
-        parts.append(("class:textdim", ctx_str))
 
-        return parts
+        def _w(parts: List[Tuple[str, str]]) -> int:
+            return sum(_disp_width(s) for _, s in parts)
+
+        def _left_text() -> str:
+            return "".join(s for _, s in left + tail)
+
+        # 计算能塞下右段时左段的最大可用宽度 (留 1 列余量)
+        avail = max(0, width - 1 - _disp_width(ctx_str) - 1)
+        # 左段 + 尾部 超宽时, 从尾部开始裁: git → 目录 → cmd_hint → 模型 → 状态
+        while _w(left + tail) > avail and tail:
+            tail.pop()
+        while _w(left + tail) > avail and len(left) > 2:
+            left.pop(1)  # 裁掉 cmd_hint / 模型, 保留模式徽标 + 状态
+        while _w(left + tail) > avail and len(left) > 1:
+            left.pop(0)  # 极端窄屏: 仅保留状态
+        # 左段内联文本
+        left_pad = max(0, avail - _w(left + tail))
+        return left + tail + [("", " " * left_pad), ("class:textdim", ctx_str)]
 
     def _git_branch(self) -> str:
         """探测当前 git 分支 (带缓存, 避免每行渲染都调 git)。"""
@@ -1281,21 +1390,85 @@ class QxtTUI:
         self._git_branch_ts = now
         return self._git_branch_cache or ""
 
-    def _account_status_line(self) -> str:
-        """欢迎盒账户行: 当前登录状态 + 四登录选项提示 (离线/GitHub/Apple/DeepSeek)。"""
-        try:
-            from ..auth import AuthStore, list_providers
+    def prompt_trust(self, workspace: str, project_name: str = "",
+                     on_confirm: Optional[Callable[[bool], None]] = None) -> None:
+        """首次访问未知目录: 显示 Kimi/Claude Code 风格信任确认卡片, 等待用户输入 y/n。
 
-            store = AuthStore()
-            logged = [
-                p["display_name"]
-                for p in list_providers()
-                if (store.get(p["name"]) or {}).get("token")
-            ]
-            state = "、".join(logged) if logged else "离线"
-        except Exception:
-            state = "离线"
-        return f"{state} · /account: 离线/GitHub/Apple/DeepSeek"
+        确认后通过 on_confirm(trusted) 回调写回 workspace_trust.json 并继续就绪流程;
+        在此之前 set_ready 不会被调用 (由 cmd_chat._boot 在回调里完成)。
+        """
+        self._trust_pending = {
+            "workspace": workspace,
+            "project_name": project_name,
+            "on_confirm": on_confirm,
+        }
+        self._booting = False       # 退出加载态, 显示确认卡片 + 输入框
+        self._boot_error = None
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def _render_trust_confirm(self) -> List[Tuple[str, str]]:
+        """Kimi/Claude Code 风格信任确认卡片 (全宽盒子, 复用欢迎盒排版)。"""
+        pending = self._trust_pending or {}
+        ws = str(pending.get("workspace", ""))
+        width = self._box_width()
+        inner = max(1, width - 2)   # 边框内侧显示列数
+        pad = "  "
+
+        def clip_dw(s: str, n: int) -> str:
+            """按显示宽度截断到 ≤ n, 末尾补省略号 (省略号占 1 列, 不超上限)。"""
+            if _disp_width(s) <= n:
+                return s
+            res = ""
+            for ch in s:
+                if _disp_width(res) + _disp_width(ch) > n - 1:  # 留 1 列给 "…"
+                    break
+                res += ch
+            return res + "…"
+
+        def row(segs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+            """把一段 (cls, text) 拼成带左右边框的一行, 右侧对齐竖线。
+
+            内容总宽超过 inner-2 时从最后一段按显示宽度截断 (补省略号),
+            防止窄屏下长标题/说明/选项行撑破右边框。
+            """
+            body_w = sum(_disp_width(s) for _, s in segs)
+            if body_w > inner - 2:
+                avail = inner - 2
+                clipped: List[Tuple[str, str]] = []
+                for cls, s in segs:
+                    w = _disp_width(s)
+                    if w <= avail:
+                        clipped.append((cls, s))
+                        avail -= w
+                    else:
+                        clipped.append((cls, clip_dw(s, avail)))
+                        avail = 0
+                        break
+                segs = clipped
+                body_w = sum(_disp_width(s) for _, s in segs)
+            line: List[Tuple[str, str]] = [("class:primary", "│")]
+            line.append(("", pad))
+            line.extend(segs)
+            line.append(("", " " * max(0, inner - 2 - body_w)))
+            line.append(("class:primary", "│"))
+            return line
+
+        out: List[Tuple[str, str]] = [("class:primary", "╭" + "─" * (width - 2) + "╮\n")]
+        out += row([("class:warning", t("tui.trust_title"))])
+        out.append(("", "\n"))
+        out += row([("class:boxsub", t("tui.trust_folder") + ": "),
+                    ("class:text", clip_dw(ws, max(1, inner - 4 - _disp_width(t("tui.trust_folder") + ": "))))])
+        out.append(("", "\n"))
+        for ln in t("tui.trust_desc").split("\n"):
+            out += row([("class:textdim", ln)])
+            out.append(("", "\n"))
+        out += row([("class:success", t("tui.trust_opt"))])
+        out.append(("", "\n"))
+        out.append(("class:primary", "╰" + "─" * (width - 2) + "╯\n"))
+        out.append(("", "\n"))
+        out.append(("class:textdim", "  " + clip_dw(t("tui.trust_prompt"), max(1, inner - 2)) + "\n"))
+        return out
 
     def _show_welcome(self) -> None:
         """就绪后展示欢迎盒 (吉祥物/模型/项目目录/账户)。
@@ -1307,11 +1480,10 @@ class QxtTUI:
         session = getattr(self, "_session_id", "") or "new-session"
         model = self._model_label or "default"
         info_pairs = [
-            (f"{t('banner.directory')}: ", cwd),
-            (f"{t('banner.session')}:   ", session),
-            (f"{t('banner.model')}:     ", model),
-            (f"{t('banner.account')}:    ", self._account_status_line()),
-            (f"{t('banner.version')}:   ", VERSION),
+            (t("banner.directory"), cwd),
+            (t("banner.session"), session),
+            (t("banner.model"), model),
+            (t("banner.version"), VERSION),
         ]
         for row in self._kimi_box(
             title=t("tui.welcome_title"),

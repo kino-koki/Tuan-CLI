@@ -4,7 +4,7 @@
     qxt upgrade              检查 PyPI 并升级到最新版 (交互确认)
     qxt upgrade --check      仅检查是否有新版本, 不安装
     qxt upgrade --yes        跳过确认直接更新
-    qxt upgrade --version 0.2.018   安装指定版本
+    qxt upgrade --version 0.3.0      安装指定版本
 
 网络失败时优雅降级, 提示手动更新命令。
 """

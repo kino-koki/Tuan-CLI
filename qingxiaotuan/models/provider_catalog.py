@@ -1,4 +1,4 @@
-"""LLM API 平台目录 —— 51 家开箱即用的供应商预设。
+"""LLM API 平台目录 —— 55 家开箱即用的供应商预设。
 
 每个预设包含:
 - base_url: OpenAI 兼容端点 (或 Anthropic 原生端点)
@@ -9,13 +9,13 @@
 - free_tier: 是否有免费额度
 - region: 地区 (cn=中国, global=全球)
 
-分类:
-  A. 中国主流 (14 家)
-  B. 国际主流 (12 家)
-  C. 聚合网关 (6 家)
-  D. 云平台 (6 家)
-  E. 免费/低门槛 (6 家)
-  F. 自托管/本地 (4 家)
+分类 (共 55 家):
+  A. 中国主流 (13 家)
+  B. 国际主流 (19 家)
+  C. 聚合网关 (8 家)
+  D. 云平台 (8 家)
+  E. 免费/低门槛 (2 家)
+  F. 自托管/本地 (5 家)
 """
 
 from __future__ import annotations
@@ -393,6 +393,17 @@ _C_AGGREGATORS: List[ProviderPreset] = [
         recommended_models=["gpt-4o-mini", "gpt-4o", "meta-llama-3.1-8b-instruct", "mistral-large-latest"],
         docs_url="https://docs.github.com/en/github-models",
     ),
+    ProviderPreset(
+        name="qiniu",
+        base_url="https://api.qnaigc.com/v1",
+        model="deepseek-v3",
+        api_key_env="QINIU_API_KEY",
+        desc="七牛云 AI (聚合 160+ 模型, 同时兼容 OpenAI / Anthropic 两套接口, 新用户送免费额度)",
+        tier=1, free_tier=True, region="cn", category="聚合网关",
+        recommended_models=["deepseek-v3", "qwen-plus", "glm-4-plus", "moonshot-v1-128k"],
+        docs_url="https://developer.qiniu.com/aitokenapi",
+        key_hint="七牛云控制台 -> AI 推理服务 -> API Key",
+    ),
 ]
 
 # =====================================================================
@@ -483,7 +494,7 @@ _E_FREE_TIER: List[ProviderPreset] = [
 ]
 
 # =====================================================================
-# G. 补充供应商 (8 家, 确保去重后总计 51 家唯一供应商)
+# G. 补充供应商 (确保去重后总计 55 家唯一供应商)
 # =====================================================================
 
 _G_EXTRA: List[ProviderPreset] = [
@@ -566,6 +577,36 @@ _G_EXTRA: List[ProviderPreset] = [
         tier=2, free_tier=True, region="global", category="聚合网关",
         recommended_models=["aimon-7b"],
         docs_url="https://docs.aimon.ai",
+    ),
+    ProviderPreset(
+        name="deepinfra",
+        base_url="https://api.deepinfra.com/v1/openai",
+        model="deepseek-ai/DeepSeek-V3",
+        api_key_env="DEEPINFRA_API_KEY",
+        desc="DeepInfra (OpenAI SDK 直连替换, 开源模型按量计费推理)",
+        tier=2, free_tier=False, region="global", category="国际主流",
+        recommended_models=["deepseek-ai/DeepSeek-V3", "meta-llama/Llama-3.3-70B-Instruct"],
+        docs_url="https://docs.deepinfra.com/",
+    ),
+    ProviderPreset(
+        name="nebius",
+        base_url="https://api.studio.nebius.com/v1",
+        model="meta-llama/Meta-Llama-3.1-70B-Instruct",
+        api_key_env="NEBIUS_API_KEY",
+        desc="Nebius AI Studio (OpenAI 兼容, 企业级开源模型推理平台)",
+        tier=2, free_tier=False, region="global", category="云平台",
+        recommended_models=["meta-llama/Meta-Llama-3.1-70B-Instruct", "openai/gpt-oss-120b"],
+        docs_url="https://docs.nebius.com/studio/inference/",
+    ),
+    ProviderPreset(
+        name="hyperbolic",
+        base_url="https://api.hyperbolic.xyz/v1",
+        model="meta-llama/Llama-3.3-70B-Instruct",
+        api_key_env="HYPERBOLIC_API_KEY",
+        desc="Hyperbolic (OpenAI 兼容, 分布式 GPU 开源模型推理)",
+        tier=2, free_tier=False, region="global", category="国际主流",
+        recommended_models=["meta-llama/Llama-3.3-70B-Instruct", "Qwen/Qwen2.5-72B-Instruct"],
+        docs_url="https://docs.hyperbolic.ai/inference/overview",
     ),
 ]
 

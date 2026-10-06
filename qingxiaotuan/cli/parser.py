@@ -15,7 +15,7 @@
     qxt agent "任务"          后台自主任务 (终端不阻塞)
     qxt setup                 初始化向导 (API Key 等)
     qxt doctor [--compact]    环境健康检查 (--compact 额外跑上下文压缩存活自检)
-    qxt models                配置/热切换模型供应商 (52 家开箱即用, 含本地 Ollama/llama.cpp)
+    qxt models                配置/热切换模型供应商 (55 家开箱即用, 含本地 Ollama/llama.cpp)
     qxt config get/set/dump   配置管理 (含 mode: qxt config get mode / qxt config set mode yolo)
     qxt plugin list           查看微内核插件与服务
     qxt skill list/show       技能管理

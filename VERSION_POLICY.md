@@ -9,66 +9,33 @@
 
 ## English
 
-### Core Principle: Small Steps, No Skip-Grading
+### Core Principle: Semantic Versioning
 
-**Version numbers are not medals — they are iteration records.**
+Tuan-CLI follows [SemVer](https://semver.org/). The project is currently in its **`0.x` line — the public API is not yet frozen**. Version numbers communicate interface stability, not effort or pride:
 
-We reject the following behaviors:
-- ❌ Jumping from 0.2.01 to 0.3.0 after fixing one major bug
-- ❌ Jumping from 0.2.01 to 1.0.0 after adding one new module
-- ❌ Bumping versions just to "look impressive"
+- Breaking changes within `0.x` bump **MINOR** (e.g. `0.3.0` → `0.4.0`) and MUST be announced with migration hints
+- New backward-compatible features bump **MINOR** (e.g. `0.3.0` → `0.4.0`)
+- Bug fixes / docs / internal refactors bump **PATCH** (e.g. `0.3.0` → `0.3.1`)
 
-We insist on the following:
-- ✅ Each iteration makes incremental changes, max version bump is +0.0.001
-- ✅ No matter how impressive a module/feature is, version only increments slightly
-- ✅ Small steps, fast iteration, continuous delivery
+The previous "small-steps / annual-lock" policy (max bump +0.0.001, no jump to 0.3 before Chinese New Year 2027) is **abolished**. Version bumps are decided by the SemVer nature of the change — not by the calendar, not by how impressive the work looks.
 
-### Annual Version Locking Rules
+### Version Bump Rules
 
-**One major version per year, no early jumps.**
+| Level | When | Example |
+|-------|------|---------|
+| **MAJOR** | Breaking changes — **only after the API freeze** (from `1.0` on) | `1.0` → `2.0` |
+| **MINOR** | New features; also breaking adjustments while in `0.x` | `0.3.0` → `0.4.0` |
+| **PATCH** | Bug fixes, docs, internal refactors, security patches without behavior change | `0.3.0` → `0.3.1` |
 
-| Year | Major Series | Allowed Range |
-|------|-------------|---------------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
-
-**Hard constraints:**
-- Before Chinese New Year 2027 (~Feb 6, 2027), **no one** may jump to 0.3 or above.
-- Each year's major version unlocks only after **Jan 1 of the next year**.
-
-### Version Increment Rules
-
-**Allowed Increments:**
-- Current version: `0.2.014`
-- Increment unit: `0.0.001`
-- I.e.: `0.2.014` → `0.2.015` → `0.2.016` → ... → `0.2.999`
-
-**Allowed Scenarios:**
-1. **Bug fixes** (regardless of severity)
-2. **Small features** (no core architecture impact)
-3. **Documentation updates** (README, comments, examples)
-4. **Dependency upgrades** (patch-level)
-5. **Security patches** (even critical ones — only +0.0.001)
-6. **Performance optimizations** (no API changes)
-7. **Test additions** (no behavior changes)
-
-**Forbidden Scenarios:**
-1. Adding a new engine/module → only +0.0.001 allowed
-2. Refactoring core architecture → only +0.0.001 allowed
-3. Fixing critical security vulnerabilities → only +0.0.001 allowed
-4. Introducing a whole new subsystem → only +0.0.001 allowed
-5. 10x performance improvement → only +0.0.001 allowed
-6. Any "I think we should bump the major version" thought → REJECTED
+Breaking changes MUST be announced in advance with migration hints; the version number itself is the signal (a MINOR bump while in `0.x`, a MAJOR bump only past `1.0`). Releases pass the full test suite and the CHANGELOG gate before publishing.
 
 ### PR/Commit Checklist
 
 Each PR must confirm before submission:
-- [ ] Version in pyproject.toml updated (only +0.0.001)
-- [ ] Version in package.json synced
-- [ ] CHANGELOG.md records this change
-- [ ] Version does not cross annual major boundary
-- [ ] Current year's major series not breached
+- [ ] Version in `pyproject.toml` and `qingxiaotuan/__init__.py` are identical
+- [ ] CHANGELOG.md top entry matches the current version
+- [ ] Version is not lower than the previous release (no downgrade)
+- [ ] Version bump level matches the SemVer nature of the change
 
 **Any PR violating the above will be closed immediately without review.**
 
@@ -76,67 +43,33 @@ Each PR must confirm before submission:
 
 ## 简体中文
 
-### 核心原则：小步快跑，拒绝跳号
+### 核心原则：语义化版本
 
-**版本号不是勋章，是迭代记录。**
+青小团遵循 [SemVer](https://semver.org/)。当前处于 **`0.x` 阶段——公共 API 尚未冻结**。版本号表达的是接口稳定度，不是工作量，也不是“面子”：
 
-我们拒绝以下行为：
-- ❌ 修了一个大BUG就把版本号从 0.2.01 跳到 0.3.0
-- ❌ 加了一个新模块就从 0.2.01 跳到 1.0.0
-- ❌ 为了"看起来NB"而跃迁版本号
+- `0.x` 内的破坏性变更 → 升 **MINOR**（如 `0.3.0` → `0.4.0`），须提前公告并给出迁移提示
+- 向后兼容的新功能 → 升 **MINOR**（如 `0.3.0` → `0.4.0`）
+- Bug 修复 / 文档 / 内部重构 → 升 **PATCH**（如 `0.3.0` → `0.3.1`）
 
-我们坚持以下行为：
-- ✅ 每次迭代只做增量修改，版本号最多 +0.0.001
-- ✅ 无论修复/新增多么NB的模块/能力，版本号都只能微调
-- ✅ 小步快跑，持续交付
-
-### 年度版本锁定规则
-
-**每年一个主版本号，不可提前跃迁。**
-
-| 年份 | 主版本系列 | 允许的版本范围 |
-|------|-----------|---------------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
-
-**硬性约束：**
-- 2027年中国农历春节（约2027年2月6日）以前，**任何人不得**将版本号跃迁至 0.3 及以上。
-- 每年主版本号只能在**次年1月1日**后解锁。
+旧的「小步快跑 / 年度锁定」策略（版本号最多 +0.0.001、2027 年春节前不得跃迁至 0.3 及以上）**已废除**。版本号由变更的 SemVer 语义决定——不由日历决定，也不由"看起来是否 NB"决定。
 
 ### 版本号递增规则
 
-**允许的递增：**
-- 当前版本：`0.2.014`
-- 递增单位：`0.0.001`
-- 即：`0.2.014` → `0.2.015` → `0.2.016` → ... → `0.2.999`
+| 级别 | 触发条件 | 示例 |
+|------|---------|------|
+| **MAJOR** | 不兼容变更 —— **仅在 API 冻结后**（`1.0` 起） | `1.0` → `2.0` |
+| **MINOR** | 新增功能；`0.x` 阶段的破坏性调整亦升此级 | `0.3.0` → `0.4.0` |
+| **PATCH** | Bug 修复、文档、内部重构、无行为变化的安全补丁 | `0.3.0` → `0.3.1` |
 
-**允许递增的场景：**
-1. **Bug 修复**（无论严重程度）
-2. **新增小功能**（不影响核心架构）
-3. **文档更新**（README、注释、示例）
-4. **依赖升级**（patch级）
-5. **安全补丁**（即使很关键，也只 +0.0.001）
-6. **性能优化**（不改变API）
-7. **测试补充**（不改变行为）
-
-**禁止跃迁的场景：**
-1. 新增一个引擎/模块 → 只允许 +0.0.001
-2. 重构核心架构 → 只允许 +0.0.001
-3. 修复重大安全漏洞 → 只允许 +0.0.001
-4. 引入全新子系统 → 只允许 +0.0.001
-5. 性能提升10倍 → 只允许 +0.0.001
-6. 任何"我觉得应该升大版本"的想法 → 拒绝
-
+破坏性变更必须提前公告并提供迁移提示；版本号本身即信号（`0.x` 阶段为 MINOR 升级，`1.0` 之后才为 MAJOR）。发版前必须跑通全量测试与 CHANGELOG 门禁。
 
 ### PR/提交检查清单
 
 每个 PR 提交前必须确认：
-- [ ] 版本号在 pyproject.toml 中已更新（且只 +0.0.001）
-- [ ] 版本号在 package.json 中已同步更新
-- [ ] CHANGELOG.md 已记录本次变更
-- [ ] 版本号未跨越年度主版本边界
-- [ ] 当前年份的主版本系列未被突破
+- [ ] `pyproject.toml` 与 `qingxiaotuan/__init__.py` 中的版本号一致
+- [ ] CHANGELOG.md 顶层条目与当前版本一致
+- [ ] 版本号不低于上一发布（禁止回退）
+- [ ] 版本递增级别与变更的 SemVer 性质相符
 
 **违反以上任何一条的PR将被直接关闭，不进入评审流程。**
 
@@ -144,66 +77,33 @@ Each PR must confirm before submission:
 
 ## 繁體中文
 
-### 核心原則：小步快跑，拒絕跳號
+### 核心原則：語義化版本
 
-**版本號不是勳章，是迭代記錄。**
+青小團遵循 [SemVer](https://semver.org/)。當前處於 **`0.x` 階段——公共 API 尚未凍結**。版本號表達的是介面穩定度，不是工作量，也不是“面子”：
 
-我們拒絕以下行為：
-- ❌ 修了一個大BUG就把版本號從 0.2.01 跳到 0.3.0
-- ❌ 加了一個新模組就從 0.2.01 跳到 1.0.0
-- ❌ 為了"看起來NB"而躍遷版本號
+- `0.x` 內的破壞性變更 → 升 **MINOR**（如 `0.3.0` → `0.4.0`），須提前公告並給出遷移提示
+- 向後相容的新功能 → 升 **MINOR**（如 `0.3.0` → `0.4.0`）
+- Bug 修復 / 文件 / 內部重構 → 升 **PATCH**（如 `0.3.0` → `0.3.1`）
 
-我們堅持以下行為：
-- ✅ 每次迭代只做增量修改，版本號最多 +0.0.001
-- ✅ 無論修復/新增多麼NB的模組/能力，版本號都只能微調
-- ✅ 小步快跑，持續交付
-
-### 年度版本鎖定規則
-
-**每年一個主版本號，不可提前躍遷。**
-
-| 年份 | 主版本系列 | 允許的版本範圍 |
-|------|-----------|---------------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
-
-**硬性約束：**
-- 2027年中國農曆春節（約2027年2月6日）以前，**任何人不得**將版本號躍遷至 0.3 及以上。
-- 每年主版本號只能在**次年1月1日**後解鎖。
+舊的「小步快跑 / 年度鎖定」策略（版本號最多 +0.0.001、2027 年春節前不得躍遷至 0.3 及以上）**已廢除**。版本號由變更的 SemVer 語義決定——不由日曆決定，也不由"看起來是否 NB"決定。
 
 ### 版本號遞增規則
 
-**允許的遞增：**
-- 目前版本：`0.2.014`
-- 遞增單位：`0.0.001`
-- 即：`0.2.014` → `0.2.015` → `0.2.016` → ... → `0.2.999`
+| 級別 | 觸發條件 | 示例 |
+|------|---------|------|
+| **MAJOR** | 不相容變更 —— **僅在 API 凍結後**（`1.0` 起） | `1.0` → `2.0` |
+| **MINOR** | 新增功能；`0.x` 階段的破壞性調整亦升此級 | `0.3.0` → `0.4.0` |
+| **PATCH** | Bug 修復、文件、內部重構、無行為變化的安全修補 | `0.3.0` → `0.3.1` |
 
-**允許遞增的場景：**
-1. **Bug 修復**（無論嚴重程度）
-2. **新增小功能**（不影響核心架構）
-3. **文件更新**（README、註釋、示例）
-4. **依賴升級**（patch級）
-5. **安全補丁**（即使很關鍵，也只 +0.0.001）
-6. **效能優化**（不改變API）
-7. **測試補充**（不改變行為）
-
-**禁止躍遷的場景：**
-1. 新增一個引擎/模組 → 只允許 +0.0.001
-2. 重構核心架構 → 只允許 +0.0.001
-3. 修復重大安全漏洞 → 只允許 +0.0.001
-4. 引入全新子系統 → 只允許 +0.0.001
-5. 效能提升10倍 → 只允許 +0.0.001
-6. 任何"我覺得應該升大版本"的想法 → 拒絕
+破壞性變更必須提前公告並提供遷移提示；版本號本身即信號（`0.x` 階段為 MINOR 升級，`1.0` 之後才為 MAJOR）。發版前必須跑通全量測試與 CHANGELOG 門禁。
 
 ### PR/提交檢查清單
 
 每個 PR 提交前必須確認：
-- [ ] 版本號在 pyproject.toml 中已更新（且只 +0.0.001）
-- [ ] 版本號在 package.json 中已同步更新
-- [ ] CHANGELOG.md 已記錄本次變更
-- [ ] 版本號未跨越年度主版本邊界
-- [ ] 當前年份的主版本系列未被突破
+- [ ] `pyproject.toml` 與 `qingxiaotuan/__init__.py` 中的版本號一致
+- [ ] CHANGELOG.md 頂層條目與目前版本一致
+- [ ] 版本號不低於上一發布（禁止回退）
+- [ ] 版本遞增級別與變更的 SemVer 性質相符
 
 **違反以上任何一條的PR將被直接關閉，不進入評審流程。**
 
@@ -211,334 +111,169 @@ Each PR must confirm before submission:
 
 ## 日本語
 
-### 核心理念：小刻みで、跳番なし
+### 核心理念：セマンティックバージョニング
 
-**バージョン番号は勲章ではなく、反復の記録です。**
+Tuan-CLI は [SemVer](https://semver.org/) に従います。現在は **`0.x` 系——公開 API はまだ凍結されていません**。バージョン番号はインターフェースの安定度を表すものであり、作業量や「格好よさ」ではありません：
 
-私たちが拒否する行為：
-- ❌ 大きなBUGを修正しただけで 0.2.01 → 0.3.0 にジャンプ
-- ❌ 新しいモジュールを追加しただけで 0.2.01 → 1.0.0 にジャンプ
-- ❌ 「見た目がすごいから」という理由でバージョンを上げる
+- `0.x` 内の破壊的変更 → **MINOR** アップ（例：`0.3.0` → `0.4.0`）、事前告知と移行ヒントが必須
+- 後方互換な新機能 → **MINOR** アップ（例：`0.3.0` → `0.4.0`）
+- Bug修正 / ドキュメント / 内部リファクタリング → **PATCH** アップ（例：`0.3.0` → `0.3.1`）
 
-私たちが堅持する行為：
-- ✅ 各反復は増分変更のみ、最大バージョンアップは +0.0.001
-- ✅ どんなにすごいモジュール/機能でも、バージョンは微調整のみ
-- ✅ 小さな一歩、速い反復、継続的デリバリー
-
-### 年度バージョンロック規則
-
-**1年に1メジャーバージョン、早期ジャンプ禁止。**
-
-| 年 | メジャー系列 | 許可範囲 |
-|------|------------|----------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
-
-**ハード制約：**
-- 2027年中国の旧正月（約2027年2月6日）以前、**誰も** 0.3 以上にジャンプしてはならない。
-- 各年のメジャーバージョンは**翌年1月1日**以降のみ解除。
+旧「小刻み・年度ロック」方針（最大 +0.0.001、2027年旧正月まで 0.3 以上へのジャンプ禁止）は**廃止**されました。バージョンは変更の SemVer 意味論で決まります——暦や「見た目の凄さ」とは無関係です。
 
 ### バージョン増分規則
 
-**許可される増分：**
-- 現在のバージョン：`0.2.014`
-- 増分単位：`0.0.001`
-- 例：`0.2.014` → `0.2.015` → `0.2.016` → ... → `0.2.999`
+| レベル | 条件 | 例 |
+|--------|------|----|
+| **MAJOR** | 非互換変更 —— **API 凍結後のみ**（`1.0` 以降） | `1.0` → `2.0` |
+| **MINOR** | 新機能；`0.x` 段階の破壊的調整もこのレベル | `0.3.0` → `0.4.0` |
+| **PATCH** | Bug修正、ドキュメント、内部リファクタリング、動作変更のないセキュリティパッチ | `0.3.0` → `0.3.1` |
 
-**許可されるシナリオ：**
-1. **Bug修正**（深刻度に関わらず）
-2. **小機能追加**（コアアーキテクチャに影響なし）
-3. **ドキュメント更新**（README、コメント、例）
-4. **依存関係アップグレード**（パッチレベル）
-5. **セキュリティパッチ**（重大でも +0.0.001 のみ）
-6. **性能最適化**（API変更なし）
-7. **テスト追加**（挙動変更なし）
-
-**禁止されるシナリオ：**
-1. 新しいエンジン/モジュール追加 → +0.0.001 のみ
-2. コアアーキテクチャのリファクタリング → +0.0.001 のみ
-3. 重大セキュリティ脆弱性の修正 → +0.0.001 のみ
-4. 全く新しいサブシステム導入 → +0.0.001 のみ
-5. 10倍の性能向上 → +0.0.001 のみ
-6. 「メジャーバージョンを上げるべき」という考え → 拒否
+破壊的変更は事前に告知し、移行ヒントを提供します。バージョン番号自体がシグナルです（`0.x` 段階は MINOR アップ、`1.0` 以降のみ MAJOR）。リリース前に全テストと CHANGELOG ゲートを通過する必要があります。
 
 ### PR/コミットチェックリスト
 
-各PRは提出前に以下を確認：
-- [ ] pyproject.toml のバージョン更新（+0.0.001 のみ）
-- [ ] package.json のバージョン同期
-- [ ] CHANGELOG.md に変更記録
-- [ ] 年度メジャー境界を超えていない
-- [ ] 今年のメジャー系列を突破していない
+各 PR は提出前に確認すること：
+- [ ] `pyproject.toml` と `qingxiaotuan/__init__.py` のバージョンが一致
+- [ ] CHANGELOG.md の最上位エントリが現在のバージョンと一致
+- [ ] バージョンが前リリースより低くない（ダウングレード禁止）
+- [ ] バージョン増分レベルが変更の SemVer 性質と一致
 
-**上記に違反するPRは即座に閉じられ、レビューに入りません。**
+**上記に違反するPRはレビューなしで即クローズされます。**
 
 ---
 
 ## 한국어
 
-### 핵심 원칙: 작은 걸음, 점프 없이
+### 핵심 원칙: 시맨틱 버저닝
 
-**버전 번호는 훈장이 아니라 반복 기록입니다.**
+Tuan-CLI는 [SemVer](https://semver.org/)를 따릅니다. 현재 **`0.x` 라인——공개 API는 아직 동결되지 않았습니다**. 버전 번호는 인터페이스 안정성을 나타내며, 작업량이나 "보기 좋음"과는 무관합니다:
 
-우리가 거부하는 행동:
-- ❌ 큰 BUG를 고쳤다고 0.2.01 → 0.3.0으로 점프
-- ❌ 새 모듈을 추가했다고 0.2.01 → 1.0.0으로 점프
-- ❌ "멋있어 보이려고" 버전을 올림
+- `0.x` 내의 파괴적 변경 → **MINOR** 상향(예: `0.3.0` → `0.4.0`), 사전 공지와 마이그레이션 힌트 필수
+- 하위 호환 신기능 → **MINOR** 상향(예: `0.3.0` → `0.4.0`)
+- 버그 수정 / 문서 / 내부 리팩터링 → **PATCH** 상향(예: `0.3.0` → `0.3.1`)
 
-우리가 고수하는 행동:
-- ✅ 각 반복은 증분 변경만, 최대 버전 업은 +0.0.001
-- ✅ 아무리 대단한 모듈/기능이어도 버전은 미세 조정만
-- ✅ 작은 걸음, 빠른 반복, 지속적 전달
-
-### 연도별 버전 잠금 규칙
-
-**1년에 1개 메이저 버전, 조기 점프 금지.**
-
-| 연도 | 메이저 시리즈 | 허용 범위 |
-|------|-------------|----------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
-
-**하드 제약:**
-- 2027년 중국 음력 설날(약 2027년 2월 6일) 이전, **누구도** 0.3 이상으로 점프 금지.
-- 각 연도의 메이저 버전은 **다음 해 1월 1일** 이후에만 해제.
+기존 "소폭 증분·연도 고정" 정책(최대 +0.0.001, 2027년 설날까지 0.3 이상 점프 금지)은 **폐지**되었습니다. 버전은 변경의 SemVer 의미로 결정됩니다——달력이나 "인상적인 숫자"와는 무관합니다.
 
 ### 버전 증분 규칙
 
-**허용되는 증분:**
-- 현재 버전: `0.2.014`
-- 증분 단위: `0.0.001`
-- 예: `0.2.014` → `0.2.015` → `0.2.016` → ... → `0.2.999`
+| 레벨 | 조건 | 예 |
+|------|------|----|
+| **MAJOR** | 비호환 변경 —— **API 동결 이후에만**(`1.0`부터) | `1.0` → `2.0` |
+| **MINOR** | 신기능; `0.x` 단계의 파괴적 조정도 이 급 | `0.3.0` → `0.4.0` |
+| **PATCH** | 버그 수정, 문서, 내부 리팩터링, 동작 변화 없는 보안 패치 | `0.3.0` → `0.3.1` |
 
-**허용되는 시나리오:**
-1. **Bug 수정** (심각도와 무관)
-2. **소규모 기능** (코어 아키텍처 영향 없음)
-3. **문서 업데이트** (README, 주석, 예제)
-4. **의존성 업그레이드** (패치 레벨)
-5. **보안 패치** (중요해도 +0.0.001만)
-6. **성능 최적화** (API 변경 없음)
-7. **테스트 추가** (동작 변경 없음)
-
-**금지되는 시나리오:**
-1. 새 엔진/모듈 추가 → +0.0.001만 허용
-2. 코어 아키텍처 리팩토링 → +0.0.001만 허용
-3. 중대 보안 취약점 수정 → +0.0.001만 허용
-4. 완전히 새로운 서브시스템 도입 → +0.0.001만 허용
-5. 10배 성능 향상 → +0.0.001만 허용
-6. "메이저 버전을 올려야 한다"는 생각 → 거부
+파괴적 변경은 사전에 공지하고 마이그레이션 힌트를 제공합니다. 버전 번호 자체가 신호입니다(`0.x` 단계는 MINOR 상향, `1.0` 이후에만 MAJOR). 릴리스 전 전체 테스트와 CHANGELOG 게이트를 통과해야 합니다.
 
 ### PR/커밋 체크리스트
 
-각 PR은 제출 전에 확인:
-- [ ] pyproject.toml 버전 업데이트 (+0.0.001만)
-- [ ] package.json 버전 동기화
-- [ ] CHANGELOG.md 변경 기록
-- [ ] 연도 메이저 경계를 넘지 않음
-- [ ] 올해 메이저 시리즈를 돌파하지 않음
+각 PR은 제출 전에 확인해야 합니다:
+- [ ] `pyproject.toml`과 `qingxiaotuan/__init__.py`의 버전이 일치
+- [ ] CHANGELOG.md 최상위 항목이 현재 버전과 일치
+- [ ] 버전이 이전 릴리스보다 낮지 않음(다운그레이드 금지)
+- [ ] 버전 증분 수준이 변경의 SemVer 특성과 일치
 
-**위 사항을 위반한 PR은 즉시 닫히고 리뷰에 들어가지 않습니다.**
+**위 규칙을 위반한 PR은 리뷰 없이 즉시 닫힙니다.**
 
 ---
 
 ## Español
 
-### Principio Central: Pasos Pequeños, Sin Saltos
+### Principio central: Versionado Semántico
 
-**Los números de versión no son medallas — son registros de iteración.**
+Tuan-CLI sigue [SemVer](https://semver.org/). El proyecto está actualmente en su **línea `0.x`: la API pública aún no está congelada**. El número de versión refleja la estabilidad de la interfaz, no la cantidad de trabajo ni la apariencia:
 
-Rechazamos los siguientes comportamientos:
-- ❌ Saltar de 0.2.01 a 0.3.0 después de arreglar un bug grande
-- ❌ Saltar de 0.2.01 a 1.0.0 después de agregar un módulo
-- ❌ Subir versiones solo para "verse impresionante"
+- Cambios disruptivos dentro de `0.x` → subir **MINOR** (p. ej. `0.3.0` → `0.4.0`), con aviso previo y notas de migración
+- Funciones nuevas compatibles hacia atrás → subir **MINOR** (p. ej. `0.3.0` → `0.4.0`)
+- Correcciones de bugs / documentación / refactor interno → subir **PATCH** (p. ej. `0.3.0` → `0.3.1`)
 
-Insistimos en lo siguiente:
-- ✅ Cada iteración hace cambios incrementales, máximo +0.0.001
-- ✅ No importa cuán impresionante sea un módulo/función, la versión solo incrementa ligeramente
-- ✅ Pasos pequeños, iteración rápida, entrega continua
+La antigua política de «pasos pequeños / bloqueo anual» (máx. +0.0.001, sin saltar a 0.3 antes del Año Nuevo Chino 2027) queda **derogada**. La versión la decide la semántica SemVer del cambio — no el calendario ni «lo impresionante que parezca».
 
-### Reglas de Bloqueo Anual de Versiones
+### Reglas de incremento de versión
 
-**Una versión mayor por año, sin saltos tempranos.**
+| Nivel | Cuándo | Ejemplo |
+|-------|--------|---------|
+| **MAJOR** | Cambios incompatibles —— **solo tras el congelamiento de la API** (desde `1.0`) | `1.0` → `2.0` |
+| **MINOR** | Nuevas funciones; también ajustes disruptivos en la línea `0.x` | `0.3.0` → `0.4.0` |
+| **PATCH** | Correcciones de bugs, documentación, refactor interno, parches de seguridad sin cambio de comportamiento | `0.3.0` → `0.3.1` |
 
-| Año | Serie Mayor | Rango Permitido |
-|-----|------------|----------------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
+Los cambios disruptivos se anuncian con antelación y se ofrecen pistas de migración; el número de versión es en sí la señal (un salto MINOR en `0.x`, MAJOR solo a partir de `1.0`). Los lanzamientos pasan el suite completo de pruebas y la compuerta de CHANGELOG antes de publicarse.
 
-**Restricciones duras:**
-- Antes del Año Nuevo Chino 2027 (~6 de febrero de 2027), **nadie** puede saltar a 0.3 o superior.
-- Cada versión mayor anual se desbloquea solo después del **1 de enero del siguiente año**.
+### Lista de verificación de PR/commits
 
-### Reglas de Incremento de Versión
+Cada PR debe confirmar antes de enviarse:
+- [ ] La versión en `pyproject.toml` y `qingxiaotuan/__init__.py` es idéntica
+- [ ] La entrada superior de CHANGELOG.md coincide con la versión actual
+- [ ] La versión no es menor que la anterior (sin degradaciones)
+- [ ] El nivel de incremento coincide con la naturaleza SemVer del cambio
 
-**Incrementos permitidos:**
-- Versión actual: `0.2.014`
-- Unidad de incremento: `0.0.001`
-- Ej: `0.2.014` → `0.2.015` → `0.2.016` → ... → `0.2.999`
-
-**Escenarios permitidos:**
-1. **Corrección de bugs** (sin importar gravedad)
-2. **Pequeñas funciones** (sin impacto en arquitectura)
-3. **Actualizaciones de documentación** (README, comentarios, ejemplos)
-4. **Actualización de dependencias** (nivel patch)
-5. **Parches de seguridad** (incluso críticos — solo +0.0.001)
-6. **Optimización de rendimiento** (sin cambios de API)
-7. **Adición de pruebas** (sin cambios de comportamiento)
-
-**Escenarios prohibidos:**
-1. Agregar un motor/módulo → solo +0.0.001 permitido
-2. Refactorizar arquitectura central → solo +0.0.001 permitido
-3. Corregir vulnerabilidades críticas → solo +0.0.001 permitido
-4. Introducir un subsistema nuevo → solo +0.0.001 permitido
-5. Mejora de rendimiento 10x → solo +0.0.001 permitido
-6. Cualquier "creo que deberíamos subir la versión mayor" → RECHAZADO
-
-### Checklist de PR/Commit
-
-Cada PR debe confirmar antes del envío:
-- [ ] Versión en pyproject.toml actualizada (solo +0.0.001)
-- [ ] Versión en package.json sincronizada
-- [ ] CHANGELOG.md registra el cambio
-- [ ] La versión no cruza el límite mayor anual
-- [ ] La serie mayor del año actual no se ha violado
-
-**Cualquier PR que viole lo anterior se cerrará inmediatamente sin revisión.**
+**Cualquier PR que viole lo anterior se cerrará de inmediato sin revisión.**
 
 ---
 
 ## Português
 
-### Princípio Central: Passos Pequenos, Sem Saltos
+### Princípio central: Versionamento Semântico
 
-**Números de versão não são medalhas — são registros de iteração.**
+O Tuan-CLI segue [SemVer](https://semver.org/). O projeto está atualmente na sua **linha `0.x`: a API pública ainda não está congelada**. O número de versão reflete a estabilidade da interface, não a quantidade de trabalho nem a aparência:
 
-Rejeitamos os seguintes comportamentos:
-- ❌ Pular de 0.2.01 para 0.3.0 após corrigir um bug grande
-- ❌ Pular de 0.2.01 para 1.0.0 após adicionar um módulo
-- ❌ Aumentar versões apenas para "parecer impressionante"
+- Mudanças que quebram dentro de `0.x` → subir **MINOR** (ex.: `0.3.0` → `0.4.0`), com aviso prévio e notas de migração
+- Novos recursos retrocompatíveis → subir **MINOR** (ex.: `0.3.0` → `0.4.0`)
+- Correções de bugs / documentação / refatoração interna → subir **PATCH** (ex.: `0.3.0` → `0.3.1`)
 
-Insistimos no seguinte:
-- ✅ Cada iteração faz mudanças incrementais, máximo +0.0.001
-- ✅ Não importa quão impressionante seja um módulo/função, a versão só incrementa levemente
-- ✅ Passos pequenos, iteração rápida, entrega contínua
+A antiga política de «pequenos passos / trava anual» (máx. +0.0.001, sem saltar para 0.3 antes do Ano Novo Chinês 2027) está **revogada**. A versão é decidida pela semântica SemVer da mudança — não pelo calendário nem por «parecer impressionante».
 
-### Regras de Bloqueio Anual de Versões
+### Regras de incremento de versão
 
-**Uma versão principal por ano, sem saltos antecipados.**
+| Nível | Quando | Exemplo |
+|-------|--------|---------|
+| **MAJOR** | Mudanças incompatíveis —— **somente após o congelamento da API** (a partir de `1.0`) | `1.0` → `2.0` |
+| **MINOR** | Novos recursos; também ajustes que quebram na linha `0.x` | `0.3.0` → `0.4.0` |
+| **PATCH** | Correções de bugs, documentação, refatoração interna, patches de segurança sem mudança de comportamento | `0.3.0` → `0.3.1` |
 
-| Ano | Série Principal | Faixa Permitida |
-|-----|----------------|----------------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
+Mudanças que quebram são anunciadas com antecedência com dicas de migração; o próprio número de versão é o sinal (um salto MINOR em `0.x`, MAJOR apenas a partir de `1.0`). Lançamentos passam o conjunto completo de testes e a porta de CHANGELOG antes de publicar.
 
-**Restrições rígidas:**
-- Antes do Ano Novo Chinês 2027 (~6 de fevereiro de 2027), **ninguém** pode pular para 0.3 ou superior.
-- Cada versão principal anual só é desbloqueada após **1º de janeiro do ano seguinte**.
-
-### Regras de Incremento de Versão
-
-**Incrementos permitidos:**
-- Versão atual: `0.2.01`
-- Unidade de incremento: `0.0.001`
-- Ex: `0.2.01` → `0.2.011` → `0.2.012` → ... → `0.2.999`
-
-**Cenários permitidos:**
-1. **Correção de bugs** (independente da gravidade)
-2. **Pequenos recursos** (sem impacto na arquitetura central)
-3. **Atualizações de documentação** (README, comentários, exemplos)
-4. **Upgrade de dependências** (nível patch)
-5. **Patches de segurança** (mesmo críticos — apenas +0.0.001)
-6. **Otimização de desempenho** (sem mudanças de API)
-7. **Adição de testes** (sem mudanças de comportamento)
-
-**Cenários proibidos:**
-1. Adicionar um motor/módulo → apenas +0.0.001 permitido
-2. Refatorar arquitetura central → apenas +0.0.001 permitido
-3. Corrigir vulnerabilidades críticas → apenas +0.0.001 permitido
-4. Introduzir um novo subsistema → apenas +0.0.001 permitido
-5. Melhoria de desempenho 10x → apenas +0.0.001 permitido
-6. Qualquer "acho que deveríamos subir a versão principal" → REJEITADO
-
-### Checklist de PR/Commit
+### Lista de verificação de PR/commits
 
 Cada PR deve confirmar antes do envio:
-- [ ] Versão em pyproject.toml atualizada (apenas +0.0.001)
-- [ ] Versão em package.json sincronizada
-- [ ] CHANGELOG.md registra a mudança
-- [ ] Versão não cruza o limite anual principal
-- [ ] Série principal do ano atual não violada
+- [ ] A versão em `pyproject.toml` e `qingxiaotuan/__init__.py` é idêntica
+- [ ] A entrada superior de CHANGELOG.md coincide com a versão atual
+- [ ] A versão não é inferior à anterior (sem downgrade)
+- [ ] O nível de incremento coincide com a natureza SemVer da mudança
 
-**Qualquer PR que violar o acima será fechado imediatamente sem revisão.**
+**Qualquer PR que viole o acima será fechado imediatamente sem revisão.**
 
 ---
 
 ## Français
 
-### Principe Central: Petits Pas, Pas de Sauts
+### Principe central : Versionnage sémantique
 
-**Les numéros de version ne sont pas des médailles — ce sont des enregistrements d'itération.**
+Tuan-CLI suit [SemVer](https://semver.org/). Le projet est actuellement sur sa **lignée `0.x` : l'API publique n'est pas encore figée**. Le numéro de version reflète la stabilité de l'interface, pas la quantité de travail ni l'apparence :
 
-Nous rejetons les comportements suivants :
-- ❌ Passer de 0.2.01 à 0.3.0 après avoir corrigé un gros bug
-- ❌ Passer de 0.2.01 à 1.0.0 après avoir ajouté un module
-- ❌ Augmenter les versions juste pour "avoir l'air impressionnant"
+- Changements cassants dans `0.x` → monter **MINOR** (ex. `0.3.0` → `0.4.0`), avec préavis et notes de migration
+- Nouvelles fonctions rétrocompatibles → monter **MINOR** (ex. `0.3.0` → `0.4.0`)
+- Corrections de bugs / documentation / refactor interne → monter **PATCH** (ex. `0.3.0` → `0.3.1`)
 
-Nous insistons sur ce qui suit :
-- ✅ Chaque itération fait des changements incrémentaux, max +0.0.001
-- ✅ Peu importe à quel point un module/fonction est impressionnant, la version n'augmente que légèrement
-- ✅ Petits pas, itération rapide, livraison continue
+L'ancienne politique « petits pas / verrou annuel » (max +0.0.001, pas de passage à 0.3 avant le Nouvel An chinois 2027) est **abolie**. La version est décidée par la sémantique SemVer du changement — pas par le calendrier ni par « l'impressionnant ».
 
-### Règles de Verrouillage Annuel des Versions
+### Règles d'incrémentation
 
-**Une version majeure par an, pas de sauts prématurés.**
+| Niveau | Quand | Exemple |
+|--------|-------|---------|
+| **MAJOR** | Changements incompatibles —— **uniquement après le gel de l'API** (à partir de `1.0`) | `1.0` → `2.0` |
+| **MINOR** | Nouvelles fonctions ; aussi les ajustements cassants en `0.x` | `0.3.0` → `0.4.0` |
+| **PATCH** | Corrections de bugs, documentation, refactor interne, correctifs de sécurité sans changement de comportement | `0.3.0` → `0.3.1` |
 
-| Année | Série Majeure | Plage Autorisée |
-|-------|--------------|----------------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
+Les changements cassants sont annoncés à l'avance avec des pistes de migration ; le numéro de version est lui-même le signal (un saut MINOR en `0.x`, MAJOR seulement à partir de `1.0`). Les versions passent la suite complète de tests et la porte CHANGELOG avant publication.
 
-**Contraintes strictes :**
-- Avant le Nouvel An Chinois 2027 (~6 février 2027), **personne** ne peut passer à 0.3 ou plus.
-- Chaque version majeure annuelle ne se débloque qu'après le **1er janvier de l'année suivante**.
-
-### Règles d'IncRémentation de Version
-
-**Incréments autorisés :**
-- Version actuelle : `0.2.01`
-- Unité d'incrément : `0.0.001`
-- Ex : `0.2.01` → `0.2.011` → `0.2.012` → ... → `0.2.999`
-
-**Scénarios autorisés :**
-1. **Corrections de bugs** (quelle que soit la gravité)
-2. **Petites fonctionnalités** (sans impact sur l'architecture)
-3. **Mises à jour de documentation** (README, commentaires, exemples)
-4. **Mises à niveau de dépendances** (niveau patch)
-5. **Correctifs de sécurité** (même critiques — seulement +0.0.001)
-6. **Optimisations de performance** (sans changements d'API)
-7. **Ajouts de tests** (sans changements de comportement)
-
-**Scénarios interdits :**
-1. Ajouter un moteur/module → seulement +0.0.001 autorisé
-2. Refactoriser l'architecture centrale → seulement +0.0.001 autorisé
-3. Corriger des vulnérabilités critiques → seulement +0.0.001 autorisé
-4. Introduire un nouveau sous-système → seulement +0.0.001 autorisé
-5. Amélioration de performance 10x → seulement +0.0.001 autorisé
-6. Toute pensée "je pense que nous devrions augmenter la version majeure" → REJETÉ
-
-### Checklist PR/Commit
+### Liste de vérification PR/commit
 
 Chaque PR doit confirmer avant soumission :
-- [ ] Version dans pyproject.toml mise à jour (seulement +0.0.001)
-- [ ] Version dans package.json synchronisée
-- [ ] CHANGELOG.md enregistre le changement
-- [ ] Version ne traverse pas la frontière majeure annuelle
-- [ ] Série majeure de l'année en cours non violée
+- [ ] La version dans `pyproject.toml` et `qingxiaotuan/__init__.py` est identique
+- [ ] L'entrée supérieure de CHANGELOG.md correspond à la version actuelle
+- [ ] La version n'est pas inférieure à la précédente (pas de downgrade)
+- [ ] Le niveau d'incrément correspond à la nature SemVer du changement
 
 **Tout PR violant ce qui précède sera fermé immédiatement sans revue.**
 
@@ -546,137 +281,66 @@ Chaque PR doit confirmer avant soumission :
 
 ## Deutsch
 
-### Kernprinzip: Kleine Schritte, Keine Sprünge
+### Kernprinzip: Semantische Versionierung
 
-**Versionsnummern sind keine Medaillen — sie sind Iterationsaufzeichnungen.**
+Tuan-CLI folgt [SemVer](https://semver.org/). Das Projekt befindet sich derzeit in seiner **`0.x`-Linie — die öffentliche API ist noch nicht eingefroren**. Versionsnummern drücken die Stabilität der Schnittstelle aus, nicht den Aufwand und nicht das Ansehen:
 
-Wir lehnen folgende Verhaltensweisen ab:
-- ❌ Von 0.2.01 auf 0.3.0 springen nach einem großen Bugfix
-- ❌ Von 0.2.01 auf 1.0.0 springen nach einem neuen Modul
-- ❌ Versionen nur erhöhen, um "beeindruckend zu wirken"
+- Breaking Changes innerhalb von `0.x` → **MINOR** anheben (z. B. `0.3.0` → `0.4.0`), mit Vorankündigung und Migrationshinweisen
+- Neue rückwärtskompatible Funktionen → **MINOR** anheben (z. B. `0.3.0` → `0.4.0`)
+- Bugfixes / Doku / interne Refactorings → **PATCH** anheben (z. B. `0.3.0` → `0.3.1`)
 
-Wir bestehen auf Folgendem:
-- ✅ Jede Iteration macht inkrementelle Änderungen, max. +0.0.001
-- ✅ Egal wie beeindruckend ein Modul/Feature ist, die Version erhöht sich nur geringfügig
-- ✅ Kleine Schritte, schnelle Iteration, kontinuierliche Lieferung
-
-### Jährliche Versionssperrregeln
-
-**Eine Hauptversion pro Jahr, keine frühen Sprünge.**
-
-| Jahr | Hauptserie | Erlaubter Bereich |
-|------|-----------|------------------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
-
-**Harte Einschränkungen:**
-- Vor dem chinesischen Neujahr 2027 (~6. Februar 2027) darf **niemand** auf 0.3 oder höher springen.
-- Jede jährliche Hauptversion wird erst nach dem **1. Januar des Folgejahres** freigeschaltet.
+Die alte Politik «kleine Schritte / Jahres-Sperre» (max. +0.0.001, kein Sprung auf 0.3 vor dem chinesischen Neujahr 2027) ist **abgeschafft**. Die Version richtet sich nach der SemVer-Semantik der Änderung — nicht nach dem Kalender oder «wie beeindruckend es aussieht».
 
 ### Versionsinkrement-Regeln
 
-**Erlaubte Inkremente:**
-- Aktuelle Version: `0.2.01`
-- Inkrementeinheit: `0.0.001`
-- D.h.: `0.2.01` → `0.2.011` → `0.2.012` → ... → `0.2.999`
+| Ebene | Wann | Beispiel |
+|-------|------|----------|
+| **MAJOR** | Inkompatible Änderungen —— **erst nach dem API-Freeze** (ab `1.0`) | `1.0` → `2.0` |
+| **MINOR** | Neue Funktionen; auch Breaking-Anpassungen in der `0.x`-Linie | `0.3.0` → `0.4.0` |
+| **PATCH** | Bugfixes, Doku, interne Refactorings, Sicherheitspatches ohne Verhaltensänderung | `0.3.0` → `0.3.1` |
 
-**Erlaubte Szenarien:**
-1. **Bugfixes** (unabhängig vom Schweregrad)
-2. **Kleine Funktionen** (keine Kernarchitektur-Auswirkung)
-3. **Dokumentationsupdates** (README, Kommentare, Beispiele)
-4. **Abhängigkeits-Upgrades** (Patch-Ebene)
-5. **Sicherheitspatches** (selbst kritische — nur +0.0.001)
-6. **Performance-Optimierungen** (keine API-Änderungen)
-7. **Test-Ergänzungen** (keine Verhaltensänderungen)
-
-**Verbotene Szenarien:**
-1. Neues Engine/Modul hinzufügen → nur +0.0.001 erlaubt
-2. Kernarchitektur refaktorisieren → nur +0.0.001 erlaubt
-3. Kritische Sicherheitslücken beheben → nur +0.0.001 erlaubt
-4. Neues Subsystem einführen → nur +0.0.001 erlaubt
-5. 10x Performance-Verbesserung → nur +0.0.001 erlaubt
-6. Jeder Gedanke "ich denke, wir sollten die Hauptversion erhöhen" → ABGELEHNT
+Breaking Changes werden im Voraus mit Migrationshinweisen angekündigt; die Versionsnummer selbst ist das Signal (ein MINOR-Sprung in `0.x`, MAJOR erst ab `1.0`). Releases bestehen die vollständige Testsuite und das CHANGELOG-Gate vor der Veröffentlichung.
 
 ### PR/Commit-Checkliste
 
 Jeder PR muss vor dem Einreichen bestätigen:
-- [ ] Version in pyproject.toml aktualisiert (nur +0.0.001)
-- [ ] Version in package.json synchronisiert
-- [ ] CHANGELOG.md dokumentiert die Änderung
-- [ ] Version überschreitet nicht die jährliche Hauptgrenze
-- [ ] Hauptserie des aktuellen Jahres nicht verletzt
+- [ ] Die Version in `pyproject.toml` und `qingxiaotuan/__init__.py` ist identisch
+- [ ] Der oberste Eintrag in CHANGELOG.md entspricht der aktuellen Version
+- [ ] Die Version ist nicht niedriger als das vorherige Release (kein Downgrade)
+- [ ] Das Inkrement-Niveau entspricht der SemVer-Natur der Änderung
 
-**Jeder PR, der das oben Genannte verletzt, wird sofort geschlossen, ohne Review.**
+**Jeder PR, der das oben Genannte verletzt, wird ohne Review sofort geschlossen.**
 
 ---
 
 ## Русский
 
-### Основной принцип: Маленькие шаги, без прыжков
+### Основной принцип: семантическое версионирование
 
-**Номера версий — не медали, а записи итераций.**
+Tuan-CLI следует [SemVer](https://semver.org/). Проект сейчас находится на **линии `0.x` — публичный API ещё не заморожен**. Номер версии отражает стабильность интерфейса, а не объём работы и не «внешний блеск»:
 
-Мы отвергаем следующее поведение:
-- ❌ Прыжок с 0.2.01 на 0.3.0 после исправления крупного бага
-- ❌ Прыжок с 0.2.01 на 1.0.0 после добавления модуля
-- ❌ Повышение версий только ради "впечатляющего вида"
+- Ломающие изменения внутри `0.x` → поднять **MINOR** (например, `0.3.0` → `0.4.0`), с предварительным анонсом и подсказками по миграции
+- Новые обратно совместимые функции → поднять **MINOR** (например, `0.3.0` → `0.4.0`)
+- Исправления ошибок / документация / внутренний рефакторинг → поднять **PATCH** (например, `0.3.0` → `0.3.1`)
 
-Мы настаиваем на следующем:
-- ✅ Каждая итерация вносит инкрементальные изменения, макс. +0.0.001
-- ✅ Неважно, насколько впечатляющий модуль/функция, версия увеличивается незначительно
-- ✅ Маленькие шаги, быстрая итерация, непрерывная поставка
+Прежняя политика «маленькие шаги / годовое ограничение» (макс. +0.0.001, запрет перехода на 0.3 до китайского Нового года 2027) **отменена**. Версия определяется семантикой SemVer изменения — не календарём и не «впечатляющим видом».
 
-### Правила годовой блокировки версий
+### Правила инкремента версии
 
-**Одна мажорная версия в год, без ранних прыжков.**
+| Уровень | Когда | Пример |
+|---------|-------|--------|
+| **MAJOR** | Несовместимые изменения —— **только после заморозки API** (начиная с `1.0`) | `1.0` → `2.0` |
+| **MINOR** | Новые функции; также ломающие правки на линии `0.x` | `0.3.0` → `0.4.0` |
+| **PATCH** | Исправления ошибок, документация, внутренний рефакторинг, патчи безопасности без изменения поведения | `0.3.0` → `0.3.1` |
 
-| Год | Мажорная серия | Допустимый диапазон |
-|-----|---------------|---------------------|
-| 2026 | 0.2.x | 0.2.01 ~ 0.2.999 |
-| 2027 | 0.3.x | 0.3.01 ~ 0.3.999 |
-| 2028 | 0.4.x | 0.4.01 ~ 0.4.999 |
+Ломающие изменения анонсируются заранее с подсказками по миграции; сам номер версии является сигналом (MINOR внутри `0.x`, MAJOR только начиная с `1.0`). Релизы проходят полный набор тестов и порог CHANGELOG перед публикацией.
 
-**Жёсткие ограничения:**
-- До китайского Нового года 2027 (~6 февраля 2027) **никто** не может перейти на 0.3 или выше.
-- Каждая годовая мажорная версия разблокируется только после **1 января следующего года**.
-
-### Правила инкрементации версии
-
-**Разрешённые инкременты:**
-- Текущая версия: `0.2.01`
-- Единица инкремента: `0.0.001`
-- Т.е.: `0.2.01` → `0.2.011` → `0.2.012` → ... → `0.2.999`
-
-**Разрешённые сценарии:**
-1. **Исправление багов** (независимо от серьёзности)
-2. **Малые функции** (без влияния на ядро архитектуры)
-3. **Обновление документации** (README, комментарии, примеры)
-4. **Обновление зависимостей** (уровень patch)
-5. **Патчи безопасности** (даже критические — только +0.0.001)
-6. **Оптимизация производительности** (без изменений API)
-7. **Добавление тестов** (без изменений поведения)
-
-**Запрещённые сценарии:**
-1. Добавление движка/модуля → только +0.0.001 разрешено
-2. Рефакторинг ядра архитектуры → только +0.0.001 разрешено
-3. Исправление критических уязвимостей → только +0.0.001 разрешено
-4. Внедрение новой подсистемы → только +0.0.001 разрешено
-5. Улучшение производительности в 10 раз → только +0.0.001 разрешено
-6. Любая мысль "я думаю, мы должны поднять мажорную версию" → ОТКЛОНЕНО
-
-### Чек-лист PR/коммита
+### Контрольный список PR/коммитов
 
 Каждый PR должен подтвердить перед отправкой:
-- [ ] Версия в pyproject.toml обновлена (только +0.0.001)
-- [ ] Версия в package.json синхронизирована
-- [ ] CHANGELOG.md фиксирует изменение
-- [ ] Версия не пересекает годовую мажорную границу
-- [ ] Мажорная серия текущего года не нарушена
+- [ ] Версия в `pyproject.toml` и `qingxiaotuan/__init__.py` идентична
+- [ ] Верхняя запись CHANGELOG.md соответствует текущей версии
+- [ ] Версия не ниже предыдущего релиза (запрет даунгрейда)
+- [ ] Уровень инкремента соответствует семантике SemVer изменения
 
-**Любой PR, нарушающий вышеуказанное, будет немедленно закрыт без рецензирования.**
-
----
-
-*最后修订 / Last revised: 2026-09-06*
-*适用于 / Applies to: Tuan-CLI 及 kino-koki 所有Python/Node项目 / and all kino-koki Python/Node projects*
+**Любой PR, нарушающий вышеуказанное, будет закрыт немедленно без ревью.**

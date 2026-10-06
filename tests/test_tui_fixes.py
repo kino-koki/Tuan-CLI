@@ -114,7 +114,7 @@ class TestSlashMeta:
         for n in names:
             assert n.startswith("/")
         # 常用命令必须有描述
-        for key in ("/help", "/provider", "/login", "/web", "/code", "/commands", "/clear", "/exit"):
+        for key in ("/help", "/provider", "/web", "/code", "/commands", "/clear", "/exit"):
             assert key in meta, key
 
     def test_completer_uses_meta(self):

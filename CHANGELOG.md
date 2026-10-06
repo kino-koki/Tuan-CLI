@@ -5,7 +5,124 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.018] - Unreleased
+## [0.3.0] - 2026-10-06
+
+> **发布说明**：本版将版本号由 `1.0` **回落至 `0.3.0`**。原因：`1.0` 宣称「公共 API 已冻结并承诺
+> 向后兼容」，但项目仍处于按天迭代、接口仍在调整的阶段，该承诺缺乏可验证性——属于**版本号超前于事实**。
+> 按 SemVer 诚实口径，`0.x` 才准确描述现状：接口未冻结，破坏性调整会预告 + 给迁移提示，但不承诺兼容。
+> `1.0` 预留给 API 真正冻结之时。同步修正：`pyproject.toml`、`qingxiaotuan/__init__.py`、TUI 版本显示、
+> VS Code 扩展、`qxt upgrade` 示例、`QXT.md`、`VERSION_POLICY.md`（10 语言）、`VERSION_FAQ.md`、
+> README（10 语言）。此前条目的历史记录不追溯改写。
+
+### 移除账户登录能力：回归「完全本地离线」 (2026-10-06)
+
+- **整体删除第三方账户登录**（GitHub / Apple / DeepSeek），因为它与项目「完全本地离线、只有模型云端」
+  的定位冲突。删除范围：
+  - `qingxiaotuan/auth/`（7 个模块：`store` / `base` / `github` / `apple` / `deepseek` / `callback`）整体移除；
+  - `cli/cmd_login.py`（`qxt login` / `qxt logout` / `qxt whoami`）移除，`parser_commands.py` 与
+    `parser.py` 中的对应子命令与路由一并清理；
+  - `/account` 斜杠命令与 `/login`（API Key 保存的冗余别名，`/provider` 已完整覆盖）移除；
+  - `/web` 工作台侧栏账户面板移除（前端 `#auth` 面板 + CSS + `loadAuth()`，后端
+    `/api/auth/status`、`/api/auth/login`、`/api/auth/logout` 三条路由与 `_auth_status_all` /
+    `_auth_login_provider` 两个函数）；
+  - TUI 欢迎盒的账户状态行移除；i18n 的 `banner.account` 键从 10 种语言中删除。
+- **保留**：模型 API Key 配置（`qxt models` / `/provider`）——这是「模型云端」的合法部分，
+  密钥由用户掌握、只发给对应端点。
+- 测试：删除 `test_auth.py` / `test_auth_e2e.py` / `test_account_menu.py`（登录专属）；
+  修正 `test_tui_fixes.py` 的命令列表。
+- 文档：README（10 语言）的「账户登录」章节整体改写为「完全本地离线 · 无账户登录」，
+  并保留诚实披露（说明该能力曾存在、为何移除）。
+
+### 供应商目录更新：52 → 55 家 (2026-10-06)
+
+- **新增 DeepInfra（`deepinfra`）**：OpenAI SDK 直连替换端点 `https://api.deepinfra.com/v1/openai`，
+  密钥变量 `DEEPINFRA_API_KEY`，归入「国际主流」。
+- **新增 Nebius AI Studio（`nebius`）**：端点 `https://api.studio.nebius.com/v1`，
+  密钥变量 `NEBIUS_API_KEY`，归入「云平台」。
+- **新增 Hyperbolic（`hyperbolic`）**：端点 `https://api.hyperbolic.xyz/v1`，
+  密钥变量 `HYPERBOLIC_API_KEY`，归入「国际主流」。
+- 三家均提供官方文档记载的 OpenAI 兼容端点（DeepInfra / Nebius / Hyperbolic docs），并补齐模型清单。
+- 全量同步「52 家」→「55 家」：README（10 语言）、`SUPPORTED_MODELS.md`、`VERSION_FAQ.md`、
+  `cli/parser.py`、`models/__init__.py`、`models/local_catalog.py`、`runtime/__init__.py`，
+  以及 `provider_catalog.py` 的分类计数注释（与代码实测一致）。
+- 校验：`verify_doc_numbers.py` → 55 家 / 1183 模型，全部一致。
+
+### 供应商目录更新：51 → 52 家 (2026-10-06)
+
+- **新增七牛云 AI（`qiniu`）**：聚合 160+ 模型，同时兼容 OpenAI / Anthropic 两套接口协议，
+  新用户赠送免费额度；归入「聚合网关」分类（该分类 7 → 8 家）。
+  端点 `https://api.qnaigc.com/v1`，密钥变量 `QINIU_API_KEY`。
+- 新增其模型清单（`deepseek-v4-pro` / `qwen3.7-max` / `glm-5.2` / `doubao-2.0-pro-256k` 等）。
+- 全量同步「51 家」→「52 家」：README（10 语言，38 处）、`SUPPORTED_MODELS.md`、
+  `VERSION_FAQ.md`、`cli/parser.py`、`models/__init__.py`、`models/local_catalog.py`、
+  `runtime/__init__.py`，以及 `provider_catalog.py` 的分类计数注释（改为与代码实测一致）。
+- `tests/test_doc_numbers.py` 不再硬编码供应商数量，改为与 `ALL_PROVIDERS` 交叉核对
+  （避免每次增删供应商都要改测试）。
+- 校验：`verify_doc_numbers.py` → 52 家 / 1173 模型，全部一致。
+
+### 安全引擎：rm 递归强删按「目标危险度」分级 (2026-10-06)
+
+- **修复误杀**：`rm -rf` 此前只要带 `-r -f` 即判硬红线，导致 `rm -rf ./dist`、`rm -rf node_modules`、
+  `rm -rf build/*` 这类**清理构建产物的常规操作**被当成灾难级操作拦截——把安全做成了骚扰。
+- 新增 `safety_redline.has_dangerous_recursive_rm()`：在原有 `has_recursive_rm()`（任何 `rm -r -f`）
+  基础上叠加**目标路径危险度**判定，仅灾难级目标才是硬红线：
+  - **硬红线（YOLO 也不放行）**：`rm -rf /`、`rm -rf ~`、`rm -rf $HOME`、`rm -rf /etc`、
+    `rm -rf /usr/local`、`rm -rf /tmp/x`、`rm -rf *`、`rm -rf ./*`、`rm -rf ..`、`C:\`
+  - **可确认（high，不拦截）**：`rm -rf ./build`、`rm -rf ./dist`、`rm -rf node_modules`、
+    `rm -rf dist/`、`rm -rf build/*`、`rm -rf ./dist/*`
+- 判定口径：绝对路径 / 家目录 / 根 / 通配无具体前缀（`*`、`./*`）→ 危险；
+  有具体相对目录前缀（`build/*`、`./dist`）→ 安全。
+- `is_redline()`（综合红线）语义**不变**——任何 `rm -r -f` 仍是「需确认」级危险操作；
+  只有 `is_hard_redline()` 与 `SafetyEngine.score()` 采用分级口径。
+- 验证：`test_safety_benign.py` / `test_shell_safety_guard.py` 新增
+  `test_rm_relative_target_not_hard_redline`、`test_rm_dangerous_target_is_hard_redline`；
+  97 项安全用例通过。
+
+### 独立对抗验证 (bench/indep_verify.py, 2026-10-06)
+
+- 新增 `bench/indep_verify.py`：**不引用项目任何数据文件**，用自行构造的 21 条混淆绕过载荷
+  （变量拼接 / IFS / 命令替换 / 反引号 / `bash -c`·`sh -c`·`eval` 套壳 / sudo / 引号分割 /
+  制表符 / 十六进制·八进制转义 / 反斜杠续行 / mkfs / dd / fork bomb / chmod 000 / force push / DROP）
+  与 8 条良性命令，交叉复核安全引擎的混淆还原能力。
+- 实测结果：**漏拦 0**（全部 21 条恶意载荷 100% 拦截）；误杀 1（`rm -rf ./dist`，
+  经上条修复后已降为可确认，重跑应为 0）。
+- 定位说明：现有三套基准数据集均为项目自建，`bypass=0` 只证明「挡得住自建样本」；
+  本脚本是对该局限的补充，但同样不等于真实红队。`bench/README.md` 已补「自我限定」诚实声明。
+- 复现：`python bench/indep_verify.py`（纯本地、不依赖网络与模型）。
+
+### 安全引擎按职责拆分 (2026-10-06)
+
+- `ext/safety_engine.py`（原 ~2300 行单文件）拆为三个职责模块，原路径保留为**兼容转发层**：
+  - `ext/safety_normalize.py` — 归一化 / 混淆还原（间接调用展开、ANSI-C/Base64/Unicode 还原、tokenize、段切分）；
+  - `ext/safety_redline.py` — 红线模式库与判定（`is_redline` / `is_hard_redline` / `is_benign_dev_command` + 模式库）；
+  - `ext/safety_score.py` — `SafetyEngine` IPC 门面（`score` / `analyze`）。
+- **对外符号与行为不变**：`from qingxiaotuan.ext.safety_engine import ...` 全部照旧；
+  静态评分入口由模块级 `score()` 收敛为 `SafetyEngine.score(params)`。
+- 验证：90 项安全相关用例通过（`test_safety_benign` / `test_shell_safety_guard` /
+  `test_safety_redline_bypass` / `test_safety_redline_fix`）。
+
+### 文档校准 (2026-10-06)
+
+- `ARCHITECTURE.md` §4.6 更正 `arch/` 定位：此前称其"非生产执行路径"，实测
+  `app.py::build_kernel` 注册 `ArchPlugin`、`codedev/engine.py` 复用 `arch.Orchestrator`、
+  `sandbox/manager.py` 复用 `arch.platform`，**属生产路径的一部分**；已区分为
+  「门面插件（生产件）」与「参考实现（测试件）」两个身份。
+- `ARCHITECTURE.md` §4.4 / `README.md` / `README_zh-CN.md` 同步 `SafetyEngine.score(params)`
+  与三模块拆分结构，消除文档漂移。
+
+### 版本跃迁：0.2.018 → 0.3.0 (2026-10-06)
+
+- 项目遵循标准语义化版本 (SemVer)，**当前处于 `0.x` 阶段（公共 API 未冻结）**：
+  `0.x` 内破坏性调整 / 兼容功能升 MINOR，修复升 PATCH；`1.0` 预留给 API 冻结。
+- **废除旧的「年度版本锁定」策略**（0.2.x → 0.3.x 按年解锁）与「最多 +0.0.001」递增上限；
+  移除 QXT.md / VERSION_POLICY.md 中的春节铁律（2027 年春节前不得跃迁 0.3+）。
+  ——注意：本版即 `0.3.0`，正是对「春节铁律」的破除；旧的年度锁定规则同时作废。
+- `scripts/check_version_policy.py` 改为 SemVer 一致性检查：版本一致性 / 禁止回退 / CHANGELOG 对齐（不再限制递增幅度），测试同步更新。
+- 同步更新：pyproject.toml、`qingxiaotuan/__init__.py`、TUI 版本显示、`qxt upgrade` 示例、
+  VS Code 扩展版本、README（10 语言）、VERSION_FAQ.md。
+- 0.2.018 未发布条目（下述）随本次跃迁一并纳入 0.3.0。
+- **注**：中途曾短暂将版本标为 `1.0`（宣称 API 冻结），因与事实不符，于同日回落到 `0.3.0`；
+  详见本文件顶部「发布说明」。
 
 ### 提示词超越层 + SKILL 注入完善 (2026-10-06)
 

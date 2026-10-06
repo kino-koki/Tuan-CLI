@@ -17,22 +17,23 @@ def _tui(**kw):
 def test_msg_to_lines_no_double_bullet():
     """用户消息已带 ✨ 前缀 (事件角色标记) 时, 渲染不再叠加第二颗。"""
     tui = _tui()
-    # 事件写入时带前缀 (append_log 路径)
+    # 事件写入时带前缀 (append_log 路径); 统一左缩进 2 格 (与欢迎盒内边距同列)
     lines = tui._msg_to_lines("user", f"{USER_MESSAGE_BULLET}你好")
     first = "".join(seg for _, seg in lines[0])
     assert first.count("✨") == 1
-    assert first == "✨ 你好"
+    assert first == "  ✨ 你好"
     # 纯文本 (防御) 渲染时补一颗
     lines2 = tui._msg_to_lines("user", "你好")
     first2 = "".join(seg for _, seg in lines2[0])
-    assert first2 == "✨ 你好"
+    assert first2 == "  ✨ 你好"
 
 
 def test_msg_to_lines_user_block_bg():
-    """用户消息块带暖金底 (气泡感), 首行与续行一致。"""
+    """用户消息块带暖金底 (气泡感), 首行与续行一致; 首段为 2 格缩进透明前缀。"""
     tui = _tui()
     lines = tui._msg_to_lines("user", f"{USER_MESSAGE_BULLET}第一行\n第二行")
-    assert "bg:#2b2416" in lines[0][0][0]  # 首行金底
+    assert lines[0][0] == ("", "  ")  # 首行缩进前缀不带金底
+    assert "bg:#2b2416" in lines[0][1][0]  # 正文段金底
     assert any("bg:#2b2416" in cls for cls, _ in lines[1])  # 续行金底延续
 
 

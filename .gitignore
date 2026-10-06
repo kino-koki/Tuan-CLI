@@ -57,6 +57,10 @@ security-report*.html
 # ===== 截图 / 本地归档（不入库） =====
 _shots/
 _repo_archive/
+# 根目录偶发截图不入库（测评页 qxt-全面测评-*.html 是项目有意入库的文档，不忽略）
+联想截图_*.png
+截图_*.png
+Screenshot_*.png
 
 # ===== 运行时状态 =====
 .qxt/
@@ -121,3 +125,6 @@ scripts/_replace_icons.py
 .demo-patch.yaml
 111.md
 .git.broken-*/
+
+# ===== WorkBuddy 工作区数据（不入库） =====
+.workbuddy-ai/

@@ -1,7 +1,7 @@
 # Tuan-CLI
 
 > **« Model + Harness = Agent »** — on sépare « penser » de « tourner en sécurité », et on te remet les deux clés.
-> Un harness d'agents IA en pur Python, sécurité d'abord, agnostique du modèle. `v0.2.018` · MIT · Python ≥ 3.10
+> Un harness d'agents IA en pur Python, sécurité d'abord, agnostique du modèle. `v0.3.0` · MIT · Python ≥ 3.10
 
 **Langue/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · **Français** · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
@@ -11,7 +11,7 @@
 
 ## En une phrase
 
-La plupart des CLIs d'agents naissent *mariés à un fournisseur*. Ici, c'est l'inverse : un **châssis sans cerveau imposé**. Change de fournisseur à chaud parmi 51, tourne 100 % hors ligne, défais tes bêtises et vois le rayon d'impact **avant** que la commande ne parte. **Le modèle pense ; lui, il fait en sorte que rien n'explose.**
+La plupart des CLIs d'agents naissent *mariés à un fournisseur*. Ici, c'est l'inverse : un **châssis sans cerveau imposé**. Change de fournisseur à chaud parmi 55, tourne 100 % hors ligne, défais tes bêtises et vois le rayon d'impact **avant** que la commande ne parte. **Le modèle pense ; lui, il fait en sorte que rien n'explose.**
 
 **Ce que ce n'est pas** : ni un emballage captif d'un modèle (hot-swap / auto-hébergement / offline, tu choisis) ; ni un sous-fifre d'IDE (c'est un outil de terminal, en plus pilotable via ACP par VSCode/Zed/JetBrains) ; ni une abstraction fragile sur une seule couche (architecture microkernel pour ceux qui bricolent + un `setup` d'un clic pour les autres).
 
@@ -22,7 +22,7 @@ La plupart des CLIs d'agents naissent *mariés à un fournisseur*. Ici, c'est l'
 | Ce qu'il donne | Jusqu'où ça va |
 |---|---|
 | 🛡️ **La sécurité d'abord** | Quatre barrières : score de risque statique, blocage par rayon d'impact, plancher de lignes rouges en YOLO, et livre de comptes transactionnel avec `/undo` de précision |
-| 🔌 **Agnostique modèle** | 51 fournisseurs + Ollama local + hot-swap + routage auto (`router.*`) |
+| 🔌 **Agnostique modèle** | 55 fournisseurs + Ollama local + hot-swap + routage auto (`router.*`) |
 | 🧠 **Trois boucles principales** | ReAct / Planner-Execute / DevLoop — enfichables : un noyau, plusieurs « rythmes de pensée » |
 | 🔧 **Microkernel** | Un `@plugin` d'une ligne, registre de services, bus d'événements append-only, middleware de hooks |
 | 🗂️ **Mémoire** | SQLite FTS5 + flux d'événements de session ; mémoire à 3 niveaux, `/undo`, checkpoint, replay, export Trajectory |
@@ -67,14 +67,14 @@ class MyTool(Plugin):
 
 ## Numéro de version et historique du dépôt (divulgation transparente)
 
-**Pourquoi la version reste-t-elle en `0.x` ?** Tuan-CLI suit [SemVer](https://semver.org/) : `0.x` signifie que **l'API n'est pas encore figée** — les changements cassants sont annoncés à l'avance avec des pistes de migration (voir [VERSION_POLICY.md](VERSION_POLICY.md)). **Le numéro de version reflète la stabilité de l'interface, pas l'exhaustivité des fonctionnalités.** En capacité, le `0.2.x` actuel offre ce que les produits comparables d'Agent CLI appellent un **ensemble de fonctionnalités de niveau 2.x** — contrôle de sécurité / rollback transactionnel, changement à chaud indépendant du modèle (51 fournisseurs + Ollama local), trois boucles principales, architecture micro-noyau à plugins, mémoire à trois niveaux, interopérabilité d'écosystèmes (pont MCP/ACP/Claude Code/Hermes), sous-agents et Swarm, cron et tâches d'arrière-plan, mode Goal et permissions précises — le tout livré et couvert par des tests. En une phrase : **la maturité fonctionnelle est à « 2.x » ; la version reste en « 0.x » parce que nous tenons le principe que 1.0 n'arrive qu'après le gel de l'API** — pas par manque de capacités.
+**Pourquoi `0.3.0` et non `1.0` ?** Sémantique [SemVer](https://semver.org/) honnête : **une version `0.x` signifie que l'API publique (surface CLI, schéma de config, protocole d'outils, contrat de plugins) n'est pas encore figée** et peut encore évoluer entre les versions. Tuan-CLI offre déjà un large ensemble de fonctionnalités — contrôle de sécurité / rollback transactionnel, changement à chaud indépendant du modèle (55 fournisseurs + Ollama local), trois boucles principales, architecture micro-noyau à plugins, mémoire à trois niveaux, interopérabilité d'écosystèmes (pont MCP/ACP/Claude Code/Hermes), sous-agents et Swarm, cron et tâches d'arrière-plan, mode Goal et permissions précises — le tout couvert par des tests. Mais **le numéro de version reflète la stabilité de l'interface, pas l'exhaustivité des fonctionnalités** : un ensemble complet de fonctionnalités ne signifie pas que l'API doive être figée. `1.0` est réservé au moment où l'API publique sera réellement stable et où nous pourrons promettre la rétrocompatibilité. D'ici là : les changements cassants montent MINOR dans `0.x` (avec pistes de migration), les fonctions compatibles MINOR, les correctifs PATCH (voir [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Sémantique de version | Signification |
 |---|---|
-| `0.x` (actuel) | API non figée : changements cassants annoncés + pistes de migration ; exhaustivité fonctionnelle au niveau des concurrents 2.x |
-| `1.0` (prévu) | Publié une fois l'API figée ; ensuite le numéro reflète directement la stabilité de l'interface |
+| `0.3.0` (actuel) | **API pas encore figée** : `0.x` autorise des ajustements cassants, annoncés avec des pistes de migration ; rétrocompatibilité non promise |
+| `1.0` (réservé) | Activé lorsque l'API publique est figée et la rétrocompatibilité promise ; c'est seulement alors que les changements cassants montent MAJOR (`2.0`) |
 
-**Note sur l'historique Git (transparence open source) :** L'historique des commits de ce dépôt a été **reconstruit le 2026-09-26 après corruption du dépôt local** ; l'évolution commit par commit antérieure à cette date n'est plus récupérable (les anciens objets `.git` ont été perdus). Le code actuel est entièrement revoyable, de l'architecture à l'implémentation ; pour l'évolution des fonctionnalités antérieure à 2026-09-26, fiez-vous aux enregistrements de version de [CHANGELOG.md](CHANGELOG.md) (la discipline de version n'est pas affectée). Nous choisissons de le divulguer clairement — sans fard, sans rien cacher.
+**Note sur l'historique Git (transparence open source) :** L'historique des commits de ce dépôt a été **volontairement reconstruit le 2026-09-26 — l'historique des commits antérieurs a été délibérément écrasé par l'auteur** ; l'évolution commit par commit antérieure à cette date n'est plus conservée. Le code actuel est entièrement revoyable, de l'architecture à l'implémentation ; pour l'évolution des fonctionnalités antérieure à 2026-09-26, fiez-vous aux enregistrements de version de [CHANGELOG.md](CHANGELOG.md) (la discipline de version n'est pas affectée). Nous choisissons de le divulguer clairement — sans fard, sans rien cacher.
 
 ---
 
@@ -119,7 +119,7 @@ qxt --print run "Salut, présente-toi en une phrase."
 | Commande | À quoi ça sert |
 |---|---|
 | `qxt` | TUI interactif (skin Kimi Code) |
-| `qxt setup` / `qxt models` | Configurer le fournisseur / lister 51 fournisseurs et 1100+ modèles |
+| `qxt setup` / `qxt models` | Configurer le fournisseur / lister 55 fournisseurs et 1100+ modèles |
 | `qxt agent` | Agents nommés (compatible `.claude/agents`, découverte en 3 niveaux) |
 | `qxt acp` | Lance un serveur ACP pour que VSCode / Zed / JetBrains te pilote |
 | `qxt cron` | Tâches planifiées en arrière-plan |
@@ -168,21 +168,29 @@ qxt --print run "Salut, une ligne." # smoke
 
 - **Discipline i18n** : README_zh-CN est le maître de référence ; chaque langue est une localisation vivante, zéro dérive — **aucune traduction mécanique.**
 - **Échelle** : ~412 `.py` / ~79 k lignes / 41 paquets / 36 plugins.
-- **Version** : `v0.2.018` (0.x/Beta) ; les changements qui cassent préviennent en version mineure + notes de migration.
+- **Version** : `v0.3.0` (une lignée `0.x` — l'API n'est pas encore figée) ; les ajustements cassants arrivent avec préavis + notes de migration, et `1.0` est réservé au gel de l'API.
 - **En profondeur** : signatures des neuf moteurs et un tutoriel de nouvelle outil vivent dans l'appendice de `README_zh-CN.md`.
 
 ---
 
-## Connexion : GitHub / Apple / DeepSeek (optionnel · hors ligne par défaut)
+## Entièrement local et hors ligne · aucune connexion
 
-- Tuan-CLI fonctionne hors ligne sans aucun compte. La connexion est une couche optionnelle.
-- `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`.
-- Identifiants dans `~/.qingxiaotuan/auth-config.toml` ou variables d'environnement `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*` (variables prioritaires).
-- Callback OAuth par défaut `http://127.0.0.1:8765/callback` ; `auth.json` stocke les jetons en clair — protégez votre répertoire personnel et déconnectez-vous sur les machines partagées.
-- API officielle DeepSeek comme backend de modèle : `qxt models set deepseek` (clé officielle sk-).
-- Détails dans README_zh-CN.md (maître) et README.md.
+Tuan-CLI **ne propose aucune connexion** : pas de liaison GitHub / Apple / DeepSeek, pas de callback OAuth, aucun jeton sur disque. C'est délibéré — **tout tourne en local sauf l'API de modèle que vous configurez**.
 
----
+- **Pleinement utilisable sans se connecter** : E/S de fichiers, exécution de commandes, mémoire, skills, sous-agents et garde-fou de sécurité sont locaux.
+- **Le seul « cloud » est votre API de modèle** : la clé est la vôtre, envoyée uniquement à ce point de terminaison, sans relais tiers.
+- **Pour un pipeline sans réseau** : installez Ollama ou llama.cpp — `qxt models local` pour détecter, `qxt models set ollama <modèle>` pour l'utiliser.
+
+### Configurer la clé d'API du modèle
+
+```bash
+qxt models set deepseek deepseek-chat   # choisir fournisseur et modèle
+qxt models                              # configuration interactive (clé dans ~/.qingxiaotuan/.env)
+```
+
+Les clés résident dans `~/.qingxiaotuan/.env` (chmod 600, jamais commité) ; les variables d'environnement (ex. `DEEPSEEK_API_KEY`) fonctionnent aussi.
+
+> **Transparence** : les versions précédentes proposaient une connexion GitHub / Apple / DeepSeek (avec une voie par jeton de session web). Cela contredisait le positionnement « entièrement local et hors ligne », et le point de terminaison web était une interface privée non prise en charge déclenchant des contrôles de risque — la capacité a donc été **entièrement retirée**. Les appels de modèle passent par les API officielles avec votre propre clé.
 
 ## License & liens
 

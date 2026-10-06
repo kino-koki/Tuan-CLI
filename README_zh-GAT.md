@@ -1,7 +1,7 @@
 # 青小團 · Tuan-CLI
 
 > **「Model + Harness = Agent」** —— 把「會思考」跟「能穩穩跑」拆開，兩把鑰匙都交到你手上。
-> 一個安全第一、模型不挑、純 Python 的 AI Agent Harness。`v0.2.018` · MIT · Python ≥ 3.10
+> 一個安全第一、模型不挑、純 Python 的 AI Agent Harness。`v0.3.0` · MIT · Python ≥ 3.10
 
 **語言/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · **繁體中文** · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
@@ -11,7 +11,7 @@
 
 ## 一句話
 
-別家賣的是「把一個模型套殼」，青小團給的是「一副能隨時換腦的殼」。模型熱切換、51 家供應商、本地離線全都行；下錯指令能撤、動手前先算影響半徑；微核心插件隨你插。**模型負責想，它負責穩。**
+別家賣的是「把一個模型套殼」，青小團給的是「一副能隨時換腦的殼」。模型熱切換、55 家供應商、本地離線全都行；下錯指令能撤、動手前先算影響半徑；微核心插件隨你插。**模型負責想，它負責穩。**
 
 **它不是什麼**：不是某家模型的禁臠（熱切換、自託管、離線隨你）；不是 IDE 的附庸（標準終端工具，可被 ACP/IDE 驅動）；不是一層套娃（給開發者的是微核心插件架構，給一般人的是一條 `setup`）。
 
@@ -22,7 +22,7 @@
 | 給你的 | 頂到哪 |
 |---|---|
 |  **安全第一** | 四道閘：靜態評分、影響半徑預攔截、YOLO 紅線兜底、交易日誌 `/undo` 精準回滾 |
-|  **模型不挑** | 51 家供應商 + 本地 Ollama + 熱切換 + 自動路由（`router.*`） |
+|  **模型不挑** | 55 家供應商 + 本地 Ollama + 熱切換 + 自動路由（`router.*`） |
 |  **三種主迴圈** | ReAct / Planner-Execute / DevLoop 可插拔；一個核心、多種「思考節奏」 |
 |  **微核心** | 一行 `@plugin`、服務註冊表、append-only 事件總線、hook 中介——愛玩的人有福了 |
 |  **記憶** | SQLite FTS5 + 會話事件流；三層記憶、`/undo`、checkpoint、replay、Trajectory 匯出 |
@@ -67,14 +67,14 @@ class MyTool(Plugin):
 
 ## 版本號與倉庫歷史（透明披露）
 
-**為什麼版本號停在 `0.x`？** Tuan-CLI 的版本號遵循 [SemVer](https://semver.org/) 語義：`0.x` 表示 **API 尚未凍結**——破壞性變更會提前預告並提供遷移提示（見 [VERSION_POLICY.md](VERSION_POLICY.md)）。**版本號反映的是介面穩定度，不是功能完成度**：就功能面而言，目前 `0.2.x` 的實際能力對標同類 Agent CLI 競品的 **2.x 級功能完整度**——安全攔截/交易回滾、模型無關熱切換（51 家供應商 + 本地 Ollama）、三種主迴圈、微核心外掛架構、三層記憶、生態互操作（MCP/ACP/Claude Code/Hermes 三方橋）、子代理與 Swarm、cron 與背景任務、Goal 模式與精確權限等均已落地並配有測試。一句話：**功能成熟度已到「2.x」，版本號停在「0.x」是因為我們堅持 API 凍結後才升 1.0**，而不是能力不足。
+**為什麼現在是 `0.3.0`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的誠實口徑：**`0.x` 階段意味著公共 API（CLI 介面、配置 schema、工具協定、外掛契約）尚未凍結**，仍可能隨迭代調整。Tuan-CLI 功能面已相當完整（安全攔截/交易回滾、模型無關熱切換（55 家供應商 + 本地 Ollama）、三種主迴圈、微核心外掛架構、三層記憶、生態互操作（MCP/ACP/Claude Code/Hermes 三方橋）、子代理與 Swarm、cron 與背景任務、Goal 模式與精確權限等，均配有測試），但**版本號反映的是介面穩定度，不是功能完成度**——功能齊全 ≠ API 該凍結。`1.0` 預留給公共 API 真正穩定、敢於承諾向後相容之時。此前：破壞性變更在 `0.x` 內升 MINOR（並附遷移提示）、相容功能升 MINOR、修復升 PATCH（見 [VERSION_POLICY.md](VERSION_POLICY.md)）。
 
 | 版本號語義 | 說明 |
 |---|---|
-| `0.x`（當前） | API 未凍結：破壞性變更預告 + 遷移提示；功能完整度對標競品 2.x |
-| `1.0`（計畫） | API 凍結後發布，此後版本號直接反映介面穩定性 |
+| `0.3.0`（當前） | **API 尚未凍結**：`0.x` 階段允許破壞性調整，會預告 + 給遷移提示；不承諾向後相容 |
+| `1.0`（預留） | 公共 API 凍結、承諾向後相容時啟用；此後破壞性變更才升 MAJOR（2.0） |
 
-**Git 歷史說明（開源透明披露）**：本倉庫的 Git 提交歷史於 **2026-09-26 因本地倉庫損壞而重建**，此前逐次提交的演進記錄已不可追溯（舊 `.git` 物件遺失）。目前程式碼從架構到實作完整可審查；2026-09-26 之前的功能演進請以 [CHANGELOG.md](CHANGELOG.md) 的版本記錄為準（版本紀律不受影響）。我們選擇如實披露這一點，不修飾、不隱藏。
+**Git 歷史說明（開源透明披露）**：本倉庫的 Git 提交歷史於 **2026-09-26 由作者有意重建——早期提交歷史被作者主動覆蓋**，此前逐次提交的演進記錄不再保留。目前程式碼從架構到實作完整可審查；2026-09-26 之前的功能演進請以 [CHANGELOG.md](CHANGELOG.md) 的版本記錄為準（版本紀律不受影響）。我們選擇如實披露這一點，不修飾、不隱藏。
 
 ---
 
@@ -119,7 +119,7 @@ qxt --print run "你好，一句話介紹你自己"
 | 指令 | 用途 |
 |---|---|
 | `qxt` | 互動 TUI（Kimi Code 皮） |
-| `qxt setup` / `qxt models` | 配供應商 / 列出 51 家供應商 & 1100+ 模型 |
+| `qxt setup` / `qxt models` | 配供應商 / 列出 55 家供應商 & 1100+ 模型 |
 | `qxt agent` | 命名 Agents（相容 `.claude/agents`，三層發現） |
 | `qxt acp` | 開 ACP server，讓 VS Code / Zed / JetBrains 來驅動你 |
 | `qxt cron` | 定時背景任務 |
@@ -168,21 +168,32 @@ qxt --print run "你好，一句話。"   # 冒煙
 
 - **多語文檔紀律**：以 `README_zh-CN.md` 為權威母本，全部 10 份同步；對譯求「生動、零漂移」，**禁機械直譯**。
 - **規模**：~412 `.py` / ~7.9 萬行 / 41 包 / 插件 36。
-- **版本**：`v0.2.018`（0.x/Beta）；破壞性變更小版本先預告 + 給遷移提示。
+- **版本**：`v0.3.0`（`0.x` 階段 API 未凍結）；破壞性調整提前預告 + 遷移提示，`1.0` 預留給 API 凍結。
 - **深挖**：九大引擎簽名、新增工具走查，附錄在 `README_zh-CN.md` 尾段。
 
 ---
 
-## 帳戶登入：GitHub / Apple / DeepSeek（可選 · 預設離線）
+## 完全本地離線 · 無帳戶登入
 
-- 不登入即可完整離線使用；登入只是可選增強層。
-- `qxt login` / `qxt login github` / `qxt logout` / `qxt whoami`。
-- 憑證寫入 `~/.qingxiaotuan/auth-config.toml` 或環境變數 `QXT_GITHUB_*` / `QXT_APPLE_*` / `QXT_DEEPSEEK_*`（環境變數優先）。
-- OAuth 回調預設 `http://127.0.0.1:8765/callback`；`auth.json` 為明文令牌，請保護主目錄、公共機器用完登出。
-- DeepSeek 官方 API 作為模型後端：`qxt models set deepseek`（官方 API Key, sk-）。
-- 詳見 README_zh-CN.md（母本）與 README.md。
+Tuan-CLI **不提供任何帳戶登入**：沒有 GitHub / Apple / DeepSeek 帳號綁定，沒有 OAuth 回呼，沒有登入態令牌落盤。
+這是刻意的設計選擇——**除了你自己設定的模型 API，一切都跑在本地**。
 
----
+- **不登入即可完整使用**：檔案讀寫、命令執行、記憶、技能、子代理、安全護欄全部本地。
+- **唯一的「雲端」是你選的模型 API**：金鑰由你掌握，只用於向該端點發起模型請求，不經過任何第三方中轉。
+- **想整條鏈路零連網**：裝 Ollama 或 llama.cpp，`qxt models local` 探測、`qxt models set ollama <模型>` 接入。
+
+### 設定模型 API Key
+
+```bash
+qxt models set deepseek deepseek-chat   # 選擇供應商與模型
+qxt models                              # 互動式設定 (API Key 寫入 ~/.qingxiaotuan/.env)
+```
+
+金鑰集中存放於 `~/.qingxiaotuan/.env`（建議權限 600、勿入庫），也可直接用環境變數（如 `DEEPSEEK_API_KEY`）。
+
+> **透明披露**：早期版本曾提供 GitHub / Apple / DeepSeek 三家帳號登入（含網頁會話令牌路徑）。
+> 這與「完全本地離線」的定位衝突，且網頁端點屬私有非受支援介面、會觸發風控，
+> 該能力已**整體移除**。模型呼叫請走官方 API + 你自己的 Key。
 
 ## License & 相關閱讀
 

@@ -48,10 +48,12 @@ def test_safety_analyze_overall_advice():
         {"kind": "write", "target": "src/app.py", "text": "x=1"},
     ]
     r = m.call("safety", "analyze", {"ops": ops})
-    assert r["overall"] == "critical"
-    assert r["advice"].startswith("BLOCK")
+    # `rm -rf build/` 是相对路径清理目标, 按目标危险度降为 high (需确认),
+    # 不再构成 critical 硬红线 —— 见 safety_redline.has_dangerous_recursive_rm。
+    assert r["overall"] == "high"
+    assert r["advice"].startswith("CONFIRM")
     kinds = [it["risk"] for it in r["items"]]
-    assert "critical" in kinds
+    assert "high" in kinds
     m.close_all()
 
 
