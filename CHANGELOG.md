@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.018] - Unreleased
 
+### 与 Claude Code 同任务双跑对比基准 (bench/vs_claude.py, 2026-10-06)
+
+- **同一任务集双跑自动化**：`bench/tasks.yaml`（understand_api / fix_bug / add_test /
+  refactor_util）+ 同一组验收脚本，在隔离工作区分别用 `qxt run -p` 与
+  `claude -p --output-format json` 执行，输出通过率 / 耗时 / 成本 / 权限拒绝数对比，
+  渲染 md / json / html 三份报告。
+- **诚实性约定**：双跑前先探测 claude 是否真能完成一轮调用；探测失败时 Claude 侧
+  如实标注 N/A 并写明原因，绝不假装跑过。`--dry` 纯校验框架不调模型；
+  `--skip-probe` 强制逐任务真跑。
+- **Windows 兼容**：npm shim（`claude.ps1`/`.cmd`）自动解析真实可执行路径；
+  老版本 claude 不支持 `--no-input`，统一以 stdin 重定向替代。
+- 文档：`bench/README.md` 与 README（英文主文件）新增 head-to-head 章节。
+
 ### 品牌更名：Qingxiaotuan Agent CLI → Tuan-CLI (2026-10-05)
 
 - **对外名称统一改为 `Tuan-CLI`**：README（10 语言）、GitHub 仓库 URL、代码与网页署名、VS Code 扩展显示名等所有出现过项目英文名的地方全部更新。
