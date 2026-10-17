@@ -367,13 +367,27 @@ class _WebHandler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, "messages": s["messages"]})
             return
         if path == "/api/info":
+            me = self._owner.mode_effort()
             self._json(200, {"ok": True,
                              "model": self._owner.model_label,
                              "workspace": self._owner.workspace,
                              "engine": self._owner.engine_label,
+                             "mode": me["mode"],
+                             "effort": me["effort"],
+                             "git": self._owner.git_status(),
+                             "trust": self._owner.trust_status(),
                              "insecure_binding": self._owner.insecure_binding,
                              "i18n": web_strings(),
                              "security": self._owner.security_info()})
+            return
+        if path == "/api/git":
+            self._json(200, {"ok": True, **self._owner.git_status()})
+            return
+        if path == "/api/trust":
+            self._json(200, {"ok": True, **self._owner.trust_status()})
+            return
+        if path == "/api/slash":
+            self._json(200, {"ok": True, "commands": self._owner.slash_commands()})
             return
         if path == "/api/files":
             qs = parse_qs(parsed.query)
@@ -502,6 +516,21 @@ class _WebHandler(BaseHTTPRequestHandler):
             res = self._owner.toggle_plugin(
                 str(body.get("kind") or ""), str(body.get("name") or ""),
                 bool(body.get("enabled")))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/mode":
+            body = self._read_body()
+            if "mode" in body and body["mode"]:
+                res = self._owner.apply_mode(body["mode"])
+            elif "effort" in body and body["effort"]:
+                res = self._owner.apply_effort(body["effort"])
+            else:
+                res = {"ok": False, "error": "缺少 mode 或 effort 参数"}
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/trust":
+            body = self._read_body()
+            res = self._owner.set_trust_level(str(body.get("level") or ""))
             self._json(200 if res.get("ok") else 400, res)
             return
         self._json(404, {"ok": False, "error": "not found"})
@@ -737,6 +766,9 @@ class WebServer:
         self._disabled_plugins: set = set()
         self._cancel: Optional[threading.Event] = None
         self._make_agent_fn = None
+        # Web 工作台内的模式/推理投入覆盖 (None = 跟随配置默认值)
+        self._mode: Optional[str] = None
+        self._effort: Optional[str] = None
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._session_file = Path(workspace or ".") / ".tuan" / "web_sessions.json"
         self.load_sessions()
@@ -1031,6 +1063,170 @@ class WebServer:
             rec["event"].set()
         return True
 
+    # ---------------- 模式 / 推理投入 / 工作区信任 / git / 斜杠命令 ----------------
+    def _cfg(self):
+        """取配置对象; 无 kernel 时返回 None (调用方自降级)。"""
+        try:
+            return self.kernel.require("config") if self.kernel is not None else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    def mode_effort(self) -> Dict[str, Any]:
+        """当前生效模式 (standard/yolo/plan) 与推理投入 (low/medium/high)。
+
+        优先级: Web 工作台里的手动覆盖 (self._mode) > 配置默认值。
+        这是 /api/info 的 mode/effort 字段来源 —— 此前这两个字段从不下发,
+        导致前端 t-mode / t-effort 两个 chip 永远是空的 (死 UI)。
+        """
+        cfg = self._cfg()
+        if self._mode:
+            mode = self._mode
+        elif cfg is not None:
+            try:
+                mode = str(cfg.get("mode.default", "standard") or "standard")
+            except Exception:  # noqa: BLE001
+                mode = "standard"
+        else:
+            mode = "standard"
+        if self._effort:
+            effort = self._effort
+        elif cfg is not None:
+            try:
+                effort = str(cfg.get("agent.effort", "high") or "high")
+            except Exception:  # noqa: BLE001
+                effort = "high"
+        else:
+            effort = "high"
+        return {"mode": mode, "effort": effort}
+
+    def apply_mode(self, mode: str) -> Dict[str, Any]:
+        """设置运行模式并实时作用于当前所有会话 agent (以及后续新建的)。
+
+        - plan: 只读规划模式 (agent.plan_mode=True, yolo=False)
+        - yolo: 放权模式 (agent.yolo=True, plan_mode=False)
+        - standard: 默认 (两者皆 False)
+        同时把覆盖写回配置 (与 CLI _apply_mode_override 同口径, 不污染后续启动之外的状态)。
+        """
+        mode = str(mode or "").strip().lower()
+        if mode not in ("standard", "yolo", "plan"):
+            return {"ok": False, "error": f"未知模式: {mode}"}
+        self._mode = mode
+        cfg = self._cfg()
+        if cfg is not None:
+            try:
+                cfg.data.setdefault("mode", {})["default"] = mode
+            except Exception:  # noqa: BLE001
+                pass
+        pm = mode == "plan"
+        yl = mode == "yolo"
+        with _SESSIONS_LOCK:
+            for s in _SESSIONS.values():
+                a = s.get("agent")
+                if a is None:
+                    continue
+                try:
+                    a.plan_mode = pm
+                    a.yolo = yl
+                    if getattr(a, "ctx", None) is not None:
+                        a.ctx.plan_mode = pm
+                        a.ctx.yolo = yl
+                    if hasattr(a, "effective_tool_set"):
+                        a.effective_tool_set()
+                except Exception:  # noqa: BLE001
+                    pass
+        return {"ok": True, "mode": mode, **self.mode_effort()}
+
+    def apply_effort(self, effort: str) -> Dict[str, Any]:
+        """设置推理投入档位 (low/medium/high), 实时作用于配置 (agent 运行期读取)。"""
+        effort = str(effort or "").strip().lower()
+        if effort not in ("low", "medium", "high"):
+            return {"ok": False, "error": f"未知档位: {effort}"}
+        self._effort = effort
+        cfg = self._cfg()
+        if cfg is not None:
+            try:
+                cfg.data.setdefault("agent", {})["effort"] = effort
+            except Exception:  # noqa: BLE001
+                pass
+        return {"ok": True, "effort": effort, **self.mode_effort()}
+
+    def git_status(self) -> Dict[str, Any]:
+        """工作区 git 状态: 当前分支 + 是否有未提交改动 (供前端展示分支 chip)。
+
+        非 git 仓库 / git 缺失时优雅降级 (branch=None, dirty=False)。
+        """
+        try:
+            br = subprocess.run(  # noqa: S603 - 固定参数
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=self.workspace,
+                capture_output=True, text=True, timeout=10, errors="replace",
+            )
+            branch = (br.stdout or "").strip()
+            if br.returncode != 0 or not branch:
+                branch = None
+            st = subprocess.run(  # noqa: S603
+                ["git", "status", "--porcelain"], cwd=self.workspace,
+                capture_output=True, text=True, timeout=10, errors="replace",
+            )
+            dirty = bool(st.stdout and st.stdout.strip())
+            return {"branch": branch, "dirty": dirty, "repo": branch is not None}
+        except FileNotFoundError:
+            return {"branch": None, "dirty": False, "repo": False}
+        except subprocess.TimeoutExpired:
+            return {"branch": None, "dirty": False, "repo": False}
+        except Exception:  # noqa: BLE001
+            return {"branch": None, "dirty": False, "repo": False}
+
+    def trust_status(self) -> Dict[str, Any]:
+        """工作区信任状态 (对标 CLI 的 WorkspaceTrust / TUI prompt_trust)。"""
+        try:
+            from ..config.loader import home_dir
+            from ..core.workspace_trust import WorkspaceTrust
+            wt = WorkspaceTrust(home_dir())
+            return wt.get_project_info(self.workspace)
+        except Exception:  # noqa: BLE001
+            return {"path": self.workspace, "trust_level": "unknown",
+                    "needs_confirmation": True}
+
+    def set_trust_level(self, level: str) -> Dict[str, Any]:
+        """设置工作区信任级别并持久化。level ∈ trusted/limited/untrusted。"""
+        level = str(level or "").strip().lower()
+        if level not in ("trusted", "limited", "untrusted"):
+            return {"ok": False, "error": f"未知信任级别: {level}"}
+        try:
+            from ..config.loader import home_dir
+            from ..core.workspace_trust import WorkspaceTrust
+            wt = WorkspaceTrust(home_dir())
+            rec = wt.set_trust(
+                self.workspace, level,
+                project_name=Path(self.workspace).name if self.workspace else "",
+            )
+            # 同步到已存在的会话 agent ctx (若已构建)
+            lvl = "trusted" if level == "trusted" else (
+                "untrusted" if level == "untrusted" else "limited")
+            with _SESSIONS_LOCK:
+                for s in _SESSIONS.values():
+                    a = s.get("agent")
+                    if a is not None and getattr(a, "ctx", None) is not None:
+                        try:
+                            setattr(a.ctx, "workspace_trust_level", lvl)
+                        except Exception:  # noqa: BLE001
+                            pass
+            return {"ok": True, "level": level, **self.trust_status()}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    def slash_commands(self) -> List[Dict[str, str]]:
+        """斜杠命令清单 (名称 + 描述), 供前端命令面板发现/补全 (与 TUI 共用同一权威清单)。"""
+        try:
+            from ..cli.cmd_slash import list_slash_commands, slash_command_meta
+        except Exception:  # noqa: BLE001
+            return []
+        meta = slash_command_meta()
+        out = []
+        for name in list_slash_commands():
+            out.append({"name": name, "desc": meta.get(name, "")})
+        return out
+
     # ---------------- 运行 ----------------
     def make_agent(self):
         if self._make_agent_fn is not None:
@@ -1041,6 +1237,25 @@ class WebServer:
         # exclude_tools: 面板上被关掉的工具 (热插拔)
         agent = create_agent(self.kernel, self.workspace, confirm=self._ask_approval,
                              exclude_tools=tuple(sorted(self._disabled_tools)))
+        # 应用 Web 工作台内的模式/推理投入覆盖 (若有)
+        me = self.mode_effort()
+        try:
+            if me["mode"] == "plan":
+                agent.plan_mode = True
+                agent.yolo = False
+            elif me["mode"] == "yolo":
+                agent.plan_mode = False
+                agent.yolo = True
+            else:
+                agent.plan_mode = False
+                agent.yolo = False
+            if getattr(agent, "ctx", None) is not None:
+                agent.ctx.plan_mode = agent.plan_mode
+                agent.ctx.yolo = agent.yolo
+            if me["effort"] in ("low", "medium", "high"):
+                self._cfg().data.setdefault("agent", {})["effort"] = me["effort"]
+        except Exception:  # noqa: BLE001
+            pass
         return agent
 
     def set_agent_factory(self, fn) -> None:
