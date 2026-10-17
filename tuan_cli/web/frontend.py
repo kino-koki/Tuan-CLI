@@ -215,6 +215,11 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   .stream-cursor{display:inline-block;width:7px;height:15px;background:var(--color-accent);
                  border-radius:1px;vertical-align:-2px;animation:blink 1s step-start infinite}
   @keyframes blink{50%{opacity:0}}
+  /* 兜底: 流式结束 (body 打上 .streaming-off) 后若光标因任何异常仍留在 DOM,
+     立刻停止闪烁动画 —— 无限动画只要元素还在就永远闪, 这是「输出结束后
+     蓝块还在闪」最刺眼的表现。JS 侧已在 endStream() 里移除元素, 这里
+     是不依赖 JS 路径的第二道保险。 */
+  body.streaming-off .stream-cursor{animation:none;opacity:0}
 
   /* ===== 输入区 (官方 composer: 32px 大圆角 + 右下模型标识) ===== */
   #inputbar{border-top:var(--p-hairline) solid var(--color-line);padding:var(--space-4) 6vw var(--space-4);
@@ -328,19 +333,19 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   #rp-toggle{position:absolute;right:var(--space-3);top:var(--space-3);z-index:var(--z-tooltip)}
 
   /* ===== 审批弹窗 (allow / deny) ===== */
-  #approve{display:none;position:fixed;inset:0;background:var(--color-scrim-strong);z-index:var(--z-modal);
+  #approve,#trust{display:none;position:fixed;inset:0;background:var(--color-scrim-strong);z-index:var(--z-modal);
            justify-content:center;align-items:center;padding:var(--space-5)}
-  #approve.open{display:flex}
-  #approve .box{background:var(--color-surface-raised);border:var(--p-hairline) solid var(--color-line-strong);
+  #approve.open,#trust.open{display:flex}
+  #approve .box,#trust .box{background:var(--color-surface-raised);border:var(--p-hairline) solid var(--color-line-strong);
                 border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:560px;width:100%;
                 max-height:86vh;overflow-y:auto;padding:var(--space-5)}
-  #approve .hd{font-size:var(--text-base);font-weight:var(--weight-semibold);color:var(--color-text-strong);
+  #approve .hd,#trust .hd{font-size:var(--text-base);font-weight:var(--weight-semibold);color:var(--color-text-strong);
                margin-bottom:var(--space-2)}
   #approve .risk{display:inline-block;padding:1px var(--space-2);border-radius:var(--radius-full);
                  font-size:var(--text-2xs);font-weight:var(--weight-medium);margin-bottom:var(--space-3)}
   #approve .risk.critical,#approve .risk.high{background:var(--color-danger-soft);color:var(--color-danger)}
   #approve .risk.medium{background:var(--color-accent-soft);color:var(--color-accent)}
-  #approve .cmd{font-family:var(--font-mono);font-size:var(--text-xs);background:var(--color-surface);
+  #approve .cmd,#trust .cmd{font-family:var(--font-mono);font-size:var(--text-xs);background:var(--color-surface);
                 border:var(--p-hairline) solid var(--color-line);border-radius:var(--radius-md);
                 padding:var(--space-2) var(--space-3);white-space:pre-wrap;word-break:break-all;
                 color:var(--color-text);margin-bottom:var(--space-3)}
@@ -429,6 +434,77 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     #sidefoot{display:none}
     #rpanel.open{position:absolute;right:0;top:0;bottom:0;z-index:var(--z-modal);width:86vw;min-width:86vw}
   }
+
+  /* ===== 代码块: 语言标签 + 复制按钮 + 语法高亮 (离线零依赖) ===== */
+  .md pre{margin:var(--space-2) 0;padding:var(--space-3);background:var(--color-code-bg,#0d1117);
+          border:var(--p-hairline) solid var(--color-line);border-radius:var(--radius-md);
+          overflow:auto;scrollbar-width:thin;max-height:520px}
+  .md pre code{font-family:var(--font-mono);font-size:var(--text-sm);line-height:1.6;
+               color:var(--color-code,#e6edf3);white-space:pre;display:block}
+  .code-block{margin:var(--space-2) 0}
+  .code-block>.code-head{display:flex;align-items:center;justify-content:space-between;
+          background:var(--color-code-bg,#0d1117);border:var(--p-hairline) solid var(--color-line);
+          border-bottom:none;border-radius:var(--radius-md) var(--radius-md) 0 0;padding:var(--space-1) var(--space-2)}
+  .code-block>.code-head .code-lang{font-family:var(--font-mono);font-size:var(--text-2xs);
+          color:var(--color-text-faint);text-transform:uppercase;letter-spacing:.04em}
+  .code-block>.code-head .code-copy{background:transparent;border:var(--p-hairline) solid var(--color-line);
+          color:var(--color-text-faint);font-size:var(--text-2xs);border-radius:var(--radius-sm);
+          padding:2px var(--space-2);cursor:pointer;font-family:var(--font-ui);transition:all var(--duration-base) var(--ease-out)}
+  .code-block>.code-head .code-copy:hover{color:var(--color-accent);border-color:var(--color-accent)}
+  .code-block>.md pre{border-radius:0 0 var(--radius-md) var(--radius-md);margin:0}
+  /* 语法高亮 token (GitHub Dark 风格, 浅色主题用 CSS 变量覆盖) */
+  .tk-c{color:var(--tk-c,#8b949e);font-style:italic}
+  .tk-s{color:var(--tk-s,#a5d6ff)}
+  .tk-n{color:var(--tk-n,#79c0ff)}
+  .tk-k{color:var(--tk-k,#ff7b72)}
+  .tk-b{color:var(--tk-b,#ffa657)}
+  .tk-f{color:var(--tk-f,#d2a8ff)}
+  .tk-o{color:var(--tk-o,#ff7b72)}
+  :root[data-color-scheme="light"] .md pre{background:var(--color-code-bg,#f6f8fa)}
+  :root[data-color-scheme="light"] .code-block>.code-head{background:var(--color-code-bg,#f6f8fa);border-color:var(--color-line)}
+  :root[data-color-scheme="light"] .md pre code{color:var(--color-code,#24292f)}
+  :root[data-color-scheme="light"] .tk-c{color:#6e7781}
+  :root[data-color-scheme="light"] .tk-s{color:#0a3069}
+  :root[data-color-scheme="light"] .tk-n{color:#0550ae}
+  :root[data-color-scheme="light"] .tk-k{color:#cf222e}
+  :root[data-color-scheme="light"] .tk-b{color:#953800}
+  :root[data-color-scheme="light"] .tk-f{color:#8250df}
+  :root[data-color-scheme="light"] .tk-o{color:#cf222e}
+
+  /* ===== 可交互 chip (模式 / 推理投入) ===== */
+  #model-row .chip.btn{cursor:pointer;transition:all var(--duration-base) var(--ease-out)}
+  #model-row .chip.btn:hover{border-color:var(--color-accent);color:var(--color-text)}
+  #model-row .chip.mode-plan{border-color:var(--color-accent);color:var(--color-accent)}
+  #model-row .chip.mode-yolo{border-color:var(--color-warn,#e3a008);color:var(--color-warn,#e3a008)}
+  #git-chip.dirty{color:var(--color-warn,#e3a008)}
+
+  /* ===== 斜杠命令面板 (对标 TUI /cmd 补全) ===== */
+  #slash{display:none;position:absolute;left:0;right:0;bottom:calc(100% + var(--space-1));
+         background:var(--color-surface);border:var(--p-hairline) solid var(--color-line);
+         border-radius:var(--radius-lg);box-shadow:var(--shadow-pop,0 8px 28px rgba(0,0,0,.28));
+         max-height:320px;overflow:auto;scrollbar-width:thin;z-index:var(--z-pop,40);padding:var(--space-1)}
+  #slash.open{display:block}
+  #slash .sl-head{font-size:var(--text-2xs);color:var(--color-text-faint);padding:var(--space-1) var(--space-2);
+          text-transform:uppercase;letter-spacing:.05em}
+  #slash .sl{display:flex;align-items:baseline;gap:var(--space-2);padding:var(--space-1-5) var(--space-2);
+          border-radius:var(--radius-md);cursor:pointer}
+  #slash .sl.sel{background:var(--color-accent-soft)}
+  #slash .sl .nm{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--color-accent);flex:none}
+  #slash .sl .ds{font-size:var(--text-2xs);color:var(--color-text-muted);line-height:1.4;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #slash .sl-empty{padding:var(--space-3);color:var(--color-text-faint);font-size:var(--text-xs)}
+
+  /* ===== 工作区信任对话框 (对标 TUI prompt_trust) ===== */
+  #trust .box{max-width:440px}
+  #trust .lvls{display:flex;gap:var(--space-2);margin-top:var(--space-3)}
+  #trust .lvl{flex:1;background:var(--color-surface);border:var(--p-hairline) solid var(--color-line);
+          border-radius:var(--radius-md);padding:var(--space-3);cursor:pointer;text-align:left;
+          transition:all var(--duration-base) var(--ease-out)}
+  #trust .lvl:hover{border-color:var(--color-accent)}
+  #trust .lvl h4{margin:0 0 var(--space-1);font-size:var(--text-sm);font-family:var(--font-ui)}
+  #trust .lvl p{margin:0;font-size:var(--text-2xs);color:var(--color-text-muted);line-height:1.5}
+  #trust .lvl[data-lvl="trusted"]:hover{border-color:var(--color-success,#2da44e)}
+  #trust .lvl[data-lvl="untrusted"]:hover{border-color:var(--color-danger)}
 </style>
 </head>
 <body>
@@ -480,10 +556,11 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       </div>
       <div id="model-row">
         <span id="t-model" class="chip"></span>
-        <span id="t-mode" class="chip"></span>
-        <span id="t-effort" class="chip"></span>
+        <span id="t-mode" class="chip btn" data-i18n-title="web.mode_tip" title="点击切换运行模式"></span>
+        <span id="t-effort" class="chip btn" data-i18n-title="web.effort_tip" title="点击切换推理投入"></span>
         <span id="t-engine" class="chip">tuan</span>
         <span class="sp"></span>
+        <span id="git-chip" class="chip" title="git 分支"></span>
         <span id="t-ws" class="chip"></span>
       </div>
     </div>
@@ -519,6 +596,19 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 </div></div>
 
 <div id="mention"></div>
+
+<div id="slash"><div class="sl-head" data-i18n="web.cmd_palette">命令面板 · 输入筛选, ↑↓ 选择, 回车插入</div><div id="slash-list"></div></div>
+
+<div id="trust"><div class="box">
+  <div class="hd" data-i18n="web.trust_title">信任此工作区？</div>
+  <div id="trust-path" class="cmd"></div>
+  <div id="trust-desc" class="rp-empty">首次打开该目录，请选择信任级别。信任级别决定 Agent 在此目录的权限边界。</div>
+  <div class="lvls">
+    <button class="lvl" data-lvl="trusted"><h4 data-i18n="web.trust_trusted">完全信任</h4><p data-i18n="web.trust_trusted_d">完整权限（仍受安全引擎约束），可执行 shell 与写操作。</p></button>
+    <button class="lvl" data-lvl="limited"><h4 data-i18n="web.trust_limited">受限</h4><p data-i18n="web.trust_limited_d">只读与规划可用，shell 需每次确认。</p></button>
+    <button class="lvl" data-lvl="untrusted"><h4 data-i18n="web.trust_untrusted">不信任</h4><p data-i18n="web.trust_untrusted_d">只读，禁止执行 shell 命令。</p></button>
+  </div>
+</div></div>
 
 <script>
 (function(){
@@ -755,6 +845,69 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     return /^```/.test(t)||/^#{1,4}\s/.test(t)||/^>/.test(t)||/^[-*+]\s+/.test(t)||
            /^\d+[.)]\s+/.test(t)||/^(-{3,}|\*{3,}|_{3,})$/.test(t)||/^\|.*\|$/.test(t);
   }
+  /* ---- 离线语法高亮 (零依赖, 正则分词; 覆盖常见语言) ---- */
+  var KEYWORDS={
+    _default:{},
+    python:{'def':'1','class':'1','return':'1','if':'1','elif':'1','else':'1','for':'1','while':'1','in':'1',
+      'import':'1','from':'1','as':'1','with':'1','try':'1','except':'1','finally':'1','raise':'1','yield':'1',
+      'lambda':'1','and':'1','or':'1','not':'1','is':'1','None':'1','pass':'1','break':'1','continue':'1',
+      'global':'1','nonlocal':'1','assert':'1','del':'1','async':'1','await':'1','self':'1'},
+    js:{'function':'1','return':'1','if':'1','else':'1','for':'1','while':'1','var':'1','let':'1','const':'1',
+      'new':'1','class':'1','extends':'1','import':'1','export':'1','from':'1','async':'1','await':'1','try':'1',
+      'catch':'1','finally':'1','throw':'1','typeof':'1','instanceof':'1','of':'1','in':'1','this':'1','switch':'1',
+      'case':'1','break':'1','continue':'1','default':'1','do':'1','void':'1','delete':'1','yield':'1'},
+    ts:{'function':'1','return':'1','if':'1','else':'1','for':'1','while':'1','var':'1','let':'1','const':'1',
+      'new':'1','class':'1','extends':'1','implements':'1','interface':'1','type':'1','enum':'1','import':'1',
+      'export':'1','from':'1','async':'1','await':'1','try':'1','catch':'1','finally':'1','throw':'1','typeof':'1',
+      'instanceof':'1','of':'1','in':'1','this':'1','public':'1','private':'1','readonly':'1','namespace':'1'},
+    go:{'func':'1','return':'1','if':'1','else':'1','for':'1','range':'1','package':'1','import':'1','var':'1',
+      'const':'1','type':'1','struct':'1','interface':'1','map':'1','go':'1','defer':'1','chan':'1','select':'1',
+      'switch':'1','case':'1','default':'1','break':'1','continue':'1','go':'1','func':'1'},
+    rust:{'fn':'1','let':'1','mut':'1','if':'1','else':'1','for':'1','while':'1','loop':'1','match':'1','return':'1',
+      'struct':'1','enum':'1','impl':'1','trait':'1','pub':'1','use':'1','mod':'1','const':'1','static':'1','self':'1',
+      'Self':'1','ref':'1','move':'1','async':'1','await':'1','where':'1','as':'1'},
+    sql:{'select':'1','from':'1','where':'1','insert':'1','update':'1','delete':'1','create':'1','table':'1',
+      'drop':'1','alter':'1','join':'1','left':'1','right':'1','inner':'1','outer':'1','on':'1','group':'1','by':'1',
+      'order':'1','limit':'1','values':'1','into':'1','set':'1','and':'1','or':'1','not':'1','null':'1','as':'1',
+      'distinct':'1','count':'1','sum':'1','avg':'1'}
+  };
+  function normalizeLang(lang){
+    lang=String(lang||'').toLowerCase();
+    if(lang==='py'||lang==='python3')return 'python';
+    if(lang==='js'||lang==='javascript'||lang==='jsx'||lang==='node'||lang==='mjs'||lang==='cjs')return 'js';
+    if(lang==='ts'||lang==='typescript'||lang==='tsx')return 'ts';
+    if(lang==='golang')return 'go';
+    if(lang==='rs'||lang==='rust')return 'rust';
+    if(lang==='sh'||lang==='bash'||lang==='shell'||lang==='zsh'||lang==='console'||lang==='cmd'||lang==='powershell')return 'bash';
+    if(lang==='yml')return 'yaml';
+    if(lang==='htm')return 'html';
+    if(lang==='sql'||lang==='postgres'||lang==='mysql'||lang==='sqlite')return 'sql';
+    if(lang==='json'||lang==='jsonc'||lang==='yaml'||lang==='toml'||lang==='ini'||lang==='xml'||lang==='html'
+      ||lang==='css'||lang==='bash'||lang==='dockerfile'||lang==='makefile')return lang;
+    return lang||'text';
+  }
+  function hlCode(code,lang){
+    var fam=normalizeLang(lang);
+    var kw=KEYWORDS[fam]||KEYWORDS._default;
+    var re=/(\/\*[\s\S]*?\*\/|\/\/[^\n]*|#[^\n]*|--[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b\d[\d_.]*\b)|([A-Za-z_$][\w$]*)|(\s+)|([^\s\w])/g;
+    var out='',m;
+    while((m=re.exec(code))){
+      if(m[1]){out+='<span class="tk-c">'+esc(m[1])+'</span>';}
+      else if(m[2]){out+='<span class="tk-s">'+esc(m[2])+'</span>';}
+      else if(m[3]){out+='<span class="tk-n">'+esc(m[3])+'</span>';}
+      else if(m[4]){
+        var w=m[4];
+        if(kw[w]){out+='<span class="tk-k">'+esc(w)+'</span>';}
+        else if(/^(true|false|null|None|True|False|nil|undefined|NaN|NULL)$/.test(w)){out+='<span class="tk-b">'+esc(w)+'</span>';}
+        else if(code[re.lastIndex]==='('){out+='<span class="tk-f">'+esc(w)+'</span>';}
+        else{out+=esc(w);}
+      }
+      else if(m[5]){out+=m[5];}
+      else{out+=esc(m[0]);}
+    }
+    return out;
+  }
+
   function renderMd(text){
     var lines=String(text==null?'':text).split('\n');
     var out=[], i=0;
@@ -766,7 +919,10 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
         var buf=[]; i++;
         while(i<lines.length && !/^```/.test(lines[i].trim())){ buf.push(lines[i]); i++; }
         i++;
-        out.push('<pre'+(lang?' data-lang="'+esc(lang)+'"':'')+'><code>'+esc(buf.join('\n'))+'</code></pre>');
+        var _code=buf.join('\n');
+        out.push('<div class="code-block"><div class="code-head"><span class="code-lang">'
+          +esc(lang||'text')+'</span><button class="code-copy" type="button">复制</button></div>'
+          +'<pre'+(lang?' data-lang="'+esc(lang)+'"':'')+'><code>'+hlCode(_code,lang)+'</code></pre></div>');
         continue;
       }
       if(!t){ i++; continue; }
@@ -989,12 +1145,66 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       document.getElementById('ws-name').textContent=j.workspace||'';
       document.getElementById('sidefoot').textContent='TUAN Tuan-CLI · '+(j.workspace||'');
       document.getElementById('t-ws').innerHTML='<b>ws</b> '+esc((j.workspace||'').split(/[\\/]/).pop()||'');
-      if(j.mode){document.getElementById('t-mode').innerHTML='<b>mode</b> '+esc(j.mode);}
-      if(j.effort){document.getElementById('t-effort').innerHTML='<b>effort</b> '+esc(j.effort);}
+      document.getElementById('t-engine').innerHTML='<b>引擎</b> '+esc(j.engine||'tuan');
+      updateModeChip(j.mode);
+      updateEffortChip(j.effort);
+      updateGitChip(j.git);
+      /* 工作区信任: 首次打开未知目录时弹确认 (对标 TUI prompt_trust) */
+      if(j.trust && j.trust.needs_confirmation){ showTrust(j.trust); }
       /* 注: 侧栏原有一张"安全基准"静态卡片, 已移除 —— 未跑过 bench 时它只会显示
          一排破折号 (对抗拦截 - · 绕过 - · PS 5k 正确率 -), 既不简洁也不明了。
          安全信息统一收在右侧「安全」面板 (基准 + 闸门 + 近期拦截)。 */
     }).catch(function(){});
+  }
+
+  /* ---- 模式 / 推理投入 chip (可点击切换) ---- */
+  var MODE_ORDER=['standard','plan','yolo'];
+  var EFFORT_ORDER=['low','medium','high'];
+  var MODE_LABEL={standard:'standard',plan:'plan 只读',yolo:'yolo 放权'};
+  function updateModeChip(mode){
+    var el=document.getElementById('t-mode');if(!el)return;
+    el.innerHTML='<b>mode</b> '+esc(mode||'standard');
+    el.className='chip btn'+(mode==='plan'?' mode-plan':(mode==='yolo'?' mode-yolo':''));
+    el._mode=mode||'standard';
+  }
+  function updateEffortChip(effort){
+    var el=document.getElementById('t-effort');if(!el)return;
+    el.innerHTML='<b>effort</b> '+esc(effort||'high');
+    el._effort=effort||'high';
+  }
+  function cycleMode(){
+    var el=document.getElementById('t-mode');if(!el)return;
+    var i=MODE_ORDER.indexOf(el._mode||'standard');
+    var next=MODE_ORDER[(i+1)%MODE_ORDER.length];
+    fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mode:next})}).then(function(r){return r.json();}).then(function(j){
+      if(j.ok){updateModeChip(j.mode);}else{updateModeChip(el._mode);}
+    }).catch(function(){updateModeChip(el._mode);});
+  }
+  function cycleEffort(){
+    var el=document.getElementById('t-effort');if(!el)return;
+    var i=EFFORT_ORDER.indexOf(el._effort||'high');
+    var next=EFFORT_ORDER[(i+1)%EFFORT_ORDER.length];
+    fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({effort:next})}).then(function(r){return r.json();}).then(function(j){
+      if(j.ok){updateEffortChip(j.effort);}else{updateEffortChip(el._effort);}
+    }).catch(function(){updateEffortChip(el._effort);});
+  }
+  document.getElementById('t-mode').addEventListener('click',cycleMode);
+  document.getElementById('t-effort').addEventListener('click',cycleEffort);
+
+  /* ---- git 分支 chip ---- */
+  function updateGitChip(git){
+    var el=document.getElementById('git-chip');if(!el)return;
+    if(git && git.repo && git.branch){
+      el.innerHTML='<b>⑂</b> '+esc(git.branch)+(git.dirty?' <span style="opacity:.8">[±]</span>':'');
+      el.className='chip'+(git.dirty?' dirty':'');
+      el.title='git 分支: '+git.branch+(git.dirty?' (有未提交改动)':' (干净)');
+    }else{
+      el.innerHTML='';
+      el.className='chip';
+      el.title='非 git 仓库';
+    }
   }
 
   /* ---- Markdown 导出 ---- */
@@ -1035,6 +1245,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   /* ---- 发送 / SSE 流式 ---- */
   function setRunning(v){
     running=v;send.disabled=v;stopBtn.style.display=v?'block':'none';
+    /* 同步 body 标记, 供 CSS 兜底关停光标闪烁 (见 .streaming-off 规则) */
+    if(document.body)document.body.classList.toggle('streaming-off',!v);
   }
   function sendMsg(){
     var msg=inp.value.trim();if(!msg||running)return;
@@ -1044,6 +1256,11 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       var cmd=msg.slice(1).trim();
       if(cmd)runShell(cmd,false);
       return;
+    }
+    /* 斜杠命令: 已知命令在 Web 端本地处理 (/clear 在此分支里走既有逻辑) */
+    if(msg.charAt(0)==='/'){
+      if(handleSlash(msg)){ inp.value='';autoGrow();return; }
+      /* handleSlash 仅对 /clear 返回 false, 其余已知命令已 return; 这里继续处理 /clear */
     }
     if(msg==='/clear'){
       if(current){ fetch('/api/sessions/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session:current})}).catch(function(){}); }
@@ -1069,19 +1286,26 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     var cursor=document.createElement('span');cursor.className='stream-cursor';
     var curSeg=null, curText='', lastTool=null;
     /* 流式渲染节流: 每个 token 都重渲染整段是 O(n²) —— 回复到 2000 字时累计解析
-       量达百万字符级, 越流越卡。改为「一帧最多渲染一次」(rAF 合并), 视觉无差别。 */
-    var renderQueued=false;
+       量达百万字符级, 越流越卡。改为「一帧最多渲染一次」(rAF 合并), 视觉无差别。
+       ⚠ 竞态修复: 早先 rAF 回调不保存句柄、finish() 也只置 renderQueued=false 而
+       不取消已排队的帧, 于是「最后一个 delta 排的帧」会在 finish() 移除 cursor
+       之后才执行, 把 cursor 又 appendChild 回 DOM —— 表现为输出结束后蓝色方块
+       残留且持续闪烁(它靠 CSS animation infinite, 只要在 DOM 里就永远闪)。
+       现在: 保存 rafId 供 finish() 取消, 并用 finished 标志兜住任何已在途的帧。 */
+    var renderQueued=false, rafId=0, finished=false;
     function scheduleRender(){
-      if(renderQueued)return;
+      if(renderQueued||finished)return;
       renderQueued=true;
-      requestAnimationFrame(function(){
+      rafId=requestAnimationFrame(function(){
         renderQueued=false;
+        if(finished)return;
         if(curSeg)curSeg.innerHTML=renderMd(curText);
         flow.appendChild(cursor);scrollBottom();
       });
     }
     function flushRender(){
-      if(renderQueued&&curSeg){curSeg.innerHTML=renderMd(curText);renderQueued=false;}
+      if(renderQueued&&curSeg&&!finished){curSeg.innerHTML=renderMd(curText);}
+      renderQueued=false;
     }
     flow.appendChild(cursor);
     scrollBottom();
@@ -1129,10 +1353,14 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       else if(ev==='tool'){
         curSeg=null;curText='';
         lastTool=appendTool(flow,j.name,j.args);
-        flow.appendChild(cursor);scrollBottom();
+        if(!finished){flow.appendChild(cursor);scrollBottom();}
       }
       else if(ev==='tool_result'){if(lastTool)lastTool.setResult(j.out);scrollBottom();}
-      else if(ev==='reason'){appendReason(flow,j);flow.appendChild(cursor);scrollBottom();}
+      /* 服务端显式收尾(done): 正常路径由 reader.done 触发 finish(), 但若代理/
+         中间层把连接保持住不关闭, 就会永远等不到 r.done —— 蓝色光标于是无限
+         闪烁。收到 done 立即收口, 与 finish() 幂等。 */
+      else if(ev==='done'){finish();}
+      else if(ev==='reason'){appendReason(flow,j);if(!finished){flow.appendChild(cursor);scrollBottom();}}
       else if(ev==='approval'){
         /* 危险工具需要确认: 弹审批窗, 把结果回填 /api/approve */
         showApproval({prompt:j.prompt,verdict:j.verdict},function(d){
@@ -1143,15 +1371,22 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       else if(ev==='error'){
         /* 出错也要把流式光标收掉并复位发送状态 —— 此前只有 done 事件才收,
            Agent 被打断/出错时蓝色光标一直闪, 让人误以为任务还在跑。 */
-        flushRender();
-        appendText(flow,'[错误] '+(j.message||''));
-        if(cursor.parentNode)cursor.parentNode.removeChild(cursor);
+        endStream();
+        appendText(flow,'[错误] '+(j.message||j));
         setRunning(false);
       }
     }
-    function finish(){
-      flushRender();
+    /* 流式结束统一收口: 先置 finished 再取消在途 rAF 帧, 确保任何已排队的帧
+       都不会再把 cursor 挂回 DOM(它是 CSS infinite 动画, 残留即永久闪烁)。 */
+    function endStream(){
+      finished=true;
+      if(rafId){cancelAnimationFrame(rafId);rafId=0;}
+      renderQueued=false;
       if(cursor.parentNode)cursor.parentNode.removeChild(cursor);
+    }
+    function finish(){
+      if(finished)return;   /* 幂等: done 事件与 reader.done 可能都触发 */
+      endStream();
       setRunning(false);loadSessions();
     }
   }
@@ -1164,10 +1399,17 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     if(e.ctrlKey&&e.key==='k'){e.preventDefault();searchBox.focus();searchBox.select();}
     if(e.ctrlKey&&e.key==='n'){e.preventDefault();current=null;clearMessages();showWelcome();loadSessions();inp.focus();}
     if(e.ctrlKey&&e.key==='b'){e.preventDefault();togglePanel();}
+    if(e.ctrlKey&&e.key==='/'){e.preventDefault();openSlash('');inp.focus();}
   });
 
   send.addEventListener('click',sendMsg);
   inp.addEventListener('keydown',function(e){
+    if(slashOpen){
+      if(e.key==='ArrowDown'){e.preventDefault();moveSlash(1);return;}
+      if(e.key==='ArrowUp'){e.preventDefault();moveSlash(-1);return;}
+      if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();pickSlash(slashSel);return;}
+      if(e.key==='Escape'){e.preventDefault();closeSlash();return;}
+    }
     if(mentionOpen){
       if(e.key==='ArrowDown'){e.preventDefault();moveMention(1);return;}
       if(e.key==='ArrowUp'){e.preventDefault();moveMention(-1);return;}
@@ -1176,7 +1418,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     }
     if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
   });
-  inp.addEventListener('input',function(){autoGrow();updateMention();});
+  inp.addEventListener('input',function(){autoGrow();updateMention();updateSlash();});
   inp.addEventListener('blur',function(){setTimeout(closeMention,150);});
   document.getElementById('newbtn').addEventListener('click',function(){current=null;clearMessages();showWelcome();loadSessions();});
 
@@ -1498,9 +1740,126 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     }).catch(function(){});
   }
 
+  /* ================================================================
+     斜杠命令面板 (对标 TUI /cmd 补全: 输入 / 即弹出, ↑↓ 选, 回车插入)
+     ================================================================ */
+  var slashCommands=[], slashOpen=false, slashItems=[], slashSel=0;
+  function loadSlash(){
+    fetch('/api/slash').then(function(r){return r.json();}).then(function(j){
+      slashCommands=j.commands||[];
+    }).catch(function(){});
+  }
+  function openSlash(q){
+    slashOpen=true; slashSel=0;
+    q=(q||'').toLowerCase();
+    slashItems=slashCommands.filter(function(c){
+      if(!q)return true;
+      return c.name.toLowerCase().indexOf(q)!==-1 || (c.desc||'').toLowerCase().indexOf(q)!==-1;
+    });
+    renderSlash();
+  }
+  function closeSlash(){slashOpen=false;document.getElementById('slash').classList.remove('open');}
+  function renderSlash(){
+    var el=document.getElementById('slash-list');
+    if(!slashItems.length){el.innerHTML='<div class="sl-empty">无匹配命令</div>';document.getElementById('slash').classList.add('open');return;}
+    el.innerHTML=slashItems.map(function(c,i){
+      return '<div class="sl'+(i===0?' sel':'')+'" data-i="'+i+'"><span class="nm">'+esc(c.name)+'</span>'
+        +'<span class="ds">'+esc(c.desc||'')+'</span></div>';
+    }).join('');
+    document.getElementById('slash').classList.add('open');
+    Array.prototype.forEach.call(el.querySelectorAll('.sl'),function(row){
+      row.addEventListener('mousedown',function(ev){ev.preventDefault();pickSlash(parseInt(row.dataset.i,10));});
+    });
+  }
+  function moveSlash(d){
+    if(!slashOpen||!slashItems.length)return;
+    slashSel=(slashSel+d+slashItems.length)%slashItems.length;
+    Array.prototype.forEach.call(document.querySelectorAll('#slash .sl'),function(el,i){
+      el.classList.toggle('sel',i===slashSel);
+    });
+  }
+  function pickSlash(i){
+    var c=slashItems[i];if(!c)return;
+    inp.value=c.name+' ';closeSlash();autoGrow();inp.focus();
+  }
+  function updateSlash(){
+    var v=inp.value;
+    if(/^\/[^\s]*$/.test(v)){openSlash(v.slice(1));}else{closeSlash();}
+  }
+
+  /* ================================================================
+     工作区信任对话框 (对标 TUI prompt_trust)
+     ================================================================ */
+  function showTrust(info){
+    document.getElementById('trust-path').textContent=(info&&info.path)||'';
+    document.getElementById('trust').classList.add('open');
+  }
+  function closeTrust(){document.getElementById('trust').classList.remove('open');}
+  Array.prototype.forEach.call(document.querySelectorAll('#trust .lvl'),function(b){
+    b.addEventListener('click',function(){
+      var lvl=b.dataset.lvl;
+      fetch('/api/trust',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({level:lvl})}).then(function(){closeTrust();}).catch(function(){closeTrust();});
+    });
+  });
+
+  /* ================================================================
+     代码块复制按钮 (事件委托, 读取渲染后的 code 文本, 不依赖属性转义)
+     ================================================================ */
+  function copyText(t){
+    try{ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t);return true;} }catch(e){}
+    try{ var ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);return true; }catch(e){ return false; }
+  }
+  document.addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('.code-copy'):null;
+    if(!b)return;
+    var cb=b.closest('.code-block');if(!cb)return;
+    var code=cb.querySelector('code');if(!code)return;
+    if(copyText(code.textContent)){var o=b.textContent;b.textContent='已复制';setTimeout(function(){b.textContent=o;},1500);}
+  });
+
+  /* ================================================================
+     斜杠命令本地处理 (/clear 已由 sendMsg 处理; 这里处理其余已知命令)
+     ================================================================ */
+  function handleSlash(msg){
+    var parts=msg.slice(1).split(/\s+/);
+    var cmd=(parts[0]||'').toLowerCase();
+    var arg=parts.slice(1).join(' ').trim();
+    if(cmd==='clear'){return false;} /* 交给 sendMsg 既有逻辑 */
+    if(cmd==='export'){exportMarkdown();return true;}
+    if(cmd==='diff'){togglePanel(true);loadTab('diff');return true;}
+    if(cmd==='plan'){
+      var cur=(document.getElementById('t-mode')._mode)||'standard';
+      var next=cur==='plan'?'standard':'plan';
+      fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mode:next})}).then(function(r){return r.json();}).then(function(j){
+        if(j.ok)updateModeChip(j.mode);
+      }).catch(function(){});
+      return true;
+    }
+    if(cmd==='mode'&&arg){
+      fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mode:arg})}).then(function(r){return r.json();}).then(function(j){
+        if(j.ok)updateModeChip(j.mode);
+      }).catch(function(){});
+      return true;
+    }
+    if(cmd==='effort'&&arg){
+      fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({effort:arg})}).then(function(r){return r.json();}).then(function(j){
+        if(j.ok)updateEffortChip(j.effort);
+      }).catch(function(){});
+      return true;
+    }
+    /* 其它斜杠命令 (如 /help /status /model ...) 作为普通消息发给 Agent 尝试 */
+    return false;
+  }
+
   /* ---- 工作面板的初始加载 (面板打开时才拉, 省流量) ---- */
   togglePanel(false);
 
+  loadSlash();
   loadInfo();loadSessions();
   /* 初始: 显示欢迎屏并启动粒子 */
   showWelcome();
