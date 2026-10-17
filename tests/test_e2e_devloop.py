@@ -8,10 +8,10 @@ import json
 import sys
 from pathlib import Path
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel, create_agent
-from qingxiaotuan.core.devloop import DevLoop
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse, ToolCall
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel, create_agent
+from tuan_cli.core.devloop import DevLoop
+from tuan_cli.models.base import ModelAdapter, ModelResponse, ToolCall
 
 
 class ScriptedModel(ModelAdapter):
@@ -44,7 +44,7 @@ def _build(tmp_path, script):
     return agent, config, model
 
 
-def test_e2e_devloop_writes_file_and_runs_real_tests(tmp_path, qxt_home):
+def test_e2e_devloop_writes_file_and_runs_real_tests(tmp_path, tuan_home):
     ws = tmp_path
     # 预置一个会失败的测试, 让 Agent 先修复它
     (ws / "mathlib.py").write_text("def add(a, b):\n    return a - b  # bug\n")
@@ -101,7 +101,7 @@ def test_e2e_devloop_writes_file_and_runs_real_tests(tmp_path, qxt_home):
     assert "run_tests" in names
 
 
-def test_e2e_context_preserves_codebase_map(tmp_path, qxt_home):
+def test_e2e_context_preserves_codebase_map(tmp_path, tuan_home):
     """验证大上下文: 系统提示钉入代码库地图, 且长会话压缩后地图不丢。"""
     ws = tmp_path
     (ws / "app.py").write_text("def main():\n    pass\n")

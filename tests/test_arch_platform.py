@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from qingxiaotuan.arch.platform import (
+from tuan_cli.arch.platform import (
     IS_WINDOWS,
     IS_LINUX,
     SyscallResult,
@@ -94,7 +94,7 @@ class TestBlockNetwork:
         # 构造包含网络 syscall 的白名单
         test_allowlist = list(SAFE_SYSCALL_ALLOWLIST)
         # 验证过滤逻辑
-        from qingxiaotuan.arch.platform import _NET_SYSCALLS
+        from tuan_cli.arch.platform import _NET_SYSCALLS
         filtered = [s for s in test_allowlist if s not in _NET_SYSCALLS]
         assert "socket" not in filtered
         assert "connect" not in filtered

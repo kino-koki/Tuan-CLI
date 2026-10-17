@@ -1,4 +1,4 @@
-"""Behavioral tests for the ported protocol core (qingxiaotuan/ports/protocol).
+"""Behavioral tests for the ported protocol core (tuan_cli/ports/protocol).
 
 Mirrors the behavioral intent of the TS ``__tests__`` for envelope / error-codes
 / approval / display, plus coverage for the other foundational modules.
@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from qingxiaotuan.ports.protocol import (
+from tuan_cli.ports.protocol import (
     ApprovalDecision,
     ApprovalRequest,
     ApprovalResponse,

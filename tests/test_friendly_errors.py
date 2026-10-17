@@ -1,4 +1,4 @@
-"""友好错误提示测试 (qingxiaotuan/core/error_handler.py)。"""
+"""友好错误提示测试 (tuan_cli/core/error_handler.py)。"""
 
 import sys
 from pathlib import Path
@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.core.error_handler import friendly_error, handle_exception, FriendlyError
+from tuan_cli.core.error_handler import friendly_error, handle_exception, FriendlyError
 
 
 def test_auth_error_message():
@@ -15,7 +15,7 @@ def test_auth_error_message():
     fe = friendly_error(exc, {"provider": "deepseek"})
     assert fe.kind == "auth"
     assert "API Key" in fe.title
-    assert "qxt login" in fe.suggestion or "qxt config" in fe.suggestion
+    assert "tuan login" in fe.suggestion or "tuan config" in fe.suggestion
 
 
 def test_rate_limit_message():
@@ -59,7 +59,7 @@ def test_config_syntax_error():
     except yaml.YAMLError as exc:
         fe = friendly_error(exc)
         assert fe.kind == "config"
-        assert "config.yaml" in fe.suggestion or "qxt doctor" in fe.suggestion
+        assert "config.yaml" in fe.suggestion or "tuan doctor" in fe.suggestion
 
 
 def test_render_format():

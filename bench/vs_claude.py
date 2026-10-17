@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""qxt bench vs-claude —— 同任务集「Tuan-CLI vs Claude Code」双跑对比基准。
+"""tuan bench vs-claude —— 同任务集「Tuan-CLI vs Claude Code」双跑对比基准。
 
 目标: 用同一组软件工程任务 (bench/tasks.yaml), 在隔离工作区里分别用
-Tuan-CLI (`qxt run -p`) 与 Claude Code (`claude -p --output-format json`)
+Tuan-CLI (`tuan run -p`) 与 Claude Code (`claude -p --output-format json`)
 headless 执行, 然后以同一验收脚本判定通过/失败, 输出
 成功率 / 耗时 / 成本 对比 —— 作为「超越 Claude Code」的可验证证据。
 
@@ -15,7 +15,7 @@ Claude 侧网络不可用时的处理:
 用法:
   python bench/vs_claude.py                    # 双跑全部任务
   python bench/vs_claude.py --task fix_bug     # 只跑单个
-  python bench/vs_claude.py --qxt .venv/Scripts/qxt.exe
+  python bench/vs_claude.py --tuan .venv/Scripts/tuan.exe
   python bench/vs_claude.py --model deepseek/deepseek-chat
   python bench/vs_claude.py --claude "claude"  # claude 可执行文件/别名
   python bench/vs_claude.py --dry              # 只校验框架/任务/报告, 不真正调用模型
@@ -50,7 +50,7 @@ CLAUDE_BASE = ["-p", "--output-format", "json",
 
 @dataclass
 class SideResult:
-    side: str            # qxt | claude
+    side: str            # tuan | claude
     task_id: str
     passed: bool
     elapsed: float
@@ -61,7 +61,7 @@ class SideResult:
 @dataclass
 class TaskResult:
     task_id: str
-    qxt: SideResult
+    tuan: SideResult
     claude: Optional[SideResult]   # claude 侧 unavailable 时为 None
 
 
@@ -73,7 +73,7 @@ def _run_side(task: Task, cmd: List[str], cwd: Path, timeout: int) -> tuple[floa
     try:
         proc = subprocess.run(
             cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
-            env={**os.environ, "QXT_HOME": str(cwd / ".qxt-home")},
+            env={**os.environ, "TUAN_HOME": str(cwd / ".tuan-home")},
             errors="replace", stdin=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired:
@@ -94,7 +94,7 @@ def _fresh_workspace(task: Task) -> Path:
     return work
 
 
-def run_qxt(task: Task, qxt: str, model: Optional[str], dry: bool = False) -> SideResult:
+def run_qxt(task: Task, tuan: str, model: Optional[str], dry: bool = False) -> SideResult:
     work = _fresh_workspace(task)
     try:
         if dry:
@@ -103,21 +103,21 @@ def run_qxt(task: Task, qxt: str, model: Optional[str], dry: bool = False) -> Si
                 proc = subprocess.run(task.check, cwd=work, shell=True,
                                       capture_output=True, text=True, timeout=120)
                 note = f"check 退出码={proc.returncode} (dry 不要求通过)"
-                return SideResult("qxt", task.id, True, 0.0, None, note)
+                return SideResult("tuan", task.id, True, 0.0, None, note)
             except Exception as exc:  # noqa: BLE001
-                return SideResult("qxt", task.id, False, 0.0, None, f"框架异常: {exc}")
-        cmd = [qxt, "run", "-p", task.instruction]
+                return SideResult("tuan", task.id, False, 0.0, None, f"框架异常: {exc}")
+        cmd = [tuan, "run", "-p", task.instruction]
         if model:
             cmd += ["--model", model]
         elapsed, rc, tail = _run_side(task, cmd, work, task.timeout)
         if rc != 0:
-            return SideResult("qxt", task.id, False, elapsed, None,
-                              f"qxt 退出码 {rc}\n{tail[-1200:]}")
+            return SideResult("tuan", task.id, False, elapsed, None,
+                              f"tuan 退出码 {rc}\n{tail[-1200:]}")
         ok, err = _run_check(task, work)
-        return SideResult("qxt", task.id, ok, elapsed, None,
+        return SideResult("tuan", task.id, ok, elapsed, None,
                           "" if ok else err[-1200:])
     except Exception as exc:  # noqa: BLE001
-        return SideResult("qxt", task.id, False, 0.0, None, str(exc))
+        return SideResult("tuan", task.id, False, 0.0, None, str(exc))
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -216,13 +216,13 @@ def render_md(results: List[TaskResult], probe_note: str, model: Optional[str]) 
     lines.append("")
     lines.append(f"- 任务集: `bench/tasks.yaml` ({len(results)} 个任务)")
     lines.append(f"- 判定: 同一验收脚本, 退出码 0 = 通过")
-    lines.append(f"- qxt 侧模型: {model or '(默认配置)'}")
+    lines.append(f"- tuan 侧模型: {model or '(默认配置)'}")
     lines.append(f"- Claude 侧: {probe_note}")
     lines.append("")
     lines.append("| 任务 | Tuan-CLI 通过 | Tuan-CLI 耗时(s) | Claude 通过 | Claude 耗时(s) | Claude 成本($) | 备注 |")
     lines.append("| --- | --- | --- | --- | --- | --- | --- |")
     for r in results:
-        q = r.qxt
+        q = r.tuan
         if r.claude:
             c = r.claude
             c_pass, c_el, c_cost = "✅" if c.passed else "❌", f"{c.elapsed:.0f}", f"{c.cost_usd or 0:.4f}"
@@ -234,7 +234,7 @@ def render_md(results: List[TaskResult], probe_note: str, model: Optional[str]) 
             f"{c_pass} | {c_el} | {c_cost} | {note} |"
         )
     lines.append("")
-    q_win = sum(1 for r in results if r.qxt.passed)
+    q_win = sum(1 for r in results if r.tuan.passed)
     c_win = sum(1 for r in results if r.claude and r.claude.passed)
     lines.append(f"**通过率: Tuan-CLI {q_win}/{len(results)} · Claude Code {c_win}/{len(results)}**")
     lines.append("")
@@ -251,7 +251,7 @@ def render_html(results: List[TaskResult], probe_note: str, model: Optional[str]
 
     rows = ""
     for r in results:
-        q = r.qxt
+        q = r.tuan
         c = r.claude
         q_pass = "PASS" if q.passed else "FAIL"
         q_tone = "ok" if q.passed else "bad"
@@ -276,7 +276,7 @@ def render_html(results: List[TaskResult], probe_note: str, model: Optional[str]
       <td class="mono">{c_cost}</td>
       <td class="mut">{c_note}</td>
     </tr>"""
-    q_win = sum(1 for r in results if r.qxt.passed)
+    q_win = sum(1 for r in results if r.tuan.passed)
     c_win = sum(1 for r in results if r.claude and r.claude.passed)
     total = len(results)
     q_pct = f"{q_win / total * 100:.0f}" if total else "0"
@@ -314,7 +314,7 @@ def render_html(results: List[TaskResult], probe_note: str, model: Optional[str]
 </head>
 <body><div class="wrap">
 <header><h1>Tuan-CLI vs Claude Code 同任务对比基准</h1>
-<div class="sub">任务集 bench/tasks.yaml · 同一验收脚本判定 · qxt 模型: {esc(model or '默认配置')} · Claude 侧: {esc(probe_note)}</div></header>
+<div class="sub">任务集 bench/tasks.yaml · 同一验收脚本判定 · tuan 模型: {esc(model or '默认配置')} · Claude 侧: {esc(probe_note)}</div></header>
 <div class="cards">
   <div class="card"><div class="num">{q_win}/{total}</div><div class="cap">Tuan-CLI 通过率 {q_pct}%</div></div>
   <div class="card"><div class="num">{c_win}/{total}</div><div class="cap">Claude Code 通过率 {c_pct}%</div></div>
@@ -334,8 +334,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Tuan-CLI vs Claude Code 双跑对比基准")
     ap.add_argument("--tasks", type=Path, default=TASKS_FILE)
     ap.add_argument("--task", help="只跑指定 id 的任务")
-    ap.add_argument("--qxt", default="qxt", help="qxt 可执行文件路径")
-    ap.add_argument("--model", default=None, help="qxt 侧模型 (provider/model)")
+    ap.add_argument("--tuan", default="tuan", help="tuan 可执行文件路径")
+    ap.add_argument("--model", default=None, help="tuan 侧模型 (provider/model)")
     ap.add_argument("--claude", default="claude", help="claude 可执行文件/别名")
     ap.add_argument("--skip-probe", action="store_true", help="跳过 Claude 可用性探测 (强制逐任务双跑)")
     ap.add_argument("--dry", action="store_true", help="只校验框架/任务/报告生成, 不真正调用模型")
@@ -361,7 +361,7 @@ def main() -> int:
 
     results: List[TaskResult] = []
     for t in tasks:
-        q_res = run_qxt(t, args.qxt, args.model, dry=args.dry)
+        q_res = run_qxt(t, args.tuan, args.model, dry=args.dry)
         c_res = run_claude(t, args.claude) if (claude_ok and not args.dry) else None
         results.append(TaskResult(t.id, q_res, c_res))
 
@@ -372,7 +372,7 @@ def main() -> int:
             "tasks": [
                 {
                     "task_id": r.task_id,
-                    "qxt": vars(r.qxt),
+                    "tuan": vars(r.tuan),
                     "claude": vars(r.claude) if r.claude else None,
                 }
                 for r in results
@@ -383,7 +383,7 @@ def main() -> int:
         print(f"{'任务':<22}{'Tuan-CLI':<10}{'耗时(s)':<10}{'Claude':<10}{'耗时(s)':<10}备注")
         print("-" * 76)
         for r in results:
-            q = r.qxt
+            q = r.tuan
             if r.claude:
                 c = r.claude
                 c_cell = "PASS" if c.passed else "FAIL"
@@ -395,7 +395,7 @@ def main() -> int:
             print(f"{r.task_id:<22}{'PASS' if q.passed else 'FAIL':<10}{q.elapsed:<10.1f}"
                   f"{c_cell:<10}{c_el:<10}{note}")
         print("-" * 76)
-        q_win = sum(1 for r in results if r.qxt.passed)
+        q_win = sum(1 for r in results if r.tuan.passed)
         c_win = sum(1 for r in results if r.claude and r.claude.passed)
         print(f"通过率: Tuan-CLI {q_win}/{len(results)} · Claude Code {c_win}/{len(results)}")
         if args.dry:
@@ -411,7 +411,7 @@ def main() -> int:
         "probe_note": probe_note,
         "claude_available": claude_ok,
         "tasks": [
-            {"task_id": r.task_id, "qxt": vars(r.qxt),
+            {"task_id": r.task_id, "tuan": vars(r.tuan),
              "claude": vars(r.claude) if r.claude else None}
             for r in results
         ],

@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from qingxiaotuan.ports.migration_legacy import (
+from tuan_cli.ports.migration_legacy import (
     MigrationScope,
     analyze_context_content,
     append_marker_run,
@@ -31,7 +31,7 @@ from qingxiaotuan.ports.migration_legacy import (
     write_migration_errors_log,
     write_report,
 )
-from qingxiaotuan.ports.migration_legacy import paths as P
+from tuan_cli.ports.migration_legacy import paths as P
 
 
 # --------------------------------------------------------------------------- #
@@ -99,7 +99,7 @@ def test_target_paths():
 # --------------------------------------------------------------------------- #
 # kimi_cli_schema
 # --------------------------------------------------------------------------- #
-from qingxiaotuan.ports.migration_legacy.kimi_cli_schema import (
+from tuan_cli.ports.migration_legacy.kimi_cli_schema import (
     parse_kimi_json,
     parse_session_state,
     SchemaError,
@@ -434,7 +434,7 @@ def test_write_report(tmp_path):
 # session_index
 # --------------------------------------------------------------------------- #
 def test_session_index_append_and_ensure(tmp_path):
-    from qingxiaotuan.ports.migration_legacy import SessionIndexEntry
+    from tuan_cli.ports.migration_legacy import SessionIndexEntry
 
     e1 = SessionIndexEntry(session_id="a", session_dir="/abs/a", work_dir="/wd")
     e2 = SessionIndexEntry(session_id="b", session_dir="/abs/b", work_dir="/wd")
@@ -467,7 +467,7 @@ def test_session_index_append_and_ensure(tmp_path):
 # stub_detect
 # --------------------------------------------------------------------------- #
 def test_is_config_stub_or_missing(tmp_path):
-    from qingxiaotuan.ports.migration_legacy import DEFAULT_CONFIG_FILE_TEXT
+    from tuan_cli.ports.migration_legacy import DEFAULT_CONFIG_FILE_TEXT
 
     assert is_config_stub_or_missing(str(tmp_path / "missing.toml")) is True
     (tmp_path / "config.toml").write_text(DEFAULT_CONFIG_FILE_TEXT, encoding="utf-8")
@@ -479,7 +479,7 @@ def test_is_config_stub_or_missing(tmp_path):
 
 
 def test_is_tui_stub_or_missing(tmp_path):
-    from qingxiaotuan.ports.migration_legacy import DEFAULT_TUI_RENDER
+    from tuan_cli.ports.migration_legacy import DEFAULT_TUI_RENDER
 
     assert is_tui_stub_or_missing(str(tmp_path / "missing.toml")) is True
     (tmp_path / "tui.toml").write_text(DEFAULT_TUI_RENDER, encoding="utf-8")

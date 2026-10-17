@@ -1,4 +1,4 @@
-"""Behavioral tests for the Kimi OAuth Python port (qingxiaotuan.ports.oauth)."""
+"""Behavioral tests for the Kimi OAuth Python port (tuan_cli.ports.oauth)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from qingxiaotuan.ports.oauth import (
+from tuan_cli.ports.oauth import (
     CustomRegistryApiError,
     CustomRegistryModelEntry,
     CustomRegistryProviderEntry,
@@ -273,7 +273,7 @@ def test_device_headers_and_assert_identity(tmp_path):
     assert headers.x_msh_device_id
 
     identity = assert_kimi_host_identity(
-        __import__("qingxiaotuan.ports.oauth", fromlist=["KimiHostIdentity"]).KimiHostIdentity(
+        __import__("tuan_cli.ports.oauth", fromlist=["KimiHostIdentity"]).KimiHostIdentity(
             product_name="p", version="1", platform="kimi_code_cli"
         )
     )

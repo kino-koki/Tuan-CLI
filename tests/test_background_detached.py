@@ -15,8 +15,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.core.background import BackgroundRunner, submit_background
-from qingxiaotuan.app import build_kernel
+from tuan_cli.core.background import BackgroundRunner, submit_background
+from tuan_cli.app import build_kernel
 
 
 class _FakeProc:
@@ -39,9 +39,9 @@ def test_submit_detached_marks_failed_when_worker_dies(tmp_path, monkeypatch):
     runner = BackgroundRunner(kernel, cfg, str(tmp_path))
 
     # 模拟 Popen: 进程对象已创建, 但随后立即死亡 (如 background_worker import 失败)
-    monkeypatch.setattr("qingxiaotuan.core.background.subprocess.Popen",
+    monkeypatch.setattr("tuan_cli.core.background.subprocess.Popen",
                         lambda *a, **k: _FakeProc(12345))
-    monkeypatch.setattr("qingxiaotuan.core.background._is_process_alive",
+    monkeypatch.setattr("tuan_cli.core.background._is_process_alive",
                         lambda pid: False)
 
     with pytest.raises(RuntimeError):
@@ -59,9 +59,9 @@ def test_submit_detached_ok_when_worker_alive(tmp_path, monkeypatch):
     _disable_background_if_needed(cfg)
     runner = BackgroundRunner(kernel, cfg, str(tmp_path))
 
-    monkeypatch.setattr("qingxiaotuan.core.background.subprocess.Popen",
+    monkeypatch.setattr("tuan_cli.core.background.subprocess.Popen",
                         lambda *a, **k: _FakeProc(54321))
-    monkeypatch.setattr("qingxiaotuan.core.background._is_process_alive",
+    monkeypatch.setattr("tuan_cli.core.background._is_process_alive",
                         lambda pid: True)
 
     data = runner.submit_detached("做点事")

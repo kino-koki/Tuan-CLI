@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from qingxiaotuan.core.ipc_client import ExternalEngineManager
+from tuan_cli.core.ipc_client import ExternalEngineManager
 
 AVAIL = set(ExternalEngineManager().list_engines())
 HAVE = "json" in AVAIL
@@ -58,11 +58,11 @@ def test_merge_overlay():
 
 @pytest.mark.skipif(not HAVE, reason="json 引擎不可用")
 def test_kernel_tools_wired():
-    from qingxiaotuan.core.kernel import Kernel
-    from qingxiaotuan.config.loader import Config
-    from qingxiaotuan.config.plugin import ConfigPlugin
-    from qingxiaotuan.tools import ToolRegistryPlugin
-    from qingxiaotuan.tools.external import ExternalToolsPlugin
+    from tuan_cli.core.kernel import Kernel
+    from tuan_cli.config.loader import Config
+    from tuan_cli.config.plugin import ConfigPlugin
+    from tuan_cli.tools import ToolRegistryPlugin
+    from tuan_cli.tools.external import ExternalToolsPlugin
 
     k = Kernel()
     k.register(ConfigPlugin(Config(profile="default")))
@@ -76,5 +76,5 @@ def test_kernel_tools_wired():
     res = reg.dispatch("ext_json_pointer",
                        json.dumps({"doc": json.dumps({"u": [{"name": "alice"}]}),
                                    "pointer": "/u/0/name"}),
-                       __import__("qingxiaotuan.tools.base", fromlist=["ToolContext"]).ToolContext(kernel=k, workspace="."))
+                       __import__("tuan_cli.tools.base", fromlist=["ToolContext"]).ToolContext(kernel=k, workspace="."))
     assert "alice" in res

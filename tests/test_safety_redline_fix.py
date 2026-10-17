@@ -8,8 +8,8 @@
    sh -c / bash -c / eval / python -c(字面 shell) / sudo -u / xargs / env /
    find -exec / find -delete 等绕过写法均命中红线, 同时安全命令不误判。
 """
-from qingxiaotuan.ext.safety_engine import is_redline
-from qingxiaotuan.tools.shell import is_redline as shell_is_redline
+from tuan_cli.ext.safety_engine import is_redline
+from tuan_cli.tools.shell import is_redline as shell_is_redline
 
 
 # -------------------------------------------------- 修复 1: is_redline 覆盖 CRITICAL_PATTERNS
@@ -116,7 +116,7 @@ def test_redline_indirection_not_overblocking():
 
 def test_redline_consistent_with_score_critical():
     """is_redline 与 score() 的 critical 判定口径必须一致。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
     eng = SafetyEngine()
     for cmd in ["chmod -R 000 /", "mkfs.ext4 /dev/sdb", "DROP TABLE users",
                 "rm -rf /", "git push --force", "format c:", "dd if=/dev/zero of=/dev/sda"]:

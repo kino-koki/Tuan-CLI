@@ -6,11 +6,11 @@
 """
 from pathlib import Path
 
-from qingxiaotuan.core import prompts
+from tuan_cli.core import prompts
 
 SOUL_PATH = (
     Path(__file__).resolve().parent.parent
-    / "qingxiaotuan" / "resources" / "SOUL.md"
+    / "tuan_cli" / "resources" / "SOUL.md"
 )
 
 

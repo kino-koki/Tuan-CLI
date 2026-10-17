@@ -7,11 +7,11 @@ import time
 
 import pytest
 
-from qingxiaotuan.tools.base import ToolContext
-from qingxiaotuan.core.dynamic_workflow import get_engine, close_engines
-from qingxiaotuan.core.subagents import SubResult
-import qingxiaotuan.tools.dynamic_workflow_tool as dw
-import qingxiaotuan.config as _cfg
+from tuan_cli.tools.base import ToolContext
+from tuan_cli.core.dynamic_workflow import get_engine, close_engines
+from tuan_cli.core.subagents import SubResult
+import tuan_cli.tools.dynamic_workflow_tool as dw
+import tuan_cli.config as _cfg
 
 
 class FakeConfig:
@@ -137,7 +137,7 @@ def test_unknown_action(env):
 # ---------------------------------------------------------------- 编排端到端 (顺序时序)
 
 def test_engine_full_run_with_dynamic_add(tmp_path):
-    from qingxiaotuan.core.dynamic_workflow import DynamicWorkflowEngine
+    from tuan_cli.core.dynamic_workflow import DynamicWorkflowEngine
 
     calls = []
 
@@ -167,7 +167,7 @@ def test_engine_full_run_with_dynamic_add(tmp_path):
 
 
 def test_emit_event_on_complete(tmp_path):
-    from qingxiaotuan.core.dynamic_workflow import DynamicWorkflowEngine
+    from tuan_cli.core.dynamic_workflow import DynamicWorkflowEngine
 
     events = []
 
@@ -202,9 +202,9 @@ def test_emit_event_on_complete(tmp_path):
 # ---------------------------------------------------------------- 第三轮迭代: 插件注册集成
 
 def test_plugin_registers_tools_and_engine_service(tmp_path):
-    from qingxiaotuan.core.kernel import Kernel
-    from qingxiaotuan.tools.base import ToolRegistry
-    from qingxiaotuan.tools.dynamic_workflow_tool import DynamicWorkflowPlugin
+    from tuan_cli.core.kernel import Kernel
+    from tuan_cli.tools.base import ToolRegistry
+    from tuan_cli.tools.dynamic_workflow_tool import DynamicWorkflowPlugin
 
     kernel = Kernel()
     reg = ToolRegistry(cache=None)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.memory.store import MemoryStore
+from tuan_cli.memory.store import MemoryStore
 
 
 @pytest.fixture

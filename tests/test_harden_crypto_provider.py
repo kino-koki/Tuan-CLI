@@ -3,7 +3,7 @@ import base64
 
 import pytest
 
-from qingxiaotuan.harden.crypto_provider import (
+from tuan_cli.harden.crypto_provider import (
     CryptoProvider,
     SoftwareProvider,
     GmsslProvider,

@@ -33,7 +33,7 @@ def _safe_delete_blocked() -> bool:
     # shim 只在存在 session id 时激活; 无 session id 的环境 (普通 CI / 本地 venv) 直接放行
     if not (os.environ.get("CODEBUDDY_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID")):
         return False
-    probe_dir = os.path.join(os.getcwd(), ".qxt_sd_probe")
+    probe_dir = os.path.join(os.getcwd(), ".tuan_sd_probe")
     try:
         os.makedirs(probe_dir, exist_ok=True)
         probe = os.path.join(probe_dir, "x")
@@ -102,7 +102,7 @@ if _missing:
         returncode=1,
     )
 
-from qingxiaotuan.core.ipc_client import close_all_managers
+from tuan_cli.core.ipc_client import close_all_managers
 
 
 @pytest.fixture(autouse=True)
@@ -126,10 +126,10 @@ def _refresh_global_alarm():
 
 
 @pytest.fixture()
-def qxt_home(tmp_path, monkeypatch):
-    """每个测试使用独立的 QXT_HOME, 不污染真实用户目录。"""
-    home = tmp_path / ".qingxiaotuan"
-    monkeypatch.setenv("QXT_HOME", str(home))
+def tuan_home(tmp_path, monkeypatch):
+    """每个测试使用独立的 TUAN_HOME, 不污染真实用户目录。"""
+    home = tmp_path / ".tuan"
+    monkeypatch.setenv("TUAN_HOME", str(home))
     yield home
 
 
@@ -137,18 +137,18 @@ def qxt_home(tmp_path, monkeypatch):
 def _isolated_environ(tmp_path, monkeypatch):
     """全局环境隔离: 让本机测试与 CI 行为一致。
 
-    - QXT_HOME 默认指向临时目录: config.loader 的 load_dotenv 不再读取真实
-      用户目录下的 ~/.qingxiaotuan/.env, 本机凭据不会泄漏进测试进程;
+    - TUAN_HOME 默认指向临时目录: config.loader 的 load_dotenv 不再读取真实
+      用户目录下的 ~/.tuan/.env, 本机凭据不会泄漏进测试进程;
     - 清空所有 *API_KEY* 变量: 路由/供应商可用性只由各测试显式注入决定;
     - 清理可能泄漏的测试专用环境变量;
     - monkeypatch teardown 自动还原, 测试中途被灌进 os.environ 的变量一并回滚。
     需要特定变量的测试用 monkeypatch.setenv 自行覆盖即可。
     """
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / ".qingxiaotuan"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / ".tuan"))
     for key in [k for k in os.environ if "API_KEY" in k.upper()]:
         monkeypatch.delenv(key, raising=False)
     # Clean up test-specific env vars that might leak between tests
-    for key in ("HOOK_AUDIT_LOG", "QXT_MODE", "QXT_WORKSPACE"):
+    for key in ("HOOK_AUDIT_LOG", "TUAN_MODE", "TUAN_WORKSPACE"):
         monkeypatch.delenv(key, raising=False)
     yield
 
@@ -162,9 +162,9 @@ def _reset_i18n_language():
     的用例 (如 /resume 的「已恢复会话」、banner「Welcome to 青小团 CLI!」)。
     隔离运行时这些用例各自通过, 全量却失败 —— 故需在此兜底复位, 保证确定性。
     """
-    from qingxiaotuan.i18n import _current, DEFAULT_LANGUAGE
+    from tuan_cli.i18n import _current, DEFAULT_LANGUAGE
     if _current != DEFAULT_LANGUAGE:
-        from qingxiaotuan.i18n import set_language
+        from tuan_cli.i18n import set_language
         set_language(DEFAULT_LANGUAGE)
     yield
 

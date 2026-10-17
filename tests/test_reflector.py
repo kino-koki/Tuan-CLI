@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from qingxiaotuan.core.reflector import (
+from tuan_cli.core.reflector import (
     ReflectDecision,
     Reflector,
     VerificationResult,
@@ -62,7 +62,7 @@ def test_run_verification_unknown_tool():
     assert "不支持的验证工具" in result.error_summary
 
 
-@patch("qingxiaotuan.core.proc.run_with_tree_kill")
+@patch("tuan_cli.core.proc.run_with_tree_kill")
 def test_run_verification_success(mock_run):
     """验证通过时 passed=True, exit_code=0。"""
     mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
@@ -73,7 +73,7 @@ def test_run_verification_success(mock_run):
     assert result.error_summary == ""
 
 
-@patch("qingxiaotuan.core.proc.run_with_tree_kill")
+@patch("tuan_cli.core.proc.run_with_tree_kill")
 def test_run_verification_failure_extracts_summary(mock_run):
     """验证失败时 passed=False 且提取错误摘要。"""
     mock_run.return_value = MagicMock(
@@ -85,7 +85,7 @@ def test_run_verification_failure_extracts_summary(mock_run):
     assert "AssertionError" in result.error_summary
 
 
-@patch("qingxiaotuan.core.proc.run_with_tree_kill")
+@patch("tuan_cli.core.proc.run_with_tree_kill")
 def test_run_verification_timeout(mock_run):
     """验证超时应返回友好错误。"""
     import subprocess
@@ -96,7 +96,7 @@ def test_run_verification_timeout(mock_run):
     assert "超时" in result.error_summary
 
 
-@patch("qingxiaotuan.core.proc.run_with_tree_kill")
+@patch("tuan_cli.core.proc.run_with_tree_kill")
 def test_run_verification_exception(mock_run):
     """执行异常应被捕获并标记失败。"""
     mock_run.side_effect = OSError("no python")
@@ -355,7 +355,7 @@ def test_degrade_task_general():
 
 def test_build_reflection_prompt_continue():
     r = Reflector(".")
-    from qingxiaotuan.core.reflector import ReflectResult
+    from tuan_cli.core.reflector import ReflectResult
     res = ReflectResult(
         decision=ReflectDecision.CONTINUE,
         verifications=[VerificationResult(name="pytest", passed=True)],
@@ -368,7 +368,7 @@ def test_build_reflection_prompt_continue():
 
 def test_build_reflection_prompt_ask_user():
     r = Reflector(".")
-    from qingxiaotuan.core.reflector import ReflectResult
+    from tuan_cli.core.reflector import ReflectResult
     res = ReflectResult(
         decision=ReflectDecision.ASK_USER,
         failure_count=3,
@@ -380,7 +380,7 @@ def test_build_reflection_prompt_ask_user():
 
 def test_build_reflection_prompt_degrade():
     r = Reflector(".")
-    from qingxiaotuan.core.reflector import ReflectResult
+    from tuan_cli.core.reflector import ReflectResult
     res = ReflectResult(
         decision=ReflectDecision.DEGRADE,
         failure_count=2,

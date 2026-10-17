@@ -1,8 +1,8 @@
-"""补齐的 Claude Code 对齐斜杠命令: /permissions /status /budget /checkpoint /web /subagent + qxt usercmd。"""
+"""补齐的 Claude Code 对齐斜杠命令: /permissions /status /budget /checkpoint /web /subagent + tuan usercmd。"""
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.models.base import ModelAdapter, ModelResponse
 
 
 class MockModel(ModelAdapter):
@@ -20,7 +20,7 @@ class MockModel(ModelAdapter):
         return resp
 
 
-def _build_agent(tmp_path, qxt_home, script=()):
+def _build_agent(tmp_path, tuan_home, script=()):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = 0
@@ -29,10 +29,10 @@ def _build_agent(tmp_path, qxt_home, script=()):
     return Agent(kernel=kernel, config=config, workspace=str(tmp_path), confirm=lambda _p: True)
 
 
-def test_slash_permissions_lists_rules(tmp_path, qxt_home, capsys):
+def test_slash_permissions_lists_rules(tmp_path, tuan_home, capsys):
     """补丁: /permissions 只读展示权限规则。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     config.data["permissions"]["rules"] = [{"tool": "run_shell", "action": "deny", "pattern": "rm"}]
     config.data["permissions"]["shell"]["deny_patterns"] = [r"\brm\b"]
@@ -45,10 +45,10 @@ def test_slash_permissions_lists_rules(tmp_path, qxt_home, capsys):
     assert "example.com" in out
 
 
-def test_slash_status_summary(tmp_path, qxt_home, capsys):
+def test_slash_status_summary(tmp_path, tuan_home, capsys):
     """/status 展示模型/模式/上下文摘要。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     assert _handle_slash("/status", agent, config, str(tmp_path)) is True
     out = capsys.readouterr().out
@@ -57,10 +57,10 @@ def test_slash_status_summary(tmp_path, qxt_home, capsys):
     assert "上下文" in out
 
 
-def test_slash_status_resilience_default_disabled(tmp_path, qxt_home, capsys):
+def test_slash_status_resilience_default_disabled(tmp_path, tuan_home, capsys):
     """/status 默认展示韧性三道防线均为未启用。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     assert _handle_slash("/status", agent, config, str(tmp_path)) is True
     out = capsys.readouterr().out
@@ -72,11 +72,11 @@ def test_slash_status_resilience_default_disabled(tmp_path, qxt_home, capsys):
     assert "open" not in out and "已熔断" not in out
 
 
-def test_slash_status_resilience_breaker_closed_and_open(tmp_path, qxt_home, capsys):
+def test_slash_status_resilience_breaker_closed_and_open(tmp_path, tuan_home, capsys):
     """/status 在熔断器开启时展示 closed (正常) 与 open (已熔断) 两种态。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    from qingxiaotuan.core.retry import CircuitBreaker
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    from tuan_cli.core.retry import CircuitBreaker
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     # 启用熔断 (默认已 closed)
     agent._circuit_breaker = CircuitBreaker(
@@ -91,10 +91,10 @@ def test_slash_status_resilience_breaker_closed_and_open(tmp_path, qxt_home, cap
     assert "已熔断" in out and "open" in out
 
 
-def test_slash_budget_view_and_set(tmp_path, qxt_home, capsys):
+def test_slash_budget_view_and_set(tmp_path, tuan_home, capsys):
     """/budget 无参查看, 有参写入 router.budget_limit。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     assert _handle_slash("/budget", agent, config, str(tmp_path)) is True
     assert "预算" in capsys.readouterr().out
@@ -106,10 +106,10 @@ def test_slash_budget_view_and_set(tmp_path, qxt_home, capsys):
     assert "用法" in out
 
 
-def test_slash_checkpoint_save_list_restore(tmp_path, qxt_home, capsys):
+def test_slash_checkpoint_save_list_restore(tmp_path, tuan_home, capsys):
     """/checkpoint save → restore 不抛异常且给出反馈。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     assert _handle_slash("/checkpoint", agent, config, str(tmp_path)) is True
     assert "没有" in capsys.readouterr().out
@@ -122,10 +122,10 @@ def test_slash_checkpoint_save_list_restore(tmp_path, qxt_home, capsys):
     assert "检查点 cp1" in capsys.readouterr().out
 
 
-def test_slash_web_and_subagent_usage(tmp_path, qxt_home, capsys):
+def test_slash_web_and_subagent_usage(tmp_path, tuan_home, capsys):
     """/web 无参启动本地工作台 (不联网); /subagent 无参给出用法提示。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     assert _handle_slash("/web", agent, config, str(tmp_path)) is True
     out = capsys.readouterr().out
@@ -134,10 +134,10 @@ def test_slash_web_and_subagent_usage(tmp_path, qxt_home, capsys):
     assert "用法" in capsys.readouterr().out
 
 
-def test_help_lists_new_commands(tmp_path, qxt_home, capsys):
+def test_help_lists_new_commands(tmp_path, tuan_home, capsys):
     """/help 帮助文本包含新补齐的命令条目。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     assert _handle_slash("/help", agent, config, str(tmp_path)) is True
     out = capsys.readouterr().out
@@ -146,15 +146,15 @@ def test_help_lists_new_commands(tmp_path, qxt_home, capsys):
 
 
 def test_parser_registers_usercmd():
-    """qxt usercmd [list] 子命令注册且分发到 cmd_usercmd。"""
-    from qingxiaotuan.cli.parser import build_parser
+    """tuan usercmd [list] 子命令注册且分发到 cmd_usercmd。"""
+    from tuan_cli.cli.parser import build_parser
     parser = build_parser()
     ns = parser.parse_args(["usercmd", "list"])
     assert ns.func == "cmd_usercmd"
     assert ns.usercmd_cmd == "list"
 
 
-def _build_agent_telemetry(tmp_path, qxt_home):
+def _build_agent_telemetry(tmp_path, tuan_home):
     """构造一个开启 observability.telemetry 的 Agent (其余配置同 _build_agent)。"""
     kernel = build_kernel()
     config = kernel.require("config")
@@ -165,23 +165,23 @@ def _build_agent_telemetry(tmp_path, qxt_home):
     return Agent(kernel=kernel, config=config, workspace=str(tmp_path), confirm=lambda _p: True)
 
 
-def test_agent_creates_telemetry_when_enabled(tmp_path, qxt_home):
+def test_agent_creates_telemetry_when_enabled(tmp_path, tuan_home):
     """observability.telemetry.enabled=true 时, Agent 自动创建 TelemetryCollector。"""
-    agent = _build_agent_telemetry(tmp_path, qxt_home)
+    agent = _build_agent_telemetry(tmp_path, tuan_home)
     assert agent._telemetry is not None
     assert agent._telemetry_trace  # 会话级 trace_id 已生成
 
 
-def test_agent_no_telemetry_by_default(tmp_path, qxt_home):
+def test_agent_no_telemetry_by_default(tmp_path, tuan_home):
     """默认不开启 telemetry, Agent._telemetry 为 None (零行为影响)。"""
-    agent = _build_agent(tmp_path, qxt_home)
+    agent = _build_agent(tmp_path, tuan_home)
     assert agent._telemetry is None
 
 
-def test_slash_stats_disabled_message(tmp_path, qxt_home, capsys):
+def test_slash_stats_disabled_message(tmp_path, tuan_home, capsys):
     """未启用 telemetry 时, /stats 提示如何开启而非报错。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     assert _handle_slash("/stats", agent, config, str(tmp_path)) is True
     out = capsys.readouterr().out
@@ -189,11 +189,11 @@ def test_slash_stats_disabled_message(tmp_path, qxt_home, capsys):
     assert "observability.telemetry.enabled" in out
 
 
-def test_slash_stats_shows_run_metrics(tmp_path, qxt_home, capsys):
+def test_slash_stats_shows_run_metrics(tmp_path, tuan_home, capsys):
     """开启 telemetry 后跑一轮, /stats 能展示累积的 span 与指标。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    from qingxiaotuan.models.base import ModelResponse
-    agent = _build_agent_telemetry(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _handle_slash
+    from tuan_cli.models.base import ModelResponse
+    agent = _build_agent_telemetry(tmp_path, tuan_home)
     config = agent.config
     # 一次带 usage 的模型响应, 无 tool_calls → run 一轮即返回
     agent.model.script = [ModelResponse(

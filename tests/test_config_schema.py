@@ -45,7 +45,7 @@ def test_schema_is_valid_json_and_well_formed():
 
 def test_default_config_conforms_to_schema_types():
     """DEFAULT_CONFIG 的每个叶子类型必须与该 schema 声明一致。"""
-    from qingxiaotuan.config.defaults import DEFAULT_CONFIG
+    from tuan_cli.config.defaults import DEFAULT_CONFIG
 
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 

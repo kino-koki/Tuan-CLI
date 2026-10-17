@@ -1,13 +1,13 @@
 """安全加固集成测试: core egress/one-way 接入 shell 路径 + 总线默认落盘。"""
 from pathlib import Path
 
-from qingxiaotuan.core.network_guard import (
+from tuan_cli.core.network_guard import (
     NetworkGuard,
     get_network_guard,
     set_network_guard,
 )
-from qingxiaotuan.core.security_bus import get_security_bus
-from qingxiaotuan.harden.network_policy import EgressRestrictedNetworkGuard
+from tuan_cli.core.security_bus import get_security_bus
+from tuan_cli.harden.network_policy import EgressRestrictedNetworkGuard
 
 
 def test_core_egress_denies_outside_cidr():

@@ -1,5 +1,5 @@
 """工具结果缓存回归: 验证缓存键纳入工作区, 防止跨工作区陈旧结果。"""
-from qingxiaotuan.tools.cache import ToolResultCache
+from tuan_cli.tools.cache import ToolResultCache
 
 
 def test_same_workspace_cache_hit():

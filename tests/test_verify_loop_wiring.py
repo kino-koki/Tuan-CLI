@@ -12,8 +12,8 @@ import contextlib
 
 import pytest
 
-from qingxiaotuan.core import verify_loop as vl
-from qingxiaotuan.core.agent import Agent
+from tuan_cli.core import verify_loop as vl
+from tuan_cli.core.agent import Agent
 
 
 class _FakeAgent:

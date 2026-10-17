@@ -1,6 +1,6 @@
 """TUI 对话区排版 + 双 ✨ 修复 + /命令 提示 回归测试。"""
 
-from qingxiaotuan.tui.tui import QxtTUI, USER_MESSAGE_BULLET
+from tuan_cli.tui.tui import QxtTUI, USER_MESSAGE_BULLET
 
 
 def _tui(**kw):
@@ -17,23 +17,22 @@ def _tui(**kw):
 def test_msg_to_lines_no_double_bullet():
     """用户消息已带 ✨ 前缀 (事件角色标记) 时, 渲染不再叠加第二颗。"""
     tui = _tui()
-    # 事件写入时带前缀 (append_log 路径); 统一左缩进 2 格 (与欢迎盒内边距同列)
+    # 事件写入时带前缀 (append_log 路径); 最早版行为: 无左缩进, 正文直接贴行首
     lines = tui._msg_to_lines("user", f"{USER_MESSAGE_BULLET}你好")
     first = "".join(seg for _, seg in lines[0])
     assert first.count("✨") == 1
-    assert first == "  ✨ 你好"
+    assert first == "✨ 你好"
     # 纯文本 (防御) 渲染时补一颗
     lines2 = tui._msg_to_lines("user", "你好")
     first2 = "".join(seg for _, seg in lines2[0])
-    assert first2 == "  ✨ 你好"
+    assert first2 == "✨ 你好"
 
 
 def test_msg_to_lines_user_block_bg():
-    """用户消息块带暖金底 (气泡感), 首行与续行一致; 首段为 2 格缩进透明前缀。"""
+    """用户消息块带暖金底 (气泡感), 首行与续行一致 (最早版行为: 首行即金底正文)。"""
     tui = _tui()
     lines = tui._msg_to_lines("user", f"{USER_MESSAGE_BULLET}第一行\n第二行")
-    assert lines[0][0] == ("", "  ")  # 首行缩进前缀不带金底
-    assert "bg:#2b2416" in lines[0][1][0]  # 正文段金底
+    assert lines[0][0] == ("class:roleuser bg:#2b2416", "✨ 第一行")  # 首行金底正文
     assert any("bg:#2b2416" in cls for cls, _ in lines[1])  # 续行金底延续
 
 
@@ -69,7 +68,7 @@ def test_scrolled_lines_no_double_sparkle_in_full_pipeline():
 
 def test_slash_completer_uses_meta():
     """补全菜单 display_meta 取命令描述表。"""
-    from qingxiaotuan.tui.tui import _SlashCompleter
+    from tuan_cli.tui.tui import _SlashCompleter
     from prompt_toolkit.document import Document
 
     comp = _SlashCompleter(
@@ -84,7 +83,7 @@ def test_slash_completer_uses_meta():
 
 def test_slash_command_meta_covers_major_commands():
     """命令描述表覆盖常用命令 (补全菜单与 /help 共用)。"""
-    from qingxiaotuan.cli.cmd_slash import slash_command_meta, list_slash_commands
+    from tuan_cli.cli.cmd_slash import slash_command_meta, list_slash_commands
 
     meta = slash_command_meta()
     names = list_slash_commands()
@@ -96,7 +95,7 @@ def test_slash_command_meta_covers_major_commands():
 
 def test_help_text_covers_command_names():
     """/help 输出覆盖全部内置命令 (SLASH_COMMAND_NAMES 与 _HELP 同步)。"""
-    from qingxiaotuan.cli.cmd_slash import _HELP, SLASH_COMMAND_NAMES
+    from tuan_cli.cli.cmd_slash import _HELP, SLASH_COMMAND_NAMES
 
     for name in SLASH_COMMAND_NAMES:
         assert name in _HELP, f"/help 未收录 {name}"

@@ -5,8 +5,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from qingxiaotuan.tools.web import web_fetch, _check_ssrf
-from qingxiaotuan.tools.base import ToolContext
+from tuan_cli.tools.web import web_fetch, _check_ssrf
+from tuan_cli.tools.base import ToolContext
 
 
 class _Handler(BaseHTTPRequestHandler):

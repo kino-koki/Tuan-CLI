@@ -1,8 +1,8 @@
 """审计日志标准化导出测试 (CEF / JSONL / RFC5424 Syslog)。"""
 import json
 
-from qingxiaotuan.core.security_bus import SecurityEvent
-from qingxiaotuan.harden.audit_export import (
+from tuan_cli.core.security_bus import SecurityEvent
+from tuan_cli.harden.audit_export import (
     AuditExporter,
     format_event,
     to_cef,

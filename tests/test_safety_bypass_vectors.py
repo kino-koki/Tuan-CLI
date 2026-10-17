@@ -14,7 +14,7 @@ import base64
 
 import pytest
 
-from qingxiaotuan.ext.safety_engine import (
+from tuan_cli.ext.safety_engine import (
     _normalize,
     is_redline,
     is_hard_redline,

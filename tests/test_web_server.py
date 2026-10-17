@@ -7,8 +7,8 @@ import urllib.request
 
 import pytest
 
-from qingxiaotuan.web import server as ws_mod
-from qingxiaotuan.web.server import WebServer
+from tuan_cli.web import server as ws_mod
+from tuan_cli.web.server import WebServer
 
 
 class _FakeAgent:
@@ -117,10 +117,36 @@ def _new_session(server):
 
 def test_frontend_html(server):
     html = _get(_url(server, "/"))
-    assert "<title>青小团 · Web 工作台</title>" in html
+    assert "<title>TUAN · Web Workbench</title>" in html
     assert "stream-cursor" in html
     assert "renderMd" in html  # markdown 渲染器
-    assert "safety" in html    # 安全徽章
+    assert "id=\"rpanel\"" in html  # 右侧工作面板 (安全详情已迁入其「安全」标签)
+    assert "tuan-canvas" in html  # TUAN 呼吸粒子
+    assert "/assets/tuan-web.css" in html  # 自研设计令牌表
+    assert "tuan-web.color-scheme" in html  # 主题机制 (新键)
+    # 旧键只应作为一次性迁移来源出现, 不应再被写入
+    assert "localStorage.setItem('kimi-web.color-scheme'" not in html
+    # P0 回归: 清空消息必须保留欢迎屏
+    assert "function clearMessages()" in html
+    assert "msgsEl.innerHTML='';" not in html  # 危险形态已全部替换
+    # P1 回归: 流式渲染需 rAF 节流
+    assert "function scheduleRender()" in html
+
+
+def test_asset_css(server):
+    css = _get(_url(server, "/assets/tuan-web.css"))
+    assert "--color-accent: #1783ff" in css      # 品牌蓝
+    assert "--radius-composer: 28px" in css      # 输入面板圆角 (圆润化)
+    assert "--color-sidebar-bg: #f9fbfc" in css  # 侧栏底色
+    assert "--p-sidebar-w: 264px" in css         # 侧栏宽度
+    # 深色主题覆盖齐全
+    assert '[data-color-scheme="dark"]' in css
+    assert "@media (prefers-color-scheme: dark)" in css  # system 模式
+
+
+def test_legacy_css_asset_removed(server):
+    """旧的第三方 CSS 产物应已移除 (版权风险)。"""
+    assert _get(_url(server, "/assets/kimi-web.css"), expect_error=True) == "not found"
 
 
 def test_info(server):
@@ -175,7 +201,7 @@ def test_delete_session(server):
 def test_persistence_roundtrip(server, tmp_path):
     """会话持久化: 聊天后磁盘有快照, 新 server 实例可加载 (重启不丢)。"""
     sid = _new_session(server)
-    disk = tmp_path / ".qxt" / "web_sessions.json"
+    disk = tmp_path / ".tuan" / "web_sessions.json"
     assert disk.exists(), "会话应落盘"
     data = json.loads(disk.read_text(encoding="utf-8"))
     assert sid in data
@@ -206,8 +232,8 @@ def test_persistence_roundtrip(server, tmp_path):
 def test_frontend_features(server):
     """测试前端新功能: 主题切换、搜索框、导出按钮、文件上传。"""
     html = _get(_url(server, "/"))
-    # 主题切换
-    assert 'data-theme' in html
+    # 主题切换 (官方机制: data-color-scheme)
+    assert 'data-color-scheme' in html
     assert 'btn-theme' in html
     assert 'localStorage' in html  # 主题持久化
     # 会话搜索
@@ -262,3 +288,36 @@ def test_missing_session_operations(server):
     assert r["ok"] is False
     r = _delete(_url(server, "/api/sessions?session=nonexistent"), expect_error=True)
     assert r["ok"] is False
+
+
+def test_assistant_parts_persisted(server, tmp_path):
+    """助手消息按出现顺序保存 text / tool 片段。
+
+    回归: 之前只存 content, 重开历史时工具调用整体丢失
+    (前端表现为「完成后历史覆盖」)。
+    """
+    sid = _new_session(server)
+    hist = json.loads(_get(_url(server, f"/api/history?session={sid}")))
+    msg = hist["messages"][-1]
+    assert msg["role"] == "assistant"
+    assert [p["type"] for p in msg["parts"]] == ["text", "tool"]
+    tool = msg["parts"][1]
+    assert tool["name"] == "read_file"
+    assert tool["out"] == "def main(): pass"
+    # 旧字段 tools 保留 (向后兼容)
+    assert msg["tools"][0]["name"] == "read_file"
+    # 磁盘快照同样携带 parts (重启不丢)
+    data = json.loads((tmp_path / ".tuan" / "web_sessions.json").read_text(encoding="utf-8"))
+    assert [p["type"] for p in data[sid]["messages"][-1]["parts"]] == ["text", "tool"]
+
+
+def test_frontend_markdown_uses_real_newlines(server):
+    """markdown 渲染器必须按真实换行切分。
+
+    回归: 源码里换行字面量被双重转义成 ``\\\\n``, JS 收到的是「反斜杠+n」
+    两个字符, 于是整段正文挤成一行, 代码块 / 列表 / 引用全部失效。
+    """
+    html = _get(_url(server, "/"))
+    assert "split('\\\\n')" not in html, "不应残留字面 \\\\n"
+    assert "split('\\n')" in html
+    assert "join('\\n')" in html

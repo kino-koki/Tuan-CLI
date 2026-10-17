@@ -6,7 +6,7 @@ import json
 import time
 from pathlib import Path
 
-from qingxiaotuan.cli.cmd_agents_view import (
+from tuan_cli.cli.cmd_agents_view import (
     collect_sessions,
     kill_session,
     render_table,
@@ -75,7 +75,7 @@ def test_kill_session_appends_cancel(tmp_path):
     lines = (sd / "20260101-120000-cccccc.jsonl").read_text(encoding="utf-8").strip().splitlines()
     last = json.loads(lines[-1])
     assert last["type"] == "job.cancel"
-    from qingxiaotuan.cli.cmd_agents_view import _get_session_status
+    from tuan_cli.cli.cmd_agents_view import _get_session_status
     assert _get_session_status(sd / "20260101-120000-cccccc.jsonl") == "cancelled"
 
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.core.kernel import AggregateProxy, PluginError, ServiceContainer
-from qingxiaotuan.ext.extension_registry import (
+from tuan_cli.core.kernel import AggregateProxy, PluginError, ServiceContainer
+from tuan_cli.ext.extension_registry import (
     ExtensionRegistry,
     OnError,
     get_registry,

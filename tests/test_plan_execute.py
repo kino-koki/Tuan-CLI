@@ -6,9 +6,9 @@ import os
 
 import pytest
 
-from qingxiaotuan.config import Config
-from qingxiaotuan.models.base import ModelCapabilities, ModelResponse, ToolCall
-from qingxiaotuan.core.agent import Agent
+from tuan_cli.config import Config
+from tuan_cli.models.base import ModelCapabilities, ModelResponse, ToolCall
+from tuan_cli.core.agent import Agent
 
 from tests.test_router import (
     _FakeContext,
@@ -49,7 +49,7 @@ class _StubAgent:
 
 
 def test_maybe_override_short_circuits_when_auto_disabled():
-    from qingxiaotuan.core.loop_provider import LoopProvider
+    from tuan_cli.core.loop_provider import LoopProvider
     agent = _StubAgent(override=2)
     agent._auto.enabled = False  # 关路由时不应切换模型
     LoopProvider._maybe_override_model(agent, "task")
@@ -57,14 +57,14 @@ def test_maybe_override_short_circuits_when_auto_disabled():
 
 
 def test_maybe_override_switches_when_override_nonzero():
-    from qingxiaotuan.core.loop_provider import LoopProvider
+    from tuan_cli.core.loop_provider import LoopProvider
     agent = _StubAgent(override=2)
     LoopProvider._maybe_override_model(agent, "task")
     assert agent.switched == [("task", 2, False)]
 
 
 def test_maybe_override_noop_when_override_zero():
-    from qingxiaotuan.core.loop_provider import LoopProvider
+    from tuan_cli.core.loop_provider import LoopProvider
     agent = _StubAgent(override=0)
     LoopProvider._maybe_override_model(agent, "task")
     assert agent.switched == []
@@ -78,10 +78,10 @@ _TIER1 = {
 
 
 @pytest.fixture(autouse=True)
-def isolated_qxt_home(monkeypatch, tmp_path):
-    """隔离 QXT_HOME, 避免读到真实 ~/.qingxiaotuan/config.yaml (如 opencode-zen 配置),
+def isolated_tuan_home(monkeypatch, tmp_path):
+    """隔离 TUAN_HOME, 避免读到真实 ~/.tuan/config.yaml (如 opencode-zen 配置),
     保证路由测试的当前模型是默认 deepseek/deepseek-chat, 且 set_user 只写临时目录。"""
-    monkeypatch.setenv("QXT_HOME", str(tmp_path))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path))
     yield
 
 
@@ -120,7 +120,7 @@ def _switcher_recording(kernel):
 
 
 def test_plan_execute_switches_strong_then_cheap(monkeypatch):
-    from qingxiaotuan.models.router import ModelRouter
+    from tuan_cli.models.router import ModelRouter
     monkeypatch.setattr(
         ModelRouter, "available_provider_names",
         staticmethod(lambda: ["deepseek", "groq", "zhipu", "qwen", "doubao",
@@ -140,8 +140,8 @@ def test_plan_execute_switches_strong_then_cheap(monkeypatch):
 
 
 def test_escalate_on_stuck_switches_back_to_strong(monkeypatch):
-    from qingxiaotuan.models.router import ModelRouter
-    from qingxiaotuan.tools.base import ToolResult
+    from tuan_cli.models.router import ModelRouter
+    from tuan_cli.tools.base import ToolResult
 
     class _FailingRegistry(_FakeRegistry):
         def dispatch(self, name, args, ctx):

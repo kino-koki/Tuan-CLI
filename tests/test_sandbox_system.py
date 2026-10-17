@@ -18,19 +18,19 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.sandbox.verdict import (
+from tuan_cli.sandbox.verdict import (
     Action, Payload, Verdict, SEV, deny, confirm, isolate,
 )
-from qingxiaotuan.sandbox.filters import (
+from tuan_cli.sandbox.filters import (
     IntentFilter, TrustFilter, ResourceFilter, HardIsolationFilter, SandboxFilterChain,
 )
-from qingxiaotuan.sandbox.backends import pick_backend, detect_backends
-from qingxiaotuan.sandbox.isolation import (
+from tuan_cli.sandbox.backends import pick_backend, detect_backends
+from tuan_cli.sandbox.isolation import (
     resolve_in_workspace, isolate_workdir, plan_isolation,
 )
-from qingxiaotuan.sandbox.manager import SandboxManager, json_deep_merge
-from qingxiaotuan.core.security_bus import SecurityEventBus, SecurityEventType
-from qingxiaotuan.config import defaults as DEFAULTS
+from tuan_cli.sandbox.manager import SandboxManager, json_deep_merge
+from tuan_cli.core.security_bus import SecurityEventBus, SecurityEventType
+from tuan_cli.config import defaults as DEFAULTS
 
 
 # ================================================================ 决策模型
@@ -126,7 +126,7 @@ class TestHardIsolationFilter:
         assert HardIsolationFilter().check(base, Payload(text=["echo hi"])) is None
 
     def test_fail_closed_when_enforce_and_no_strong(self, monkeypatch):
-        monkeypatch.setattr("qingxiaotuan.sandbox.backends.pick_backend",
+        monkeypatch.setattr("tuan_cli.sandbox.backends.pick_backend",
                             lambda prefer="auto": ("local", True))
         base = Verdict(isolate=True)
         p = Payload(text=["rm -rf /tmp/x"])
@@ -206,7 +206,7 @@ class TestIsolationPath:
 
     def test_backup_disambiguates_same_basename(self, tmp_path, monkeypatch):
         """同名文件 (src/main.py 与 lib/main.py) 的备份互不覆盖。"""
-        from qingxiaotuan.sandbox import isolation as iso_mod
+        from tuan_cli.sandbox import isolation as iso_mod
         monkeypatch.setattr(iso_mod.tempfile, "gettempdir", lambda: str(tmp_path))
         ws = tmp_path / "ws"
         (ws / "src").mkdir(parents=True)
@@ -215,7 +215,7 @@ class TestIsolationPath:
         (ws / "lib" / "main.py").write_text("b", encoding="utf-8")
         iso_mod._backup(str(ws / "src" / "main.py"))
         iso_mod._backup(str(ws / "lib" / "main.py"))
-        baks = list((tmp_path / "qxt-sandbox-backup").glob("main.py.*.bak"))
+        baks = list((tmp_path / "tuan-sandbox-backup").glob("main.py.*.bak"))
         assert len(baks) == 2
 
     def test_copy_diff_apply_roundtrip(self, tmp_path):
@@ -311,7 +311,7 @@ class TestAuditClosure:
         assert not seen  # 良性放行不入审计, 避免噪音
 
     def test_deny_written_to_auditor(self, tmp_path):
-        from qingxiaotuan.core.security_auditor import SecurityAuditor
+        from tuan_cli.core.security_auditor import SecurityAuditor
         auditor = SecurityAuditor(home=tmp_path / "home", passphrase="test")
         m = self._manager(None, auditor)
         m.assess(Payload(text=["rm -rf /"], trust_level="trusted"))
@@ -320,7 +320,7 @@ class TestAuditClosure:
         assert recs[0].context.get("layer") == "intent"
 
     def test_bus_event_reaches_auditor_via_subscribe(self, tmp_path):
-        from qingxiaotuan.core.security_auditor import SecurityAuditor
+        from tuan_cli.core.security_auditor import SecurityAuditor
         bus = SecurityEventBus()
         auditor = SecurityAuditor(home=tmp_path / "home", passphrase="test")
         auditor.subscribe_bus(bus)

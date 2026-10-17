@@ -12,9 +12,9 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.tools.base import Tool, ToolRegistry
-from qingxiaotuan.core.tool_executor import ToolExecutor
+from tuan_cli.core.agent import Agent
+from tuan_cli.tools.base import Tool, ToolRegistry
+from tuan_cli.core.tool_executor import ToolExecutor
 
 
 def _registry_with_rw():

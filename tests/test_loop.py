@@ -1,9 +1,9 @@
 """自主开发循环测试 (离线): Mock 模型驱动 DevLoop 收敛与检查点。"""
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.core.devloop import DevLoop
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.core.devloop import DevLoop
+from tuan_cli.models.base import ModelAdapter, ModelResponse
 
 
 class MockModel(ModelAdapter):
@@ -18,7 +18,7 @@ class MockModel(ModelAdapter):
         return self.script.pop(0)
 
 
-def _build(tmp_path, qxt_home, script):
+def _build(tmp_path, tuan_home, script):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = 0
@@ -29,8 +29,8 @@ def _build(tmp_path, qxt_home, script):
     return agent, config
 
 
-def test_devloop_stops_on_user_ok(tmp_path, qxt_home):
-    agent, config = _build(tmp_path, qxt_home,
+def test_devloop_stops_on_user_ok(tmp_path, tuan_home):
+    agent, config = _build(tmp_path, tuan_home,
                            [ModelResponse(content="实现功能完成\n【已完成】交付总结")])
     decisions = []
     loop = DevLoop(agent, config, on_checkpoint=lambda r: decisions.append(r) or "done")
@@ -39,8 +39,8 @@ def test_devloop_stops_on_user_ok(tmp_path, qxt_home):
     assert decisions  # 检查点被触发
 
 
-def test_devloop_continues_on_feedback_then_done(tmp_path, qxt_home):
-    agent, config = _build(tmp_path, qxt_home, [
+def test_devloop_continues_on_feedback_then_done(tmp_path, tuan_home):
+    agent, config = _build(tmp_path, tuan_home, [
         ModelResponse(content="第一版实现, 还不完美"),
         ModelResponse(content="已按反馈修正\n【已完成】最终交付"),
     ])
@@ -60,8 +60,8 @@ def test_devloop_continues_on_feedback_then_done(tmp_path, qxt_home):
     assert any("把按钮改成蓝色" in str(m) for m in agent.messages)
 
 
-def test_devloop_detects_done_without_checkpoint(tmp_path, qxt_home):
-    agent, config = _build(tmp_path, qxt_home,
+def test_devloop_detects_done_without_checkpoint(tmp_path, tuan_home):
+    agent, config = _build(tmp_path, tuan_home,
                            [ModelResponse(content="【已完成】全部搞定")])
     config.data["loop"]["ask_every"] = 0
     config.data["loop"]["stop_on_user_ok"] = False
@@ -70,17 +70,17 @@ def test_devloop_detects_done_without_checkpoint(tmp_path, qxt_home):
     assert "模型判定完成" in out
 
 
-def test_agent_run_respects_max_iter_cap(tmp_path, qxt_home):
+def test_agent_run_respects_max_iter_cap(tmp_path, tuan_home):
     """循环终止防护: 模型若永远只发工具调用、从不收尾, Agent.run 必须在
     agent.max_iterations 次迭代后兜底终止, 不无限循环、不崩溃, 且工具结果都合法回喂。"""
-    from qingxiaotuan.models.base import ModelResponse
+    from tuan_cli.models.base import ModelResponse
 
     # 永远返回工具调用 (不收尾) 的脚本
     def endless_tool():
         return ModelResponse(content="", tool_calls=[
             type("TC", (), {"id": "t1", "name": "shell", "arguments": "echo hi"})()
         ])
-    agent, config = _build(tmp_path, qxt_home, [None])  # 占位, 下面替换脚本
+    agent, config = _build(tmp_path, tuan_home, [None])  # 占位, 下面替换脚本
     agent.model.script = [endless_tool() for _ in range(50)]  # 远超上限
     config.data["agent"]["max_iterations"] = 5
 
@@ -91,7 +91,7 @@ def test_agent_run_respects_max_iter_cap(tmp_path, qxt_home):
     tool_msgs = [m for m in agent.messages if m.get("role") == "tool"]
     assert len(tool_msgs) >= 1
     # 不会有孤立的 tool_calls 没有对应 tool 结果
-    from qingxiaotuan.context.manager import ContextManager
+    from tuan_cli.context.manager import ContextManager
     cm = ContextManager()
     # 复用协议校验逻辑: 每个 tool_call_id 都有回喂
     pending = 0
@@ -106,10 +106,10 @@ def test_agent_run_respects_max_iter_cap(tmp_path, qxt_home):
     assert pending == 0 or len(seen_tool_ids) == 0 or True  # 回喂完整或已被压缩
 
 
-def test_agent_run_compresses_under_long_session(tmp_path, qxt_home):
+def test_agent_run_compresses_under_long_session(tmp_path, tuan_home):
     """异常/长路径: 超长会话触发压缩后, 消息序列仍协议合法且能继续推进到完成。"""
-    from qingxiaotuan.models.base import ModelResponse
-    from qingxiaotuan.context.manager import ContextManager
+    from tuan_cli.models.base import ModelResponse
+    from tuan_cli.context.manager import ContextManager
 
     # 前 40 轮发工具调用制造长上下文, 最后一轮收尾
     script = []
@@ -118,7 +118,7 @@ def test_agent_run_compresses_under_long_session(tmp_path, qxt_home):
             type("TC", (), {"id": "t%d" % _, "name": "shell", "arguments": "echo %d" % _})()
         ]))
     script.append(ModelResponse(content="【已完成】长任务跑完"))
-    agent, config = _build(tmp_path, qxt_home, script)
+    agent, config = _build(tmp_path, tuan_home, script)
     config.data["agent"]["max_iterations"] = 60
     config.data["context"]["budget_tokens"] = 400  # 低预算, 强制压缩
     config.data["context"]["keep_recent"] = 4

@@ -1,4 +1,4 @@
-# 青小团(qxt) vs Kimi Code vs Claude Code 差距分析报告
+# 青小团(tuan) vs Kimi Code vs Claude Code 差距分析报告
 
 > 调研截止：2026-09-26 | 青小团版本：v0.2.017 | Kimi Code：v2.1.1 | Claude Code：v2.1.283
 > **本报告为项目自评，非第三方评测。** 评分与"领先/较优"等判定基于公开信息与作者主观判断，**可能高估本项目**；
@@ -9,23 +9,23 @@
 
 ## 一、总览评分矩阵
 
-| 维度 | 青小团 qxt | Kimi Code v2.1.1 | Claude Code v2.1.283 | 差距判定 |
+| 维度 | 青小团 tuan | Kimi Code v2.1.1 | Claude Code v2.1.283 | 差距判定 |
 |---|---|---|---|---|
-| 安装/分发/更新 | pip + ps1 + bat，无自动更新 | 官方脚本/npm/Homebrew/单二进制，`kimi upgrade` | npm(弃用)/原生二进制，`claude install` | ⚠️ qxt缺自动更新 |
-| 模型/Provider | 51 provider，模型中立 ✅ | 自家K3+第三方6类，双协议API | 仅Claude系列+Bedrock/Vertex/Foundry | ✅ qxt领先 |
+| 安装/分发/更新 | pip + ps1 + bat，无自动更新 | 官方脚本/npm/Homebrew/单二进制，`kimi upgrade` | npm(弃用)/原生二进制，`claude install` | ⚠️ tuan缺自动更新 |
+| 模型/Provider | 51 provider，模型中立 ✅ | 自家K3+第三方6类，双协议API | 仅Claude系列+Bedrock/Vertex/Foundry | ✅ tuan领先 |
 | Agent模式/自主性 | plan/auto/agent/dev/run/bg，SubAgentPool，DevLoop | Plan/Goal/三档权限/AgentSwarm/Tower/WaitFor | Plan/Auto(默认)/Bypass/goal/fork/Ultraplan/Workflows | ⚠️ 缺Goal模式、WaitFor、dynamic workflows |
 | 代码编辑精度 | str_replace单次编辑，code_edit助手，run_tests | Edit/Write须先Read，危险命令守卫，symlink防护 | Edit(multi-cut)/Write/NotebookEdit，沙箱Bash，Monitor，ultrareview | ⚠️ Edit工具偏弱，缺diff预览 |
 | 终端UI/TUI | textual TUI + Web workbench | 全交互TUI，Mermaid/LaTeX渲染，全屏模式 | 流式TUI，diff面板，vim模式，agent view，Rewind | ⚠️ 缺diff面板、agent view、Rewind |
-| IDE集成 | ACP服务端，无IDE扩展 | VS Code扩展+桌面端+ACP接JetBrains/Zed | VS Code+JetBrains+Desktop+Web | ❌ qxt无IDE扩展 |
+| IDE集成 | ACP服务端，无IDE扩展 | VS Code扩展+桌面端+ACP接JetBrains/Zed | VS Code+JetBrains+Desktop+Web | ❌ tuan无IDE扩展 |
 | 上下文/记忆 | QXT.md多层级，MemoryStore(FTS5)，代码索引，上下文压缩 | compact，会话恢复/派生/全局搜索，1M上下文 | CLAUDE.md，Auto Memory(4类)，三层压缩，1M上下文 | ⚠️ 缺Auto Memory自动写入 |
 | MCP/工具生态 | MCP完整，微内核插件，Skills，Hooks(8事件) | MCP，插件市场，Skills，Hooks | MCP，Plugins+Marketplaces，Skills，Hooks，plugin eval | ✅ 基本持平 |
 | 安全/权限 | auto mode风险分类，沙箱，安全审计，工作区信任 | 三档权限，危险命令守卫，工作区信任，Web鉴权 | 三层权限+Tool(param:value)，沙箱Bash，hard deny，--restricted | ⚠️ 缺Tool(param:value)精确匹配、--restricted |
-| 插件/自定义 | 微内核@plugin，服务注册表，事件总线 | 插件清单(MCP+skills+agents+systemPrompt) | Plugins+Marketplaces，Hooks，settings.json分层 | ✅ qxt架构领先 |
-| 自动化/CI | qxt run(headless)，cron，Web API，后台任务 | -p print，stream-json，Server API，Remote Control | -p/--print，--bare，/loop，Routines，ultrareview CI | ⚠️ 缺-p简洁模式、--bare、stream-json |
+| 插件/自定义 | 微内核@plugin，服务注册表，事件总线 | 插件清单(MCP+skills+agents+systemPrompt) | Plugins+Marketplaces，Hooks，settings.json分层 | ✅ tuan架构领先 |
+| 自动化/CI | tuan run(headless)，cron，Web API，后台任务 | -p print，stream-json，Server API，Remote Control | -p/--print，--bare，/loop，Routines，ultrareview CI | ⚠️ 缺-p简洁模式、--bare、stream-json |
 | 性能/上下文 | 取决于provider | 1M上下文(K3)，260 tok/s(宣称) | 1M上下文(Opus5/Sonnet5)，fast mode | ✅ 模型中立无差距 |
-| 多语言 | 10语言README + i18n ✅ | 中英界面，多语言文档站 | 英/日/中/韩/德/法/西/葡/俄/印尼 | ✅ qxt领先 |
-| 价格 | 开源免费 ✅ | CLI免费MIT，会员¥49-699/月 | Pro$20/Max$100-200 | ✅ qxt领先 |
-| 开源 | MIT ✅ | MIT ✅ | 闭源(Commercial Terms) | ✅ qxt领先 |
+| 多语言 | 10语言README + i18n ✅ | 中英界面，多语言文档站 | 英/日/中/韩/德/法/西/葡/俄/印尼 | ✅ tuan领先 |
+| 价格 | 开源免费 ✅ | CLI免费MIT，会员¥49-699/月 | Pro$20/Max$100-200 | ✅ tuan领先 |
+| 开源 | MIT ✅ | MIT ✅ | 闭源(Commercial Terms) | ✅ tuan领先 |
 
 ---
 
@@ -38,10 +38,10 @@
 - Kimi Code：`kimi -p "任务"`，`--output-format stream-json` 每行一个JSON对象便于程序解析
 
 **青小团现状**：
-- `qxt run "任务"` 存在，但输出混合 console.print 与 token stream，不是纯管道模式
+- `tuan run "任务"` 存在，但输出混合 console.print 与 token stream，不是纯管道模式
 - 无 `--output-format json` 结构化输出
 - 无 `--bare` 纯净模式（会加载用户配置/skills/hooks/MCP，CI环境不可复现）
-- 无 stdin 管道输入（`cat file | qxt -p "explain"`）
+- 无 stdin 管道输入（`cat file | tuan -p "explain"`）
 
 **差距等级**：⚠️ 明显差距，CI/自动化场景核心能力缺失
 
@@ -91,7 +91,7 @@
 - Claude Code：`--bare` 跳过 hooks/skills/commands/subagents/plugins/MCP/auto memory/CLAUDE.md 自动加载，确保 CI 可复现
 
 **青小团现状**：
-- 无此模式，`qxt run` 会加载全部用户配置和插件
+- 无此模式，`tuan run` 会加载全部用户配置和插件
 
 **差距等级**：⚠️ 中等差距，CI/评测场景需要
 
@@ -106,12 +106,12 @@
 - Kimi Code：`kimi vis` 浏览器实时检视会话展开过程
 
 **青小团现状**：
-- 会话存储在 `~/.qingxiaotuan/sessions/`，但无导出命令
+- 会话存储在 `~/.tuan/sessions/`，但无导出命令
 - 无会话可视化
 
 **差距等级**：⚠️ 中等差距，实用性功能
 
-**可补齐性**：高。增加 `qxt session export` 命令，zip 打包会话文件。
+**可补齐性**：高。增加 `tuan session export` 命令，zip 打包会话文件。
 
 ---
 
@@ -165,7 +165,7 @@
 - Claude Code：VS Code + JetBrains 插件 + Desktop
 
 **青小团现状**：
-- 有 ACP 服务端（`qingxiaotuan/acp/`），理论上可接 JetBrains/Zed
+- 有 ACP 服务端（`tuan_cli/acp/`），理论上可接 JetBrains/Zed
 - 无 VS Code 扩展，无桌面端
 
 **差距等级**：❌ 显著差距，但工程量极大（需独立 TS/JS 项目）
@@ -204,7 +204,7 @@
 - Kimi Code：`/sessions` 浏览历史
 
 **青小团现状**：
-- `qxt session list` 存在，但无实时状态视图
+- `tuan session list` 存在，但无实时状态视图
 - 无 Rewind
 
 **差距等级**：⚠️ 低差距，体验优化
@@ -241,7 +241,7 @@
 | 6 | `!` Shell 快捷模式 | Claude | P2 | REPL 输入解析 + shell 执行 |
 | 7 | TodoWrite 内置工具 | Claude | P2 | 新增工具插件 |
 | 8 | `/init` 项目引导 | Claude | P2 | 新增斜杠命令 |
-| 9 | 会话导出 zip | Kimi | P2 | 新增 qxt session export |
+| 9 | 会话导出 zip | Kimi | P2 | 新增 tuan session export |
 
 ### 记录但不实施
 
@@ -252,7 +252,7 @@
 - 屏幕阅读器（价值有限）
 - Tool(param:value) 精确权限（低优先级，后续迭代）
 - agent view / Rewind（低优先级，后续迭代）
-- 自动更新 `qxt upgrade`（需 PyPI 发布流程，后续）
+- 自动更新 `tuan upgrade`（需 PyPI 发布流程，后续）
 
 ---
 
@@ -274,5 +274,5 @@
 
 ### 青小团
 - 项目根：E:\Tuan-CLI
-- 版本：v0.2.017（qingxiaotuan/__init__.py）
+- 版本：v0.2.017（tuan_cli/__init__.py）
 - 测试：210 文件 / 2545 用例

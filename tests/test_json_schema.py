@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from qingxiaotuan.core.json_schema import (
+from tuan_cli.core.json_schema import (
     build_instruction, extract_json, load_schema, produce_structured,
     dispatch_builtin, match_oneof_branch, repair_answer, run_structured,
     summarize_errors, untag_fence, validate_against,
@@ -273,11 +273,11 @@ def test_dispatch_builtin_unknown():
     assert out["ok"] is False and "zz" in out["error"]
 
 
-def test_run_structured_with_agent_stream_mocked(tmp_path, qxt_home):
+def test_run_structured_with_agent_stream_mocked(tmp_path, tuan_home):
     """端到端: 用 mock 模型走 Agent 循环, 输出需修复一次才符合 schema。"""
-    from qingxiaotuan.core.agent import Agent
-    from qingxiaotuan.models.base import ModelAdapter
-    from qingxiaotuan.app import build_kernel
+    from tuan_cli.core.agent import Agent
+    from tuan_cli.models.base import ModelAdapter
+    from tuan_cli.app import build_kernel
 
     class MockModel(ModelAdapter):
         name = "mock-json"
@@ -301,7 +301,7 @@ def test_run_structured_with_agent_stream_mocked(tmp_path, qxt_home):
     agent._system_prompt = "sys"
 
     # 注入结构化指令后跑 run_structured
-    from qingxiaotuan.core.json_schema import build_instruction
+    from tuan_cli.core.json_schema import build_instruction
     agent.messages = [{"role": "system", "content": agent._system_prompt}]
     agent.messages.insert(1, {"role": "system", "content":
                               build_instruction(BOOK, strict=True)})
@@ -316,7 +316,7 @@ def test_run_structured_with_agent_stream_mocked(tmp_path, qxt_home):
 # ---------------------------------------------------------------- Loader 集成
 
 def test_json_schema_arg_parse():
-    from qingxiaotuan.cli.parser import build_parser
+    from tuan_cli.cli.parser import build_parser
     p = build_parser()
     args = p.parse_args(["--print", "--json-schema", '{"type":"object"}'])
     assert args.json_schema == '{"type":"object"}'

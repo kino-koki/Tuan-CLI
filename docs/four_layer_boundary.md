@@ -9,7 +9,7 @@
 
 | 层 | 解决什么问题 | 落地形式 |
 |---|---|---|
-| Project 层 | 长期工作需要固定办公室, 项目间不串味 | 每个目录独立 `.qxt/` |
+| Project 层 | 长期工作需要固定办公室, 项目间不串味 | 每个目录独立 `.tuan/` |
 | Chat 层 | 对话太长要及时交接, 别硬撑 | 摘要压缩 → 新会话 |
 | Subagent 层 | 重任务隔离在外, 别把主上下文淹了 | 独立工作目录 + 独立上下文 |
 | Worktree 层 | 并行修改时互不污染 | git worktree 分支 |
@@ -21,7 +21,7 @@
 每个工作目录就是一个独立办公室, 有自己的记忆 / 配置 / 会话索引 / 快照:
 
 ```
-<你的项目>/.qxt/
+<你的项目>/.tuan/
 ├── config.yaml      项目级配置 (覆盖全局)
 ├── goal.json        当前项目目标
 ├── memory.db        项目级记忆 (与全局记忆隔离)
@@ -36,12 +36,12 @@
 
 ```bash
 cd 你的项目
-qxt project init      # 初始化 (幂等; 已有 .qxt/ 自动识别)
-qxt project info      # 查看项目 ID / 会话数 / 记忆数
-qxt project list      # 列出所有已知项目 (~/.qingxiaotuan/projects.json)
+tuan project init      # 初始化 (幂等; 已有 .tuan/ 自动识别)
+tuan project info      # 查看项目 ID / 会话数 / 记忆数
+tuan project list      # 列出所有已知项目 (~/.tuan/projects.json)
 ```
 
-隔离语义: 在 A 目录和 B 目录跑 qxt, 记忆、配置、会话列表互不可见。
+隔离语义: 在 A 目录和 B 目录跑 tuan, 记忆、配置、会话列表互不可见。
 
 配置:
 
@@ -65,11 +65,11 @@ qxt project list      # 列出所有已知项目 (~/.qingxiaotuan/projects.json)
 
 ```
 /handoff                  # 会话中手动交接
-qxt chat handoff <id>     # CLI 交接指定会话
+tuan chat handoff <id>     # CLI 交接指定会话
 ```
 
 上下文超过 `chat.auto_handoff_threshold`(默认模型窗口的 80%) 时会自动提示交接。
-交接谱系落在 `.qxt/handoffs.json`, 可用 `qxt session resume <新会话ID>` 无缝接手。
+交接谱系落在 `.tuan/handoffs.json`, 可用 `tuan session resume <新会话ID>` 无缝接手。
 
 配置:
 
@@ -82,7 +82,7 @@ qxt chat handoff <id>     # CLI 交接指定会话
 
 ## 3. Subagent 层 —— 重任务外包
 
-重活 (大批量调研、独立跑脚本) 派给子代理: 它在 `.qxt/subagents/<task_id>/`
+重活 (大批量调研、独立跑脚本) 派给子代理: 它在 `.tuan/subagents/<task_id>/`
 独立目录里干活, 用独立上下文, 只把摘要交回来。
 
 用法:
@@ -110,13 +110,13 @@ qxt chat handoff <id>     # CLI 交接指定会话
 想同时试方案 A 和方案 B? 给每个实验开一个 git worktree:
 
 ```
-/worktree create exp-redesign    # 开 .qxt/worktrees/exp-redesign (新分支)
+/worktree create exp-redesign    # 开 .tuan/worktrees/exp-redesign (新分支)
 /worktree list                   # 列出全部 worktree
 /worktree switch exp-redesign    # 切换过去
 /worktree remove exp-redesign    # 不要了就删
 ```
 
-CLI 等价命令: `qxt worktree create|list|remove|switch <name>`。
+CLI 等价命令: `tuan worktree create|list|remove|switch <name>`。
 满意就 `git merge` 回主分支, 不满意直接 remove, 主工作区毫发无损。
 (非 git 仓库会提示先 `git init`。)
 
@@ -131,17 +131,17 @@ CLI 等价命令: `qxt worktree create|list|remove|switch <name>`。
 /rewind              # 回退一步
 /rewind list         # 看有哪些快照
 /rewind to 3         # 精确回到 3 号快照
-qxt rewind <id>      # CLI 离线回退某个会话
+tuan rewind <id>      # CLI 离线回退某个会话
 ```
 
-快照保存在 `.qxt/snapshots/`, 只留最近 `rewind.max_snapshots`(默认 20) 个。
+快照保存在 `.tuan/snapshots/`, 只留最近 `rewind.max_snapshots`(默认 20) 个。
 
 ## Agent View
 
 ```
-qxt agents view          # rich 表格看全部会话状态
-qxt agents view --watch  # top 模式实时刷新
-qxt agents kill <id>     # 终止后台会话
+tuan agents view          # rich 表格看全部会话状态
+tuan agents view --watch  # top 模式实时刷新
+tuan agents kill <id>     # 终止后台会话
 ```
 
 ## 设计原则

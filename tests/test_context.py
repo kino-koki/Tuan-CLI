@@ -1,7 +1,7 @@
 """上下文子系统测试 (离线): 代码库索引器 + 智能压缩管理器。"""
 
-from qingxiaotuan.context.indexer import CodebaseIndexer
-from qingxiaotuan.context.manager import (
+from tuan_cli.context.indexer import CodebaseIndexer
+from tuan_cli.context.manager import (
     ContextManager, estimate_messages, estimate_tokens,
 )
 
@@ -176,7 +176,7 @@ def test_compact_force_folds_even_under_budget():
 
 def test_importance_and_metrics():
     """语义重要性评分与压缩质量指标应可解释、可比较。"""
-    from qingxiaotuan.context.compaction_fusion import (
+    from tuan_cli.context.compaction_fusion import (
         compaction_metrics, message_importance,
     )
     decision = {"role": "user", "content": "决定采用方案B: 修复 src/main.py 的 import 错误"}
@@ -247,7 +247,7 @@ def test_fusion_rescues_high_importance_middle():
 
 def test_agent_summarize_extracts_structure():
     """Agent._summarize 应从消息中提取用户目标、文件路径、工具操作和结论, 而非截断拼接。"""
-    from qingxiaotuan.core.agent import Agent
+    from tuan_cli.core.agent import Agent
     # 模拟一段对话: 用户提问 → assistant 调工具 → 产出结论
     messages = [
         {"role": "user", "content": "帮我修复 main.py 中的 import 错误"},
@@ -279,7 +279,7 @@ def test_agent_summarize_extracts_structure():
 
 def test_agent_summarize_empty_messages():
     """空消息列表应返回 fallback 摘要而非崩溃。"""
-    from qingxiaotuan.core.agent import Agent
+    from tuan_cli.core.agent import Agent
     summary = Agent._summarize(None, [])
     assert isinstance(summary, str)
     assert len(summary) > 0

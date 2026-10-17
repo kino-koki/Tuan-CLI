@@ -14,15 +14,15 @@ import threading
 
 import pytest
 
-from qingxiaotuan.runtime.mcp.naming import qualify_mcp_tool_name
-from qingxiaotuan.runtime.mcp.types import MCPContentBlock, MCPToolResult
-from qingxiaotuan.tools.mcp.multitransport import (
+from tuan_cli.runtime.mcp.naming import qualify_mcp_tool_name
+from tuan_cli.runtime.mcp.types import MCPContentBlock, MCPToolResult
+from tuan_cli.tools.mcp.multitransport import (
     MultiTransportMCP,
     format_mcp_tool_result,
     is_remote_server,
 )
-from qingxiaotuan.tools.mcp.plugin import register_mcp_tool
-from qingxiaotuan.tools.base import Tool
+from tuan_cli.tools.mcp.plugin import register_mcp_tool
+from tuan_cli.tools.base import Tool
 
 
 # --------------------------------------------------------------------- 配置识别

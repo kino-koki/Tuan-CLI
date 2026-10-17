@@ -6,16 +6,16 @@ import pytest
 
 
 @pytest.fixture()
-def qxt_home(tmp_path, monkeypatch):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path))
+def tuan_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path))
     return tmp_path
 
 
 @pytest.fixture()
-def agent(tmp_path, qxt_home):
+def agent(tmp_path, tuan_home):
     """创建一个最小 agent 用于测试。"""
-    from qingxiaotuan.config import Config
-    from qingxiaotuan.core.kernel import Kernel
+    from tuan_cli.config import Config
+    from tuan_cli.core.kernel import Kernel
 
     config = Config()
     kernel = Kernel()
@@ -60,7 +60,7 @@ def test_export_creates_markdown_file(agent, tmp_path, monkeypatch):
     ]
     monkeypatch.chdir(tmp_path)
 
-    from qingxiaotuan.cli.cmd_slash import _cmd_export
+    from tuan_cli.cli.cmd_slash import _cmd_export
     _cmd_export(agent, "")
 
     # 检查创建了文件
@@ -79,7 +79,7 @@ def test_export_with_custom_filename(agent, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     filepath = str(tmp_path / "my_chat.md")
-    from qingxiaotuan.cli.cmd_slash import _cmd_export
+    from tuan_cli.cli.cmd_slash import _cmd_export
     _cmd_export(agent, filepath)
 
     assert os.path.exists(filepath)
@@ -91,7 +91,7 @@ def test_export_empty_session(agent):
     """测试空会话导出。"""
     agent.messages = []
 
-    from qingxiaotuan.cli.cmd_slash import _cmd_export
+    from tuan_cli.cli.cmd_slash import _cmd_export
     _cmd_export(agent, "")
 
     # 空会话应该不创建文件
@@ -113,7 +113,7 @@ Response from import
     filepath = tmp_path / "test_import.md"
     filepath.write_text(md_content, encoding="utf-8")
 
-    from qingxiaotuan.cli.cmd_slash import _cmd_import
+    from tuan_cli.cli.cmd_slash import _cmd_import
     _cmd_import(agent, str(filepath))
 
     assert len(agent.messages) == 2
@@ -125,7 +125,7 @@ Response from import
 
 def test_import_missing_file(agent):
     """测试 /import 不存在的文件。"""
-    from qingxiaotuan.cli.cmd_slash import _cmd_import
+    from tuan_cli.cli.cmd_slash import _cmd_import
     _cmd_import(agent, "/nonexistent/path.md")
 
     # 不存在的文件不应该添加消息
@@ -134,7 +134,7 @@ def test_import_missing_file(agent):
 
 def test_import_empty_arg(agent):
     """测试 /import 无参数。"""
-    from qingxiaotuan.cli.cmd_slash import _cmd_import
+    from tuan_cli.cli.cmd_slash import _cmd_import
     _cmd_import(agent, "")
 
     # 无参数不应该添加消息
@@ -146,7 +146,7 @@ def test_import_invalid_format(agent, tmp_path):
     filepath = tmp_path / "bad.md"
     filepath.write_text("# Just a heading\n\nSome text\n", encoding="utf-8")
 
-    from qingxiaotuan.cli.cmd_slash import _cmd_import
+    from tuan_cli.cli.cmd_slash import _cmd_import
     _cmd_import(agent, str(filepath))
 
     # 无效格式不会添加消息

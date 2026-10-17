@@ -6,12 +6,12 @@
 - 危险命令 (rm -rf) 仍受安全护栏拦截, `!` 不是豁免通道。
 """
 
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.cli.cmd_bang import run_bang_command, split_bang_command
-from qingxiaotuan.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.cli.cmd_bang import run_bang_command, split_bang_command
+from tuan_cli.core.agent import Agent
 
 
-def _make_agent(tmp_path, qxt_home):
+def _make_agent(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     return Agent(kernel=kernel, config=config, workspace=str(tmp_path),
@@ -24,21 +24,21 @@ def test_split_bang_command():
     assert split_bang_command("！echo hi") == "echo hi"
 
 
-def test_bang_command_executes(tmp_path, qxt_home):
-    agent = _make_agent(tmp_path, qxt_home)
+def test_bang_command_executes(tmp_path, tuan_home):
+    agent = _make_agent(tmp_path, tuan_home)
     out = run_bang_command(agent, "!echo hello", display=False)
     assert "hello" in out
 
 
-def test_bang_result_injected(tmp_path, qxt_home):
-    agent = _make_agent(tmp_path, qxt_home)
+def test_bang_result_injected(tmp_path, tuan_home):
+    agent = _make_agent(tmp_path, tuan_home)
     before = len(agent.messages)
     run_bang_command(agent, "!echo marker-42", display=False)
     new_msgs = agent.messages[before:]
     assert any("marker-42" in str(m.get("content", "")) for m in new_msgs)
 
 
-def test_bang_dangerous_blocked(tmp_path, qxt_home):
-    agent = _make_agent(tmp_path, qxt_home)
+def test_bang_dangerous_blocked(tmp_path, tuan_home):
+    agent = _make_agent(tmp_path, tuan_home)
     out = run_bang_command(agent, "!rm -rf /", display=False)
     assert "已拦截" in out

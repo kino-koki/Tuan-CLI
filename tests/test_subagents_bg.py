@@ -9,11 +9,11 @@
 import json
 import time
 
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.core.subagents import SubAgentPool, SubTask, make_tasks
-from qingxiaotuan.core.background import BackgroundRunner
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse, ToolCall
+from tuan_cli.app import build_kernel
+from tuan_cli.core.agent import Agent
+from tuan_cli.core.subagents import SubAgentPool, SubTask, make_tasks
+from tuan_cli.core.background import BackgroundRunner
+from tuan_cli.models.base import ModelAdapter, ModelResponse, ToolCall
 
 
 class EchoModel(ModelAdapter):
@@ -37,7 +37,7 @@ class EchoModel(ModelAdapter):
         return resp
 
 
-def _pool(tmp_path, qxt_home, max_workers=2, default_timeout=30.0):
+def _pool(tmp_path, tuan_home, max_workers=2, default_timeout=30.0):
     kernel = build_kernel()
     config = kernel.require("config")
     # 用 EchoModel 替换真实模型适配器
@@ -57,8 +57,8 @@ def test_make_tasks_order_and_ids():
     assert tasks[0].prompt == "调研A"
 
 
-def test_subagent_pool_runs_concurrent_and_ordered(tmp_path, qxt_home):
-    pool = _pool(tmp_path, qxt_home, max_workers=3)
+def test_subagent_pool_runs_concurrent_and_ordered(tmp_path, tuan_home):
+    pool = _pool(tmp_path, tuan_home, max_workers=3)
     tasks = make_tasks([f"子任务{i}" for i in range(5)])
     results = pool.dispatch(tasks, stream=False)
     # 顺序与输入一致
@@ -71,9 +71,9 @@ def test_subagent_pool_runs_concurrent_and_ordered(tmp_path, qxt_home):
         assert r.elapsed >= 0
 
 
-def test_subagent_pool_context_isolation(tmp_path, qxt_home):
+def test_subagent_pool_context_isolation(tmp_path, tuan_home):
     """隔离性: 两个子 Agent 各自独立 messages, 互不影响。"""
-    pool = _pool(tmp_path, qxt_home, max_workers=2)
+    pool = _pool(tmp_path, tuan_home, max_workers=2)
     tasks = [
         SubTask(task_id="A", prompt="只做A的事"),
         SubTask(task_id="B", prompt="只做B的事"),
@@ -85,7 +85,7 @@ def test_subagent_pool_context_isolation(tmp_path, qxt_home):
     assert "只做B的事" not in by_id["A"].output
 
 
-def test_subagent_pool_failure_isolated(tmp_path, qxt_home):
+def test_subagent_pool_failure_isolated(tmp_path, tuan_home):
     """单个子任务失败不应拖垮其它 (失败隔离)。"""
     kernel = build_kernel()
     config = kernel.require("config")
@@ -107,7 +107,7 @@ def test_subagent_pool_failure_isolated(tmp_path, qxt_home):
     assert "boom" in (results[0].error or "")
 
 
-def test_subagent_pool_timeout(tmp_path, qxt_home):
+def test_subagent_pool_timeout(tmp_path, tuan_home):
     """超时控制: 子任务卡住应在 timeout 内返回失败而非永久阻塞。"""
     kernel = build_kernel()
     config = kernel.require("config")
@@ -131,7 +131,7 @@ def test_subagent_pool_timeout(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ 弱模型覆盖的还原
 
-def test_subagent_thread_override_restores_kernel_model(tmp_path, qxt_home):
+def test_subagent_thread_override_restores_kernel_model(tmp_path, tuan_home):
     """线程隔离 + 单 worker + 弱模型覆盖: 子任务跑完后内核适配器与配置视图必须还原。
 
     回归背景: _run_one_thread 曾在 switch_model(persist=False) 之后从不还原,
@@ -175,14 +175,14 @@ def test_subagent_thread_override_restores_kernel_model(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ dispatch 工具
 
-def test_dispatch_tasks_tool_registered(tmp_path, qxt_home):
+def test_dispatch_tasks_tool_registered(tmp_path, tuan_home):
     kernel = build_kernel()
     registry = kernel.require("tool_registry")
     names = {t.name for t in registry.tools}
     assert "dispatch_tasks" in names
 
 
-def test_dispatch_tasks_tool_invocation(tmp_path, qxt_home):
+def test_dispatch_tasks_tool_invocation(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     config.set_user("agent.subagent_isolation", "thread")  # 单测用线程模式 (mock 模型在进程内)
@@ -197,7 +197,7 @@ def test_dispatch_tasks_tool_invocation(tmp_path, qxt_home):
     assert "T1" in out and "T2" in out
 
 
-def test_dispatch_tasks_rejects_empty(tmp_path, qxt_home):
+def test_dispatch_tasks_rejects_empty(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     config.set_user("agent.subagent_isolation", "thread")
@@ -210,7 +210,7 @@ def test_dispatch_tasks_rejects_empty(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ 后台自主
 
-def test_background_submit_returns_immediately(tmp_path, qxt_home):
+def test_background_submit_returns_immediately(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     kernel.unprovide("model_adapter")
@@ -229,7 +229,7 @@ def test_background_submit_returns_immediately(tmp_path, qxt_home):
     assert job.turns >= 1
 
 
-def test_background_tail_shows_progress(tmp_path, qxt_home):
+def test_background_tail_shows_progress(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     kernel.unprovide("model_adapter")

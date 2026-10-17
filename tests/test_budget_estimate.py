@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.core import agent as agent_mod
+from tuan_cli.core import agent as agent_mod
 
 
 def test_estimate_total_cost_uses_token_usage():
@@ -26,7 +26,7 @@ def test_estimate_total_cost_uses_token_usage():
     )
     fn = agent_mod.Agent._estimate_total_cost.__get__(fake)
 
-    import qingxiaotuan.models.router as router
+    import tuan_cli.models.router as router
 
     orig = router.estimate_cost
     router.estimate_cost = lambda p, m, pt, ct: pt * 0.001 + ct * 0.002

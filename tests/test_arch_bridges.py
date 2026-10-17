@@ -7,7 +7,7 @@
 """
 import pytest
 
-from qingxiaotuan.arch.execution import (
+from tuan_cli.arch.execution import (
     BaseAgentLoop,
     EventSemantics,
     LoopContext,
@@ -17,7 +17,7 @@ from qingxiaotuan.arch.execution import (
     SemanticBus,
     SemanticEvent,
 )
-from qingxiaotuan.arch.context import TieredContext
+from tuan_cli.arch.context import TieredContext
 
 
 # ================================================================ SemanticBus 异常隔离
@@ -287,7 +287,7 @@ class TestKernelExecutor:
 
     def test_returns_callable_with_correct_signature(self):
         """kernel_executor 返回一个可调用对象, 签名为 (goal, AgentContext, Path) -> (str, dict)。"""
-        from qingxiaotuan.arch.orchestration import kernel_executor, AgentContext
+        from tuan_cli.arch.orchestration import kernel_executor, AgentContext
         from pathlib import Path
         import inspect
 
@@ -309,7 +309,7 @@ class TestTieredContextSummarize:
     """测试 _summarize 的结构化压缩策略。"""
 
     def test_preserves_system_message(self):
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="system", content="You are a coding agent. Be concise."),
             ContextEntry(role="user", content="hello world"),
@@ -319,7 +319,7 @@ class TestTieredContextSummarize:
         assert "coding agent" in summary
 
     def test_extracts_user_first_and_last_sentence(self):
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="user", content="First sentence. Middle stuff here. Last important point."),
         ]
@@ -329,7 +329,7 @@ class TestTieredContextSummarize:
         assert "Last important point" in summary
 
     def test_tool_messages_only_keep_status(self):
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="tool", content="已写入 file.py: 42 lines modified"),
             ContextEntry(role="tool", content="[错误] read_file: file not found"),
@@ -346,7 +346,7 @@ class TestTieredContextSummarize:
         assert "read_file" in summary
 
     def test_summary_stays_under_800_chars(self):
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="system", content="x" * 500),
             ContextEntry(role="user", content="y" * 500),
@@ -359,7 +359,7 @@ class TestTieredContextSummarize:
         assert len(summary) <= 800
 
     def test_deduplicates_tool_names(self):
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="tool", content="已写入 a.py"),
             ContextEntry(role="tool", content="已写入 a.py"),
@@ -658,7 +658,7 @@ class TestTieredContextSummarizeV2:
     """测试 _summarize 的扩展状态推断和代码块处理。"""
 
     def test_new_tool_statuses(self):
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="tool", content="[已限流] 工具 web_fetch 速率限制"),
             ContextEntry(role="tool", content="[已禁用] 工具 run_shell 已被排除"),
@@ -672,7 +672,7 @@ class TestTieredContextSummarizeV2:
         assert "(cached)" in summary
 
     def test_code_block_handled(self):
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="assistant", content="```python\ndef hello():\n    print('hi')\n```"),
         ]
@@ -683,7 +683,7 @@ class TestTieredContextSummarizeV2:
 
     def test_code_block_with_pre_text(self):
         """包含代码块的混合内容: 检测到 ``` 就按代码块处理。"""
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="assistant", content="Here is the fix:\n```python\nx = 1\n```"),
         ]
@@ -692,7 +692,7 @@ class TestTieredContextSummarizeV2:
         assert "Here is the fix" in summary
 
     def test_benign_tool_is_ok(self):
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="tool", content="已写入 file.py: 10 lines"),
             ContextEntry(role="tool", content="搜索结果: 3 个匹配"),
@@ -703,7 +703,7 @@ class TestTieredContextSummarizeV2:
 
     def test_tool_dedup_by_name_prefix(self):
         """同一工具不同状态应只保留首次出现 (按工具名前缀去重)。"""
-        from qingxiaotuan.arch.context import ContextEntry
+        from tuan_cli.arch.context import ContextEntry
         entries = [
             ContextEntry(role="tool", content="read_file 结果 A"),
             ContextEntry(role="tool", content="[错误] read_file 失败"),

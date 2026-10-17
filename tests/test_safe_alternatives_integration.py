@@ -2,10 +2,10 @@
 """安全替代建议引擎集成测试: SafetyEngine.score + SandboxManager 裁决补齐。"""
 from __future__ import annotations
 
-from qingxiaotuan.ext.safety_engine import SafetyEngine
-from qingxiaotuan.harden.safe_alternatives import suggest_safe_alternatives
-from qingxiaotuan.sandbox.manager import SandboxManager
-from qingxiaotuan.sandbox.verdict import Action
+from tuan_cli.ext.safety_engine import SafetyEngine
+from tuan_cli.harden.safe_alternatives import suggest_safe_alternatives
+from tuan_cli.sandbox.manager import SandboxManager
+from tuan_cli.sandbox.verdict import Action
 
 
 def test_engine_score_suggests_command_aware():

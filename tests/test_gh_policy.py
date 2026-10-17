@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from qingxiaotuan.gh.policy import (
+from tuan_cli.gh.policy import (
     Action, SafetyPolicy, classify, load_policy, write_policy,
 )
 

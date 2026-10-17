@@ -12,15 +12,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from qingxiaotuan.core.kernel import Kernel
-from qingxiaotuan.core.ipc_client import ExternalEngineManager
-from qingxiaotuan.config.loader import Config
-from qingxiaotuan.config.plugin import ConfigPlugin
-from qingxiaotuan.tools.external import ExternalToolsPlugin
-from qingxiaotuan.tools.shell import ShellPlugin, _pre_exec_guard, YOLO_REDLINE, is_redline
-from qingxiaotuan.tools.base import ToolContext
-from qingxiaotuan.core.whitelist import MultiStageConfirm, get_warning_level
-from qingxiaotuan.ext.safety_engine import SafetyEngine, is_benign_dev_command, is_hard_redline
+from tuan_cli.core.kernel import Kernel
+from tuan_cli.core.ipc_client import ExternalEngineManager
+from tuan_cli.config.loader import Config
+from tuan_cli.config.plugin import ConfigPlugin
+from tuan_cli.tools.external import ExternalToolsPlugin
+from tuan_cli.tools.shell import ShellPlugin, _pre_exec_guard, YOLO_REDLINE, is_redline
+from tuan_cli.tools.base import ToolContext
+from tuan_cli.core.whitelist import MultiStageConfirm, get_warning_level
+from tuan_cli.ext.safety_engine import SafetyEngine, is_benign_dev_command, is_hard_redline
 
 AVAIL = set(ExternalEngineManager().list_engines())
 HAVE_SAFETY = "safety" in AVAIL
@@ -32,14 +32,14 @@ def _build_ctx(kernel: Kernel, *, yolo: bool = False, confirm=None) -> ToolConte
 
 @pytest.fixture
 def strict_shell_off(monkeypatch):
-    """关闭严格模式 (QXT_STRICT_SHELL=0)。
+    """关闭严格模式 (TUAN_STRICT_SHELL=0)。
 
     供「风险分级 / 建议挂载」类测试使用: 这类测试只关心 safety 引擎把命令分成
     high/medium 并附建议, 与严格模式的强制确认是正交的两层能力。严格模式在
     headless (无确认通道) 下对所有非良性命令 fail-closed 拦截, 会挡住这些命令;
     这里关掉它以隔离验证风险分级本身。严格模式的拦截/确认行为由独立测试锁定。
     """
-    monkeypatch.setenv("QXT_STRICT_SHELL", "0")
+    monkeypatch.setenv("TUAN_STRICT_SHELL", "0")
 
 
 # ------------------------------------------------------------------ 多阶段确认间隔
@@ -76,7 +76,7 @@ def test_multistage_confirm_decline_stops_immediately():
 
 
 def _kernel_with_safety() -> Kernel:
-    from qingxiaotuan.tools import ToolRegistryPlugin
+    from tuan_cli.tools import ToolRegistryPlugin
 
     k = Kernel()
     k.register(ConfigPlugin(Config(profile="default")))
@@ -217,7 +217,7 @@ def test_redline_tokens_cover_critical():
 
 def test_readonly_blocks_piped_writes():
     """cat file | sed -i 等管道写操作不应被误判为只读 (fail-open 修复)。"""
-    from qingxiaotuan.tools.shell import _is_readonly_command
+    from tuan_cli.tools.shell import _is_readonly_command
     # 管道下游含写特征: 应拒绝
     assert not _is_readonly_command("cat file | sed -i 's/foo/bar/'")
     assert not _is_readonly_command("echo hello | tee output.txt")
@@ -230,14 +230,14 @@ def test_readonly_blocks_piped_writes():
     assert _is_readonly_command("python -c 'print(1)'")
 
 
-def test_run_shell_timeout_executes_once(qxt_home, tmp_path):
+def test_run_shell_timeout_executes_once(tuan_home, tmp_path):
     """超时命令只执行一次: 旧实现会在超时后重新 Popen 同一命令再杀掉,
     等于把超时任务跑两遍。用计数文件锁定该行为。"""
     import subprocess as _subprocess
     import sys
 
-    from qingxiaotuan.tools.base import ToolContext
-    from qingxiaotuan.tools.shell import run_shell
+    from tuan_cli.tools.base import ToolContext
+    from tuan_cli.tools.shell import run_shell
 
     marker = tmp_path / "count.txt"
     script = tmp_path / "slow_task.py"
@@ -257,7 +257,7 @@ def test_run_shell_timeout_executes_once(qxt_home, tmp_path):
     # 严格模式会在 headless 下拦截非良性命令; 本测试验证的是「超时只执行一次」,
     # 与严格确认正交, 关闭严格模式以隔离该行为。
     import os as _os
-    _os.environ["QXT_STRICT_SHELL"] = "0"
+    _os.environ["TUAN_STRICT_SHELL"] = "0"
     try:
         # 预热解释器, 消除冷启动抖动
         _subprocess.run([sys.executable, "-c", "pass"], timeout=30, capture_output=True)
@@ -271,13 +271,13 @@ def test_run_shell_timeout_executes_once(qxt_home, tmp_path):
         # 命令恰好执行一次 (修复前会写入 'xx')
         assert marker.read_text(encoding="utf-8") == "x"
     finally:
-        _os.environ.pop("QXT_STRICT_SHELL", None)
+        _os.environ.pop("TUAN_STRICT_SHELL", None)
 
 
-def test_run_shell_normal_output_and_exit_code(qxt_home, tmp_path):
+def test_run_shell_normal_output_and_exit_code(tuan_home, tmp_path):
     """Popen 重构后正常命令仍返回退出码与输出。"""
-    from qingxiaotuan.tools.base import ToolContext
-    from qingxiaotuan.tools.shell import run_shell
+    from tuan_cli.tools.base import ToolContext
+    from tuan_cli.tools.shell import run_shell
 
     kernel = MagicMock()
     config = MagicMock()
@@ -292,15 +292,15 @@ def test_run_shell_normal_output_and_exit_code(qxt_home, tmp_path):
 
 def test_plan_mode_blocks_bg_command(tmp_path):
     """Plan 模式的只读约束不能被 `!` 后台命令绕过。"""
-    from qingxiaotuan.tools.base import ToolContext
-    from qingxiaotuan.tools.shell import run_shell
+    from tuan_cli.tools.base import ToolContext
+    from tuan_cli.tools.shell import run_shell
 
     kernel = MagicMock()
     config = MagicMock()
     config.get = lambda k, d=None: {"tools.shell.timeout": 10}.get(k, d)
     kernel.get = lambda s: config if s == "config" else None
     # ! 后台 + plan_mode=True: 写命令必须被拦, 且不得启动任务
-    from qingxiaotuan.core.background_shell import BackgroundShellManager
+    from tuan_cli.core.background_shell import BackgroundShellManager
     created = []
 
     orig_start = BackgroundShellManager.start
@@ -309,7 +309,7 @@ def test_plan_mode_blocks_bg_command(tmp_path):
         created.append(command)
         raise AssertionError("plan 模式后台写命令不应被启动")
 
-    import qingxiaotuan.core.background_shell as _bg
+    import tuan_cli.core.background_shell as _bg
     _bg.BackgroundShellManager.start = _start  # type: ignore[method-assign]
     try:
         ctx = ToolContext(kernel=kernel, workspace=str(tmp_path), plan_mode=True)
@@ -323,8 +323,8 @@ def test_plan_mode_blocks_bg_command(tmp_path):
 
 def test_plan_mode_allows_readonly_bg_command(tmp_path):
     """plan 模式的只读后台命令应放行 (如 ! cat file)。"""
-    from qingxiaotuan.tools.base import ToolContext
-    from qingxiaotuan.tools.shell import run_shell
+    from tuan_cli.tools.base import ToolContext
+    from tuan_cli.tools.shell import run_shell
 
     kernel = MagicMock()
     config = MagicMock()
@@ -372,7 +372,7 @@ def test_redline_var_assignment_not_overblocking():
 
 def test_readonly_blocks_find_delete():
     """find -delete 会删文件, Plan 模式不应视为只读。"""
-    from qingxiaotuan.tools.shell import _is_readonly_command
+    from tuan_cli.tools.shell import _is_readonly_command
     assert not _is_readonly_command("find . -delete")
     assert not _is_readonly_command("find . -name '*.pyc' -delete")
     # 普通查找仍是只读
@@ -675,7 +675,7 @@ _BENIGN_COMMANDS = [
     "black --check .",
     "isort --check-only .",
     "mypy src/",
-    "flake8 qingxiaotuan",
+    "flake8 tuan_cli",
     "eslint src/",
     "tsc --noEmit",
     "echo hello",
@@ -764,24 +764,24 @@ def test_benign_with_quoted_spaces():
 
 
 # ================================================================ 严格模式 (headless 保底)
-# 严格模式 (QXT_STRICT_SHELL, 默认开): 非良性命令强制人工确认; headless (无确认通道)
+# 严格模式 (TUAN_STRICT_SHELL, 默认开): 非良性命令强制人工确认; headless (无确认通道)
 # 时对所有非良性命令 fail-closed 拒绝 —— 弱模型(3B+)被诱导发出任何"未见过的非良性命令"
 # 都无法在该模式下自动执行, 这是「基本不绕过」的确定性兜底。
 
 def test_strict_default_blocks_non_benign_headless(monkeypatch):
     """默认严格模式: 非良性命令在无确认通道时被拦截 (即使 warning>=3, 如 kill -9)。"""
-    monkeypatch.delenv("QXT_STRICT_SHELL", raising=False)
+    monkeypatch.delenv("TUAN_STRICT_SHELL", raising=False)
     k = _kernel_with_safety()
     for cmd in ["systemctl restart nginx", "kill -9 1234", "docker rm -f abc"]:
         ctx = _build_ctx(k)
         reason = _pre_exec_guard(ctx, cmd)
         assert reason is not None, f"严格模式漏拦(无确认通道): {cmd}"
-        assert "严格模式" in reason or "QXT_STRICT_SHELL" in reason
+        assert "严格模式" in reason or "TUAN_STRICT_SHELL" in reason
 
 
 def test_strict_lowrisky_confirm_accept_once(monkeypatch):
     """严格模式 + 有确认通道 + 低/中危: 弹 1 次确认, 通过后放行。"""
-    monkeypatch.delenv("QXT_STRICT_SHELL", raising=False)
+    monkeypatch.delenv("TUAN_STRICT_SHELL", raising=False)
     k = _kernel_with_safety()
     calls = []
 
@@ -795,7 +795,7 @@ def test_strict_lowrisky_confirm_accept_once(monkeypatch):
 
 
 def test_strict_lowrisky_confirm_decline_blocks(monkeypatch):
-    monkeypatch.delenv("QXT_STRICT_SHELL", raising=False)
+    monkeypatch.delenv("TUAN_STRICT_SHELL", raising=False)
     k = _kernel_with_safety()
     ctx = _build_ctx(k, confirm=lambda p: False)
     reason = _pre_exec_guard(ctx, "systemctl restart nginx")
@@ -804,8 +804,8 @@ def test_strict_lowrisky_confirm_decline_blocks(monkeypatch):
 
 
 def test_strict_disabled_allows_non_benign(monkeypatch):
-    """QXT_STRICT_SHELL=0 时恢复旧语义: 非良性低危命令可放行 (不进严格确认)。"""
-    monkeypatch.setenv("QXT_STRICT_SHELL", "0")
+    """TUAN_STRICT_SHELL=0 时恢复旧语义: 非良性低危命令可放行 (不进严格确认)。"""
+    monkeypatch.setenv("TUAN_STRICT_SHELL", "0")
     k = _kernel_with_safety()
     ctx = _build_ctx(k)
     assert _pre_exec_guard(ctx, "systemctl restart nginx") is None
@@ -813,7 +813,7 @@ def test_strict_disabled_allows_non_benign(monkeypatch):
 
 def test_strict_benign_still_autopasses(monkeypatch):
     """严格模式不误杀良性开发命令 (git status / pytest 等仍自动放行)。"""
-    monkeypatch.delenv("QXT_STRICT_SHELL", raising=False)
+    monkeypatch.delenv("TUAN_STRICT_SHELL", raising=False)
     k = _kernel_with_safety()
     ctx = _build_ctx(k)  # 无确认通道
     for cmd in ["ls -la src", "git status", "pytest -q", "cat README.md"]:
@@ -876,15 +876,15 @@ class _FakeProc:
 
 def test_foreground_exec_calls_guard_before_popen(monkeypatch, tmp_path):
     """前台路径: _pre_exec_guard 必须先于 subprocess.Popen 调用。"""
-    from qingxiaotuan.tools.shell import run_shell
+    from tuan_cli.tools.shell import run_shell
 
     events = []
     monkeypatch.setattr(
-        "qingxiaotuan.tools.shell._pre_exec_guard",
+        "tuan_cli.tools.shell._pre_exec_guard",
         lambda ctx, cmd: events.append(("guard", cmd)) or None,
     )
     monkeypatch.setattr(
-        "qingxiaotuan.tools.shell.subprocess.Popen",
+        "tuan_cli.tools.shell.subprocess.Popen",
         lambda *a, **k: events.append(("popen", a[0] if a else k.get("command"))) or _FakeProc(),
     )
 
@@ -896,7 +896,7 @@ def test_foreground_exec_calls_guard_before_popen(monkeypatch, tmp_path):
 
 def test_background_exec_calls_guard_before_start(monkeypatch, tmp_path):
     """后台 `! cmd` 路径: _pre_exec_guard 必须先于 run_in_background 调用。"""
-    from qingxiaotuan.tools.shell import run_shell
+    from tuan_cli.tools.shell import run_shell
 
     class _Job:
         job_id = "j1"
@@ -904,11 +904,11 @@ def test_background_exec_calls_guard_before_start(monkeypatch, tmp_path):
 
     events = []
     monkeypatch.setattr(
-        "qingxiaotuan.tools.shell._pre_exec_guard",
+        "tuan_cli.tools.shell._pre_exec_guard",
         lambda ctx, cmd: events.append(("guard", cmd)) or None,
     )
     monkeypatch.setattr(
-        "qingxiaotuan.tools.shell.run_in_background",
+        "tuan_cli.tools.shell.run_in_background",
         lambda *a, **k: events.append(("start", a[0])) or _Job(),
     )
 
@@ -921,19 +921,19 @@ def test_background_exec_calls_guard_before_start(monkeypatch, tmp_path):
 
 def test_guard_block_prevents_any_execution(monkeypatch, tmp_path):
     """护栏返回拦截原因时: 前台/后台都不得触发任何执行。"""
-    from qingxiaotuan.tools.shell import run_shell
+    from tuan_cli.tools.shell import run_shell
 
     monkeypatch.setattr(
-        "qingxiaotuan.tools.shell._pre_exec_guard",
+        "tuan_cli.tools.shell._pre_exec_guard",
         lambda ctx, cmd: "[已拦截] 测试拦截",
     )
     called = []
     monkeypatch.setattr(
-        "qingxiaotuan.tools.shell.subprocess.Popen",
+        "tuan_cli.tools.shell.subprocess.Popen",
         lambda *a, **k: called.append("popen"),
     )
     monkeypatch.setattr(
-        "qingxiaotuan.tools.shell.run_in_background",
+        "tuan_cli.tools.shell.run_in_background",
         lambda *a, **k: called.append("start"),
     )
 

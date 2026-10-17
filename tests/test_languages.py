@@ -1,8 +1,8 @@
 import json
 
-from qingxiaotuan.core.kernel import Kernel
-from qingxiaotuan.tools.base import ToolContext, ToolRegistry
-from qingxiaotuan.tools.languages import LanguagePlugin, project_languages, language_checks
+from tuan_cli.core.kernel import Kernel
+from tuan_cli.tools.base import ToolContext, ToolRegistry
+from tuan_cli.tools.languages import LanguagePlugin, project_languages, language_checks
 
 
 def test_project_languages_detects_python_and_typescript(tmp_path):

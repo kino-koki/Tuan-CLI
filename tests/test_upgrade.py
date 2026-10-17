@@ -1,4 +1,4 @@
-"""测试: qxt upgrade 自动更新。
+"""测试: tuan upgrade 自动更新。
 
 覆盖:
 - 版本号比较 (零填充数字段)
@@ -14,8 +14,8 @@ import urllib.error
 from types import SimpleNamespace
 from unittest import mock
 
-from qingxiaotuan import __version__
-from qingxiaotuan.cli import cmd_upgrade
+from tuan_cli import __version__
+from tuan_cli.cli import cmd_upgrade
 
 
 # ----------------------------------------------------------------- 版本比较
@@ -63,7 +63,7 @@ def test_yes_upgrade_invokes_pip():
     cmd = run.call_args[0][0]
     assert "pip" in cmd
     assert "--upgrade" in cmd
-    assert "qingxiaotuan==9.9.9" in cmd
+    assert "tuan_cli==9.9.9" in cmd
 
 
 def test_version_skips_pypi_and_installs():
@@ -75,7 +75,7 @@ def test_version_skips_pypi_and_installs():
     assert rc == 0
     fetch.assert_not_called()  # 指定版本不查 PyPI
     cmd = run.call_args[0][0]
-    assert "qingxiaotuan==1.0" in cmd
+    assert "tuan_cli==1.0" in cmd
 
 
 # ----------------------------------------------------------------- 网络失败

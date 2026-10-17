@@ -1,7 +1,7 @@
 """编排层测试: 5 子代理并发 + 3 层嵌套 + 冲突解决 + 人类审批。"""
 import pytest
 
-from qingxiaotuan.arch.orchestration import (
+from tuan_cli.arch.orchestration import (
     AgentContext,
     AgentSpec,
     ConflictResolver,

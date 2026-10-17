@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from qingxiaotuan.core.proc import (
+from tuan_cli.core.proc import (
     popen_new_session,
     run_with_tree_kill,
     wait_with_tree_kill,

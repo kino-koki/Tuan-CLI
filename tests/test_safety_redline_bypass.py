@@ -9,14 +9,14 @@
 
 同时保证安全命令不被误判 (echo 内容 / 普通脚本 / grep 字符串 / 无旗标解释器调用)。
 """
-from qingxiaotuan.ext.safety_engine import (
+from tuan_cli.ext.safety_engine import (
     _normalize,
     is_hard_redline,
     is_redline,
     is_benign_dev_command,
 )
-from qingxiaotuan.ext.safety_engine import SafetyEngine
-from qingxiaotuan.tools.shell import is_redline as shell_is_redline
+from tuan_cli.ext.safety_engine import SafetyEngine
+from tuan_cli.tools.shell import is_redline as shell_is_redline
 
 
 # -------------------------------------------------- 1. 旗标与命令无空格

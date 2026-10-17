@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""qxt models update 本地目录层测试 (qingxiaotuan/models/local_catalog.py)。
+"""tuan models update 本地目录层测试 (tuan_cli/models/local_catalog.py)。
 
 覆盖: 内置导出 / 写读回环 / 缺失与损坏回退 / 合并保用户自建 / 后台刷新。
 """
@@ -7,8 +7,8 @@ import json
 
 import pytest
 
-from qingxiaotuan.models import local_catalog
-from qingxiaotuan.models.provider_catalog import (
+from tuan_cli.models import local_catalog
+from tuan_cli.models.provider_catalog import (
     ALL_PROVIDERS, PROVIDER_BY_NAME, presets_from_catalog,
 )
 

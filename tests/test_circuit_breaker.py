@@ -12,7 +12,7 @@
 """
 import time
 
-from qingxiaotuan.core.retry import CircuitBreaker, CircuitOpen
+from tuan_cli.core.retry import CircuitBreaker, CircuitOpen
 
 
 class FakeClock:

@@ -1,10 +1,10 @@
 """健壮性测试 (离线): 模型超时/重试、UI 错误展示、上下文预算条。"""
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse
-from qingxiaotuan.ui.repl import UI
-from qingxiaotuan.config import Config
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.models.base import ModelAdapter, ModelResponse
+from tuan_cli.ui.repl import UI
+from tuan_cli.config import Config
 
 
 class FlakyModel(ModelAdapter):
@@ -42,7 +42,7 @@ def _build(tmp_path, model, max_retries=3):
     return agent
 
 
-def test_retry_recovers_after_transient_failures(tmp_path, qxt_home):
+def test_retry_recovers_after_transient_failures(tmp_path, tuan_home):
     good = ModelResponse(content="最终成功")
     agent = _build(tmp_path, FlakyModel(fail_times=2, then=good), max_retries=3)
     # 第一次 chat 会被重试包裹: 抛 2 次 -> 第 3 次成功
@@ -53,7 +53,7 @@ def test_retry_recovers_after_transient_failures(tmp_path, qxt_home):
     assert agent.max_retries == 3
 
 
-def test_retry_exhausted_returns_error_via_callback(tmp_path, qxt_home):
+def test_retry_exhausted_returns_error_via_callback(tmp_path, tuan_home):
     agent = _build(tmp_path, AlwaysFailModel(), max_retries=2)
     errors = []
     out = agent.run("hi", stream=False, on_error=lambda m: errors.append(m))

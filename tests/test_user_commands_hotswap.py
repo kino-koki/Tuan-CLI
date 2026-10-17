@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.cli import user_commands as uc
+from tuan_cli.cli import user_commands as uc
 
 
 class _Cfg:
@@ -27,7 +27,7 @@ def cmds(tmp_path):
         "description: 打招呼命令\n"
         "argument-hint: <名字>\n"
         "---\n"
-        "import qingxiaotuan.cli.user_commands as _uc\n"
+        "import tuan_cli.cli.user_commands as _uc\n"
         "def run(args, agent, config, workspace):\n"
         "    _uc._ui_store.append(('greet', args, workspace))\n"
         "    return True\n"

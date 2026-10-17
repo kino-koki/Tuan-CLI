@@ -105,7 +105,7 @@ def _make_args(**kw):
 @pytest.fixture
 def patched_run(monkeypatch):
     """把 cmd_run 的内核/Agent 构建换成替身, 捕获 stdout/stderr。"""
-    from qingxiaotuan.cli import cmd_agents
+    from tuan_cli.cli import cmd_agents
 
     monkeypatch.setattr(cmd_agents, "build_kernel", lambda *a, **k: _FakeKernel())
     monkeypatch.setattr(cmd_agents, "create_agent", lambda kernel, workspace: _FakeAgent())
@@ -131,8 +131,8 @@ def test_print_mode_no_tui_decoration(patched_run, capsys):
 
 
 def test_print_mode_parser_flag():
-    """parser: `qxt run -p` / `--print` 都能打开 print_mode, 默认 output_format=text。"""
-    from qingxiaotuan.cli.parser import build_parser
+    """parser: `tuan run -p` / `--print` 都能打开 print_mode, 默认 output_format=text。"""
+    from tuan_cli.cli.parser import build_parser
     p = build_parser()
     a = p.parse_args(["run", "-p", "任务"])
     assert a.print_mode is True
@@ -145,7 +145,7 @@ def test_print_mode_parser_flag():
 
 def test_print_mode_stdin_pipe(monkeypatch):
     """stdin 非 tty 且任务为空时, 读取 stdin 内容作为任务输入。"""
-    from qingxiaotuan.cli import cmd_agents
+    from tuan_cli.cli import cmd_agents
 
     fake_stdin = io.StringIO("把这段管道文本翻译成英文")
     fake_stdin.isatty = lambda: False  # type: ignore[attr-defined]
@@ -156,7 +156,7 @@ def test_print_mode_stdin_pipe(monkeypatch):
 
 def test_stdin_tty_not_read(monkeypatch):
     """stdin 是 tty 时不读取 (避免阻塞终端交互)。"""
-    from qingxiaotuan.cli import cmd_agents
+    from tuan_cli.cli import cmd_agents
 
     class _TTY:
         def isatty(self):
@@ -173,7 +173,7 @@ def test_stdin_tty_not_read(monkeypatch):
 
 def test_output_format_json_events():
     """--output-format json: 每行一个合法 JSON, 含 text/finish 事件。"""
-    from qingxiaotuan.cli.cmd_agents import _NDJsonEmitter
+    from tuan_cli.cli.cmd_agents import _NDJsonEmitter
 
     buf = io.StringIO()
     em = _NDJsonEmitter(sink=buf)
@@ -216,13 +216,13 @@ def test_output_format_json_end_to_end(patched_run, capsys):
 
 # --------------------------------------------------------------------- 4/5. --bare 纯净模式
 
-def test_bare_mode_skips_user_config(qxt_home):
+def test_bare_mode_skips_user_config(tuan_home):
     """--bare 不加载用户级 config.yaml (仅内置默认)。"""
-    from qingxiaotuan.config.loader import Config
+    from tuan_cli.config.loader import Config
 
-    qxt_home.mkdir(parents=True, exist_ok=True)
+    tuan_home.mkdir(parents=True, exist_ok=True)
     # 写入用户配置, 覆盖一个内置存在的键
-    (qxt_home / "config.yaml").write_text(
+    (tuan_home / "config.yaml").write_text(
         "model:\n  model: \"user-marker-model\"\n", encoding="utf-8")
 
     normal = Config()
@@ -234,12 +234,12 @@ def test_bare_mode_skips_user_config(qxt_home):
     assert getattr(bare, "bare", False) is True
 
 
-def test_bare_kernel_skips_user_config_and_has_builtin_tools(qxt_home):
+def test_bare_kernel_skips_user_config_and_has_builtin_tools(tuan_home):
     """build_kernel(bare=True): 不读用户配置, 但内置工具仍注册。"""
-    from qingxiaotuan.app import build_kernel
+    from tuan_cli.app import build_kernel
 
-    qxt_home.mkdir(parents=True, exist_ok=True)
-    (qxt_home / "config.yaml").write_text(
+    tuan_home.mkdir(parents=True, exist_ok=True)
+    (tuan_home / "config.yaml").write_text(
         "model:\n  model: \"user-marker-model\"\n"
         "skills:\n  auto_inject: true\n", encoding="utf-8")
 

@@ -1,11 +1,11 @@
 # 技能蒸馏闭环使用指南 (SkillDistiller Distill Loop)
 
 > 适用版本: v0.2.017+
-> 这是 qxt 技能系统的核心超越点: **一次成功的多步任务结束后, qxt 主动提议把它沉淀成可复用技能,
+> 这是 tuan 技能系统的核心超越点: **一次成功的多步任务结束后, tuan 主动提议把它沉淀成可复用技能,
 > 你确认一次, 下次遇到相似任务它会自动命中。**
 
 Claude Code 只写 memory 笔记、Kimi Code 的 sub-skill.review/consolidate 是人工触发、
-Codex 没有自动蒸馏 —— qxt 把这条链路做成了端到端可演示。
+Codex 没有自动蒸馏 —— tuan 把这条链路做成了端到端可演示。
 
 ---
 
@@ -30,7 +30,7 @@ skill_save 写入 <home>/skills/<slug>.md  (source=auto-distill, 同名=refine)
 下次相似任务: activate_for_task() 因标签匹配 + use_count 自动激活
 ```
 
-实现位置: `qingxiaotuan/self_improve/distill_loop.py`。
+实现位置: `tuan_cli/self_improve/distill_loop.py`。
 它是纯逻辑模块 (不直接读 UI), 交互层把提议渲染给用户、把 `y/n` 回传。
 
 ---
@@ -45,7 +45,7 @@ skill_save 写入 <home>/skills/<slug>.md  (source=auto-distill, 同名=refine)
 关闭自动提议 (仍可手动 `/distill`):
 
 ```
-qxt config set self_improve.auto_propose false
+tuan config set self_improve.auto_propose false
 ```
 
 ---
@@ -54,8 +54,8 @@ qxt config set self_improve.auto_propose false
 
 ### 3.1 自动提议 (默认)
 
-正常在 qxt 里干活。当你连续成功地调用了 ≥3 个工具完成一件事后,
-qxt 会提示:
+正常在 tuan 里干活。当你连续成功地调用了 ≥3 个工具完成一件事后,
+tuan 会提示:
 
 ```
 检测到可复用工作流, 建议存为技能:
@@ -88,7 +88,7 @@ qxt 会提示:
 把下面的流程跑一遍, 就能录出"蒸馏提议 → 确认 → 下次自动命中"的主线 demo:
 
 ```text
-# 第 1 步: 完成一次多步任务 (qxt 会在结束时提议)
+# 第 1 步: 完成一次多步任务 (tuan 会在结束时提议)
 你: 读 main.py, 给 /login 路由加上 token 校验, 然后跑 pytest 确认通过
 
 # 第 2 步: 看到提议后按 y
@@ -96,13 +96,13 @@ qxt 会提示:
 
 # 第 3 步: 开新会话, 给一个相似但措辞不同的任务
 你: 帮我保护一下 /admin 接口, 改完跑测试看看
-#    → qxt 在系统提示里自动激活 fastapi-auth-test 技能 (标签 code-editing/testing 命中)
+#    → tuan 在系统提示里自动激活 fastapi-auth-test 技能 (标签 code-editing/testing 命中)
 ```
 
 验证"下次自动命中"也可以直接用 Python:
 
 ```python
-from qingxiaotuan.skills.manager import SkillManager
+from tuan_cli.skills.manager import SkillManager
 mgr = SkillManager(home)           # 与确认时同一个 home
 hits = mgr.activate_for_task("保护 /admin 接口并跑测试")
 assert hits and hits[0].source == "auto-distill"
@@ -142,8 +142,8 @@ assert hits and hits[0].source == "auto-distill"
 | `/skills` | 列出全部技能 (标注 project/user/builtin) |
 | `/skills audit` | 审计: 僵尸/元数据不全/frontmatter 合法性 |
 | `/skills consolidate` | 检测相似技能 (dry-run, 不改盘) |
-| `qxt skills list` | CLI 列出全部技能及来源 |
-| `qxt skills import <path>` | 从 Claude Code/Codex 技能目录导入 |
-| `qxt skills audit` | CLI 审计报告 |
-| `qxt skills consolidate [--apply]` | CLI 合并 (默认 dry-run) |
-| `qxt skills lint <name>` | 检查单个技能 |
+| `tuan skills list` | CLI 列出全部技能及来源 |
+| `tuan skills import <path>` | 从 Claude Code/Codex 技能目录导入 |
+| `tuan skills audit` | CLI 审计报告 |
+| `tuan skills consolidate [--apply]` | CLI 合并 (默认 dry-run) |
+| `tuan skills lint <name>` | 检查单个技能 |

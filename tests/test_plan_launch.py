@@ -1,57 +1,57 @@
 """Tests for launch unification + Plan-mode read-only window agent.
 
-背景: 用户要求把 `qxt chat` 统一为单一 `qxt` 启动命令, 保留三种启动形态
-`qxt` / `qxt --yolo` / `qxt --plan`; 其中 `--plan` 必须让「窗口 Agent」只读
+背景: 用户要求把 `tuan chat` 统一为单一 `tuan` 启动命令, 保留三种启动形态
+`tuan` / `tuan --yolo` / `tuan --plan`; 其中 `--plan` 必须让「窗口 Agent」只读
 (对标 Claude Code 的 Plan Mode: 模型只能观察、不能修改任何文件)。
 """
 
 import pytest
 
-from qingxiaotuan.cli.parser import build_parser
-from qingxiaotuan.tools.base import Tool, ToolRegistry, ToolContext
+from tuan_cli.cli.parser import build_parser
+from tuan_cli.tools.base import Tool, ToolRegistry, ToolContext
 
 
 # ====================================================================== 启动入口统一
 # ======================================================================
 
-def test_bare_qxt_launches_chat():
-    """`qxt` (无子命令) 应进入交互对话 (cmd=None 由 fast_chat/cmd_chat 接管)。"""
+def test_bare_tuan_launches_chat():
+    """`tuan` (无子命令) 应进入交互对话 (cmd=None 由 fast_chat/cmd_chat 接管)。"""
     args = build_parser().parse_args([])
     assert args.cmd is None
 
 
 def test_chat_subcommand_handoff():
-    """`qxt chat` 是会话交接父命令: 裸 chat 不直接进 TUI, 而是路由到 handoff 命令族;
+    """`tuan chat` 是会话交接父命令: 裸 chat 不直接进 TUI, 而是路由到 handoff 命令族;
     `handoff` 缺 session_id 时解析层报错, 带参时正确解析。"""
-    # 裸 `qxt chat` -> 路由到 cmd_chat_handoff (运行时会提示用法, 不进入聊天 TUI)
+    # 裸 `tuan chat` -> 路由到 cmd_chat_handoff (运行时会提示用法, 不进入聊天 TUI)
     args = build_parser().parse_args(["chat"])
     assert args.cmd == "chat"
     assert args.chat_cmd is None
     assert args.func == "cmd_chat_handoff"
-    # `qxt chat handoff` 缺 session_id -> 解析报错
+    # `tuan chat handoff` 缺 session_id -> 解析报错
     with pytest.raises(SystemExit):
         build_parser().parse_args(["chat", "handoff"])
-    # `qxt chat handoff <id>` -> 正确解析
+    # `tuan chat handoff <id>` -> 正确解析
     args = build_parser().parse_args(["chat", "handoff", "abc123"])
     assert args.chat_cmd == "handoff"
     assert args.session_id == "abc123"
 
 
 def test_plan_flag_parses():
-    """`qxt --plan` 解析出 plan=True, 且无子命令 (走交互启动)。"""
+    """`tuan --plan` 解析出 plan=True, 且无子命令 (走交互启动)。"""
     args = build_parser().parse_args(["--plan"])
     assert args.plan is True
     assert args.cmd is None
 
 
 def test_mode_plan_parses():
-    """`qxt --mode plan` 解析出 mode='plan'。"""
+    """`tuan --mode plan` 解析出 mode='plan'。"""
     args = build_parser().parse_args(["--mode", "plan"])
     assert args.mode == "plan"
 
 
 def test_yolo_flag_unchanged():
-    """`qxt --yolo` 仍可用。"""
+    """`tuan --yolo` 仍可用。"""
     args = build_parser().parse_args(["--yolo"])
     assert args.yolo is True
 
@@ -102,7 +102,7 @@ def test_standard_mode_allows_write_tools():
 
 def test_agent_effective_tool_set_plan():
     """agent.plan_mode=True 时, effective_tool_set() 返回 'plan' (模型只看到只读工具)。"""
-    from qingxiaotuan.core.agent import Agent
+    from tuan_cli.core.agent import Agent
     agent = Agent.__new__(Agent)
     agent.plan_mode = True
     agent.yolo = False

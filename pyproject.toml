@@ -3,36 +3,47 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "qingxiaotuan"
-version = "0.3.0"
-description = "A safety-first AI agent CLI — blast-radius analysis blocks dangerous commands before execution. Pure Python, model-neutral, 10 capability engines."
+name = "tuan-cli"
+version = "0.3.1"
+description = "青小团 Tuan-CLI — safety-first, model-agnostic, pure-Python AI Agent CLI (blast-radius preview → hard redline → exact /undo)."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 keywords = ["ai", "agent", "cli", "code-agent", "terminal-agent", "safety", "blast-radius", "llm", "deepseek", "claude", "openai"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    # 注: 按 PEP 639, license 用下方 SPDX 表达式声明, 不再放 License :: 分类器
+    # (新版 setuptools 会因二者并存而直接报错)。
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
     "Topic :: Software Development :: Code Generators",
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    "pyyaml>=6.0",
+    # 核心运行依赖 (最小集): rich=终端 UI 输出 (ui/repl.py 模块级),
+    # httpx=模型传输 (models/anthropic.py 模块级)。
+    # pyyaml / prompt_toolkit 均有内置/裸输入降级路径, 见 optional-dependencies。
     "rich>=13.0",
-    "prompt_toolkit>=3.0",
     "httpx>=0.27",
     # Python < 3.11 无内置 tomllib, 旧版本回退用 tomli 解析 pyproject (迁移/探测场景)
     "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
+# yaml: PyYAML 用于 YAML 配置/生态探测解析。不安装时 config/loader.py 自动降级
+# 内置极简解析器, ecosystem 探测与 doctor 检查各自 try/except 兜底 (功能可用,
+# 仅 YAML 高级语法/注释解析能力降级)。
+yaml = ["pyyaml>=6.0"]
+# repl: prompt_toolkit 增强交互 (补全/历史/快捷键)。不安装时 ui/repl.py 自动
+# 降级为裸 input 输入 (功能可用, 无补全与行编辑增强)。
+repl = ["prompt_toolkit>=3.0"]
 # openai 仅作 OpenAI 兼容传输层使用, 核心逻辑 (路由/护栏/工具) 不依赖它。
 # 使用本地/Ollama/Anthropic 等非 OpenAI 场景可不安装; 需要 OpenAI 兼容端点时再装。
 openai = ["openai>=1.40"]
@@ -65,26 +76,31 @@ Changelog = "https://github.com/kino-koki/Tuan-CLI/blob/main/CHANGELOG.md"
 "Bug Tracker" = "https://github.com/kino-koki/Tuan-CLI/issues"
 
 [project.scripts]
-qxt = "qingxiaotuan.cli:main"
+tuan = "tuan_cli.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["qingxiaotuan*"]
+include = ["tuan_cli*"]
 
 # 把内置技能模板与 SOUL.md 等资源文件打进 wheel (否则 pip install 后首次启动无技能)
 [tool.setuptools.package-data]
-qingxiaotuan = ["resources/**/*.md", "resources/**/*.yaml"]
+tuan_cli = [
+    "resources/**/*.md",
+    "resources/**/*.yaml",
+    "resources/**/*.yml",
+    "resources/**/*.json",
+]
 
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-check_untyped_defs = false  # 逐步收紧: 先强制检查, 再要求所有函数有注解
+check_untyped_defs = true  # 逐步收紧: 先强制检查, 再要求所有函数有注解
 no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 show_error_codes = true
-disallow_untyped_defs = false  # 逐步收紧: 先不强制所有函数都有类型注解
+disallow_untyped_defs = true  # 逐步收紧: 先不强制所有函数都有类型注解
 
 # pytest 配置: slow marker 用于「真实 spawn 子进程 / 较重」的隔离验证测试,
 # 默认跳过, 用 `pytest -m slow` 显式运行。

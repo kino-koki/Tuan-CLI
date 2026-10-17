@@ -1,4 +1,4 @@
-"""外部引擎集成测试: 验证 Python 内核通过 JSONL IPC 驱动 qingxiaotuan/ext 纯 Python 引擎。
+"""外部引擎集成测试: 验证 Python 内核通过 JSONL IPC 驱动 tuan_cli/ext 纯 Python 引擎。
 
 若某引擎在当前环境不可用, ExternalEngineManager 会自动跳过, 相关测试 skip。
 """
@@ -8,10 +8,10 @@ import threading
 
 import pytest
 
-from qingxiaotuan.core.ipc_client import ExternalEngineManager, IpcClient
-from qingxiaotuan.core.kernel import Kernel
-from qingxiaotuan.tools import ToolRegistryPlugin, builtin_tool_plugins
-from qingxiaotuan.tools.base import ToolContext
+from tuan_cli.core.ipc_client import ExternalEngineManager, IpcClient
+from tuan_cli.core.kernel import Kernel
+from tuan_cli.tools import ToolRegistryPlugin, builtin_tool_plugins
+from tuan_cli.tools.base import ToolContext
 
 
 def _kernel():
@@ -151,7 +151,7 @@ def test_ext_index_build_and_query(tmp_path):
 @pytest.mark.skipif(not HAVE_INDEX, reason="index 引擎不可用")
 def test_index_cache_scoped_by_workspace(tmp_path):
     """切换工作区后查询不应命中上一工作区残留的索引 (stale 防护)。"""
-    import qingxiaotuan.tools.external as ext
+    import tuan_cli.tools.external as ext
 
     (tmp_path / "mod.py").write_text("def hello():\n    return 1\n", encoding="utf-8")
     ext._INDEX_CACHE.clear()
@@ -262,7 +262,7 @@ def test_ipc_error_response_echoes_request_id():
     修复后: 客户端应快速收到携带真实错误信息的 IpcError。
     """
     import time
-    from qingxiaotuan.core.ipc_client import IpcError
+    from tuan_cli.core.ipc_client import IpcError
 
     m = ExternalEngineManager()
     t0 = time.monotonic()

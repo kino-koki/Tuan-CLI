@@ -11,8 +11,8 @@
 
 import io
 
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.core.agent import Agent
 
 
 def _make_ctx(tmp_path):
@@ -25,7 +25,7 @@ def _make_ctx(tmp_path):
 
 # ------------------------------------------------------------------ 注册
 
-def test_session_tools_registered(qxt_home):
+def test_session_tools_registered(tuan_home):
     kernel = build_kernel()
     names = {t.name for t in kernel.require("tool_registry").tools}
     for n in ("todo_write", "todo_read", "ask_user",
@@ -35,7 +35,7 @@ def test_session_tools_registered(qxt_home):
 
 # ------------------------------------------------------------------ todo
 
-def test_todo_write_and_read_roundtrip(tmp_path, qxt_home):
+def test_todo_write_and_read_roundtrip(tmp_path, tuan_home):
     kernel, agent = _make_ctx(tmp_path)
     reg = kernel.require("tool_registry")
     out = reg.get("todo_write").handler(agent.ctx, todos=[
@@ -51,7 +51,7 @@ def test_todo_write_and_read_roundtrip(tmp_path, qxt_home):
     assert [t["content"] for t in agent.ctx.todos] == ["调研代码", "写实现", "补测试"]
 
 
-def test_todo_write_validation(tmp_path, qxt_home):
+def test_todo_write_validation(tmp_path, tuan_home):
     kernel, agent = _make_ctx(tmp_path)
     reg = kernel.require("tool_registry")
     # 空 todos 拒绝
@@ -71,7 +71,7 @@ def test_todo_write_validation(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ ask_user
 
-def test_ask_user_headless_fallback(tmp_path, qxt_home, monkeypatch):
+def test_ask_user_headless_fallback(tmp_path, tuan_home, monkeypatch):
     """非交互环境: 不提问, 安全降级并把问题/选项带回给模型。"""
     kernel, agent = _make_ctx(tmp_path)
     import sys
@@ -82,7 +82,7 @@ def test_ask_user_headless_fallback(tmp_path, qxt_home, monkeypatch):
     assert "无法交互" in out and "用哪种方案?" in out and "A | B" in out
 
 
-def test_ask_user_interactive_choice(tmp_path, qxt_home, monkeypatch):
+def test_ask_user_interactive_choice(tmp_path, tuan_home, monkeypatch):
     """交互终端: 输入编号自动映射到选项文本。"""
     kernel, agent = _make_ctx(tmp_path)
     import sys
@@ -99,7 +99,7 @@ def test_ask_user_interactive_choice(tmp_path, qxt_home, monkeypatch):
     assert out2 == "用户回答: 都行, 听你的"
 
 
-def test_ask_user_skipped_returns_hint(tmp_path, qxt_home, monkeypatch):
+def test_ask_user_skipped_returns_hint(tmp_path, tuan_home, monkeypatch):
     """用户 Ctrl+C 跳过提问: 返回明确提示而非崩溃。"""
     kernel, agent = _make_ctx(tmp_path)
     import sys
@@ -117,7 +117,7 @@ def test_ask_user_skipped_returns_hint(tmp_path, qxt_home, monkeypatch):
 
 # ------------------------------------------------------------------ plan mode 工具化
 
-def test_plan_mode_tools_toggle_and_block(tmp_path, qxt_home):
+def test_plan_mode_tools_toggle_and_block(tmp_path, tuan_home):
     kernel, agent = _make_ctx(tmp_path)
     reg = kernel.require("tool_registry")
     assert not agent.plan_mode and not agent.ctx.plan_mode

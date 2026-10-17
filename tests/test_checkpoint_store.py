@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from qingxiaotuan.core.checkpoint_store import CheckpointStore
+from tuan_cli.core.checkpoint_store import CheckpointStore
 
 
 class FakeLedger:
@@ -23,7 +23,7 @@ class FakeLedger:
 def store(tmp_path):
     ledger = FakeLedger()
     s = CheckpointStore(str(tmp_path), ledger,
-                        subdir=".qxt/checkpoints",
+                        subdir=".tuan/checkpoints",
                         ttl=1000, max_checkpoints=3)
     return s
 
@@ -114,23 +114,23 @@ def test_clear_removes_all(store):
 
 
 def test_disabled_does_nothing(tmp_path):
-    s = CheckpointStore(str(tmp_path), None, subdir=".qxt/checkpoints", ttl=100)
+    s = CheckpointStore(str(tmp_path), None, subdir=".tuan/checkpoints", ttl=100)
     s.auto=False
     assert s.auto_checkpoint(["a.py"]) is None
     assert s.list() == []
 
 
 def test_index_persists_across_instances(tmp_path):
-    s1 = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".qxt/checkpoints", ttl=1000)
+    s1 = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".tuan/checkpoints", ttl=1000)
     s1.auto_checkpoint(["a.py"])
-    s2 = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".qxt/checkpoints", ttl=1000)
+    s2 = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".tuan/checkpoints", ttl=1000)
     assert len(s2.list()) == 1
 
 
 def test_load_filters_malformed_index_entries(tmp_path):
     """畸形索引条目 (非 dict / 缺 id / 缺 created_at) 在加载时被过滤, 不炸 prune。"""
     import json
-    d = tmp_path / ".qxt" / "checkpoints"
+    d = tmp_path / ".tuan" / "checkpoints"
     d.mkdir(parents=True)
     (d / "checkpoints.json").write_text(json.dumps([
         {"id": "ckp1", "created_at": time.time() - 10, "ledger_marker": 1, "files": ["a.py"]},
@@ -140,7 +140,7 @@ def test_load_filters_malformed_index_entries(tmp_path):
         None,
         42,
     ]), encoding="utf-8")
-    s = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".qxt/checkpoints", ttl=1000)
+    s = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".tuan/checkpoints", ttl=1000)
     cps = s.list()
     assert [c["id"] for c in cps] == ["ckp1"]
     # 加载后不被畸形条目炸掉, 还能正常建点
@@ -151,19 +151,19 @@ def test_load_filters_malformed_index_entries(tmp_path):
 def test_malformed_created_at_does_not_crash_prune(tmp_path):
     """created_at 为非数值 (字符串) 时, TTL 判定与排序按 0 处理, 不抛异常。"""
     import json
-    d = tmp_path / ".qxt" / "checkpoints"
+    d = tmp_path / ".tuan" / "checkpoints"
     d.mkdir(parents=True)
     (d / "checkpoints.json").write_text(json.dumps([
         {"id": "ckp1", "created_at": "2026-09-06T10:00:00", "ledger_marker": 1, "files": []},
         {"id": "ckp2", "created_at": None, "ledger_marker": 2, "files": []},
     ]), encoding="utf-8")
-    s = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".qxt/checkpoints", ttl=1000)
+    s = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".tuan/checkpoints", ttl=1000)
     assert s.list() == []  # 非数值时间戳按过期处理, 且不抛异常
 
 
 def test_flush_leaves_no_tmp_leftover(tmp_path):
     """索引落盘原子性: 建点/清理后目录无 .tmp / .checkpoints. 残留临时文件。"""
-    s = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".qxt/checkpoints", ttl=1000)
+    s = CheckpointStore(str(tmp_path), FakeLedger(), subdir=".tuan/checkpoints", ttl=1000)
     s.auto_checkpoint(["a.py"])
     s.auto_checkpoint(["b.py"])
     leftovers = [p.name for p in s.dir.iterdir()

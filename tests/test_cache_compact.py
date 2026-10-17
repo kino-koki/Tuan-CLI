@@ -14,16 +14,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.core.prompts import build_system_prompt, build_task_context, system_prompt_hash
-from qingxiaotuan.core.kernel import Kernel
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.context.manager import ContextManager, estimate_messages
-from qingxiaotuan.models.openai_compat import _extract_usage
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse, ToolCall
+from tuan_cli.core.agent import Agent
+from tuan_cli.core.prompts import build_system_prompt, build_task_context, system_prompt_hash
+from tuan_cli.core.kernel import Kernel
+from tuan_cli.app import build_kernel
+from tuan_cli.context.manager import ContextManager, estimate_messages
+from tuan_cli.models.openai_compat import _extract_usage
+from tuan_cli.models.base import ModelAdapter, ModelResponse, ToolCall
 
 
-def _echo_agent(tmp_path, qxt_home, usage_seq=None):
+def _echo_agent(tmp_path, tuan_home, usage_seq=None):
     """构造一个 Agent, 模型每轮回显 user 末段; 可选注入 usage 序列。"""
     kernel = build_kernel()
     config = kernel.require("config")
@@ -41,11 +41,11 @@ def _echo_agent(tmp_path, qxt_home, usage_seq=None):
     return Agent(kernel=kernel, config=config, workspace=str(tmp_path), confirm=lambda _p: True)
 
 
-def test_build_system_prompt_has_no_task_hint_param_and_stable(tmp_path, qxt_home):
+def test_build_system_prompt_has_no_task_hint_param_and_stable(tmp_path, tuan_home):
     import inspect
     sig = inspect.signature(build_system_prompt)
     assert "task_hint" not in sig.parameters, "system 提示不应再接收 task_hint (缓存杀手)"
-    from qingxiaotuan.config.loader import Config
+    from tuan_cli.config.loader import Config
     cfg = Config()
     p1 = build_system_prompt(home=cfg.home, workspace=str(tmp_path))
     p2 = build_system_prompt(home=cfg.home, workspace=str(tmp_path))
@@ -53,7 +53,7 @@ def test_build_system_prompt_has_no_task_hint_param_and_stable(tmp_path, qxt_hom
 
 
 def test_compact_keeps_tool_call_group_intact():
-    from qingxiaotuan.context.manager import ContextManager
+    from tuan_cli.context.manager import ContextManager
 
     messages = [{"role": "system", "content": "system"}]
     for index in range(3):
@@ -75,8 +75,8 @@ def test_compact_keeps_tool_call_group_intact():
             assert previous.get("tool_calls")
 
 
-def test_agent_system_prefix_stable_across_turns(tmp_path, qxt_home):
-    agent = _echo_agent(tmp_path, qxt_home)
+def test_agent_system_prefix_stable_across_turns(tmp_path, tuan_home):
+    agent = _echo_agent(tmp_path, tuan_home)
     hashes = []
     for i in range(4):
         agent.run(f"任务 {i} 关于完全不同的主题", stream=False)
@@ -85,7 +85,7 @@ def test_agent_system_prefix_stable_across_turns(tmp_path, qxt_home):
     assert len(set(hashes)) == 1, f"system 前缀在多轮间变化: {hashes}"
 
 
-def test_agent_system_prompt_equals_stable_builder_output(tmp_path, qxt_home):
+def test_agent_system_prompt_equals_stable_builder_output(tmp_path, tuan_home):
     """核心缓存不变量: agent 的 system 提示 == build_system_prompt 输出,
     即 agent 没有把任何随任务变化的内容(用户输入/语义召回)塞进 system。"""
     kernel = build_kernel()
@@ -100,18 +100,28 @@ def test_agent_system_prompt_equals_stable_builder_output(tmp_path, qxt_home):
     kernel.provide("model_adapter", M(), owner="test")
     agent = Agent(kernel=kernel, config=config, workspace=str(tmp_path), confirm=lambda _p: True)
     agent.run("怎么跑测试", stream=False)
+    # 注入预算走提示词分层 (agent._effective_prompt_limits), 镜像同一份预算才能保证相等。
+    (skill_limit, notes_lines, doc_bytes, long_mem) = agent._effective_prompt_limits()
     expected = build_system_prompt(
         home=config.home, workspace=str(tmp_path),
         memory_store=kernel.get("memory_store"),
         skill_manager=kernel.get("skill_manager") if config.get("skills.auto_inject", True) else None,
-        skill_limit=config.get("skills.inject_limit", 3),
+        skill_limit=skill_limit,
         codebase_map=agent._codebase_map,
+        reply_language=config.get("language", "") or "zh-CN",
+        output_style=config.get("ui.output_style", "default"),
+        cache_stable_prefix=config.get("prompt.cache_stable_prefix", True),
+        memory_notes_enabled=config.get("memory.notes_enabled", True),
+        memory_notes_max_lines=notes_lines,
+        project_doc_max_bytes=doc_bytes,
+        long_memory_max_chars=long_mem,
+        user_mode=agent.user_mode,
     )
     assert agent.messages[0]["role"] == "system"
     assert agent.messages[0]["content"] == expected, "system 提示不应含任何任务相关内容"
 
 
-def test_build_task_context_injects_relevant_memory(tmp_path, qxt_home):
+def test_build_task_context_injects_relevant_memory(tmp_path, tuan_home):
     """语义召回机制: 查询含已存记忆关键词时, build_task_context 应返回该记忆。"""
     kernel = build_kernel()
     store = kernel.get("memory_store")
@@ -140,8 +150,8 @@ def test_context_manager_iterates_until_under_budget(tmp_path):
     assert dropped2 == 0
 
 
-def test_cache_hit_rate_accumulates(tmp_path, qxt_home):
-    agent = _echo_agent(tmp_path, qxt_home, usage_seq=[
+def test_cache_hit_rate_accumulates(tmp_path, tuan_home):
+    agent = _echo_agent(tmp_path, tuan_home, usage_seq=[
         {"prompt_cache_hit_tokens": 1000, "prompt_cache_miss_tokens": 0},
         {"prompt_cache_hit_tokens": 2000, "prompt_cache_miss_tokens": 100},
     ])

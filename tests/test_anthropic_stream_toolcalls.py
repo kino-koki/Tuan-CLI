@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.models.anthropic import AnthropicAdapter
+from tuan_cli.models.anthropic import AnthropicAdapter
 
 # 一个 tool_use 块的 SSE 流: input 在 start 时为空, 参数通过两段 input_json_delta 拼出。
 SSE_LINES = [

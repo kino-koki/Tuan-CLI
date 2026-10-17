@@ -8,8 +8,8 @@
 
 from __future__ import annotations
 
-from qingxiaotuan.tools.permissions import PermissionDecision, PermissionPolicy
-from qingxiaotuan.tools.permission_fusion import (
+from tuan_cli.tools.permissions import PermissionDecision, PermissionPolicy
+from tuan_cli.tools.permission_fusion import (
     FusionPermissionPolicy,
     build_permission_policy,
 )

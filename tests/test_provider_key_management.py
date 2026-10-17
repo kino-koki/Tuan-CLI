@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from qingxiaotuan.config import Config, persist_api_key, read_api_key
+from tuan_cli.config import Config, persist_api_key, read_api_key
 
 
 class _Chosen:
@@ -26,7 +26,7 @@ class _FakeAgent:
         return None
 
 
-def _cfg_dual_key(qxt_home) -> Config:
+def _cfg_dual_key(tuan_home) -> Config:
     """把旧供应商配置写入 config + .env, 返回 Config。"""
     persist_api_key("DEEPSEEK_API_KEY", "sk-old")
     persist_api_key("MOONSHOT_API_KEY", "sk-ms")
@@ -36,11 +36,11 @@ def _cfg_dual_key(qxt_home) -> Config:
     return cfg
 
 
-def test_offer_keep_original_keeps_old_key(qxt_home, monkeypatch):
+def test_offer_keep_original_keeps_old_key(tuan_home, monkeypatch):
     """选 Y/回车: 保留旧供应商密钥 (文件不删、已有环境变量不删)。"""
-    from qingxiaotuan.cli.cmd_chat import _offer_keep_original_config
+    from tuan_cli.cli.cmd_chat import _offer_keep_original_config
 
-    cfg = _cfg_dual_key(qxt_home)
+    cfg = _cfg_dual_key(tuan_home)
     os.environ["DEEPSEEK_API_KEY"] = "sk-old"
     monkeypatch.setattr("builtins.input", lambda *a, **k: "y")
     _offer_keep_original_config(cfg, _Chosen("moonshot", "MOONSHOT_API_KEY"))
@@ -48,11 +48,11 @@ def test_offer_keep_original_keeps_old_key(qxt_home, monkeypatch):
     assert os.environ.get("DEEPSEEK_API_KEY") == "sk-old"
 
 
-def test_offer_keep_original_deletes_old_key(qxt_home, monkeypatch):
+def test_offer_keep_original_deletes_old_key(tuan_home, monkeypatch):
     """选 n: 删除旧供应商密钥 (文件 + 环境) 且不伤及新密钥。"""
-    from qingxiaotuan.cli.cmd_chat import _offer_keep_original_config
+    from tuan_cli.cli.cmd_chat import _offer_keep_original_config
 
-    cfg = _cfg_dual_key(qxt_home)
+    cfg = _cfg_dual_key(tuan_home)
     os.environ["DEEPSEEK_API_KEY"] = "sk-old"
     monkeypatch.setattr("builtins.input", lambda *a, **k: "n")
     _offer_keep_original_config(cfg, _Chosen("moonshot", "MOONSHOT_API_KEY"))
@@ -62,11 +62,11 @@ def test_offer_keep_original_deletes_old_key(qxt_home, monkeypatch):
     assert read_api_key("MOONSHOT_API_KEY") == "sk-ms"
 
 
-def test_offer_keep_original_same_provider_skips_prompt(qxt_home, monkeypatch, capsys):
+def test_offer_keep_original_same_provider_skips_prompt(tuan_home, monkeypatch, capsys):
     """同供应商换模型时不弹保留/删除, 也不删除任何配置。"""
-    from qingxiaotuan.cli.cmd_chat import _offer_keep_original_config
+    from tuan_cli.cli.cmd_chat import _offer_keep_original_config
 
-    cfg = _cfg_dual_key(qxt_home)
+    cfg = _cfg_dual_key(tuan_home)
     monkeypatch.setattr("builtins.input", lambda *a, **k: "n")  # 不应被调用
     _offer_keep_original_config(cfg, _Chosen("deepseek", "DEEPSEEK_API_KEY"))
     assert read_api_key("DEEPSEEK_API_KEY") == "sk-old"
@@ -76,11 +76,11 @@ def test_offer_keep_original_same_provider_skips_prompt(qxt_home, monkeypatch, c
     ("/provider clear", "DEEPSEEK_API_KEY", ["MOONSHOT_API_KEY"]),
     ("/provider clear MOONSHOT_API_KEY", "MOONSHOT_API_KEY", ["DEEPSEEK_API_KEY"]),
 ])
-def test_provider_clear(qxt_home, capsys, cmd, env, expect_kept):
+def test_provider_clear(tuan_home, capsys, cmd, env, expect_kept):
     """`/provider clear [ENV]` 从 .env 与当前环境删除指定密钥, 其他密钥不受影响。"""
-    from qingxiaotuan.cli.cmd_slash import _handle_slash
+    from tuan_cli.cli.cmd_slash import _handle_slash
 
-    _cfg_dual_key(qxt_home)
+    _cfg_dual_key(tuan_home)
     cfg = Config()
     assert _handle_slash(cmd, _FakeAgent(), cfg, os.getcwd()) is True
     assert read_api_key(env) is None
@@ -89,9 +89,9 @@ def test_provider_clear(qxt_home, capsys, cmd, env, expect_kept):
         assert read_api_key(kept) is not None
 
 
-def test_provider_set_then_clear_roundtrip(qxt_home, capsys):
+def test_provider_set_then_clear_roundtrip(tuan_home, capsys):
     """set -> 可见/持久化 -> clear 后再 set 正常。"""
-    from qingxiaotuan.cli.cmd_slash import _handle_slash
+    from tuan_cli.cli.cmd_slash import _handle_slash
 
     cfg = Config()
     _handle_slash("/provider set DEEPSEEK_API_KEY sk-new", _FakeAgent(), cfg, os.getcwd())

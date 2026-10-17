@@ -6,7 +6,7 @@
 - KNOWN_PROVIDERS / is_known_provider 可用;
 - ModelPlugin.switch_model 重建适配器并重新注册内核服务 (运行时换脑子);
 - 切换后 agent.kernel.require("model_adapter") 指向新实例;
-- /model switch 与 qxt model set 路径可写回配置。
+- /model switch 与 tuan model set 路径可写回配置。
 """
 
 import sys
@@ -14,11 +14,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.models import create_adapter, KNOWN_PROVIDERS, is_known_provider
-from qingxiaotuan.models.plugin import ModelPlugin
-from qingxiaotuan.models.openai_compat import OpenAICompatAdapter
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.config import Config
+from tuan_cli.models import create_adapter, KNOWN_PROVIDERS, is_known_provider
+from tuan_cli.models.plugin import ModelPlugin
+from tuan_cli.models.openai_compat import OpenAICompatAdapter
+from tuan_cli.app import build_kernel
+from tuan_cli.config import Config
 
 
 def _cfg(**overrides):
@@ -82,9 +82,9 @@ def test_switch_model_rebuilds_and_reregisters():
 
 
 def test_switch_model_persists_to_user_config(tmp_path):
-    """persist=True 时把覆盖项写回用户层 config (通过 QXT_HOME 隔离)。"""
+    """persist=True 时把覆盖项写回用户层 config (通过 TUAN_HOME 隔离)。"""
     import os
-    os.environ["QXT_HOME"] = str(tmp_path)
+    os.environ["TUAN_HOME"] = str(tmp_path)
     try:
         kernel = build_kernel()
         ModelPlugin.switch_model(
@@ -97,7 +97,7 @@ def test_switch_model_persists_to_user_config(tmp_path):
         assert cfg2.get("model.provider") == "openai-compatible"
         assert cfg2.get("model.model") == "gpt-4o-mini"
     finally:
-        os.environ.pop("QXT_HOME", None)
+        os.environ.pop("TUAN_HOME", None)
 
 
 def test_switch_model_unknown_provider_without_base_url_raises():

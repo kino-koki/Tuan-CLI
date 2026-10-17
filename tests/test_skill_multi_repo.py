@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from qingxiaotuan.skills.manager import SkillManager
+from tuan_cli.skills.manager import SkillManager
 
 
 def _write(p: Path, text: str):
@@ -42,7 +42,7 @@ def test_same_name_priority_project_over_user(tmp_path: Path):
     ws = tmp_path / "ws"
     _write(home / "skills" / "dup.md",
            "---\nname: Dup\ndescription: 用户级版本\n---\nUSER VERSION\n")
-    _write(ws / ".qxt" / "skills" / "dup.md",
+    _write(ws / ".tuan" / "skills" / "dup.md",
            "---\nname: Dup\ndescription: 项目级版本\n---\nPROJECT VERSION\n")
     mgr = SkillManager(home, workspace=ws)
     s = mgr.load("dup")

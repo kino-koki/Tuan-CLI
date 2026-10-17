@@ -12,18 +12,18 @@ import tempfile
 
 import pytest
 
-from qingxiaotuan.config import Config
-from qingxiaotuan.models.base import ModelCapabilities, ModelResponse, ToolCall
-from qingxiaotuan.models.anthropic import AnthropicAdapter
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.vision import (
+from tuan_cli.config import Config
+from tuan_cli.models.base import ModelCapabilities, ModelResponse, ToolCall
+from tuan_cli.models.anthropic import AnthropicAdapter
+from tuan_cli.core.agent import Agent
+from tuan_cli.vision import (
     ImageRef,
     encode_image_source,
     build_user_content,
     build_tool_content,
 )
-from qingxiaotuan.vision.blocks import encode_image_file
-from qingxiaotuan.tools.base import ToolResult
+from tuan_cli.vision.blocks import encode_image_file
+from tuan_cli.tools.base import ToolResult
 
 # 1x1 透明 PNG (合法图片, 67 字节)
 _PNG_B64 = (

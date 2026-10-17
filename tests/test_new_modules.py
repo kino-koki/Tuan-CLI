@@ -9,11 +9,11 @@ from unittest import mock
 
 import pytest
 
-from qingxiaotuan.config import Config
-from qingxiaotuan.core.model_router import AgentModelRouter
-from qingxiaotuan.core.resilience import AgentResilience
-from qingxiaotuan.core.observability import AgentObservability
-from qingxiaotuan.core.retry import RetryPolicy, RateLimiter, CircuitBreaker
+from tuan_cli.config import Config
+from tuan_cli.core.model_router import AgentModelRouter
+from tuan_cli.core.resilience import AgentResilience
+from tuan_cli.core.observability import AgentObservability
+from tuan_cli.core.retry import RetryPolicy, RateLimiter, CircuitBreaker
 
 
 # ============================================================ AgentModelRouter
@@ -39,7 +39,7 @@ class TestAgentModelRouter:
                        "model": {"provider": "deepseek", "model": "deepseek-chat"}}
         kernel = mock.MagicMock()
         router = AgentModelRouter(config, kernel)
-        with mock.patch("qingxiaotuan.models.router.ModelRouter") as MockRouter:
+        with mock.patch("tuan_cli.models.router.ModelRouter") as MockRouter:
             instance = mock.MagicMock()
             instance.decide.return_value = {"switch": False, "reason": "already optimal"}
             MockRouter.return_value = instance
@@ -117,7 +117,7 @@ class TestAgentResilience:
             RuntimeError("transient"),
             mock.MagicMock(content="ok"),
         ]
-        with mock.patch("qingxiaotuan.core.retry.time.sleep"):
+        with mock.patch("tuan_cli.core.retry.time.sleep"):
             result = res.chat_with_retry(model, [], None, False)
         assert result.content == "ok"
 

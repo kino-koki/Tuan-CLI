@@ -2,8 +2,8 @@
 
 import pytest
 
-from qingxiaotuan.core.swarm import Swarm
-from qingxiaotuan.core.markers import DONE_MARKERS, is_done
+from tuan_cli.core.swarm import Swarm
+from tuan_cli.core.markers import DONE_MARKERS, is_done
 
 
 class _FakeConfig:

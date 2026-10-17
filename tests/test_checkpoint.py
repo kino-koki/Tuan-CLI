@@ -9,12 +9,12 @@
 
 import json
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.core.ledger import MutationLedger
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse, ToolCall
-from qingxiaotuan.tools.base import ToolContext
-from qingxiaotuan.tools.checkpoint import checkpoint_tool
+from tuan_cli.core.agent import Agent
+from tuan_cli.core.ledger import MutationLedger
+from tuan_cli.app import build_kernel
+from tuan_cli.models.base import ModelAdapter, ModelResponse, ToolCall
+from tuan_cli.tools.base import ToolContext
+from tuan_cli.tools.checkpoint import checkpoint_tool
 
 
 # ------------------------------------------------------------------ ledger 单元
@@ -108,7 +108,7 @@ class MockModel(ModelAdapter):
         return self.script.pop(0)
 
 
-def test_checkpoint_roundtrip_in_agent_loop(tmp_path, qxt_home):
+def test_checkpoint_roundtrip_in_agent_loop(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = 0

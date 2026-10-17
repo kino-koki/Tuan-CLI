@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from qingxiaotuan.skills.manager import SkillManager
+from tuan_cli.skills.manager import SkillManager
 
 
 SUPERSET_MD = """---
@@ -55,7 +55,7 @@ def test_parse_superset_fields(tmp_path: Path):
     assert s.short_description == "简短描述, 用于列表视图"
     assert s.default_prompt == "帮我跑一遍完整的测试流程并汇总结果"
     assert s.allow_implicit is True
-    # qxt 自有字段保留
+    # tuan 自有字段保留
     assert s.activation == "auto"
     assert "testing" in s.tags
 

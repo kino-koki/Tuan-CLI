@@ -11,8 +11,8 @@
 
 from __future__ import annotations
 
-from qingxiaotuan.runtime.tools.permission import match_param_value
-from qingxiaotuan.tools.permissions import PermissionPolicy
+from tuan_cli.runtime.tools.permission import match_param_value
+from tuan_cli.tools.permissions import PermissionPolicy
 
 
 class _Cfg:

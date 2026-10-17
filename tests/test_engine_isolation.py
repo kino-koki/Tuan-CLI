@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from qingxiaotuan.core import engine_isolation as ei
+from tuan_cli.core import engine_isolation as ei
 
 
 # ---------------------------------------------------------- 配置: 默认关闭
@@ -88,7 +88,7 @@ def test_subprocess_failure_falls_back_to_inprocess(monkeypatch):
             pass
 
     # 让 _call_subprocess 里 import 的 IpcClient 变成必然失败的桩
-    monkeypatch.setattr("qingxiaotuan.core.ipc_client.IpcClient", _Boom)
+    monkeypatch.setattr("tuan_cli.core.ipc_client.IpcClient", _Boom)
 
     result = iso.call("diff", "diff", {"old": "a\n", "new": "b\n"})
     assert iso.stats["subprocess"] == 0

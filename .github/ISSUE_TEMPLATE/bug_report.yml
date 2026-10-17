@@ -19,7 +19,7 @@ body:
     attributes:
       label: 复现步骤
       placeholder: |
-        1. 运行 'qxt ...'
+        1. 运行 'tuan ...'
         2. 输入 ...
         3. 看到 ...
     validations:
@@ -34,14 +34,14 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: "`qxt doctor` 输出"
-      description: 在终端运行 qxt doctor 并粘贴结果
+      label: "`tuan doctor` 输出"
+      description: 在终端运行 tuan doctor 并粘贴结果
     validations:
       required: true
   - type: textarea
     id: config
     attributes:
-      label: "`qxt config dump` 输出（脱敏）"
+      label: "`tuan config dump` 输出（脱敏）"
       description: 请务必移除 api_key 等敏感字段后再粘贴
   - type: dropdown
     id: os

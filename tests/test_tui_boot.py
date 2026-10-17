@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from qingxiaotuan.tui.tui import QxtTUI
+from tuan_cli.tui.tui import QxtTUI
 
 
 class _FakeCtx:
@@ -160,7 +160,7 @@ def test_tool_calls_collapse_to_see_and_expand():
     # 折叠态: 三条工具记录不进 _events 逐条滚动, 只在对话区显示一行摘要
     assert len(tui._turn_tool_lines) == 3
     assert not any("read_file done" in str(e) for e in tui._events)
-    assert "▸ 已调用 3 项工具 (Ctrl+O 展开)" in _flat(tui)
+    assert "▸ see 3 tool calls (Ctrl+O)" in _flat(tui)
     # Ctrl+O 展开
     tui.toggle_audit()
     assert tui._tool_detail is True
@@ -218,12 +218,14 @@ def test_scroll_pin_and_follow_to_bottom():
     assert n >= 40
     # 默认跟随底部
     assert tui._follow is True
-    # 上翻一页 -> 离开跟随, pin 生效
+    # 上翻一页 -> 离开跟随, pin_t (终端行单位) 生效; 渲染锚点映射回逻辑行
     tui._scroll_log(-101)
     assert tui._follow is False
-    assert 0 <= tui._pin < n
-    # 大幅下滚 -> 到达底部 -> 恢复跟随
-    tui._scroll_log(n)
+    assert 0 <= tui._pin_t < tui._terminal_total()
+    lines = tui._scrolled_lines()
+    assert tui._pin == tui._cursor_line == tui._pin_t_to_logic(tui._pin_t)
+    # 大幅下滚 (终端行总量) -> 到达底部 -> 恢复跟随
+    tui._scroll_log(tui._terminal_total())
     assert tui._follow is True
 
 

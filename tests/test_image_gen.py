@@ -14,14 +14,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.tools.image_gen import (
+from tuan_cli.tools.image_gen import (
     ImageGenPlugin,
     _ensure_gen_dir,
     _gen_filename,
     generate_image,
     list_generated,
 )
-from qingxiaotuan.tools.base import ToolContext
+from tuan_cli.tools.base import ToolContext
 
 
 # ------------------------------------------------------------------ 工具函数
@@ -83,7 +83,7 @@ class TestGenerateImage:
         result = generate_image(ctx, "a cat", provider="nonexistent")
         assert "不支持" in result
 
-    @patch("qingxiaotuan.tools.image_gen._generate_dalle")
+    @patch("tuan_cli.tools.image_gen._generate_dalle")
     def test_dalle_success_saves_file(self, mock_dalle, tmp_path):
         # Create a minimal valid PNG (1x1 pixel, red)
         png_bytes = (
@@ -105,14 +105,14 @@ class TestGenerateImage:
             assert "已生成并保存" in result
             assert "DALL-E" in result or "openai" in result
             # Check file exists
-            gen_dir = tmp_path / ".qxt" / "generated"
+            gen_dir = tmp_path / ".tuan" / "generated"
             assert gen_dir.exists()
             pngs = list(gen_dir.glob("*.png"))
             assert len(pngs) == 1
         finally:
             os.environ.pop("OPENAI_API_KEY", None)
 
-    @patch("qingxiaotuan.tools.image_gen._generate_dalle")
+    @patch("tuan_cli.tools.image_gen._generate_dalle")
     def test_dalle_error_returns_message(self, mock_dalle, tmp_path):
         mock_dalle.return_value = {"error": "API rate limit exceeded"}
         ctx = ToolContext(kernel=None, workspace=str(tmp_path))
@@ -133,7 +133,7 @@ class TestListGenerated:
         assert "暂无" in result
 
     def test_lists_files(self, tmp_path):
-        gen_dir = tmp_path / ".qxt" / "generated"
+        gen_dir = tmp_path / ".tuan" / "generated"
         gen_dir.mkdir(parents=True)
         (gen_dir / "img_001.png").write_bytes(b"\x89PNG fake")
         (gen_dir / "img_002.png").write_bytes(b"\x89PNG fake2")
@@ -147,15 +147,15 @@ class TestListGenerated:
 
 class TestImageGenPlugin:
     def test_plugin_metadata(self):
-        from qingxiaotuan.core.kernel import Plugin
+        from tuan_cli.core.kernel import Plugin
         p = ImageGenPlugin()
         assert p.name == "tools.image_gen"
         assert isinstance(p, Plugin)
         assert p.version == "0.1.0"
 
     def test_register_tools(self):
-        from qingxiaotuan.tools.base import ToolRegistry
-        from qingxiaotuan.core.kernel import Kernel
+        from tuan_cli.tools.base import ToolRegistry
+        from tuan_cli.core.kernel import Kernel
 
         kernel = Kernel()
         registry = ToolRegistry()
@@ -175,8 +175,8 @@ class TestImageGenPlugin:
         assert tool.long_running is True
 
     def test_disabled_by_config(self):
-        from qingxiaotuan.tools.base import ToolRegistry
-        from qingxiaotuan.core.kernel import Kernel
+        from tuan_cli.tools.base import ToolRegistry
+        from tuan_cli.core.kernel import Kernel
 
         kernel = Kernel()
         registry = ToolRegistry()

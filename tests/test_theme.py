@@ -1,6 +1,6 @@
 """M8: 统一主题模块测试 —— 配色派生、占用条与状态图标。"""
 
-from qingxiaotuan.ui.theme import (
+from tuan_cli.ui.theme import (
     C, PT_STYLE, MASCOT_ICONS,
     blank_pt_style, context_bar, context_style,
 )

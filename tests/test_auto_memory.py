@@ -14,8 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from qingxiaotuan.memory.auto_extractor import AutoMemoryExtractor
-from qingxiaotuan.memory.store import MEMORY_KINDS, MemoryStore
+from tuan_cli.memory.auto_extractor import AutoMemoryExtractor
+from tuan_cli.memory.store import MEMORY_KINDS, MemoryStore
 
 
 # ------------------------------------------------------------------ 分类规则
@@ -127,7 +127,7 @@ def _make_fake_agent(tmp_path: Path):
 
 def test_memory_slash_list(tmp_path: Path, capsys) -> None:
     """/memory list 输出正常 (rich 表格不抛异常)。"""
-    from qingxiaotuan.cli.cmd_slash import _cmd_memory
+    from tuan_cli.cli.cmd_slash import _cmd_memory
 
     agent, config, store = _make_fake_agent(tmp_path)
     store.add_auto_memory("用户偏好中文回复", kind="user")
@@ -144,7 +144,7 @@ def test_memory_slash_list(tmp_path: Path, capsys) -> None:
 
 def test_memory_slash_add(tmp_path: Path) -> None:
     """/memory add 正常写入。"""
-    from qingxiaotuan.cli.cmd_slash import _cmd_memory
+    from tuan_cli.cli.cmd_slash import _cmd_memory
 
     agent, config, store = _make_fake_agent(tmp_path)
     _cmd_memory(agent, config, "add reference 文档地址 https://example.com/docs")
@@ -160,7 +160,7 @@ def test_memory_slash_add(tmp_path: Path) -> None:
 
 def test_memory_slash_delete(tmp_path: Path) -> None:
     """/memory delete 按 id 删除。"""
-    from qingxiaotuan.cli.cmd_slash import _cmd_memory
+    from tuan_cli.cli.cmd_slash import _cmd_memory
 
     agent, config, store = _make_fake_agent(tmp_path)
     new_id = store.add_auto_memory("待删除的临时记忆", kind="reference")
@@ -171,7 +171,7 @@ def test_memory_slash_delete(tmp_path: Path) -> None:
 
 def test_memory_slash_on_off(tmp_path: Path) -> None:
     """/memory on|off 写配置。"""
-    from qingxiaotuan.cli.cmd_slash import _cmd_memory
+    from tuan_cli.cli.cmd_slash import _cmd_memory
 
     captured = {}
     store = MemoryStore(tmp_path, fts_enabled=True)

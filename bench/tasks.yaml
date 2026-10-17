@@ -2,7 +2,7 @@
 #
 # 每个任务:
 #   id          任务标识
-#   instruction 给 qxt 的自然语言指令
+#   instruction 给 tuan 的自然语言指令
 #   files       工作区初始化文件 (相对路径 -> 内容)
 #   check       验收脚本 (退出码 0 = 通过), 在临时工作区里以 shell 执行
 #   timeout     单任务超时 (秒)

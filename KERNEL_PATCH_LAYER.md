@@ -7,7 +7,7 @@
 
 ## 1. 背景与动机
 
-对 `qingxiaotuan` 全量的评估（`core/ kernel/ ext/ arch/ ports/ tui/`）发现四类"不完善"
+对 `tuan_cli` 全量的评估（`core/ kernel/ ext/ arch/ ports/ tui/`）发现四类"不完善"
 信号，其中运维层可安全修复的点：
 
 | 类别 | 证据 | 处理方式 |
@@ -39,10 +39,10 @@
 
 ## 3. 架构
 
-### 3.1 新模块（`qingxiaotuan/kernel_patch/`）
+### 3.1 新模块（`tuan_cli/kernel_patch/`）
 
 ```
-qingxiaotuan/kernel_patch/
+tuan_cli/kernel_patch/
 ├── __init__.py      # 门面: install / get_manager / patch_impl / ensures
 ├── patch_base.py    # 引擎: PatchSpec / TargetPatcher / KernelPatchManager / 装饰器
 ├── builtin.py       # 内置补丁: i18n.t 记忆化 / retry 导入缓存 / 版本跳过演示
@@ -95,14 +95,14 @@ mgr = kernel.require("kernel_patch")   # 其它插件可取用
 mgr.status()                            # 已应用 / 跳过 / 目标清单
 
 # 2) 独立安装/回滚
-from qingxiaotuan.kernel_patch import install, get_manager
+from tuan_cli.kernel_patch import install, get_manager
 install(kernel)                         # 绑定 kernel 并应用全部补丁
 get_manager().revert("_i18n_t_memo")    # 回滚单个
 get_manager().revert_all()              # 全部回滚, 还原现场
 
 # 3) 第三方声明新补丁
-from qingxiaotuan.kernel_patch import patch_impl
-@patch_impl("qingxiaotuan.core.retry.retry_after_seconds", priority=5, min_kernel="0.2.0")
+from tuan_cli.kernel_patch import patch_impl
+@patch_impl("tuan_cli.core.retry.retry_after_seconds", priority=5, min_kernel="0.2.0")
 def _mine(original, exc):
     """给 retry_after_seconds 加自定义逻辑。"""
     return original(exc)

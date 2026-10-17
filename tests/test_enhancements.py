@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from qingxiaotuan.context.manager import ContextManager, estimate_messages
-from qingxiaotuan.core.agent import Agent
+from tuan_cli.context.manager import ContextManager, estimate_messages
+from tuan_cli.core.agent import Agent
 
 
 # ======================================================================
@@ -37,7 +37,7 @@ def _make_fake_agent_for_tools(tmp_path):
     # 关键: 提供真实的 get → 返回带 read_only 标志的 Tool, 否则 MagicMock.get 对
     # 任何工具名都返回真值 mock, `_is_readonly_tool` 会把 write_file 也误判为只读,
     # 导致写工具被并行化、执行顺序随机 (test_write_tool_blocks_parallel 失败)。
-    from qingxiaotuan.tools.base import Tool
+    from tuan_cli.tools.base import Tool
     _RO = Tool(
         name="x", description="", parameters={"type": "object", "properties": {}},
         handler=lambda *a, **k: "", read_only=True,
@@ -66,14 +66,14 @@ def _make_fake_agent_for_tools(tmp_path):
     agent.turn_count = 0
     agent.total_usage = {}
 
-    from qingxiaotuan.tools.base import ToolContext
+    from tuan_cli.tools.base import ToolContext
     agent.ctx = ToolContext(kernel=kernel, workspace=str(tmp_path))
 
     agent.messages = []
     agent._session_append = lambda *a, **kw: None
 
     # Agent 重构后 _execute_tools 委托给 ToolExecutor (core/tool_executor.py)
-    from qingxiaotuan.core.tool_executor import ToolExecutor
+    from tuan_cli.core.tool_executor import ToolExecutor
     agent._tool_executor = ToolExecutor(
         registry=registry,
         messages=agent.messages,
@@ -153,10 +153,10 @@ def test_compact_summarize_receives_list_not_string():
 # 3. Shell 超时处理
 # ======================================================================
 
-def test_run_shell_timeout_returns_friendly_error(qxt_home):
+def test_run_shell_timeout_returns_friendly_error(tuan_home):
     """shell 命令超时应返回友好错误而非抛异常。"""
-    from qingxiaotuan.tools.shell import run_shell
-    from qingxiaotuan.tools.base import ToolContext
+    from tuan_cli.tools.shell import run_shell
+    from tuan_cli.tools.base import ToolContext
 
     kernel = MagicMock()
     config = MagicMock()
@@ -169,10 +169,10 @@ def test_run_shell_timeout_returns_friendly_error(qxt_home):
     assert "超时" in result or "exit=-1" in result
 
 
-def test_run_shell_normal_command(qxt_home):
+def test_run_shell_normal_command(tuan_home):
     """正常命令应正常返回。"""
-    from qingxiaotuan.tools.shell import run_shell
-    from qingxiaotuan.tools.base import ToolContext
+    from tuan_cli.tools.shell import run_shell
+    from tuan_cli.tools.base import ToolContext
 
     kernel = MagicMock()
     config = MagicMock()
@@ -191,10 +191,10 @@ def test_run_shell_normal_command(qxt_home):
 
 def test_cmd_diff_clean_workspace(tmp_path):
     """干净工作区应报告无变更。"""
-    from qingxiaotuan.cli.commands import _cmd_diff
+    from tuan_cli.cli.commands import _cmd_diff
     from unittest.mock import patch as mock_patch
 
-    with mock_patch("qingxiaotuan.cli.cmd_agents.ui") as mock_ui:
+    with mock_patch("tuan_cli.cli.cmd_agents.ui") as mock_ui:
         # 初始化 git 仓库
         os.system(f"cd {tmp_path} && git init -q && git commit -q --allow-empty -m init")
         _cmd_diff(str(tmp_path), "")
@@ -209,7 +209,7 @@ def test_cmd_diff_clean_workspace(tmp_path):
 
 def test_cmd_undo_safe_stash(tmp_path):
     """--safe 应该 stash 变更。"""
-    from qingxiaotuan.cli.commands import _cmd_undo
+    from tuan_cli.cli.commands import _cmd_undo
     from unittest.mock import patch as mock_patch, MagicMock
     import subprocess as _subprocess
 
@@ -232,7 +232,7 @@ def test_cmd_undo_safe_stash(tmp_path):
         return real_run(cmd, *args, **kwargs)
 
     with mock_patch("subprocess.run", side_effect=fake_run), \
-         mock_patch("qingxiaotuan.cli.cmd_agents.ui") as mock_ui:
+         mock_patch("tuan_cli.cli.cmd_agents.ui") as mock_ui:
         _cmd_undo(str(tmp_path), "--safe", agent)
         calls = [str(c) for c in mock_ui.success.call_args_list]
         assert any("stash" in c for c in calls)
@@ -244,8 +244,8 @@ def test_cmd_undo_safe_stash(tmp_path):
 
 def test_agent_summarize_extracts_info():
     """Agent._summarize 应能从消息列表中提取结构化信息。"""
-    from qingxiaotuan.core.agent import Agent
-    from qingxiaotuan.tools.base import ToolContext
+    from tuan_cli.core.agent import Agent
+    from tuan_cli.tools.base import ToolContext
 
     # 构造最小 agent
     agent = Agent.__new__(Agent)
