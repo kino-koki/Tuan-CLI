@@ -222,3 +222,36 @@ class TestSetReadyAttach:
         monkeypatch.setattr(tui, "_show_welcome", lambda: None)
         tui.set_ready(_FakeConfig(), _FakeAgent(), ".")
         assert calls == [True]
+
+
+# ---------------------------------------------------------------- 信任确认对话框渲染
+class TestTrustDialogRender:
+    """回归: 信任确认卡片必须渲染出两个可选项 (信任 / 不信任)。
+
+    该卡片曾漏渲染选项, 导致用户看到标题却没有任何可选入口, 完全无法进入工作区。
+    修复后改为 ↑↓ 可选项列表 (默认高亮=信任, 空回车即可进入)。
+    """
+
+    def _render(self, index):
+        from tuan_cli.tui.tui import QxtTUI
+        from tuan_cli.i18n import t
+        tui = QxtTUI(on_submit=lambda x: None)
+        tui._trust_pending = {"workspace": "/tmp/ws", "on_confirm": lambda b: None}
+        tui._trust_index = index
+        return "".join(seg[1] for seg in tui._render_trust_confirm())
+
+    def test_both_options_rendered(self):
+        from tuan_cli.i18n import t
+        flat = self._render(0)
+        assert t("tui.trust_opt_trust") in flat
+        assert t("tui.trust_opt_distrust") in flat
+        assert t("tui.trust_opt_trust_desc") in flat
+        assert t("tui.trust_opt_distrust_desc") in flat
+        assert "1)" in flat and "2)" in flat
+
+    def test_highlight_switches(self):
+        # index=1 时不应影响两个选项的可见性 (仅高亮态变化)
+        flat = self._render(1)
+        from tuan_cli.i18n import t
+        assert t("tui.trust_opt_trust") in flat
+        assert t("tui.trust_opt_distrust") in flat

@@ -28,10 +28,13 @@ classifiers = [
 ]
 dependencies = [
     # 核心运行依赖 (最小集): rich=终端 UI 输出 (ui/repl.py 模块级),
-    # httpx=模型传输 (models/anthropic.py 模块级)。
-    # pyyaml / prompt_toolkit 均有内置/裸输入降级路径, 见 optional-dependencies。
+    # httpx=模型传输 (models/anthropic.py 模块级),
+    # prompt_toolkit=默认 TUI (QxtTUI) 强依赖。它是 `tuan` 默认入口的必需品,
+    # 缺失时进入交互界面会 NameError; 故提为核心依赖, 不再作为可选 extra,
+    # 确保 `pip install tuan-cli` / `pip install -e .` / install.ps1 都自动带上它。
     "rich>=13.0",
     "httpx>=0.27",
+    "prompt_toolkit>=3.0",
     # Python < 3.11 无内置 tomllib, 旧版本回退用 tomli 解析 pyproject (迁移/探测场景)
     "tomli>=2.0; python_version < '3.11'",
 ]

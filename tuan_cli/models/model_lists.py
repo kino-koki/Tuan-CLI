@@ -1,4 +1,4 @@
-"""各供应商当前可选模型清单 (2026-08 调研整理, 自动生成)。
+"""各供应商当前可选模型清单 (2026-10 一致性校验整理, 自动生成)。
 
 设计原则:
 - 聚合平台 (OpenRouter / SiliconFlow / Novita / Together / Fireworks / Groq / NVIDIA NIM):
@@ -1226,11 +1226,18 @@ MODEL_LISTS: Dict[str, List[str]] = {
         "nemotron-3.5-lightning-free|free",
         "muse-spark-1.3-contributor-free|free",
     ],
-    # 商汤日日新 SenseNova (中国主流, Token Plan): flash-lite 系列积分/免费额度。
+    # 商汤日日新 SenseNova (中国主流, Token Plan, token.sensenova.cn/v1):
+    # flash-lite 系列积分/免费额度; 官方当前主打 6.8/6.7 两代 Flash-Lite + U1-Fast。
     "sensenova": [
         "sensenova-6.8-flash-lite|free",
         "sensenova-6.7-flash-lite|free",
-        "sensenova-u1-fast",
+        "sensenova-u1-fast|free",
+    ],
+    # 商汤日日新 SenseNova 企业大装置端点 (api.sensenova.cn/v1): nova 系列, 付费。
+    "sensenova-neo": [
+        "nova-p3|paid",
+        "nova-micro|paid",
+        "nova-pro|paid",
     ],
     # Agnes AI (免费层): 全线模型无限期免费, 故全部标注 |free。
     "agnes-ai": [
