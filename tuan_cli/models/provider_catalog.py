@@ -192,11 +192,11 @@ _A_CHINA_MAINSTREAM: List[ProviderPreset] = [
         docs_url="https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
     ),
     ProviderPreset(
-        name="sensenova",
+        name="sensenova-neo",
         base_url="https://api.sensenova.cn/v1",
         model="nova-p3",
         api_key_env="SENSENOVA_API_KEY",
-        desc="商汤日日新 SenseNova (多模态/大模型)",
+        desc="商汤日日新 SenseNova 企业大装置端点 (api.sensenova.cn, nova-p3/micro/pro 系列, 付费)",
         tier="cheap", free_tier=False, region="cn", category="中国主流",
         recommended_models=["nova-p3", "nova-micro", "nova-pro"],
         docs_url="https://platform.sensenova.cn/dev/api/overview",
@@ -419,7 +419,7 @@ _C_AGGREGATORS: List[ProviderPreset] = [
 ]
 
 # =====================================================================
-# D. 云平台 (4 家, aws-bedrock/azure-openai 已在 B 中)
+# D. 云平台 (azure-openai 已在 B 中, 此处不重复登记; 仅列 B 区之外者)
 # =====================================================================
 
 _D_CLOUD_PLATFORMS: List[ProviderPreset] = [
@@ -472,16 +472,6 @@ _D_CLOUD_PLATFORMS: List[ProviderPreset] = [
         tier="standard", free_tier=False, region="global", category="云平台",
         recommended_models=["anthropic.claude-3-5-sonnet-20241022-v2:0", "meta.llama3-70b-instruct"],
         docs_url="https://docs.aws.amazon.com/bedrock/",
-    ),
-    ProviderPreset(
-        name="azure-openai",
-        base_url="https://your-resource.openai.azure.com/openai/deployments",
-        model="gpt-4o",
-        api_key_env="AZURE_OPENAI_API_KEY",
-        desc="Azure OpenAI (企业级, 私有网络, 合规)",
-        tier="standard", free_tier=False, region="global", category="云平台",
-        recommended_models=["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-        docs_url="https://learn.microsoft.com/azure/ai-services/openai/",
     ),
 ]
 
