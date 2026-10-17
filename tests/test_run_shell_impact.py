@@ -5,7 +5,7 @@
 且明确标注「不可回滚」 (因为快照对命令字符串安全降级, 不会伪造回滚)。
 """
 
-from qingxiaotuan.tools.base import (
+from tuan_cli.tools.base import (
     _MUTATION_EXTRACTORS,
     _build_impact_preview,
 )

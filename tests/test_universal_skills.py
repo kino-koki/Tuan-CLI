@@ -9,7 +9,7 @@ from textwrap import dedent
 
 import pytest
 
-from qingxiaotuan.skills.universal_format import (
+from tuan_cli.skills.universal_format import (
     SkillPackage,
     SkillMdAdapter,
     CursorRulesAdapter,
@@ -27,7 +27,7 @@ from qingxiaotuan.skills.universal_format import (
     batch_import,
     FORMAT_INFO,
 )
-from qingxiaotuan.skills.plugin_sdk import (
+from tuan_cli.skills.plugin_sdk import (
     PluginManifest,
     PluginManager,
     HeadersHelper,

@@ -1,6 +1,6 @@
-# Tuan-CLI (qxt) Architecture Documentation
+# Tuan-CLI (tuan) Architecture Documentation
 
-> Goal: Help new contributors understand "how the kernel works, how safety blocks, how loops switch, how models route" in 10 minutes, lowering the barrier to onboarding and contribution. Companion commands: `qxt others` (capability catalog), `qxt safe` (safety entry), `qxt models` (models and local LLM).
+> Goal: Help new contributors understand "how the kernel works, how safety blocks, how loops switch, how models route" in 10 minutes, lowering the barrier to onboarding and contribution. Companion commands: `tuan others` (capability catalog), `tuan safe` (safety entry), `tuan models` (models and local LLM).
 
 Tuan-CLI is a **microkernel + plugin** architecture Agent CLI. The kernel itself carries no Agent capabilities, only responsible for "plugin registration / service discovery / lifecycle events"; all capabilities (tools, model adapters, memory, skills, safety, routing, loops) are mounted as **plugins**.
 
@@ -60,11 +60,11 @@ One-liner call chain: **Kernel loads plugins → Loop decides how to think → S
 
 ---
 
-## 3. Request Lifecycle (Complete Journey of `qxt run "task"`)
+## 3. Request Lifecycle (Complete Journey of `tuan run "task"`)
 
 ```
 [1] Startup (fast_start / main)
-    └─ load_dotenv() loads secrets from ~/.qingxiaotuan/.env into environment
+    └─ load_dotenv() loads secrets from ~/.tuan/.env into environment
     └─ build_parser() parses subcommands (run / dev / agent / safe / models / others ...)
 
 [2] Kernel starts and activates plugins
@@ -88,7 +88,7 @@ One-liner call chain: **Kernel loads plugins → Loop decides how to think → S
        · WhitelistManager hit ? → pass through directly (user added locally)
        · Pass → execute; block → SecurityEventBus.emit_command_blocked(cmd, reason)
     └─ MCP calls go through security_gate.decide_mcp_tool(); file writes through decide_file_write()
-    └─ Audit events asynchronously persisted to ~/.qingxiaotuan/security-audit.jsonl
+    └─ Audit events asynchronously persisted to ~/.tuan/security-audit.jsonl
 
 [6] Router escalates/de-escalates models (parallel with Loop, per-round decision)
     └─ AutoRouter.observe_turn() tracks "consecutive failure rounds"
@@ -137,18 +137,18 @@ One-liner call chain: **Kernel loads plugins → Loop decides how to think → S
 - Files:
   - `ext/safety_engine.py` — Redline determination (`is_redline` / `is_hard_redline` / `score`) and pattern library (`_CRITICAL_PATTERNS` / `_HIGH_PATTERNS` / `_MEDIUM_PATTERNS`).
   - `core/whitelist.py` — `WhitelistManager`: user-local pass-through list.
-  - `core/security_bus.py` — `SecurityEventBus`: event bus + JSONL persistence (default: `~/.qingxiaotuan/security-audit.jsonl`).
+  - `core/security_bus.py` — `SecurityEventBus`: event bus + JSONL persistence (default: `~/.tuan/security-audit.jsonl`).
   - `ext/security_gate.py` — Unified gate: `decide_shell` / `decide_mcp_tool` / `decide_file_write`.
   - `core/blacklist_override.py` — **User-local blacklist override** (see below).
   - `tools/shell.py` — `_pre_exec_guard`: actual interception point before every shell tool execution.
 - Two-layer determination:
   1. **Hard redline** (`is_hard_redline`): OS/filesystem-level destructive operations (rm -rf /, dd, mkfs, force push, shutdown etc. tokenized detection). **Never auto-executes** even in YOLO mode.
   2. **Comprehensive redline** (`is_redline`): builds on hard redline with `_CRITICAL_PATTERNS` regex library (including SQL destructive ops DROP/DELETE/TRUNCATE, classified as "confirmable critical level", allowed after multi-stage confirmation).
-- **Audit logging**: blocked/allowed events written to `security-audit.jsonl` via `emit_command_blocked` / `emit_command_allowed`, viewable with `qxt safe status`.
-- **User-local blacklist override (`blacklist_override`)**: some built-in patterns may be false positives or trusted in user environments. Users declare pattern label keywords to suppress in `~/.qingxiaotuan/blacklist-override.json`, and `is_redline` / `is_hard_redline` / `score` will skip these patterns.
+- **Audit logging**: blocked/allowed events written to `security-audit.jsonl` via `emit_command_blocked` / `emit_command_allowed`, viewable with `tuan safe status`.
+- **User-local blacklist override (`blacklist_override`)**: some built-in patterns may be false positives or trusted in user environments. Users declare pattern label keywords to suppress in `~/.tuan/blacklist-override.json`, and `is_redline` / `is_hard_redline` / `score` will skip these patterns.
   - Security boundary: **only suppresses regex pattern library entries**; irreversible/OS-level tokenized hard redlines (rm -rf / force push / shutdown ...) have independent determination, **never** affected by overrides.
-  - Usage: `qxt safe reduce <keyword>` (e.g., `qxt safe reduce format`), `qxt safe restore <keyword>`, `qxt safe blacklist` to view the list.
-- Whitelist: `qxt safe allow <command>` adds trusted commands (redline commands rejected); `qxt safe deny` removes.
+  - Usage: `tuan safe reduce <keyword>` (e.g., `tuan safe reduce format`), `tuan safe restore <keyword>`, `tuan safe blacklist` to view the list.
+- Whitelist: `tuan safe allow <command>` adds trusted commands (redline commands rejected); `tuan safe deny` removes.
 - Multi-stage confirmation: extremely high risk 5 times, high risk 3 times confirmation (see `ext/security_gate.py`), including TOCTOU script detection.
 
 ### 4.5 Router (Model Routing)
@@ -163,7 +163,7 @@ One-liner call chain: **Kernel loads plugins → Loop decides how to think → S
   - `RouteSession` tracks `stuck` (consecutive failure rounds) across turns.
   - `plan_execute`: planning uses strong model (difficulty 10), execution uses cheap model (difficulty 2).
   - `escalate_on_stuck`: cheap model consecutive failures reach threshold → escalate to strong model for rescue, then de-escalate back.
-- Local models: `models/provider_catalog.py` presets `ollama` (:11434), `llamacpp` (:8080/v1) etc. self-hosted providers; `models/openai_compat.py` allows empty key for localhost endpoints (local LLMs don't need keys); `models/offline.py`'s `detect_local_models()` probes local Ollama + llama.cpp models (`qxt models local` invocation).
+- Local models: `models/provider_catalog.py` presets `ollama` (:11434), `llamacpp` (:8080/v1) etc. self-hosted providers; `models/openai_compat.py` allows empty key for localhost endpoints (local LLMs don't need keys); `models/offline.py`'s `detect_local_models()` probes local Ollama + llama.cpp models (`tuan models local` invocation).
 
 ---
 
@@ -182,7 +182,7 @@ is_redline(cmd) / is_hard_redline(cmd)
   └─ Pass                      → Execute
   │
   ▼  SecurityEventBus.emit_command_blocked(cmd, reason)
-persist → ~/.qingxiaotuan/security-audit.jsonl   ← Audit log
+persist → ~/.tuan/security-audit.jsonl   ← Audit log
   │
   ▼  LoopRegistry.set_current(name)              ← Loop switch (strategy hot-swap)
 Agent runs next round with new Loop
@@ -203,28 +203,28 @@ Four stages can each be independently unit-tested; the combination is the "safet
 | --- | --- | --- |
 | New Loop strategy | Subclass `LoopProvider`, `register` in `LoopPlugin.activate` | `core/loop_provider.py` |
 | New security pattern | Add `(regex, label)` to `_CRITICAL/_HIGH/_MEDIUM_PATTERNS`; redline commands reject whitelist addition | `ext/safety_engine.py` |
-| Local blacklist override | User-side `qxt safe reduce <label_keyword>`, no code changes needed | `core/blacklist_override.py` |
+| Local blacklist override | User-side `tuan safe reduce <label_keyword>`, no code changes needed | `core/blacklist_override.py` |
 | New model provider | Add `ProviderPreset` to `provider_catalog.py` (with `category="local"` for local deployment) | `models/provider_catalog.py` |
 | New plugin capability | `@plugin("svc", provides=[...], requires=[...])` + `provide` in `activate` | `core/kernel.py` |
-| New CLI subcommand | Add subparser in `cli/parser.py` + `_resolve_func` branch + `cli/cmd_*.py` | `qingxiaotuan/cli/` |
+| New CLI subcommand | Add subparser in `cli/parser.py` + `_resolve_func` branch + `cli/cmd_*.py` | `tuan_cli/cli/` |
 
 ---
 
 ## 7. Localization & Configuration
 
-- Home directory: `~/.qingxiaotuan` (can be overridden with environment variable `QXT_HOME` for test isolation).
+- Home directory: `~/.tuan` (can be overridden with environment variable `TUAN_HOME` for test isolation).
 - Key files:
-  - `security-audit.jsonl` — Security audit log (viewable via `qxt safe status`).
+  - `security-audit.jsonl` — Security audit log (viewable via `tuan safe status`).
   - `whitelist.json` — Whitelist.
   - `blacklist-override.json` — Local blacklist override declarations.
   - `.env` — Centralized secret management (permissions should be 600, not in version control).
-- Local models: After installing Ollama (:11434) or llama.cpp (:8080/v1), use `qxt models local` to probe, `qxt models set ollama <model>` / `qxt models set llamacpp <model>` to connect.
+- Local models: After installing Ollama (:11434) or llama.cpp (:8080/v1), use `tuan models local` to probe, `tuan models set ollama <model>` / `tuan models set llamacpp <model>` to connect.
 
 ---
 
 ## 8. Related Documentation
-- `qxt help` — Complete subcommands and parameters.
-- `qxt others` — Friendly capability catalog (newcomer entry point).
-- `qxt safe` — Safety entry (status / whitelist / blacklist override / update).
-- `qxt models` — Models and local LLM management.
+- `tuan help` — Complete subcommands and parameters.
+- `tuan others` — Friendly capability catalog (newcomer entry point).
+- `tuan safe` — Safety entry (status / whitelist / blacklist override / update).
+- `tuan models` — Models and local LLM management.
 - `SECURITY.md` · `CONTRIBUTING.md` · `CHANGELOG.md` — Security policy / contribution guidelines / changelog.

@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""CLI 层测试: qxt safe bench / qxt safe report (一键复现安全基准 + HTML 报告)。"""
+"""CLI 层测试: tuan safe bench / tuan safe report (一键复现安全基准 + HTML 报告)。"""
 from __future__ import annotations
 
 import json
 import types
 from pathlib import Path
 
-from qingxiaotuan.cli import cmd_safe
-from qingxiaotuan.cli import parser as cli_parser
+from tuan_cli.cli import cmd_safe
+from tuan_cli.cli import parser as cli_parser
 
 
 def _run_parse(argv: list[str]):

@@ -5,9 +5,9 @@
 
 import json
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse, ToolCall
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.models.base import ModelAdapter, ModelResponse, ToolCall
 
 
 class MockModel(ModelAdapter):
@@ -25,7 +25,7 @@ class MockModel(ModelAdapter):
         return resp
 
 
-def _build_agent(tmp_path, qxt_home, script, nudge_interval=1):
+def _build_agent(tmp_path, tuan_home, script, nudge_interval=1):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = nudge_interval
@@ -34,8 +34,8 @@ def _build_agent(tmp_path, qxt_home, script, nudge_interval=1):
     return Agent(kernel=kernel, config=config, workspace=str(tmp_path), confirm=lambda _p: True)
 
 
-def test_react_loop_executes_tool_and_finishes(tmp_path, qxt_home):
-    agent = _build_agent(tmp_path, qxt_home, [
+def test_react_loop_executes_tool_and_finishes(tmp_path, tuan_home):
+    agent = _build_agent(tmp_path, tuan_home, [
         ModelResponse(tool_calls=[ToolCall(
             id="c1", name="write_file",
             arguments=json.dumps({"path": "out.txt", "content": "hello"}))]),
@@ -50,8 +50,8 @@ def test_react_loop_executes_tool_and_finishes(tmp_path, qxt_home):
     assert any(m.get("role") == "tool" for m in agent.messages)
 
 
-def test_skill_nudge_triggers_distillation(tmp_path, qxt_home):
-    agent = _build_agent(tmp_path, qxt_home, [
+def test_skill_nudge_triggers_distillation(tmp_path, tuan_home):
+    agent = _build_agent(tmp_path, tuan_home, [
         ModelResponse(content="任务完成"),
         # nudge 轮: 模型决定蒸馏技能
         ModelResponse(tool_calls=[ToolCall(id="s1", name="skill_save", arguments=json.dumps({
@@ -67,8 +67,8 @@ def test_skill_nudge_triggers_distillation(tmp_path, qxt_home):
     assert "write_file" in skill.body
 
 
-def test_session_event_stream_written(tmp_path, qxt_home):
-    agent = _build_agent(tmp_path, qxt_home, [
+def test_session_event_stream_written(tmp_path, tuan_home):
+    agent = _build_agent(tmp_path, tuan_home, [
         ModelResponse(tool_calls=[ToolCall(
             id="c1", name="list_dir", arguments="{}")]),
         ModelResponse(content="done"),
@@ -84,7 +84,7 @@ def test_session_event_stream_written(tmp_path, qxt_home):
     assert "assistant" in types
 
 
-def test_dangerous_tool_needs_confirmation(tmp_path, qxt_home):
+def test_dangerous_tool_needs_confirmation(tmp_path, tuan_home):
     denied = []
     kernel = build_kernel()
     config = kernel.require("config")
@@ -104,8 +104,8 @@ def test_dangerous_tool_needs_confirmation(tmp_path, qxt_home):
     assert "已拒绝" in tool_msgs[0]["content"]
 
 
-def test_context_compression(tmp_path, qxt_home):
-    agent = _build_agent(tmp_path, qxt_home, [ModelResponse(content="ok")], nudge_interval=0)
+def test_context_compression(tmp_path, tuan_home):
+    agent = _build_agent(tmp_path, tuan_home, [ModelResponse(content="ok")], nudge_interval=0)
     # 用新上下文管理器: 把预算调到极低, 触发智能压缩
     agent.config.data["context"]["budget_tokens"] = 10
     agent.config.data["context"]["keep_recent"] = 4

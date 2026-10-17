@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import threading
 
-from qingxiaotuan.config import Config
-from qingxiaotuan.core.retry import RateLimiter, RetryPolicy
+from tuan_cli.config import Config
+from tuan_cli.core.retry import RateLimiter, RetryPolicy
 
 
 class _Clock:

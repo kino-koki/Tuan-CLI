@@ -1,10 +1,10 @@
 """自动技能蒸馏闭环测试: 事件流 → 经验 → 技能 → 反馈。"""
 import time
 
-from qingxiaotuan.core.kernel import Kernel
-from qingxiaotuan.config.loader import Config
-from qingxiaotuan.config.plugin import ConfigPlugin
-from qingxiaotuan.self_improve.plugin import SelfImprovePlugin
+from tuan_cli.core.kernel import Kernel
+from tuan_cli.config.loader import Config
+from tuan_cli.config.plugin import ConfigPlugin
+from tuan_cli.self_improve.plugin import SelfImprovePlugin
 
 
 class _FakeSessionStore:

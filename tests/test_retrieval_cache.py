@@ -2,8 +2,8 @@
 """ContextForge 磁盘索引缓存测试: save/load/is_fresh + engine 跨进程复用。"""
 import time
 
-from qingxiaotuan.codedev.engine import CodeDevEngine
-from qingxiaotuan.codedev.retrieval import CodeIndex
+from tuan_cli.codedev.engine import CodeDevEngine
+from tuan_cli.codedev.retrieval import CodeIndex
 
 
 def _seed_repo(root, extra=""):
@@ -22,7 +22,7 @@ def test_save_load_roundtrip(tmp_path):
     _seed_repo(tmp_path)
     idx = CodeIndex().build(tmp_path)
     assert idx.files_scanned == 2
-    cache = tmp_path / ".qxt" / "code_index.json"
+    cache = tmp_path / ".tuan" / "code_index.json"
     assert idx.save(cache) is True
     idx2 = CodeIndex.load(cache)
     assert idx2 is not None
@@ -61,7 +61,7 @@ def test_engine_uses_disk_cache(tmp_path):
     r1 = e1.forge_context("加法", top_k=2)
     assert r1.hits and r1.hits[0].symbol.name == "add"
     # 磁盘缓存文件已生成
-    disk = tmp_path / ".qxt" / "code_index.json"
+    disk = tmp_path / ".tuan" / "code_index.json"
     assert disk.exists()
     # 新引擎实例 (跨进程模拟) 直接复用磁盘索引
     e2 = CodeDevEngine(workspace=str(tmp_path), cache_index=False)

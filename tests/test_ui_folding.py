@@ -1,7 +1,7 @@
 """UI 增强: 长输出折叠预览 + token/上下文状态栏回写。"""
 
-from qingxiaotuan.ui.repl import UI
-from qingxiaotuan.ui.mascot import IDLE
+from tuan_cli.ui.repl import UI
+from tuan_cli.ui.mascot import IDLE
 
 
 def _ui() -> UI:
@@ -97,7 +97,7 @@ def test_status_bar_reflects_tokens():
             text=True,
         ).strip()
     except Exception:
-        # 与 qingxiaotuan/ui/repl.py 的 _detect_branch 回退值保持一致:
+        # 与 tuan_cli/ui/repl.py 的 _detect_branch 回退值保持一致:
         # git 不可用/超时时状态栏回退显示 main
         branch = "main"
     assert branch in rendered  # git 分支

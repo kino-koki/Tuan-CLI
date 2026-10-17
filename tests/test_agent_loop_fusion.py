@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.core.agent_loop_fusion import (
+from tuan_cli.core.agent_loop_fusion import (
     classify_transient,
     resolve_max_iterations,
     retry_step,

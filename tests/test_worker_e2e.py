@@ -14,7 +14,7 @@ from pathlib import Path
 
 from conftest import _tool_call  # noqa: F401  (共享 mock 端点)
 
-from qingxiaotuan.core.background_store import BackgroundStore
+from tuan_cli.core.background_store import BackgroundStore
 
 
 def _write_config(home: Path, port: int) -> None:
@@ -24,7 +24,7 @@ def _write_config(home: Path, port: int) -> None:
         "  provider: openai-compatible\n"
         f"  base_url: http://127.0.0.1:{port}/v1\n"
         "  model: mock\n"
-        "  api_key_env: QXT_API_KEY\n",
+        "  api_key_env: TUAN_API_KEY\n",
         encoding="utf-8",
     )
 
@@ -39,7 +39,7 @@ def _wait_status(store: BackgroundStore, job_id: str, timeout: float = 60.0) -> 
     raise TimeoutError(f"worker 未在 {timeout}s 内结束: {store.get(job_id)}")
 
 
-def test_worker_subprocess_runs_task_to_done(tmp_path, qxt_home, mock_server):
+def test_worker_subprocess_runs_task_to_done(tmp_path, tuan_home, mock_server):
     ws = tmp_path / "ws"
     ws.mkdir()
     (ws / "note.txt").write_text("后台任务数据", encoding="utf-8")
@@ -55,11 +55,11 @@ def test_worker_subprocess_runs_task_to_done(tmp_path, qxt_home, mock_server):
     job = store.create("worker-e2e-001", "读取 note.txt", str(ws), "default")
 
     env = dict(os.environ)
-    env["QXT_HOME"] = str(home)
-    env["QXT_API_KEY"] = "test-key"
+    env["TUAN_HOME"] = str(home)
+    env["TUAN_API_KEY"] = "test-key"
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent)
     proc = subprocess.run(
-        [sys.executable, "-m", "qingxiaotuan.core.background_worker", job["job_id"], str(home)],
+        [sys.executable, "-m", "tuan_cli.core.background_worker", job["job_id"], str(home)],
         cwd=str(ws), env=env, capture_output=True, text=True, timeout=180,
     )
 
@@ -76,7 +76,7 @@ def test_worker_subprocess_runs_task_to_done(tmp_path, qxt_home, mock_server):
         assert any("job.done" in line for line in Path(session).read_text(encoding="utf-8").splitlines())
 
 
-def test_worker_subprocess_marks_failed_on_error(tmp_path, qxt_home, mock_server):
+def test_worker_subprocess_marks_failed_on_error(tmp_path, tuan_home, mock_server):
     """mock 端返回 500, worker 应把任务标记为 failed 并返回非零。"""
     ws = tmp_path / "ws"
     ws.mkdir()
@@ -88,11 +88,11 @@ def test_worker_subprocess_marks_failed_on_error(tmp_path, qxt_home, mock_server
     job = store.create("worker-e2e-002", "必然失败的任务", str(ws), "default")
 
     env = dict(os.environ)
-    env["QXT_HOME"] = str(home)
-    env["QXT_API_KEY"] = "test-key"
+    env["TUAN_HOME"] = str(home)
+    env["TUAN_API_KEY"] = "test-key"
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent)
     proc = subprocess.run(
-        [sys.executable, "-m", "qingxiaotuan.core.background_worker", job["job_id"], str(home)],
+        [sys.executable, "-m", "tuan_cli.core.background_worker", job["job_id"], str(home)],
         cwd=str(ws), env=env, capture_output=True, text=True, timeout=180,
     )
 

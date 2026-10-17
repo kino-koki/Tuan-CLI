@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from qingxiaotuan.core.security_utils import (
+from tuan_cli.core.security_utils import (
     REDACT_TAG, is_sensitive_key, mask_sensitive_dict,
     redact_nested, redact_sensitive,
 )
@@ -56,7 +56,7 @@ def test_is_sensitive_and_mask_dict():
 # ---------------------------------------------------------------- bus + 导出
 
 def test_bus_emit_redacts_payload():
-    from qingxiaotuan.core.security_bus import SecurityEvent, SecurityEventBus, SecurityEventType
+    from tuan_cli.core.security_bus import SecurityEvent, SecurityEventBus, SecurityEventType
     bus = SecurityEventBus()
     ev = SecurityEvent(
         event_type=SecurityEventType.COMMAND_BLOCKED, timestamp=1.0,
@@ -69,8 +69,8 @@ def test_bus_emit_redacts_payload():
 
 
 def test_export_formatters_redact():
-    from qingxiaotuan.core.security_bus import SecurityEvent
-    from qingxiaotuan.harden import audit_export as ae
+    from tuan_cli.core.security_bus import SecurityEvent
+    from tuan_cli.harden import audit_export as ae
     ev = SecurityEvent(event_type="cmd.blocked", timestamp=1.0,
                        payload={"command": f"echo password={_SKEY}"},
                        source="x", severity="high")
@@ -80,9 +80,9 @@ def test_export_formatters_redact():
         assert REDACT_TAG in rendered, fmt
 
 
-def test_mcp_audit_redacts(qxt_home):
-    from qingxiaotuan.tools.mcp.audit import MCPAuditStore
-    store = MCPAuditStore(qxt_home / "mcp-audit.jsonl")
+def test_mcp_audit_redacts(tuan_home):
+    from tuan_cli.tools.mcp.audit import MCPAuditStore
+    store = MCPAuditStore(tuan_home / "mcp-audit.jsonl")
     store.record({"server": "s", "tool": "t", "arguments": {"key": _SKEY}})
     rows = store.read(5)
     assert rows and _SKEY not in json.dumps(rows)
@@ -90,8 +90,8 @@ def test_mcp_audit_redacts(qxt_home):
 
 # ---------------------------------------------------------------- config 遮蔽
 
-def test_config_mask_value(qxt_home):
-    from qingxiaotuan.cli.cmd_config import _mask_value
+def test_config_mask_value(tuan_home):
+    from tuan_cli.cli.cmd_config import _mask_value
     assert _mask_value(_SKEY) != _SKEY and REDACT_TAG in _mask_value(_SKEY)
     assert _mask_value("") == ""
     assert _mask_value({"a": 1}) == REDACT_TAG

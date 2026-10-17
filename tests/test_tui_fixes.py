@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.ui.tui_bridge import TuiUI  # noqa: E402
+from tuan_cli.ui.tui_bridge import TuiUI  # noqa: E402
 
 
 # ---------------------------------------------------------------- TUI UI 桥接
@@ -47,8 +47,8 @@ class TestTuiBridge:
         assert b.confirm("确认?") is True
 
     def test_attach_ui_replaces_singleton(self):
-        from qingxiaotuan.cli import _ui_singleton
-        from qingxiaotuan.cli.cmd_chat import _prepare_agent  # noqa: F401 确保可导入
+        from tuan_cli.cli import _ui_singleton
+        from tuan_cli.cli.cmd_chat import _prepare_agent  # noqa: F401 确保可导入
 
         class FakeQxtTUI:
             def __init__(self):
@@ -58,7 +58,7 @@ class TestTuiBridge:
                 self.called = True
 
         # 直接测 QxtTUI.attach_ui 存在且可调用 (不启动全屏)
-        from qingxiaotuan.tui.tui import QxtTUI
+        from tuan_cli.tui.tui import QxtTUI
         assert hasattr(QxtTUI, "attach_ui")
         assert hasattr(QxtTUI, "__init__")
         # 单例替换路径: attach_ui 内部会把 _ui_singleton._ui 换成 TuiUI
@@ -70,15 +70,15 @@ class TestTuiBridge:
 # ---------------------------------------------------------------- /web 横幅
 class TestWebBanner:
     def test_serve_forever_accepts_banner(self):
-        from qingxiaotuan.web.server import WebServer
+        from tuan_cli.web.server import WebServer
         import inspect
         sig = inspect.signature(WebServer.serve_forever)
         assert "banner" in sig.parameters
 
     def test_banner_called_not_print(self, tmp_path, monkeypatch):
         """serve_forever(banner=...) 时横幅走回调, 不打 stdout。"""
-        from qingxiaotuan.app import build_kernel
-        from qingxiaotuan.web.server import WebServer
+        from tuan_cli.app import build_kernel
+        from tuan_cli.web.server import WebServer
 
         kernel = build_kernel()
         srv = WebServer(kernel, str(tmp_path), port=0)
@@ -101,14 +101,14 @@ class TestWebBanner:
 # ---------------------------------------------------------------- slash 补全 meta
 class TestSlashMeta:
     def test_slash_command_meta(self):
-        from qingxiaotuan.cli.cmd_slash import slash_command_meta
+        from tuan_cli.cli.cmd_slash import slash_command_meta
         meta = slash_command_meta()
         assert meta.get("/web", "").startswith("启动本地 Web")
         assert meta.get("/help", "") == "显示帮助"
         assert len(meta) > 15
 
     def test_list_slash_commands_has_meta_keys(self):
-        from qingxiaotuan.cli.cmd_slash import list_slash_commands, slash_command_meta
+        from tuan_cli.cli.cmd_slash import list_slash_commands, slash_command_meta
         names = list_slash_commands()
         meta = slash_command_meta()
         for n in names:
@@ -118,7 +118,7 @@ class TestSlashMeta:
             assert key in meta, key
 
     def test_completer_uses_meta(self):
-        from qingxiaotuan.tui.tui import _SlashCompleter
+        from tuan_cli.tui.tui import _SlashCompleter
 
         c = _SlashCompleter(["/web", "/code"], {"/web": "启动 Web 工作台"})
         items = list(c.get_completions(_FakeDocument("/"), None))
@@ -140,7 +140,7 @@ class TestOverflowGuard:
     """TUI 规范化: 单条日志/流式缓冲/思考全文都有界, 防止巨文本挤爆渲染。"""
 
     def _tui(self):
-        from qingxiaotuan.tui.tui import QxtTUI
+        from tuan_cli.tui.tui import QxtTUI
         return QxtTUI(on_submit=lambda x: None)
 
     def test_append_log_truncates_long_text(self):
@@ -198,7 +198,7 @@ class TestSetReadyAttach:
     """set_ready 必须调用 attach_ui(): slash 命令输出进入渲染层而非直写 stdout。"""
 
     def test_set_ready_attaches_ui(self, monkeypatch):
-        from qingxiaotuan.tui.tui import QxtTUI
+        from tuan_cli.tui.tui import QxtTUI
 
         class _FakeCtx:
             confirm = None

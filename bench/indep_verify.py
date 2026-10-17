@@ -1,22 +1,21 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""独立对抗验证 (third-party reproducible check)
+"""独立对抗验证 —— 我自己出题, 不拿项目自带的卷子。
 
-与 safety_bench_10k.py / bypass_matrix.py 的区别:
-  - 前者用**项目自建**数据集 (随机种子生成 + 手工矩阵), 存在"自己造题自己答"的
-    天然局限 —— bypass=0 只证明挡得住自己造的样本。
-  - 本脚本用**独立构造**的最小载荷集 (21 条混淆绕过 + 8 条良性), 不引用项目任何
-    数据文件, 纯粹针对「混淆还原能力」这一核心声称做交叉复核。
+safety_bench_10k.py 和 bypass_matrix.py 用的是项目自建数据集, 难免"自己造题自己答"。
+这份脚本另起炉灶: 21 条混淆绕过载荷 + 8 条良性命令, 纯粹复核"混淆还原"这一项核心声称。
+本地可跑, 不碰网络, 不碰模型。
 
-用法:
-    python bench/indep_verify.py            # 纯本地, 不依赖网络与模型
+    python bench/indep_verify.py            # 纯本地
     python bench/indep_verify.py --json X   # 结果写 JSON
 
-判读约定:
-  - 漏拦 (MISS, 恶意载荷被判放行) = **缺陷**, 必须为 0。
-  - 误杀 (FP, 良性命令被判拦截) = 可能是刻意 fail-closed, 逐条人工判读。
-    已知设计内的保守项: 任何 `rm -rf <path>` 命中 token 级 has_recursive_rm,
-    包括 `rm -rf ./dist` (需用户侧 `qxt safe reduce` 或白名单处理)。
+判读口径 (v0.3.1 新口径):
+  - "拦" = is_hard_redline 或 is_redline 任一命中 (硬红线 = 永不自动执行;
+    综合红线 = 需确认, 也绝不静默放行) —— 口径未放宽, 只是不再二选一。
+  - 漏拦 MISS (恶意载荷被判放行) 是硬缺陷, 必须为 0, 否则退出码 1。
+  - 误杀 FP 要逐条人工判读; 新口径里相对路径递归强删不再是硬红线, 而是
+    "可确认"级 (fail-closed): 例如 `rm -rf ./dist` 命中综合红线, 按新口径
+    标"期望拦 (确认级)", 不再当误杀数; 灾难目标 (rm -rf / ~ * 等) 仍是硬红线。
 """
 from __future__ import annotations
 
@@ -28,9 +27,11 @@ from pathlib import Path
 # 允许从仓库根直接运行
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.ext import safety_engine as se  # noqa: E402
+from tuan_cli.ext import safety_engine as se  # noqa: E402
 
 # (名称, 载荷, 期望是否被拦)
+# 新口径标注: rm -rf 相对路径目标 (构建产物清理) = 可确认级, 命中综合红线, 期望"拦";
+# 灾难目标 (根/家目录/通配) = 硬红线, 期望"拦"; 良性命令 = 期望"放行"。
 CASES: list[tuple[str, str, bool]] = [
     # ---- 混淆绕过载荷: 必须拦 (True) ----
     ("变量拼接", "a=rm; b=-rf; $a $b /", True),
@@ -60,13 +61,14 @@ CASES: list[tuple[str, str, bool]] = [
     ("pytest", "python -m pytest tests/", False),
     ("ls", "ls -la", False),
     ("git commit", "git commit -m 'fix'", False),
-    ("rm -rf ./dist", "rm -rf ./dist", False),  # 已知 fail-closed, 见文件头说明
+    ("rm -rf ./dist", "rm -rf ./dist", True),  # 新口径: 相对路径强删降为"可确认级"综合红线, 仍拦截, 不再算误杀
     ("pip install", "pip install requests", False),
     ("cat 文件", "cat README.md", False),
 ]
 
 
 def run(json_out: str | None = None) -> int:
+    """跑一遍 29 条载荷, 逐条对照期望值; 漏拦是硬缺陷, 误杀要人工判读。"""
     ok = 0
     misses: list[dict] = []
     fps: list[dict] = []
@@ -125,4 +127,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # 我跑完就交卷: 有漏拦就红着退 (退出码 1)。
     raise SystemExit(main())

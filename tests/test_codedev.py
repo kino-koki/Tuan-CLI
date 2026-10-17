@@ -2,12 +2,12 @@
 
 import pytest
 
-from qingxiaotuan.codedev import (
+from tuan_cli.codedev import (
     CodeDevEngine, CodeIndex, Verifier, Decomposer, DevSpec,
 )
-from qingxiaotuan.codedev.verify import _parse, Diagnostic
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.tools.base import ToolContext
+from tuan_cli.codedev.verify import _parse, Diagnostic
+from tuan_cli.app import build_kernel
+from tuan_cli.tools.base import ToolContext
 
 
 def _make_project(root):
@@ -162,7 +162,7 @@ def test_codedev_service_and_tools_registered():
         assert n in names, f"{n} 未注册"
 
 
-def test_codedev_retrieve_tool_handler(tmp_path, qxt_home):
+def test_codedev_retrieve_tool_handler(tmp_path, tuan_home):
     _make_project(tmp_path)
     kernel = build_kernel()
     reg = kernel.require("tool_registry")

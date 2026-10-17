@@ -22,7 +22,7 @@ pytest tests/ -q
 ## 架构速览
 
 ```
-qingxiaotuan/
+tuan_cli/
   app.py            内核装配 (build_kernel) 与 Agent 工厂 (create_agent)
   core/             agent(ReAct 循环) / prompts / context / subagents / background / sandbox / retry / swarm
   models/           模型适配层: openai_compat / anthropic / router(运行时热切换) / provider_catalog / plugin
@@ -35,7 +35,7 @@ qingxiaotuan/
   cron/             定时任务 (持久化调度 + 常驻守护进程)
   audit/            审计日志
   context/          上下文构建与 codebase 地图
-  cli/              qxt 命令行入口与子命令
+  cli/              tuan 命令行入口与子命令
   ui/               终端界面 (Rich REPL / 全屏 TUI / 吉祥物 / 共享主题 theme.py)
 ```
 
@@ -45,7 +45,7 @@ qingxiaotuan/
 
 1. Fork 并切出特性分支：`git checkout -b feat/your-feature`
 2. 写代码 + **补测试**（新功能必须有对应离线测试）
-3. 跑通 `pytest tests/ -q` 与 `qxt config validate`
+3. 跑通 `pytest tests/ -q` 与 `tuan config validate`
 4. 提交信息清晰说明「为什么」：`feat: 支持 Claude 网关热切换`
 5. 发起 PR，描述动机与测试覆盖
 
@@ -58,7 +58,7 @@ qingxiaotuan/
 
 ## 报告问题
 
-- Bug：开 Issue，附复现步骤、`qxt doctor` 输出、`qxt config dump` 脱敏版
+- Bug：开 Issue，附复现步骤、`tuan doctor` 输出、`tuan config dump` 脱敏版
 - 安全漏洞：**请勿公开 Issue**，按 [SECURITY.md](./SECURITY.md) 通过 GitHub 私密漏洞报告提交
 
 ## 行为准则

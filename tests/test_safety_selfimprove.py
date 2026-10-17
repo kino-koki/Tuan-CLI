@@ -8,14 +8,14 @@ import json
 
 import pytest
 
-from qingxiaotuan.core.ipc_client import ExternalEngineManager
-from qingxiaotuan.core.kernel import Kernel
-from qingxiaotuan.config.loader import Config
-from qingxiaotuan.config.plugin import ConfigPlugin
-from qingxiaotuan.self_improve.plugin import SelfImprovePlugin
-from qingxiaotuan.self_improve.reflector import Reflector, Experience
-from qingxiaotuan.self_improve.rulegen import RuleGenerator
-from qingxiaotuan.self_improve.skillgen import SkillGenerator
+from tuan_cli.core.ipc_client import ExternalEngineManager
+from tuan_cli.core.kernel import Kernel
+from tuan_cli.config.loader import Config
+from tuan_cli.config.plugin import ConfigPlugin
+from tuan_cli.self_improve.plugin import SelfImprovePlugin
+from tuan_cli.self_improve.reflector import Reflector, Experience
+from tuan_cli.self_improve.rulegen import RuleGenerator
+from tuan_cli.self_improve.skillgen import SkillGenerator
 
 AVAIL = set(ExternalEngineManager().list_engines())
 
@@ -124,7 +124,7 @@ def test_skillgen_draft_created(tmp_path):
     assert "ext_search" in content
 
 
-def test_self_improve_plugin_service(qxt_home):
+def test_self_improve_plugin_service(tuan_home):
     k = _kernel_with_events()
     svc = k.get("self_improve")
     assert svc is not None

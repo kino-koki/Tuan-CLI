@@ -2,10 +2,10 @@
 
 import json
 
-from qingxiaotuan.core.kernel import Kernel
-from qingxiaotuan.config import Config
-from qingxiaotuan.tools import ToolRegistryPlugin, builtin_tool_plugins
-from qingxiaotuan.tools.base import ToolContext
+from tuan_cli.core.kernel import Kernel
+from tuan_cli.config import Config
+from tuan_cli.tools import ToolRegistryPlugin, builtin_tool_plugins
+from tuan_cli.tools.base import ToolContext
 
 
 def _kernel_with_tools():

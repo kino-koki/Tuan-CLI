@@ -9,7 +9,7 @@ import threading
 
 from prompt_toolkit.layout.processors import BeforeInput
 
-from qingxiaotuan.ui.fullscreen import FullScreenTUI
+from tuan_cli.ui.fullscreen import FullScreenTUI
 
 
 def _tui():
@@ -41,7 +41,7 @@ def test_fullscreen_tui_renders_mascot_states():
 
     图标取自实现自身的映射表, 避免字形改版后断言再次过期。
     """
-    from qingxiaotuan.ui.mascot import Mascot
+    from tuan_cli.ui.mascot import Mascot
 
     tui = _tui()
     for state in ("idle", "thinking", "working", "alert", "done"):

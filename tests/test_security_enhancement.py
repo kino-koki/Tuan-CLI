@@ -15,7 +15,7 @@ class TestVerifyLoopConfig:
     """测试 verify_loop 默认配置。"""
 
     def test_verify_config_in_defaults(self):
-        from qingxiaotuan.config.defaults import DEFAULT_CONFIG
+        from tuan_cli.config.defaults import DEFAULT_CONFIG
         assert "verify" in DEFAULT_CONFIG
         verify = DEFAULT_CONFIG["verify"]
         assert verify["enabled"] is True
@@ -23,14 +23,14 @@ class TestVerifyLoopConfig:
         assert verify["max_heal_rounds"] == 3
 
     def test_verify_config_has_checks(self):
-        from qingxiaotuan.config.defaults import DEFAULT_CONFIG
+        from tuan_cli.config.defaults import DEFAULT_CONFIG
         checks = DEFAULT_CONFIG["verify"]["checks"]
         assert "test" in checks
         assert "typecheck" in checks
         assert "lint" in checks
 
     def test_verify_config_from_dict(self):
-        from qingxiaotuan.core.verify_loop import VerifyConfig
+        from tuan_cli.core.verify_loop import VerifyConfig
         cfg = VerifyConfig.from_dict({
             "verify": {
                 "enabled": True,
@@ -50,7 +50,7 @@ class TestSecurityPolicyHotReload:
     """测试安全策略引擎热加载。"""
 
     def _make_engine(self, tmpdir: str = ""):
-        from qingxiaotuan.core.security_policy import SecurityPolicyEngine
+        from tuan_cli.core.security_policy import SecurityPolicyEngine
         return SecurityPolicyEngine(home=Path(tmpdir or tempfile.mkdtemp()))
 
     def test_reload_refreshes_rules(self):
@@ -76,7 +76,7 @@ class TestSecurityPolicyHotReload:
 
     def test_evaluate_content_with_pattern(self):
         engine = self._make_engine()
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         engine.add_rule(PolicyRule(
             id="no_dangerous_code",
             name="禁止危险代码",
@@ -92,7 +92,7 @@ class TestSecurityPolicyHotReload:
 
     def test_evaluate_file_write_content(self):
         engine = self._make_engine()
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         engine.add_rule(PolicyRule(
             id="no_api_key",
             name="禁止写入 API 密钥",
@@ -113,7 +113,7 @@ class TestMCPInjectionEnhanced:
     """测试 MCP 注入检测增强。"""
 
     def _make_guard(self):
-        from qingxiaotuan.tools.mcp.security import MCPSecurityGuard
+        from tuan_cli.tools.mcp.security import MCPSecurityGuard
         return MCPSecurityGuard()
 
     def test_injection_detection_works(self):
@@ -166,7 +166,7 @@ class TestCrossSessionSearch:
     """测试跨会话搜索和比较。"""
 
     def _make_resolver(self, tmpdir: str):
-        from qingxiaotuan.core.cross_session import CrossSessionResolver
+        from tuan_cli.core.cross_session import CrossSessionResolver
         return CrossSessionResolver(home=Path(tmpdir))
 
     def _create_session(self, tmpdir: str, sid: str, events: list):
@@ -220,7 +220,7 @@ class TestPathSafetyEnhanced:
     """测试路径安全增强。"""
 
     def test_safe_join_complex(self):
-        from qingxiaotuan.core.path_safety import PathSafety
+        from tuan_cli.core.path_safety import PathSafety
         safety = PathSafety(workspace="/home/user/project")
 
         # 正常拼接
@@ -237,7 +237,7 @@ class TestPathSafetyEnhanced:
         assert result is None
 
     def test_validate_path_absolute_outside(self):
-        from qingxiaotuan.core.path_safety import PathSafety
+        from tuan_cli.core.path_safety import PathSafety
         safety = PathSafety(workspace="/home/user/project")
 
         # 绝对路径在工作区内
@@ -249,7 +249,7 @@ class TestPathSafetyEnhanced:
         assert r.denied
 
     def test_sensitive_patterns_extended(self):
-        from qingxiaotuan.core.path_safety import PathSafety
+        from tuan_cli.core.path_safety import PathSafety
         safety = PathSafety(workspace="/home/user/project")
 
         # .env 文件
@@ -270,7 +270,7 @@ class TestPathSafetyEnhanced:
 
     def test_boundary_prefix_confusion_denied(self):
         """工作区 /proj 不得被 /proj-evil 前缀混淆绕过 (回归: 裸 startswith 漏洞)。"""
-        from qingxiaotuan.core.path_safety import PathSafety
+        from tuan_cli.core.path_safety import PathSafety
         safety = PathSafety(workspace="/home/user/project")
 
         # 前缀混淆兄弟目录: 必须以边界分隔符判定
@@ -286,7 +286,7 @@ class TestPathSafetyEnhanced:
         assert safety.validate_path("/home/user/project/src/a.py", action="write").safe
 
     def test_safe_join_base_prefix_confusion(self):
-        from qingxiaotuan.core.path_safety import PathSafety
+        from tuan_cli.core.path_safety import PathSafety
         safety = PathSafety(workspace="/home/user/project")
 
         # base 为 /home/user/project 时, 拼接结果必须是其真子路径;

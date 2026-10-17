@@ -1,21 +1,21 @@
 """测试: 联网/搜索配置命令 (cmd_network) + 别名解析。
 
 覆盖:
-- `qxt network configuration` / `qxt net con` 等别名均解析到 cmd_network;
+- `tuan network configuration` / `tuan net con` 等别名均解析到 cmd_network;
 - action 简写 (裸 key 视为 get);
 - 不接网络, 只验证参数路由与 Command 对象行为。
 """
 
 from __future__ import annotations
 
-from qingxiaotuan.cli.cmd_network import (
+from tuan_cli.cli.cmd_network import (
     _KNOWN_ACTIONS,
     _NET_META,
     _ORDER,
     _coerce,
     cmd_network,
 )
-from qingxiaotuan.cli.parser import build_parser
+from tuan_cli.cli.parser import build_parser
 
 
 class _Args:
@@ -57,7 +57,7 @@ def test_cmd_network_get_shortcut(monkeypatch):
         def set_user(self, key, value):  # pragma: no cover
             pass
 
-    monkeypatch.setattr("qingxiaotuan.cli.cmd_network.Config",
+    monkeypatch.setattr("tuan_cli.cli.cmd_network.Config",
                         lambda profile, patch_file=None: _Cfg())
     rc = cmd_network(_Args(action="search_top_k"))
     assert rc == 0  # 裸 key 走 get, 不报错
@@ -91,7 +91,7 @@ def test_cmd_network_set_rejects_invalid_value(monkeypatch):
         def set_user(self, key, value):
             raise AssertionError("非法值不应写入")
 
-    monkeypatch.setattr("qingxiaotuan.cli.cmd_network.Config",
+    monkeypatch.setattr("tuan_cli.cli.cmd_network.Config",
                         lambda profile, patch_file=None: _Cfg())
     assert cmd_network(_Args(action="set", key="search_max_results", value="9999")) == 1
     assert cmd_network(_Args(action="set", key="search_top_k", value="-1")) == 1
@@ -108,7 +108,7 @@ def test_cmd_network_reset_clears_user_overrides(monkeypatch):
             deleted.append(dotted)
             return True
 
-    monkeypatch.setattr("qingxiaotuan.cli.cmd_network.Config",
+    monkeypatch.setattr("tuan_cli.cli.cmd_network.Config",
                         lambda profile, patch_file=None: _Cfg())
     # reset 指定 key
     cmd_network(_Args(action="reset", key="search_top_k"))
@@ -124,7 +124,7 @@ def test_cmd_network_describe_lists_all_params(monkeypatch):
         def get(self, dotted, default=None):
             return None
 
-    monkeypatch.setattr("qingxiaotuan.cli.cmd_network.Config",
+    monkeypatch.setattr("tuan_cli.cli.cmd_network.Config",
                         lambda profile, patch_file=None: _Cfg())
     assert cmd_network(_Args(action="describe")) == 0
 
@@ -139,7 +139,7 @@ def test_cmd_network_set_strips_network_prefix(monkeypatch):
         def set_user(self, key, value):
             written[key] = value
 
-    monkeypatch.setattr("qingxiaotuan.cli.cmd_network.Config",
+    monkeypatch.setattr("tuan_cli.cli.cmd_network.Config",
                         lambda profile, patch_file=None: _Cfg())
     # 用户误写 network. 前缀也要正确落到 network.<key>
     cmd_network(_Args(action="set", key="network.search_max_results", value="350"))
@@ -156,7 +156,7 @@ def test_cmd_network_set_requires_key_and_value(monkeypatch):
         def set_user(self, key, value):
             raise AssertionError("不应写入")
 
-    monkeypatch.setattr("qingxiaotuan.cli.cmd_network.Config",
+    monkeypatch.setattr("tuan_cli.cli.cmd_network.Config",
                         lambda profile, patch_file=None: _Cfg())
     assert cmd_network(_Args(action="set", key=None, value="1")) == 1
     assert cmd_network(_Args(action="set", key="search_top_k", value=None)) == 1

@@ -15,11 +15,11 @@ class TestSecurityPolicyExtended:
     """测试安全策略引擎的扩展功能。"""
 
     def _make_engine(self, tmpdir: str = ""):
-        from qingxiaotuan.core.security_policy import SecurityPolicyEngine
+        from tuan_cli.core.security_policy import SecurityPolicyEngine
         return SecurityPolicyEngine(home=Path(tmpdir or tempfile.mkdtemp()))
 
     def test_get_policy_engine_singleton(self):
-        from qingxiaotuan.core.security_policy import get_policy_engine
+        from tuan_cli.core.security_policy import get_policy_engine
         e1 = get_policy_engine()
         e2 = get_policy_engine()
         assert e1 is e2
@@ -43,7 +43,7 @@ class TestSecurityPolicyExtended:
 
     def test_evaluate_mcp_tool_with_custom_rule(self):
         engine = self._make_engine()
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         engine.add_rule(PolicyRule(
             id="mcp_no_rm_rf",
             name="MCP 禁止 rm -rf",
@@ -57,7 +57,7 @@ class TestSecurityPolicyExtended:
 
     def test_rule_enable_disable(self):
         engine = self._make_engine()
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         engine.add_rule(PolicyRule(
             id="toggle_test", name="可切换规则",
             action="deny", tools=["test_tool"],
@@ -77,7 +77,7 @@ class TestSecurityPolicyExtended:
 
     def test_yaml_export_roundtrip(self):
         engine = self._make_engine()
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         engine.add_rule(PolicyRule(
             id="yaml_test", name="YAML 测试",
             action="ask", tools=["run_shell"], patterns=[r"docker\s+deploy"],
@@ -107,7 +107,7 @@ class TestTrajectoryReplay:
     """测试会话轨迹回放。"""
 
     def _make_replay(self, tmpdir: str):
-        from qingxiaotuan.core.trajectory_replay import TrajectoryReplay
+        from tuan_cli.core.trajectory_replay import TrajectoryReplay
         return TrajectoryReplay(session_dir=Path(tmpdir))
 
     def _create_session(self, session_dir: str, session_id: str, events: list):
@@ -245,7 +245,7 @@ class TestSecurityAlerterExtended:
     """测试安全告警器的扩展功能。"""
 
     def _make_alerter(self, tmpdir: str):
-        from qingxiaotuan.core.security_alert import SecurityAlerter
+        from tuan_cli.core.security_alert import SecurityAlerter
         return SecurityAlerter(home=Path(tmpdir), enable_desktop=False)
 
     def test_alert_with_details(self):

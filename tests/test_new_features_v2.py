@@ -13,7 +13,7 @@ class TestWriteStormDetector:
     """Tests for _WriteStormDetector in tool_executor.py."""
 
     def _make_detector(self):
-        from qingxiaotuan.core.tool_executor import _WriteStormDetector
+        from tuan_cli.core.tool_executor import _WriteStormDetector
         return _WriteStormDetector()
 
     def test_no_storm_under_threshold(self):
@@ -105,7 +105,7 @@ class TestTrustDecay:
     """Tests for WorkspaceTrust.check_for_decay and apply_decay."""
 
     def _make_trust(self, tmp_path):
-        from qingxiaotuan.core.workspace_trust import WorkspaceTrust, TrustLevel
+        from tuan_cli.core.workspace_trust import WorkspaceTrust, TrustLevel
         trust = WorkspaceTrust(tmp_path)
         # Set up a trusted workspace
         trust.set_trust(str(tmp_path), TrustLevel.TRUSTED, project_name="test")
@@ -167,13 +167,13 @@ class TestStormDetectorIntegration:
 
     def test_detector_import(self):
         """Verify storm detector can be imported and instantiated."""
-        from qingxiaotuan.core.tool_executor import _WriteStormDetector
+        from tuan_cli.core.tool_executor import _WriteStormDetector
         det = _WriteStormDetector()
         assert det is not None
 
     def test_detector_record_methods(self):
         """Verify record_write and record_delete methods work."""
-        from qingxiaotuan.core.tool_executor import _WriteStormDetector
+        from tuan_cli.core.tool_executor import _WriteStormDetector
         det = _WriteStormDetector()
         # record_write
         result = det.record_write("/tmp/test.txt")

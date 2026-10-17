@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import json
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.base import ModelAdapter
-from qingxiaotuan.memory.sessions import SessionStore
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.models.base import ModelAdapter
+from tuan_cli.memory.sessions import SessionStore
 
 
 class MockModel(ModelAdapter):
@@ -24,7 +24,7 @@ class MockModel(ModelAdapter):
         return None
 
 
-def _build_agent(tmp_path, qxt_home):
+def _build_agent(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = 0
@@ -45,10 +45,10 @@ def _make_session(agent, task: str = "你好") -> SessionStore:
     return store
 
 
-def test_load_session_prepends_system_prompt(tmp_path, qxt_home):
+def test_load_session_prepends_system_prompt(tmp_path, tuan_home):
     """恢复时 messages = [system] + 历史, 系统提示在最前。"""
-    from qingxiaotuan.cli.commands import _load_session_into_agent
-    agent = _build_agent(tmp_path, qxt_home)
+    from tuan_cli.cli.commands import _load_session_into_agent
+    agent = _build_agent(tmp_path, tuan_home)
     store = _make_session(agent)
     name = _load_session_into_agent(agent, store.file)
     assert name == store.file.name
@@ -60,35 +60,35 @@ def test_load_session_prepends_system_prompt(tmp_path, qxt_home):
     assert agent.messages[3]["role"] == "tool"
 
 
-def test_resume_by_path(tmp_path, qxt_home):
-    from qingxiaotuan.cli.commands import _resume_session
-    agent = _build_agent(tmp_path, qxt_home)
+def test_resume_by_path(tmp_path, tuan_home):
+    from tuan_cli.cli.commands import _resume_session
+    agent = _build_agent(tmp_path, tuan_home)
     store = _make_session(agent)
     name = _resume_session(agent, str(store.file))
     assert name == store.file.name
     assert agent.messages[1]["content"] == "你好"
 
 
-def test_resume_by_id_prefix(tmp_path, qxt_home):
-    from qingxiaotuan.cli.commands import _resume_session
-    agent = _build_agent(tmp_path, qxt_home)
+def test_resume_by_id_prefix(tmp_path, tuan_home):
+    from tuan_cli.cli.commands import _resume_session
+    agent = _build_agent(tmp_path, tuan_home)
     store = _make_session(agent)
     prefix = store.file.stem[:8]
     name = _resume_session(agent, prefix)
     assert name == store.file.name
 
 
-def test_resume_by_index(tmp_path, qxt_home):
-    from qingxiaotuan.cli.commands import _resume_session
-    agent = _build_agent(tmp_path, qxt_home)
+def test_resume_by_index(tmp_path, tuan_home):
+    from tuan_cli.cli.commands import _resume_session
+    agent = _build_agent(tmp_path, tuan_home)
     store = _make_session(agent)
     name = _resume_session(agent, "1")
     assert name == store.file.name
 
 
-def test_resume_latest(tmp_path, qxt_home):
-    from qingxiaotuan.cli.commands import _resume_session
-    agent = _build_agent(tmp_path, qxt_home)
+def test_resume_latest(tmp_path, tuan_home):
+    from tuan_cli.cli.commands import _resume_session
+    agent = _build_agent(tmp_path, tuan_home)
     _make_session(agent, "第一个会话")
     store2 = _make_session(agent, "第二个会话")
     name = _resume_session(agent, "latest")
@@ -96,17 +96,17 @@ def test_resume_latest(tmp_path, qxt_home):
     assert agent.messages[1]["content"] == "第二个会话"
 
 
-def test_resume_not_found(tmp_path, qxt_home, capsys):
-    from qingxiaotuan.cli.commands import _resume_session
-    agent = _build_agent(tmp_path, qxt_home)
+def test_resume_not_found(tmp_path, tuan_home, capsys):
+    from tuan_cli.cli.commands import _resume_session
+    agent = _build_agent(tmp_path, tuan_home)
     assert _resume_session(agent, "no-such-session") is None
     out = capsys.readouterr().out
     assert "未找到会话" in out
 
 
-def test_resume_index_out_of_range(tmp_path, qxt_home, capsys):
-    from qingxiaotuan.cli.commands import _resume_session
-    agent = _build_agent(tmp_path, qxt_home)
+def test_resume_index_out_of_range(tmp_path, tuan_home, capsys):
+    from tuan_cli.cli.commands import _resume_session
+    agent = _build_agent(tmp_path, tuan_home)
     _make_session(agent)
     # 越界数字回退到前缀匹配, 找不到时报"未找到会话"
     assert _resume_session(agent, "99") is None
@@ -114,9 +114,9 @@ def test_resume_index_out_of_range(tmp_path, qxt_home, capsys):
     assert "未找到会话" in out
 
 
-def test_slash_resume_list_and_resume(tmp_path, qxt_home, capsys):
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+def test_slash_resume_list_and_resume(tmp_path, tuan_home, capsys):
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
     store = _make_session(agent, "恢复测试任务")
 

@@ -10,7 +10,7 @@
   - 真正该匹配的正则 pattern(args[1]) 从未被使用 → 匹配结果完全错位。
 """
 
-from qingxiaotuan.ext.rules_engine import RuleEngine
+from tuan_cli.ext.rules_engine import RuleEngine
 
 
 def _engine(rules_yaml: str) -> RuleEngine:

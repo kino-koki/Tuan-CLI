@@ -7,9 +7,9 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.cli import commands
-from qingxiaotuan.cli import cmd_setup, cmd_chat
-from qingxiaotuan.config import Config
+from tuan_cli.cli import commands
+from tuan_cli.cli import cmd_setup, cmd_chat
+from tuan_cli.config import Config
 
 
 def _make_config(data: dict, key: str = None):
@@ -99,10 +99,10 @@ def test_count_session_messages(tmp_path):
     assert commands._count_session_messages(f) == 3  # user + assistant + tool
 
 
-def test_session_list_respects_qxt_home(tmp_path, monkeypatch, capsys):
-    """qxt session list 应读取 QXT_HOME 下的会话目录, 而非硬编码 ~/.qingxiaotuan。"""
+def test_session_list_respects_tuan_home(tmp_path, monkeypatch, capsys):
+    """tuan session list 应读取 TUAN_HOME 下的会话目录, 而非硬编码 ~/.tuan。"""
     home = tmp_path / "custom_home"
-    monkeypatch.setenv("QXT_HOME", str(home))
+    monkeypatch.setenv("TUAN_HOME", str(home))
     sess_dir = home / "sessions"
     sess_dir.mkdir(parents=True)
     sid = "20260826-test-session"
@@ -133,7 +133,7 @@ def test_bench_cache_graceful_without_key():
 
 def test_bench_cache_shows_per_round_deltas(tmp_path, monkeypatch, capsys):
     """逐轮明细应显示单轮增量而非累计值, 汇总用总累计。"""
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     args = mock.Mock(bench_cmd="cache", rounds=2, task="t")
 
     class FakeAgent:
@@ -191,7 +191,7 @@ def test_model_test_success():
     fake_resp = mock.Mock()
     fake_resp.content = "pong"
     fake_resp.usage = {"prompt_tokens": 5, "completion_tokens": 1}
-    with mock.patch("qingxiaotuan.models.create_adapter") as ca:
+    with mock.patch("tuan_cli.models.create_adapter") as ca:
         adapter = mock.Mock()
         adapter.chat.return_value = fake_resp
         ca.return_value = adapter
@@ -202,7 +202,7 @@ def test_model_test_success():
 def test_model_test_connection_error():
     config = _make_config({"model": {"provider": "deepseek", "model": "deepseek-chat",
                                      "base_url": "https://api.deepseek.com"}}, key="sk-x")
-    with mock.patch("qingxiaotuan.models.create_adapter") as ca:
+    with mock.patch("tuan_cli.models.create_adapter") as ca:
         ca.side_effect = RuntimeError("boom")
         assert commands._model_test(config) == 1
 
@@ -219,7 +219,7 @@ def test_ask_choice_defaults():
 
 
 def test_setup_blank_creates_skeleton(tmp_path, monkeypatch):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     config = Config()
     assert commands._setup_blank(config) == 0
     home = tmp_path / "home"
@@ -229,7 +229,7 @@ def test_setup_blank_creates_skeleton(tmp_path, monkeypatch):
 
 
 def test_setup_full_writes_all_settings(tmp_path, monkeypatch):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     config = Config()
     written = {}
 
@@ -241,9 +241,16 @@ def test_setup_full_writes_all_settings(tmp_path, monkeypatch):
             node = node.setdefault(k, {})
         node[keys[-1]] = value
 
-    inputs = ["1", "", "yolo", "low", "0.5", "4096"]
+    # 交互式向导的提问数会随功能增长 (新增安全加固/沙箱选项等), 用「先用脚本值,
+    # 用完后一律回默认 1」的生成器代替固定列表, 避免 StopIteration 把测试炸掉。
+    scripted = ["1", "", "yolo", "low", "0.5", "4096"]
+    def _inputs():
+        for v in scripted:
+            yield v
+        while True:
+            yield "1"
     with mock.patch.object(Config, "set_user", fake_set_user), \
-         mock.patch("builtins.input", side_effect=inputs), \
+         mock.patch("builtins.input", side_effect=_inputs()), \
          mock.patch.object(cmd_chat, "_pick_model_interactive", return_value=("deepseek", "deepseek-chat")):
         assert commands._setup_full(config) == 0
     assert written["model.provider"] == "deepseek"
@@ -255,7 +262,7 @@ def test_setup_full_writes_all_settings(tmp_path, monkeypatch):
 
 
 def test_setup_full_invalid_inputs_fall_back_to_defaults(tmp_path, monkeypatch):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     config = Config()
     written = {}
 
@@ -268,9 +275,15 @@ def test_setup_full_invalid_inputs_fall_back_to_defaults(tmp_path, monkeypatch):
         node[keys[-1]] = value
 
     # 非法枚举/数值 → 回退默认 (mode=standard, effort=high, temp=0.7, mt=8192)
-    inputs = ["1", "", "crazy", "insane", "abc", "abc"]
+    # 同上: 脚本值耗尽后回默认 "1", 防止向导新增提问时 StopIteration。
+    scripted = ["1", "", "crazy", "insane", "abc", "abc"]
+    def _inputs():
+        for v in scripted:
+            yield v
+        while True:
+            yield "1"
     with mock.patch.object(Config, "set_user", fake_set_user), \
-         mock.patch("builtins.input", side_effect=inputs), \
+         mock.patch("builtins.input", side_effect=_inputs()), \
          mock.patch.object(cmd_chat, "_pick_model_interactive", return_value=("deepseek", "deepseek-chat")):
         assert commands._setup_full(config) == 0
     assert written["mode.default"] == "standard"
@@ -302,7 +315,7 @@ def _make_sessions(tmp_path, names, mtimes):
 
 
 def test_session_delete_by_number(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     # mtime 越大越新 → 排序: s2(3000), s1(2000), s0(1000)
     sess_dir = _make_sessions(tmp_path, ["s0", "s1", "s2"], [1000, 2000, 3000])
     args = mock.Mock(session_cmd="delete", target="2", yes=True)
@@ -314,7 +327,7 @@ def test_session_delete_by_number(tmp_path, monkeypatch, capsys):
 
 
 def test_session_delete_all_with_confirm(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     sess_dir = _make_sessions(tmp_path, ["a", "b"], [1000, 2000])
     args = mock.Mock(session_cmd="delete", target="all", yes=False)
     with mock.patch("builtins.input", side_effect=["y"]):
@@ -323,7 +336,7 @@ def test_session_delete_all_with_confirm(tmp_path, monkeypatch, capsys):
 
 
 def test_session_delete_cancel(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     sess_dir = _make_sessions(tmp_path, ["a"], [1000])
     args = mock.Mock(session_cmd="delete", target="all", yes=False)
     with mock.patch("builtins.input", side_effect=["n"]):
@@ -333,14 +346,14 @@ def test_session_delete_cancel(tmp_path, monkeypatch, capsys):
 
 
 def test_session_delete_not_found(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     _make_sessions(tmp_path, ["a"], [1000])
     args = mock.Mock(session_cmd="delete", target="zzz", yes=True)
     assert commands.cmd_session(args) == 1
 
 
 def test_session_delete_by_id_prefix(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     sess_dir = _make_sessions(tmp_path, ["20260826-abc", "20260826-def"], [1000, 2000])
     args = mock.Mock(session_cmd="delete", target="20260826-def", yes=True)
     assert commands.cmd_session(args) == 0
@@ -359,7 +372,7 @@ def test_model_test_override_params():
     fake_resp = mock.Mock()
     fake_resp.content = "pong"
     fake_resp.usage = {"prompt_tokens": 5, "completion_tokens": 1}
-    with mock.patch("qingxiaotuan.models.create_adapter") as ca:
+    with mock.patch("tuan_cli.models.create_adapter") as ca:
         adapter = mock.Mock()
         adapter.chat.return_value = fake_resp
         ca.return_value = adapter
@@ -382,7 +395,7 @@ def test_model_test_override_key_env(monkeypatch):
     fake_resp = mock.Mock()
     fake_resp.content = "pong"
     fake_resp.usage = {}
-    with mock.patch("qingxiaotuan.models.create_adapter") as ca:
+    with mock.patch("tuan_cli.models.create_adapter") as ca:
         adapter = mock.Mock()
         adapter.chat.return_value = fake_resp
         ca.return_value = adapter
@@ -407,10 +420,10 @@ def test_bench_latency_graceful_without_key():
 
 
 def test_bench_latency_success(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     args = mock.Mock(bench_cmd="latency", rounds=2, task="t")
     with mock.patch.object(cmd_setup, "build_kernel") as bk, \
-         mock.patch("qingxiaotuan.models.create_adapter") as ca:
+         mock.patch("tuan_cli.models.create_adapter") as ca:
         kernel = mock.Mock()
         config = mock.Mock()
         config.get = lambda k, d=None: {
@@ -432,12 +445,12 @@ def test_bench_latency_success(tmp_path, monkeypatch, capsys):
 
 
 # ------------------------------------------------------------------ doctor
-# 注: qxt doctor 的完整诊断逻辑已迁移到 qingxiaotuan/cli/cmd_doctor.py,
+# 注: tuan doctor 的完整诊断逻辑已迁移到 tuan_cli/cli/cmd_doctor.py,
 # 全面用例见 tests/test_doctor.py。这里只做 CLI 入口冒烟测试 (返回合法退出码)。
 
 def test_doctor_entrypoint_smoke(tmp_path, monkeypatch, capsys):
     """commands.cmd_doctor 可调用, 返回 0/1/2 之一, 并打印报告。"""
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     args = mock.Mock(workspace=str(tmp_path), fix=False, json=False, network=False)
     code = commands.cmd_doctor(args)
     assert code in (0, 1, 2)
@@ -447,7 +460,7 @@ def test_doctor_entrypoint_smoke(tmp_path, monkeypatch, capsys):
 
 def test_doctor_json_exit_code(tmp_path, monkeypatch, capsys):
     """--json 输出 JSON 且退出码与报告一致。"""
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "home"))
     args = mock.Mock(workspace=str(tmp_path), fix=False, json=True, network=False)
     code = commands.cmd_doctor(args)
     assert code in (0, 1, 2)

@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from qingxiaotuan.codedev.retrieval import CodeIndex
+from tuan_cli.codedev.retrieval import CodeIndex
 
 
 @pytest.fixture()

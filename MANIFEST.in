@@ -2,5 +2,5 @@ include LICENSE
 include README.md
 include CHANGELOG.md
 include pyproject.toml
-recursive-include qingxiaotuan/resources *.md
-recursive-include qingxiaotuan/resources *.yaml *.yml *.json
+recursive-include tuan_cli/resources *.md
+recursive-include tuan_cli/resources *.yaml *.yml *.json

@@ -6,8 +6,8 @@
 """
 from __future__ import annotations
 
-from qingxiaotuan.core import engine_isolation as ei
-from qingxiaotuan.tools import external
+from tuan_cli.core import engine_isolation as ei
+from tuan_cli.tools import external
 
 
 class _FakeIso:

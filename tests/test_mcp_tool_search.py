@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from qingxiaotuan.tools.base import Tool, ToolRegistry
-from qingxiaotuan.tools.mcp_tool_search import (
+from tuan_cli.tools.base import Tool, ToolRegistry
+from tuan_cli.tools.mcp_tool_search import (
     ContextBudget,
     DEFAULT_THRESHOLD,
     MCPToolSearchEngine,
@@ -253,7 +253,7 @@ def test_slash_mcp_tools_report(monkeypatch):
     eng.add(_mk_mcp("read_file", _big_desc(80), {"path": {}}))
     class FakeAgent:
         kernel = type("K", (), {"get": lambda s, n: eng if n == "mcp_tool_search" else None})()
-    from qingxiaotuan.cli import cmd_slash
+    from tuan_cli.cli import cmd_slash
     fake = _FakeUI()
     monkeypatch.setattr(cmd_slash, "ui", fake)
     cmd_slash._cmd_mcp_tools(FakeAgent(), "")
@@ -266,7 +266,7 @@ def test_slash_mcp_tools_toggle(monkeypatch):
     eng = MCPToolSearchEngine()
     class FakeAgent:
         kernel = type("K", (), {"get": lambda s, n: eng if n == "mcp_tool_search" else None})()
-    from qingxiaotuan.cli import cmd_slash
+    from tuan_cli.cli import cmd_slash
     fake = _FakeUI()
     monkeypatch.setattr(cmd_slash, "ui", fake)
     cmd_slash._cmd_mcp_tools(FakeAgent(), "off")
@@ -280,7 +280,7 @@ def test_slash_mcp_tools_search(monkeypatch):
     eng.add(_mk_mcp("read_file", "read file from disk", {"path": {}}))
     class FakeAgent:
         kernel = type("K", (), {"get": lambda s, n: eng if n == "mcp_tool_search" else None})()
-    from qingxiaotuan.cli import cmd_slash
+    from tuan_cli.cli import cmd_slash
     fake = _FakeUI()
     monkeypatch.setattr(cmd_slash, "ui", fake)
     cmd_slash._cmd_mcp_tools(FakeAgent(), "search read file")
@@ -292,7 +292,7 @@ def test_slash_dispatch_routes_mcp_tools(monkeypatch):
     class FakeAgent:
         kernel = type("K", (), {"get": lambda s, n: eng if n == "mcp_tool_search" else None})()
         registry = type("R", (), {"tools": []})()
-    from qingxiaotuan.cli import cmd_slash
+    from tuan_cli.cli import cmd_slash
     fake = _FakeUI()
     monkeypatch.setattr(cmd_slash, "ui", fake)
     assert cmd_slash._handle_slash("/mcp-tools", FakeAgent(), None, "") is True

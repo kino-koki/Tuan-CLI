@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.harden import repro_build
+from tuan_cli.harden import repro_build
 
 
 def test_generate_and_verify_lock(tmp_path, monkeypatch):

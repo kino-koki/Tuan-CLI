@@ -1,4 +1,4 @@
-"""模型目录与 qxt model 选择流程测试 (离线)。
+"""模型目录与 tuan model 选择流程测试 (离线)。
 
 验证:
 - 聚合平台 (OpenRouter/SiliconFlow/Novita/Together/Fireworks/Groq/NVIDIA NIM) 模型数量充足,
@@ -16,10 +16,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.models.provider_catalog import (
+from tuan_cli.models.provider_catalog import (
     ALL_PROVIDERS, PROVIDER_CATEGORIES, get_provider, get_provider_models,
 )
-from qingxiaotuan.cli.commands import _pick_model_interactive
+from tuan_cli.cli.commands import _pick_model_interactive
 
 
 AGGREGATORS = ["openrouter", "siliconflow", "novita", "together", "fireworks", "groq", "nvidia-nim"]
@@ -87,7 +87,7 @@ def test_get_provider_models_unknown_returns_empty():
 
 
 def test_nvidia_nim_in_free_tier_category():
-    """NVIDIA NIM 应归入 qxt models 的"免费层"分类 (而非国际主流)。"""
+    """NVIDIA NIM 应归入 tuan models 的"免费层"分类 (而非国际主流)。"""
     nim = get_provider("nvidia-nim")
     assert nim is not None
     assert nim.free_tier is True
@@ -97,7 +97,7 @@ def test_nvidia_nim_in_free_tier_category():
 
 
 def test_every_provider_in_a_category():
-    """每个供应商都归入某个一级分类 (qxt models 分组展示)。"""
+    """每个供应商都归入某个一级分类 (tuan models 分组展示)。"""
     all_names = {p.name for p in ALL_PROVIDERS}
     grouped = {p.name for group in PROVIDER_CATEGORIES.values() for p in group}
     assert grouped == all_names

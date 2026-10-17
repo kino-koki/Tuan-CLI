@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import json
 
-from qingxiaotuan.tools.base import Tool, ToolContext, ToolRegistry
-from qingxiaotuan.tools.permissions import PermissionPolicy
+from tuan_cli.tools.base import Tool, ToolContext, ToolRegistry
+from tuan_cli.tools.permissions import PermissionPolicy
 
 
 class _Cfg:
@@ -183,7 +183,7 @@ class _KernelWithCfg:
         return None
 
 
-from qingxiaotuan.tools.permission_fusion import build_permission_policy
+from tuan_cli.tools.permission_fusion import build_permission_policy
 
 
 def _make_ctx(config, *, yolo=False, confirm_calls=None):
@@ -240,5 +240,5 @@ def test_default_factory_rule_pattern_miss_falls_back():
 def test_build_permission_policy_always_wraps():
     # 工厂始终返回 FusionPermissionPolicy, 敏感文件检测始终生效
     policy = build_permission_policy(None)
-    from qingxiaotuan.tools.permission_fusion import FusionPermissionPolicy
+    from tuan_cli.tools.permission_fusion import FusionPermissionPolicy
     assert isinstance(policy, FusionPermissionPolicy)

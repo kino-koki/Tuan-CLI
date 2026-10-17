@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.core.tool_executor import _is_mcp_dangerous
-from qingxiaotuan.ext.security_gate import SecurityGate, GateVerdict
-from qingxiaotuan.tools.mcp.security import (
+from tuan_cli.core.tool_executor import _is_mcp_dangerous
+from tuan_cli.ext.security_gate import SecurityGate, GateVerdict
+from tuan_cli.tools.mcp.security import (
     MCPSecurityGuard, get_mcp_security_guard,
 )
 

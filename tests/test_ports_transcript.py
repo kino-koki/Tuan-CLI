@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from qingxiaotuan.ports.transcript import (
+from tuan_cli.ports.transcript import (
     AgentTranscript,
     AgentTranscriptSnapshot,
     AppendOp,
@@ -28,7 +28,7 @@ from qingxiaotuan.ports.transcript import (
     step_id,
     grade_for,
 )
-from qingxiaotuan.ports.transcript.model import TextFrame, TranscriptMarker
+from tuan_cli.ports.transcript.model import TextFrame, TranscriptMarker
 
 
 def _build_turn_ops() -> list:
@@ -65,13 +65,13 @@ def test_append_turn_serialize_deserialize_equals():
 
 
 def _reset_op(snapshot):
-    from qingxiaotuan.ports.transcript import ResetOp
+    from tuan_cli.ports.transcript import ResetOp
 
     return ResetOp(agent_id="agent1", snapshot=snapshot)
 
 
 def _snap_to_dict(snapshot):
-    from qingxiaotuan.ports.transcript.operation import snapshot_to_dict
+    from tuan_cli.ports.transcript.operation import snapshot_to_dict
 
     return snapshot_to_dict(snapshot)
 
@@ -102,7 +102,7 @@ def test_store_roster_and_agents():
     a = store.ensure_agent("main", None)
     assert isinstance(a, AgentTranscript)
     assert store.get_agent("main") is a
-    store.describe_agent(__import__("qingxiaotuan.ports.transcript", fromlist=["AgentDescriptor"]).AgentDescriptor(agent_id="main", label="Main"))
+    store.describe_agent(__import__("tuan_cli.ports.transcript", fromlist=["AgentDescriptor"]).AgentDescriptor(agent_id="main", label="Main"))
     assert store.agents()[0].label == "Main"
     assert store.remove_agent("main") is True
     assert store.get_agent("main") is None
@@ -149,7 +149,7 @@ def test_group_messages_into_snapshot_basic():
 
 
 def test_fold_wire_record_facts_basic():
-    base = AgentTranscriptSnapshot(items=[], tasks=[], interactions=[], attachments=[], todos=[], prompts=[], meta=__import__("qingxiaotuan.ports.transcript.model", fromlist=["TranscriptMeta"]).TranscriptMeta())
+    base = AgentTranscriptSnapshot(items=[], tasks=[], interactions=[], attachments=[], todos=[], prompts=[], meta=__import__("tuan_cli.ports.transcript.model", fromlist=["TranscriptMeta"]).TranscriptMeta())
     records = [
         {"type": "goal.create", "objective": "ship it", "time": 1000},
         {"type": "task.started", "info": {"taskId": "tk1", "kind": "process", "status": "running"}, "outputTail": "log"},
@@ -243,8 +243,8 @@ def test_group_tool_error_frame_state():
 
 
 def test_apply_meta_merge_goal_set_and_clear():
-    from qingxiaotuan.ports.transcript import MetaMergeOp
-    from qingxiaotuan.ports.transcript.apply import AgentState, apply_operation
+    from tuan_cli.ports.transcript import MetaMergeOp
+    from tuan_cli.ports.transcript.apply import AgentState, apply_operation
 
     state = AgentState()
     r = apply_operation(state, MetaMergeOp(meta={"goal": {"objective": "ship", "status": "active"}}))
@@ -258,8 +258,8 @@ def test_apply_meta_merge_goal_set_and_clear():
 
 
 def test_apply_meta_merge_modes_set_and_clear():
-    from qingxiaotuan.ports.transcript import MetaMergeOp
-    from qingxiaotuan.ports.transcript.apply import AgentState, apply_operation
+    from tuan_cli.ports.transcript import MetaMergeOp
+    from tuan_cli.ports.transcript.apply import AgentState, apply_operation
 
     state = AgentState()
     r = apply_operation(state, MetaMergeOp(meta={"modes": {"plan": "block"}}))
@@ -273,8 +273,8 @@ def test_apply_meta_merge_modes_set_and_clear():
 
 
 def test_apply_meta_merge_agent_merge_and_keep():
-    from qingxiaotuan.ports.transcript import MetaMergeOp
-    from qingxiaotuan.ports.transcript.apply import AgentState, apply_operation
+    from tuan_cli.ports.transcript import MetaMergeOp
+    from tuan_cli.ports.transcript.apply import AgentState, apply_operation
 
     state = AgentState()
     r = apply_operation(state, MetaMergeOp(meta={"agent": {"model": "gpt-x"}}))
@@ -285,9 +285,9 @@ def test_apply_meta_merge_agent_merge_and_keep():
 
 
 def test_item_id_and_frame_equals_helpers():
-    from qingxiaotuan.ports.transcript import TranscriptTaskRef
-    from qingxiaotuan.ports.transcript.apply import _frame_equals, _item_id_of
-    from qingxiaotuan.ports.transcript.model import ThinkingFrame
+    from tuan_cli.ports.transcript import TranscriptTaskRef
+    from tuan_cli.ports.transcript.apply import _frame_equals, _item_id_of
+    from tuan_cli.ports.transcript.model import ThinkingFrame
 
     t = TranscriptTurn(turn_id="t0", ordinal=0, state="running", origin={"kind": "user"}, steps=[])
     m = TranscriptMarker(marker_id="m1", marker="skill", payload={})
@@ -304,7 +304,7 @@ def test_item_id_and_frame_equals_helpers():
 
 
 def test_media_ref_parse_and_pairing():
-    from qingxiaotuan.ports.transcript.media_ref import (
+    from tuan_cli.ports.transcript.media_ref import (
         MediaRefPart,
         daemon_file_ref_from_pairing_part,
         parse_daemon_file_ref,

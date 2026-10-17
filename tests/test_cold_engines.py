@@ -1,6 +1,6 @@
 """冷门引擎增强功能的单元测试。
 
-直接实例化 qingxiaotuan/ext 下的引擎 (不经 IPC 子进程), 覆盖:
+直接实例化 tuan_cli/ext 下的引擎 (不经 IPC 子进程), 覆盖:
 - search: glob 过滤 / ignore_case / context / truncated / count
 - index: 缩进 def、async、Go/Rust/Java 符号提取 + 行号 + kind
 - notify: Windows 回退链 / beep / dry_run / 诊断信息
@@ -14,10 +14,10 @@ import json
 
 import pytest
 
-from qingxiaotuan.ext.crypto_engine import CryptoEngine
-from qingxiaotuan.ext.index_engine import IndexEngine
-from qingxiaotuan.ext.notify_engine import NotifyEngine
-from qingxiaotuan.ext.search_engine import SearchEngine
+from tuan_cli.ext.crypto_engine import CryptoEngine
+from tuan_cli.ext.index_engine import IndexEngine
+from tuan_cli.ext.notify_engine import NotifyEngine
+from tuan_cli.ext.search_engine import SearchEngine
 
 
 # ---------------------------------------------------------------- search
@@ -159,7 +159,7 @@ def test_notify_meta_lists_new_methods():
 def test_notify_dry_run_reports_backend_without_sending(monkeypatch):
     eng = NotifyEngine()
     called = []
-    monkeypatch.setattr("qingxiaotuan.ext.notify_engine._run_cmd",
+    monkeypatch.setattr("tuan_cli.ext.notify_engine._run_cmd",
                         lambda *a, **k: called.append(a) or (0, ""))
     res = eng.notify({"title": "t", "message": "m", "dry_run": True})
     assert res["dry_run"] is True and res["sent"] is False
@@ -167,7 +167,7 @@ def test_notify_dry_run_reports_backend_without_sending(monkeypatch):
 
 
 def test_notify_windows_fallback_chain(monkeypatch):
-    import qingxiaotuan.ext.notify_engine as ne
+    import tuan_cli.ext.notify_engine as ne
 
     eng = ne.NotifyEngine()
     scripted = []
@@ -191,7 +191,7 @@ def test_notify_windows_fallback_chain(monkeypatch):
 
 def test_notify_macos_escapes_quotes(monkeypatch):
     """macOS 分支必须把消息/标题中的双引号转义, 避免 AppleScript 字符串截断/注入。"""
-    import qingxiaotuan.ext.notify_engine as ne
+    import tuan_cli.ext.notify_engine as ne
 
     eng = ne.NotifyEngine()
     captured = {}
@@ -263,7 +263,7 @@ def test_crypto_iterations_hardening():
 
 def test_crypto_open_invalid_utf8_friendly_error():
     """确定性构造必然非法的 UTF-8 明文: 用引擎内部函数反向生成密文。"""
-    from qingxiaotuan.ext.crypto_engine import _derive_key, _xor_stream
+    from tuan_cli.ext.crypto_engine import _derive_key, _xor_stream
 
     eng = CryptoEngine()
     salt = b"0123456789abcdef"
@@ -337,7 +337,7 @@ def test_crypto_seal_open_roundtrip_regression():
 # ---------------------------------------------------------------- ansi
 
 def test_ansi_width_cjk_and_stripped():
-    from qingxiaotuan.ext.ansi_engine import AnsiEngine
+    from tuan_cli.ext.ansi_engine import AnsiEngine
 
     eng = AnsiEngine()
     assert eng.width({"text": "abc"})["width"] == 3
@@ -348,7 +348,7 @@ def test_ansi_width_cjk_and_stripped():
 
 
 def test_ansi_truncate_cjk_boundary_and_marker_budget():
-    from qingxiaotuan.ext.ansi_engine import AnsiEngine
+    from tuan_cli.ext.ansi_engine import AnsiEngine
 
     eng = AnsiEngine()
     # "青小团ABC" 宽 9; 截到 7 (marker "…" 宽 1, 预算 6) → 恰好放下 "青小团"
@@ -371,7 +371,7 @@ def test_ansi_truncate_cjk_boundary_and_marker_budget():
 
 
 def test_ansi_pad_aligns_by_display_width():
-    from qingxiaotuan.ext.ansi_engine import AnsiEngine
+    from tuan_cli.ext.ansi_engine import AnsiEngine
 
     eng = AnsiEngine()
     left = eng.pad({"text": "ab", "width": 5})
@@ -386,7 +386,7 @@ def test_ansi_pad_aligns_by_display_width():
 
 
 def test_ansi_render_sgr_and_backward_compat():
-    from qingxiaotuan.ext.ansi_engine import AnsiEngine
+    from tuan_cli.ext.ansi_engine import AnsiEngine
 
     eng = AnsiEngine()
     out = eng.render({"text": "err", "fg": "red", "bold": True})["text"]
@@ -399,7 +399,7 @@ def test_ansi_render_sgr_and_backward_compat():
 
 
 def test_ansi_handle_envelope_new_methods():
-    from qingxiaotuan.ext.ansi_engine import AnsiEngine
+    from tuan_cli.ext.ansi_engine import AnsiEngine
 
     eng = AnsiEngine()
     resp = json.loads(eng.handle(json.dumps(
@@ -416,7 +416,7 @@ def test_ansi_handle_envelope_new_methods():
 
 def test_safety_score_critical_shutdown_reboot():
     """CRITICAL: 系统关机/重启命令应返回 critical + block=True。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     critical_cmds = [
@@ -439,7 +439,7 @@ def test_safety_score_critical_shutdown_reboot():
 
 def test_safety_score_critical_chmod_chown_recursive():
     """CRITICAL: chmod -R 000 / 和 chown -R root / 应返回 critical。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     for cmd in ["chmod -R 000 /", "chmod -r 000 /", "chmod -R 0000 /",
@@ -450,7 +450,7 @@ def test_safety_score_critical_chmod_chown_recursive():
 
 def test_safety_score_high_docker_kubectl_git_clean():
     """HIGH: docker rm/rmi -f, kubectl delete, git clean -f, git checkout -- . 应返回 high。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     high_cmds = [
@@ -471,7 +471,7 @@ def test_safety_score_high_docker_kubectl_git_clean():
 
 def test_safety_score_medium_systemctl_stop_pkill():
     """MEDIUM: systemctl stop, pkill, killall, chmod 000, chown root 应返回 medium。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     medium_cmds = [
@@ -492,7 +492,7 @@ def test_safety_score_medium_systemctl_stop_pkill():
 
 def test_safety_score_safe_commands():
     """安全命令应返回 none。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     safe_cmds = [
@@ -511,7 +511,7 @@ def test_safety_score_safe_commands():
 
 def test_safety_score_indirection_penetration():
     """归一化穿透: 子壳/变量间接写法的关机命令仍应命中。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     indirect = [
@@ -528,7 +528,7 @@ def test_safety_score_indirection_penetration():
 
 def test_safety_analyze_batch():
     """analyze() 批量分析: 混合风险级别应返回 overall = 最高风险。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     result = eng.analyze({"ops": [
@@ -545,7 +545,7 @@ def test_safety_analyze_batch():
 
 def test_safety_analyze_empty():
     """analyze() 空列表: overall=none。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     result = eng.analyze({"ops": []})
@@ -555,7 +555,7 @@ def test_safety_analyze_empty():
 
 def test_safety_list_methods():
     """list_methods() 返回引擎元数据。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     meta = eng.list_methods()
@@ -567,7 +567,7 @@ def test_safety_list_methods():
 
 def test_safety_handle_envelope():
     """handle() JSONL 信封: 正确路由 + 未知方法报错。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     ok = json.loads(eng.handle(json.dumps(
@@ -582,7 +582,7 @@ def test_safety_handle_envelope():
 
 def test_safety_analyze_overall_high_only():
     """analyze() 全 HIGH 无 CRITICAL → overall=high。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     result = eng.analyze({"ops": [
@@ -595,7 +595,7 @@ def test_safety_analyze_overall_high_only():
 
 def test_safety_analyze_overall_medium_only():
     """analyze() 全 MEDIUM → overall=medium。"""
-    from qingxiaotuan.ext.safety_engine import SafetyEngine
+    from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     result = eng.analyze({"ops": [

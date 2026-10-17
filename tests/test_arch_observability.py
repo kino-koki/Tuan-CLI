@@ -1,12 +1,12 @@
 """可观测层测试: Trajectory 视图 + 每步"模型看到了什么" + 跨会话归因。"""
 import pytest
 
-from qingxiaotuan.arch.observability import (
+from tuan_cli.arch.observability import (
     CrossSessionAttributor,
     StepViewer,
     TrajectoryStore,
 )
-from qingxiaotuan.arch.security import CryptoVault
+from tuan_cli.arch.security import CryptoVault
 
 
 def test_trajectory_store_and_tree():

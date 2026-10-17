@@ -10,12 +10,12 @@ import pytest
 
 openai = pytest.importorskip("openai", reason="需要 openai 包")
 
-from qingxiaotuan.config import Config, PRESET_PROFILES, load_dotenv
-from qingxiaotuan.models.openai_compat import OpenAICompatAdapter
-from qingxiaotuan.logging_conf import redact, setup_logging
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.core.retry import RateLimiter, RetryPolicy
-from qingxiaotuan.models.provider_catalog import get_provider, get_provider_models
+from tuan_cli.config import Config, PRESET_PROFILES, load_dotenv
+from tuan_cli.models.openai_compat import OpenAICompatAdapter
+from tuan_cli.logging_conf import redact, setup_logging
+from tuan_cli.core.agent import Agent
+from tuan_cli.core.retry import RateLimiter, RetryPolicy
+from tuan_cli.models.provider_catalog import get_provider, get_provider_models
 
 
 # ---------------------------------------------------------------- 预设 profile
@@ -28,17 +28,17 @@ def test_preset_opencode_zen_exists():
     assert prof["api_key_env"] == "OPENCODE_ZEN_API_KEY"
 
 
-def test_preset_profile_applied_on_load(qxt_home):
+def test_preset_profile_applied_on_load(tuan_home):
     cfg = Config(profile="opencode-zen")
     assert cfg.get("model.provider") == "opencode-zen"
     assert cfg.get("model.base_url") == "https://opencode.ai/zen/v1"
     assert cfg.get("model.model") == "deepseek-v4-free"
 
 
-def test_user_config_overrides_preset(qxt_home):
+def test_user_config_overrides_preset(tuan_home):
     # 用户层写了不同 model, 应覆盖预设
-    qxt_home.mkdir(parents=True, exist_ok=True)
-    (qxt_home / "config.yaml").write_text("model:\n  model: other-model\n", encoding="utf-8")
+    tuan_home.mkdir(parents=True, exist_ok=True)
+    (tuan_home / "config.yaml").write_text("model:\n  model: other-model\n", encoding="utf-8")
     cfg = Config(profile="opencode-zen")
     assert cfg.get("model.model") == "other-model"
     # 预设的 base_url 仍保留
@@ -78,14 +78,14 @@ def test_api_key_from_env(monkeypatch):
     assert cfg.api_key() == "sk-test-123"
 
 
-def test_api_key_fallback_to_qxt(monkeypatch):
+def test_api_key_fallback_to_tuan(monkeypatch):
     monkeypatch.delenv("OPENCODE_ZEN_API_KEY", raising=False)
-    monkeypatch.setenv("QXT_API_KEY", "sk-qxt-fallback")
+    monkeypatch.setenv("TUAN_API_KEY", "sk-tuan-fallback")
     cfg = Config()
-    assert cfg.api_key() == "sk-qxt-fallback"
+    assert cfg.api_key() == "sk-tuan-fallback"
 
 
-def test_api_key_ref_resolution(qxt_home, monkeypatch):
+def test_api_key_ref_resolution(tuan_home, monkeypatch):
     monkeypatch.setenv("MY_CUSTOM_KEY", "sk-custom")
     cfg = Config()
     cfg.set_user("model.api_key_env", "DOES_NOT_EXIST")
@@ -158,7 +158,7 @@ def test_classify_timeout():
 def test_retry_backoff_with_jitter():
     """验证指数退避+抖动, 且 429 不立即放弃 (重试策略已拆到 core/retry.py)。"""
     sleeps = []
-    with mock.patch("qingxiaotuan.core.retry.time.sleep", side_effect=lambda s: sleeps.append(s)):
+    with mock.patch("tuan_cli.core.retry.time.sleep", side_effect=lambda s: sleeps.append(s)):
         adapter = mock.MagicMock()
         adapter.chat.side_effect = [
             RuntimeError("Rate limit"),  # 第1次失败
@@ -184,7 +184,7 @@ def test_retry_backoff_with_jitter():
 
 
 def test_auth_error_immediately_raises():
-    with mock.patch("qingxiaotuan.core.retry.time.sleep"):
+    with mock.patch("tuan_cli.core.retry.time.sleep"):
         class AuthExc(Exception):
             status_code = 401
         adapter = mock.MagicMock()
@@ -220,7 +220,7 @@ def test_redact_key():
 def test_setup_logging_creates_file(tmp_path):
     logger = setup_logging(tmp_path, level=20, audit=False)
     logger.info("hello %s", "world")
-    log_files = list((tmp_path / "logs").glob("qxt-*.log"))
+    log_files = list((tmp_path / "logs").glob("tuan-*.log"))
     assert log_files
     content = log_files[0].read_text(encoding="utf-8")
     assert "hello world" in content

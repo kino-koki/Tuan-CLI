@@ -16,8 +16,8 @@ import os
 from collections import Counter
 
 sys.path.insert(0, os.path.abspath("."))
-from qingxiaotuan.ext import safety_engine as se
-from qingxiaotuan.core.network_guard import NetworkGuard
+from tuan_cli.ext import safety_engine as se
+from tuan_cli.core.network_guard import NetworkGuard
 
 
 def _d(s):

@@ -16,7 +16,7 @@ class TestPathSafety:
     """测试路径遍历保护。"""
 
     def _make_safety(self, workspace: str = "") -> "PathSafety":
-        from qingxiaotuan.core.path_safety import PathSafety
+        from tuan_cli.core.path_safety import PathSafety
         return PathSafety(workspace=workspace)
 
     def test_normal_relative_path_safe(self):
@@ -119,7 +119,7 @@ class TestFileIntegrity:
     """测试文件完整性监控。"""
 
     def _make_monitor(self, tmpdir: str, on_change=None):
-        from qingxiaotuan.core.file_integrity import FileIntegrityMonitor
+        from tuan_cli.core.file_integrity import FileIntegrityMonitor
         return FileIntegrityMonitor(home=Path(tmpdir), on_change=on_change)
 
     def test_snapshot_directory(self):
@@ -269,7 +269,7 @@ class TestSecurityPolicy:
     """测试安全策略引擎。"""
 
     def _make_engine(self, tmpdir: str):
-        from qingxiaotuan.core.security_policy import SecurityPolicyEngine
+        from tuan_cli.core.security_policy import SecurityPolicyEngine
         return SecurityPolicyEngine(home=Path(tmpdir))
 
     def test_builtin_rules_loaded(self):
@@ -314,7 +314,7 @@ class TestSecurityPolicy:
 
     def test_custom_rule_deny(self):
         engine = self._make_engine(tempfile.mkdtemp())
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         engine.add_rule(PolicyRule(
             id="test_no_drop_prod",
             name="禁止删除生产数据",
@@ -329,7 +329,7 @@ class TestSecurityPolicy:
 
     def test_custom_rule_ask(self):
         engine = self._make_engine(tempfile.mkdtemp())
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         engine.add_rule(PolicyRule(
             id="test_ask_deploy",
             name="部署需确认",
@@ -343,7 +343,7 @@ class TestSecurityPolicy:
 
     def test_remove_rule(self):
         engine = self._make_engine(tempfile.mkdtemp())
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         engine.add_rule(PolicyRule(
             id="test_removable",
             name="可移除规则",
@@ -355,7 +355,7 @@ class TestSecurityPolicy:
 
     def test_export_import_rules(self):
         engine = self._make_engine(tempfile.mkdtemp())
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         engine.add_rule(PolicyRule(
             id="test_export",
             name="导出测试",
@@ -378,7 +378,7 @@ class TestSecurityPolicy:
 
     def test_priority_deny_over_allow(self):
         engine = self._make_engine(tempfile.mkdtemp())
-        from qingxiaotuan.core.security_policy import PolicyRule
+        from tuan_cli.core.security_policy import PolicyRule
         # 先加 allow
         engine.add_rule(PolicyRule(
             id="test_allow",
@@ -406,7 +406,7 @@ class TestSecurityAlert:
     """测试安全告警系统。"""
 
     def _make_alerter(self, tmpdir: str, enable_desktop=False):
-        from qingxiaotuan.core.security_alert import SecurityAlerter
+        from tuan_cli.core.security_alert import SecurityAlerter
         return SecurityAlerter(
             home=Path(tmpdir),
             enable_desktop=enable_desktop,

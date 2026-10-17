@@ -1,6 +1,6 @@
-#  QXT — VS Code 扩展
+#  Tuan — VS Code 扩展
 
-> 把 [ Agent CLI](https://github.com/your-org/qingxiaotuan) 接进 VS Code：在侧边栏里和 Agent 对话、看它流式输出、观察它调用工具、批准它做危险操作。
+> 把 [ Agent CLI](https://github.com/your-org/tuan_cli) 接进 VS Code：在侧边栏里和 Agent 对话、看它流式输出、观察它调用工具、批准它做危险操作。
 
 ![badge](https://img.shields.io/badge/license-MIT-green)
 ![vscode](https://img.shields.io/badge/vscode-%5E1.80.0-blue)
@@ -42,8 +42,8 @@ ide/vscode/
 │   └── icon.svg           # Activity Bar 图标
 ├── src/
 │   ├── extension.ts        # 入口：注册视图、命令、启停 ACP 子进程
-│   ├── types.ts            # ACP 消息类型定义（与 qingxiaotuan/acp/protocol.py 对齐）
-│   ├── acpClient.ts        # spawn `qxt acp`，NDJSON-RPC 读写，事件分发
+│   ├── types.ts            # ACP 消息类型定义（与 tuan_cli/acp/protocol.py 对齐）
+│   ├── acpClient.ts        # spawn `tuan acp`，NDJSON-RPC 读写，事件分发
 │   ├── chatProvider.ts     # 聊天流数据模型：消息列表、流式 delta 累积、工具调用状态
 │   ├── sidebarPanel.ts     # WebviewViewProvider：渲染对话流（内联 HTML/CSS/JS）
 │   ├── diffPreview.ts      # TextEditorDecorationType：行内 diff 装饰
@@ -55,12 +55,12 @@ ide/vscode/
 
 ## 4. ACP 通信架构
 
-扩展本身**不实现任何 Agent 逻辑**，所有智能都在 `qxt acp` 子进程里。通信是 stdio 上的 NDJSON-JSON-RPC：
+扩展本身**不实现任何 Agent 逻辑**，所有智能都在 `tuan acp` 子进程里。通信是 stdio 上的 NDJSON-JSON-RPC：
 
 ```
 ┌─────────────────────────┐         stdin (JSON-RPC 请求)        ┌──────────────────────────┐
-│  VS Code Extension      │  ───────────────────────────────────▶ │  qxt acp 子进程 (Python)  │
-│  (TypeScript, 本工程)  │                                       │  qingxiaotuan/acp/server  │
+│  VS Code Extension      │  ───────────────────────────────────▶ │  tuan acp 子进程 (Python)  │
+│  (TypeScript, 本工程)  │                                       │  tuan_cli/acp/server  │
 │                         │  ◀─────────────────────────────────── │                          │
 │  - AcpClient            │         stdout (NDJSON 通知)         │  - Agent 业务循环          │
 │  - ChatProvider         │   session/update, task/update        │  - 工具执行                │
@@ -76,7 +76,7 @@ ide/vscode/
 
 ## 5. 安装与构建
 
-前置：Node.js ≥ 22（开发环境已验证 v22.23.2 / npm 10.9.8），且 `qxt` 已在 PATH 中（或在 VS Code 设置里改 `qingxiaotuan.command`）。
+前置：Node.js ≥ 22（开发环境已验证 v22.23.2 / npm 10.9.8），且 `tuan` 已在 PATH 中（或在 VS Code 设置里改 `tuan_cli.command`）。
 
 ```powershell
 cd "E:\Tuan-CLI\ide\vscode"
@@ -89,21 +89,21 @@ npx tsc                 # 编译到 out/
 
 ```powershell
 npx @vscode/vsce package
-# 产物：qingxiaotuan-vscode-<version>.vsix
+# 产物：tuan_cli-vscode-<version>.vsix
 ```
 
 > 如果 `vsce package` 因为网络（拉 marketplace metadata）失败，至少 `npx tsc --noEmit` 通过即可视为开发就绪；打包可在联网环境重试，或直接用 `Extension Development Host`（F5）调试。
 
 在 VS Code 里安装：
 ```powershell
-code --install-extension qingxiaotuan-vscode-0.2.017.vsix
+code --install-extension tuan_cli-vscode-0.2.017.vsix
 ```
 
 ## 6. 使用说明
 
 1. 在 VS Code 里打开你的项目根目录（工作区根目录会作为 Agent 的 cwd）。
 2. 左侧 Activity Bar 点图标，打开侧边栏。
-3. 第一次激活会自动 `qxt acp`；看到顶部出现模型名即连接成功。
+3. 第一次激活会自动 `tuan acp`；看到顶部出现模型名即连接成功。
 4. 在底部输入框输入任务，`Enter` 发送，`Shift+Enter` 换行。
 5. Agent 跑起来后：
    - 流式文本逐字出现；
@@ -115,16 +115,16 @@ code --install-extension qingxiaotuan-vscode-0.2.017.vsix
 
 | 配置 | 默认 | 说明 |
 | --- | --- | --- |
-| `qingxiaotuan.command` | `qxt` | 启动 ACP 的可执行文件；PATH 里没有就填绝对路径或 `python`。 |
-| `qingxiaotuan.args` | `["acp"]` | 启动参数。 |
-| `qingxiaotuan.cwd` | （空） | Agent 工作目录；留空用 workspace 根。 |
-| `qingxiaotuan.enableInlineDiff` | `true` | 是否在编辑器里显示行内 diff 装饰。 |
-| `qingxiaotuan.approveAlways` | `false` | 实验性：自动批准所有工具（不推荐）。 |
+| `tuan_cli.command` | `tuan` | 启动 ACP 的可执行文件；PATH 里没有就填绝对路径或 `python`。 |
+| `tuan_cli.args` | `["acp"]` | 启动参数。 |
+| `tuan_cli.cwd` | （空） | Agent 工作目录；留空用 workspace 根。 |
+| `tuan_cli.enableInlineDiff` | `true` | 是否在编辑器里显示行内 diff 装饰。 |
+| `tuan_cli.approveAlways` | `false` | 实验性：自动批准所有工具（不推荐）。 |
 
 ## 8. 已知限制 / Roadmap
 
 - 当前 ACP 上报的工具参数/结果是截断后的纯文本，行内 diff 只能做"文件级高亮"占位；等服务端推结构化 edit 事件后升级为真正的 unified diff。
-- MCP 状态依赖 `initialize.tools[].source` 字段；旧版 server 没带时全部归到 `qxt builtin`。
+- MCP 状态依赖 `initialize.tools[].source` 字段；旧版 server 没带时全部归到 `tuan builtin`。
 - 重启会话目前通过"Reload Window"实现；后续改为原地 respawn 子进程。
 
 ## 9. License

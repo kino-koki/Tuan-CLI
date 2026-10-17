@@ -30,7 +30,7 @@ jobs:
 
       # 静态安全扫描 (排除测试目录)
       - name: bandit (static SAST)
-        run: bandit -r qingxiaotuan -x "*/tests/*,*/test_*.py" -ll -f txt
+        run: bandit -r tuan_cli -x "*/tests/*,*/test_*.py" -ll -f txt
 
   harden-tests:
     name: Hardening module tests
@@ -58,6 +58,9 @@ jobs:
   safety-benchmarks:
     name: Safety benchmarks (reproducible numbers gate)
     runs-on: ubuntu-latest
+    env:
+      # 仓库根锚定: 基准脚本与存档都按 TUAN_REPO_ROOT 定位 (v0.3.1 起 _repo_root 首选此变量)
+      TUAN_REPO_ROOT: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
 
@@ -75,7 +78,7 @@ jobs:
         # 备份 git 存档后覆盖工作区汇总, 让 report 使用 CI 实跑数字
         run: |
           cp bench/security-bench.json /tmp/security-bench.ref.json
-          python -m qingxiaotuan safe bench --out bench/security-bench.json
+          python -m tuan_cli safe bench --out bench/security-bench.json
 
       - name: Gate — numbers must not regress vs committed archive
         run: |
@@ -121,7 +124,7 @@ jobs:
           EOF
 
       - name: Generate shareable HTML security report
-        run: python -m qingxiaotuan safe report --release --out security-report.html
+        run: python -m tuan_cli safe report --release --out security-report.html
 
       - name: Upload report artifact
         uses: actions/upload-artifact@v4

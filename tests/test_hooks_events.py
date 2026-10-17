@@ -14,11 +14,11 @@ import sys
 
 import pytest
 
-from qingxiaotuan.context.manager import ContextManager
-from qingxiaotuan.hooks import HookManager, HOOK_EVENTS
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse
+from tuan_cli.context.manager import ContextManager
+from tuan_cli.hooks import HookManager, HOOK_EVENTS
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.models.base import ModelAdapter, ModelResponse
 
 PY = sys.executable
 FIX = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -121,7 +121,7 @@ class MockModel(ModelAdapter):
         return ModelResponse(content=self.content)
 
 
-def _build_agent(tmp_path, qxt_home):
+def _build_agent(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = 0
@@ -133,8 +133,8 @@ def _build_agent(tmp_path, qxt_home):
     return agent, model
 
 
-def test_agent_injects_prompt_submit_context(tmp_path, qxt_home):
-    agent, model = _build_agent(tmp_path, qxt_home)
+def test_agent_injects_prompt_submit_context(tmp_path, tuan_home):
+    agent, model = _build_agent(tmp_path, tuan_home)
     agent.ctx.hooks = HookManager(make_cfg({
         "UserPromptSubmit": [{"matcher": "*", "command": [PY, "-c", "print('HOOKCTX-42')"]}],
     }), workspace=str(tmp_path))
@@ -143,11 +143,11 @@ def test_agent_injects_prompt_submit_context(tmp_path, qxt_home):
     assert any("HOOKCTX-42" in str(m.get("content")) for m in user_msgs)
 
 
-def test_agent_fires_stop_on_finish(tmp_path, qxt_home):
+def test_agent_fires_stop_on_finish(tmp_path, tuan_home):
     audit_log = os.path.join(str(tmp_path), "stop.log")
     os.environ["HOOK_AUDIT_LOG"] = audit_log
     try:
-        agent, _ = _build_agent(tmp_path, qxt_home)
+        agent, _ = _build_agent(tmp_path, tuan_home)
         agent.ctx.hooks = HookManager(make_cfg({
             "Stop": [{"matcher": "*", "command": [PY, AUDIT]}],
         }), workspace=str(tmp_path))
@@ -160,9 +160,9 @@ def test_agent_fires_stop_on_finish(tmp_path, qxt_home):
         os.environ.pop("HOOK_AUDIT_LOG", None)
 
 
-def test_agent_no_stop_without_hooks(tmp_path, qxt_home):
+def test_agent_no_stop_without_hooks(tmp_path, tuan_home):
     # 未配置 hooks 时主循环零额外开销、行为不变
-    agent, model = _build_agent(tmp_path, qxt_home)
+    agent, model = _build_agent(tmp_path, tuan_home)
     answer = agent.run("plain input", stream=False)
     assert answer == "done"
     assert len(model.calls) == 1

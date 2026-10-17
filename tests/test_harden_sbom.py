@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from qingxiaotuan.harden.sbom import generate_sbom, write_sbom, sbom_hash
+from tuan_cli.harden.sbom import generate_sbom, write_sbom, sbom_hash
 
 
 def test_generate_sbom_structure():
@@ -11,7 +11,7 @@ def test_generate_sbom_structure():
     assert data["SPDXID"] == "SPDXRef-DOCUMENT"
     # 根组件 + 至少一个已安装包
     names = {p["name"] for p in data["packages"]}
-    assert "qingxiaotuan" in names
+    assert "tuan_cli" in names
     assert len(data["packages"]) >= 2
     assert len(data["relationships"]) >= 1
     # 关系指向存在的 SPDXID

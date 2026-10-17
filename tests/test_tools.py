@@ -3,10 +3,10 @@
 import json
 import os
 
-from qingxiaotuan.core.kernel import Kernel
-from qingxiaotuan.config import Config
-from qingxiaotuan.tools import ToolRegistryPlugin, builtin_tool_plugins
-from qingxiaotuan.tools.base import ToolContext
+from tuan_cli.core.kernel import Kernel
+from tuan_cli.config import Config
+from tuan_cli.tools import ToolRegistryPlugin, builtin_tool_plugins
+from tuan_cli.tools.base import ToolContext
 
 
 def _kernel_with_tools():
@@ -124,7 +124,7 @@ def test_unknown_tool_error():
     assert "未知工具" in registry.dispatch("nope", "{}", ctx)
 
 
-def test_permission_policy_denies_shell_pattern(tmp_path, qxt_home):
+def test_permission_policy_denies_shell_pattern(tmp_path, tuan_home):
     k = _kernel_with_tools()
     config = k.require("config")
     config.data["permissions"]["shell"]["deny_patterns"] = [r"\bformat\b"]
@@ -134,7 +134,7 @@ def test_permission_policy_denies_shell_pattern(tmp_path, qxt_home):
     assert "拒绝" in out
 
 
-def test_permission_policy_restricts_network_domain(tmp_path, qxt_home):
+def test_permission_policy_restricts_network_domain(tmp_path, tuan_home):
     k = _kernel_with_tools()
     config = k.require("config")
     config.data["permissions"]["network"]["allow_domains"] = ["allowed.example"]
@@ -144,7 +144,7 @@ def test_permission_policy_restricts_network_domain(tmp_path, qxt_home):
     assert "域名" in out
 
 
-def test_permission_policy_keeps_yolo_redline(tmp_path, qxt_home):
+def test_permission_policy_keeps_yolo_redline(tmp_path, tuan_home):
     k = _kernel_with_tools()
     config = k.require("config")
     config.data["mode"]["yolo_require_confirm"] = ["write_file"]

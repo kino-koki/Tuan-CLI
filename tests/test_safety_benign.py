@@ -7,8 +7,8 @@
 
 from __future__ import annotations
 
-from qingxiaotuan.core.whitelist import get_warning_level
-from qingxiaotuan.ext.safety_engine import (
+from tuan_cli.core.whitelist import get_warning_level
+from tuan_cli.ext.safety_engine import (
     SafetyEngine,
     is_benign_dev_command,
     is_hard_redline,
@@ -51,7 +51,7 @@ _BENIGN_COMMANDS = [
     "black --check .",
     "isort --check-only .",
     "mypy src/",
-    "flake8 qingxiaotuan",
+    "flake8 tuan_cli",
     "eslint src/",
     "tsc --noEmit",
     "echo hello",

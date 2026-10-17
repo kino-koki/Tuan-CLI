@@ -2,10 +2,10 @@
 
 import json
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse
-from qingxiaotuan.models.router import estimate_cost
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.models.base import ModelAdapter, ModelResponse
+from tuan_cli.models.router import estimate_cost
 
 
 class MockModel(ModelAdapter):
@@ -23,7 +23,7 @@ class MockModel(ModelAdapter):
         return resp
 
 
-def _build_agent(tmp_path, qxt_home, script):
+def _build_agent(tmp_path, tuan_home, script):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = 0
@@ -32,9 +32,9 @@ def _build_agent(tmp_path, qxt_home, script):
     return Agent(kernel=kernel, config=config, workspace=str(tmp_path), confirm=lambda _p: True)
 
 
-def test_agent_compact_folds_old_history(tmp_path, qxt_home):
+def test_agent_compact_folds_old_history(tmp_path, tuan_home):
     """Agent.compact() 手动折叠旧历史, 保留最近消息。"""
-    agent = _build_agent(tmp_path, qxt_home, [])
+    agent = _build_agent(tmp_path, tuan_home, [])
     agent.messages = [{"role": "system", "content": "sys"}]
     for i in range(20):
         agent.messages.append({"role": "user", "content": f"历史消息{i}" * 30})
@@ -47,9 +47,9 @@ def test_agent_compact_folds_old_history(tmp_path, qxt_home):
     assert "历史消息19" in agent.messages[-1]["content"]
 
 
-def test_agent_compact_noop_when_short(tmp_path, qxt_home):
+def test_agent_compact_noop_when_short(tmp_path, tuan_home):
     """消息很短时 compact 不误伤 (系统提示 + 少量消息保持原样)。"""
-    agent = _build_agent(tmp_path, qxt_home, [])
+    agent = _build_agent(tmp_path, tuan_home, [])
     agent.messages = [{"role": "system", "content": "sys"},
                       {"role": "user", "content": "hi"}]
     dropped = agent.compact()
@@ -70,9 +70,9 @@ def test_estimate_cost_unknown_model_fallback():
     assert cost > 0
 
 
-def test_cost_usage_accumulates_cache_fields(tmp_path, qxt_home):
+def test_cost_usage_accumulates_cache_fields(tmp_path, tuan_home):
     """total_usage 累计缓存命中/未命中, 供 /cost 展示。"""
-    agent = _build_agent(tmp_path, qxt_home, [])
+    agent = _build_agent(tmp_path, tuan_home, [])
     agent._accumulate_usage({"prompt_tokens": 100, "completion_tokens": 50,
                              "prompt_cache_hit_tokens": 80,
                              "prompt_cache_miss_tokens": 20})
@@ -81,10 +81,10 @@ def test_cost_usage_accumulates_cache_fields(tmp_path, qxt_home):
     assert agent.cache_hit_rate() == 0.8
 
 
-def test_slash_compact_and_cost_handlers(tmp_path, qxt_home, capsys):
+def test_slash_compact_and_cost_handlers(tmp_path, tuan_home, capsys):
     """/compact 与 /cost 斜杠命令接线正确, 不抛异常。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home, [])
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home, [])
     config = agent.config
     agent.messages = [{"role": "system", "content": "sys"}]
     for i in range(20):
@@ -100,20 +100,20 @@ def test_slash_compact_and_cost_handlers(tmp_path, qxt_home, capsys):
     assert "估算成本" in out
 
 
-def test_slash_route_usage_hint(tmp_path, qxt_home, capsys):
+def test_slash_route_usage_hint(tmp_path, tuan_home, capsys):
     """/route 无参数时给出用法提示, 不抛异常。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home, [])
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home, [])
     assert _handle_slash("/route", agent, agent.config, str(tmp_path)) is True
     out = capsys.readouterr().out
     assert "用法" in out
     assert "自动路由" in out
 
 
-def test_slash_route_suggests_model(tmp_path, qxt_home, capsys):
+def test_slash_route_suggests_model(tmp_path, tuan_home, capsys):
     """/route <任务> 返回难度评估与建议模型。"""
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home, [])
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home, [])
     assert _handle_slash("/route 修复一个按钮的错别字", agent, agent.config,
                          str(tmp_path)) is True
     out = capsys.readouterr().out

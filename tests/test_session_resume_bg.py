@@ -1,4 +1,4 @@
-"""后台任务接入 qxt session 断点续聊 (Task F) 测试。
+"""后台任务接入 tuan session 断点续聊 (Task F) 测试。
 
 验证:
 - 后台任务提交的会话流带有 session.meta(kind=background, job_id, task);
@@ -13,9 +13,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.memory.sessions import SessionStore
-from qingxiaotuan.core.background import BackgroundRunner, BackgroundJob
-from qingxiaotuan.app import build_kernel
+from tuan_cli.memory.sessions import SessionStore
+from tuan_cli.core.background import BackgroundRunner, BackgroundJob
+from tuan_cli.app import build_kernel
 
 
 def test_background_session_writes_meta(tmp_path):

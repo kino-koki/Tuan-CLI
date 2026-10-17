@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from qingxiaotuan.context.compaction_fusion import (
+from tuan_cli.context.compaction_fusion import (
     compact_head_tail_elision,
     estimate_message,
     estimate_messages,

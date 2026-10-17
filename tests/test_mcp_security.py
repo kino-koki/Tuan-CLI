@@ -22,10 +22,10 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "mcp_demo_server.py"
 sys.path.insert(0, str(ROOT))
 
-from qingxiaotuan.tools.mcp.audit import MCPAuditStore  # noqa: E402
-from qingxiaotuan.tools.mcp.client import MCPClient, MCPSecurityPolicy  # noqa: E402
-from qingxiaotuan.tools.mcp.plugin import _build_security_policy  # noqa: E402
-from qingxiaotuan.tools.mcp.sandbox import _sanitize_env  # noqa: E402
+from tuan_cli.tools.mcp.audit import MCPAuditStore  # noqa: E402
+from tuan_cli.tools.mcp.client import MCPClient, MCPSecurityPolicy  # noqa: E402
+from tuan_cli.tools.mcp.plugin import _build_security_policy  # noqa: E402
+from tuan_cli.tools.mcp.sandbox import _sanitize_env  # noqa: E402
 
 
 class FakeConfig:
@@ -215,8 +215,8 @@ def test_denied_tools_wins_over_wildcard():
 # ---------------------------------------------------------- CLI 子命令
 
 def test_mcp_audit_clear(tmp_path, capsys):
-    from qingxiaotuan.cli import cmd_services as CS
-    from qingxiaotuan.tools.mcp.audit import MCPAuditStore
+    from tuan_cli.cli import cmd_services as CS
+    from tuan_cli.tools.mcp.audit import MCPAuditStore
 
     store = MCPAuditStore(tmp_path / "mcp-audit.jsonl")
     store.record({"tool": "x", "success": True})

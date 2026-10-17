@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from qingxiaotuan.core.chat_handoff import (
+from tuan_cli.core.chat_handoff import (
     ChatHandoff,
     build_summary,
     should_handoff,
@@ -55,7 +55,7 @@ def test_handoff_flow(tmp_path):
     assert report.new_session_id != "old-session-1"
     assert report.archived is True
     assert report.summary  # 非空摘要
-    # 交接记录落盘 (.qxt/handoffs.json)
+    # 交接记录落盘 (.tuan/handoffs.json)
     records = handoff.list_handoffs()
     assert len(records) == 1
     assert records[0]["old_session_id"] == "old-session-1"

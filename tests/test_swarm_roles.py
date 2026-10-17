@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from qingxiaotuan.core.swarm import Swarm, SwarmPlan
+from tuan_cli.core.swarm import Swarm, SwarmPlan
 
 
 class _FakeKernel:

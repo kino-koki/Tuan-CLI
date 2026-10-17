@@ -14,8 +14,8 @@ import json
 
 import pytest
 
-from qingxiaotuan.tools.base import ToolContext, ToolRegistry
-from qingxiaotuan.tools.web import (
+from tuan_cli.tools.base import ToolContext, ToolRegistry
+from tuan_cli.tools.web import (
     WebPlugin,
     _decode_ddg_href,
     _engine_bing,
@@ -108,7 +108,7 @@ def test_parse_ddg_results_truncates_and_handles_empty():
 # ----------------------------------------------------------------- handler
 
 def test_web_search_formats_results(monkeypatch):
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", lambda url, timeout: SAMPLE_HTML)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", lambda url, timeout: SAMPLE_HTML)
     out = web_search(_ctx(), "python", max_results=5)
     assert out.startswith("1. Python 官网")
     assert "https://www.python.org/" in out
@@ -126,7 +126,7 @@ def test_web_search_clamps_max_results(monkeypatch):
         seen["url"] = url
         return SAMPLE_HTML
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
     out = web_search(_ctx(), "python", max_results=99)  # 夹到 10, 不报错即可
     assert "1. Python 官网" in out
     assert "q=python" in str(seen["url"])
@@ -136,14 +136,14 @@ def test_web_search_network_failure_friendly(monkeypatch):
     def boom(url, timeout):
         raise TimeoutError("timed out")
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", boom)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", boom)
     out = web_search(_ctx(), "python")
     assert out.startswith("[web_search] 搜索失败")
     assert "TimeoutError" in out
 
 
 def test_web_search_no_results(monkeypatch):
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", lambda url, timeout: "<html/>")
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", lambda url, timeout: "<html/>")
     assert '未找到与 "xyz" 相关的结果' in web_search(_ctx(), "xyz")
 
 
@@ -160,7 +160,7 @@ def test_web_search_paginates_across_pages(monkeypatch):
         # 第 1 页 20 条 a*, 第 2 页 20 条 b* → 共 40 条
         return _sample_page(20, "a") if start == 0 else _sample_page(20, "b")
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
     cfg = _ctx_cfg({"network.search_top_k": 0})  # 关掉 top_k, 验证分页不丢结果
     out = web_search(cfg, "python", max_results=40)
     assert "1. Result a-0" in out and "Result a-19" in out
@@ -172,7 +172,7 @@ def test_web_search_dedups_identical_urls(monkeypatch):
     def fake_fetch(url, timeout):
         return _sample_page(20, "dup")  # 两页 URL 完全相同
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
     out = web_search(_ctx(), "python", max_results=40)
     # 去重后只剩 20 条, 且不再抓第 3 页
     assert out.count("https://dup0.example.com/doc") == 1
@@ -190,7 +190,7 @@ def test_web_search_truncates_long_snippets(monkeypatch):
                 f'<a class="result__a" href="//ddg/?uddg=https://long.example.com">{title}</a></h2>'
                 f'<a class="result__snippet">{huge_snip}</a></div>')
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", lambda url, t: make_page(url))
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", lambda url, t: make_page(url))
     out = web_search(cfg, "python")
     # 摘要被截到 30 字符内并带省略号
     for line in out.splitlines():
@@ -214,7 +214,7 @@ def test_web_search_top_k_keeps_most_relevant(monkeypatch):
     def fake_fetch(url, timeout):
         return html
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
     out = web_search(cfg, "python")
     # 只返回 1 条, 且是最相关的标题命中者
     assert out.count("https://hit.example.com") == 1
@@ -234,7 +234,7 @@ def test_web_search_caps_at_max_results(monkeypatch):
         calls.append(url)
         return _sample_page(20, "p" + str(start))  # 每页数据不同, 便于数分页次数
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
     out = web_search(cfg, "python", max_results=500)
     assert len(calls) == 3  # 受 search_max_pages 约束, 不会无限分页
     assert out.count("https://p00.example.com/doc") == 1  # top_k 默认 5, 只注入最相关 5 条
@@ -285,7 +285,7 @@ def test_web_search_falls_back_to_bing_when_ddg_fails(monkeypatch):
             raise TimeoutError("ddg down")
         return _bing_page(3, "b")
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
     out = web_search(_ctx(), "python")
     assert "bing.example.com" in out
     assert any("bing.com" in u for u in calls)  # 确实尝试了 Bing
@@ -299,7 +299,7 @@ def test_web_search_stays_on_ddg_when_it_succeeds(monkeypatch):
         calls.append(url)
         return SAMPLE_HTML
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
     out = web_search(_ctx(), "python")
     assert "python.org" in out
     assert not any("bing.com" in u for u in calls)
@@ -311,7 +311,7 @@ def test_web_search_ddg_empty_then_bing_hits(monkeypatch):
             return "<html/>"          # DDG 无结果
         return _bing_page(2, "fb")    # Bing 有结果
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
     out = web_search(_ctx(), "python")
     assert "fb0.bing.example.com" in out
 
@@ -326,7 +326,7 @@ def test_web_search_disk_cache_shortcircuits_refetch(tmp_path, monkeypatch):
         calls.append(url)
         return SAMPLE_HTML
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
 
     def mk_cache_dir_ctx():
         return _ctx_cfg({
@@ -353,7 +353,7 @@ def test_web_search_cache_expired_refetches(tmp_path, monkeypatch):
         calls.append(url)
         return SAMPLE_HTML
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
 
     def ctx(ttl):
         return _ctx_cfg({
@@ -377,7 +377,7 @@ def test_web_search_cache_disabled_always_network(tmp_path, monkeypatch):
         calls.append(url)
         return SAMPLE_HTML
 
-    monkeypatch.setattr("qingxiaotuan.tools.web._ddg_fetch", fake_fetch)
+    monkeypatch.setattr("tuan_cli.tools.web._ddg_fetch", fake_fetch)
     ctx = _ctx_cfg({  # _ctx_cfg 默认 search_cache=False
         "network.search_cache_dir": str(tmp_path),
     })

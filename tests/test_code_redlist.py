@@ -1,6 +1,6 @@
 """验证 code 工具的危险命令红名单拦截。"""
 
-from qingxiaotuan.tools.code import _looks_dangerous
+from tuan_cli.tools.code import _looks_dangerous
 
 
 def test_rm_rf_blocked():

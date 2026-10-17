@@ -1,5 +1,5 @@
 """网络出口加固测试 (CIDR 出口白名单 + 单向模式)。"""
-from qingxiaotuan.harden.network_policy import EgressRestrictedNetworkGuard
+from tuan_cli.harden.network_policy import EgressRestrictedNetworkGuard
 
 
 def test_egress_cidr_denies_outside():

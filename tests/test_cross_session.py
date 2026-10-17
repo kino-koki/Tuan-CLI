@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from qingxiaotuan.core.cross_session import (
+from tuan_cli.core.cross_session import (
     CrossSessionResolver, Mention, resolve_mentions,
 )
-from qingxiaotuan.memory.sessions import SessionStore
+from tuan_cli.memory.sessions import SessionStore
 
 
 def _seed_session(home, sid):

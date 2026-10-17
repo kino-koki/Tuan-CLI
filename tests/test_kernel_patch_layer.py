@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.kernel_patch import install, ensure_builtin_loaded
-from qingxiaotuan.kernel_patch import patch_base
+from tuan_cli.kernel_patch import install, ensure_builtin_loaded
+from tuan_cli.kernel_patch import patch_base
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +31,7 @@ def test_builtin_patches_apply():
 
 
 def test_i18n_t_memo_keeps_semantics():
-    from qingxiaotuan import i18n as I
+    from tuan_cli import i18n as I
     install()
     I.set_language("zh-CN")
     v1 = I.t("banner.welcome")
@@ -41,7 +41,7 @@ def test_i18n_t_memo_keeps_semantics():
 
 
 def test_lang_switch_clears_cache():
-    from qingxiaotuan import i18n as I
+    from tuan_cli import i18n as I
     install()
     I.set_language("zh-CN")
     zh = I.t("banner.welcome")
@@ -51,13 +51,13 @@ def test_lang_switch_clears_cache():
 
 
 def test_classify_error_equivalent():
-    from qingxiaotuan.core.retry import classify_error
+    from tuan_cli.core.retry import classify_error
     install()
     assert classify_error(None) == ("other", None)
 
 
 def test_revert_restores_and_emits():
-    from qingxiaotuan.core.kernel import Kernel
+    from tuan_cli.core.kernel import Kernel
     k = Kernel()
     mgr = patch_base.get_manager(k)
     ensure_builtin_loaded()

@@ -1,16 +1,16 @@
-"""qingxiaotuan.code_edit 模块测试。
+"""tuan_cli.code_edit 模块测试。
 
 覆盖：任务模板解析、五层安全闸门、版本锁死、权限 TTL/回收、验证闭环、规则外置、编排器。
 """
 
 import time
 
-from qingxiaotuan.code_edit import (
+from tuan_cli.code_edit import (
     Action, CodeEditAssistant, EditReport, PermissionGrant, RiskLevel, TaskSpec,
     UserPrefsMemory, VerifyLoop, check_version_lock, classify_risk,
     load_project_rules, parse_task_spec, run_tests,
 )
-from qingxiaotuan.code_edit.safety_gate import SafetyGate
+from tuan_cli.code_edit.safety_gate import SafetyGate
 
 
 # ---------------- task_spec ----------------
@@ -134,7 +134,7 @@ def test_verify_loop_retries_on_failure():
 
     def fake_run(cmd, cwd):
         calls["n"] += 1
-        from qingxiaotuan.code_edit import TestResult
+        from tuan_cli.code_edit import TestResult
         # 第一次失败，诊断后第二次成功
         if calls["n"] == 1:
             return TestResult(1, 0, 1, 0, "boom")
@@ -196,7 +196,7 @@ def test_assistant_runs_verify_loop():
 
     def fake_run(cmd, cwd):
         calls["n"] += 1
-        from qingxiaotuan.code_edit import TestResult
+        from tuan_cli.code_edit import TestResult
         return TestResult(0, 1, 0, 0, "ok")
 
     a = CodeEditAssistant(run_test_fn=fake_run, confirm_fn=lambda p: True)

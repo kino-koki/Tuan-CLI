@@ -1,10 +1,10 @@
-"""CLI 开箱即用简化测试 (Task: qxt 直接开界面 / qxt --yolo / qxt models 51家)。
+"""CLI 开箱即用简化测试 (Task: tuan 直接开界面 / tuan --yolo / tuan models 51家)。
 
 验证:
 - 顶层 --yolo 被 main() 转成 mode=yolo 并交给 cmd_chat;
 - 顶层 --model 透传给 cmd_chat;
-- qxt models 无子命令时进入交互选择 (PROVIDER_PRESETS 驱动);
-- qxt models set 用预设自动带好 base_url / api_key_env。
+- tuan models 无子命令时进入交互选择 (PROVIDER_PRESETS 驱动);
+- tuan models set 用预设自动带好 base_url / api_key_env。
 """
 
 import sys
@@ -13,10 +13,10 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.cli.parser import build_parser
-from qingxiaotuan.cli import commands
-from qingxiaotuan.cli import cmd_chat
-from qingxiaotuan.models import PROVIDER_PRESETS
+from tuan_cli.cli.parser import build_parser
+from tuan_cli.cli import commands
+from tuan_cli.cli import cmd_chat
+from tuan_cli.models import PROVIDER_PRESETS
 
 
 def test_top_level_yolo_routes_to_chat_in_yolo_mode():
@@ -47,7 +47,7 @@ def test_top_level_model_passthrough():
 
 
 def test_model_no_subcommand_triggers_interactive_chooser(tmp_path):
-    """qxt models 无子命令应进入交互选择; 模拟选第1家(deepseek)并默认模型。"""
+    """tuan models 无子命令应进入交互选择; 模拟选第1家(deepseek)并默认模型。"""
     written = {}
     orig_set_user = cmd_chat.Config.set_user
     def fake_set_user(self, dotted, value):
@@ -87,7 +87,7 @@ def test_model_set_uses_explicit_values():
 
 
 def test_model_set_autofills_preset_base_url_and_key_env():
-    """qxt model set <已知供应商> <模型> 未给 base_url/api_key_env 时应从预设自动补全。"""
+    """tuan model set <已知供应商> <模型> 未给 base_url/api_key_env 时应从预设自动补全。"""
     written = {}
     def fake_set_user(self, dotted, value):
         written[dotted] = value

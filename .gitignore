@@ -20,6 +20,8 @@ ENV/
 .pytest_cache/
 .pytest-tmp/
 .pytest_tmp/
+.pytest_tmp*/
+.pytest-run-*
 .pt-*/
 .pt-full-*/
 .pt-win-*/
@@ -57,19 +59,33 @@ security-report*.html
 # ===== 截图 / 本地归档（不入库） =====
 _shots/
 _repo_archive/
-# 根目录偶发截图不入库（测评页 qxt-全面测评-*.html 是项目有意入库的文档，不忽略）
+# Web 工作台渲染缓存: HTML/图片被切片渲染成 png + 抽取的 text.md + 目录 manifest。
+# 内容含本机绝对路径 (E:\Qingxiaotuan Agent CLI\_preview_tmp\...), 是本地临时产物,
+# 8.9MB 纯图片, 对使用者毫无价值。v0.3.1 起从版本库中移除 (曾误提交 308 个文件)。
+.preview/
+# 根目录偶发截图不入库（测评页 tuan-全面测评-*.html 是项目有意入库的文档，不忽略）
 联想截图_*.png
 截图_*.png
 Screenshot_*.png
 
-# ===== 运行时状态 =====
-.qxt/
-~/.qingxiaotuan/
-audit/
-sessions/
-memories/
-cron/
-# 注: 用户技能在 ~/.qingxiaotuan/skills (已由上方 ~/.qingxiaotuan/ 覆盖);
+# ===== 运行时状态 (只锚定仓库根, 避免误杀 tuan_cli/ 包内同名源码目录) =====
+# v0.3.1 修复: 旧规则 `audit/` `cron/` `sessions/` `memories/` 不带前导 /,
+# 会把包内源码 tuan_cli/audit/ tuan_cli/cron/ 也误忽略 (cron 插件、审计存储
+# 都是要入库的功能代码, 不是运行时落盘)。现在全部锚到仓库根。
+/.tuan/
+# .qxt/ 是代理运行时状态目录 (config/ledger/sessions/web_sessions/project/memory.db),
+# 内容含本机绝对路径与用户对话记录, 绝不入库。历史上 7 个文件曾误提交。
+/.qxt/
+# SD 探针与 ACL 恢复报告: 本地诊断产物, 含本机路径, 不入库。
+/.tuan_sd_probe/
+/recovery/
+# 注: 数据 (~/.tuan/) 不在仓库内, 无需忽略; git 不做 home 目录展开,
+#     `~/.tuan/` 会被当作字面量目录名, 匹配不到任何东西, 故不设此规则。
+/audit/
+/sessions/
+/memories/
+/cron/
+# 注: 用户技能在 ~/.tuan/skills (不在仓库内, 无需忽略);
 #     resources/skills/builtin 是随包分发的资源, 必须入库, 故不设 skills/ 全局忽略。
 
 # ===== 敏感信息 =====
@@ -101,10 +117,15 @@ desktop.ini
 *~
 *.user
 *.suo
+# Python 编译产物: 四代 Python 的 __pycache__ 叠加, 不入库
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
 # ===== 官网（Web）不入库 =====
 # 官网页面与素材保持本地维护，不随 Tuan-CLI 代码仓库提交
-# 仅忽略仓库根级官网目录 /web/, 不影响 qingxiaotuan/web/ 代码包
+# 仅忽略仓库根级官网目录 /web/, 不影响 tuan_cli/web/ 代码包
 /web/
 .trae-html-share-packages/
 
@@ -116,6 +137,8 @@ bench/*.json
 !bench/security-bench.json
 bench/vs_report.md
 bench/vs_report.html
+# bench/ 下的 `_` 前缀脚本为一次性校准/抓取工具, 与仓库约定一致不入库。
+bench/_*.py
 
 # ===== 一次性操作脚本 =====
 scripts/_replace_icons.py
@@ -125,6 +148,25 @@ scripts/_replace_icons.py
 .demo-patch.yaml
 111.md
 .git.broken-*/
+# GitHub token / 凭据文件（根目录，不入库）
+github token*
+*.token
+# 个人待办/备忘笔记（根目录）。历史教训: `26.10.13午代办` 曾因未忽略而被提交,
+# 把一枚真实的 GitHub PAT 推到了远端仓库 —— 从此任何 *代办* 一律不入库。
+*代办*
+# 一次性推送脚本: 面向单次全量迁移的临时工具, 不走版本控制。
+# 脚本内绝不硬编码凭据 (只读 GITHUB_TOKEN 环境变量), 但仍属个人操作留痕, 不入库。
+push_api.py
+push_api.ps1
+# 本地依赖投放目录: 在 .venv 损坏时用来给测试装依赖的临时 --target 目录, 不入库。
+.deptrt/
 
-# ===== WorkBuddy 工作区数据（不入库） =====
-.workbuddy-ai/
+# ===== 本地桌面版工程（暂不入库） =====
+# 仍在外层开发中，暂不入库。
+# 其自带 Non-Commercial 许可证，与主仓 MIT 不同源，误提交会造成许可污染。
+Tuan-Chat/
+
+# ===== 根目录一次性脚本 / 抓取产物（约定 `_` 前缀，不入库） =====
+# 项目约定: 根级 `_` 前缀文件均为本地临时/抓取产物（_cda_* / _tmp_* / _dsh_* / _redteam_* 等），
+# 不入库。历史上根目录堆积过 20+ 个此类脚本，此规则一劳永逸。已归档副本在 _repo_archive/。
+/_*

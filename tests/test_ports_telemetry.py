@@ -1,4 +1,4 @@
-"""Tests for qingxiaotuan.ports.telemetry (kimi-code telemetry port)."""
+"""Tests for tuan_cli.ports.telemetry (kimi-code telemetry port)."""
 from __future__ import annotations
 
 import asyncio
@@ -33,7 +33,7 @@ def _restore_global_tempdir():
     yield
     tempfile.tempdir = _original_tempdir
 
-from qingxiaotuan.ports.telemetry import (
+from tuan_cli.ports.telemetry import (
     EnrichedTelemetryEvent,
     EventSink,
     EventSinkContextOptions,
@@ -52,7 +52,7 @@ from qingxiaotuan.ports.telemetry import (
     sanitize_properties,
     track,
 )
-from qingxiaotuan.ports.telemetry.types import TelemetryEvent
+from tuan_cli.ports.telemetry.types import TelemetryEvent
 
 
 class InMemoryTransport(TelemetryTransport):
@@ -71,7 +71,7 @@ class InMemoryTransport(TelemetryTransport):
 
 
 def _context_options() -> EventSinkContextOptions:
-    return EventSinkContextOptions(app_name="qxt", version="1.0.0")
+    return EventSinkContextOptions(app_name="tuan", version="1.0.0")
 
 
 # --------------------------------------------------------------------------
@@ -119,7 +119,7 @@ def test_client_emits_to_sink():
     assert event.device_id == "dev"
     assert event.session_id == "sess"
     assert event.event_id  # generated uuid hex
-    assert event.context["app_name"] == "qxt"
+    assert event.context["app_name"] == "tuan"
     assert event.context["runtime"] == "python"
 
 
@@ -254,7 +254,7 @@ def test_build_payload_and_flatten():
             event="ping",
             timestamp=1.5,
             properties={"a": "b", "n": 2},
-            context={"app": "qxt", "ui_mode": "shell"},
+            context={"app": "tuan", "ui_mode": "shell"},
         )
     ]
     payload = build_payload(events, "dev")
@@ -263,7 +263,7 @@ def test_build_payload_and_flatten():
     assert flat["event"] == "kfc_ping"  # server prefix applied
     assert flat["property_a"] == "b"
     assert flat["property_n"] == 2
-    assert flat["context_app"] == "qxt"
+    assert flat["context_app"] == "tuan"
     assert flat["context_ui_mode"] == "shell"
     assert flat["device_id"] == "d"
     assert flat["timestamp"] == 1.5
@@ -301,7 +301,7 @@ def test_event_round_trip():
         event="ping",
         timestamp=123.0,
         properties={"a": 1, "b": "x"},
-        context={"app": "qxt"},
+        context={"app": "tuan"},
     )
     restored = EnrichedTelemetryEvent(**asdict(event))
     assert restored == event
@@ -330,7 +330,7 @@ def test_normalize_remote(raw, expected):
 # Default client module-level API
 # --------------------------------------------------------------------------
 def test_default_client_module_api():
-    from qingxiaotuan.ports.telemetry import (
+    from tuan_cli.ports.telemetry import (
         attach_sink,
         get_default_telemetry_client,
         reset_default_telemetry_client_for_tests,

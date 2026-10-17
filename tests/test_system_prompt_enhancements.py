@@ -12,7 +12,7 @@ class TestSystemPromptWindowsGuidance:
     def test_windows_section_present_on_win32(self, monkeypatch):
         """在 Windows 平台上, system prompt 应包含 Windows 命令外骨骼。"""
         monkeypatch.setattr(platform, "system", lambda: "Windows")
-        from qingxiaotuan.core.prompts import build_system_prompt
+        from tuan_cli.core.prompts import build_system_prompt
         prompt = build_system_prompt(
             home=Path("/tmp/test-home"),
             workspace="/tmp/test-ws",
@@ -25,7 +25,7 @@ class TestSystemPromptWindowsGuidance:
     def test_windows_section_absent_on_linux(self, monkeypatch):
         """在 Linux 平台上, system prompt 不应包含 Windows 外骨骼。"""
         monkeypatch.setattr(platform, "system", lambda: "Linux")
-        from qingxiaotuan.core.prompts import build_system_prompt
+        from tuan_cli.core.prompts import build_system_prompt
         prompt = build_system_prompt(
             home=Path("/tmp/test-home"),
             workspace="/tmp/test-ws",
@@ -36,7 +36,7 @@ class TestSystemPromptWindowsGuidance:
     def test_windows_guidance_mentions_key_practices(self, monkeypatch):
         """Windows 指引应包含关键最佳实践。"""
         monkeypatch.setattr(platform, "system", lambda: "Windows")
-        from qingxiaotuan.core.prompts import build_system_prompt
+        from tuan_cli.core.prompts import build_system_prompt
         prompt = build_system_prompt(
             home=Path("/tmp/test-home"),
             workspace="/tmp/test-ws",
@@ -53,7 +53,7 @@ class TestSystemPromptWebGuidance:
 
     def test_web_guidance_always_present(self):
         """上网查证指引应在所有平台上注入。"""
-        from qingxiaotuan.core.prompts import build_system_prompt
+        from tuan_cli.core.prompts import build_system_prompt
         prompt = build_system_prompt(
             home=Path("/tmp/test-home"),
             workspace="/tmp/test-ws",
@@ -65,7 +65,7 @@ class TestSystemPromptWebGuidance:
 
     def test_web_guidance_mentions_citation(self):
         """指引应要求模型在回答中注明引用来源。"""
-        from qingxiaotuan.core.prompts import build_system_prompt
+        from tuan_cli.core.prompts import build_system_prompt
         prompt = build_system_prompt(
             home=Path("/tmp/test-home"),
             workspace="/tmp/test-ws",
@@ -80,7 +80,7 @@ class TestSystemPromptCodeDevGuidance:
 
     def test_code_dev_guidance_present(self):
         """代码开发指引应始终注入。"""
-        from qingxiaotuan.core.prompts import build_system_prompt
+        from tuan_cli.core.prompts import build_system_prompt
         prompt = build_system_prompt(
             home=Path("/tmp/test-home"),
             workspace="/tmp/test-ws",
@@ -92,7 +92,7 @@ class TestSystemPromptCodeDevGuidance:
 
     def test_code_dev_guidance_mentions_review(self):
         """代码开发指引应提到提交规范。"""
-        from qingxiaotuan.core.prompts import build_system_prompt
+        from tuan_cli.core.prompts import build_system_prompt
         prompt = build_system_prompt(
             home=Path("/tmp/test-home"),
             workspace="/tmp/test-ws",
@@ -106,7 +106,7 @@ class TestSystemPromptSandboxGuidance:
 
     def test_sandbox_guidance_present(self):
         """安全指引应始终注入。"""
-        from qingxiaotuan.core.prompts import build_system_prompt
+        from tuan_cli.core.prompts import build_system_prompt
         prompt = build_system_prompt(
             home=Path("/tmp/test-home"),
             workspace="/tmp/test-ws",
@@ -118,7 +118,7 @@ class TestSystemPromptSandboxGuidance:
 
     def test_sandbox_guidance_mentions_dangerous_ops(self):
         """安全指引应提到危险操作。"""
-        from qingxiaotuan.core.prompts import build_system_prompt
+        from tuan_cli.core.prompts import build_system_prompt
         prompt = build_system_prompt(
             home=Path("/tmp/test-home"),
             workspace="/tmp/test-ws",
@@ -135,7 +135,7 @@ class TestWindowsSkillFile:
         """Windows 命令参考 skill 文件应存在。"""
         skill_path = (
             Path(__file__).resolve().parent.parent
-            / "qingxiaotuan"
+            / "tuan_cli"
             / "resources"
             / "skills"
             / "builtin"
@@ -147,7 +147,7 @@ class TestWindowsSkillFile:
         """Skill 文件应有 YAML frontmatter。"""
         skill_path = (
             Path(__file__).resolve().parent.parent
-            / "qingxiaotuan"
+            / "tuan_cli"
             / "resources"
             / "skills"
             / "builtin"
@@ -162,7 +162,7 @@ class TestWindowsSkillFile:
         """Skill 文件应覆盖关键的 Windows 命令。"""
         skill_path = (
             Path(__file__).resolve().parent.parent
-            / "qingxiaotuan"
+            / "tuan_cli"
             / "resources"
             / "skills"
             / "builtin"
@@ -181,7 +181,7 @@ class TestWindowsSkillFile:
         """Skill 文件应覆盖常见陷阱。"""
         skill_path = (
             Path(__file__).resolve().parent.parent
-            / "qingxiaotuan"
+            / "tuan_cli"
             / "resources"
             / "skills"
             / "builtin"

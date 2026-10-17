@@ -5,7 +5,7 @@
 项目遵循标准语义化版本 (SemVer): MAJOR.MINOR.PATCH; 当前 0.x 阶段公共 API 未冻结。
 本脚本把"写在文档里"的版本纪律变成 CI 会拦下来的硬约束:
 
-  1. **一致性**: pyproject.toml 的 version 与 qingxiaotuan/__init__.py 的
+  1. **一致性**: pyproject.toml 的 version 与 tuan_cli/__init__.py 的
      __version__ 必须完全相同(当前二者曾长期不同步)。
   2. **禁止回退**: 相对基线版本, 版本号不允许降低。
   3. **CHANGELOG 对齐**: 最新版本号必须与 CHANGELOG.md 顶层条目一致。
@@ -31,7 +31,7 @@ from typing import Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = REPO_ROOT / "pyproject.toml"
-INIT_PY = REPO_ROOT / "qingxiaotuan" / "__init__.py"
+INIT_PY = REPO_ROOT / "tuan_cli" / "__init__.py"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 
 # 版本形如 1.0 或 1.0.0 —— 主/次段必填, 补丁段可选(缺省按 0 处理)
@@ -66,14 +66,24 @@ def read_pyproject_version() -> Optional[str]:
 
 
 def read_init_version() -> Optional[str]:
-    if not INIT_PY.exists():
-        return None
-    m = re.search(
-        r'^__version__\s*=\s*["\']([^"\']+)["\']',
-        INIT_PY.read_text(encoding="utf-8"),
-        re.M,
-    )
-    return m.group(1) if m else None
+    """读取包版本号。
+
+    单一版本号源重构后, `__version__` 字面量已从 `__init__.py` 移到
+    `tuan_cli/version.py` (init 仅 `from .version import __version__` 再导出)。
+    故先读 version.py, 再回退到 __init__.py 的字面量, 兼容两种布局。
+    """
+    candidates = [INIT_PY.parent / "version.py", INIT_PY]
+    for path in candidates:
+        if not path.exists():
+            continue
+        m = re.search(
+            r'^__version__\s*=\s*["\']([^"\']+)["\']',
+            path.read_text(encoding="utf-8"),
+            re.M,
+        )
+        if m:
+            return m.group(1)
+    return None
 
 
 def read_changelog_top_version() -> Optional[str]:
@@ -148,11 +158,11 @@ def main() -> int:
     # 规则 1: 两处版本号必须一致
     problems: list[str] = []
     if init_v is None:
-        problems.append("无法从 qingxiaotuan/__init__.py 读取 __version__")
+        problems.append("无法从 tuan_cli/__init__.py 读取 __version__")
     elif parse_version(init_v) != parse_version(pyproject_v):
         problems.append(
             f"版本号不一致: pyproject.toml={pyproject_v} vs "
-            f"qingxiaotuan/__init__.py={init_v}"
+            f"tuan_cli/__init__.py={init_v}"
         )
 
     current = args.current or pyproject_v

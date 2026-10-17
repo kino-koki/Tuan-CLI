@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-# 确保可以导入 qingxiaotuan
+# 确保可以导入 tuan_cli
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from qingxiaotuan.models.base import ModelCapabilities
-from qingxiaotuan.models.openai_compat import OpenAICompatAdapter
-from qingxiaotuan.models.anthropic import AnthropicAdapter
+from tuan_cli.models.base import ModelCapabilities
+from tuan_cli.models.openai_compat import OpenAICompatAdapter
+from tuan_cli.models.anthropic import AnthropicAdapter
 
 
 def test_model_capabilities_defaults():
@@ -53,8 +53,8 @@ def test_anthropic_capabilities():
 
 def test_provider_factory_switch():
     """测试运行时热切换不破坏 Agent 契约"""
-    from qingxiaotuan.models import create_adapter
-    from qingxiaotuan.config.loader import Config
+    from tuan_cli.models import create_adapter
+    from tuan_cli.config.loader import Config
 
     config = Config()
     config.data["model"]["provider"] = "deepseek"
@@ -69,9 +69,9 @@ def test_provider_factory_switch():
 
 def test_gemini_routes_to_openai_compat_adapter():
     """M3 验收: Gemini 通过 OpenAI 兼容端点接入, 能力声明含工具/流式/视觉。"""
-    from qingxiaotuan.models import create_adapter
-    from qingxiaotuan.models.openai_compat import OpenAICompatAdapter
-    from qingxiaotuan.config.loader import Config
+    from tuan_cli.models import create_adapter
+    from tuan_cli.models.openai_compat import OpenAICompatAdapter
+    from tuan_cli.config.loader import Config
 
     config = Config()
     config.data["model"]["provider"] = "gemini"

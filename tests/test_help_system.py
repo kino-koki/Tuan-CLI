@@ -1,4 +1,4 @@
-"""/help 增强与命令补全测试 (qingxiaotuan/cli/cmd_help.py)。"""
+"""/help 增强与命令补全测试 (tuan_cli/cli/cmd_help.py)。"""
 
 import json
 import sys
@@ -7,8 +7,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.cli import cmd_help
-from qingxiaotuan.cli import commands
+from tuan_cli.cli import cmd_help
+from tuan_cli.cli import commands
 
 
 def test_categorized_help_groups_commands():
@@ -41,8 +41,8 @@ def test_help_unknown_command():
     assert "未知命令" in out
 
 
-def test_qxt_commands_json_output(capsys):
-    """qxt commands 输出合法 JSON, 每个命令含 name/description。"""
+def test_tuan_commands_json_output(capsys):
+    """tuan commands 输出合法 JSON, 每个命令含 name/description。"""
     args = mock.Mock()
     assert commands.cmd_commands(args) == 0
     payload = json.loads(capsys.readouterr().out)
@@ -56,7 +56,7 @@ def test_qxt_commands_json_output(capsys):
 
 def test_acp_slash_commands_have_description():
     """ACP initialize 的 slash_commands 含 description 字段 (IDE 补全可展示)。"""
-    from qingxiaotuan.cli.cmd_acp import _get_slash_commands
+    from tuan_cli.cli.cmd_acp import _get_slash_commands
     cmds = _get_slash_commands()
     assert cmds, "ACP 斜杠命令不应为空"
     for c in cmds:

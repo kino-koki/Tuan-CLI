@@ -20,12 +20,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from conftest import _tool_call, _spec_to_payload  # noqa: F401  (共享 mock 端点)
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.openai_compat import OpenAICompatAdapter
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.models.openai_compat import OpenAICompatAdapter
 
 
-def _build_agent(adapter, tmp_path, qxt_home):
+def _build_agent(adapter, tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = 0
@@ -38,7 +38,7 @@ def _build_agent(adapter, tmp_path, qxt_home):
     )
 
 
-def test_mock_server_nonstream_tool_loop(tmp_path, qxt_home, mock_server):
+def test_mock_server_nonstream_tool_loop(tmp_path, tuan_home, mock_server):
     """非流式: 真实 HTTP 上完成 工具调用 → 工具结果回填 → 最终回答。"""
     (tmp_path / "hello.txt").write_text("你好, 青小团", encoding="utf-8")
     server = mock_server([
@@ -50,7 +50,7 @@ def test_mock_server_nonstream_tool_loop(tmp_path, qxt_home, mock_server):
         base_url=f"http://127.0.0.1:{server.port}/v1", model="mock",
         api_key="test-key", prompt_cache=False,
     )
-    agent = _build_agent(adapter, tmp_path, qxt_home)
+    agent = _build_agent(adapter, tmp_path, tuan_home)
 
     answer = agent.run("读一下 hello.txt", stream=False)
 
@@ -68,7 +68,7 @@ def test_mock_server_nonstream_tool_loop(tmp_path, qxt_home, mock_server):
     assert "你好, 青小团" in tool_msg["content"]
 
 
-def test_mock_server_streaming_tokens(tmp_path, qxt_home, mock_server):
+def test_mock_server_streaming_tokens(tmp_path, tuan_home, mock_server):
     """流式: SSE chunk 逐片送达, on_token 回调收到内容。"""
     server = mock_server([
         {"content": "流式响应"},
@@ -77,7 +77,7 @@ def test_mock_server_streaming_tokens(tmp_path, qxt_home, mock_server):
         base_url=f"http://127.0.0.1:{server.port}/v1", model="mock",
         api_key="test-key", prompt_cache=False,
     )
-    agent = _build_agent(adapter, tmp_path, qxt_home)
+    agent = _build_agent(adapter, tmp_path, tuan_home)
 
     tokens: list[str] = []
     answer = agent.run("用流式回答", stream=True, on_token=tokens.append)
@@ -87,7 +87,7 @@ def test_mock_server_streaming_tokens(tmp_path, qxt_home, mock_server):
     assert server.requests[0]["stream"] is True
 
 
-def test_mock_server_streaming_tool_calls(tmp_path, qxt_home, mock_server):
+def test_mock_server_streaming_tool_calls(tmp_path, tuan_home, mock_server):
     """流式工具调用: 分片累积出完整 arguments, 再走工具循环。"""
     (tmp_path / "data.json").write_text('{"ok": true}', encoding="utf-8")
     server = mock_server([
@@ -99,7 +99,7 @@ def test_mock_server_streaming_tool_calls(tmp_path, qxt_home, mock_server):
         base_url=f"http://127.0.0.1:{server.port}/v1", model="mock",
         api_key="test-key", prompt_cache=False,
     )
-    agent = _build_agent(adapter, tmp_path, qxt_home)
+    agent = _build_agent(adapter, tmp_path, tuan_home)
 
     answer = agent.run("读 data.json", stream=True)
 
@@ -112,8 +112,8 @@ def test_mock_server_streaming_tool_calls(tmp_path, qxt_home, mock_server):
     assert "tool" in roles
 
 
-def test_mock_server_run_shell_benign_passes_safety(tmp_path, qxt_home, mock_server):
-    """核心链路: qxt → 工具执行 → 安全评估。
+def test_mock_server_run_shell_benign_passes_safety(tmp_path, tuan_home, mock_server):
+    """核心链路: tuan → 工具执行 → 安全评估。
 
     良性 shell 命令 (echo) 必须穿透安全护栏正常执行, 不被误判为高风险而拦截。
     """
@@ -126,7 +126,7 @@ def test_mock_server_run_shell_benign_passes_safety(tmp_path, qxt_home, mock_ser
         base_url=f"http://127.0.0.1:{server.port}/v1", model="mock",
         api_key="test-key", prompt_cache=False,
     )
-    agent = _build_agent(adapter, tmp_path, qxt_home)
+    agent = _build_agent(adapter, tmp_path, tuan_home)
 
     answer = agent.run("执行 echo SAFE_OK", stream=False)
 
@@ -190,7 +190,7 @@ class _FlakyServer:
         self._httpd.server_close()
 
 
-def test_mock_server_retry_on_5xx(tmp_path, qxt_home):
+def test_mock_server_retry_on_5xx(tmp_path, tuan_home):
     """Agent 韧性: 端点前 2 次 503, RetryPolicy 退避重试后应在第 3 次成功。
 
     验证 provider-agnostic 链路在瞬时服务端错误下仍能跑通 (不依赖具体模型)。
@@ -201,7 +201,7 @@ def test_mock_server_retry_on_5xx(tmp_path, qxt_home):
             base_url=f"http://127.0.0.1:{srv.port}/v1", model="mock",
             api_key="test-key", prompt_cache=False,
         )
-        agent = _build_agent(adapter, tmp_path, qxt_home)
+        agent = _build_agent(adapter, tmp_path, tuan_home)
         answer = agent.run("重试一下", stream=False)
         assert answer == "重试后成功"
         # 恰好 3 次请求: 2 次 503 + 1 次 200

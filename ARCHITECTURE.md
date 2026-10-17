@@ -1,8 +1,8 @@
-# 青小团 (qxt) 架构文档
+# 青小团 (tuan) 架构文档
 
 > 目标：让新贡献者 10 分钟看懂「内核怎么转、安全怎么拦、Loop 怎么切、模型怎么路由」，
-> 降低上手与贡献门槛。配套命令：`qxt others`（能力目录）、`qxt safe`（安全总入口）、
-> `qxt models`（模型与本地 LLM）。
+> 降低上手与贡献门槛。配套命令：`tuan others`（能力目录）、`tuan safe`（安全总入口）、
+> `tuan models`（模型与本地 LLM）。
 
 青小团是一个**微内核 + 插件**架构的 Agent CLI。内核本身不携带任何 Agent 能力，
 只负责「插件注册 / 服务发现 / 生命周期事件」；所有能力（工具、模型适配器、记忆、
@@ -64,11 +64,11 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
 
 ---
 
-## 3. 请求生命周期（一次 `qxt run "任务"` 的完整旅程）
+## 3. 请求生命周期（一次 `tuan run "任务"` 的完整旅程）
 
 ```
 [1] 启动 (fast_start / main)
-    └─ load_dotenv() 把 ~/.qingxiaotuan/.env 的密钥载入环境
+    └─ load_dotenv() 把 ~/.tuan/.env 的密钥载入环境
     └─ build_parser() 解析子命令 (run / dev / agent / safe / models / others ...)
 
 [2] Kernel 启动并激活插件
@@ -92,7 +92,7 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
        · WhitelistManager 命中 ? → 直接放行 (用户在本地自主添加)
        · 通过 → 执行; 拦截 → SecurityEventBus.emit_command_blocked(cmd, reason)
     └─ MCP 调用经 security_gate.decide_mcp_tool(); 文件写入经 decide_file_write()
-    └─ 审计事件异步落盘 ~/.qingxiaotuan/security-audit.jsonl
+    └─ 审计事件异步落盘 ~/.tuan/security-audit.jsonl
 
 [6] Router 升降级模型 (与 Loop 并行, 每轮决策)
     └─ AutoRouter.observe_turn() 统计「连续失败轮数」
@@ -155,7 +155,7 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
       方法；`SafetyEngine.score(params)` 是静态评分入口（旧文档中的模块级 `score()` 已收敛至此）。
   - `core/whitelist.py` — `WhitelistManager`：用户本地自主添加的放行名单。
   - `core/security_bus.py` — `SecurityEventBus`：事件总线 + JSONL 持久化
-    （默认落盘 `~/.qingxiaotuan/security-audit.jsonl`）。
+    （默认落盘 `~/.tuan/security-audit.jsonl`）。
   - `ext/security_gate.py` — 统一闸门：`decide_shell` / `decide_mcp_tool` / `decide_file_write`。
   - `core/blacklist_override.py` — **用户本地黑名单减负**（见下）。
   - `tools/shell.py` — `_pre_exec_guard`：每次 shell 工具执行前的实际拦截点。
@@ -165,17 +165,17 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
   2. **综合红线**（`is_redline`）：在硬红线基础上叠加 `_CRITICAL_PATTERNS` 正则库（含 SQL
      破坏性操作 DROP/DELETE/TRUNCATE，归为「可确认关键级」，经多阶段确认放行）。
 - **审计落盘**：拦截/放行事件经 `emit_command_blocked` / `emit_command_allowed` 写入
-  `security-audit.jsonl`，可用 `qxt safe status` 查看路径与统计。
+  `security-audit.jsonl`，可用 `tuan safe status` 查看路径与统计。
 - **用户本地黑名单减负（`blacklist_override`）**：某些内置模式在用户环境属误杀或可信。
-  用户在 `~/.qingxiaotuan/blacklist-override.json` 声明要抑制的模式 label 关键字，
+  用户在 `~/.tuan/blacklist-override.json` 声明要抑制的模式 label 关键字，
   `is_redline` / `is_hard_redline` / `SafetyEngine.score` 即跳过这些模式。
   - 安全边界：**只抑制正则模式库条目**；不可逆/OS 级的 token 化硬红线（rm -rf / force push /
     shutdown …）走独立判定，**永不**受减负影响。
-  - 用法：`qxt safe reduce <关键字>`（如 `qxt safe reduce format`）、
-    `qxt safe restore <关键字>`、`qxt safe blacklist` 查看清单。
+  - 用法：`tuan safe reduce <关键字>`（如 `tuan safe reduce format`）、
+    `tuan safe restore <关键字>`、`tuan safe blacklist` 查看清单。
   - 提示：README 中提到的 `nc` 端口探测、`tar|ssh` 外传等 **fail-closed 保守误杀**，
-    同样可经 `qxt safe reduce` 按 label 关键字调回，无需改代码。
-- 白名单：`qxt safe allow <命令>` 把可信命令加入（红线命令拒绝加入）；`qxt safe deny` 移除。
+    同样可经 `tuan safe reduce` 按 label 关键字调回，无需改代码。
+- 白名单：`tuan safe allow <命令>` 把可信命令加入（红线命令拒绝加入）；`tuan safe deny` 移除。
 - 多阶段确认：极高风险 5 次、高风险 3 次确认（见 `ext/security_gate.py`），含 TOCTOU 脚本检测。
 - **系统级沙箱强隔离（`sandbox/`）**：`SandboxManager` 提供 L0 意图 / L1 信任 / L2 资源 /
   L3 强隔离四层滤网。L3 强隔离依赖后端可用性（Windows jobobject、Linux landlock、Docker 等）；
@@ -199,7 +199,7 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
 - 本地模型：`models/provider_catalog.py` 预置 `ollama`（:11434）、`llamacpp`（:8080/v1）等
   自托管供应商；`models/openai_compat.py` 对 localhost 端点放通空 key（本地 LLM 无需密钥）；
   `models/offline.py` 的 `detect_local_models()` 探测本机 Ollama + llama.cpp 模型
-  （`qxt models local` 调用）。
+  （`tuan models local` 调用）。
 
 ### 4.6 分层封装层（`arch/`）—— 门面层，被生产路径复用
 
@@ -238,7 +238,7 @@ is_redline(cmd) / is_hard_redline(cmd)
   └─ 通过                    → 执行
   │
   ▼  SecurityEventBus.emit_command_blocked(cmd, reason)
-persist → ~/.qingxiaotuan/security-audit.jsonl   ← 审计记录
+persist → ~/.tuan/security-audit.jsonl   ← 审计记录
   │
   ▼  LoopRegistry.set_current(name)              ← Loop 切换 (策略热换)
 Agent 用新 Loop 跑下一轮
@@ -258,16 +258,16 @@ ModelRouter.decide(task, difficulty, available_providers)
 > 把青小团从「一个 Agent」变成「Agent 生态的互操作枢纽」：Claude Code / Hermes Agent
 > 在本机积累的技能、命名 Agent、记忆、SOUL 人格与 MCP 配置，三方直接互相复用。
 
-实现落在 `qingxiaotuan/ecosystem/`（`v0.2.018` 新增），CLI 入口 `qxt ecosystem`：
+实现落在 `tuan_cli/ecosystem/`（`v0.2.018` 新增），CLI 入口 `tuan ecosystem`：
 
 | 模块 | 职责 | 关键接口 |
 | --- | --- | --- |
 | `detect.py` | 探测本机 Claude Code / Hermes 安装状态与全部资产（只读） | `EcosystemProbe.probe(workspace, hermes_home=)` · `render_probe()` |
-| `skills_bridge.py` | 技能双向搬运（SKILL.md 开放标准；导出为可移植 `<slug>/SKILL.md` 目录包，跳过 qxt 专有字段） | `import_skills()` · `export_skills()` |
+| `skills_bridge.py` | 技能双向搬运（SKILL.md 开放标准；导出为可移植 `<slug>/SKILL.md` 目录包，跳过 tuan 专有字段） | `import_skills()` · `export_skills()` |
 | `memory_bridge.py` | 记忆/人格互通（Hermes `§` 记忆解析、去重导入、SOUL.md 不覆盖复制、按字符预算导出） | `import_hermes_memory()` · `export_to_hermes()` |
-| `agents_bridge.py` | 命名 Agent 双向同步（`.claude/agents/*.md` ⇄ qxt） | `import_claude_agents()` · `export_to_claude()` |
-| `mcp_import.py` | MCP 配置互导（`.mcp.json` / Hermes `config.yaml` ⇄ qxt；密钥 env 脱敏为占位符） | `import_mcp_servers()` · `export_to_claude_mcp_json()` · `export_to_hermes_config()` |
-| `mcp_server.py` | MCP Server（`qxt ecosystem serve`）：纯标准库 stdio、JSON-RPC 2.0 换行帧 | `McpToolServer.handle_line()` · `serve_stdio()` |
+| `agents_bridge.py` | 命名 Agent 双向同步（`.claude/agents/*.md` ⇄ tuan） | `import_claude_agents()` · `export_to_claude()` |
+| `mcp_import.py` | MCP 配置互导（`.mcp.json` / Hermes `config.yaml` ⇄ tuan；密钥 env 脱敏为占位符） | `import_mcp_servers()` · `export_to_claude_mcp_json()` · `export_to_hermes_config()` |
+| `mcp_server.py` | MCP Server（`tuan ecosystem serve`）：纯标准库 stdio、JSON-RPC 2.0 换行帧 | `McpToolServer.handle_line()` · `serve_stdio()` |
 | `invoke.py` | 委派工具插件（`claude_code_run` / `hermes_run`），CLI 存在才注册 | `EcosystemPlugin` |
 
 **运行时接线（零配置即生效）**：
@@ -280,11 +280,11 @@ ModelRouter.decide(task, difficulty, available_providers)
 - `app.py::build_kernel` 非 bare 模式注册 `EcosystemPlugin`，注入委派工具
   `claude_code_run`（`claude -p --output-format text`）与 `hermes_run`（`hermes chat -q`）。
 
-**反向挂载（被对方调用）**：`qxt ecosystem serve` 以 MCP stdio server 运行，
-暴露 `qxt_status` / `qxt_run` / `memory_search` / `memory_write` / `skill_list` /
+**反向挂载（被对方调用）**：`tuan ecosystem serve` 以 MCP stdio server 运行，
+暴露 `tuan_status` / `tuan_run` / `memory_search` / `memory_write` / `skill_list` /
 `skill_read` / `agent_list` / `context_files` 八个受控工具；危险工具 `run_shell`
 默认 fail-closed 不暴露（`ecosystem.mcp.allow_dangerous_tools=true` 时才开放，
-且仍由安全引擎判定）。`qxt ecosystem link` 写 Claude Code 项目 `.mcp.json`
+且仍由安全引擎判定）。`tuan ecosystem link` 写 Claude Code 项目 `.mcp.json`
 或 Hermes `config.yaml` 的 `mcp.servers`。
 
 **安全设计**：危险工具 fail-closed；MCP 配置互导时含 `secret/token/password/api_key/key`
@@ -298,32 +298,32 @@ ModelRouter.decide(task, difficulty, available_providers)
 | --- | --- | --- |
 | 新 Loop 策略 | 继承 `LoopProvider`，在 `LoopPlugin.activate` 里 `register` | `core/loop_provider.py` |
 | 新安全责任/模式 | 在 `_CRITICAL/_HIGH/_MEDIUM_PATTERNS` 加 `(regex, label)`；红线命令拒绝加白名单 | `ext/safety_engine.py` |
-| 本地黑名单减负 | 用户侧 `qxt safe reduce <label关键字>`，无需改代码 | `core/blacklist_override.py` |
+| 本地黑名单减负 | 用户侧 `tuan safe reduce <label关键字>`，无需改代码 | `core/blacklist_override.py` |
 | 新模型供应商 | 在 `provider_catalog.py` 加 `ProviderPreset`（含 `category="本地部署"` 可标本地） | `models/provider_catalog.py` |
 | 新插件能力 | `@plugin("svc", provides=[...], requires=[...])` + `activate` 里 `provide` | `core/kernel.py` |
-| 新 CLI 子命令 | 在 `cli/parser.py` 加 subparser + `_resolve_func` 分支 + `cli/cmd_*.py` | `qingxiaotuan/cli/` |
+| 新 CLI 子命令 | 在 `cli/parser.py` 加 subparser + `_resolve_func` 分支 + `cli/cmd_*.py` | `tuan_cli/cli/` |
 
 ---
 
 ## 8. 本地化与配置
 
-- 主目录：`~/.qingxiaotuan`（可用环境变量 `QXT_HOME` 覆盖，便于测试隔离）。
+- 主目录：`~/.tuan`（可用环境变量 `TUAN_HOME` 覆盖，便于测试隔离）。
 - 关键文件：
-  - `security-audit.jsonl` — 安全审计落盘（可通过 `qxt safe status` 查看）。
+  - `security-audit.jsonl` — 安全审计落盘（可通过 `tuan safe status` 查看）。
   - `whitelist.json` — 白名单。
   - `blacklist-override.json` — 本地黑名单减负声明。
   - `.env` — 密钥集中管理（权限应 600，不进版本库）。
-- 本地模型：安装 Ollama（:11434）或 llama.cpp（:8080/v1）后，`qxt models local` 探测，
-  `qxt models set ollama <模型>` / `qxt models set llamacpp <模型>` 接入。
+- 本地模型：安装 Ollama（:11434）或 llama.cpp（:8080/v1）后，`tuan models local` 探测，
+  `tuan models set ollama <模型>` / `tuan models set llamacpp <模型>` 接入。
 
 ---
 
 ## 9. 相关文档
-- `qxt help` — 完整子命令与参数。
-- `qxt others` — 友好能力目录（新手入口）。
-- `qxt safe` — 安全总入口（状态 / 白名单 / 黑名单减负 / 更新）。
-- `qxt models` — 模型与本地 LLM 管理。
-- `qxt ecosystem` — 生态互操作（Claude Code / Hermes 资产双向搬运）。
+- `tuan help` — 完整子命令与参数。
+- `tuan others` — 友好能力目录（新手入口）。
+- `tuan safe` — 安全总入口（状态 / 白名单 / 黑名单减负 / 更新）。
+- `tuan models` — 模型与本地 LLM 管理。
+- `tuan ecosystem` — 生态互操作（Claude Code / Hermes 资产双向搬运）。
 - `docs/ecosystem_bridge.md` — 生态互操作层详解（格式对照 / 安全设计 / 目录结构）。
 - `SECURITY.md` · `CONTRIBUTING.md` · `CHANGELOG.md` — 安全策略 / 贡献规范 / 变更记录。
 - `HARDENING.md` — 加固模块启用与配置速查。

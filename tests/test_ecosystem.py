@@ -1,4 +1,4 @@
-"""生态互操作层 (qingxiaotuan.ecosystem) 测试。
+"""生态互操作层 (tuan_cli.ecosystem) 测试。
 
 覆盖: 探测/盘点、技能双向桥接、Hermes 记忆/人格桥接、Claude Code Agent 桥接、
 MCP 配置互导、MCP Server 协议 (initialize / tools/list / tools/call / 错误处理)。
@@ -11,28 +11,28 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.ecosystem.agents_bridge import export_to_claude, import_claude_agents
-from qingxiaotuan.ecosystem.detect import EcosystemProbe
-from qingxiaotuan.ecosystem.mcp_import import (
+from tuan_cli.ecosystem.agents_bridge import export_to_claude, import_claude_agents
+from tuan_cli.ecosystem.detect import EcosystemProbe
+from tuan_cli.ecosystem.mcp_import import (
     export_to_claude_mcp_json,
     export_to_hermes_config,
     import_mcp_servers,
     parse_claude_mcp_json,
     parse_hermes_config,
 )
-from qingxiaotuan.ecosystem.mcp_server import McpToolServer
-from qingxiaotuan.ecosystem.memory_bridge import (
+from tuan_cli.ecosystem.mcp_server import McpToolServer
+from tuan_cli.ecosystem.memory_bridge import (
     export_to_hermes,
     import_hermes_memory,
     parse_hermes_entries,
 )
-from qingxiaotuan.ecosystem.skills_bridge import (
+from tuan_cli.ecosystem.skills_bridge import (
     export_skills,
     find_skill_files,
     import_skills,
 )
-from qingxiaotuan.memory.store import MemoryStore
-from qingxiaotuan.skills.manager import SkillManager
+from tuan_cli.memory.store import MemoryStore
+from tuan_cli.skills.manager import SkillManager
 
 
 def _write(p: Path, text: str):
@@ -88,7 +88,7 @@ def test_probe_mcp_servers_counted_per_ecosystem(tmp_path: Path):
     """MCP servers 应分生态统计: claude 只计项目 .mcp.json, hermes 只计 config.yaml (真实机 bug 回归)。"""
     ws = tmp_path / "ws"
     hermes_home = tmp_path / "hermes"
-    _write(ws / ".mcp.json", '{"mcpServers": {"qxt": {"command": "qxt", "args": []}}}')
+    _write(ws / ".mcp.json", '{"mcpServers": {"tuan": {"command": "tuan", "args": []}}}')
     _write(hermes_home / "config.yaml",
            "mcp:\n  servers:\n    zhipu:\n      command: \"zhipu-mcp\"\n      args: []\n")
     probe = EcosystemProbe.probe(str(ws), claude_home=str(tmp_path / "cc"), hermes_home=str(hermes_home))
@@ -109,7 +109,7 @@ def test_find_skill_files_both_forms(tmp_path: Path):
 # ---------------------------------------------------------------- skills bridge
 
 def test_import_skills_from_claude_and_hermes(tmp_path: Path):
-    home = tmp_path / "qxt"
+    home = tmp_path / "tuan"
     cc_home = tmp_path / "cc"
     hermes_home = tmp_path / "hermes"
     _write(cc_home / "skills" / "cc-one.md",
@@ -133,7 +133,7 @@ def test_export_skills_portable_package(tmp_path: Path):
                 return False
             return default
 
-    home = tmp_path / "qxt"
+    home = tmp_path / "tuan"
     mgr = SkillManager(home, config=_NoEcoConfig())
     mgr.save("Portable Skill", "可移植技能", "正文")
     dest = tmp_path / "out"
@@ -144,7 +144,7 @@ def test_export_skills_portable_package(tmp_path: Path):
     text = skill_md.read_text(encoding="utf-8")
     assert "name: Portable Skill" in text
     assert "正文" in text
-    # qxt 专有计数字段不应污染可移植 frontmatter
+    # tuan 专有计数字段不应污染可移植 frontmatter
     assert "use_count" not in text
 
 
@@ -158,8 +158,8 @@ def test_export_skills_uses_file_slug_not_name_slugify(tmp_path: Path):
                 return False
             return default
 
-    home = tmp_path / "qxt"
-    # 真实形态: 文件名英文 slug, name 是中文 (与 qxt 用户技能库一致)
+    home = tmp_path / "tuan"
+    # 真实形态: 文件名英文 slug, name 是中文 (与 tuan 用户技能库一致)
     _write(home / "skills" / "anthropomorphic-comments.md",
            "---\nname: 拟人化注释风格\ndescription: a\n---\n正文A\n")
     _write(home / "skills" / "understanding-legacy-code.md",
@@ -184,7 +184,7 @@ def test_export_skills_duplicate_slug_export_once(tmp_path: Path):
                 return False
             return default
 
-    home = tmp_path / "qxt"
+    home = tmp_path / "tuan"
     _write(home / "skills" / "dup.md",
            "---\nname: 重复技能\ndescription: x\n---\n正文\n")
     _write(home / ".agents" / "skills" / "dup.md",
@@ -207,7 +207,7 @@ def test_discover_skips_hidden_staging_skill_dirs(tmp_path: Path):
                 return False
             return default
 
-    home = tmp_path / "qxt"
+    home = tmp_path / "tuan"
     _write(home / "skills" / "real.md",
            "---\nname: 真技能\ndescription: r\n---\n正文\n")
     _write(home / "skills" / ".tabbit-stage-ABC123" / "SKILL.md",
@@ -228,21 +228,21 @@ def test_parse_hermes_entries_splits_sections():
 
 
 def test_import_hermes_memory_dedup_and_soul(tmp_path: Path):
-    home = tmp_path / "qxt"
+    home = tmp_path / "tuan"
     hermes_home = tmp_path / "hermes"
     _write(hermes_home / "memories" / "MEMORY.md", "用户偏好简洁回答\n§\n项目约定: 用 pytest\n")
     _write(hermes_home / "memories" / "USER.md", "昵称: 小王\n")
     _write(hermes_home / "SOUL.md", "你是 Hermes\n")
     store = MemoryStore(home)
     r1 = import_hermes_memory(store, [hermes_home / "memories"],
-                              hermes_home=hermes_home, qxt_home=home)
+                              hermes_home=hermes_home, tuan_home=home)
     assert len(r1.memory_added) == 2
     assert len(r1.user_added) == 1
     assert r1.soul_copied is True
     assert (home / "SOUL.md").exists()
     # 二次导入: 全部去重
     r2 = import_hermes_memory(store, [hermes_home / "memories"],
-                              hermes_home=hermes_home, qxt_home=home)
+                              hermes_home=hermes_home, tuan_home=home)
     assert len(r2.memory_added) == 0
     assert len(r2.memory_skipped) == 2
     # SOUL 已存在且未 force → 不覆盖
@@ -250,7 +250,7 @@ def test_import_hermes_memory_dedup_and_soul(tmp_path: Path):
 
 
 def test_export_to_hermes_writes_files_and_flags_budget(tmp_path: Path):
-    home = tmp_path / "qxt"
+    home = tmp_path / "tuan"
     hermes_home = tmp_path / "hermes"
     store = MemoryStore(home)
     store.append_memory("一条短期事实", section="事实")
@@ -266,20 +266,20 @@ def test_export_to_hermes_writes_files_and_flags_budget(tmp_path: Path):
 
 def test_agents_bridge_roundtrip(tmp_path: Path):
     cc_dir = tmp_path / "cc" / "agents"
-    qxt_dir = tmp_path / "qxt" / "agents"
+    tuan_dir = tmp_path / "tuan" / "agents"
     _write(cc_dir / "reviewer.md",
            "---\nname: reviewer\ndescription: 代码审查员\n---\n你是审查员\n")
-    result = import_claude_agents([cc_dir], qxt_dir)
+    result = import_claude_agents([cc_dir], tuan_dir)
     assert result.imported == ["reviewer"]
-    assert (qxt_dir / "reviewer.md").exists()
+    assert (tuan_dir / "reviewer.md").exists()
     # 导出回项目 .claude/agents
     out = tmp_path / "ws" / ".claude" / "agents"
-    exported = export_to_claude(qxt_dir, out)
+    exported = export_to_claude(tuan_dir, out)
     assert exported.exported == ["reviewer"]
     assert (out / "reviewer.md").exists()
     # 无 frontmatter 的文件按 filename 兜底为名称 (与 agents_registry 运行期行为一致)
     _write(cc_dir / "broken.md", "没有 frontmatter 的正文文件\n")
-    r2 = import_claude_agents([cc_dir], qxt_dir)
+    r2 = import_claude_agents([cc_dir], tuan_dir)
     assert "broken" in r2.imported
     assert "reviewer" in r2.skipped  # 同名已存在且未 overwrite → 跳过
 
@@ -328,7 +328,7 @@ class _FakeConfig:
 def test_import_mcp_servers_merge_and_skip():
     cfg = _FakeConfig()
     cfg.set("mcp.servers", [{"name": "existing", "command": "python", "args": []}])
-    servers = [{"name": "new", "command": "qxt", "args": ["ecosystem", "serve"]},
+    servers = [{"name": "new", "command": "tuan", "args": ["ecosystem", "serve"]},
                {"name": "existing", "command": "python", "args": []},
                {"name": "", "command": ""}]
     result = import_mcp_servers(cfg, servers)
@@ -343,8 +343,8 @@ def test_import_mcp_servers_merge_and_skip():
 
 def test_import_mcp_servers_with_real_config(tmp_path: Path, monkeypatch):
     """真实 Config 走 set_user 写用户层配置 (真实机 bug 回归: Config 无 set 属性)。"""
-    monkeypatch.setenv("QXT_HOME", str(tmp_path / "qxt_home"))
-    from qingxiaotuan.config import Config
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path / "tuan_home"))
+    from tuan_cli.config import Config
 
     cfg = Config(profile="e2e", bare=False)
     result = import_mcp_servers(cfg, [{"name": "zhipu", "command": "zhipu-mcp", "args": []}])
@@ -372,10 +372,10 @@ def test_export_redacts_secrets(tmp_path: Path):
 def test_export_to_hermes_config_merges(tmp_path: Path):
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text("mode: default\nmcp:\n  servers:\n    old:\n      command: x\n", encoding="utf-8")
-    result = export_to_hermes_config([{"name": "qxt", "command": "qxt", "args": ["ecosystem", "serve"]}], cfg_file)
+    result = export_to_hermes_config([{"name": "tuan", "command": "tuan", "args": ["ecosystem", "serve"]}], cfg_file)
     assert result.exported_path
     text = cfg_file.read_text(encoding="utf-8")
-    assert "qxt" in text and "old" in text
+    assert "tuan" in text and "old" in text
 
 
 # ---------------------------------------------------------------- mcp server
@@ -392,17 +392,17 @@ def _rpc(method: str, params, req_id=None):
 def test_mcp_server_handshake_and_tools(tmp_path: Path):
     srv = McpToolServer(tmp_path)
     init = json.loads(srv.handle_line(_rpc("initialize", {"protocolVersion": "2024-11-05"}, 1)))
-    assert init["result"]["serverInfo"]["name"] == "qingxiaotuan-ecosystem"
+    assert init["result"]["serverInfo"]["name"] == "tuan_cli-ecosystem"
     # 通知无响应
     assert srv.handle_line(_rpc("notifications/initialized", None)) is None
     listed = json.loads(srv.handle_line(_rpc("tools/list", {}, 2)))
     names = [t["name"] for t in listed["result"]["tools"]]
-    assert "qxt_status" in names and "memory_write" in names and "skill_list" in names
+    assert "tuan_status" in names and "memory_write" in names and "skill_list" in names
     assert "run_shell" not in names  # 默认 fail-closed 不暴露危险工具
-    # 调 qxt_status
-    call = json.loads(srv.handle_line(_rpc("tools/call", {"name": "qxt_status", "arguments": {}}, 3)))
+    # 调 tuan_status
+    call = json.loads(srv.handle_line(_rpc("tools/call", {"name": "tuan_status", "arguments": {}}, 3)))
     assert not call["result"]["isError"]
-    assert "qingxiaotuan-ecosystem" in call["result"]["content"][0]["text"]
+    assert "tuan_cli-ecosystem" in call["result"]["content"][0]["text"]
     # ping
     pong = json.loads(srv.handle_line(_rpc("ping", {}, 9)))
     assert pong["result"] == {}
@@ -415,7 +415,7 @@ def test_mcp_server_handshake_and_tools(tmp_path: Path):
 
 
 def test_mcp_server_memory_and_skill_tools(tmp_path: Path):
-    home = tmp_path / "qxt"
+    home = tmp_path / "tuan"
     srv = McpToolServer(home)
     # memory_write → memory_search 回读
     w = json.loads(srv.handle_line(_rpc("tools/call", {"name": "memory_write",

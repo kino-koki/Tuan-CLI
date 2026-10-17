@@ -29,7 +29,7 @@ def test_doc_numbers_are_consistent() -> None:
     data = json.loads(proc.stdout)
     # 真值由脚本从代码实时计算, 这里与 catalog 交叉核对 (不再硬编码具体数字,
     # 避免每次增删供应商都要改测试)。
-    from qingxiaotuan.models.provider_catalog import ALL_PROVIDERS
+    from tuan_cli.models.provider_catalog import ALL_PROVIDERS
     assert data["truth"]["providers"] == len(ALL_PROVIDERS)
     assert data["truth"]["providers"] >= 50
     assert data["truth"]["models"] >= 1100

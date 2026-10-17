@@ -12,8 +12,8 @@
 import json
 from pathlib import Path
 
-from qingxiaotuan.core.ledger import MutationLedger
-from qingxiaotuan.tools.base import (
+from tuan_cli.core.ledger import MutationLedger
+from tuan_cli.tools.base import (
     ToolContext, ToolRegistry, Tool, _build_impact_preview, _MUTATION_EXTRACTORS,
 )
 

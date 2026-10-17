@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.core.sandbox import prepare_sandbox, run_in_sandbox
-from qingxiaotuan.core.subagents import SubAgentPool, SubTask, make_tasks
+from tuan_cli.core.sandbox import prepare_sandbox, run_in_sandbox
+from tuan_cli.core.subagents import SubAgentPool, SubTask, make_tasks
 
 
 def _write_fake_worker(tmp_path: Path, sleep: float = 0.0, fail: bool = False) -> str:
@@ -68,7 +68,7 @@ def test_run_in_sandbox_roundtrip(tmp_path):
     assert result.output.startswith("fake-output:")
     assert result.turns == 1
     # 沙箱应被清理 (目录不存在)
-    assert not any(p.name.startswith("qxt-sandbox-") for p in Path(tmp_path).iterdir())
+    assert not any(p.name.startswith("tuan-sandbox-") for p in Path(tmp_path).iterdir())
 
 
 def test_run_in_sandbox_failure_propagates(tmp_path):
@@ -100,7 +100,7 @@ def test_run_in_sandbox_timeout(tmp_path):
 def test_pool_process_isolation_uses_sandbox(tmp_path):
     """SubAgentPool(isolation=process) 经 fake worker 跑通, 结果汇总正确。"""
     worker = _write_fake_worker(tmp_path)
-    kernel = __import__("qingxiaotuan.app", fromlist=["build_kernel"]).build_kernel()
+    kernel = __import__("tuan_cli.app", fromlist=["build_kernel"]).build_kernel()
     config = kernel.require("config")
     pool = SubAgentPool(
         kernel=kernel, config=config, workspace=str(tmp_path),

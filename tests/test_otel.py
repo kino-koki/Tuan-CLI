@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from qingxiaotuan.ports.telemetry.otel import (
+from tuan_cli.ports.telemetry.otel import (
     OtlpTransport,
     build_otlp_metrics_payload,
     build_otlp_traces_payload,
@@ -14,7 +14,7 @@ from qingxiaotuan.ports.telemetry.otel import (
     record_span,
     snapshot_counters,
 )
-from qingxiaotuan.ports.telemetry.types import EnrichedTelemetryEvent
+from tuan_cli.ports.telemetry.types import EnrichedTelemetryEvent
 
 
 def _ev(name="agent.run"):
@@ -28,7 +28,7 @@ def _ev(name="agent.run"):
 # ---------------------------------------------------------------- 无依赖可用性
 def test_module_importable_without_opentelemetry():
     # 未装 otel 可选依赖也必须可导入, 且 otel_available 返回 False (不抛)
-    from qingxiaotuan.ports.telemetry import otel  # noqa: F401
+    from tuan_cli.ports.telemetry import otel  # noqa: F401
     assert isinstance(otel_available(), bool)
 
 
@@ -59,9 +59,9 @@ def test_build_otlp_metrics_payload():
 # ---------------------------------------------------------------- transport 回退
 def test_otlp_transport_send_falls_back_to_disk(tmp_path, monkeypatch):
     # 0 依赖 (otel_available=False) + POST 失败 -> 落盘 JSONL, 不抛
-    monkeypatch.setattr("qingxiaotuan.ports.telemetry.otel.otel_available", lambda: False)
+    monkeypatch.setattr("tuan_cli.ports.telemetry.otel.otel_available", lambda: False)
     monkeypatch.setattr(
-        "qingxiaotuan.ports.telemetry.otel._post_json", lambda url, payload: False)
+        "tuan_cli.ports.telemetry.otel._post_json", lambda url, payload: False)
     out = tmp_path / "otel.jsonl"
     t = OtlpTransport(endpoint="http://collector.invalid/v1/traces",
                       fallback_path=str(out))
@@ -72,8 +72,8 @@ def test_otlp_transport_send_falls_back_to_disk(tmp_path, monkeypatch):
 
 
 def test_otlp_transport_noop_on_empty(monkeypatch):
-    monkeypatch.setattr("qingxiaotuan.ports.telemetry.otel.otel_available", lambda: False)
-    monkeypatch.setattr("qingxiaotuan.ports.telemetry.otel._post_json",
+    monkeypatch.setattr("tuan_cli.ports.telemetry.otel.otel_available", lambda: False)
+    monkeypatch.setattr("tuan_cli.ports.telemetry.otel._post_json",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
     t = OtlpTransport()
     asyncio.run(t.send([]))  # 空事件不应触发任何网络/落盘
@@ -84,7 +84,7 @@ def test_otlp_transport_uses_sdk_when_available(monkeypatch, tmp_path):
     called = {}
     def fake_sdk(self, events):
         called["events"] = len(events)
-    monkeypatch.setattr("qingxiaotuan.ports.telemetry.otel.otel_available", lambda: True)
+    monkeypatch.setattr("tuan_cli.ports.telemetry.otel.otel_available", lambda: True)
     monkeypatch.setattr(OtlpTransport, "_send_via_sdk", fake_sdk)
     t = OtlpTransport(fallback_path=str(tmp_path / "otel.jsonl"))
     asyncio.run(t.send([_ev()]))
@@ -105,7 +105,7 @@ def test_span_nesting_stack():
     record_span("outer")
     record_span("inner")
     end_span()
-    from qingxiaotuan.ports.telemetry.otel import _current_stack
+    from tuan_cli.ports.telemetry.otel import _current_stack
     assert [s.name for s in _current_stack()] == ["outer"]
     end_span()
     assert _current_stack() == []

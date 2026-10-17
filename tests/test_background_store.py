@@ -2,7 +2,7 @@
 
 import json
 
-from qingxiaotuan.core.background_store import BackgroundStore
+from tuan_cli.core.background_store import BackgroundStore
 
 
 def test_background_store_roundtrip_and_atomic_manifest(tmp_path):

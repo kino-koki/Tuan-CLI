@@ -11,9 +11,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.memory.sessions import SessionStore
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.memory.sessions import SessionStore
 
 
 # ----------------------------------------------------------------- sum_usage 聚合
@@ -61,7 +61,7 @@ class _MockModel:
         return None
 
 
-def _build_agent_with_session(tmp_path, qxt_home):
+def _build_agent_with_session(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = 0
@@ -72,9 +72,9 @@ def _build_agent_with_session(tmp_path, qxt_home):
     return agent, kernel.get("session_store")
 
 
-def test_agent_persists_usage_delta_to_session(tmp_path, qxt_home):
+def test_agent_persists_usage_delta_to_session(tmp_path, tuan_home):
     """每次调用后 usage 增量事件落盘, 且带 provider/model/成本。"""
-    agent, store = _build_agent_with_session(tmp_path, qxt_home)
+    agent, store = _build_agent_with_session(tmp_path, tuan_home)
     agent._accumulate_usage({"prompt_tokens": 200, "completion_tokens": 100})
     agent._accumulate_usage({"prompt_cache_hit_tokens": 60})   # 只有缓存字段也记录
     agent._accumulate_usage(None)                              # 空用量不产生事件

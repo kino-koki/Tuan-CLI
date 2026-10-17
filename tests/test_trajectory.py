@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from qingxiaotuan.core.event_protocol import (
+from tuan_cli.core.event_protocol import (
     AgentEvent, canonicalize, normalize_record,
     tool_call, tool_call_update, agent_message_chunk,
 )
-from qingxiaotuan.core.trajectory import Trajectory
+from tuan_cli.core.trajectory import Trajectory
 
 
 def _sample_records():

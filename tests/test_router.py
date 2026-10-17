@@ -11,10 +11,10 @@ import os
 
 import pytest
 
-from qingxiaotuan.config import Config
-from qingxiaotuan.models.base import ModelCapabilities, ModelResponse
-from qingxiaotuan.models.router import ModelRouter
-from qingxiaotuan.core.agent import Agent
+from tuan_cli.config import Config
+from tuan_cli.models.base import ModelCapabilities, ModelResponse
+from tuan_cli.models.router import ModelRouter
+from tuan_cli.core.agent import Agent
 
 # 测试中允许路由切换到的供应商全集 (绕过环境变量, 保证确定性)
 _BROAD = [
@@ -35,9 +35,9 @@ def router():
 
 
 @pytest.fixture(autouse=True)
-def isolated_qxt_home(monkeypatch, tmp_path):
-    """隔离 QXT_HOME, 确保任何 Config()/set_user 只写到临时目录, 绝不触碰用户真实配置。"""
-    monkeypatch.setenv("QXT_HOME", str(tmp_path))
+def isolated_tuan_home(monkeypatch, tmp_path):
+    """隔离 TUAN_HOME, 确保任何 Config()/set_user 只写到临时目录, 绝不触碰用户真实配置。"""
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path))
     yield
 
 
@@ -195,7 +195,7 @@ class _FakeRegistry:
         return []
 
     def dispatch(self, name, args, ctx):
-        from qingxiaotuan.tools.base import ToolResult
+        from tuan_cli.tools.base import ToolResult
         return ToolResult(status="ok", content="x")
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from qingxiaotuan.core.project_layer import ProjectLayer
+from tuan_cli.core.project_layer import ProjectLayer
 
 
 def test_init_creates_structure(tmp_path):
@@ -15,12 +15,12 @@ def test_init_creates_structure(tmp_path):
     info = layer.init()
     assert info.initialized is True
     assert info.project_id
-    assert (ws / ".qxt" / "project.json").exists()
-    assert (ws / ".qxt" / "config.yaml").exists()
-    assert (ws / ".qxt" / "goal.json").exists()
-    assert (ws / ".qxt" / "sessions.json").exists()
-    assert (ws / ".qxt" / "snapshots").is_dir()
-    assert (ws / "QXT.md").exists()  # 模板
+    assert (ws / ".tuan" / "project.json").exists()
+    assert (ws / ".tuan" / "config.yaml").exists()
+    assert (ws / ".tuan" / "goal.json").exists()
+    assert (ws / ".tuan" / "sessions.json").exists()
+    assert (ws / ".tuan" / "snapshots").is_dir()
+    assert (ws / "TUAN.md").exists()  # 模板
 
 
 def test_init_idempotent(tmp_path):
@@ -51,7 +51,7 @@ def test_info_after_init(tmp_path):
     assert info.memory_count == 0  # 空 db
 
 
-def test_list_projects_global_index(tmp_path, qxt_home):
+def test_list_projects_global_index(tmp_path, tuan_home):
     ws = tmp_path / "proj"
     ws.mkdir()
     ProjectLayer(ws).init()
@@ -61,7 +61,7 @@ def test_list_projects_global_index(tmp_path, qxt_home):
 
 
 def test_isolation_between_projects(tmp_path):
-    """不同目录的项目: 独立 .qxt / 独立 project_id / 会话不共享。"""
+    """不同目录的项目: 独立 .tuan / 独立 project_id / 会话不共享。"""
     ws1 = tmp_path / "p1"
     ws2 = tmp_path / "p2"
     ws1.mkdir()

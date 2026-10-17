@@ -17,7 +17,7 @@ import tempfile
 
 import pytest
 
-from qingxiaotuan.ext.safety_engine import (
+from tuan_cli.ext.safety_engine import (
     _try_decode_ps_encoded,
     _unwrap_indirection,
     _normalize,
@@ -205,36 +205,36 @@ class TestMCPGuard:
 
     def test_mcp_execute_with_dangerous_sql(self):
         """MCP 工具名含 'execute' 且参数含 SQL DROP 应被拦截。"""
-        from qingxiaotuan.core.tool_executor import _is_mcp_dangerous
+        from tuan_cli.core.tool_executor import _is_mcp_dangerous
         args = '{"query": "DROP TABLE users;"}'
         assert _is_mcp_dangerous("mcp__postgres__execute", args)
 
     def test_mcp_shell_with_rm_rf(self):
         """MCP shell 工具执行 rm -rf 应被拦截。"""
-        from qingxiaotuan.core.tool_executor import _is_mcp_dangerous
+        from tuan_cli.core.tool_executor import _is_mcp_dangerous
         args = '{"command": "rm -rf /"}'
         assert _is_mcp_dangerous("mcp__server__shell", args)
 
     def test_mcp_write_with_rm_rf(self):
         """MCP write 工具写入 rm -rf 内容应被拦截。"""
-        from qingxiaotuan.core.tool_executor import _is_mcp_dangerous
+        from tuan_cli.core.tool_executor import _is_mcp_dangerous
         args = '{"content": "rm -rf /"}'
         assert _is_mcp_dangerous("mcp__server__write", args)
 
     def test_mcp_safe_tool_not_blocked(self):
         """MCP 工具名不含危险关键词不应被拦截。"""
-        from qingxiaotuan.core.tool_executor import _is_mcp_dangerous
+        from tuan_cli.core.tool_executor import _is_mcp_dangerous
         args = '{"query": "SELECT * FROM users"}'
         assert not _is_mcp_dangerous("mcp__postgres__query", args)
 
     def test_non_mcp_tool_not_checked(self):
         """非 MCP 工具不走 MCP 检查。"""
-        from qingxiaotuan.core.tool_executor import _is_mcp_dangerous
+        from tuan_cli.core.tool_executor import _is_mcp_dangerous
         assert not _is_mcp_dangerous("run_shell", '{"command": "ls"}')
 
     def test_mcp_dangerous_keyword_detection(self):
         """各种危险关键词应被检测。"""
-        from qingxiaotuan.core.tool_executor import _is_mcp_dangerous
+        from tuan_cli.core.tool_executor import _is_mcp_dangerous
         for keyword in ("exec", "execute", "run", "delete", "drop", "remove",
                          "write", "shell", "system"):
             tool_name = "mcp__srv__" + keyword + "_something"
@@ -250,7 +250,7 @@ class TestTOCTOUCheck:
 
     def test_powershell_file_with_rm_rf(self):
         """powershell -File 含 rm -rf 的脚本应被拦截。"""
-        from qingxiaotuan.tools.shell import _check_script_content
+        from tuan_cli.tools.shell import _check_script_content
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ps1", delete=False) as f:
             f.write("rm -rf /\n")
             f.flush()
@@ -265,7 +265,7 @@ class TestTOCTOUCheck:
 
     def test_powershell_file_with_remove_item(self):
         """powershell -File 含 Remove-Item -Recurse -Force 的脚本应被拦截。"""
-        from qingxiaotuan.tools.shell import _check_script_content
+        from tuan_cli.tools.shell import _check_script_content
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ps1", delete=False) as f:
             f.write("Remove-Item -Recurse -Force /\n")
             f.flush()
@@ -280,7 +280,7 @@ class TestTOCTOUCheck:
 
     def test_safe_script_not_blocked(self):
         """安全脚本不应被拦截。"""
-        from qingxiaotuan.tools.shell import _check_script_content
+        from tuan_cli.tools.shell import _check_script_content
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ps1", delete=False) as f:
             f.write("Write-Host 'Hello World'\n")
             f.flush()
@@ -294,6 +294,6 @@ class TestTOCTOUCheck:
 
     def test_nonexistent_script_ignored(self):
         """不存在的脚本文件不检查。"""
-        from qingxiaotuan.tools.shell import _check_script_content
+        from tuan_cli.tools.shell import _check_script_content
         result = _check_script_content("powershell -File /nonexistent/evil.ps1", "")
         assert result is None

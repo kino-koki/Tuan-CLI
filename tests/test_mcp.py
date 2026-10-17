@@ -17,9 +17,9 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "mcp_demo_server.py"
 sys.path.insert(0, str(ROOT))
 
-from qingxiaotuan.tools.mcp.client import MCPClient  # noqa: E402
-from qingxiaotuan.tools.mcp.plugin import MCPPlugin  # noqa: E402
-from qingxiaotuan.tools.base import Tool  # noqa: E402
+from tuan_cli.tools.mcp.client import MCPClient  # noqa: E402
+from tuan_cli.tools.mcp.plugin import MCPPlugin  # noqa: E402
+from tuan_cli.tools.base import Tool  # noqa: E402
 
 
 class FakeConfig:
@@ -163,7 +163,7 @@ def _fake_kernel_with_client():
 
 
 def test_cmd_mcp_list(monkeypatch):
-    import qingxiaotuan.cli.cmd_mcp_cli as MC
+    import tuan_cli.cli.cmd_mcp_cli as MC
     kernel, c = _fake_kernel_with_client()
     monkeypatch.setattr(MC, "build_kernel", lambda *a, **k: kernel)
     monkeypatch.setattr(MC, "Config", lambda *a, **k: kernel.require("config"))
@@ -177,7 +177,7 @@ def test_cmd_mcp_list(monkeypatch):
 
 
 def test_cmd_mcp_tools(monkeypatch):
-    import qingxiaotuan.cli.cmd_mcp_cli as MC
+    import tuan_cli.cli.cmd_mcp_cli as MC
     kernel, c = _fake_kernel_with_client()
     monkeypatch.setattr(MC, "build_kernel", lambda *a, **k: kernel)
     try:
@@ -190,7 +190,7 @@ def test_cmd_mcp_tools(monkeypatch):
 
 
 def test_cmd_mcp_call(monkeypatch):
-    import qingxiaotuan.cli.cmd_mcp_cli as MC
+    import tuan_cli.cli.cmd_mcp_cli as MC
     kernel, c = _fake_kernel_with_client()
     monkeypatch.setattr(MC, "build_kernel", lambda *a, **k: kernel)
     try:
@@ -203,7 +203,7 @@ def test_cmd_mcp_call(monkeypatch):
 
 
 def test_cmd_mcp_add_persists(monkeypatch):
-    import qingxiaotuan.cli.cmd_mcp_cli as MC
+    import tuan_cli.cli.cmd_mcp_cli as MC
     fake_cfg = FakeConfig({"mcp": {"servers": []}})
     monkeypatch.setattr(MC, "Config", lambda *a, **k: fake_cfg)
     ns = argparse.Namespace(mcp_cmd="add", server=None, tool=None, json=None,

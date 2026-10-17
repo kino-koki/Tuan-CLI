@@ -7,7 +7,7 @@
 """
 import base64
 
-from qingxiaotuan.ext.crypto_engine import CryptoEngine
+from tuan_cli.ext.crypto_engine import CryptoEngine
 
 
 def _seal(params):

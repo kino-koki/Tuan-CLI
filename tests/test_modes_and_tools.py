@@ -5,21 +5,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from qingxiaotuan.config import Config
-from qingxiaotuan.tools.base import ToolContext, Tool, ToolRegistry
-from qingxiaotuan.tools.filesystem import glob, move_file, delete_file, write_file
+from tuan_cli.config import Config
+from tuan_cli.tools.base import ToolContext, Tool, ToolRegistry
+from tuan_cli.tools.filesystem import glob, move_file, delete_file, write_file
 
 
 # ----------------------------------------------------------------- 模式
 
-def test_default_mode_is_standard(qxt_home):
+def test_default_mode_is_standard(tuan_home):
     cfg = Config()
     assert cfg.mode == "standard"
     assert not cfg.is_yolo()
     assert cfg.tool_auto_approve("delete_file") is False
 
 
-def test_mode_setter_and_yolo(qxt_home):
+def test_mode_setter_and_yolo(tuan_home):
     cfg = Config()
     cfg.mode = "yolo"
     assert cfg.is_yolo()
@@ -32,7 +32,7 @@ def test_mode_setter_and_yolo(qxt_home):
     assert cfg.tool_auto_approve("run_shell") is True
 
 
-def test_invalid_mode_rejected(qxt_home):
+def test_invalid_mode_rejected(tuan_home):
     cfg = Config()
     try:
         cfg.mode = "turbo"
@@ -43,11 +43,11 @@ def test_invalid_mode_rejected(qxt_home):
 
 # ----------------------------------------------------------------- YOLO 下的 dispatch 自动批准
 
-def _make_ctx(qxt_home, yolo: bool):
+def _make_ctx(tuan_home, yolo: bool):
     class _FakeKernel:
         def get(self, _):
             return None
-    return ToolContext(kernel=_FakeKernel(), workspace=str(qxt_home), yolo=yolo)
+    return ToolContext(kernel=_FakeKernel(), workspace=str(tuan_home), yolo=yolo)
 
 
 def test_dangerous_tool_confirmed_in_standard():
@@ -131,7 +131,7 @@ def test_mcp_tool_bridge():
         def call_tool(self, name, args):
             return f"called {name} with {args}"
 
-    from qingxiaotuan.tools.mcp.plugin import MCPPlugin
+    from tuan_cli.tools.mcp.plugin import MCPPlugin
     # _register_tool 是实例方法 (self, registry, client, spec); 用最小桩实例承载 _safe_names
     _stub = type("StubPlugin", (), {"_safe_names": False, "_engine": None})()
     MCPPlugin._register_tool(_stub, reg, FakeClient(), FakeClient().list_tools()[0])
@@ -148,7 +148,7 @@ def test_mcp_tool_bridge():
 
 def test_loop_detects_repetition(monkeypatch):
     # 用一个固定返回的假 agent, 连续两轮回复相同, 验证去重提示被注入
-    from qingxiaotuan.core.devloop import DevLoop
+    from tuan_cli.core.devloop import DevLoop
 
     class FakeCfg:
         def get(self, k, d=None):

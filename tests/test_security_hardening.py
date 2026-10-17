@@ -12,16 +12,16 @@ import tempfile
 
 import pytest
 
-from qingxiaotuan.ext.security_gate import GateVerdict, SecurityGate
-from qingxiaotuan.core.remote_control import RemoteControl
-from qingxiaotuan.tools.mcp.sandbox import _refuse_if_redline, _sanitize_env
-from qingxiaotuan.core.workspace_trust import (
+from tuan_cli.ext.security_gate import GateVerdict, SecurityGate
+from tuan_cli.core.remote_control import RemoteControl
+from tuan_cli.tools.mcp.sandbox import _refuse_if_redline, _sanitize_env
+from tuan_cli.core.workspace_trust import (
     TrustLevel,
     consult_for_shell,
     is_action_allowed,
 )
-from qingxiaotuan.ext.rules_engine import RuleEngine, _safe_compile
-from qingxiaotuan.core.sandbox import _sanitize_sandbox_env
+from tuan_cli.ext.rules_engine import RuleEngine, _safe_compile
+from tuan_cli.core.sandbox import _sanitize_sandbox_env
 
 
 # ---------------------------------------------------------------- SecurityGate
@@ -152,8 +152,8 @@ def test_mcp_sandbox_redline_blocked():
 
 
 def test_mcp_sandbox_env_sanitize():
-    e = _sanitize_env({"PATH": "/x", "MY_API_KEY": "s", "QXT_TOKEN": "t"}, {"OK": "1"})
-    assert e["MY_API_KEY"] == "" and e["QXT_TOKEN"] == ""
+    e = _sanitize_env({"PATH": "/x", "MY_API_KEY": "s", "TUAN_TOKEN": "t"}, {"OK": "1"})
+    assert e["MY_API_KEY"] == "" and e["TUAN_TOKEN"] == ""
     assert e["PATH"] == "/x" and e["OK"] == "1"
 
 
