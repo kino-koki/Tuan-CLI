@@ -23,9 +23,9 @@ sys.path.insert(0, str(ROOT))
 
 @pytest.fixture
 def isolated_home(tmp_path, monkeypatch):
-    """隔离 QXT_HOME, 避免污染真实 ~/.qingxiaotuan, 并让黑名单减负测试可确定。"""
-    monkeypatch.setenv("QXT_HOME", str(tmp_path))
-    from qingxiaotuan.core import blacklist_override
+    """隔离 TUAN_HOME, 避免污染真实 ~/.tuan, 并让黑名单减负测试可确定。"""
+    monkeypatch.setenv("TUAN_HOME", str(tmp_path))
+    from tuan_cli.core import blacklist_override
     blacklist_override.reset_cache()
     yield tmp_path
     blacklist_override.reset_cache()
@@ -35,7 +35,7 @@ def isolated_home(tmp_path, monkeypatch):
 
 def test_stage_security_interception():
     """危险命令被 is_hard_redline / is_redline 判定为红线; 良性命令不误杀。"""
-    from qingxiaotuan.ext import safety_engine as se
+    from tuan_cli.ext import safety_engine as se
 
     # 硬红线 (OS/文件系统级, YOLO 也不放行)
     assert se.is_hard_redline("rm -rf /") is True
@@ -53,7 +53,7 @@ def test_stage_security_interception():
 
 def test_stage_audit_logging(isolated_home):
     """拦截事件经 SecurityEventBus 落盘 JSONL, 且内存侧可查。"""
-    from qingxiaotuan.core.security_bus import SecurityEventBus, SecurityEventType
+    from tuan_cli.core.security_bus import SecurityEventBus, SecurityEventType
 
     audit = isolated_home / "security-audit.jsonl"
     bus = SecurityEventBus(persist_path=audit)
@@ -81,7 +81,7 @@ def test_stage_audit_logging(isolated_home):
 
 def test_stage_loop_switching():
     """LoopRegistry.set_current 在不同 Loop 间热切换。"""
-    from qingxiaotuan.core.loop_provider import LoopProvider, LoopRegistry, ReActLoop
+    from tuan_cli.core.loop_provider import LoopProvider, LoopRegistry, ReActLoop
 
     class _FakeLoop(LoopProvider):
         def __init__(self, name: str) -> None:
@@ -113,7 +113,7 @@ def test_stage_loop_switching():
 
 def test_stage_router_escalation(isolated_home):
     """高难度任务升级到更强 (tier 更高) 的模型。"""
-    from qingxiaotuan.models.router import ModelRouter
+    from tuan_cli.models.router import ModelRouter
 
     router = ModelRouter(default_provider="zhipu", default_model="glm-4-flash")
     decision = router.decide(
@@ -132,7 +132,7 @@ def test_stage_router_escalation(isolated_home):
 
 def test_stage_router_deescalation(isolated_home):
     """简单任务降级到更便宜的模型以省钱。"""
-    from qingxiaotuan.models.router import ModelRouter
+    from tuan_cli.models.router import ModelRouter
 
     router = ModelRouter(
         default_provider="anthropic", default_model="claude-sonnet-4-20250514"
@@ -153,7 +153,7 @@ def test_stage_router_deescalation(isolated_home):
 
 def test_stage_router_fail_safe(isolated_home):
     """无可用密钥供应商时, 即使任务很难也保持当前模型, 绝不切到无凭证端点。"""
-    from qingxiaotuan.models.router import ModelRouter
+    from tuan_cli.models.router import ModelRouter
 
     router = ModelRouter(default_provider="zhipu", default_model="glm-4-flash")
     decision = router.decide(
@@ -169,10 +169,10 @@ def test_stage_router_fail_safe(isolated_home):
 
 def test_e2e_full_chain(isolated_home):
     """安全拦截 → 审计记录 → Loop 切换 → 模型路由升降级 (端到端)。"""
-    from qingxiaotuan.core.loop_provider import LoopProvider, LoopRegistry, ReActLoop
-    from qingxiaotuan.core.security_bus import SecurityEventBus, SecurityEventType
-    from qingxiaotuan.ext import safety_engine
-    from qingxiaotuan.models.router import ModelRouter
+    from tuan_cli.core.loop_provider import LoopProvider, LoopRegistry, ReActLoop
+    from tuan_cli.core.security_bus import SecurityEventBus, SecurityEventType
+    from tuan_cli.ext import safety_engine
+    from tuan_cli.models.router import ModelRouter
 
     # 1) 安全拦截
     cmd = "DROP TABLE important_data;"
@@ -220,8 +220,8 @@ def test_e2e_full_chain(isolated_home):
 
 def test_stage_blacklist_override(isolated_home):
     """用户本地抑制某黑名单模式后, is_redline 不再命中该模式 (硬红线仍不可抑制)。"""
-    from qingxiaotuan.core import blacklist_override
-    from qingxiaotuan.ext import safety_engine as se
+    from tuan_cli.core import blacklist_override
+    from tuan_cli.ext import safety_engine as se
 
     # 正则模式命中 (format 写盘)
     assert se.is_redline("format c:") is True

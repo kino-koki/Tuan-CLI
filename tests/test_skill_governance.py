@@ -13,8 +13,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from qingxiaotuan.skills.manager import SkillManager
-from qingxiaotuan.skills.governance import audit, consolidate, lint
+from tuan_cli.skills.manager import SkillManager
+from tuan_cli.skills.governance import audit, consolidate, lint
 
 
 def _write(p: Path, text: str):

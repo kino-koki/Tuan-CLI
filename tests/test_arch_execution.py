@@ -1,7 +1,7 @@
 """执行层测试: 5 种事件语义 + 可插拔 Loop + 工具管线 waterfall。"""
 import pytest
 
-from qingxiaotuan.arch.execution import (
+from tuan_cli.arch.execution import (
     EventSemantics,
     LoopContext,
     LoopRegistry,
@@ -21,9 +21,9 @@ def test_semantic_bus_routes_by_kind():
     bus = SemanticBus()
     seen = []
     bus.subscribe(EventSemantics.EMIT, lambda e: seen.append(e.kind))
-    bus.publish(__import__("qingxiaotuan.arch.execution", fromlist=["SemanticEvent"]).SemanticEvent(
+    bus.publish(__import__("tuan_cli.arch.execution", fromlist=["SemanticEvent"]).SemanticEvent(
         kind=EventSemantics.EMIT, source="t", payload={}))
-    bus.publish(__import__("qingxiaotuan.arch.execution", fromlist=["SemanticEvent"]).SemanticEvent(
+    bus.publish(__import__("tuan_cli.arch.execution", fromlist=["SemanticEvent"]).SemanticEvent(
         kind=EventSemantics.OBSERVE, source="t", payload={}))
     assert [str(k) for k in seen] == ["emit"]
 
@@ -32,13 +32,13 @@ def test_loop_registry_pluggable():
     before = set(LoopRegistry.names())
     # ReAct 已注册
     assert "react" in before
-    from qingxiaotuan.arch.execution import BaseAgentLoop
+    from tuan_cli.arch.execution import BaseAgentLoop
 
     class MyLoop(BaseAgentLoop):
         name = "custom-x"
 
         def run(self, ctx):
-            return __import__("qingxiaotuan.arch.execution", fromlist=["LoopResult"]).LoopResult(
+            return __import__("tuan_cli.arch.execution", fromlist=["LoopResult"]).LoopResult(
                 success=True, steps=0, final_answer="x")
 
     LoopRegistry.register("custom-x", MyLoop)

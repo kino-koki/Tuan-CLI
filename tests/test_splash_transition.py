@@ -16,14 +16,14 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def _fresh_qxt_home():
-    os.environ["QXT_HOME"] = tempfile.mkdtemp()
+def _fresh_tuan_home():
+    os.environ["TUAN_HOME"] = tempfile.mkdtemp()
 
 
 def test_splash_exits_when_kernel_ready():
     """Kernel 就绪后 splash.run() 必须返回 (不再永久阻塞)。"""
-    _fresh_qxt_home()
-    from qingxiaotuan.ui.splash import SplashTUI
+    _fresh_tuan_home()
+    from tuan_cli.ui.splash import SplashTUI
 
     splash = SplashTUI()
     splash.start()
@@ -45,8 +45,8 @@ def test_splash_exits_when_kernel_ready():
 
 def test_splash_exits_on_error():
     """内核构建出错时 splash 也应退出, 让 fast_start 走错误分支返回。"""
-    _fresh_qxt_home()
-    from qingxiaotuan.ui.splash import SplashTUI
+    _fresh_tuan_home()
+    from tuan_cli.ui.splash import SplashTUI
 
     splash = SplashTUI()
     splash.start()
@@ -63,8 +63,8 @@ def test_splash_exits_on_error():
 
 def test_tui_context_zero_when_budget_unknown():
     """budget=0 时上下文占用条必须显示 0%, 不得出现 300000%/100%。"""
-    _fresh_qxt_home()
-    from qingxiaotuan.tui.tui import QxtTUI
+    _fresh_tuan_home()
+    from tuan_cli.tui.tui import QxtTUI
 
     tui = QxtTUI(on_submit=lambda t: "ok", title="青小团", workspace=os.getcwd())
     tui.set_context_info(3000, 0)
@@ -79,8 +79,8 @@ def test_tui_context_zero_when_budget_unknown():
 
 def test_tui_context_real_percentage():
     """真实估算/预算应算出正确百分比 (夹在 0~100)。"""
-    _fresh_qxt_home()
-    from qingxiaotuan.tui.tui import QxtTUI
+    _fresh_tuan_home()
+    from tuan_cli.tui.tui import QxtTUI
 
     tui = QxtTUI(on_submit=lambda t: "ok", title="青小团", workspace=os.getcwd())
     tui.set_context_info(3000, 60000)

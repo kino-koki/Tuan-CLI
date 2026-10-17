@@ -1,7 +1,7 @@
 """内核事件类型与 emit/on 便捷函数测试。"""
 
-from qingxiaotuan.core.events import EventType, emit_event, on_event
-from qingxiaotuan.core.kernel import Kernel
+from tuan_cli.core.events import EventType, emit_event, on_event
+from tuan_cli.core.kernel import Kernel
 
 
 def test_event_type_values():

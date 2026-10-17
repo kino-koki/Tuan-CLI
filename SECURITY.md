@@ -39,8 +39,8 @@
                (AEAD 落盘, 防篡改链, 实时告警)
 ```
 
-- 主链路位于 [`qingxiaotuan/sandbox/`](qingxiaotuan/sandbox/)（`SandboxManager` 统一入口）。
-- 工具执行闸门位于 [`qingxiaotuan/core/tool_executor.py`](qingxiaotuan/core/tool_executor.py)（`_security_gate_check` + `_sandbox_gate_check`）。
+- 主链路位于 [`tuan_cli/sandbox/`](tuan_cli/sandbox/)（`SandboxManager` 统一入口）。
+- 工具执行闸门位于 [`tuan_cli/core/tool_executor.py`](tuan_cli/core/tool_executor.py)（`_security_gate_check` + `_sandbox_gate_check`）。
 
 ---
 
@@ -239,16 +239,16 @@
 
 ### 10.5 白名单（Trae 模式）
 
-1. **手动授权**：用户通过 `qxt safe allow <command>` 将命令加入白名单
+1. **手动授权**：用户通过 `tuan safe allow <command>` 将命令加入白名单
 2. **白名单生效后**：同类操作**自动执行**，不再弹出确认（前缀匹配，如 `git status` 匹配 `git status --short`）
-3. **用户随时可撤销**：通过 `qxt safe deny <cmd>` 撤销白名单
+3. **用户随时可撤销**：通过 `tuan safe deny <cmd>` 撤销白名单
 4. **白名单永远低于黑名单**：即使命令在白名单中，如果命中红线模式，**仍然拦截**
-5. **红线命令无法加入白名单**：`is_redline` 命中的命令，`qxt safe allow` 会直接拒绝
+5. **红线命令无法加入白名单**：`is_redline` 命中的命令，`tuan safe allow` 会直接拒绝
 
 > **注意**：用户在某次确认通道中「放行」的命令**仅本次生效**，不会自动写入白名单。
-> 白名单存储在 `~/.qingxiaotuan/whitelist.json`。
+> 白名单存储在 `~/.tuan/whitelist.json`。
 
-白名单管理命令：`qxt safe list`（查看）· `qxt safe allow <command>`（添加，红线命令会被拒绝）· `qxt safe deny <cmd>`（移除）· `qxt safe status`（查看安全系统状态，含白名单条目数与存储路径）。
+白名单管理命令：`tuan safe list`（查看）· `tuan safe allow <command>`（添加，红线命令会被拒绝）· `tuan safe deny <cmd>`（移除）· `tuan safe status`（查看安全系统状态，含白名单条目数与存储路径）。
 
 ### 10.6 月度更新（黑名单演进）
 
@@ -257,14 +257,14 @@
 ### 10.7 验证机制（实时可用，非虚构接口）
 
 ```bash
-qxt ext call safety score '{"command":"rm -rf /"}'
+tuan ext call safety score '{"command":"rm -rf /"}'
 # 输出: { "risk": "critical", "score": 100, "block": true, "reasons": ["recursive force delete (递归强制删除)"], ... }
 
-qxt ext call safety score '{"command":"ls -la"}'
+tuan ext call safety score '{"command":"ls -la"}'
 # 输出: { "risk": "none", "score": 0, "block": false, "reasons": [], ... }
 ```
 
-> **注**: 旧文档曾出现 `qxt safety check` 命令，该命令**不存在**（未实现），请使用上述 `qxt ext call safety score` 替代。
+> **注**: 旧文档曾出现 `tuan safety check` 命令，该命令**不存在**（未实现），请使用上述 `tuan ext call safety score` 替代。
 
 ### 10.8 安全承诺
 
@@ -322,7 +322,7 @@ mcp:
 
 对不受信任的 MCP server，启用 `security.sandbox: true` 后执行**进程级隔离**：
 
-1. **环境脱敏**：server 子进程的环境变量中抹除密钥类变量（`API_KEY`、`SECRET`、`TOKEN`、`PASSWORD`、`QXT_*`、`OPENAI*`、`AWS_*`、`DATABASE_URL` 等），防止密钥泄漏到 server。
+1. **环境脱敏**：server 子进程的环境变量中抹除密钥类变量（`API_KEY`、`SECRET`、`TOKEN`、`PASSWORD`、`TUAN_*`、`OPENAI*`、`AWS_*`、`DATABASE_URL` 等），防止密钥泄漏到 server。
 2. **工作目录隔离**：server 子进程运行在临时空目录，无法读写工作区文件。
 3. **调用前 fail-closed 安全闸门**：每次工具调用前，参数中的文本字段经 safety 引擎红线检测，命中 `rm -rf`、`DROP TABLE` 等危险操作**直接拒绝**，不发送给 server；闸门异常时同样保守拒绝。
 
@@ -339,9 +339,9 @@ mcp:
 ```
 
 - 工具调用被拒绝 → 检查 `/mcp security`（是否在黑名单中，或不在白名单中）。
-- 超过频率限制 → `qxt config set mcp.security.max_calls_per_minute 120`（重启后生效）。
-- **注**: `/mcp config` 命令**不存在**。调整 MCP 配置请使用 `qxt config set <key> <value>`，或直接编辑 `~/.qingxiaotuan/config.yaml` 的 `mcp:` 段。
-- 沙箱执行失败 → 检查 server `command`/`args` 是否可执行（`qxt mcp list`）；闸门拦截是预期行为（查 `/mcp audit` 中 `sandbox-gate-denied` 记录）；密钥被抹除导致行为异常时请在 server 的 `env:` 段显式声明（仍建议最小必要权限）。
+- 超过频率限制 → `tuan config set mcp.security.max_calls_per_minute 120`（重启后生效）。
+- **注**: `/mcp config` 命令**不存在**。调整 MCP 配置请使用 `tuan config set <key> <value>`，或直接编辑 `~/.tuan/config.yaml` 的 `mcp:` 段。
+- 沙箱执行失败 → 检查 server `command`/`args` 是否可执行（`tuan mcp list`）；闸门拦截是预期行为（查 `/mcp audit` 中 `sandbox-gate-denied` 记录）；密钥被抹除导致行为异常时请在 server 的 `env:` 段显式声明（仍建议最小必要权限）。
 
 ### 11.5 最佳实践
 
@@ -389,7 +389,7 @@ mcp:
 ### 12.4 待办（非阻塞，环境类）
 
 - IPC 稳定性（进程/端口复用、引擎常驻连接池）：全量长跑偶发瞬断。
-- `tests/test_cli_e2e.py` CLI 入口夹具：`_qxt_bin()` 解析的 `run` 控制台脚本不存在。
+- `tests/test_cli_e2e.py` CLI 入口夹具：`_tuan_bin()` 解析的 `run` 控制台脚本不存在。
 
 ---
 

@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from qingxiaotuan.arch.security import (
+from tuan_cli.arch.security import (
     CryptoVault,
     ImmutableSecurityPolicy,
     PolicyViolation,

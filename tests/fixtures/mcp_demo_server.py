@@ -1,4 +1,4 @@
-"""最小 MCP Server (stdio) —— 仅用于 qingxiaotuan 的 MCP 桥接测试。
+"""最小 MCP Server (stdio) —— 仅用于 tuan_cli 的 MCP 桥接测试。
 
 实现协议最小集:
   - initialize        -> 返回 protocolVersion / capabilities / serverInfo

@@ -1,4 +1,4 @@
-"""Behavioral tests for the ported ``qingxiaotuan.ports.kaos`` package.
+"""Behavioral tests for the ported ``tuan_cli.ports.kaos`` package.
 
 Covers environment path resolution, login-shell-path computation, the
 shell-path bridge, internal helpers, and the current-Kaos context machinery.
@@ -12,7 +12,7 @@ from pathlib import PureWindowsPath
 
 import pytest
 
-from qingxiaotuan.ports.kaos import (
+from tuan_cli.ports.kaos import (
     Environment,
     EnvironmentDeps,
     KaosError,
@@ -40,7 +40,7 @@ from qingxiaotuan.ports.kaos import (
     resolve_os_kind,
     translate_shell_drive_path,
 )
-from qingxiaotuan.ports.kaos import current as current_mod
+from tuan_cli.ports.kaos import current as current_mod
 
 
 # ── helpers ────────────────────────────────────────────────────────────────

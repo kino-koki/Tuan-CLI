@@ -8,7 +8,7 @@
 
 import pytest
 
-from qingxiaotuan.arch.execution import (
+from tuan_cli.arch.execution import (
     EventSemantics,
     LoopContext,
     SemanticBus,

@@ -14,13 +14,13 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.core.prompts import (
+from tuan_cli.core.prompts import (
     build_system_prompt,
     build_system_prompt_dynamic,
     build_system_prompt_stable,
     system_prompt_stable_hash,
 )
-from qingxiaotuan.skills.manager import Skill, SkillManager
+from tuan_cli.skills.manager import Skill, SkillManager
 
 _PROTOCOL_MARKERS = (
     "## 执行协议",
@@ -67,25 +67,25 @@ class _FakeSkillManager:
 # ============================================================ 执行协议段
 
 @pytest.mark.parametrize("marker", _PROTOCOL_MARKERS)
-def test_stable_prefix_contains_execution_protocol(qxt_home, marker: str) -> None:
+def test_stable_prefix_contains_execution_protocol(tuan_home, marker: str) -> None:
     """稳定前缀包含执行协议全部章节。"""
-    stable = build_system_prompt_stable(qxt_home)
+    stable = build_system_prompt_stable(tuan_home)
     assert marker in stable
 
 
-def test_full_prompt_contains_execution_protocol(qxt_home, tmp_path) -> None:
+def test_full_prompt_contains_execution_protocol(tuan_home, tmp_path) -> None:
     """完整系统提示包含执行协议, 且六条组合齐全。"""
-    prompt = build_system_prompt(qxt_home, str(tmp_path))
+    prompt = build_system_prompt(tuan_home, str(tmp_path))
     assert "## 执行协议" in prompt
     assert "不为「显得忙碌」重复调用" in prompt
     assert "验证失败先诊断根因再修" in prompt
     assert "/audit /impact 可追溯" in prompt
 
 
-def test_protocol_hash_stable_across_calls(qxt_home) -> None:
+def test_protocol_hash_stable_across_calls(tuan_home) -> None:
     """执行协议加入后 stable 段仍逐字节稳定 (prompt cache 边界不破坏)。"""
-    h1 = system_prompt_stable_hash(build_system_prompt_stable(qxt_home))
-    h2 = system_prompt_stable_hash(build_system_prompt_stable(qxt_home))
+    h1 = system_prompt_stable_hash(build_system_prompt_stable(tuan_home))
+    h2 = system_prompt_stable_hash(build_system_prompt_stable(tuan_home))
     assert h1 == h2
 
 
@@ -94,7 +94,7 @@ def test_soul_md_contains_execution_protocol() -> None:
     import os
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root, "qingxiaotuan", "resources", "SOUL.md"), encoding="utf-8") as f:
+    with open(os.path.join(root, "tuan_cli", "resources", "SOUL.md"), encoding="utf-8") as f:
         soul_text = f.read()
     assert "## 执行协议" in soul_text
     assert "工具调用理由化" in soul_text
@@ -104,7 +104,7 @@ def test_soul_md_contains_execution_protocol() -> None:
 
 # ============================================================ SKILL 注入语义
 
-def test_always_skill_not_squeezed_by_priority(qxt_home, tmp_path) -> None:
+def test_always_skill_not_squeezed_by_priority(tuan_home, tmp_path) -> None:
     """always 技能 priority 再低也保底注入, 不被高热度 lazy 技能挤出 top-N。"""
     always = _skill("always-guard", "always", priority=0, use_count=0,
                     body="常驻守则: 任何情况下遵守。")
@@ -115,7 +115,7 @@ def test_always_skill_not_squeezed_by_priority(qxt_home, tmp_path) -> None:
     mgr = _FakeSkillManager([hot1, hot2, hot3, hot4, always])
 
     prompt = build_system_prompt_dynamic(
-        qxt_home, str(tmp_path), skill_manager=mgr, skill_limit=3)
+        tuan_home, str(tmp_path), skill_manager=mgr, skill_limit=3)
     assert "always-guard" in prompt          # always 技能进注入
     assert "常驻守则" in prompt              # always 正文注入
     assert "hot-lazy-1" in prompt            # 最高热度 lazy 也进
@@ -123,14 +123,14 @@ def test_always_skill_not_squeezed_by_priority(qxt_home, tmp_path) -> None:
     assert "hot-lazy-4" not in prompt        # 第 4 个被挤出
 
 
-def test_auto_skill_registry_entry_without_body(qxt_home, tmp_path) -> None:
+def test_auto_skill_registry_entry_without_body(tuan_home, tmp_path) -> None:
     """auto 技能只给注册表条目 (含激活档标记), 正文不无条件注入。"""
     auto = _skill("auto-fmt", "auto", priority=90, body="AUTO 正文不应出现")
     lazy = _skill("lazy-help", "lazy", body="LAZY 正文不应出现")
     mgr = _FakeSkillManager([auto, lazy])
 
     prompt = build_system_prompt_dynamic(
-        qxt_home, str(tmp_path), skill_manager=mgr, skill_limit=3)
+        tuan_home, str(tmp_path), skill_manager=mgr, skill_limit=3)
     assert "auto-fmt" in prompt
     assert "AUTO 正文不应出现" not in prompt   # 正文按需加载
     assert "lazy-help" in prompt

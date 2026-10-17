@@ -2,7 +2,7 @@
 """win_compat 兼容层单测 —— 保证非 Windows / 非 TTY / 测试环境一律 no-op。"""
 import sys
 
-from qingxiaotuan.tui import win_compat as wc
+from tuan_cli.tui import win_compat as wc
 
 
 def test_module_imports_and_constants():
@@ -27,11 +27,11 @@ def test_enable_virtual_terminal_noop_outside_prod_tty():
 
 def test_tui_imports_win_compat():
     # tui 包内应能安全导入 win_compat (跨平台)
-    from qingxiaotuan.tui.tui import QxtTUI  # noqa: F401
+    from tuan_cli.tui.tui import QxtTUI  # noqa: F401
     assert True
 
 
 def test_fullscreen_imports_win_compat():
     # ui.fullscreen 引用 ..tui.win_compat, 需能成功导入 (路径正确性回归)
-    import qingxiaotuan.ui.fullscreen  # noqa: F401
+    import tuan_cli.ui.fullscreen  # noqa: F401
     assert True

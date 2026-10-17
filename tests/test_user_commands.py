@@ -1,4 +1,4 @@
-"""自定义斜杠命令 (<QXT_HOME>/commands 与 <workspace>/.qxt/commands) 测试。
+"""自定义斜杠命令 (<TUAN_HOME>/commands 与 <workspace>/.tuan/commands) 测试。
 
 验证:
 - 两级目录扫描 + 项目级覆盖同名用户级;
@@ -11,11 +11,11 @@
 
 import json
 
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.cli import user_commands as uc_mod
-from qingxiaotuan.cli import commands as cmds_mod
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse
+from tuan_cli.app import build_kernel
+from tuan_cli.cli import user_commands as uc_mod
+from tuan_cli.cli import commands as cmds_mod
+from tuan_cli.core.agent import Agent
+from tuan_cli.models.base import ModelAdapter, ModelResponse
 
 
 class EchoModel(ModelAdapter):
@@ -46,10 +46,10 @@ DEPLOY = (
 
 # ------------------------------------------------------------------ 加载与解析
 
-def test_load_two_levels_and_override(qxt_home, tmp_path):
-    _write_cmd(qxt_home, "deploy.md", DEPLOY)
+def test_load_two_levels_and_override(tuan_home, tmp_path):
+    _write_cmd(tuan_home, "deploy.md", DEPLOY)
     ws = tmp_path / "ws"
-    proj = ws / ".qxt" / "commands"
+    proj = ws / ".tuan" / "commands"
     proj.mkdir(parents=True)
     (proj / "deploy.md").write_text(
         "---\ndescription: 项目级覆盖\n---\n项目版: $ARGUMENTS", encoding="utf-8")
@@ -58,43 +58,43 @@ def test_load_two_levels_and_override(qxt_home, tmp_path):
     assert table["deploy"].description == "项目级覆盖"      # 就近优先
 
 
-def test_parse_name_fallback_and_body(qxt_home):
-    _write_cmd(qxt_home, "helper.md", "你就是个帮手, 目标: $ARGUMENTS")
+def test_parse_name_fallback_and_body(tuan_home):
+    _write_cmd(tuan_home, "helper.md", "你就是个帮手, 目标: $ARGUMENTS")
     table = uc_mod.load_user_commands(None, "")
     uc = table["helper"]
     assert uc.name == "helper" and uc.argument_hint == ""
     assert "$ARGUMENTS" in uc.body
 
 
-def test_claude_commands_discovered_and_take_precedence(qxt_home, tmp_path):
-    """Claude Code 标准位置 .claude/commands/*.md 被收录, 且优先级高于 .qxt/commands。"""
+def test_claude_commands_discovered_and_take_precedence(tuan_home, tmp_path):
+    """Claude Code 标准位置 .claude/commands/*.md 被收录, 且优先级高于 .tuan/commands。"""
     ws = tmp_path / "ws"
-    (ws / ".qxt" / "commands").mkdir(parents=True)
+    (ws / ".tuan" / "commands").mkdir(parents=True)
     (ws / ".claude" / "commands").mkdir(parents=True)
-    (ws / ".qxt" / "commands" / "ship.md").write_text(
-        "---\ndescription: qxt 版\n---\n.qxt: $ARGUMENTS", encoding="utf-8")
+    (ws / ".tuan" / "commands" / "ship.md").write_text(
+        "---\ndescription: tuan 版\n---\n.tuan: $ARGUMENTS", encoding="utf-8")
     (ws / ".claude" / "commands" / "ship.md").write_text(
         "---\ndescription: claude 版\n---\n.claude: $ARGUMENTS", encoding="utf-8")
     table = uc_mod.load_user_commands("no-such-config", str(ws))
     assert "ship" in table
-    # 同名命令: .claude/commands 最后加载 → 就近优先, 覆盖 .qxt 版
+    # 同名命令: .claude/commands 最后加载 → 就近优先, 覆盖 .tuan 版
     assert table["ship"].description == "claude 版"
     assert table["ship"].body.startswith(".claude:")
 
 
-def test_claude_commands_listing_order(qxt_home, tmp_path):
-    """command_dirs 输出: 用户级 → .qxt → .claude (优先级递增)。"""
+def test_claude_commands_listing_order(tuan_home, tmp_path):
+    """command_dirs 输出: 用户级 → .tuan → .claude (优先级递增)。"""
     dirs = uc_mod.command_dirs("no-such-config", str(tmp_path / "ws"))
     assert len(dirs) == 3
     assert dirs[-1].name == "commands" and ".claude" in str(dirs[-1])
-    assert ".qxt" in str(dirs[-2])
+    assert ".tuan" in str(dirs[-2])
     # 无 workspace 时只有用户级
     assert len(uc_mod.command_dirs("no-such-config", "")) == 1
 
 
-def test_expand_arguments_and_shell(tmp_path, qxt_home):
+def test_expand_arguments_and_shell(tmp_path, tuan_home):
     uc = uc_mod.parse_command.__wrapped__ if False else None  # noqa: F841 (占位防误删注释)
-    _write_cmd(qxt_home, "deploy.md", DEPLOY)
+    _write_cmd(tuan_home, "deploy.md", DEPLOY)
     cmd = uc_mod.load_user_commands(None, "")["deploy"]
     out = uc_mod.expand_command(cmd, "prod 快一点", workspace=str(tmp_path))
     assert "部署到 prod 环境" in out                 # $1
@@ -103,17 +103,17 @@ def test_expand_arguments_and_shell(tmp_path, qxt_home):
     assert "!`" not in out and "$1" not in out
 
 
-def test_expand_file_inject_and_truncation(tmp_path, qxt_home):
+def test_expand_file_inject_and_truncation(tmp_path, tuan_home):
     note = tmp_path / "notes.md"
     note.write_text("A" * 60_000, encoding="utf-8")
-    _write_cmd(qxt_home, "review.md",
+    _write_cmd(tuan_home, "review.md",
                "审查 @notes.md 并总结, 参数: $1")
     cmd = uc_mod.load_user_commands(None, str(tmp_path))["review"]
     out = uc_mod.expand_command(cmd, "严格", workspace=str(tmp_path))
     assert '<file path="notes.md">' in out
     assert "截断" in out                              # 超限截断保护
     # 不存在的文件原样保留
-    _write_cmd(qxt_home, "ghost.md", "看看 @no_such_file.md")
+    _write_cmd(tuan_home, "ghost.md", "看看 @no_such_file.md")
     out2 = uc_mod.expand_command(
         uc_mod.load_user_commands(None, "")["ghost"], "", workspace=str(tmp_path))
     assert "@no_such_file.md" in out2
@@ -121,7 +121,7 @@ def test_expand_file_inject_and_truncation(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ 安装与分发
 
-def _make_agent(tmp_path, qxt_home):
+def _make_agent(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     kernel.unprovide("model_adapter")
@@ -131,9 +131,9 @@ def _make_agent(tmp_path, qxt_home):
     return kernel, config, agent
 
 
-def test_install_dispatches_custom_command(tmp_path, qxt_home, monkeypatch):
-    _write_cmd(qxt_home, "deploy.md", "请部署 $1, 完毕。")
-    kernel, config, agent = _make_agent(tmp_path, qxt_home)
+def test_install_dispatches_custom_command(tmp_path, tuan_home, monkeypatch):
+    _write_cmd(tuan_home, "deploy.md", "请部署 $1, 完毕。")
+    kernel, config, agent = _make_agent(tmp_path, tuan_home)
     n = uc_mod.install_user_commands(agent, config, str(tmp_path))
     assert n >= 1 and "/deploy" in cmds_mod._HELP
 
@@ -145,8 +145,8 @@ def test_install_dispatches_custom_command(tmp_path, qxt_home, monkeypatch):
     assert len(captured) == 1 and "部署 生产" in captured[0]
 
 
-def test_unmatched_falls_through(tmp_path, qxt_home, monkeypatch):
-    kernel, config, agent = _make_agent(tmp_path, qxt_home)
+def test_unmatched_falls_through(tmp_path, tuan_home, monkeypatch):
+    kernel, config, agent = _make_agent(tmp_path, tuan_home)
     uc_mod.install_user_commands(agent, config, str(tmp_path))
     # 未命中的命令回落原处理链: /help 正常返回且不触发回合
     captured: list = []
@@ -156,14 +156,14 @@ def test_unmatched_falls_through(tmp_path, qxt_home, monkeypatch):
     assert captured == []
 
 
-def test_double_install_is_idempotent(tmp_path, qxt_home, monkeypatch):
-    kernel, config, agent = _make_agent(tmp_path, qxt_home)
+def test_double_install_is_idempotent(tmp_path, tuan_home, monkeypatch):
+    kernel, config, agent = _make_agent(tmp_path, tuan_home)
     uc_mod.install_user_commands(agent, config, str(tmp_path))
     first = cmds_mod._handle_slash
     uc_mod.install_user_commands(agent, config, str(tmp_path))
     assert cmds_mod._handle_slash is first             # 不叠加包装
     # 新增文件后重装 → 表格刷新生效
-    _write_cmd(qxt_home, "extra.md", "额外命令")
+    _write_cmd(tuan_home, "extra.md", "额外命令")
     uc_mod.install_user_commands(agent, config, str(tmp_path))
     captured: list = []
     monkeypatch.setattr(cmds_mod, "_run_turn",

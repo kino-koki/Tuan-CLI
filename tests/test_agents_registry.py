@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.core.agents_registry import (
+from tuan_cli.core.agents_registry import (
     AgentSpec, discover_agents, format_agent_list, load_agent, parse_agent_md,
 )
 
@@ -120,7 +120,7 @@ class _Tool:
 
 
 def test_fold_whitelist_method_form():
-    from qingxiaotuan.tools.subagent_tool import _fold_whitelist
+    from tuan_cli.tools.subagent_tool import _fold_whitelist
     def tools():
         return [_Tool("a"), _Tool("b"), _Tool("c")]
     ex = {"subagent"}
@@ -130,7 +130,7 @@ def test_fold_whitelist_method_form():
 
 
 def test_fold_whitelist_property_form():
-    from qingxiaotuan.tools.subagent_tool import _fold_whitelist
+    from tuan_cli.tools.subagent_tool import _fold_whitelist
     tools = [_Tool("a"), _Tool("b"), _Tool("c")]  # property: 值是 list, 不可调用
     ex = set()
     out = _fold_whitelist(ex, ("a",), tools)
@@ -138,13 +138,13 @@ def test_fold_whitelist_property_form():
 
 
 def test_fold_whitelist_empty_keeps():
-    from qingxiaotuan.tools.subagent_tool import _fold_whitelist
+    from tuan_cli.tools.subagent_tool import _fold_whitelist
     assert _fold_whitelist({"x"}, (), lambda: []) == {"x"}
 
 
 def test_builtin_dir_delegation(tmp_path, monkeypatch):
     # 用 monkeypatch 注入内置目录, 验证 builtin 层也参与发现
-    from qingxiaotuan.core import agents_registry as ar
+    from tuan_cli.core import agents_registry as ar
     builtin = tmp_path / "builtin"
     builtin.mkdir()
     (builtin / "doc-agent.md").write_text(
@@ -155,7 +155,7 @@ def test_builtin_dir_delegation(tmp_path, monkeypatch):
 
 def test_subagent_tool_imports_and_agents_list():
     # 工具模块可导入, name 参数与 agents_list 工具已接线
-    from qingxiaotuan.tools.subagent_tool import SubagentPlugin, _list_agents, _run_subagent
+    from tuan_cli.tools.subagent_tool import SubagentPlugin, _list_agents, _run_subagent
     assert callable(_run_subagent)
     assert callable(_list_agents)
     assert "name" in _run_subagent.__code__.co_varnames or True  # 仅保证可导入

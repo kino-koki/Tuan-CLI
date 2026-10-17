@@ -1,4 +1,4 @@
-"""M8: CLI 端到端测试 —— 真实子进程跑 `qxt run`, 连本地 mock server 完成一次 headless 任务。
+"""M8: CLI 端到端测试 —— 真实子进程跑 `tuan run`, 连本地 mock server 完成一次 headless 任务。
 
 验证: 命令行入口 → build_kernel → create_agent → Agent.run → 真实 HTTP 模型调用
 → 工具执行 → 输出回答, 整条链路在独立子进程里闭环 (离线, 不访问外网)。
@@ -21,26 +21,26 @@ def _write_config(home: Path, port: int) -> None:
         "  provider: openai-compatible\n"
         f"  base_url: http://127.0.0.1:{port}/v1\n"
         "  model: mock\n"
-        "  api_key_env: QXT_API_KEY\n",
+        "  api_key_env: TUAN_API_KEY\n",
         encoding="utf-8",
     )
 
 
-def _qxt_bin() -> list:
-    """返回启动 qxt CLI 的命令片段 (list, 可直接 `+ ["run", ...]`)。
+def _tuan_bin() -> list:
+    """返回启动 tuan CLI 的命令片段 (list, 可直接 `+ ["run", ...]`)。
 
-    - 优先用 venv 里安装的 qxt 控制台脚本 (真实入口接线, 跨平台);
+    - 优先用 venv 里安装的 tuan 控制台脚本 (真实入口接线, 跨平台);
     - 若脚本不存在 (例如未 `pip install` 出控制台脚本的裸 venv), 回退到
-      `python -m qingxiaotuan.cli.parser`, 行为等价且无需安装, 保证测试可跑通。
+      `python -m tuan_cli.cli.parser`, 行为等价且无需安装, 保证测试可跑通。
     """
     bin_dir = Path(sys.executable).resolve().parent
-    qxt = bin_dir / ("qxt.exe" if os.name == "nt" else "qxt")
-    if qxt.exists():
-        return [str(qxt)]
-    return [sys.executable, "-m", "qingxiaotuan.cli.parser"]
+    tuan = bin_dir / ("tuan.exe" if os.name == "nt" else "tuan")
+    if tuan.exists():
+        return [str(tuan)]
+    return [sys.executable, "-m", "tuan_cli.cli.parser"]
 
 
-def test_cli_run_headless_with_mock_server(tmp_path, qxt_home, mock_server):
+def test_cli_run_headless_with_mock_server(tmp_path, tuan_home, mock_server):
     ws = tmp_path / "ws"
     ws.mkdir()
     (ws / "hello.txt").write_text("CLI 端到端", encoding="utf-8")
@@ -53,11 +53,11 @@ def test_cli_run_headless_with_mock_server(tmp_path, qxt_home, mock_server):
     _write_config(home, server.port)
 
     env = dict(os.environ)
-    env["QXT_HOME"] = str(home)
-    env["QXT_API_KEY"] = "test-key"
+    env["TUAN_HOME"] = str(home)
+    env["TUAN_API_KEY"] = "test-key"
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent)
     proc = subprocess.run(
-        _qxt_bin() + ["run", "读 hello.txt", "--no-stream"],
+        _tuan_bin() + ["run", "读 hello.txt", "--no-stream"],
         cwd=str(ws), env=env, capture_output=True, text=True, timeout=180,
     )
 
@@ -68,7 +68,7 @@ def test_cli_run_headless_with_mock_server(tmp_path, qxt_home, mock_server):
     assert not server.requests[0].get("stream")
 
 
-def test_cli_run_streaming_with_mock_server(tmp_path, qxt_home, mock_server):
+def test_cli_run_streaming_with_mock_server(tmp_path, tuan_home, mock_server):
     ws = tmp_path / "ws"
     ws.mkdir()
     home = tmp_path / "home"
@@ -78,11 +78,11 @@ def test_cli_run_streaming_with_mock_server(tmp_path, qxt_home, mock_server):
     _write_config(home, server.port)
 
     env = dict(os.environ)
-    env["QXT_HOME"] = str(home)
-    env["QXT_API_KEY"] = "test-key"
+    env["TUAN_HOME"] = str(home)
+    env["TUAN_API_KEY"] = "test-key"
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent)
     proc = subprocess.run(
-        _qxt_bin() + ["run", "用流式回答"],
+        _tuan_bin() + ["run", "用流式回答"],
         cwd=str(ws), env=env, capture_output=True, text=True, timeout=180,
     )
 

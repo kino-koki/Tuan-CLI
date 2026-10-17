@@ -2,7 +2,7 @@
 import hashlib
 import hmac
 
-from qingxiaotuan.harden.crypto_provider import (
+from tuan_cli.harden.crypto_provider import (
     GmsslProvider,
     HsmProvider,
     SoftwareProvider,
@@ -15,7 +15,7 @@ def _old_ct_encrypt(plaintext: bytes, key: bytes, nonce: bytes) -> bytes:
     result = bytearray()
     for i in range(0, len(plaintext), 32):
         block = plaintext[i:i + 32]
-        material = b"qxt-audit\x00" + key + b"\x01" + nonce + b"\x02" + i.to_bytes(8, "big")
+        material = b"tuan-audit\x00" + key + b"\x01" + nonce + b"\x02" + i.to_bytes(8, "big")
         ks = hashlib.sha256(material).digest()
         result.extend(bytes(a ^ b for a, b in zip(block, ks[:len(block)])))
     mac = hmac.new(key, bytes(result), hashlib.sha256).digest()
@@ -31,7 +31,7 @@ def _old_ct_decrypt(blob: bytes, key: bytes) -> bytes:
     result = bytearray()
     for i in range(0, len(ct), 32):
         block = ct[i:i + 32]
-        material = b"qxt-audit\x00" + key + b"\x01" + nonce + b"\x02" + i.to_bytes(8, "big")
+        material = b"tuan-audit\x00" + key + b"\x01" + nonce + b"\x02" + i.to_bytes(8, "big")
         ks = hashlib.sha256(material).digest()
         result.extend(bytes(a ^ b for a, b in zip(block, ks[:len(block)])))
     return bytes(result)
@@ -89,7 +89,7 @@ def test_hsm_raw_unsupported():
     except RuntimeError:
         # 没有 PKCS#11/HSM 时工厂会在审计器里降级; 这里直接验证接口契约:
         # HsmProvider 的 seal_raw/open_raw 必须是"明确报错"而非假装可用。
-        from qingxiaotuan.harden.crypto_provider import HsmProvider as HP
+        from tuan_cli.harden.crypto_provider import HsmProvider as HP
         hp = object.__new__(HP)  # 绕过 __init__ 的依赖检查
         hp.token_label = ""
         hp.key_label = ""

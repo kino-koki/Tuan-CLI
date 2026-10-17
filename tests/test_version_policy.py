@@ -76,7 +76,7 @@ def test_changelog_mismatch_blocked():
 
 # ---------------------------------------------------------------- 仓库现状
 def test_repo_versions_are_in_sync():
-    """pyproject.toml 与 qingxiaotuan/__init__.py 必须一致(曾长期不同步)。"""
+    """pyproject.toml 与 tuan_cli/__init__.py 必须一致(曾长期不同步)。"""
     pv = mod.read_pyproject_version()
     iv = mod.read_init_version()
     assert pv and iv, "两处版本号都应可读"

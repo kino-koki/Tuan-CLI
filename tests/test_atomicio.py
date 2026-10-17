@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from qingxiaotuan.core.atomicio import atomic_write_text
+from tuan_cli.core.atomicio import atomic_write_text
 
 
 def _tmp_leftovers(directory) -> list:
@@ -53,7 +53,7 @@ def test_unwritable_dir_raises_and_cleans_tmp(tmp_path, monkeypatch):
     def boom(*_a, **_k):
         raise OSError("disk full")
 
-    monkeypatch.setattr("qingxiaotuan.core.atomicio.os.replace", boom)
+    monkeypatch.setattr("tuan_cli.core.atomicio.os.replace", boom)
     with pytest.raises(OSError):
         atomic_write_text(target, "x")
     assert not target.exists()
@@ -62,8 +62,8 @@ def test_unwritable_dir_raises_and_cleans_tmp(tmp_path, monkeypatch):
 
 def test_written_through_workspace_trust_and_message_bus(tmp_path):
     """workspace_trust / message_bus 的落盘走原子写, 无 .tmp 残留。"""
-    from qingxiaotuan.core.message_bus import MessageBus
-    from qingxiaotuan.core.workspace_trust import WorkspaceTrust, TrustLevel
+    from tuan_cli.core.message_bus import MessageBus
+    from tuan_cli.core.workspace_trust import WorkspaceTrust, TrustLevel
 
     home = tmp_path / "home"
     wt = WorkspaceTrust(home)

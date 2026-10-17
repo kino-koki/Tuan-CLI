@@ -11,16 +11,16 @@
 import json
 import time
 
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.core.agent_types import (
+from tuan_cli.app import build_kernel
+from tuan_cli.core.agent import Agent
+from tuan_cli.core.agent_types import (
     get_agent_type,
     readonly_tool_names,
     render_types_for_prompt,
     type_names,
 )
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse, ToolCall
-from qingxiaotuan.tools.base import Tool, ToolRegistry
+from tuan_cli.models.base import ModelAdapter, ModelResponse, ToolCall
+from tuan_cli.tools.base import Tool, ToolRegistry
 
 
 class EchoModel(ModelAdapter):
@@ -68,7 +68,7 @@ class WriteOnceModel(ModelAdapter):
 def _make_ctx(tmp_path, model):
     """构造共享内核 + 主 Agent ctx (thread 软隔离, mock 模型进程内)。
 
-    子代理默认在 .qxt/subagents/<task_id>/ 独立目录读写; 本测试的对照断言
+    子代理默认在 .tuan/subagents/<task_id>/ 独立目录读写; 本测试的对照断言
     直接落在主工作区, 因此显式关闭 isolated_workdir, 聚焦"只读类型物理阻断"
     本身, 而非隔离目录路由。
     """
@@ -110,7 +110,7 @@ def test_readonly_tool_names_computation():
     assert names == ["rw_b"]
 
 
-def test_system_extra_injected_into_system_prompt(tmp_path, qxt_home):
+def test_system_extra_injected_into_system_prompt(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     kernel.unprovide("model_adapter")
@@ -126,14 +126,14 @@ def test_system_extra_injected_into_system_prompt(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ 工具注册与前台委派
 
-def test_task_tools_registered(qxt_home):
+def test_task_tools_registered(tuan_home):
     kernel = build_kernel()
     registry = kernel.require("tool_registry")
     names = {t.name for t in registry.tools}
     assert "task" in names and "background_status" in names
 
 
-def test_task_foreground_dispatch(tmp_path, qxt_home):
+def test_task_foreground_dispatch(tmp_path, tuan_home):
     kernel, ctx = _make_ctx(tmp_path, EchoModel())
     tool = kernel.require("tool_registry").get("task")
     out = tool.handler(ctx, description="前台调研", prompt="前台任务X",
@@ -143,7 +143,7 @@ def test_task_foreground_dispatch(tmp_path, qxt_home):
     assert "回声:" in out and "前台任务X" in out
 
 
-def test_task_rejects_unknown_type(tmp_path, qxt_home):
+def test_task_rejects_unknown_type(tmp_path, tuan_home):
     kernel, ctx = _make_ctx(tmp_path, EchoModel())
     tool = kernel.require("tool_registry").get("task")
     out = tool.handler(ctx, description="x", prompt="y", subagent_type="wizard")
@@ -152,7 +152,7 @@ def test_task_rejects_unknown_type(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ 只读类型物理阻断
 
-def test_task_readonly_type_blocks_writes(tmp_path, qxt_home):
+def test_task_readonly_type_blocks_writes(tmp_path, tuan_home):
     kernel, ctx = _make_ctx(tmp_path, WriteOnceModel())
     tool = kernel.require("tool_registry").get("task")
     # explore (只读): write_file 被 exclude_tools 物理拦下, 文件不得落盘
@@ -168,7 +168,7 @@ def test_task_readonly_type_blocks_writes(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ 后台模式 + 状态查询
 
-def test_task_background_and_status(tmp_path, qxt_home):
+def test_task_background_and_status(tmp_path, tuan_home):
     kernel, ctx = _make_ctx(tmp_path, EchoModel())
     registry = kernel.require("tool_registry")
 

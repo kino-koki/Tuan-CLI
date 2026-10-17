@@ -2,8 +2,8 @@
 
 import json
 
-from qingxiaotuan.tools.base import ToolContext
-from qingxiaotuan.tools.pipeline import (
+from tuan_cli.tools.base import ToolContext
+from tuan_cli.tools.pipeline import (
     OnFailure,
     Pipeline,
     PipelineResult,
@@ -282,9 +282,9 @@ def test_pipeline_result_all_passed_empty():
 
 def test_pipeline_run_with_real_kernel():
     """pipeline_run 应通过内核注册表执行多步链。"""
-    from qingxiaotuan.config import Config
-    from qingxiaotuan.core.kernel import Kernel
-    from qingxiaotuan.tools import ToolRegistryPlugin, builtin_tool_plugins
+    from tuan_cli.config import Config
+    from tuan_cli.core.kernel import Kernel
+    from tuan_cli.tools import ToolRegistryPlugin, builtin_tool_plugins
 
     k = Kernel()
     k.provide("config", Config(), owner="test")
@@ -320,9 +320,9 @@ def test_pipeline_run_empty_steps():
 
 def test_pipeline_list_tools_formats_schemas():
     """pipeline_list_tools 应列出工具名与参数 schema。"""
-    from qingxiaotuan.config import Config
-    from qingxiaotuan.core.kernel import Kernel
-    from qingxiaotuan.tools import ToolRegistryPlugin, builtin_tool_plugins
+    from tuan_cli.config import Config
+    from tuan_cli.core.kernel import Kernel
+    from tuan_cli.tools import ToolRegistryPlugin, builtin_tool_plugins
 
     k = Kernel()
     k.provide("config", Config(), owner="test")

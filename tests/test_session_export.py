@@ -8,7 +8,7 @@
 import json
 import zipfile
 
-from qingxiaotuan.cli.cmd_session_export import export_session_zip
+from tuan_cli.cli.cmd_session_export import export_session_zip
 
 
 def _make_session(tmp_path):
@@ -25,7 +25,7 @@ def _make_session(tmp_path):
     return f
 
 
-def test_export_creates_zip(tmp_path, qxt_home):
+def test_export_creates_zip(tmp_path, tuan_home):
     src = _make_session(tmp_path)
     dest = tmp_path / "out.zip"
     export_session_zip(src, dest)
@@ -34,7 +34,7 @@ def test_export_creates_zip(tmp_path, qxt_home):
         assert zf.testzip() is None
 
 
-def test_export_contains_session_data(tmp_path, qxt_home):
+def test_export_contains_session_data(tmp_path, tuan_home):
     src = _make_session(tmp_path)
     dest = tmp_path / "out.zip"
     export_session_zip(src, dest)

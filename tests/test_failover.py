@@ -13,9 +13,9 @@ import time
 
 import pytest
 
-from qingxiaotuan.core.resilience import AgentResilience
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse, ModelCapabilities
+from tuan_cli.core.resilience import AgentResilience
+from tuan_cli.app import build_kernel
+from tuan_cli.models.base import ModelAdapter, ModelResponse, ModelCapabilities
 
 
 class FailingModel(ModelAdapter):
@@ -58,7 +58,7 @@ class AuthError(RuntimeError):
     status_code = 401
 
 
-def _make_resilience(qxt_home, monkeypatch, **env_keys):
+def _make_resilience(tuan_home, monkeypatch, **env_keys):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data.setdefault("model", {})["provider"] = "deepseek"
@@ -76,8 +76,8 @@ def _fake_fallback(res, fallback):
     }
 
 
-def test_failover_switches_to_secondary(tmp_path, qxt_home, monkeypatch):
-    kernel, config, res = _make_resilience(qxt_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
+def test_failover_switches_to_secondary(tmp_path, tuan_home, monkeypatch):
+    kernel, config, res = _make_resilience(tuan_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
     primary = FailingModel()
     fallback = OkModel()
     _fake_fallback(res, fallback)
@@ -97,8 +97,8 @@ def test_failover_switches_to_secondary(tmp_path, qxt_home, monkeypatch):
     assert fallback.calls == 2
 
 
-def test_failover_raises_primary_when_fallback_also_fails(tmp_path, qxt_home, monkeypatch):
-    kernel, config, res = _make_resilience(qxt_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
+def test_failover_raises_primary_when_fallback_also_fails(tmp_path, tuan_home, monkeypatch):
+    kernel, config, res = _make_resilience(tuan_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
     primary = FailingModel(exc=RuntimeError("primary down"))
     _fake_fallback(res, FailingModel(exc=RuntimeError("fallback down")))
 
@@ -106,8 +106,8 @@ def test_failover_raises_primary_when_fallback_also_fails(tmp_path, qxt_home, mo
         res.chat_with_retry(primary, [{"role": "user", "content": "hi"}], [], stream=False)
 
 
-def test_auth_failure_does_not_failover(tmp_path, qxt_home, monkeypatch):
-    kernel, config, res = _make_resilience(qxt_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
+def test_auth_failure_does_not_failover(tmp_path, tuan_home, monkeypatch):
+    kernel, config, res = _make_resilience(tuan_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
     primary = FailingModel(exc=AuthError("401 Unauthorized"))
     fallback = OkModel()
     _fake_fallback(res, fallback)
@@ -118,8 +118,8 @@ def test_auth_failure_does_not_failover(tmp_path, qxt_home, monkeypatch):
     assert res._failover_count == 0
 
 
-def test_partial_tokens_do_not_failover(tmp_path, qxt_home, monkeypatch):
-    kernel, config, res = _make_resilience(qxt_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
+def test_partial_tokens_do_not_failover(tmp_path, tuan_home, monkeypatch):
+    kernel, config, res = _make_resilience(tuan_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
 
     class PartialThenFail(ModelAdapter):
         capabilities = ModelCapabilities(tool_calling=True)
@@ -137,8 +137,8 @@ def test_partial_tokens_do_not_failover(tmp_path, qxt_home, monkeypatch):
     assert fallback.calls == 0
 
 
-def test_model_switched_clears_sticky(tmp_path, qxt_home, monkeypatch):
-    kernel, config, res = _make_resilience(qxt_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
+def test_model_switched_clears_sticky(tmp_path, tuan_home, monkeypatch):
+    kernel, config, res = _make_resilience(tuan_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
     primary = FailingModel()
     fallback = OkModel()
     _fake_fallback(res, fallback)
@@ -152,9 +152,9 @@ def test_model_switched_clears_sticky(tmp_path, qxt_home, monkeypatch):
     assert res._fallback_cache == {}
 
 
-def test_build_fallback_adapter_picks_configured_provider(tmp_path, qxt_home, monkeypatch):
+def test_build_fallback_adapter_picks_configured_provider(tmp_path, tuan_home, monkeypatch):
     """真实候选逻辑: 只选已配置密钥的供应商, 排除当前供应商, 缓存复用。"""
-    kernel, config, res = _make_resilience(qxt_home, monkeypatch,
+    kernel, config, res = _make_resilience(tuan_home, monkeypatch,
                                            DASHSCOPE_API_KEY="sk-qwen",
                                            ZHIPU_API_KEY="sk-zhipu")
     primary = OkModel()
@@ -168,16 +168,16 @@ def test_build_fallback_adapter_picks_configured_provider(tmp_path, qxt_home, mo
     assert info2 is info1  # 缓存复用
 
 
-def test_no_candidate_no_failover(tmp_path, qxt_home, monkeypatch):
+def test_no_candidate_no_failover(tmp_path, tuan_home, monkeypatch):
     """没有任何已配置密钥的备用供应商 → 不转移, 原样抛主异常。"""
-    kernel, config, res = _make_resilience(qxt_home, monkeypatch)
+    kernel, config, res = _make_resilience(tuan_home, monkeypatch)
     primary = FailingModel()
 
     with pytest.raises(RuntimeError, match="上游 500"):
         res.chat_with_retry(primary, [{"role": "user", "content": "hi"}], [], stream=False)
 
 
-def test_failover_disabled_via_config(tmp_path, qxt_home, monkeypatch):
+def test_failover_disabled_via_config(tmp_path, tuan_home, monkeypatch):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data.setdefault("model", {})["provider"] = "deepseek"
@@ -194,8 +194,8 @@ def test_failover_disabled_via_config(tmp_path, qxt_home, monkeypatch):
     assert fallback.calls == 0
 
 
-def test_status_reports_failover(tmp_path, qxt_home, monkeypatch):
-    kernel, config, res = _make_resilience(qxt_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
+def test_status_reports_failover(tmp_path, tuan_home, monkeypatch):
+    kernel, config, res = _make_resilience(tuan_home, monkeypatch, DASHSCOPE_API_KEY="sk-test")
     status = res.status()
     assert status["failover"]["enabled"] is True
     assert status["failover"]["count"] == 0

@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from qingxiaotuan.core.auto_route import AutoRouter, RouteSession, tool_messages_of_turn
+from tuan_cli.core.auto_route import AutoRouter, RouteSession, tool_messages_of_turn
 
 
 def _cfg(**over):

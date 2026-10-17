@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""qxt migrate CLI 端到端测试 —— detect / run / status。"""
+"""tuan migrate CLI 端到端测试 —— detect / run / status。"""
 import json
 import os
 
-from qingxiaotuan.cli.cmd_migrate import cmd_migrate
-from qingxiaotuan.ports.migration_legacy.runner import run_migration
-from qingxiaotuan.ports.migration_legacy.workdir_bucket import old_md5_bucket_name
+from tuan_cli.cli.cmd_migrate import cmd_migrate
+from tuan_cli.ports.migration_legacy.runner import run_migration
+from tuan_cli.ports.migration_legacy.workdir_bucket import old_md5_bucket_name
 
 
 def _make_legacy(src):
@@ -58,7 +58,7 @@ def test_migrate_run_writes_target_and_marker(tmp_path, capsys):
     out = capsys.readouterr().out
     # 报告输出应指向真实的 report 文件路径 (console 可能软换行, 归一化后断言)
     assert "migration-report.json" in out.replace("\n", "")
-    from qingxiaotuan.ports.migration_legacy.paths import migrated_marker
+    from tuan_cli.ports.migration_legacy.paths import migrated_marker
     assert os.path.exists(migrated_marker(str(src)))
     # 二次 run 仍是幂等 (no-op 但成功)
     code2 = cmd_migrate(_args(migrate_cmd="run", source=str(src), target=str(tgt)))

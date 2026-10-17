@@ -2,13 +2,13 @@
 
 from pathlib import Path
 
-from qingxiaotuan.skills import SkillManager
-from qingxiaotuan.core.prompts import build_system_prompt
-from qingxiaotuan.tui.tui import QxtTUI
-from qingxiaotuan.runtime.contract import GenerateOptions
-from qingxiaotuan.runtime.providers.anthropic import AnthropicChatProvider
+from tuan_cli.skills import SkillManager
+from tuan_cli.core.prompts import build_system_prompt
+from tuan_cli.tui.tui import QxtTUI
+from tuan_cli.runtime.contract import GenerateOptions
+from tuan_cli.runtime.providers.anthropic import AnthropicChatProvider
 
-BUILTIN_DIR = Path(__file__).resolve().parents[1] / "qingxiaotuan" / "resources" / "skills" / "builtin"
+BUILTIN_DIR = Path(__file__).resolve().parents[1] / "tuan_cli" / "resources" / "skills" / "builtin"
 
 
 # ---------------------------------------------------------------- 前端设计技能
@@ -28,9 +28,9 @@ def test_frontend_design_builtin_skill_exists():
     assert skill.triggers
 
 
-def test_frontend_design_tag_activation(qxt_home):
+def test_frontend_design_tag_activation(tuan_home):
     """前端/设计类任务能激活内置 frontend-design 技能 (标签映射命中)。"""
-    mgr = SkillManager(qxt_home)
+    mgr = SkillManager(tuan_home)
     src = BUILTIN_DIR / "frontend-design.md"
     dest = mgr.dir / "frontend-design.md"
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -43,9 +43,9 @@ def test_frontend_design_tag_activation(qxt_home):
 
 # ---------------------------------------------------------------- 提到才读渲染
 
-def test_render_prompt_registry_mode(qxt_home):
+def test_render_prompt_registry_mode(tuan_home):
     """render_for_prompt 注册表模式: lazy 技能只渲染目录, always 技能渲染全文。"""
-    mgr = SkillManager(qxt_home)
+    mgr = SkillManager(tuan_home)
     mgr.save("Lazy Skill", "lazy 技能描述", "LONG_BODY_LAZY_XYZ")
     lazy = mgr.load("lazy-skill")
     assert lazy is not None
@@ -85,15 +85,28 @@ def test_anthropic_thinking_effort_body():
 
 # ---------------------------------------------------------------- 提示词注入
 
-def test_system_prompt_skill_guidance(qxt_home):
-    """系统提示词包含技能使用规范 (提到才读)。"""
-    prompt = build_system_prompt(qxt_home, "C:\\proj")
+def test_system_prompt_skill_guidance(tuan_home):
+    """系统提示词包含技能使用规范 (提到才读, 按需加载/按需蒸馏)。
+
+    技能块只有在 tuan_home 里真有技能时才会渲染, 所以先落一个内置技能,
+    再断言按需加载约定被写进提示词。
+
+    注: 早期版本用 ``skill_read`` / ``skill_save`` 两个独立工具, 现已合并为
+    单个 ``skill`` 工具 + ``op="read"`` / ``op="save"`` 参数。断言同步更新。
+    """
+    mgr = SkillManager(tuan_home)
+    src = BUILTIN_DIR / "frontend-design.md"
+    dest = mgr.dir / "frontend-design.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    prompt = build_system_prompt(tuan_home, "C:\\proj")
     assert "提到才读" in prompt
-    assert "skill_read" in prompt
-    assert "skill_save" in prompt
+    assert 'op="read"' in prompt
+    assert 'op="save"' in prompt
 
 
-def test_fallback_identity_has_design_view(qxt_home):
+def test_fallback_identity_has_design_view(tuan_home):
     """无 SOUL.md 时兜底身份包含技能按需加载与前端设计观。"""
-    prompt = build_system_prompt(qxt_home, "C:\\proj")
+    prompt = build_system_prompt(tuan_home, "C:\\proj")
     assert "前端/UI 时先定设计语言" in prompt

@@ -2,7 +2,7 @@
 
 import threading
 
-from qingxiaotuan.core.telemetry import TelemetryCollector
+from tuan_cli.core.telemetry import TelemetryCollector
 
 
 def _collector_with_spans(tmp_path) -> TelemetryCollector:
@@ -124,7 +124,7 @@ def test_export_jsonl_writes_spans(tmp_path):
 
 def test_tool_executor_records_spans_and_metrics(tmp_path):
     """ToolExecutor 在 telemetry 传入后, 每个工具调用生成 span 并记录延迟/成败。"""
-    from qingxiaotuan.core.tool_executor import ToolExecutor
+    from tuan_cli.core.tool_executor import ToolExecutor
 
     tc = TelemetryCollector(tmp_path)
 
@@ -158,7 +158,7 @@ def test_tool_executor_records_spans_and_metrics(tmp_path):
 
 def test_tool_executor_no_telemetry_overhead(tmp_path):
     """未传入 telemetry 时 ToolExecutor 行为不变、不产生任何遥测 (零开销)。"""
-    from qingxiaotuan.core.tool_executor import ToolExecutor
+    from tuan_cli.core.tool_executor import ToolExecutor
 
     class FakeRegistry:
         def dispatch(self, name, args, ctx):

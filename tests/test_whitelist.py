@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from qingxiaotuan.core.whitelist import (
+from tuan_cli.core.whitelist import (
     WhitelistManager, get_warning_level, make_confirm_token, MultiStageConfirm,
 )
 

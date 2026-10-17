@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import time
 
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.core.subagents import (
+from tuan_cli.app import build_kernel
+from tuan_cli.core.subagents import (
     SubAgentPool,
     SubTask,
     cleanup_isolated_workdir,
     prepare_isolated_workdir,
 )
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse
+from tuan_cli.models.base import ModelAdapter, ModelResponse
 
 
 class EchoModel(ModelAdapter):
@@ -48,7 +48,7 @@ def _kernel_with(model):
 def test_prepare_isolated_workdir(tmp_path):
     wd = prepare_isolated_workdir(tmp_path, "task-1")
     assert wd.is_dir()
-    assert wd == tmp_path / ".qxt" / "subagents" / "task-1"
+    assert wd == tmp_path / ".tuan" / "subagents" / "task-1"
     assert cleanup_isolated_workdir(wd) is True
     assert not wd.exists()
 

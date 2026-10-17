@@ -1,5 +1,5 @@
 """diff 引擎回归测试: 覆盖 merge3 双 offset 修复与 diff().changed 字段修复。"""
-from qingxiaotuan.ext.diff_engine import DiffEngine
+from tuan_cli.ext.diff_engine import DiffEngine
 
 
 def test_diff_changed_false_when_identical():

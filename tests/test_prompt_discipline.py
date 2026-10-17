@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.core.prompts import (
+from tuan_cli.core.prompts import (
     _FALLBACK_SOUL,
     build_system_prompt,
     build_system_prompt_stable,
@@ -20,24 +20,24 @@ _DISCIPLINE_MARKERS = ("检索纪律", "引用纪律", "拒绝与信任", "记�
 
 
 @pytest.mark.parametrize("marker", _DISCIPLINE_MARKERS)
-def test_stable_prefix_contains_discipline_sections(qxt_home, marker: str) -> None:
+def test_stable_prefix_contains_discipline_sections(tuan_home, marker: str) -> None:
     """稳定前缀包含全部操作纪律章节。"""
-    stable = build_system_prompt_stable(qxt_home)
+    stable = build_system_prompt_stable(tuan_home)
     assert marker in stable
 
 
-def test_full_prompt_contains_discipline(qxt_home, tmp_path) -> None:
+def test_full_prompt_contains_discipline(tuan_home, tmp_path) -> None:
     """完整系统提示 (stable+dynamic) 包含操作纪律。"""
-    prompt = build_system_prompt(qxt_home, str(tmp_path))
+    prompt = build_system_prompt(tuan_home, str(tmp_path))
     assert "## 操作纪律" in prompt
     assert "不逐字粘贴" in prompt
     assert "gaslight" in prompt
 
 
-def test_stable_hash_is_stable_across_calls(qxt_home) -> None:
+def test_stable_hash_is_stable_across_calls(tuan_home) -> None:
     """操作纪律加入后 stable 段仍逐字节稳定 (prompt cache 边界不破坏)。"""
-    h1 = system_prompt_stable_hash(build_system_prompt_stable(qxt_home))
-    h2 = system_prompt_stable_hash(build_system_prompt_stable(qxt_home))
+    h1 = system_prompt_stable_hash(build_system_prompt_stable(tuan_home))
+    h2 = system_prompt_stable_hash(build_system_prompt_stable(tuan_home))
     assert h1 == h2
 
 
@@ -50,9 +50,9 @@ def test_fallback_soul_summarizes_discipline() -> None:
     assert "技能按需加载" in _FALLBACK_SOUL
 
 
-def test_no_verbatim_leak_of_fable_prompt(qxt_home, tmp_path) -> None:
+def test_no_verbatim_leak_of_fable_prompt(tuan_home, tmp_path) -> None:
     """防误贴: 提示词不含泄露原文的结构特征与专用标签。"""
-    prompt = build_system_prompt(qxt_home, str(tmp_path))
+    prompt = build_system_prompt(tuan_home, str(tmp_path))
     for forbidden in (
         "antml:cite",
         "budget:token_budget",
@@ -68,7 +68,7 @@ def test_soul_md_matches_discipline_sections() -> None:
     import os
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root, "qingxiaotuan", "resources", "SOUL.md"), encoding="utf-8") as f:
+    with open(os.path.join(root, "tuan_cli", "resources", "SOUL.md"), encoding="utf-8") as f:
         soul_text = f.read()
     assert "检索纪律" in soul_text
     assert "引用纪律" in soul_text

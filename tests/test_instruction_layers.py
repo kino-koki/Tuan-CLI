@@ -1,34 +1,34 @@
 """分层项目级指令发现 (对标 Claude Code 的 CLAUDE.md 分层记忆) 测试。
 
 覆盖三层:
-- 用户全局层: <qxt_home>/AGENTS.md 与 ~/.agents/AGENTS.md (monkeypatch 隔离);
+- 用户全局层: <tuan_home>/AGENTS.md 与 ~/.agents/AGENTS.md (monkeypatch 隔离);
 - 项目祖先层: 工作区沿父目录向上到最近 git 仓库根, 逐级收录;
-- 工作区根: 候选名优先级 (QXT.md > AGENTS.md > CLAUDE.md > .qxt.md)。
+- 工作区根: 候选名优先级 (TUAN.md > AGENTS.md > CLAUDE.md > .tuan.md)。
 
 以及两条硬约束: 绝不飘出 git 仓库边界; 同环境多次构建逐字节一致 (缓存友好)。
 """
 
 from pathlib import Path
 
-import qingxiaotuan.core.prompts as prompts
-from qingxiaotuan.core.prompts import (
+import tuan_cli.core.prompts as prompts
+from tuan_cli.core.prompts import (
     _discover_project_instructions,
     build_system_prompt,
 )
 
 
-def test_global_layer_from_qxt_home(qxt_home, tmp_path):
-    """<qxt_home>/AGENTS.md 应作为用户全局层注入。"""
-    qxt_home.mkdir(parents=True, exist_ok=True)
-    (qxt_home / "AGENTS.md").write_text("全局约定: 中文注释", encoding="utf-8")
+def test_global_layer_from_tuan_home(tuan_home, tmp_path):
+    """<tuan_home>/AGENTS.md 应作为用户全局层注入。"""
+    tuan_home.mkdir(parents=True, exist_ok=True)
+    (tuan_home / "AGENTS.md").write_text("全局约定: 中文注释", encoding="utf-8")
     ws = tmp_path / "ws"
     ws.mkdir()
-    out = _discover_project_instructions(str(ws), home=qxt_home)
+    out = _discover_project_instructions(str(ws), home=tuan_home)
     assert "# 全局指令" in out
     assert "全局约定: 中文注释" in out
 
 
-def test_global_layer_user_agents_fallback(qxt_home, tmp_path, monkeypatch):
+def test_global_layer_user_agents_fallback(tuan_home, tmp_path, monkeypatch):
     """~/.agents/AGENTS.md (社区标准位置) 也应被收录 —— monkeypatch 隔离真实用户目录。"""
     fake = tmp_path / "userhome" / ".agents" / "AGENTS.md"
     fake.parent.mkdir(parents=True)
@@ -74,24 +74,24 @@ def test_no_escape_outside_repo(tmp_path, monkeypatch):
 
 
 def test_root_candidate_priority(tmp_path):
-    """工作区根同时有 QXT.md 与 AGENTS.md 时都收录, 且 QXT.md 段在前。"""
+    """工作区根同时有 TUAN.md 与 AGENTS.md 时都收录, 且 TUAN.md 段在前。"""
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "QXT.md").write_text("自家格式优先", encoding="utf-8")
+    (ws / "TUAN.md").write_text("自家格式优先", encoding="utf-8")
     (ws / "AGENTS.md").write_text("社区标准其次", encoding="utf-8")
     out = _discover_project_instructions(str(ws))
     assert "自家格式优先" in out and "社区标准其次" in out
     assert out.index("自家格式优先") < out.index("社区标准其次")
 
 
-def test_byte_stability_for_cache(qxt_home, tmp_path):
+def test_byte_stability_for_cache(tuan_home, tmp_path):
     """同环境多次构建 system prompt 必须逐字节一致 (prompt cache 硬要求)。"""
-    qxt_home.mkdir(parents=True, exist_ok=True)
-    (qxt_home / "AGENTS.md").write_text("稳定层", encoding="utf-8")
+    tuan_home.mkdir(parents=True, exist_ok=True)
+    (tuan_home / "AGENTS.md").write_text("稳定层", encoding="utf-8")
     ws = tmp_path / "ws"
     ws.mkdir()
     (ws / "AGENTS.md").write_text("项目层", encoding="utf-8")
-    p1 = build_system_prompt(home=qxt_home, workspace=str(ws))
-    p2 = build_system_prompt(home=qxt_home, workspace=str(ws))
+    p1 = build_system_prompt(home=tuan_home, workspace=str(ws))
+    p2 = build_system_prompt(home=tuan_home, workspace=str(ws))
     assert p1 == p2
     assert "稳定层" in p1 and "项目层" in p1

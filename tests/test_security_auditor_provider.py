@@ -1,8 +1,8 @@
 """SecurityAuditor 接入可插拔加密后端的测试: 持久化 / 防篡改链 / 后端选型降级。"""
 import logging
 
-from qingxiaotuan.core.security_auditor import SecurityAuditor
-from qingxiaotuan.harden.crypto_provider import SoftwareProvider
+from tuan_cli.core.security_auditor import SecurityAuditor
+from tuan_cli.harden.crypto_provider import SoftwareProvider
 
 
 def _record_some(auditor):
@@ -41,7 +41,7 @@ def test_auditor_software_provider_persist_and_reload(tmp_path):
 
 def test_auditor_provider_fallback_gmssl(tmp_path, caplog):
     # 本环境通常未装 gmssl -> 应降级到 software 并告警, 不抛错
-    with caplog.at_level(logging.WARNING, logger="qingxiaotuan.core.security_auditor"):
+    with caplog.at_level(logging.WARNING, logger="tuan_cli.core.security_auditor"):
         a = SecurityAuditor(home=tmp_path / "h1", crypto_provider="gmssl")
     assert a._provider.name == "software"
     assert a.count() == 0  # 仍可正常工作
@@ -49,7 +49,7 @@ def test_auditor_provider_fallback_gmssl(tmp_path, caplog):
 
 def test_auditor_provider_fallback_hsm(tmp_path, caplog):
     # hsm 不适用于流式审计日志 -> 降级 software + 明确告警
-    with caplog.at_level(logging.WARNING, logger="qingxiaotuan.core.security_auditor"):
+    with caplog.at_level(logging.WARNING, logger="tuan_cli.core.security_auditor"):
         a = SecurityAuditor(home=tmp_path / "h2", crypto_provider="hsm")
     assert a._provider.name == "software"
 

@@ -16,12 +16,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.config import Config
-from qingxiaotuan.core.swarm import (
+from tuan_cli.config import Config
+from tuan_cli.core.swarm import (
     Swarm, SwarmPlan, Blackboard,
     _planner_prompt, _acceptor_prompt,
 )
-from qingxiaotuan.core.subagents import SubAgentPool, SubTask, make_tasks
+from tuan_cli.core.subagents import SubAgentPool, SubTask, make_tasks
 
 
 def _cfg(**overrides):
@@ -120,7 +120,7 @@ class _FakePool(SubAgentPool):
         # 分波执行时 dispatch 会被多次调用 (每波一次), 累加记录
         self.last_overrides += [dict(self.model_overrides or {}) for _ in tasks]
         self.dispatch_batches.append(list(tasks))
-        from qingxiaotuan.core.subagents import SubResult
+        from tuan_cli.core.subagents import SubResult
         return [
             SubResult(
                 task_id=t.task_id, prompt=t.prompt, ok=True,
@@ -267,7 +267,7 @@ def test_subagentpool_propagates_model_overrides():
     # 用假 worker 覆盖 _run_one_thread, 既触发 dispatch 的 meta 注入, 又不依赖真实模型
     class _CapturePool(SubAgentPool):
         def _run_one_thread(self, task, *a, **kw):
-            from qingxiaotuan.core.subagents import SubResult
+            from tuan_cli.core.subagents import SubResult
             ov = kw.get("model_overrides") or task.meta.get("model_overrides") or self.model_overrides
             self.captured = getattr(self, "captured", []) + [ov]
             return SubResult(task_id=task.task_id, prompt=task.prompt, ok=True, output="ok")
@@ -289,7 +289,7 @@ def test_prompts_non_empty():
 
 def test_slash_swarm_wires_collaboration(monkeypatch):
     """/swarm <目标> 应构造 Swarm 跑协作, 展示报告并把结论回灌主 Agent。"""
-    import qingxiaotuan.core.swarm as swarm_mod
+    import tuan_cli.core.swarm as swarm_mod
 
     class _FakeCollab:
         def to_report(self):
@@ -317,7 +317,7 @@ def test_slash_swarm_wires_collaboration(monkeypatch):
 
     agent = _Agent()
     cfg = Config(profile="default")
-    from qingxiaotuan.cli import commands as cmds
+    from tuan_cli.cli import commands as cmds
     ok = cmds._handle_slash("/swarm 写一份开源公告", agent, cfg, ".")
     assert ok is True
     # 目标被传给 Swarm.run
@@ -327,7 +327,7 @@ def test_slash_swarm_wires_collaboration(monkeypatch):
 
 def test_slash_swarm_no_arg_shows_usage(monkeypatch):
     """无参数时给出用法提示, 不触发协作。"""
-    import qingxiaotuan.core.swarm as swarm_mod
+    import tuan_cli.core.swarm as swarm_mod
     called = []
 
     class _FakeSwarm:
@@ -348,7 +348,7 @@ def test_slash_swarm_no_arg_shows_usage(monkeypatch):
         messages = []
 
     cfg = Config(profile="default")
-    from qingxiaotuan.cli import commands as cmds
+    from tuan_cli.cli import commands as cmds
     ok = cmds._handle_slash("/swarm", _Agent(), cfg, ".")
     assert ok is True
     assert called == []  # 未构造 Swarm

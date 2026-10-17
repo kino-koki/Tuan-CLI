@@ -4,18 +4,18 @@
 
 1. **安全基准（安全优先路线的核心证据）**：`safety_bench_10k.py`（10k 对抗样本）、
    `bench_powershell_safety.py`（5k PowerShell 样本）、`bypass_matrix.py`（2310 手工绕过载荷 + 灾难后果级断言）。
-   全部**本地可复现**：`qxt safe bench` 一条命令串跑三套件并汇总，`qxt safe report` 生成自包含 HTML 报告。
+   全部**本地可复现**：`tuan safe bench` 一条命令串跑三套件并汇总，`tuan safe report` 生成自包含 HTML 报告。
    第三方可在本仓库原样复现，不依赖网络与模型。
 2. **SWE 能力基准**：`run.py` + `tasks.yaml`，用本地 SWE 任务量化「真实编程能力」，可与 Claude Code 横向对比。
-   框架本身**不依赖外网**：任务声明在 `tasks.yaml`，运行器在临时工作区里启动真实 `qxt run` 子进程，
+   框架本身**不依赖外网**：任务声明在 `tasks.yaml`，运行器在临时工作区里启动真实 `tuan run` 子进程，
    再执行验收脚本判定通过/耗时/成本。
 
 ## 安全基准（一键复现）
 
 ```bash
-qxt safe bench            # 全量 (~3 分钟): 10k 对抗 + 5k PS + 2310 绕过矩阵
-qxt safe bench --quick    # 快速自检 (~30 秒, 对抗样本 2000 条)
-qxt safe report           # 自包含 HTML 安全报告 (可分享/存档)
+tuan safe bench            # 全量 (~3 分钟): 10k 对抗 + 5k PS + 2310 绕过矩阵
+tuan safe bench --quick    # 快速自检 (~30 秒, 对抗样本 2000 条)
+tuan safe report           # 自包含 HTML 安全报告 (可分享/存档)
 ```
 
 - `safety_bench_10k.py --count N --seed 20260906 --out X.json`：bash/通用命令对抗样本，输出拦截召回/标记召回/误杀率/绕过。
@@ -33,7 +33,7 @@ qxt safe report           # 自包含 HTML 安全报告 (可分享/存档)
 
 当前代码实测（2026-09-19）：对抗 10k → 拦截召回 100% / 标记召回 100% / 误杀率 1.87% / 绕过 0；
 PS 5k → 正确率 100% / 漏放 0 / 误杀 0；绕过矩阵 2310 → 绕过 0 / 误杀 1 / 灾难类别 100% 拦截。
-数字以 `qxt safe bench` 本地重跑为准。
+数字以 `tuan safe bench` 本地重跑为准。
 
 ## 快速开始
 
@@ -41,13 +41,13 @@ PS 5k → 正确率 100% / 漏放 0 / 误杀 0；绕过矩阵 2310 → 绕过 0 
 # 1) 仅校验框架与任务定义 (不调用模型)
 python bench/run.py --dry
 
-# 2) 真实跑测 (需先 qxt setup 配好模型端点)
+# 2) 真实跑测 (需先 tuan setup 配好模型端点)
 python bench/run.py
 
-# 3) 只跑单个任务 / 指定模型 / 指定 qxt 路径
+# 3) 只跑单个任务 / 指定模型 / 指定 tuan 路径
 python bench/run.py --task fix_bug
 python bench/run.py --model deepseek/deepseek-chat
-python bench/run.py --qxt .venv/Scripts/qxt.exe
+python bench/run.py --tuan .venv/Scripts/tuan.exe
 
 # 4) 机器可读输出
 python bench/run.py --json
@@ -70,15 +70,15 @@ python bench/run.py --json
 ## 对比 Claude Code（自动双跑）
 
 **`vs_claude.py` 把「同一任务集双跑」自动化**：同一份 `tasks.yaml`、同一组验收脚本，
-在隔离工作区分别用 `qxt run -p` 与 `claude -p --output-format json` 执行，输出
+在隔离工作区分别用 `tuan run -p` 与 `claude -p --output-format json` 执行，输出
 通过率 / 耗时 / 成本 / 权限拒绝数对比，并渲染 md / json / html 三份报告。
 
 ```bash
 # 1) 校验框架与任务定义 (不调用模型, 不探测 claude)
-python bench/vs_claude.py --dry --qxt .venv/Scripts/qxt.exe
+python bench/vs_claude.py --dry --tuan .venv/Scripts/tuan.exe
 
-# 2) 真实双跑 (需 qxt 配好可用模型端点; claude 需可用)
-python bench/vs_claude.py --qxt .venv/Scripts/qxt.exe
+# 2) 真实双跑 (需 tuan 配好可用模型端点; claude 需可用)
+python bench/vs_claude.py --tuan .venv/Scripts/tuan.exe
 
 # 3) 只跑单任务 / 指定模型 / 指定 claude 可执行
 python bench/vs_claude.py --task fix_bug --model openrouter/deepseek/deepseek-chat
@@ -96,7 +96,7 @@ Claude 侧如实标注 **N/A** 并写明原因，绝不假装跑过。报告里�
 **Windows 注意**：npm 安装的 claude 是 `.ps1`/`.cmd` shim，脚本会自动解析真实
 可执行路径；老版本 claude 不支持 `--no-input`，脚本已统一用 stdin 重定向替代。
 
-旧的手工流程（`qxt /cost` + `claude --cost` 填表）保留如下，供无自动化环境的场合：
+旧的手工流程（`tuan /cost` + `claude --cost` 填表）保留如下，供无自动化环境的场合：
 
 | 任务 | (通过/耗时/成本) | Claude Code(通过/耗时/成本) |
 | --- | --- | --- |

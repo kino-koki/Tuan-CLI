@@ -28,7 +28,7 @@ jobs:
 
       - name: Syntax gate (py_compile)
         run: |
-          python -m compileall -q qingxiaotuan
+          python -m compileall -q tuan_cli
           python -m compileall -q tests
 
       # 版本政策强制 (docs/VERSION_POLICY.md):
@@ -37,7 +37,7 @@ jobs:
         run: python scripts/check_version_policy.py
 
       - name: Type check (mypy)
-        run: python -m mypy qingxiaotuan
+        run: python -m mypy tuan_cli
 
       - name: Test suite
         run: python -m pytest tests/ -q --timeout=120 --basetemp="$RUNNER_TEMP/pytest"
@@ -62,8 +62,8 @@ jobs:
           pip install -e ".[dev,mcp]"
 
       - name: Syntax gate (py_compile)
-        run: python -m compileall -q qingxiaotuan
+        run: python -m compileall -q tuan_cli
 
       - name: Portable test subset
         shell: pwsh
-        run: python -m pytest tests/test_tui_boot.py tests/test_config.py tests/test_config_schema.py tests/test_difficulty.py tests/test_router.py tests/test_hooks.py tests/test_hooks_events.py tests/test_kernel.py tests/test_kernel_emit_isolation.py tests/test_ports_telemetry.py tests/test_telemetry.py tests/test_safety_benign.py tests/test_safety_bypass_vectors.py tests/test_safety_confirm_and_alert.py tests/test_safety_redline_bypass.py tests/test_safety_redline_fix.py tests/test_security_v2.py tests/test_security_hardening.py -q --timeout=120
+        run: python -m pytest tests/test_tui_boot.py tests/test_tui_trust_dialog.py tests/test_config.py tests/test_config_schema.py tests/test_difficulty.py tests/test_router.py tests/test_hooks.py tests/test_hooks_events.py tests/test_kernel.py tests/test_kernel_emit_isolation.py tests/test_ports_telemetry.py tests/test_telemetry.py tests/test_safety_benign.py tests/test_safety_bypass_vectors.py tests/test_safety_confirm_and_alert.py tests/test_safety_redline_bypass.py tests/test_safety_redline_fix.py tests/test_safety_redteam_round4.py tests/test_security_v2.py tests/test_security_hardening.py -q --timeout=120

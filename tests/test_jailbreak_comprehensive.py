@@ -26,7 +26,7 @@ from typing import List, Tuple
 
 import pytest
 
-from qingxiaotuan.ext.safety_engine import (
+from tuan_cli.ext.safety_engine import (
     SafetyEngine,
     has_force_push,
     has_recursive_rm,

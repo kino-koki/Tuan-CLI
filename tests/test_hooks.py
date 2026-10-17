@@ -18,8 +18,8 @@ import time
 
 import pytest
 
-from qingxiaotuan.hooks import HookManager
-from qingxiaotuan.tools.base import Tool, ToolContext, ToolRegistry
+from tuan_cli.hooks import HookManager
+from tuan_cli.tools.base import Tool, ToolContext, ToolRegistry
 
 PY = sys.executable
 FIX = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -211,7 +211,7 @@ def test_session_hooks_triggered(tmp_path):
 # ------------------------------------------------------------------ 配置块默认值
 
 def test_default_config_hooks_block():
-    from qingxiaotuan.config import DEFAULT_CONFIG
+    from tuan_cli.config import DEFAULT_CONFIG
     h = DEFAULT_CONFIG["hooks"]
     assert h["enabled"] is True
     assert h["allow_blocking"] is True

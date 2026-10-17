@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.cli.parser import build_parser, _rewrite_dev_codedev
+from tuan_cli.cli.parser import build_parser, _rewrite_dev_codedev
 
 
 def _parse(*argv):

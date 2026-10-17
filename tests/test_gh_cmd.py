@@ -1,4 +1,4 @@
-"""qxt gh 命令路由测试 —— 假 gh 放 PATH, 端到端验证原生透传与拦截不派生。"""
+"""tuan gh 命令路由测试 —— 假 gh 放 PATH, 端到端验证原生透传与拦截不派生。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 @pytest.fixture
 def fake_gh_env(tmp_path, monkeypatch):
     """造一个 `gh` 假命令到 PATH: 记录被调用; 遇到 repo delete 写破坏标记。"""
-    import qingxiaotuan.config.loader as _loader
+    import tuan_cli.config.loader as _loader
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -29,7 +29,7 @@ def fake_gh_env(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", ""))
 
-    import qingxiaotuan.cli.cmd_gh as _gh
+    import tuan_cli.cli.cmd_gh as _gh
     monkeypatch.setattr(_loader, "home_dir", lambda: tmp_path)
     return _gh, marker
 
@@ -62,7 +62,7 @@ def test_gh_cmd_requires_args_shows_usage(fake_gh_env, capsys):
     rc = gh_cmd.cmd_gh(_args([]))
     out = capsys.readouterr().out
     assert rc == 0
-    assert "用法: qxt gh" in out
+    assert "用法: tuan gh" in out
 
 
 def test_policy_subcommand(fake_gh_env, capsys):
@@ -75,7 +75,7 @@ def test_policy_subcommand(fake_gh_env, capsys):
 
 def test_borrow_retained_feature(fake_gh_env, capsys, monkeypatch):
     gh_cmd, _ = fake_gh_env
-    import qingxiaotuan.tools.gh_borrow as _b
+    import tuan_cli.tools.gh_borrow as _b
     monkeypatch.setattr(_b, "borrow",
                         lambda q, mode="code", limit=5: {"hits": [{"type": "fake"}]})
     monkeypatch.setattr(_b, "format_borrow",
@@ -110,11 +110,11 @@ def test_guarded_blocked_without_confirm_noninteractive(fake_gh_env, capsys):
 
 
 def test_doctor_reports_no_gh(monkeypatch, capsys):
-    """qxt gh doctor 在无 gh 时提示安装指引并返回 EXIT_NO_GH。"""
+    """tuan gh doctor 在无 gh 时提示安装指引并返回 EXIT_NO_GH。"""
     fake_bin = os.environ.get("PATH", "")
     monkeypatch.setenv("PATH", "")
-    import qingxiaotuan.cli.cmd_gh as gh_cmd
-    from qingxiaotuan.gh.native import EXIT_NO_GH
+    import tuan_cli.cli.cmd_gh as gh_cmd
+    from tuan_cli.gh.native import EXIT_NO_GH
     rc = gh_cmd.cmd_gh(_args(["doctor"]))
     out = capsys.readouterr().out
     assert rc == EXIT_NO_GH
@@ -124,7 +124,7 @@ def test_doctor_reports_no_gh(monkeypatch, capsys):
 def test_native_auth_failure_appends_refresh_guidance(fake_gh_env, monkeypatch, capsys):
     """gh 返回认证失败时, 透传原生报错并附刷新引导。"""
     gh_cmd, _ = fake_gh_env
-    import qingxiaotuan.gh.native as _native
+    import tuan_cli.gh.native as _native
 
     def auth_fail_runner(argv, timeout=None, env=None):
         return 1, "", "HTTP 401: Unauthorized\nPlease run 'gh auth login'"
@@ -147,12 +147,12 @@ def test_audit_empty_reports_no_records(fake_gh_env, capsys):
 
 def test_audit_renders_records(fake_gh_env, capsys, tmp_path):
     gh_cmd, _ = fake_gh_env
-    from qingxiaotuan.gh.audit import audit_log_path, append_event
+    from tuan_cli.gh.audit import audit_log_path, append_event
     # 造两条审计记录
     append_event(["repo", "delete", "u/r"], "forbidden", "blocked", "x", home=tmp_path)
     append_event(["issue", "close", "5"], "guarded", "cancelled", "y", home=tmp_path)
     # 让 audit_log_path 指向 tmp 下 (与 home 一致)
-    import qingxiaotuan.config.loader as _loader
+    import tuan_cli.config.loader as _loader
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(_loader, "home_dir", lambda: tmp_path)
     try:
@@ -173,9 +173,9 @@ def test_audit_renders_records(fake_gh_env, capsys, tmp_path):
 
 def test_audit_clear_removes_records(fake_gh_env, capsys, tmp_path):
     gh_cmd, _ = fake_gh_env
-    from qingxiaotuan.gh.audit import audit_log_path, append_event
+    from tuan_cli.gh.audit import audit_log_path, append_event
     append_event(["repo", "delete", "u/r"], "forbidden", "blocked", "x", home=tmp_path)
-    import qingxiaotuan.config.loader as _loader
+    import tuan_cli.config.loader as _loader
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(_loader, "home_dir", lambda: tmp_path)
     try:

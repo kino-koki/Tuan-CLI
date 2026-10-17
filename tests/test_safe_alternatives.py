@@ -2,7 +2,7 @@
 """安全替代建议引擎测试。"""
 from __future__ import annotations
 
-from qingxiaotuan.harden.safe_alternatives import (
+from tuan_cli.harden.safe_alternatives import (
     format_suggestions,
     suggest_for_decision,
     suggest_safe_alternatives,

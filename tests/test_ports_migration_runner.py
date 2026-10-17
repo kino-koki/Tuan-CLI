@@ -6,21 +6,21 @@ import os
 import pytest
 from pathlib import Path
 
-from qingxiaotuan.ports.migration_legacy.detect import DetectOptions, detect_migration
-from qingxiaotuan.ports.migration_legacy.paths import (
+from tuan_cli.ports.migration_legacy.detect import DetectOptions, detect_migration
+from tuan_cli.ports.migration_legacy.paths import (
     migrated_marker,
     skip_marker,
     target_config_file,
     target_mcp_file,
     target_tui_file,
 )
-from qingxiaotuan.ports.migration_legacy.runner import run_migration
-from qingxiaotuan.ports.migration_legacy.workdir_bucket import old_md5_bucket_name
-from qingxiaotuan.ports.migration_legacy.stub_detect import (
+from tuan_cli.ports.migration_legacy.runner import run_migration
+from tuan_cli.ports.migration_legacy.workdir_bucket import old_md5_bucket_name
+from tuan_cli.ports.migration_legacy.stub_detect import (
     DEFAULT_CONFIG_FILE_TEXT,
     DEFAULT_TUI_RENDER,
 )
-from qingxiaotuan.ports.migration_legacy.types import MigrationPlan
+from tuan_cli.ports.migration_legacy.types import MigrationPlan
 
 
 def _make_source(tmp_path):

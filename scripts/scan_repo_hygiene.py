@@ -63,7 +63,7 @@ for p in tracked:
     low = p.lower()
     if (".pytest" in low or ".venv" in low or "egg-info" in low
             or low.endswith(".log") or "/__pycache__/" in low
-            or low.startswith(".qxt/") or low.startswith("sessions/")
+            or low.startswith(".tuan/") or low.startswith("sessions/")
             or low.startswith("audit/") or low.startswith("memories/")
             or low.startswith("cron/") or low.startswith("12345/")):
         suspect.append(p)

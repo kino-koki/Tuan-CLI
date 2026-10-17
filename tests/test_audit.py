@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.audit.store import (
+from tuan_cli.audit.store import (
     AuditStore, AuditQuery, redact, _redact_text,
 )
-from qingxiaotuan.audit.plugin import AuditPlugin
-from qingxiaotuan.core.kernel import Kernel
+from tuan_cli.audit.plugin import AuditPlugin
+from tuan_cli.core.kernel import Kernel
 
 
 # ---------------------------------------------------------------- 脱敏
@@ -38,6 +38,60 @@ def test_redact_text_catches_bearer_and_sk():
     assert "eyJhbGci" not in red
     assert "sk-ABCdefGHI" not in red
     assert "***" in red
+
+
+def test_redact_masks_compound_suffix_names():
+    """复合名末段命中: user_api_key / session_token / db_password 都要脱敏。"""
+    out = redact({
+        "user_api_key": "sk-live-1234567890abcd",
+        "session_token": "sess-abc123xyz",
+        "db_password": "hunter2-secret",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "x.api.key": "nested-dot-key",
+    })
+    assert out["user_api_key"] == "***"
+    assert out["session_token"] == "***"
+    assert out["db_password"] == "***"
+    assert out["private_key"] == "***"
+    assert out["x.api.key"] == "***"
+
+
+def test_redact_does_not_mask_lookalike_names():
+    """回归: endswith('key') 曾把 monkey / turkey / session_id 误打成 ***。
+
+    审计日志是给排障用的 —— 把正常字段脱敏成 *** 等于让审计失效。
+    """
+    out = redact({
+        "monkey": "patched-attr",
+        "turkey": "3.2",
+        "donkey": "kong",
+        "keyboard_layout": "us",
+        "monkeypatch": "fixture-name",
+        "session_id": "sess_20261015_abc",
+        "key_id": "key-000123",
+        "cookie_name": "remember_me",
+        "tokenizer": "tiktoken-cl100k",
+        "hockey_score": 5,
+    })
+    assert out == {
+        "monkey": "patched-attr",
+        "turkey": "3.2",
+        "donkey": "kong",
+        "keyboard_layout": "us",
+        "monkeypatch": "fixture-name",
+        "session_id": "sess_20261015_abc",
+        "key_id": "key-000123",
+        "cookie_name": "remember_me",
+        "tokenizer": "tiktoken-cl100k",
+        "hockey_score": 5,
+    }
+
+
+def test_redact_keeps_value_side_masking_for_benign_keys():
+    """键名干净但值里嵌着密钥时, 值侧正则仍要兜底脱敏。"""
+    out = redact({"note": "user said password=hunter2secret in chat"})
+    assert "hunter2secret" not in out["note"]
+    assert "***" in out["note"]
 
 
 # ---------------------------------------------------------------- 落盘

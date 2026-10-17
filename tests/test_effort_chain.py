@@ -1,9 +1,9 @@
 """effort 链路穿透测试: config.agent.effort -> ProviderConfig -> AnthropicChatProvider.thinking_effort。"""
 
-from qingxiaotuan.config import Config
-from qingxiaotuan.models.kernel_adapter import create_kernel_adapter
-from qingxiaotuan.runtime.provider_service import ProviderConfig, build_provider
-from qingxiaotuan.runtime.providers.anthropic import AnthropicChatProvider
+from tuan_cli.config import Config
+from tuan_cli.models.kernel_adapter import create_kernel_adapter
+from tuan_cli.runtime.provider_service import ProviderConfig, build_provider
+from tuan_cli.runtime.providers.anthropic import AnthropicChatProvider
 
 
 def test_provider_config_effort_reaches_anthropic_provider():
@@ -23,7 +23,7 @@ def test_provider_config_effort_default_none():
     assert provider.thinking_effort is None
 
 
-def test_kernel_adapter_reads_agent_effort(qxt_home):
+def test_kernel_adapter_reads_agent_effort(tuan_home):
     """create_kernel_adapter 从 config.agent.effort 读取并注入 provider。"""
     config = Config()
     config.ensure_home()
@@ -34,7 +34,7 @@ def test_kernel_adapter_reads_agent_effort(qxt_home):
     assert adapter._provider.thinking_effort == "medium"
 
 
-def test_kernel_adapter_default_effort_high(qxt_home):
+def test_kernel_adapter_default_effort_high(tuan_home):
     """未配置 effort 时默认 high (defaults.py 同款口径)。"""
     config = Config()
     config.ensure_home()
@@ -44,7 +44,7 @@ def test_kernel_adapter_default_effort_high(qxt_home):
     assert adapter._provider.thinking_effort == "high"
 
 
-def test_effort_survives_slash_set_roundtrip(qxt_home):
+def test_effort_survives_slash_set_roundtrip(tuan_home):
     """/effort 写入配置 -> adapter 重建 -> provider effort 生效 (闭环)。"""
     config = Config()
     config.ensure_home()

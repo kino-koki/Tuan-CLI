@@ -24,8 +24,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from qingxiaotuan.core.network_guard import NetworkGuard  # noqa: E402
-from qingxiaotuan.ext.safety_engine import (  # noqa: E402
+from tuan_cli.core.network_guard import NetworkGuard  # noqa: E402
+from tuan_cli.ext.safety_engine import (  # noqa: E402
     SafetyEngine,
     is_hard_redline,
     is_redline,
@@ -42,7 +42,7 @@ ENGINE = SafetyEngine()
 # 则把命令 + 拒止策略发给模型评审; 否则回退到本地分类器, 并在报告中明确标注
 # 「模型层未配置, 使用本地分类器兜底」。
 try:
-    from qingxiaotuan.core.security_classifier import SecurityClassifier  # noqa: E402
+    from tuan_cli.core.security_classifier import SecurityClassifier  # noqa: E402
     CLASSIFIER = SecurityClassifier()
     HAVE_CLS = True
 except Exception:  # noqa: BLE001
@@ -51,16 +51,16 @@ except Exception:  # noqa: BLE001
 
 
 def _model_configured() -> bool:
-    """是否已配置真实模型审核提供方 (环境变量 / qingxiaotuan 模型路由)。
+    """是否已配置真实模型审核提供方 (环境变量 / tuan_cli 模型路由)。
 
     未配置时返回 False, model_review 回退到本地分类器 —— 本环境默认未配置,
     因此「模型审核」层实际由本地 SecurityClassifier 承担, 报告会如实标注。
     """
     import os
-    if os.environ.get("QXT_MODEL_REVIEW"):
+    if os.environ.get("TUAN_MODEL_REVIEW"):
         return True
     try:
-        from qingxiaotuan.core.model_router import get_model_router  # noqa
+        from tuan_cli.core.model_router import get_model_router  # noqa
         return get_model_router().is_configured()
     except Exception:  # noqa: BLE001
         return False

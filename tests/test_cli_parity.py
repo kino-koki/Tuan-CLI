@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.cli.parser import build_parser
-from qingxiaotuan.cli.cmd_chat import resolve_mode_from_permission
-from qingxiaotuan.config.validate import validate
+from tuan_cli.cli.parser import build_parser
+from tuan_cli.cli.cmd_chat import resolve_mode_from_permission
+from tuan_cli.config.validate import validate
 
 
 def _parse(argv):

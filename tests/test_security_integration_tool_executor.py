@@ -10,7 +10,7 @@ write_file/edit_file 没过 decide_file_write 闸门、工具调用没有统一�
 
 import types
 
-from qingxiaotuan.core.tool_executor import ToolExecutor
+from tuan_cli.core.tool_executor import ToolExecutor
 
 
 class _FakeCtx:

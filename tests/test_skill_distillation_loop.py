@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from qingxiaotuan.skills.manager import SkillManager
-from qingxiaotuan.self_improve.distill_loop import (
+from tuan_cli.skills.manager import SkillManager
+from tuan_cli.self_improve.distill_loop import (
     DistillLoop,
     DistillProposal,
     count_steps,

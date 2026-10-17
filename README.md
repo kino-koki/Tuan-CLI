@@ -1,7 +1,7 @@
 # Tuan-CLI
 
 > **"Model + Harness = Agent."** — Split "how to think" from "how to run it safely," and hand you both keys.
-> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.3.0` · MIT · Python ≥ 3.10
+> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.3.1` · MIT · Python ≥ 3.10
 
 > ### Positioning: a safety-first agent — without sacrificing developer experience
 >
@@ -9,12 +9,17 @@
 >
 > - **Safety first**: dangerous commands are blocked *before* they run (blast-radius preview → hard redline → multi-stage confirmation). Every write is journaled in a transactional ledger for exact `/undo`. YOLO mode still cannot cross a hard redline.
 > - **Developer experience preserved**: file reads/writes, routine `git` operations, package installs, test runs and linters are scored `none` — **zero confirmation, zero blocking** (`safety_engine.is_benign_dev_command`). Only genuinely dangerous actions escalate to advice or blocking.
-> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,310 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `qxt safe bench`, reproduces everything locally** (no network, no model); `qxt safe report` emits a self-contained HTML security report. Current code measured (2026-09): adversarial 10k → block recall 100% / flag recall 100% / false-positive 1.87% / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 2,310 payloads → bypass 0 / false positive 1 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
-> - **Ecosystem interop**: we don't rebuild ecosystems — we **reuse what Claude Code / Hermes Agent already accumulated** on this machine (skills, named agents, memory, SOUL persona, MCP configs). `qxt ecosystem` moves assets both ways in one command; `qxt ecosystem link` mounts qxt back into them over MCP. One harness, three ecosystems' worth of assets.
+> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,310 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `tuan safe bench`, reproduces everything locally** (no network, no model); `tuan safe report` emits a self-contained HTML security report. Current code measured (2026-09): adversarial 10k → block recall 100% / flag recall 100% / false-positive 1.87% / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 2,310 payloads → bypass 0 / false positive 1 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
+> - **Ecosystem interop**: we don't rebuild ecosystems — we **reuse what Claude Code / Hermes Agent already accumulated** on this machine (skills, named agents, memory, SOUL persona, MCP configs). `tuan ecosystem` moves assets both ways in one command; `tuan ecosystem link` mounts tuan back into them over MCP. One harness, three ecosystems' worth of assets.
 
 **Language:** **English** · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
-**Must-reads:** [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · `qxt models list-providers`
+**Must-reads:** [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · `tuan models list-providers`
+
+**Quick Start:**
+- 🚀 **Get started in 3 steps:** `pip install tuan-cli` → `tuan setup` → `tuan "your task"`
+- 📖 **Full guide:** [docs/QUICKSTART.md](docs/QUICKSTART.md) — includes decision trees, common scenarios, and FAQ
+- 🎯 **Quick reference:** `tuan help quickstart` — shows the quick start guide directly in the terminal
 
 ---
 
@@ -31,12 +36,12 @@ The core idea: **the model does the thinking; the harness makes that thinking ru
 | The thing | Details |
 |---|---|
 | 🛡️ **Safety-first** | Four gates: static risk scoring, blast-radius pre-blocking, YOLO-redline floor, transactional ledger with exact `/undo` |
-| 🎯 **Developer experience** | Benign dev commands pass with zero confirmation, `/undo` has your back, 40+ slash commands, `qxt safe allow` for explicit opt-outs, YOLO to skip repeat prompts |
-| 🔌 **Model-agnostic** | 55 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
+| 🎯 **Developer experience** | Benign dev commands pass with zero confirmation, `/undo` has your back, 40+ slash commands, `tuan safe allow` for explicit opt-outs, YOLO to skip repeat prompts |
+| 🔌 **Model-agnostic** | 57 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
 | 🧠 **Three main loops** | ReAct / Planner-Execute / DevLoop — pluggable; one kernel, different "thinking rhythms" |
 | 🔧 **Microkernel** | One-line `@plugin`, service registry, append-only event bus, hook middleware |
 | 🗂️ **Memory** | SQLite FTS5 + session event stream; three-tier memory, `/undo`, checkpoint, replay, Trajectory export |
-| 🧩 **Ecosystem** | MCP + ACP + **Claude Code / Hermes Agent interop**: skills / named agents / memory / SOUL / MCP configs move both ways (`qxt ecosystem`), out-of-the-box |
+| 🧩 **Ecosystem** | MCP + ACP + **Claude Code / Hermes Agent interop**: skills / named agents / memory / SOUL / MCP configs move both ways (`tuan ecosystem`), out-of-the-box |
 | 🌍 **Ten languages** | zh-CN default, native localization of the whole UI |
 | 🐍 **Pure Python** | Large `.py` codebase, MIT-licensed |
 
@@ -48,10 +53,10 @@ The core idea: **the model does the thinking; the harness makes that thinking ru
 Two things, kept separate. **The code is self-written**: the kernel and the vast majority of capabilities (`core/`, `runtime/`, `arch/`, `tools/`, `ports/`…) are built line-by-line in Python, aligned to external protocols for interoperability only. **The ideas and design are borrowed** — this project deliberately fuses concepts from known agent projects, and that's worth saying plainly rather than hiding. The one part where even the *style* is kept is the `--tui` terminal skin, which intentionally follows **Kimi Code's** signature interaction feel and palette (`#4FA8FF` primary, the moon-phase spinner, the two-line status bar), credited in [NOTICE](NOTICE). The full attribution list is in [Inspiration & attribution](#inspiration--attribution). **Code is ours; ideas are shared.**
 
 **Q: Why does it block me before I run commands?**
-Feature, not bug. Dangerous commands ask first; YOLO still respects hard redlines. If it's too chatty, `qxt safe allow <cmd>` to allowlist — don't disable safety.
+Feature, not bug. Dangerous commands ask first; YOLO still respects hard redlines. If it's too chatty, `tuan safe allow <cmd>` to allowlist — don't disable safety.
 
 **Q: So when I'm blocked, am I stuck?**
-No. Every block/confirm carries **command-aware safe alternatives** (`qxt safe suggest <cmd>` queries any time): `git push --force` → `--force-with-lease`, `rm -rf` → trash/recycle recipe, `curl | sh` → "download and review first". We don't just stop you — we take you to the safe way to get it done.
+No. Every block/confirm carries **command-aware safe alternatives** (`tuan safe suggest <cmd>` queries any time): `git push --force` → `--force-with-lease`, `rm -rf` → trash/recycle recipe, `curl | sh` → "download and review first". We don't just stop you — we take you to the safe way to get it done.
 
 **Q: What can `/undo` actually roll back?**
 Every **write** that goes through the ledger: a single file, a single step, a whole turn. Under the hood it's the transactional ledger + diff `reverse_transform` + checkpoint snapshots. Not a miracle cure, but it turns a slip from a guaranteed loss into a probable save.
@@ -60,7 +65,7 @@ Every **write** that goes through the ledger: a single file, a single step, a wh
 Tool scope is constrained by a domain allow-list, egress is gated to prevent exfiltration, and secrets are redacted from output. Defaults and what you can tune are in [SECURITY.md](SECURITY.md).
 
 **Q: Fully offline?**
-`qxt models local` to probe, `/offline` to manage Ollama. No internet, no problem.
+`tuan models local` to probe, `/offline` to manage Ollama. No internet, no problem.
 
 **Q: Can I write my own tools/plugins?**
 Yes — `@plugin` metadata, `activate(kernel)` + `kernel.provide(...)` / `kernel.require(...)`. Three steps:
@@ -80,11 +85,11 @@ class MyTool(Plugin):
 
 ## Version number & repository history (transparent disclosure)
 
-**Why `0.3.0` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (55 providers + local Ollama), three main loops, microkernel plugin architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Why `0.3.1` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (57 providers + local Ollama), three main loops, microkernel plugin architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Version semantics | Meaning |
 |---|---|
-| `0.3.0` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
+| `0.3.1` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
 | `1.0` (reserved) | Enabled once the public API is frozen and backward compatibility is promised; only then do breaking changes bump MAJOR (`2.0`) |
 
 **Git history note (open-source transparency):** This repository's Git commit history was **deliberately rebuilt on 2026-09-26 — the early commit history was intentionally overwritten by the author**; the per-commit evolution before that date is no longer preserved. The current code is fully reviewable from architecture to implementation; for feature evolution before 2026-09-26, please rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We choose to disclose this plainly — no polishing, no hiding.
@@ -100,7 +105,7 @@ Tuan-CLI isn't born from nothing — its design explicitly builds on the followi
 | **DeepSeek Harness / Cordis** | Microkernel + service registry + append-only event bus architecture (annotated in `core/kernel.py`) |
 | **Kimi Code** | Terminal TUI interaction feel & palette (see [NOTICE](NOTICE)) |
 | **Claude Code** | `/` slash-command system, named agents (`.claude/agents`-compatible), Goal mode, DevLoop — interface alignment |
-| **Hermes Agent** | Three-tier memory, skill self-evolution loop, SOUL identity, self-registering tools, cron semantics — aligned; `qxt ecosystem` two-way-syncs memory/skills/SOUL with it |
+| **Hermes Agent** | Three-tier memory, skill self-evolution loop, SOUL identity, self-registering tools, cron semantics — aligned; `tuan ecosystem` two-way-syncs memory/skills/SOUL with it |
 | **ACP (Agent Client Protocol)** | As client/server, aligned message & handshake semantics so an IDE can drive Tuan-CLI |
 | **MCP (Model Context Protocol)** | As a client, aligned protocol to plug into the tools ecosystem |
 | **OpenAI / Anthropic / Google etc. APIs** | Provider adapters implemented per official REST semantics — protocol adaptation only, no internal replication |
@@ -118,33 +123,33 @@ python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\ac
 pip install -e ".[dev]"
 
 # 2) Point at a provider (14 built-in profiles: deepseek / groq-free / siliconflow-free / ollama…)
-qxt setup
-# or by hand: ~/.qingxiaotuan/config.yaml
+tuan setup
+# or by hand: ~/.tuan/config.yaml
 #   model.provider: deepseek
 #   model.model: deepseek-chat
 #   model.api_key_env: DEEPSEEK_API_KEY      # keys never in plaintext
 
 # 3) Chat
-qxt
+tuan
 # or a smoketest:
-qxt --print run "Hi, describe yourself in one sentence."
+tuan --print run "Hi, describe yourself in one sentence."
 ```
 
 ---
 
-## The command surface: 36 core subcommands + slash commands
+## The command surface: 38 core subcommands + slash commands
 
 | Command | What it's for |
 |---|---|
-| `qxt` | Interactive TUI (Kimi Code skin) |
-| `qxt setup` / `qxt models` | Configure providers / list 55 providers & 1100+ models |
-| `qxt models update` | Update the model/provider catalog locally: merge the built-in lists into `~/.qingxiaotuan/models_catalog.json` (offline, preserves user-added entries; `--check` reports diffs only, `--background` runs async) |
-| `qxt agent` | Named agents (`.claude/agents`-compatible, 3-tier discovery) |
-| `qxt acp` | Run an ACP server so VSCode / Zed / JetBrains can drive you |
-| `qxt ecosystem` | **Ecosystem interop**: `scan` probes Claude Code / Hermes; `import` pulls their skills/agents/memory/SOUL/MCP configs into qxt; `export` pushes back; `link` mounts qxt into them over MCP; `serve` runs the MCP server (see [docs/ecosystem_bridge.md](docs/ecosystem_bridge.md)) |
-| `qxt cron` | Scheduled background tasks |
-| `qxt doctor [--compact]` | Health check (add `--compact` for context-compaction survival self-check) |
-| `qxt dev codedev ...` | Code-dev subsystem (retrieval / verification / decomposition) |
+| `tuan` | Interactive TUI (Kimi Code skin) |
+| `tuan setup` / `tuan models` | Configure providers / list 57 providers & 1100+ models |
+| `tuan models update` | Update the model/provider catalog locally: merge the built-in lists into `~/.tuan/models_catalog.json` (offline, preserves user-added entries; `--check` reports diffs only, `--background` runs async) |
+| `tuan agent` | Named agents (`.claude/agents`-compatible, 3-tier discovery) |
+| `tuan acp` | Run an ACP server so VSCode / Zed / JetBrains can drive you |
+| `tuan ecosystem` | **Ecosystem interop**: `scan` probes Claude Code / Hermes; `import` pulls their skills/agents/memory/SOUL/MCP configs into tuan; `export` pushes back; `link` mounts tuan into them over MCP; `serve` runs the MCP server (see [docs/ecosystem_bridge.md](docs/ecosystem_bridge.md)) |
+| `tuan cron` | Scheduled background tasks |
+| `tuan doctor [--compact]` | Health check (add `--compact` for context-compaction survival self-check) |
+| `tuan dev codedev ...` | Code-dev subsystem (retrieval / verification / decomposition) |
 
 Slash commands you'll live in: `/plan` · `/model` · `/undo`·`/impact` · `/swarm` · `/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help` — full list via `Ctrl-G` in the TUI.
 
@@ -152,16 +157,16 @@ Slash commands you'll live in: `/plan` · `/model` · `/undo`·`/impact` · `/sw
 
 ## Ecosystem interop: Claude Code / Hermes Agent out of the box
 
-Beyond "safety-first" and "model-agnostic", the third leg is: **don't rebuild ecosystems — reuse what the other agent ecosystems already accumulated.** Skills (the SKILL.md open standard), named agents (`.claude/agents`), memory & persona (Hermes' `MEMORY.md` / `USER.md` / `SOUL.md`), context files (`AGENTS.md` / `CLAUDE.md`) and MCP server configs are structurally near-identical across the three — qxt bridges them:
+Beyond "safety-first" and "model-agnostic", the third leg is: **don't rebuild ecosystems — reuse what the other agent ecosystems already accumulated.** Skills (the SKILL.md open standard), named agents (`.claude/agents`), memory & persona (Hermes' `MEMORY.md` / `USER.md` / `SOUL.md`), context files (`AGENTS.md` / `CLAUDE.md`) and MCP server configs are structurally near-identical across the three — tuan bridges them:
 
 ```bash
-qxt ecosystem scan                        # probe Claude Code / Hermes + their assets (read-only)
-qxt ecosystem import all                  # pull both sides' skills/agents/memory/SOUL/MCP configs into qxt
-qxt ecosystem export skills --to claude   # qxt skills → .claude/skills (Hermes: --to hermes)
-qxt ecosystem link                        # reverse-mount: Claude Code/Hermes call qxt over MCP
+tuan ecosystem scan                        # probe Claude Code / Hermes + their assets (read-only)
+tuan ecosystem import all                  # pull both sides' skills/agents/memory/SOUL/MCP configs into tuan
+tuan ecosystem export skills --to claude   # tuan skills → .claude/skills (Hermes: --to hermes)
+tuan ecosystem link                        # reverse-mount: Claude Code/Hermes call tuan over MCP
 ```
 
-- **Automatic in-session**: skills Claude Code or Hermes already installed are usable in qxt immediately (`~/.claude/skills`, `~/.hermes/skills` are on the search path); `qxt ecosystem serve` exposes qxt as an MCP server so Claude Code / Hermes sessions gain `qxt_*` tools (memory search/write, skill list/read, headless task dispatch).
+- **Automatic in-session**: skills Claude Code or Hermes already installed are usable in tuan immediately (`~/.claude/skills`, `~/.hermes/skills` are on the search path); `tuan ecosystem serve` exposes tuan as an MCP server so Claude Code / Hermes sessions gain `tuan_*` tools (memory search/write, skill list/read, headless task dispatch).
 - **Delegate, don't migrate**: `claude_code_run` / `hermes_run` tools hand tasks to the other agent's full native environment (their own config, memory, skills, MCP).
 - Full doc: [`docs/ecosystem_bridge.md`](docs/ecosystem_bridge.md) (format map / security design / layout).
 
@@ -182,27 +187,27 @@ qxt ecosystem link                        # reverse-mount: Claude Code/Hermes ca
 3. **YOLO-redline floor** — YOLO kills per-step confirmations but **cannot** touch hard redlines (recursive `rm`, force-push, `chmod -R 000 /`… never auto-run).
 4. **Transactional ledger** — every write has an audit trail; `/undo` restores via diff `reverse_transform` + snapshots.
 
-Rules always resolve `deny > ask > allow`. Whitelist with `qxt safe allow <cmd>`; never disable safety to save clicks.
+Rules always resolve `deny > ask > allow`. Whitelist with `tuan safe allow <cmd>`; never disable safety to save clicks.
 
 ---
 
 ## Security benchmarks: reproducible with one command
 
-`qxt safe bench` packages the three reproducible suites into one command (fully local, no model — any third party can re-run them as-is):
+`tuan safe bench` packages the three reproducible suites into one command (fully local, no model — any third party can re-run them as-is):
 
 - **Adversarial corpus** `bench/safety_bench_10k.py` — 10,000 bash/generic commands (seeded 20260906, reproducible); reports block recall / flag recall / false-positive rate / bypasses.
 - **PowerShell corpus** `bench/bench_powershell_safety.py` — 5,000 samples (2,300 dangerous / 2,700 benign); reports accuracy / misses / false positives.
 - **Bypass matrix** `bench/bypass_matrix.py` — 2,310 hand-crafted adversarial payloads; beyond pattern matching, it asserts **per disaster-consequence class** whether every class of catastrophic intent was actually blocked.
 
 ```bash
-qxt safe bench                 # full run (~3 min)
-qxt safe bench --quick         # quick self-check (~30 s)
-qxt safe bench --check         # compare vs archive; exit 1 if numbers regressed (gate)
-qxt safe report                # self-contained HTML security report (shareable)
-qxt safe report --release      # RELEASE: numbers + timestamp + git commit bound (no stale numbers)
+tuan safe bench                 # full run (~3 min)
+tuan safe bench --quick         # quick self-check (~30 s)
+tuan safe bench --check         # compare vs archive; exit 1 if numbers regressed (gate)
+tuan safe report                # self-contained HTML security report (shareable)
+tuan safe report --release      # RELEASE: numbers + timestamp + git commit bound (no stale numbers)
 ```
 
-Measured on current code (2026-09-19, reproducible via `qxt safe bench`):
+Measured on current code (2026-09-19, reproducible via `tuan safe bench`):
 
 | Suite | Size | Core metric | Bypasses | False positives |
 |---|---|---|---|---|
@@ -210,7 +215,7 @@ Measured on current code (2026-09-19, reproducible via `qxt safe bench`):
 | PowerShell | 5,000 | accuracy 100% · misses 0 | 0 | 0 |
 | Bypass matrix | 2,310 | disaster-intent classes 100% blocked | 0 | 1 |
 
-Caveat: the bypass matrix is deliberately fail-closed and keeps a few conservative escalations (`nc` Unicode-variant probes, `tar|ssh` exfil-shaped payloads), which produce "benign-but-flagged" false positives; the 1.87% FP in the adversarial suite comes from the same conservatism. Numbers are authoritative as re-run locally with `qxt safe bench`.
+Caveat: the bypass matrix is deliberately fail-closed and keeps a few conservative escalations (`nc` Unicode-variant probes, `tar|ssh` exfil-shaped payloads), which produce "benign-but-flagged" false positives; the 1.87% FP in the adversarial suite comes from the same conservatism. Numbers are authoritative as re-run locally with `tuan safe bench`.
 
 **CI numbers gate**: the `safety-benchmarks` job in `.github/workflows/security-ci.yml` re-runs all three suites on every push and compares against the committed archive — any regression (bypasses, a disaster class no longer fully blocked, a clear FP rise) **fails CI**. The archive `bench/security-bench.json` corresponds 1:1 to the README table. 
 
@@ -218,11 +223,11 @@ Caveat: the bypass matrix is deliberately fail-closed and keeps a few conservati
 
 ## Head-to-head vs Claude Code: one command
 
-Beyond self-measured security suites, `bench/vs_claude.py` runs **the same task set on both agents** and renders an honest side-by-side: same `bench/tasks.yaml`, same acceptance scripts, isolated workspaces, `qxt run -p` vs `claude -p --output-format json`.
+Beyond self-measured security suites, `bench/vs_claude.py` runs **the same task set on both agents** and renders an honest side-by-side: same `bench/tasks.yaml`, same acceptance scripts, isolated workspaces, `tuan run -p` vs `claude -p --output-format json`.
 
 ```bash
-python bench/vs_claude.py --dry --qxt .venv/Scripts/qxt.exe   # framework-only check, no model calls
-python bench/vs_claude.py --qxt .venv/Scripts/qxt.exe         # real run (needs working endpoints on both sides)
+python bench/vs_claude.py --dry --tuan .venv/Scripts/tuan.exe   # framework-only check, no model calls
+python bench/vs_claude.py --tuan .venv/Scripts/tuan.exe         # real run (needs working endpoints on both sides)
 python bench/vs_claude.py --task fix_bug --model openrouter/deepseek/deepseek-chat
 python bench/vs_claude.py --claude "C:\path\claude.cmd" --json
 ```
@@ -237,7 +242,7 @@ Outputs `bench/vs_report.md` / `.json` / `.html` with pass rate, wall time, cost
 
 - **Memory** — three tiers (user/project/session) + SQLite FTS5 (trigram), auto-degrades to plaintext if unavailable.
 - **Subagents** — typed delegation (general-purpose / explore / plan / coder), isolated subagents, concurrent workers, Swarm for sharding long tasks.
-- **Cron & background** — `qxt cron start --detach`; headless autonomy.
+- **Cron & background** — `tuan cron start --detach`; headless autonomy.
 - **Hooks** — `PreToolUse` can `block` or rewrite `args` (`hooks.allow_edit_args`) — a big seam for builders.
 - **Observability** — `/stats`·`/audit`·`/impact`·`/bench`·`/cost`; cost on the table.
 - **crypto** — AES-GCM(AEAD) with `cryptography`, else an HMAC-SHA256 stream-cipher fallback; missing-MAC / tampered `open()` always fails closed.
@@ -248,12 +253,12 @@ Outputs `bench/vs_report.md` / `.json` / `.html` with pass rate, wall time, cost
 
 ```bash
 python -m pytest tests/ -q        # large suite
-python -m mypy qingxiaotuan       # typing gate
-qxt --print run "Hi, one line."   # smoke
+python -m mypy tuan_cli       # typing gate
+tuan --print run "Hi, one line."   # smoke
 ```
 
 - **i18n discipline**: README_zh-CN is the authoritative master; every locale is a vivid, zero-drift localization — **no mechanical translation.**
-- **Version**: `v0.3.0` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
+- **Version**: `v0.3.1` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
 - **Deep dive**: engine signatures & a step-by-step tool walkthrough live in the appendix of `README_zh-CN.md`.
 
 ---
@@ -264,16 +269,16 @@ Tuan-CLI **offers no account login**: no GitHub / Apple / DeepSeek binding, no O
 
 - **Fully usable without signing in**: file I/O, command execution, memory, skills, subagents and the safety guard are all local.
 - **The only "cloud" is your model API**: the key is yours, sent only to that endpoint, with no third-party relay.
-- **Want a zero-network pipeline**: install Ollama or llama.cpp — `qxt models local` to detect, `qxt models set ollama <model>` to use it.
+- **Want a zero-network pipeline**: install Ollama or llama.cpp — `tuan models local` to detect, `tuan models set ollama <model>` to use it.
 
 ### Configure a model API key
 
 ```bash
-qxt models set deepseek deepseek-chat   # pick provider & model
-qxt models                              # interactive setup (key written to ~/.qingxiaotuan/.env)
+tuan models set deepseek deepseek-chat   # pick provider & model
+tuan models                              # interactive setup (key written to ~/.tuan/.env)
 ```
 
-Keys live in `~/.qingxiaotuan/.env` (chmod 600, never commit); environment variables (e.g. `DEEPSEEK_API_KEY`) work too.
+Keys live in `~/.tuan/.env` (chmod 600, never commit); environment variables (e.g. `DEEPSEEK_API_KEY`) work too.
 
 > **Transparency**: earlier versions shipped GitHub / Apple / DeepSeek account login (including a web-session token path). It conflicted with the "fully local & offline" positioning, and the web endpoint was a private, unsupported interface that triggered risk controls — so the whole capability has been **removed**. Model calls go through official APIs with your own key.
 

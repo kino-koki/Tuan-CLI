@@ -1,5 +1,5 @@
 """青小团吉祥物: ascii / svg 渲染与状态机。"""
-from qingxiaotuan.ui.mascot import Mascot, IDLE, THINKING, WORKING, ALERT, DONE, STATES
+from tuan_cli.ui.mascot import Mascot, IDLE, THINKING, WORKING, ALERT, DONE, STATES
 
 
 def test_states_constant():
@@ -56,7 +56,7 @@ def test_logo_returns_block_art():
 
 def test_spinner_returns_moon_frame():
     m = Mascot()
-    from qingxiaotuan.ui.mascot import MOON_FRAMES
+    from tuan_cli.ui.mascot import MOON_FRAMES
     for i in range(len(MOON_FRAMES)):
         assert m.spinner(i) == MOON_FRAMES[i]
 

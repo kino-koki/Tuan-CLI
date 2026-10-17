@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.core.background_store import BackgroundStore, kill_process_tree
+from tuan_cli.core.background_store import BackgroundStore, kill_process_tree
 
 
 # ---------------------------------------------------------------------------
@@ -94,8 +94,8 @@ def test_recoverable_returns_queued_dead(tmp_path):
 # ---------------------------------------------------------------------------
 def _mock_runner(tmp_path: Path) -> "BackgroundRunner":
     """构造一个最小可用的 BackgroundRunner 用于离线测试 (不构建真实 kernel)。"""
-    from qingxiaotuan.core.background import BackgroundRunner
-    from qingxiaotuan.config.loader import Config
+    from tuan_cli.core.background import BackgroundRunner
+    from tuan_cli.config.loader import Config
 
     runner = BackgroundRunner.__new__(BackgroundRunner)
     runner._jobs = {}
@@ -111,7 +111,7 @@ def _mock_runner(tmp_path: Path) -> "BackgroundRunner":
 
 
 def test_cancel_detached_kills_worker_process(monkeypatch, tmp_path):
-    from qingxiaotuan.core.background import BackgroundRunner
+    from tuan_cli.core.background import BackgroundRunner
 
     killed = {}
 
@@ -119,7 +119,7 @@ def test_cancel_detached_kills_worker_process(monkeypatch, tmp_path):
         killed["pid"] = pid
         return True
 
-    monkeypatch.setattr("qingxiaotuan.core.background_store.kill_process_tree", fake_kill_tree)
+    monkeypatch.setattr("tuan_cli.core.background_store.kill_process_tree", fake_kill_tree)
 
     runner = _mock_runner(tmp_path)
     runner._store.create("bg-d1", "task", str(tmp_path), "default")
@@ -133,8 +133,8 @@ def test_cancel_detached_kills_worker_process(monkeypatch, tmp_path):
 
 def test_cancel_thread_task_stops_loop(monkeypatch, tmp_path):
     """线程版任务: cancel 置 cancelled, _work 循环应退出。"""
-    from qingxiaotuan.core.background import BackgroundJob
-    from qingxiaotuan.memory.sessions import SessionStore
+    from tuan_cli.core.background import BackgroundJob
+    from tuan_cli.memory.sessions import SessionStore
 
     runner = _mock_runner(tmp_path)
     job = BackgroundJob(job_id="bg-t1", task="sleep task", started_at=time.time(),
@@ -162,7 +162,7 @@ def test_cancel_non_running_returns_false(tmp_path):
 # worker 响应 cancel_requested
 # ---------------------------------------------------------------------------
 def test_worker_honors_cancel_requested(monkeypatch, tmp_path):
-    from qingxiaotuan.core import background_worker as bw
+    from tuan_cli.core import background_worker as bw
     from types import SimpleNamespace
 
     home = tmp_path
@@ -191,7 +191,7 @@ def test_worker_honors_cancel_requested(monkeypatch, tmp_path):
 
 
 def test_worker_marks_done(monkeypatch, tmp_path):
-    from qingxiaotuan.core import background_worker as bw
+    from tuan_cli.core import background_worker as bw
     from types import SimpleNamespace
 
     home = tmp_path
@@ -221,7 +221,7 @@ def test_worker_marks_done(monkeypatch, tmp_path):
 # recover_queued
 # ---------------------------------------------------------------------------
 def test_recover_queued_restarts(monkeypatch, tmp_path):
-    from qingxiaotuan.core.background import BackgroundRunner
+    from tuan_cli.core.background import BackgroundRunner
 
     runner = BackgroundRunner.__new__(BackgroundRunner)
     runner._jobs = {}

@@ -12,9 +12,9 @@
 
 from __future__ import annotations
 
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.models.base import ModelAdapter, ModelResponse
+from tuan_cli.app import build_kernel
+from tuan_cli.core.agent import Agent
+from tuan_cli.models.base import ModelAdapter, ModelResponse
 
 
 class EchoModel(ModelAdapter):
@@ -69,7 +69,7 @@ HELPER = (
 
 # ------------------------------------------------------------------ 工具注册
 
-def test_subagent_tools_registered(tmp_path, qxt_home):
+def test_subagent_tools_registered(tmp_path, tuan_home):
     kernel = build_kernel()
     registry = kernel.require("tool_registry")
     names = {t.name for t in registry.tools}
@@ -81,7 +81,7 @@ def test_subagent_tools_registered(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ agents_list
 
-def test_agents_list_lists_project_agent(tmp_path, qxt_home):
+def test_agents_list_lists_project_agent(tmp_path, tuan_home):
     _write_agent(tmp_path, "helper", HELPER)
     kernel = _kernel_with(EchoModel())
     config = kernel.require("config")
@@ -94,7 +94,7 @@ def test_agents_list_lists_project_agent(tmp_path, qxt_home):
     assert "暖心的助手" in out or "helper" in out
 
 
-def test_agents_list_no_agents(tmp_path, qxt_home):
+def test_agents_list_no_agents(tmp_path, tuan_home):
     kernel = _kernel_with(EchoModel())
     config = kernel.require("config")
     ctx = Agent(kernel=kernel, config=config, workspace=str(tmp_path),
@@ -105,7 +105,7 @@ def test_agents_list_no_agents(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ subagent 命名 Agent
 
-def test_subagent_named_agent_resolves(tmp_path, qxt_home):
+def test_subagent_named_agent_resolves(tmp_path, tuan_home):
     """name 命中注册表 → 子代理正常执行、返回摘要 (而非 [错误] 未找到)。"""
     _write_agent(tmp_path, "helper", HELPER)
     kernel = _kernel_with(EchoModel())
@@ -119,7 +119,7 @@ def test_subagent_named_agent_resolves(tmp_path, qxt_home):
     assert "帮" in out
 
 
-def test_subagent_unknown_name_errors_no_model(tmp_path, qxt_home):
+def test_subagent_unknown_name_errors_no_model(tmp_path, tuan_home):
     """name 未命中 → 立即返回错误, 不创建子代理、不发模型。"""
     kernel = _kernel_with(EchoModel())
     config = kernel.require("config")
@@ -132,7 +132,7 @@ def test_subagent_unknown_name_errors_no_model(tmp_path, qxt_home):
 
 # ------------------------------------------------------------------ 白名单折算 (端到端)
 
-def test_subagent_whitelist_folds_real_registry(tmp_path, qxt_home):
+def test_subagent_whitelist_folds_real_registry(tmp_path, tuan_home):
     """命名 agent 的 tools 白名单在真实注册表上端到端生效: 子代理只见白名单内工具。
 
     用 ProbeModel 记录子代理模型调用收到的工具 schema; 若白名单折算正确,

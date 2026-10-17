@@ -1,4 +1,4 @@
-"""qxt CLI 参数解析与命令注册测试 (cli/parser.py)。
+"""tuan CLI 参数解析与命令注册测试 (cli/parser.py)。
 
 验证:
 - 每个顶层子命令都注册了 func 默认值 (main() 依赖它做分发);
@@ -18,8 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from qingxiaotuan.cli import parser
-from qingxiaotuan.cli.parser import build_parser
+from tuan_cli.cli import parser
+from tuan_cli.cli.parser import build_parser
 
 
 def _parse(*argv):
@@ -141,54 +141,56 @@ def test_version_flag_exits_zero():
 # ---------------------------------------------------------------- 函数解析与分发
 
 def test_resolve_func_routes_to_correct_module():
-    with mock.patch("qingxiaotuan.cli.parser.importlib.import_module") as imp:
+    with mock.patch("tuan_cli.cli.parser.importlib.import_module") as imp:
         parser._resolve_func("cmd_improve")
         assert imp.call_args[0][0] == ".improve_cli"
         parser._resolve_func("cmd_chat")
-        assert imp.call_args[0][0] == ".commands"
+        # cmd_chat 经 commands.py::_CMD_SOURCES 路由到 .cmd_chat
+        # (拆分后 cmd_chat 仍是交互对话实现模块, 不再是 .commands 门面)。
+        assert imp.call_args[0][0] == ".cmd_chat"
 
 
 def test_main_no_args_routes_to_interactive():
-    """`qxt` (无子命令) 应进入交互启动 (fast_chat -> cmd_chat)。"""
-    from qingxiaotuan.cli import fast_start
+    """`tuan` (无子命令) 应进入交互启动 (fast_chat -> cmd_chat)。"""
+    from tuan_cli.cli import fast_start
     captured = {}
     def spy(args):
         captured["called"] = True
         return 0
     with mock.patch.object(fast_start, "fast_chat", spy), \
          mock.patch("sys.stdin.isatty", return_value=True), \
-         mock.patch.object(sys, "argv", ["qxt"]):
+         mock.patch.object(sys, "argv", ["tuan"]):
         assert parser.main() == 0
     assert captured["called"] is True
 
 
 def test_main_yolo_sets_mode():
-    from qingxiaotuan.cli import fast_start
+    from tuan_cli.cli import fast_start
     captured = {}
     def spy(args):
         captured["mode"] = getattr(args, "mode", None)
         return 0
     with mock.patch.object(fast_start, "fast_chat", spy), \
          mock.patch("sys.stdin.isatty", return_value=True), \
-         mock.patch.object(sys, "argv", ["qxt", "--yolo"]):
+         mock.patch.object(sys, "argv", ["tuan", "--yolo"]):
         parser.main()
     assert captured["mode"] == "yolo"
 
 
 def test_main_routes_run_to_cmd_run():
-    from qingxiaotuan.cli import commands
+    from tuan_cli.cli import commands
     captured = {}
     def spy(args):
         captured["task"] = args.task
         return 0
     with mock.patch.object(commands, "cmd_run", spy), \
          mock.patch("sys.stdin.isatty", return_value=False), \
-         mock.patch.object(sys, "argv", ["qxt", "run", "do it"]):
+         mock.patch.object(sys, "argv", ["tuan", "run", "do it"]):
         assert parser.main() == 0
     assert captured["task"] == "do it"
 
 
 def test_main_returns_2_when_not_tty_and_interactive():
     with mock.patch("sys.stdin.isatty", return_value=False), \
-         mock.patch.object(sys, "argv", ["qxt"]):
+         mock.patch.object(sys, "argv", ["tuan"]):
         assert parser.main() == 2

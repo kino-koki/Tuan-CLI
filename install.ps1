@@ -1,7 +1,7 @@
-# 青小团 (qxt) Windows 一键安装脚本
+# 青小团 (tuan) Windows 一键安装脚本
 # 用法 (PowerShell):
 #   cd 到项目目录后执行:  .\install.ps1
-# 脚本会: 建 venv -> 安装依赖 -> 把 qxt 所在目录加入用户 PATH -> 完成后告诉你怎么用。
+# 脚本会: 建 venv -> 安装依赖 -> 把 tuan 所在目录加入用户 PATH -> 完成后告诉你怎么用。
 #
 # 设计原则: 不修改系统 Python, 全部隔离在项目 .venv 内; PATH 只加用户级, 不动系统变量。
 
@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = $PSScriptRoot
 $VenvDir   = Join-Path $ProjectDir ".venv"
 $ScriptsDir = Join-Path $VenvDir "Scripts"
-$QxtExe    = Join-Path $ScriptsDir "qxt.exe"
+$QxtExe    = Join-Path $ScriptsDir "tuan.exe"
 $PyExe     = Join-Path $ScriptsDir "python.exe"
 
 Write-Host "==> 青小团安装开始: $ProjectDir" -ForegroundColor Cyan
@@ -56,12 +56,16 @@ if (-not (Test-Path $VenvDir)) {
 & "$PyExe" -m pip --version 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "==> venv 内未检测到 pip, 尝试 ensurepip 引导..." -ForegroundColor Yellow
-    & "$PyExe" -m ensurepip --upgrade 2>&1 | Out-Null
+    & "$PyExe" -m ensurepip --upgrade
     if ($LASTEXITCODE -ne 0) {
         Write-Host "!! 无法在 venv 中引导 pip。请改用标准 Python 3.10+ (含 pip) 后重试。" -ForegroundColor Red
         exit 1
     }
 }
+
+# 1c. 仓库根锚定: 基准脚本 (tuan safe bench) 按 TUAN_REPO_ROOT 定位,
+#     环境变量安装/运行时优先认这个变量, 所以本地安装直接设好 (仅当前会话, 不污染系统)。
+$env:TUAN_REPO_ROOT = $ProjectDir
 
 # 2. 安装 (editable)
 Write-Host "==> 安装青小团 (pip install -e .) ..." -ForegroundColor Cyan
@@ -98,18 +102,18 @@ if (-not ($CurrentEntries | Where-Object { $_.TrimEnd('\') -ieq $ScriptsDir.Trim
 # 4. 收尾提示
 Write-Host ""
 Write-Host "==> 安装完成!" -ForegroundColor Green
-$resolved = Get-Command qxt -ErrorAction SilentlyContinue
+$resolved = Get-Command tuan -ErrorAction SilentlyContinue
 if ($resolved) {
-    Write-Host "    验证: 当前环境已能解析 qxt -> $($resolved.Source)" -ForegroundColor Green
+    Write-Host "    验证: 当前环境已能解析 tuan -> $($resolved.Source)" -ForegroundColor Green
 } else {
     Write-Host "    注意: 用户 PATH 已写入；已有终端不会自动读取新环境变量。" -ForegroundColor Yellow
-    Write-Host "    请关闭并重新打开 PowerShell/Windows Terminal 后运行 qxt。" -ForegroundColor Yellow
+    Write-Host "    请关闭并重新打开 PowerShell/Windows Terminal 后运行 tuan。" -ForegroundColor Yellow
 }
 Write-Host ""
 Write-Host "  接下来 (请在一个『真实终端』里操作, 不要在本软件/IDE 内嵌命令行里跑):" -ForegroundColor Cyan
 Write-Host "    1) 打开 命令提示符 / Windows Terminal" -ForegroundColor White
-Write-Host "    2) 输入:  qxt              # 直接进交互界面, 就能打字了" -ForegroundColor White
-Write-Host "    3) 首次使用先配模型:  qxt models   (开箱支持多家平台)" -ForegroundColor White
-Write-Host "    4) 无限制模式:  qxt --yolo        # 危险操作自动批准" -ForegroundColor White
+Write-Host "    2) 输入:  tuan              # 直接进交互界面, 就能打字了" -ForegroundColor White
+Write-Host "    3) 首次使用先配模型:  tuan models   (开箱支持多家平台)" -ForegroundColor White
+Write-Host "    4) 无限制模式:  tuan --yolo        # 危险操作自动批准" -ForegroundColor White
 Write-Host ""
-Write-Host "  也可以直接双击项目里的 qxt.bat 启动。" -ForegroundColor DarkGray
+Write-Host "  也可以直接双击项目里的 tuan.bat 启动。" -ForegroundColor DarkGray

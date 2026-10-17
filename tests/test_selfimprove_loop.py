@@ -10,14 +10,14 @@ import json
 
 import pytest
 
-from qingxiaotuan.core.kernel import Kernel
-from qingxiaotuan.config.loader import Config
-from qingxiaotuan.config.plugin import ConfigPlugin
-from qingxiaotuan.tools import ToolRegistryPlugin
-from qingxiaotuan.tools.base import ToolContext, Tool, PermissionPolicy
-from qingxiaotuan.self_improve.rulegen import RuleGenerator
-from qingxiaotuan.self_improve.store import SelfImproveRuleStore
-from qingxiaotuan.self_improve.reflector import Experience
+from tuan_cli.core.kernel import Kernel
+from tuan_cli.config.loader import Config
+from tuan_cli.config.plugin import ConfigPlugin
+from tuan_cli.tools import ToolRegistryPlugin
+from tuan_cli.tools.base import ToolContext, Tool, PermissionPolicy
+from tuan_cli.self_improve.rulegen import RuleGenerator
+from tuan_cli.self_improve.store import SelfImproveRuleStore
+from tuan_cli.self_improve.reflector import Experience
 
 
 def _tmp_jsonl(tmp_path):
@@ -53,7 +53,7 @@ def test_store_roundtrip_and_query(tmp_path):
 
 def test_dispatch_upgrades_on_learned_rule(tmp_path):
     """learned 规则命中的工具调用, 自动升级为需确认。"""
-    from qingxiaotuan.tools.base import ToolResult
+    from tuan_cli.tools.base import ToolResult
 
     p = _tmp_jsonl(tmp_path)
     store = SelfImproveRuleStore(p)

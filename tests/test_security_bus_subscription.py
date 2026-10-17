@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 
-from qingxiaotuan.core.security_bus import SecurityEvent, SecurityEventBus, SecurityEventType
-from qingxiaotuan.harden.audit_export import AuditExporter
+from tuan_cli.core.security_bus import SecurityEvent, SecurityEventBus, SecurityEventType
+from tuan_cli.harden.audit_export import AuditExporter
 
 
 def _evt(etype: str = SecurityEventType.COMMAND_BLOCKED) -> SecurityEvent:

@@ -2,8 +2,8 @@
 """DifficultyClassifier 单测 —— 覆盖评审 Major #4 的对抗性绕过与回归。"""
 import pytest
 
-from qingxiaotuan.models.difficulty import DifficultyClassifier, estimate_difficulty
-from qingxiaotuan.models.router import ModelRouter
+from tuan_cli.models.difficulty import DifficultyClassifier, estimate_difficulty
+from tuan_cli.models.router import ModelRouter
 
 
 @pytest.fixture

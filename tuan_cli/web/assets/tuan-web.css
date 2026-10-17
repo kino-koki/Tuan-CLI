@@ -1,0 +1,203 @@
+/* ==========================================================================
+   Tuan-CLI Web 工作台设计令牌 (tuan-web.css)
+   --------------------------------------------------------------------------
+   本文件是 **原创实现**, 不是任何第三方产物的拷贝。
+
+   历史上这里放的是从某个 npm 包 dist 目录里拷出来的 minified CSS (640KB)。
+   那对 MIT 项目是明确的版权风险 —— 即便只用到其中的 CSS 变量, 整份拷贝本身
+   也不属于我们。现改为: 按前端**实际引用**的 66 个令牌逐个重新定义,
+   视觉与原先一致, 体积 640KB → 约 6KB, 且来源干净。
+
+   令牌口径 (与前端 frontend.py 内联样式一一对应):
+     - 颜色  --color-*    : 品牌蓝 / 文本 / 表面 / 语义色 (成功·危险)
+     - 间距  --space-*    : 4px 基准栅格
+     - 圆角  --radius-*   : xs 6 / sm 10 / md 12 / lg 16 / xl 20 / full 999 / composer 28
+     - 字号  --text-*     : 2xs 11 / xs 12 / sm 13 / base 14
+     - 字重  --weight-*   : regular 400 / medium 500 / semibold 700 / section-label 600
+     - 版式  --p-*        : hairline 1px / sidebar 264px / content-max 760px / focus-ring
+     - 动效  --duration-* / --ease-out
+     - 层级  --z-*        : max 9999
+
+   主题: 浅色为默认值, [data-color-scheme="dark"] 覆盖为深色,
+        [data-color-scheme="system"] 由 prefers-color-scheme 媒体查询接管。
+   ========================================================================== */
+
+:root {
+  /* ---- 品牌与语义色 ---- */
+  --color-accent: #1783ff;
+  --color-accent-hover: #167ff7;
+  --color-accent-soft: #e8f3ff;
+  --color-accent-bd: rgba(23, 131, 255, .25);
+  --color-success: #0e7a38;
+  --color-danger: #c0392b;
+  --color-danger-soft: #fbeaea;
+
+  /* ---- 文本 ---- */
+  --color-text: rgba(0, 0, 0, .95);
+  --color-text-strong: #000000;
+  --color-text-muted: rgba(0, 0, 0, .68);
+  --color-text-faint: rgba(0, 0, 0, .53);
+
+  /* ---- 表面与描边 ---- */
+  --color-bg: #ffffff;
+  --color-sidebar-bg: #f9fbfc;
+  --color-surface: #f5f5f5;
+  --color-surface-raised: #ffffff;
+  --color-hover: rgba(0, 0, 0, .03);
+  --color-line: rgba(0, 0, 0, .13);
+  --color-line-strong: rgba(0, 0, 0, .15);
+  --color-inline-code-bg: rgba(0, 0, 0, .03);
+  --color-user-bubble-bg: #f5f5f5;
+  --color-scrim-strong: rgba(0, 0, 0, .6);
+
+  /* ---- 输入面板 (composer) ---- */
+  --color-composer-bg: #ffffff;
+  --color-composer-line: rgba(0, 0, 0, .13);
+  --color-composer-focus-line: rgba(0, 0, 0, .25);
+  --color-send-bg: rgba(0, 0, 0, .9);
+  --color-send-bg-hover: #252525;
+  --color-send-bg-disabled: rgba(0, 0, 0, .05);
+  --color-send-icon: #ffffff;
+  --color-send-icon-disabled: rgba(0, 0, 0, .27);
+
+  /* ---- 间距 (4px 栅格) ---- */
+  --space-05: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ---- 圆角 (整体偏圆润: 面板/卡片 16, 控件 12, 药丸 full) ---- */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 999px;
+  --radius-composer: 28px;
+
+  /* ---- 字体 ---- */
+  --font-ui-latin: "Schibsted Grotesk Variable", "Helvetica Neue", Arial;
+  --font-ui: var(--font-ui-latin), "Noto Sans SC Variable", "Noto Sans SC",
+             "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC",
+             -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif,
+             "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono",
+               Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* ---- 字号 / 字重 ---- */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-section-label: 600;
+  --weight-semibold: 700;
+
+  /* ---- 版式 ---- */
+  --p-hairline: 1px;
+  --p-sidebar-w: 264px;
+  --p-content-max: 760px;
+  --p-focus-ring-w: 3px;
+  --p-focus-ring: 0 0 0 var(--p-focus-ring-w) var(--color-accent-soft);
+
+  /* ---- 阴影 ---- */
+  --shadow-input: 0 5px 16px -4px rgba(0, 0, 0, .07);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, .12), 0 4px 10px rgba(16, 24, 40, .08);
+  --shadow-send: 0 7px 16px -13px rgba(0, 0, 0, .38), 0 1px 2px rgba(0, 0, 0, .07);
+  --shadow-send-hover: 0 8px 18px -13px rgba(0, 0, 0, .42), 0 1px 3px rgba(0, 0, 0, .09);
+
+  /* ---- 动效 ---- */
+  --duration-fast: .12s;
+  --duration-base: .16s;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+
+  /* ---- 层级 ---- */
+  --z-tooltip: 600;
+  --z-modal: 900;
+  --z-max: 9999;
+}
+
+/* ---------------------------------------------------------------- 深色 */
+[data-color-scheme="dark"] {
+  --color-accent: #1a88ff;
+  --color-accent-hover: #258eff;
+  --color-accent-soft: rgba(26, 136, 255, .1);
+  --color-accent-bd: rgba(26, 136, 255, .28);
+  --color-success: #3fb950;
+  --color-danger: #f85149;
+  --color-danger-soft: rgba(248, 81, 73, .14);
+
+  --color-text: rgba(255, 255, 255, .9);
+  --color-text-strong: #ffffff;
+  --color-text-muted: rgba(255, 255, 255, .64);
+  --color-text-faint: rgba(255, 255, 255, .5);
+
+  --color-bg: #121212;
+  --color-sidebar-bg: #0d0d0d;
+  --color-surface: #1f1f1f;
+  --color-surface-raised: #292929;
+  --color-hover: rgba(255, 255, 255, .05);
+  --color-line: rgba(255, 255, 255, .12);
+  --color-line-strong: rgba(255, 255, 255, .18);
+  --color-inline-code-bg: rgba(255, 255, 255, .1);
+  --color-user-bubble-bg: #292929;
+  --color-scrim-strong: rgba(0, 0, 0, .75);
+
+  --color-composer-bg: #1f1f1f;
+  --color-composer-line: rgba(255, 255, 255, .12);
+  --color-composer-focus-line: rgba(255, 255, 255, .25);
+  --color-send-bg: rgba(255, 255, 255, .84);
+  --color-send-bg-hover: rgba(255, 255, 255, .848);
+  --color-send-bg-disabled: rgba(255, 255, 255, .1);
+  --color-send-icon: #1f1f1f;
+  --color-send-icon-disabled: rgba(255, 255, 255, .28);
+
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, .34), 0 4px 10px rgba(0, 0, 0, .28);
+}
+
+/* "跟随系统" 模式: 系统为深色时套用深色令牌 */
+@media (prefers-color-scheme: dark) {
+  [data-color-scheme="system"] {
+    --color-accent: #1a88ff;
+    --color-accent-hover: #258eff;
+    --color-accent-soft: rgba(26, 136, 255, .1);
+    --color-accent-bd: rgba(26, 136, 255, .28);
+    --color-success: #3fb950;
+    --color-danger: #f85149;
+    --color-danger-soft: rgba(248, 81, 73, .14);
+
+    --color-text: rgba(255, 255, 255, .9);
+    --color-text-strong: #ffffff;
+    --color-text-muted: rgba(255, 255, 255, .64);
+    --color-text-faint: rgba(255, 255, 255, .5);
+
+    --color-bg: #121212;
+    --color-sidebar-bg: #0d0d0d;
+    --color-surface: #1f1f1f;
+    --color-surface-raised: #292929;
+    --color-hover: rgba(255, 255, 255, .05);
+    --color-line: rgba(255, 255, 255, .12);
+    --color-line-strong: rgba(255, 255, 255, .18);
+    --color-inline-code-bg: rgba(255, 255, 255, .1);
+    --color-user-bubble-bg: #292929;
+    --color-scrim-strong: rgba(0, 0, 0, .75);
+
+    --color-composer-bg: #1f1f1f;
+    --color-composer-line: rgba(255, 255, 255, .12);
+    --color-composer-focus-line: rgba(255, 255, 255, .25);
+    --color-send-bg: rgba(255, 255, 255, .84);
+    --color-send-bg-hover: rgba(255, 255, 255, .848);
+    --color-send-bg-disabled: rgba(255, 255, 255, .1);
+    --color-send-icon: #1f1f1f;
+    --color-send-icon-disabled: rgba(255, 255, 255, .28);
+
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, .34), 0 4px 10px rgba(0, 0, 0, .28);
+  }
+}

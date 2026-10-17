@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.cron.store import CronStore
-from qingxiaotuan.cli.commands import cmd_cron
-from qingxiaotuan.cli.parser import build_parser
+from tuan_cli.cron.store import CronStore
+from tuan_cli.cli.commands import cmd_cron
+from tuan_cli.cli.parser import build_parser
 
 
 # ------------------------------------------------------------------ CronStore CRUD
@@ -47,15 +47,15 @@ def test_store_due_respects_interval(tmp_path):
 def _run_cron(tmp_path, argv):
     parser = build_parser()
     args = parser.parse_args(["cron"] + argv)
-    old_home = os.environ.get("QXT_HOME")
-    os.environ["QXT_HOME"] = str(tmp_path)
+    old_home = os.environ.get("TUAN_HOME")
+    os.environ["TUAN_HOME"] = str(tmp_path)
     try:
         return cmd_cron(args)
     finally:
         if old_home is None:
-            os.environ.pop("QXT_HOME", None)
+            os.environ.pop("TUAN_HOME", None)
         else:
-            os.environ["QXT_HOME"] = old_home
+            os.environ["TUAN_HOME"] = old_home
 
 
 def test_cmd_cron_add_list_remove(tmp_path):
@@ -133,13 +133,13 @@ def test_cmd_cron_status(tmp_path):
 # ------------------------------------------------------------------ 守护进程模块
 
 def test_daemon_main_parses_args(tmp_path):
-    from qingxiaotuan.cron import daemon
+    from tuan_cli.cron import daemon
     assert callable(daemon.main)
     assert callable(daemon._handle_signal)
 
 
 def test_daemon_heartbeat_path(tmp_path):
-    from qingxiaotuan.cron.daemon import _heartbeat_path
+    from tuan_cli.cron.daemon import _heartbeat_path
     assert _heartbeat_path(tmp_path) == tmp_path / "cron" / "daemon.heartbeat"
 
 

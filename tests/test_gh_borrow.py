@@ -2,8 +2,8 @@
 
 import json
 
-from qingxiaotuan.tools import gh_borrow
-from qingxiaotuan.tools.gh_borrow import GitHubClient, borrow, format_borrow
+from tuan_cli.tools import gh_borrow
+from tuan_cli.tools.gh_borrow import GitHubClient, borrow, format_borrow
 
 
 class _FakeClient(GitHubClient):

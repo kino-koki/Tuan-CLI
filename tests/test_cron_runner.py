@@ -3,9 +3,9 @@ import json
 import time
 from pathlib import Path
 
-from qingxiaotuan.cron.runner import CronRunner, _write_output, run_due_jobs
-from qingxiaotuan.cron.store import CronStore
-from qingxiaotuan.memory.sessions import SessionStore
+from tuan_cli.cron.runner import CronRunner, _write_output, run_due_jobs
+from tuan_cli.cron.store import CronStore
+from tuan_cli.memory.sessions import SessionStore
 
 
 class _FakeAgent:
@@ -53,13 +53,13 @@ def _make(tmp_path, agent_out="周期性报告"):
     kernel = _FakeKernel(store, agent_out)
 
     # 用 monkeypatch 替换 Agent 构造
-    import qingxiaotuan.cron.runner as runner_mod
+    import tuan_cli.cron.runner as runner_mod
     runner_mod.Agent = lambda *a, **k: _FakeAgent(agent_out)
     return store, job, kernel
 
 
 def test_run_job_writes_session_and_marks_run(tmp_path):
-    import qingxiaotuan.cron.runner as runner_mod
+    import tuan_cli.cron.runner as runner_mod
     store, job, kernel = _make(tmp_path, "今日完成 A/B/C")
     runner = CronRunner(kernel, config=None, workspace=str(tmp_path), home=tmp_path)
     res = runner.run_job(job, stream=False)
@@ -77,7 +77,7 @@ def test_run_job_writes_session_and_marks_run(tmp_path):
 
 
 def test_run_job_isolates_exception(tmp_path):
-    import qingxiaotuan.cron.runner as runner_mod
+    import tuan_cli.cron.runner as runner_mod
 
     class _Boom:
         def run(self, prompt, stream=False):
@@ -102,7 +102,7 @@ def test_run_job_isolates_exception(tmp_path):
 
 
 def test_run_due_jobs_counts(tmp_path):
-    import qingxiaotuan.cron.runner as runner_mod
+    import tuan_cli.cron.runner as runner_mod
     runner_mod.Agent = lambda *a, **k: _FakeAgent("ok")
     store = CronStore(tmp_path)
     for i in range(2):
@@ -147,7 +147,7 @@ def test_write_output_bad_path_silent(tmp_path):
 
 
 def test_run_job_writes_output_file(tmp_path):
-    import qingxiaotuan.cron.runner as runner_mod
+    import tuan_cli.cron.runner as runner_mod
     out_file = tmp_path / "report.md"
     store, job, kernel = _make(tmp_path, "今日完成 A/B/C")
     store.update(job["id"], output=str(out_file))
@@ -174,7 +174,7 @@ class _Cfg:
 
 def test_run_job_timeout_abandons_and_marks_run(tmp_path, monkeypatch):
     """卡死的任务到墙钟上限应强判失败返回, 不拖垮调度; 且 mark_run 防热循环重触发。"""
-    import qingxiaotuan.cron.runner as runner_mod
+    import tuan_cli.cron.runner as runner_mod
 
     class _Slow:
         def run(self, prompt, stream=False):
@@ -207,7 +207,7 @@ def test_run_job_timeout_abandons_and_marks_run(tmp_path, monkeypatch):
 
 def test_run_due_jobs_skips_while_another_sweep_holds_lock(tmp_path, monkeypatch):
     """已有调度进程持锁时, 第二个调度方应整体跳过, 而不是重复执行同一批任务。"""
-    import qingxiaotuan.cron.runner as runner_mod
+    import tuan_cli.cron.runner as runner_mod
     monkeypatch.setattr(runner_mod, "Agent", lambda *a, **k: _FakeAgent("x"))
     store = CronStore(tmp_path)
     j = store.add("任务A", "p", interval_minutes=60)
@@ -237,7 +237,7 @@ def test_run_due_jobs_rereads_due_inside_lock(tmp_path, monkeypatch):
     重跑同一批任务 (重复执行)。修复后: 进入锁内重新 due(), 已被别人跑过的任务
     自然不再到期。
     """
-    import qingxiaotuan.cron.runner as runner_mod
+    import tuan_cli.cron.runner as runner_mod
 
     executed = []
 
@@ -279,7 +279,7 @@ def test_store_due_skips_malformed_job(tmp_path):
     """回归: jobs.json 里缺 interval_minutes 的畸形条目不应让整个调度崩掉。
 
     此前 due() 直接下标 j["interval_minutes"], 手工编辑/旧版本残留的缺字段条目
-    会抛 KeyError, 让 qxt cron tick / daemon 整轮失败。
+    会抛 KeyError, 让 tuan cron tick / daemon 整轮失败。
     """
     store = CronStore(tmp_path)
     good = store.add("正常任务", "p", interval_minutes=60)

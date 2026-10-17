@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.memory.sessions import SessionStore
-from qingxiaotuan.memory.store import MemoryStore, _atomic_write_text
+from tuan_cli.memory.sessions import SessionStore
+from tuan_cli.memory.store import MemoryStore, _atomic_write_text
 
 
 def test_recall_context_dedupes_fts_and_recent(tmp_path: Path) -> None:
@@ -40,7 +40,7 @@ def test_failed_replace_keeps_original_memory(tmp_path: Path, monkeypatch: pytes
     store.append_memory("原有记忆不可丢失")
     original = store.read_memory()
 
-    import qingxiaotuan.memory.store as mstore
+    import tuan_cli.memory.store as mstore
 
     def boom(src: object, dst: object) -> None:
         raise OSError("simulated disk full")
@@ -77,7 +77,7 @@ def test_list_sessions_tolerates_vanished_file(
 
 def test_build_task_context_recalls_recent_memory(tmp_path: Path) -> None:
     """build_task_context 应走 recall_context: 无关键词命中也召回近 24h 记忆。"""
-    from qingxiaotuan.core.prompts import build_task_context
+    from tuan_cli.core.prompts import build_task_context
 
     store = MemoryStore(tmp_path, fts_enabled=True)
     store.append_memory("青小团的部署脚本藏在 scripts/deploy.ps1")

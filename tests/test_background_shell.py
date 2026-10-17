@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from qingxiaotuan.core.background_shell import (
+from tuan_cli.core.background_shell import (
     BackgroundShellManager, is_bg_command, run_in_background,
     strip_bg_prefix,
 )
@@ -29,7 +29,7 @@ def test_strip_bg_prefix():
 
 # ---------------------------------------------------------------- 生命周期
 
-def test_background_job_lifecycle(tmp_path, qxt_home):
+def test_background_job_lifecycle(tmp_path, tuan_home):
     mgr = BackgroundShellManager(tmp_path)
     job = mgr.start(
         'python -c "import time;print(1,flush=True);time.sleep(0.4);print(2,flush=True)"')
@@ -43,7 +43,7 @@ def test_background_job_lifecycle(tmp_path, qxt_home):
     assert "1" in out and "2" in out
 
 
-def test_status_dict_and_tail(tmp_path, qxt_home):
+def test_status_dict_and_tail(tmp_path, tuan_home):
     mgr = BackgroundShellManager(tmp_path)
     job = mgr.start('python -c "print(42,flush=True)"')
     mgr.wait(job.job_id, timeout=10)
@@ -52,7 +52,7 @@ def test_status_dict_and_tail(tmp_path, qxt_home):
     assert "42" in mgr.tail(job.job_id, 5)
 
 
-def test_cancel_terminates(tmp_path, qxt_home):
+def test_cancel_terminates(tmp_path, tuan_home):
     mgr = BackgroundShellManager(tmp_path)
     job = mgr.start('python -c "import time;time.sleep(30)"')
     time.sleep(0.6)  # 等进程起来
@@ -61,7 +61,7 @@ def test_cancel_terminates(tmp_path, qxt_home):
     assert done.status == "cancelled"
 
 
-def test_cancel_status_not_overwritten_by_run_thread(tmp_path, qxt_home):
+def test_cancel_status_not_overwritten_by_run_thread(tmp_path, tuan_home):
     """取消竞争回归: 工作线程在 cancel 之后不把 cancelled 覆盖成 done/failed。"""
     mgr = BackgroundShellManager(tmp_path)
     job = mgr.start('python -c "import time;time.sleep(30)"')
@@ -77,7 +77,7 @@ def test_cancel_status_not_overwritten_by_run_thread(tmp_path, qxt_home):
     assert job.returncode is not None or job.ended_at is not None
 
 
-def test_rehydrate_from_disk(tmp_path, qxt_home):
+def test_rehydrate_from_disk(tmp_path, tuan_home):
     """跨进程读: 新 manager 能重建磁盘上已结束的 job。"""
     mgr1 = BackgroundShellManager(tmp_path)
     job = mgr1.start('python -c "print(77,flush=True)"')
@@ -90,7 +90,7 @@ def test_rehydrate_from_disk(tmp_path, qxt_home):
     assert "77" in rebuilt.tail(5)
 
 
-def test_list_and_prune(tmp_path, qxt_home):
+def test_list_and_prune(tmp_path, tuan_home):
     mgr = BackgroundShellManager(tmp_path)
     j1 = mgr.start('python -c "print(1,flush=True)"')
     j2 = mgr.start('python -c "print(2,flush=True)"')
@@ -101,7 +101,7 @@ def test_list_and_prune(tmp_path, qxt_home):
     assert mgr.prune_finished() >= 2
 
 
-def test_unknown_status_and_timeout(tmp_path, qxt_home):
+def test_unknown_status_and_timeout(tmp_path, tuan_home):
     mgr = BackgroundShellManager(tmp_path)
     view = mgr.status_dict("nope")
     assert view["ok"] is False
@@ -111,10 +111,10 @@ def test_unknown_status_and_timeout(tmp_path, qxt_home):
 
 # ---------------------------------------------------------------- 工具层
 
-def test_run_shell_bg_dispatches(tmp_path, qxt_home):
+def test_run_shell_bg_dispatches(tmp_path, tuan_home):
     import re
-    from qingxiaotuan.tools.base import ToolContext
-    from qingxiaotuan.tools.shell import run_bg_shell, run_shell
+    from tuan_cli.tools.base import ToolContext
+    from tuan_cli.tools.shell import run_bg_shell, run_shell
     ctx = ToolContext(kernel=None, workspace=str(tmp_path))
     # shell 工具遇到 `!` 前缀应立即返回 job id (而非前台阻塞)
     out = run_shell(ctx, '! python -c "print(\'bg-ok\',flush=True)"')
@@ -127,9 +127,9 @@ def test_run_shell_bg_dispatches(tmp_path, qxt_home):
     assert "bg-ok" in logs
 
 
-def test_run_bg_shell_list_and_errors(tmp_path, qxt_home):
-    from qingxiaotuan.tools.base import ToolContext
-    from qingxiaotuan.tools.shell import run_bg_shell
+def test_run_bg_shell_list_and_errors(tmp_path, tuan_home):
+    from tuan_cli.tools.base import ToolContext
+    from tuan_cli.tools.shell import run_bg_shell
     ctx = ToolContext(kernel=None, workspace=str(tmp_path))
     view = run_bg_shell(ctx, action="list")
     assert "共" in view or "暂无" in view
@@ -143,7 +143,7 @@ def test_run_bg_shell_list_and_errors(tmp_path, qxt_home):
 
 # ------------------------------------------------- Round 2: 增量跟随/超时/安全
 
-def test_incremental_offset_tail(tmp_path, qxt_home):
+def test_incremental_offset_tail(tmp_path, tuan_home):
     mgr = BackgroundShellManager(tmp_path)
     job = mgr.start('python -c "import time;print(1,flush=True);time.sleep(0.5);print(2,flush=True);print(3,flush=True)"')
     # 等第一行产出
@@ -160,7 +160,7 @@ def test_incremental_offset_tail(tmp_path, qxt_home):
     assert "1" not in v2["text"]  # 只读新产出
 
 
-def test_timeout_auto_kills(tmp_path, qxt_home):
+def test_timeout_auto_kills(tmp_path, tuan_home):
     mgr = BackgroundShellManager(tmp_path)
     job = mgr.start('python -c "import time;time.sleep(30)"', timeout=0.8)
     done = mgr.wait(job.job_id, timeout=10)
@@ -168,9 +168,9 @@ def test_timeout_auto_kills(tmp_path, qxt_home):
     assert done.error and "超时" in done.error
 
 
-def test_bg_command_respects_redline(tmp_path, qxt_home):
-    from qingxiaotuan.tools.base import ToolContext
-    from qingxiaotuan.tools.shell import run_shell
+def test_bg_command_respects_redline(tmp_path, tuan_home):
+    from tuan_cli.tools.base import ToolContext
+    from tuan_cli.tools.shell import run_shell
     ctx = ToolContext(kernel=None, workspace=str(tmp_path))
     out = run_shell(ctx, "! rm -rf some/dir")  # 后台也不豁免红线
     assert "已拦截" in out
@@ -178,7 +178,7 @@ def test_bg_command_respects_redline(tmp_path, qxt_home):
 
 
 def test_bg_shell_cli_parser():
-    from qingxiaotuan.cli.parser import build_parser
+    from tuan_cli.cli.parser import build_parser
     p = build_parser()
     a = p.parse_args(["bg", "shell", "list"])
     assert a.func == "cmd_bg" and a.bg_cmd == "shell" and a.action == "list"
@@ -191,7 +191,7 @@ def test_bg_shell_cli_parser():
 
 # ---------------------------------------------- Round 3: 预览/并发限制/清理
 
-def test_status_has_preview(tmp_path, qxt_home):
+def test_status_has_preview(tmp_path, tuan_home):
     mgr = BackgroundShellManager(tmp_path)
     job = mgr.start('python -c "print(1,flush=True);print(2,flush=True)"')
     mgr.wait(job.job_id, timeout=10)
@@ -200,7 +200,7 @@ def test_status_has_preview(tmp_path, qxt_home):
     assert "1" in view["preview"] or "2" in view["preview"]
 
 
-def test_prune_disk_removes_finished(tmp_path, qxt_home):
+def test_prune_disk_removes_finished(tmp_path, tuan_home):
     mgr = BackgroundShellManager(tmp_path)
     job = mgr.start('python -c "print(9,flush=True)"')
     mgr.wait(job.job_id, timeout=10)
@@ -214,8 +214,8 @@ def test_prune_disk_removes_finished(tmp_path, qxt_home):
     assert mgr.get(j2.job_id).status in ("queued", "running")
 
 
-def test_max_running_limit(tmp_path, qxt_home, monkeypatch):
-    monkeypatch.setenv("QXT_BG_SHELL_MAX", "1")
+def test_max_running_limit(tmp_path, tuan_home, monkeypatch):
+    monkeypatch.setenv("TUAN_BG_SHELL_MAX", "1")
     mgr = BackgroundShellManager(tmp_path)
     j1 = mgr.start('python -c "import time;time.sleep(30)"')
     assert j1.job_id.startswith("shl-")

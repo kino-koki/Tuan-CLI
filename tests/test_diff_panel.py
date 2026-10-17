@@ -1,11 +1,11 @@
-"""/diff 与 REPL diff 美化测试 (qingxiaotuan/core/diff_view.py)。"""
+"""/diff 与 REPL diff 美化测试 (tuan_cli/core/diff_view.py)。"""
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qingxiaotuan.core import diff_view
+from tuan_cli.core import diff_view
 
 
 def test_colorize_additions_green():
@@ -42,7 +42,7 @@ def test_no_diff_message():
 
 def test_last_edit_diff_from_ledger(tmp_path):
     """账本里有最近一次 edit 事件 -> 返回 (路径, 着色 diff)。"""
-    ledger_dir = tmp_path / ".qxt"
+    ledger_dir = tmp_path / ".tuan"
     ledger_dir.mkdir()
     ledger = ledger_dir / "ledger"
     ledger.mkdir()

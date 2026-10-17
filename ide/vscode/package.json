@@ -1,9 +1,9 @@
 {
-  "name": "qingxiaotuan-vscode",
-  "displayName": "青小团 QXT Agent",
+  "name": "tuan_cli-vscode",
+  "displayName": "青小团 Tuan Agent",
   "description": "青小团 Agent CLI 的 VS Code 集成：侧边栏对话、流式输出、工具调用折叠面板、行内 diff 预览、权限确认。",
   "version": "0.3.0",
-  "publisher": "qingxiaotuan",
+  "publisher": "tuan_cli",
   "license": "MIT",
   "engines": {
     "vscode": "^1.80.0"
@@ -17,11 +17,10 @@
   "keywords": [
     "agent",
     "ai",
-    "qxt",
-    "qingxiaotuan",
+    "tuan",
+    "tuan_cli",
     "acp",
-    "copilot",
-    "claude"
+    "copilot"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -31,26 +30,26 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "qingxiaotuan-view",
+          "id": "tuan_cli-view",
           "title": "青小团 QXT",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "qingxiaotuan-view": [
+      "tuan_cli-view": [
         {
-          "id": "qingxiaotuan.sidebar",
+          "id": "tuan_cli.sidebar",
           "name": "Agent 对话",
           "type": "webview"
         },
         {
-          "id": "qingxiaotuan.tools",
+          "id": "tuan_cli.tools",
           "name": "工具调用",
           "type": "tree"
         },
         {
-          "id": "qingxiaotuan.mcpStatus",
+          "id": "tuan_cli.mcpStatus",
           "name": "MCP 服务器",
           "type": "tree"
         }
@@ -58,44 +57,44 @@
     },
     "commands": [
       {
-        "command": "qingxiaotuan.newChat",
+        "command": "tuan_cli.newChat",
         "title": "青小团: 新建对话",
         "icon": "$(add)"
       },
       {
-        "command": "qingxiaotuan.sendPrompt",
+        "command": "tuan_cli.sendPrompt",
         "title": "青小团: 发送提示词"
       },
       {
-        "command": "qingxiaotuan.cancel",
+        "command": "tuan_cli.cancel",
         "title": "青小团: 取消当前任务",
         "icon": "$(stop)"
       },
       {
-        "command": "qingxiaotuan.restart",
+        "command": "tuan_cli.restart",
         "title": "青小团: 重启 Agent 会话",
         "icon": "$(refresh)"
       },
       {
-        "command": "qingxiaotuan.focusInput",
+        "command": "tuan_cli.focusInput",
         "title": "青小团: 聚焦输入框"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "qingxiaotuan.newChat",
-          "when": "view == qingxiaotuan.sidebar",
+          "command": "tuan_cli.newChat",
+          "when": "view == tuan_cli.sidebar",
           "group": "navigation@1"
         },
         {
-          "command": "qingxiaotuan.cancel",
-          "when": "view == qingxiaotuan.sidebar && qingxiaotuan.busy",
+          "command": "tuan_cli.cancel",
+          "when": "view == tuan_cli.sidebar && tuan_cli.busy",
           "group": "navigation@2"
         },
         {
-          "command": "qingxiaotuan.restart",
-          "when": "view == qingxiaotuan.sidebar",
+          "command": "tuan_cli.restart",
+          "when": "view == tuan_cli.sidebar",
           "group": "navigation@3"
         }
       ]
@@ -103,28 +102,28 @@
     "configuration": {
       "title": "青小团 QXT",
       "properties": {
-        "qingxiaotuan.command": {
+        "tuan_cli.command": {
           "type": "string",
-          "default": "qxt",
-          "description": "启动 ACP 子进程的命令（默认 qxt；若 PATH 中没有，可填 python 或 uv run python）。"
+          "default": "tuan",
+          "description": "启动 ACP 子进程的命令（默认 tuan；若 PATH 中没有，可填 python 或 uv run python）。"
         },
-        "qingxiaotuan.args": {
+        "tuan_cli.args": {
           "type": "array",
           "items": { "type": "string" },
           "default": ["acp"],
           "description": "传给上述命令的参数，例如 [\"acp\"]。"
         },
-        "qingxiaotuan.cwd": {
+        "tuan_cli.cwd": {
           "type": "string",
           "default": "",
           "description": "Agent 工作目录；留空则使用当前 workspace 根目录。"
         },
-        "qingxiaotuan.enableInlineDiff": {
+        "tuan_cli.enableInlineDiff": {
           "type": "boolean",
           "default": true,
           "description": "在编辑器中为代码编辑类工具调用显示行内 diff 装饰。"
         },
-        "qingxiaotuan.approveAlways": {
+        "tuan_cli.approveAlways": {
           "type": "boolean",
           "default": false,
           "description": "实验性：自动批准所有工具调用（不推荐）。"

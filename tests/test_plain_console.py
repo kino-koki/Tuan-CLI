@@ -13,7 +13,7 @@ import contextlib
 from rich.markdown import Markdown
 from rich.table import Table
 
-from qingxiaotuan.ui.plain_console import (
+from tuan_cli.ui.plain_console import (
     PlainConsole,
     console,
     render_plain,

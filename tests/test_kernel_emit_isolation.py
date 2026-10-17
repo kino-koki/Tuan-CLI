@@ -4,7 +4,7 @@
 """
 import pytest
 
-from qingxiaotuan.core.kernel import Kernel
+from tuan_cli.core.kernel import Kernel
 
 
 def test_emit_isolates_handler_exception():

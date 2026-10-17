@@ -3,7 +3,7 @@
 覆盖: initialize 回执 + 初始化广播、prompt 流式 (agent_message_chunk / tool_call /
 tool_call_update)、权限握手 (permission_request -> update(approved/denied))、cancel。
 
-归属说明: 协议子集为青小团对 kimi-code ACP 理念的重新实现 (见 qingxiaotuan/acp/)。
+归属说明: 协议子集为青小团对 kimi-code ACP 理念的重新实现 (见 tuan_cli/acp/)。
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import json
 import threading
 import time
 
-from qingxiaotuan.acp.server import AcpServer
+from tuan_cli.acp.server import AcpServer
 
 
 class _CapturingWriter:

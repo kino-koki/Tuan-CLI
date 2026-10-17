@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.core.allowed_tools import AllowedTools, _scope_match
+from tuan_cli.core.allowed_tools import AllowedTools, _scope_match
 
 
 def test_parse_tools_and_scopes():

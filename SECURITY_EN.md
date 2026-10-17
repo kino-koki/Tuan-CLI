@@ -40,8 +40,8 @@
                (AEAD-logged, tamper-proof chain, real-time alerts)
 ```
 
-- Main pipeline: [`qingxiaotuan/sandbox/`](qingxiaotuan/sandbox/) (`SandboxManager` unified entry).
-- Tool execution gate: [`qingxiaotuan/core/tool_executor.py`](qingxiaotuan/core/tool_executor.py) (`_security_gate_check` + `_sandbox_gate_check`).
+- Main pipeline: [`tuan_cli/sandbox/`](tuan_cli/sandbox/) (`SandboxManager` unified entry).
+- Tool execution gate: [`tuan_cli/core/tool_executor.py`](tuan_cli/core/tool_executor.py) (`_security_gate_check` + `_sandbox_gate_check`).
 
 ---
 

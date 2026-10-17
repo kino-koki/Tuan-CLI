@@ -12,19 +12,19 @@ from __future__ import annotations
 import asyncio
 import json
 
-from qingxiaotuan.runtime.acp.server import (
+from tuan_cli.runtime.acp.server import (
     AUTH_REQUIRED,
     AcpServer,
     AUTH_TYPE_INTERNAL,
 )
-from qingxiaotuan.runtime.acp import (
+from tuan_cli.runtime.acp import (
     AUTHENTICATE,
     INITIALIZE,
     SESSION_NEW,
     SESSION_FORK,
     SESSION_PROMPT,
 )
-from qingxiaotuan.runtime.mcp.client_sse import SseMcpClient
+from tuan_cli.runtime.mcp.client_sse import SseMcpClient
 
 
 class _ListWriter:
@@ -151,7 +151,7 @@ def test_fork_falls_back_to_new_when_missing():
 # ----------------------------------------------------------------- loop 排序
 
 def _make_handler(handler_id, label):
-    from qingxiaotuan.runtime.agent.loop import LoopErrorHandler
+    from tuan_cli.runtime.agent.loop import LoopErrorHandler
 
     async def handle(ctx):
         ctx.retry_order.append(label)
@@ -169,7 +169,7 @@ def _make_handler(handler_id, label):
 
 
 def _build_loop():
-    from qingxiaotuan.runtime.agent.loop import AgentLoopService, ToolExecutor
+    from tuan_cli.runtime.agent.loop import AgentLoopService, ToolExecutor
     return AgentLoopService(
         provider=object(),
         system_prompt="",

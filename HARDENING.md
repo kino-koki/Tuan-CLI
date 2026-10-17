@@ -1,8 +1,8 @@
 # 青小团安全加固指南 (Hardening)
 
-本文档说明 `qingxiaotuan.harden` 安全加固工具集，以及如何在运行时真正启用它们。
+本文档说明 `tuan_cli.harden` 安全加固工具集，以及如何在运行时真正启用它们。
 
-加固模块把"代码层可对接、可验证、可审计"的安全能力做实。**它们不声称"国防级/军工认证"**——国密产品认证、HSM 实体、等保三级测评、供应链国产化是代码之外的合规流程，见 [README](README.md) 与 [QXT.md](QXT.md)。
+加固模块把"代码层可对接、可验证、可审计"的安全能力做实。**它们不声称"国防级/军工认证"**——国密产品认证、HSM 实体、等保三级测评、供应链国产化是代码之外的合规流程，见 [README](README.md) 与 [TUAN.md](TUAN.md)。
 
 ---
 
@@ -11,7 +11,7 @@
 安全加固**不是可选开关**——它已默认编入运行时主链路，无需任何配置即可生效：
 
 - **每个工具调用都过统一安全闸门** (`core/tool_executor.py`)：内置工具 / shell / 文件写 / MCP 工具统一经 `SecurityGate` 裁决（fail-closed），危险操作（致命红线、MCP 参数注入、文件写入危险内容等）默认拦截，不依赖任何显式开关。
-- **审计溯源默认开启**：所有工具调用的安全决策（允许/拒绝）写入 `security_auditor` 审计日志（AEAD 加密 + 防篡改链），落盘到 `~/.qingxiaotuan/security-audit.jsonl`（或 `audit/security_events.jsonl`），任何会话均可追溯。
+- **审计溯源默认开启**：所有工具调用的安全决策（允许/拒绝）写入 `security_auditor` 审计日志（AEAD 加密 + 防篡改链），落盘到 `~/.tuan/security-audit.jsonl`（或 `audit/security_events.jsonl`），任何会话均可追溯。
 - **网络出口与入站监听** 的门控在 shell 执行路径默认生效（见 §3）。
 - **MCP 工具** 的描述注入扫描与参数注入扫描默认生效。
 
@@ -21,7 +21,7 @@
 
 ## 1. 可插拔密码学后端 (CryptoProvider)
 
-模块：`qingxiaotuan/harden/crypto_provider.py`
+模块：`tuan_cli/harden/crypto_provider.py`
 
 让审计日志的加密算法在 **软件 / 国密 SM4 / 硬件 HSM** 之间可替换。所有后端 fail-closed：解密认证失败一律抛错，绝不静默返回篡改后的明文。
 
@@ -46,14 +46,14 @@ security:
 查看可用后端：
 
 ```bash
-qxt harden crypto-provider
+tuan harden crypto-provider
 ```
 
 ---
 
 ## 2. 审计日志标准化导出 (AuditExporter)
 
-模块：`qingxiaotuan/harden/audit_export.py`
+模块：`tuan_cli/harden/audit_export.py`
 
 订阅 `SecurityEventBus`，把安全事件导出为三种标准格式，便于对接 SIEM / 日志平台：
 
@@ -64,9 +64,9 @@ qxt harden crypto-provider
 
 ```bash
 # 重放已落盘的安全事件总线日志
-qxt harden audit-export --format cef,jsonl --from ~/.qingxiaotuan/security-audit.jsonl --out ./export
+tuan harden audit-export --format cef,jsonl --from ~/.tuan/security-audit.jsonl --out ./export
 # 可选推送到 SIEM
-qxt harden audit-export --format cef --push https://siem.example.com/ingest
+tuan harden audit-export --format cef --push https://siem.example.com/ingest
 ```
 
 `audit-export` 默认会按候选路径（`security-audit.jsonl` / `audit/security_events.jsonl`）自动寻找最近的落盘文件。
@@ -75,7 +75,7 @@ qxt harden audit-export --format cef --push https://siem.example.com/ingest
 
 ## 3. 网络出口加固 (EgressRestrictedNetworkGuard)
 
-模块：`qingxiaotuan/harden/network_policy.py` + 内核 `qingxiaotuan/core/network_guard.py`
+模块：`tuan_cli/harden/network_policy.py` + 内核 `tuan_cli/core/network_guard.py`
 
 在既有域名白/黑名单之上新增：
 
@@ -94,27 +94,27 @@ security:
 命令行单独评估一条命令：
 
 ```bash
-qxt harden network-check --command "curl http://192.168.1.1/secret" --egress-cidr 10.0.0.0/8
-qxt harden network-check --command "python -m http.server 8000" --one-way
+tuan harden network-check --command "curl http://192.168.1.1/secret" --egress-cidr 10.0.0.0/8
+tuan harden network-check --command "python -m http.server 8000" --one-way
 ```
 
 ---
 
 ## 4. SBOM 与可复现构建锁
 
-模块：`qingxiaotuan/harden/sbom.py` + `qingxiaotuan/harden/repro_build.py`
+模块：`tuan_cli/harden/sbom.py` + `tuan_cli/harden/repro_build.py`
 
 - **SBOM**：纯标准库生成 SPDX 2.3 软件物料清单（优先 `cyclonedx-python` 若存在），用于供应链可视化与验签基线。
 
   ```bash
-  qxt harden sbom --out sbom.spdx.json
+  tuan harden sbom --out sbom.spdx.json
   ```
 
 - **可复现构建锁**：基于 `pip freeze` 钉死全部依赖版本并带哈希，`verify_lock` 做依赖漂移检测（不联网）。
 
   ```bash
-  qxt harden repro-lock --out requirements.lock    # 生成
-  qxt harden repro-lock --verify --out requirements.lock   # 校验是否漂移
+  tuan harden repro-lock --out requirements.lock    # 生成
+  tuan harden repro-lock --verify --out requirements.lock   # 校验是否漂移
   ```
 
 ---
@@ -134,7 +134,7 @@ qxt harden network-check --command "python -m http.server 8000" --one-way
 ## 6. 一键查看加固态势
 
 ```bash
-qxt harden status
+tuan harden status
 ```
 
 输出当前加密后端、审计落盘状态、SBOM 可用性、网络策略配置。
@@ -160,4 +160,4 @@ security:
     block_on_injection: true
 ```
 
-> 这些项此前仅靠 `security_plugin` 内联默认值读取，现已集中到 `qingxiaotuan/config/defaults.py` 的顶层 `security` 块，便于发现与覆盖。
+> 这些项此前仅靠 `security_plugin` 内联默认值读取，现已集中到 `tuan_cli/config/defaults.py` 的顶层 `security` 块，便于发现与覆盖。

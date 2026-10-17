@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 
-from qingxiaotuan.core.goal_mode import (
+from tuan_cli.core.goal_mode import (
     DEFAULT_MAX_AUTO_ITERATIONS,
     DONE,
     FAILED,
@@ -60,7 +60,7 @@ def test_set_goal_creates_id_and_steps(tmp_path):
     assert state["steps"][0]["status"] == IN_PROGRESS
     assert state["steps"][1]["status"] == "pending"
     # 已落盘
-    assert os.path.isfile(tmp_path / ".qxt" / "goal.json")
+    assert os.path.isfile(tmp_path / ".tuan" / "goal.json")
 
 
 def test_set_goal_without_llm_falls_back_to_line_split(tmp_path):
@@ -130,7 +130,7 @@ def test_clear_removes_state_and_file(tmp_path):
 
     eng.clear()
     assert eng.status() is None
-    assert not os.path.isfile(tmp_path / ".qxt" / "goal.json")
+    assert not os.path.isfile(tmp_path / ".tuan" / "goal.json")
 
 
 def test_state_persists_and_recovers_in_new_engine(tmp_path):

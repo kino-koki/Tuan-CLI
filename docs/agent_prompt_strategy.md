@@ -13,7 +13,7 @@ Anthropic 授权, 直接粘贴进开源项目会带来版权与合规风险。
 本项目只做了两件事:
 1. 阅读公开的**二手分析文章** (dev.to / explainx / 腾讯云等对泄露物的结构化拆解);
 2. 提炼其中**可迁移的工程理念**, 用青小团自己的语言重写, 并落进
-   `qingxiaotuan/resources/SOUL.md` 与 `qingxiaotuan/core/prompts.py`。
+   `tuan_cli/resources/SOUL.md` 与 `tuan_cli/core/prompts.py`。
 
 `tests/test_prompt_discipline.py` 里有一条「防误贴」测试, 断言提示词不含
 `antml:cite`、`<memory_system>`、`critical_child_safety_instructions` 等
@@ -29,7 +29,7 @@ base policy + product info + user prefs + memory policy
   + tool schemas + retrieval policy + safety constraints + history
 ```
 
-青小团已实现同构的分层组装 (`qingxiaotuan/core/prompts.py`):
+青小团已实现同构的分层组装 (`tuan_cli/core/prompts.py`):
 
 | 层 | 函数 | 缓存边界 | 内容 |
 | --- | --- | --- | --- |
@@ -89,8 +89,8 @@ base policy + product info + user prefs + memory policy
 5. **不确定性分级**: 事实与推断分开表述; 没把握先查文档, 不拿猜测当结论。
 6. **审计友好**: 关键动作前给一行理由, 让 /audit /impact 可追溯。
 
-同步落点: `qingxiaotuan/core/prompts.py::_execution_protocol_block` (稳定段) +
-`qingxiaotuan/resources/SOUL.md`「执行协议」章节 + `_FALLBACK_SOUL` 兜底一句。
+同步落点: `tuan_cli/core/prompts.py::_execution_protocol_block` (稳定段) +
+`tuan_cli/resources/SOUL.md`「执行协议」章节 + `_FALLBACK_SOUL` 兜底一句。
 
 ## SKILL 注入完善 (Injection semantics)
 

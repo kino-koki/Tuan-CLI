@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.core.worktree_layer import WorktreeError, WorktreeLayer
+from tuan_cli.core.worktree_layer import WorktreeError, WorktreeLayer
 
 
 def _git(args, cwd):
@@ -18,8 +19,8 @@ def git_repo(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(["init"], repo)
-    _git(["config", "user.email", "test@qxt.dev"], repo)
-    _git(["config", "user.name", "qxt-test"], repo)
+    _git(["config", "user.email", "test@tuan.dev"], repo)
+    _git(["config", "user.name", "tuan-test"], repo)
     (repo / "main.py").write_text("print('hi')\n", encoding="utf-8")
     _git(["add", "-A"], repo)
     _git(["commit", "-m", "initial"], repo)
@@ -54,14 +55,14 @@ def test_create_list_remove(git_repo):
     info = layer.create("exp1")
     assert info.name == "exp1"
     assert info.path.endswith("exp1")
-    assert (git_repo / ".qxt" / "worktrees" / "exp1").is_dir()
+    assert (git_repo / ".tuan" / "worktrees" / "exp1").is_dir()
 
     items = layer.list()
     names = [it.name for it in items]
     assert "exp1" in names
 
     path = layer.remove("exp1")
-    assert not (git_repo / ".qxt" / "worktrees" / "exp1").exists()
+    assert not (git_repo / ".tuan" / "worktrees" / "exp1").exists()
     items = layer.list()
     assert "exp1" not in [it.name for it in items]
 
@@ -86,3 +87,40 @@ def test_invalid_name_rejected(git_repo):
     layer = WorktreeLayer(git_repo)
     with pytest.raises(WorktreeError):
         layer.create("../evil")
+
+
+def test_created_worktree_has_own_branch(git_repo):
+    """回归证据: create 必须产出真实独立分支的 git worktree (非模拟目录)。"""
+    layer = WorktreeLayer(git_repo)
+    info = layer.create("iso1")
+    # worktree 内 checkout 的分支应等于创建名
+    r = _git(["rev-parse", "--abbrev-ref", "HEAD"], Path(info.path))
+    assert r.stdout.strip() == "iso1"
+    # 主仓库分支列表里能看到新分支
+    branches = _git(["branch", "--list"], git_repo).stdout
+    assert "iso1" in branches
+
+
+def test_switch_returns_real_worktree_path(git_repo):
+    """switch 返回的路径必须真实存在于磁盘, 且是 git 识别的工作树。"""
+    layer = WorktreeLayer(git_repo)
+    layer.create("iso2")
+    p = layer.switch("iso2")
+    wt = Path(p)
+    assert wt.is_dir(), "switch 返回路径必须真实存在"
+    # git worktree list 应包含该路径
+    listed = [it.path for it in layer.list()]
+    assert any(Path(x).resolve() == wt.resolve() for x in listed)
+
+
+def test_worktree_isolation_between_main_and_exp(git_repo):
+    """主工作区与实验 worktree 相互隔离: 在实验目录写文件不影响主工作区。"""
+    layer = WorktreeLayer(git_repo)
+    info = layer.create("iso3")
+    wt = Path(info.path)
+    # 在实验 worktree 里新建文件
+    (wt / "exp_note.txt").write_text("experiment A\n", encoding="utf-8")
+    # 主工作区不应出现该文件
+    assert not (git_repo / "exp_note.txt").exists()
+    # 实验 worktree 里能看到主工作区原有的 main.py (共享同一仓库对象库)
+    assert (wt / "main.py").exists()

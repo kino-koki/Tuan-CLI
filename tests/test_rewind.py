@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from qingxiaotuan.core.rewind import (
+from tuan_cli.core.rewind import (
     RewindError,
     RewindManager,
     rewind_session_file,

@@ -1,7 +1,7 @@
 """上下文层测试: 分层上下文 + 事件溯源 + 分叉重放 + 技能蒸馏。"""
 import pytest
 
-from qingxiaotuan.arch.context import (
+from tuan_cli.arch.context import (
     ContextEventLog,
     SkillDistiller,
     TieredContext,

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.config.loader import Config
+from tuan_cli.config.loader import Config
 
 
 @pytest.fixture
 def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "qxt"
+    home = tmp_path / "tuan"
     home.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("QXT_HOME", str(home))
+    monkeypatch.setenv("TUAN_HOME", str(home))
     return Config()
 
 

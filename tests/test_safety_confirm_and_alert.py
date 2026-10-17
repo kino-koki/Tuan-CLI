@@ -1,20 +1,20 @@
 """多阶段确认 (真实令牌 + 屏幕位置变化) 与安全事件总线实时告警测试。
 
 对应实现:
-- qingxiaotuan/core/whitelist.py: MultiStageConfirm / interactive_confirm / make_confirm_token
-- qingxiaotuan/core/security_bus.py: SecurityEventBus.set_alerter + emit 实时告警
+- tuan_cli/core/whitelist.py: MultiStageConfirm / interactive_confirm / make_confirm_token
+- tuan_cli/core/security_bus.py: SecurityEventBus.set_alerter + emit 实时告警
 
 这些是把"不同位置多阶段确认""实时告警"从文档宣称落地为真实机制的回归测试。
 """
 import sys
 from unittest import mock
 
-from qingxiaotuan.core.whitelist import (
+from tuan_cli.core.whitelist import (
     MultiStageConfirm,
     make_confirm_token,
     interactive_confirm,
 )
-from qingxiaotuan.core.security_bus import (
+from tuan_cli.core.security_bus import (
     SecurityEvent,
     SecurityEventBus,
     SecurityEventType,

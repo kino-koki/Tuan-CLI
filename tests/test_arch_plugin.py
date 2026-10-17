@@ -2,8 +2,8 @@
 
 import pytest
 
-from qingxiaotuan.arch.plugin import ArchPlugin
-from qingxiaotuan.core.kernel import Kernel
+from tuan_cli.arch.plugin import ArchPlugin
+from tuan_cli.core.kernel import Kernel
 
 
 class TestArchPlugin:
@@ -22,7 +22,7 @@ class TestArchPlugin:
         """激活后应向 kernel 注册五层服务。"""
         kernel = Kernel()
         # ArchPlugin 需要 config 服务
-        from qingxiaotuan.config import Config
+        from tuan_cli.config import Config
         kernel.provide("config", Config())
 
         plugin = ArchPlugin()
@@ -40,7 +40,7 @@ class TestArchPlugin:
     def test_arch_service_has_all_layers(self):
         """arch 聚合服务应包含五层。"""
         kernel = Kernel()
-        from qingxiaotuan.config import Config
+        from tuan_cli.config import Config
         kernel.provide("config", Config())
 
         plugin = ArchPlugin()
@@ -57,7 +57,7 @@ class TestArchPlugin:
     def test_security_layer_has_classes(self):
         """安全层应包含 SyscallSandbox / ImmutableSecurityPolicy / CryptoVault。"""
         kernel = Kernel()
-        from qingxiaotuan.config import Config
+        from tuan_cli.config import Config
         kernel.provide("config", Config())
 
         plugin = ArchPlugin()
@@ -72,7 +72,7 @@ class TestArchPlugin:
     def test_execution_layer_has_classes(self):
         """执行层应包含 SemanticBus / ToolPipeline / EventSemantics。"""
         kernel = Kernel()
-        from qingxiaotuan.config import Config
+        from tuan_cli.config import Config
         kernel.provide("config", Config())
 
         plugin = ArchPlugin()

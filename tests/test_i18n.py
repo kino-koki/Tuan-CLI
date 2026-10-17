@@ -4,7 +4,7 @@ import importlib
 
 import pytest
 
-from qingxiaotuan.i18n import (
+from tuan_cli.i18n import (
     DEFAULT_LANGUAGE, LANGUAGES, available_languages, choose_language_interactive,
     ensure_language, get_language, normalize_language, set_language, t,
 )
@@ -21,7 +21,7 @@ def _restore_default_language():
 
 def _locale(code: str):
     return importlib.import_module(
-        "qingxiaotuan.i18n.locales." + code.replace("-", "_"))
+        "tuan_cli.i18n.locales." + code.replace("-", "_"))
 
 
 # ------------------------------------------------------------------ 语言清单
@@ -150,7 +150,7 @@ def test_ensure_language_noninteractive_never_blocks(monkeypatch):
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)
     called = []
-    monkeypatch.setattr("qingxiaotuan.i18n.choose_language_interactive",
+    monkeypatch.setattr("tuan_cli.i18n.choose_language_interactive",
                         lambda: called.append(1) or DEFAULT_LANGUAGE)
     cfg = _StubConfig("")
     assert ensure_language(cfg) == DEFAULT_LANGUAGE
@@ -177,7 +177,7 @@ def test_choose_language_eof_returns_default(monkeypatch):
 # ------------------------------------------------------------------ 系统提示注入
 
 def test_system_prompt_reply_language_rule(tmp_path):
-    from qingxiaotuan.core.prompts import build_system_prompt
+    from tuan_cli.core.prompts import build_system_prompt
 
     base = dict(home=tmp_path / "home", workspace=str(tmp_path))
     (tmp_path / "home").mkdir()

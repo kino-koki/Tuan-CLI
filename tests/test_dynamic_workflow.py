@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from qingxiaotuan.core.dynamic_workflow import DynamicWorkflowEngine
-from qingxiaotuan.core.subagents import SubResult, SubTask
+from tuan_cli.core.dynamic_workflow import DynamicWorkflowEngine
+from tuan_cli.core.subagents import SubResult, SubTask
 
 
 class FakePool:
@@ -356,7 +356,7 @@ def test_resume_ignores_terminated_workflows(tmp_path):
 
 def test_get_engine_auto_resumes_pending_workflow(tmp_path):
     """进程重启后 get_engine 自动拉起未结束的工作流 (无池时走到 failed 而非卡死)。"""
-    from qingxiaotuan.core.dynamic_workflow import get_engine, close_engines
+    from tuan_cli.core.dynamic_workflow import get_engine, close_engines
     close_engines()
     wf_id = "wf-auto"
     # 先写一个 running 工作流到磁盘 (无 pool → 引擎仍会自动续跑, 池初始化失败应落 failed)

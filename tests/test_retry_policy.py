@@ -5,8 +5,8 @@ from unittest import mock
 
 import pytest
 
-from qingxiaotuan.config import Config
-from qingxiaotuan.core.retry import (MAX_BACKOFF_WAIT, RetryPolicy,
+from tuan_cli.config import Config
+from tuan_cli.core.retry import (MAX_BACKOFF_WAIT, RetryPolicy,
                                      classify_error, retry_after_seconds)
 
 

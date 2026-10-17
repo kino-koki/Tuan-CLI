@@ -16,9 +16,9 @@ import json
 import threading
 import time
 
-from qingxiaotuan.acp.protocol import LineBuffer, parse_frame, read_messages_robust
-from qingxiaotuan.acp.server import AcpServer
-from qingxiaotuan.acp.version import CURRENT_VERSION, negotiate_version
+from tuan_cli.acp.protocol import LineBuffer, parse_frame, read_messages_robust
+from tuan_cli.acp.server import AcpServer
+from tuan_cli.acp.version import CURRENT_VERSION, negotiate_version
 
 
 # --------------------------------------------------------------------- 版本协商

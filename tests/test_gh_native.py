@@ -1,14 +1,14 @@
-"""qxt gh 原生绑定测试 —— 安全闸门拦截 + 受保护放行 + 退出码透传。"""
+"""tuan gh 原生绑定测试 —— 安全闸门拦截 + 受保护放行 + 退出码透传。"""
 
 from __future__ import annotations
 
 import io
 import sys
 
-from qingxiaotuan.gh.native import (
+from tuan_cli.gh.native import (
     NativeGH, GHNotInstalledError, EXIT_FORBIDDEN, classify,
 )
-from qingxiaotuan.gh.policy import SafetyPolicy
+from tuan_cli.gh.policy import SafetyPolicy
 
 
 class RecordingRunner:
@@ -71,7 +71,7 @@ def test_guarded_requires_confirm_noninteractive():
 
 
 def test_guarded_confirm_flag_allows_passthrough():
-    from qingxiaotuan.gh.native import EXIT_NEED_CONFIRM
+    from tuan_cli.gh.native import EXIT_NEED_CONFIRM
     runner = RecordingRunner(rc=0, out="merged")
     gh = NativeGH(runner=runner, gh_path="fake-gh", interactive=False)
     rc, out, _ = gh.run(["pr", "merge", "12", "--confirm"])
@@ -153,10 +153,10 @@ def test_audit_sink_events_for_blocked_cancelled_passed():
 
 
 def test_audit_sink_default_writes_to_disk(tmp_path, monkeypatch):
-    """默认 sink 把拦截记录写到 ~/.qingxiaotuan/logs/gh-audit.log。"""
-    import qingxiaotuan.config.loader as _loader
+    """默认 sink 把拦截记录写到 ~/.tuan/logs/gh-audit.log。"""
+    import tuan_cli.config.loader as _loader
     monkeypatch.setattr(_loader, "home_dir", lambda: tmp_path)
-    from qingxiaotuan.gh.native import audit_sink_default
+    from tuan_cli.gh.native import audit_sink_default
 
     audit_sink_default(["repo", "delete", "u/r"], "forbidden", "blocked", "x")
     log = tmp_path / "logs" / "gh-audit.log"
@@ -168,7 +168,7 @@ def test_audit_sink_default_writes_to_disk(tmp_path, monkeypatch):
 # ---- fx3: 认证引导 ----
 
 def test_auth_failure_detector():
-    from qingxiaotuan.cli.cmd_gh import _looks_like_auth_failure
+    from tuan_cli.cli.cmd_gh import _looks_like_auth_failure
     assert _looks_like_auth_failure("HTTP 401: Unauthorized")
     assert _looks_like_auth_failure("Please run 'gh auth login' to authenticate")
     assert _looks_like_auth_failure("not logged in")

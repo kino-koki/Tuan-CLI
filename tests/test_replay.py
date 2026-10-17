@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from qingxiaotuan.core.replay import (
+from tuan_cli.core.replay import (
     list_sessions, load_trajectory, reconstruct_messages, render_replay,
 )
-from qingxiaotuan.memory.sessions import SessionStore
+from tuan_cli.memory.sessions import SessionStore
 
 
 def _write_session(home: Path, sid: str):

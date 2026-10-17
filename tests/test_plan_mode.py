@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import json
 
-from qingxiaotuan.core.agent import Agent
-from qingxiaotuan.app import build_kernel
-from qingxiaotuan.models.base import ModelAdapter
-from qingxiaotuan.tools.base import ToolContext, Tool, ToolRegistry
-from qingxiaotuan.tools.shell import _is_readonly_command, run_shell
+from tuan_cli.core.agent import Agent
+from tuan_cli.app import build_kernel
+from tuan_cli.models.base import ModelAdapter
+from tuan_cli.tools.base import ToolContext, Tool, ToolRegistry
+from tuan_cli.tools.shell import _is_readonly_command, run_shell
 
 
 class _FakeKernel:
@@ -109,7 +109,7 @@ class MockModel(ModelAdapter):
         return None
 
 
-def _build_agent(tmp_path, qxt_home):
+def _build_agent(tmp_path, tuan_home):
     kernel = build_kernel()
     config = kernel.require("config")
     config.data["agent"]["skill_nudge_interval"] = 0
@@ -118,9 +118,9 @@ def _build_agent(tmp_path, qxt_home):
     return Agent(kernel=kernel, config=config, workspace=str(tmp_path), confirm=lambda _p: True)
 
 
-def test_slash_plan_toggles(tmp_path, qxt_home, capsys):
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+def test_slash_plan_toggles(tmp_path, tuan_home, capsys):
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
 
     assert agent.plan_mode is False
@@ -137,9 +137,9 @@ def test_slash_plan_toggles(tmp_path, qxt_home, capsys):
     assert "Plan 模式已关闭" in out
 
 
-def test_slash_plan_explicit_on_off(tmp_path, qxt_home, capsys):
-    from qingxiaotuan.cli.commands import _handle_slash
-    agent = _build_agent(tmp_path, qxt_home)
+def test_slash_plan_explicit_on_off(tmp_path, tuan_home, capsys):
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
     config = agent.config
 
     assert _handle_slash("/plan on", agent, config, str(tmp_path)) is True
@@ -150,8 +150,8 @@ def test_slash_plan_explicit_on_off(tmp_path, qxt_home, capsys):
 
 # ----------------------------------------------------------------- Agent 同步
 
-def test_agent_plan_mode_syncs_to_ctx(tmp_path, qxt_home):
-    agent = _build_agent(tmp_path, qxt_home)
+def test_agent_plan_mode_syncs_to_ctx(tmp_path, tuan_home):
+    agent = _build_agent(tmp_path, tuan_home)
     assert agent.ctx.plan_mode is False
     agent.plan_mode = True
     agent.ctx.plan_mode = agent.plan_mode

@@ -1,25 +1,25 @@
 """四层边界「默认自动生效」测试。
 
 覆盖改造目标:
-- Project 层: 会话启动后 ``.qxt/`` 自动存在 (ensure_project_context);
+- Project 层: 会话启动后 ``.tuan/`` 自动存在 (ensure_project_context);
 - Chat 层: 超阈值时自动执行交接 (auto_handoff_if_needed), 而非仅提示;
 - Subagent 层: should_isolate_task 启发式;
 - Worktree 层: detect_parallel_intent 启发式 + 非 git 仓库优雅跳过;
 - bare 模式 / 配置开关 的短路行为。
 
-全部使用临时目录 (tmp_path / qxt_home), 不污染真实工作区。
+全部使用临时目录 (tmp_path / tuan_home), 不污染真实工作区。
 """
 
 from __future__ import annotations
 
-from qingxiaotuan.core.boundary_auto import (
+from tuan_cli.core.boundary_auto import (
     auto_create_parallel_worktree,
     detect_parallel_intent,
     ensure_project_context,
     should_isolate_task,
     try_run_isolated,
 )
-from qingxiaotuan.core.chat_handoff import ChatHandoff
+from tuan_cli.core.chat_handoff import ChatHandoff
 
 
 class Cfg:
@@ -34,18 +34,18 @@ class Cfg:
 
 # ------------------------------------------------------------ 1. Project 层自动初始化
 
-def test_ensure_project_context_creates_qxt(tmp_path, qxt_home):
-    """新会话启动后, .qxt/ 应自动存在 (无需手动 qxt project init)。"""
+def test_ensure_project_context_creates_tuan(tmp_path, tuan_home):
+    """新会话启动后, .tuan/ 应自动存在 (无需手动 tuan project init)。"""
     ws = tmp_path / "proj"
     ws.mkdir()
-    assert not (ws / ".qxt").exists()
+    assert not (ws / ".tuan").exists()
     info = ensure_project_context(ws)
     assert info.initialized is True
     assert info.project_id
-    assert (ws / ".qxt" / "project.json").exists()
+    assert (ws / ".tuan" / "project.json").exists()
 
 
-def test_ensure_project_context_idempotent(tmp_path, qxt_home):
+def test_ensure_project_context_idempotent(tmp_path, tuan_home):
     """重复启动会话不重复初始化 (project_id 不变)。"""
     ws = tmp_path / "proj"
     ws.mkdir()
@@ -54,13 +54,13 @@ def test_ensure_project_context_idempotent(tmp_path, qxt_home):
     assert i1.project_id == i2.project_id
 
 
-def test_ensure_project_context_respects_off_switch(tmp_path, qxt_home):
+def test_ensure_project_context_respects_off_switch(tmp_path, tuan_home):
     """project.auto_init=false 时不创建目录。"""
     ws = tmp_path / "plain"
     ws.mkdir()
     info = ensure_project_context(ws, config=Cfg(**{"project.auto_init": False}))
     assert info.initialized is False
-    assert not (ws / ".qxt").exists()
+    assert not (ws / ".tuan").exists()
 
 
 # ------------------------------------------------------------ 2. Chat 层: 超阈值自动交接

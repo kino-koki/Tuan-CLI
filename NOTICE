@@ -2,31 +2,117 @@
 Copyright (c) 2026 kino-koki
 (Lu'An Tuan-CLI-Technology Co.,LTD)
 
-This product is developed independently by Lu'An Tuan-CLI-Technology Co.,LTD.
-It contains visual assets derived from a third-party project, attributed below
-in accordance with the respective license.
+This product's codebase is written in Python and is the independent work of
+Lu'An Tuan-CLI-Technology Co.,LTD.  It reuses design patterns, protocol
+conventions, and selected visual assets from several upstream open-source
+projects, all acknowledged below in accordance with their respective licenses.
+
+The following upstream projects contributed to the design and implementation
+of specific subsystems.  Code in each subsystem is independently written in
+Python, aligned to the upstream's public interfaces or protocols where noted.
 
 -------------------------------------------------------------------------------
-THIRD-PARTY COMPONENTS
+THIRD-PARTY ATTRIBUTIONS
 -------------------------------------------------------------------------------
 
-1) TUI visual tokens (colors / symbols / spinner / diff palette)
-   Location: qingxiaotuan/ui/theme.py
+1) TUI visual tokens (colors / symbols / spinner / diff palette / logo)
+   Location: tuan_cli/ui/theme.py, tuan_cli/tui/tui.py
    Origin:   design tokens taken from the `src/tui` of Kimi Code
    Upstream: https://github.com/MoonshotAI/kimi-code
    Holder:   Moonshot AI
    License:  MIT (text reproduced below)
 
-   Note: only the visual tokens are reused; all functional logic in the TUI
-   (command completion, audit panel, status bar, mascot state machine) is
-   implemented by the Tuan-CLI project.
+   Note: the visual tokens (colors, symbols, spinner frames, diff palette,
+   ASCII logo) are reused as-is under the MIT license above.  All functional
+   logic in the TUI (command completion, audit panel, status bar, mascot
+   state machine, trust-confirmation flow) is independently implemented by
+   the Tuan-CLI project.
 
-2) Runtime third-party libraries (installed via pip, not vendored):
-   pyyaml, rich, prompt_toolkit, httpx — each under its own license
-   (see pyproject.toml for version constraints).
+2) Protocol layer (ports/protocol/)
+   Location: tuan_cli/ports/protocol/ (13 modules)
+   Origin:   ported from the upstream TypeScript reference implementation
+   Upstream: https://github.com/MoonshotAI/kimi-code
+   License:  MIT
+
+   Note: the protocol types, envelope, error-codes, events, and pagination
+   logic are independently written in Python, aligned to the upstream's
+   public JSON-RPC / NDJSON message formats for interoperability.
+
+3) OAuth / identity layer (ports/oauth/)
+   Location: tuan_cli/ports/oauth/ (9 modules)
+   Origin:   ported from the upstream TypeScript reference implementation
+   Upstream: https://github.com/MoonshotAI/kimi-code
+   License:  MIT
+
+   Note: the device-identity, token-state, error-classification, and
+   custom-registry logic are independently written in Python.  The platform
+   identifier (`kimi_code_cli`) and User-Agent format follow the upstream
+   convention for OAuth interoperability with Moonshot AI endpoints; these
+   can be overridden via `KIMI_CODE_CUSTOM_HEADERS` or by supplying a
+   different `KimiHostIdentity`.
+
+4) Migration-legacy layer (ports/migration_legacy/)
+   Location: tuan_cli/ports/migration_legacy/ (16 modules)
+   Origin:   ported from the upstream TypeScript reference implementation
+   Upstream: https://github.com/MoonshotAI/kimi-code
+   License:  MIT
+
+   Note: the parsers for legacy kimi-cli persisted state (sessions,
+   metadata, classification) are independently written in Python, aligned
+   to the upstream's on-disk JSON format for backward-compatible migration.
+
+5) Transcript / media-ref layer (ports/transcript/)
+   Location: tuan_cli/ports/transcript/
+   Origin:   ported from the upstream TypeScript reference implementation
+   Upstream: https://github.com/MoonshotAI/kimi-code
+   License:  MIT
+
+   Note: the `kimi-file://` URI scheme and media-path-tag parsing are
+   retained for interoperability with upstream-produced transcripts.  The
+   implementation is independently written in Python.
+
+6) Telemetry layer (ports/telemetry/)
+   Location: tuan_cli/ports/telemetry/
+   Origin:   ported from the upstream TypeScript reference implementation
+   Upstream: https://github.com/MoonshotAI/kimi-code
+   License:  MIT
+
+   Note: the event serialization, enrichment, and transport-abstraction
+   logic are independently written in Python.  The `TELEMETRY_ENDPOINT`
+   constant mirrors the upstream's default endpoint for compatibility;
+   actual telemetry delivery uses the OpenTelemetry OTLP path (see
+   `ports/telemetry/otel.py`) and defaults to `localhost:4318`.
+
+7) Kaos / environment layer (ports/kaos/)
+   Location: tuan_cli/ports/kaos/
+   Origin:   ported from the upstream TypeScript reference implementation
+   Upstream: https://github.com/MoonshotAI/kimi-code
+   License:  MIT
+
+   Note: the agent-operating-system interface (login, paths, environment
+   detection) is independently written in Python, aligned to the upstream's
+   public interface for interoperability.
+
+8) Ecosystem interop defaults (config/defaults.py)
+   Location: tuan_cli/config/defaults.py (ecosystem section)
+   Origin:   Claude Code and Hermes Agent project structures
+   Upstream: https://github.com/anthropics/claude-code, https://github.com/nousresearch/hermes-agent
+   License:  respective licenses
+
+   Note: by default, Tuan-CLI scans `~/.claude/` and `~/.hermes/` for
+   skills, named agents, and memories when `ecosystem.claude_code.enabled`
+   or `ecosystem.hermes.enabled` is `True`.  Users can disable these in
+   `~/.tuan/config.yaml` to prevent any access to third-party CLI data.
 
 -------------------------------------------------------------------------------
-MIT LICENSE (as required to be retained for component 1)
+RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
+-------------------------------------------------------------------------------
+
+pyyaml, rich, prompt_toolkit, httpx, openai — each under its own license
+(see pyproject.toml for version constraints).
+
+-------------------------------------------------------------------------------
+MIT LICENSE (as required to be retained for components 1-7)
 -------------------------------------------------------------------------------
 
 MIT License

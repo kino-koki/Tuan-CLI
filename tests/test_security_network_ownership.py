@@ -17,12 +17,12 @@ from __future__ import annotations
 
 import pytest
 
-from qingxiaotuan.core.network_guard import (
+from tuan_cli.core.network_guard import (
     NetworkGuard, NetworkDecision, get_network_guard, set_network_guard,
 )
-from qingxiaotuan.sandbox.verdict import Action, Payload, SEV
-from qingxiaotuan.sandbox.filters import IntentFilter, TrustFilter, ResourceFilter
-from qingxiaotuan.sandbox.manager import SandboxManager
+from tuan_cli.sandbox.verdict import Action, Payload, SEV
+from tuan_cli.sandbox.filters import IntentFilter, TrustFilter, ResourceFilter
+from tuan_cli.sandbox.manager import SandboxManager
 
 
 @pytest.fixture(autouse=True)

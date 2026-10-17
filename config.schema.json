@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://qingxiaotuan.dev/schemas/config.schema.json",
-  "title": "青小团 (qxt) 用户配置",
-  "description": "qxt 用户配置 schema (对应 ~/.qingxiaotuan/config.yaml)。由 scripts/gen_config_schema.py 从 DEFAULT_CONFIG 自动生成, 覆盖全部内置配置项; 编辑器据此自动补全键路径并校验类型。",
+  "$id": "https://tuan_cli.dev/schemas/config.schema.json",
+  "title": "青小团 (tuan) 用户配置",
+  "description": "tuan 用户配置 schema (对应 ~/.tuan_cli/config.yaml)。由 scripts/gen_config_schema.py 从 DEFAULT_CONFIG 自动生成, 覆盖全部内置配置项; 编辑器据此自动补全键路径并校验类型。",
   "type": "object",
   "properties": {
     "model": {
@@ -862,8 +862,8 @@
         },
         "snapshot_dir": {
           "type": "string",
-          "default": ".qxt/ledger",
-          "description": "配置项 ledger.snapshot_dir（默认值: '.qxt/ledger'）"
+          "default": ".tuan/ledger",
+          "description": "配置项 ledger.snapshot_dir（默认值: '.tuan/ledger'）"
         },
         "auto_rollback_on_error": {
           "type": "boolean",

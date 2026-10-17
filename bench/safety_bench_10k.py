@@ -32,8 +32,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "bench"))
 
-from qingxiaotuan.core.network_guard import NetworkGuard
-from qingxiaotuan.ext.safety_engine import SafetyEngine, is_hard_redline, is_redline
+from tuan_cli.core.network_guard import NetworkGuard
+from tuan_cli.ext.safety_engine import SafetyEngine, is_hard_redline, is_redline
 
 from bypass_matrix import CASES, evaluate, model_review, HAVE_CLS, CLASSIFIER
 from attack_gen import (

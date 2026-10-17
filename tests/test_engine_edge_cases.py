@@ -9,9 +9,9 @@
 
 import json
 
-from qingxiaotuan.ext.diff_engine import DiffEngine
-from qingxiaotuan.ext.rules_engine import RuleEngine
-from qingxiaotuan.ext.notify_engine import NotifyEngine
+from tuan_cli.ext.diff_engine import DiffEngine
+from tuan_cli.ext.rules_engine import RuleEngine
+from tuan_cli.ext.notify_engine import NotifyEngine
 
 
 # ================================================================ diff_engine 边界
