@@ -283,6 +283,7 @@ class QxtTUI:
         # 由 prompt_trust() 挂起, _resolve_trust() 消费后经 on_confirm 回调写回
         # workspace_trust.json; 确认前 set_ready 不被调用 (由 cmd_chat._boot 完成)。
         self._trust_pending: Optional[Dict[str, Any]] = None
+        self._trust_index: int = 0  # 信任确认 radiolist 高亮项: 0=信任 / 1=不信任
         # 命令执行确认态 (Kimi 风格卡片): 由 confirm() 挂起 —— 工具线程阻塞在
         # threading.Event 上, 卡片渲染在对话区底部, 用户在输入框敲 y/n 后由
         # _resolve_confirm() 唤醒。取代旧的 run_in_terminal(print+input) 方案:
@@ -509,12 +510,20 @@ class QxtTUI:
 
         @kb.add("down")
         def _(event):
+            if self._trust_pending:
+                self._trust_index = 1
+                event.app.invalidate()
+                return
             b = event.current_buffer
             if b.complete_state:
                 b.complete_next()
 
         @kb.add("up")
         def _(event):
+            if self._trust_pending:
+                self._trust_index = 0
+                event.app.invalidate()
+                return
             b = event.current_buffer
             if b.complete_state:
                 b.complete_previous()
@@ -678,12 +687,17 @@ class QxtTUI:
         #  表现即"TUI 没有输入框 / 输入没反应"。)
         if self._trust_pending:
             _ws = (self._trust_pending or {}).get("workspace", "")
-            if self._resolve_trust(text):
+            # ① 用户直接输入了明确的 y/n/1/2/是/否/信任/只读 → 按文本解析
+            if text and self._resolve_trust(text):
                 self._input.buffer.reset()
                 event.app.invalidate()
                 return
-            self._trust_pending = None
-            self.append_log(f"{SUCCESS_MARK} {t('tui.trust_ok')} {_ws}", cls="class:success")
+            # ② 否则按当前 ↑↓ 高亮项确认 (默认高亮=信任, 空回车也能进工作区);
+            #    既修复"对话框没有选项"的渲染缺失, 也修复"不按 y/n 就永远卡在确认态"。
+            self._resolve_trust("y" if self._trust_index == 0 else "n")
+            self._input.buffer.reset()
+            event.app.invalidate()
+            return
         # 命令确认态: 同样只接受 y/n (或确认码)。必须排在 _busy 判断之前 ——
         # 确认期间 _busy=True (防止用户又提交一轮对话), 但输入框此刻正是答复通道。
         if self._confirm_pending:
@@ -1650,6 +1664,7 @@ class QxtTUI:
             "project_name": project_name,
             "on_confirm": on_confirm,
         }
+        self._trust_index = 0  # 重置高亮到默认项 (信任)
         self._booting = False       # 退出加载态, 显示确认卡片 + 输入框
         self._boot_error = None
         if self._app and self._app.is_running:
@@ -1720,6 +1735,19 @@ class QxtTUI:
             out.append(("", "\n"))
         out += row([("class:success", t("tui.trust_opt"))])
         out.append(("", "\n"))
+        # 选项列表 (↑↓ 选择 · Enter 确认; 也可直接输入 1/2 或 y/n):
+        # 此前这两行选项被遗漏渲染, 导致对话框"有标题没选项、完全无法进入工作区"。
+        for _i, (_label, _desc) in enumerate((
+            (t("tui.trust_opt_trust"), t("tui.trust_opt_trust_desc")),
+            (t("tui.trust_opt_distrust"), t("tui.trust_opt_distrust_desc")),
+        )):
+            _sel = self._trust_index == _i
+            _mark = "▶ " if _sel else "  "
+            out += row([("class:accent" if _sel else "class:textdim",
+                         f"{_mark}{_i + 1}) {_label}")])
+            out.append(("", "\n"))
+            out += row([("class:textdim", "   " + clip_dw(_desc, max(1, inner - 4)))])
+            out.append(("", "\n"))
         out.append(("class:primary", "╰" + "─" * (width - 2) + "╯\n"))
         out.append(("", "\n"))
         out.append(("class:textdim", "  " + clip_dw(t("tui.trust_prompt"), max(1, inner - 2)) + "\n"))
