@@ -25,7 +25,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
 <title>TUAN · Web Workbench</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231783FF'/%3E%3Ctext x='32' y='44' font-family='Arial,sans-serif' font-size='30' font-weight='bold' fill='%23FFFFFF' text-anchor='middle'%3ET%3C/text%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23C8664A'/%3E%3Ctext x='32' y='44' font-family='Arial,sans-serif' font-size='30' font-weight='bold' fill='%23FFFFFF' text-anchor='middle'%3ET%3C/text%3E%3C/svg%3E">
 <script>
 /* 预涂 color-scheme, 避免首屏闪烁; 顺带从旧键 kimi-web.color-scheme 迁移一次 */
 (function(){try{
@@ -452,24 +452,24 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
           padding:2px var(--space-2);cursor:pointer;font-family:var(--font-ui);transition:all var(--duration-base) var(--ease-out)}
   .code-block>.code-head .code-copy:hover{color:var(--color-accent);border-color:var(--color-accent)}
   .code-block>.md pre{border-radius:0 0 var(--radius-md) var(--radius-md);margin:0}
-  /* 语法高亮 token (GitHub Dark 风格, 浅色主题用 CSS 变量覆盖) */
-  .tk-c{color:var(--tk-c,#8b949e);font-style:italic}
-  .tk-s{color:var(--tk-s,#a5d6ff)}
-  .tk-n{color:var(--tk-n,#79c0ff)}
-  .tk-k{color:var(--tk-k,#ff7b72)}
-  .tk-b{color:var(--tk-b,#ffa657)}
-  .tk-f{color:var(--tk-f,#d2a8ff)}
-  .tk-o{color:var(--tk-o,#ff7b72)}
+  /* 语法高亮 token (Claude Code 暖色调; 浅色主题用下方规则覆盖) */
+  .tk-c{color:#8c8475;font-style:italic}
+  .tk-s{color:#7fbf95}
+  .tk-n{color:#e58a5f}
+  .tk-k{color:#c89fe0}
+  .tk-b{color:#e0b15e}
+  .tk-f{color:#7fa8e0}
+  .tk-o{color:#e58a5f}
   :root[data-color-scheme="light"] .md pre{background:var(--color-code-bg,#f6f8fa)}
   :root[data-color-scheme="light"] .code-block>.code-head{background:var(--color-code-bg,#f6f8fa);border-color:var(--color-line)}
   :root[data-color-scheme="light"] .md pre code{color:var(--color-code,#24292f)}
-  :root[data-color-scheme="light"] .tk-c{color:#6e7781}
-  :root[data-color-scheme="light"] .tk-s{color:#0a3069}
-  :root[data-color-scheme="light"] .tk-n{color:#0550ae}
-  :root[data-color-scheme="light"] .tk-k{color:#cf222e}
-  :root[data-color-scheme="light"] .tk-b{color:#953800}
-  :root[data-color-scheme="light"] .tk-f{color:#8250df}
-  :root[data-color-scheme="light"] .tk-o{color:#cf222e}
+  :root[data-color-scheme="light"] .tk-c{color:#998f7e}
+  :root[data-color-scheme="light"] .tk-s{color:#3f7d5a}
+  :root[data-color-scheme="light"] .tk-n{color:#c8664a}
+  :root[data-color-scheme="light"] .tk-k{color:#9b5fb0}
+  :root[data-color-scheme="light"] .tk-b{color:#b9852e}
+  :root[data-color-scheme="light"] .tk-f{color:#3563a8}
+  :root[data-color-scheme="light"] .tk-o{color:#c8664a}
 
   /* ===== 可交互 chip (模式 / 推理投入) ===== */
   #model-row .chip.btn{cursor:pointer;transition:all var(--duration-base) var(--ease-out)}
@@ -704,9 +704,9 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       var w=welcomeEl.clientWidth, h=welcomeEl.clientHeight;
       ctx.clearRect(0,0,w,h);
       var dark=document.documentElement.getAttribute('data-color-scheme')==='dark';
-      /* 官方 token: 浅色 text rgba(0,0,0,.9) + accent #1783ff ; 深色 text rgba(255,255,255,.84) + accent #1a88ff */
+      /* 主题 token: 浅色 text rgba(0,0,0,.9) + accent #c8664a ; 深色 text rgba(255,255,255,.84) + accent #e58a5f */
       var base=dark?'255,255,255':'0,0,0';
-      var brand=dark?'26,136,255':'23,131,255';
+      var brand=dark?'229,138,95':'200,102,74';
       var t=performance.now()/1000;
       var mx=particle.mouse.x, my=particle.mouse.y;
       var parts=particle.parts;
