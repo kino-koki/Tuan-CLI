@@ -1,6 +1,7 @@
 """UI - 青小团终端交互界面 (圆角蓝框 + 吉祥物)。"""
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 from pathlib import Path
 import logging
@@ -198,7 +199,7 @@ class UI:
 
     def banner(self, config=None, workspace: str = "", model_label: str = "", profile: str = "",
                mode: str = "", effort: str = "") -> None:
-        self._cwd = workspace or os.getcwd()
+        self._cwd = workspace or default_workspace()
         self._branch = self._detect_branch()
         self._model = model_label or self._model
         # 从 config 获取额外信息

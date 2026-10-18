@@ -108,3 +108,41 @@ def enable_virtual_terminal() -> bool:
         _initialized = True
         log.debug("Windows VT enabled: stdout=%s", ok_stdout)
         return True
+
+
+def set_terminal_title(title: str) -> bool:
+    """设置终端窗口/标签标题 (Windows Terminal 标签页 / ConHost 标题栏)。
+
+    TUI 启动时调用, 把默认的 "Windows PowerShell"/"命令提示符" 标签改成
+    产品名 (如 "Tuan-CLI"), 与 Claude Code 等成熟 TUI 的品牌行为一致。
+
+    双通道 best-effort:
+    1. ANSI OSC 0 转义 (``\\x1b]0;<title>\\x07``, icon+title) —— Windows
+       Terminal 与绝大多数现代终端, 需 VT 已启用 (enable_virtual_terminal);
+    2. ctypes ``SetConsoleTitleW`` —— 未启用 VT 的 legacy ConHost 兜底。
+
+    非 TTY (重定向/测试/CI) 不发 OSC; 任一步失败仅记 debug, 绝不影响启动。
+    """
+    if not title:
+        return False
+    ok = False
+    # 1. ANSI OSC (仅 TTY: 避免把转义序列写进重定向的文件/管道)
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if not getattr(stream, "isatty", lambda: False)():
+                continue
+            stream.write(f"\x1b]0;{title}\x07")
+            stream.flush()
+            ok = True
+        except Exception as exc:  # noqa: BLE001 - 流不可写/已关闭时跳过
+            log.debug("OSC title write failed: %s", exc)
+    # 2. ConHost 原生标题 API (Windows; 无控制台时静默失败)
+    if _HAVE_CTYPES and sys.platform == "win32":
+        try:
+            ctypes.windll.kernel32.SetConsoleTitleW(str(title))
+            ok = True
+        except Exception as exc:  # pragma: no cover - 无控制台句柄的极边缘环境
+            log.debug("SetConsoleTitleW failed: %s", exc)
+    if ok:
+        log.debug("terminal title set: %s", title)
+    return ok
