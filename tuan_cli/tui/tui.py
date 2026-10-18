@@ -91,6 +91,10 @@ try:
 except Exception:  # noqa: BLE001
     VERSION = "v0.3.1"
 
+#: TUI 启动时写入的终端窗口/标签标题 (Windows Terminal 标签页 / ConHost 标题栏)。
+#: 环境变量 TUAN_TERMINAL_TITLE 可覆盖 (留空则不修改标题)。
+TERMINAL_TITLE = os.environ.get("TUAN_TERMINAL_TITLE", "").strip() or "Tuan-CLI"
+
 # 加载屏转圈帧
 _SPLASH_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -102,6 +106,9 @@ _MOON_INTERVAL = 0.09
 _MAX_LOG_LEN = 2000      # 单条日志/审计行最大字符, 超出截断并标注
 _MAX_STREAM_BUF = 20000  # 流式缓冲上限, 超出将前段固化为日志
 _MAX_REASON_LEN = 30000  # 思考全文上限, 超出截断并标注
+
+# ---- "/" 命令面板 (Claude Code 同款 slash menu) ----
+_SLASH_MAX_VISIBLE = 9   # 面板最大可见行数 (超出滚动, 与 Claude Code 观感一致)
 
 # 吉祥物字符标
 KIMI_LOGO = ['▐█▛█▛█▌', '▐█████▌']
@@ -125,6 +132,12 @@ _STYLE_DICT = {
     "roleuser": _ROLEUSER,    # 用户消息: 金
     "border": _BORDER,        # 输入框边框: 灰
     "shellmode": _SHELL,
+    # ---- "/" 命令面板 (Claude Code 同款: 高亮选择 + 描述) ----
+    "slashbg": "bg:#16202C",          # 面板背景 (深色终端下与对话区区分)
+    "slashsel": "bg:#26456B #FFFFFF bold",  # 选中行: 亮底加粗反显
+    "slashcmd": _PRIMARY,             # 命令名 (品牌蓝)
+    "slashdesc": _DIM,                # 命令描述 (弱化)
+    "slashhint": _MUTED,              # 面板底部操作提示
 }
 STYLE = Style.from_dict(_STYLE_DICT) if _HAS_PT else None
 
@@ -251,6 +264,15 @@ class QxtTUI:
         # Kimi 同款 `+/命令` 补全词表: 传入则启用补全, 缺省 (兼容旧调用) 则不启用。
         self._commands: List[str] = list(commands or [])
         self._command_meta: Dict[str, str] = dict(command_meta or {})
+        # "/" 命令面板状态 (Claude Code 同款: 输入 / 自动高亮列出全部命令,
+        # ↑↓ 选择, Enter/Tab 确认填入, Esc 关闭)。取代 prompt_toolkit 自带
+        # 补全菜单 —— 后者在输入框位于屏幕底部时下拉菜单无处渲染 (被底栏/
+        # 屏幕边缘裁掉), 且无法做整行高亮。见 _on_input_changed / _render_slash_menu。
+        self._slash_open = False            # 面板是否展开
+        self._slash_items: List[str] = []   # 当前过滤后的命令列表
+        self._slash_index = 0               # 高亮项索引
+        self._slash_scroll = 0              # 滚动窗口起始索引
+        self._slash_accepting = False       # 程序化写入文本时抑制联动 (防递归)
 
         # 状态
         self._events: List[Any] = []
@@ -337,10 +359,17 @@ class QxtTUI:
             scrollbar=False,
             height=1,
             history=InMemoryHistory(),
-            # Kimi 同款命令补全: 输入 `/` 或 `+/` 时弹命令菜单 (仅当传入 commands)。
-            completer=_SlashCompleter(self._commands, self._command_meta) if self._commands else None,
-            complete_while_typing=bool(self._commands),
+            # "/" 命令面板由 QxtTUI 自绘 (见 _render_slash_menu): 输入 "/" 即弹出,
+            # ↑↓ 选择 · Enter/Tab 确认 · Esc 关闭。不走 prompt_toolkit 补全器 ——
+            # 其下拉菜单位于输入框下方, 而本布局输入框贴屏幕底部, 菜单会被裁掉。
+            completer=None,
+            complete_while_typing=False,
         )
+        # 输入文本变化 → 命令面板开合/过滤 (Claude Code 同款体验)
+        try:
+            self._input.buffer.on_text_changed += self._on_input_changed
+        except Exception:  # noqa: BLE001 - 测试桩/旧版 pt 无该事件时静默降级
+            pass
 
         # 输入框: 单行细边框 (可见性优先)。裸 TextArea 在深色终端 conpty 下
         # 无边框无背景, 观感"输入框消失"; 恢复三层 ╭─╮ 细边框保证任何终端可见,
@@ -389,8 +418,23 @@ class QxtTUI:
         # renderer.reset() 全量重绘, 杜绝 prompt_toolkit diff 残影 (旧帧的 boot
         # 状态/旧 footer 叠在新帧上, 观感"字符残留/双行状态栏")。
         _ready = Condition(lambda: not self._booting and not self._boot_error)
+        # "/" 命令面板: 输入 "/" 即在输入框上方弹出 (Claude Code 同款位置),
+        # 高度随条目数动态伸缩 (callable → prompt_toolkit 布局期求值), 最多 9 行。
+        self._slash_control = FormattedTextControl(
+            self._render_slash_menu, show_cursor=False, focusable=False,
+        )
+        slash_menu = ConditionalContainer(
+            Window(
+                self._slash_control,
+                height=self._slash_menu_rows,
+                style="class:slashbg",
+                wrap_lines=False,
+            ),
+            filter=Condition(lambda: self._slash_open and bool(self._slash_items)),
+        )
         bottom = ConditionalContainer(
             HSplit([
+                slash_menu,
                 input_frame,
                 Window(self._footer_control, height=1),
             ]),
@@ -499,11 +543,14 @@ class QxtTUI:
             self._pin_t = 0
             event.app.invalidate()
 
-        # ---- Kimi 同款命令补全: Tab 开始/循环, 方向键在命令菜单中游走 ----
+        # ---- "/" 命令面板: Tab 确认填入, ↑↓ 游走菜单 (关闭时回退默认行为), Esc 关闭 ----
         @kb.add("c-i")  # Tab
         def _(event):
+            if self._slash_open and self._slash_items:
+                self._accept_slash(event)
+                return
             b = event.current_buffer
-            if b.complete_state:
+            if b.complete_state:  # 兼容旧补全路径 (外部直接驱动 buffer 的场景)
                 b.complete_next()
             else:
                 b.start_completion(select_first=True)
@@ -514,9 +561,17 @@ class QxtTUI:
                 self._trust_index = 1
                 event.app.invalidate()
                 return
+            if self._slash_open and self._slash_items:
+                self._slash_move(1)
+                event.app.invalidate()
+                return
             b = event.current_buffer
             if b.complete_state:
                 b.complete_next()
+            else:
+                # 面板关闭: 交还默认行为 (↑↓ 历史导航 / 光标移动)。
+                # 早先这里"匹配却不代理"吞掉了按键, 导致历史导航失效。
+                b.auto_down(count=event.arg or 1)
 
         @kb.add("up")
         def _(event):
@@ -524,9 +579,24 @@ class QxtTUI:
                 self._trust_index = 0
                 event.app.invalidate()
                 return
+            if self._slash_open and self._slash_items:
+                self._slash_move(-1)
+                event.app.invalidate()
+                return
             b = event.current_buffer
             if b.complete_state:
                 b.complete_previous()
+            else:
+                # 同 down: 面板关闭时交还默认行为, 修复 ↑ 历史导航被吞。
+                b.auto_up(count=event.arg or 1)
+
+        @kb.add("escape")
+        def _(event):
+            # Esc: 关闭 "/" 命令面板 (未展开时不消费按键, 不影响信任/确认等其它流程)
+            if self._slash_open:
+                self._close_slash_menu()
+                event.app.invalidate()
+                return
 
         return kb
 
@@ -677,7 +747,199 @@ class QxtTUI:
         except Exception:
             pass
 
+    # ============================================================ "/" 命令面板
+
+    def _term_width(self) -> int:
+        """终端真实列宽 (探测失败回退 shutil/80)。"""
+        try:
+            if self._app is not None:
+                w = self._app.output.get_size().columns
+                if w and w > 0:
+                    return int(w)
+        except Exception:
+            pass
+        try:
+            return shutil.get_terminal_size((80, 24)).columns
+        except Exception:
+            return 80
+
+    def _on_input_changed(self, buffer=None) -> None:
+        """输入文本变化 → 命令面板开合/过滤 (Claude Code 同款体验)。
+
+        规则:
+        - 输入以 "/" 或 "+/" 开头且尚未输空格 → 展开面板, 按已输入前缀过滤;
+          空前缀 ("/") 列出全部命令并高亮第一项;
+        - 出现空格 (命令已定, 开始输参数) / 删空 / 非命令输入 → 关闭面板;
+        - boot / 信任确认 / 命令确认 / 思考进行中 → 不展开 (输入框是答复通道)。
+        """
+        if self._slash_accepting:
+            return
+        try:
+            text = self._input.text
+        except Exception:  # noqa: BLE001 - 输入框未就绪 (极早期启动)
+            return
+        if (not self._commands or self._booting or self._boot_error
+                or self._trust_pending or self._confirm_pending):
+            self._close_slash_menu()
+            return
+        if text.startswith("/"):
+            typed = text[1:]
+        elif text.startswith("+/"):
+            typed = text[2:]
+        else:
+            self._close_slash_menu()
+            return
+        if " " in typed or "\n" in typed:
+            self._close_slash_menu()
+            return
+        low = typed.lower()
+        items = [c for c in self._commands if c[1:].lower().startswith(low)]
+        if not items:
+            self._close_slash_menu()
+            return
+        self._slash_items = items
+        self._slash_index = 0
+        self._slash_scroll = 0
+        self._slash_open = True
+
+    def _close_slash_menu(self) -> None:
+        """关闭命令面板 (幂等)。"""
+        self._slash_open = False
+        self._slash_items = []
+        self._slash_index = 0
+        self._slash_scroll = 0
+        if self._app and self._app.is_running:
+            try:
+                self._app.invalidate()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _slash_move(self, delta: int) -> None:
+        """面板内移动高亮 (循环滚动), 并保持滚动窗口可见。"""
+        if not self._slash_items:
+            return
+        n = len(self._slash_items)
+        self._slash_index = (self._slash_index + delta) % n
+        self._slash_clamp_scroll()
+
+    def _slash_clamp_scroll(self) -> None:
+        visible = min(_SLASH_MAX_VISIBLE, len(self._slash_items))
+        if self._slash_index < self._slash_scroll:
+            self._slash_scroll = self._slash_index
+        elif self._slash_index >= self._slash_scroll + visible:
+            self._slash_scroll = self._slash_index - visible + 1
+
+    def _accept_slash(self, event=None) -> bool:
+        """Enter/Tab 确认: 把高亮命令填入输入框并关闭面板 (不直接执行)。
+
+        与 Claude Code 一致: 选中只是补全, 用户可继续输入参数, 再按回车执行。
+        """
+        if not (self._slash_open and self._slash_items):
+            return False
+        idx = max(0, min(self._slash_index, len(self._slash_items) - 1))
+        cmd = self._slash_items[idx]
+        try:
+            from prompt_toolkit.document import Document
+
+            self._slash_accepting = True
+            try:
+                self._input.buffer.document = Document(cmd, cursor_position=len(cmd))
+            finally:
+                self._slash_accepting = False
+        except Exception:  # noqa: BLE001 - 极端环境退回纯文本赋值
+            self._slash_accepting = False
+            try:
+                self._input.buffer.text = cmd
+            except Exception:
+                pass
+        self._slash_open = False
+        self._slash_items = []
+        self._slash_index = 0
+        self._slash_scroll = 0
+        if self._app and self._app.is_running:
+            try:
+                self._app.invalidate()
+            except Exception:  # noqa: BLE001
+                pass
+        return True
+
+    def _slash_menu_rows(self) -> int:
+        """面板高度 (布局期 callable 求值): 条目数封顶 _SLASH_MAX_VISIBLE, 至少 1 行。"""
+        return max(1, min(len(self._slash_items), _SLASH_MAX_VISIBLE))
+
+    def _render_slash_menu(self):
+        """"/" 命令面板: 高亮行 + 命令名 + 描述 (+ 溢出时滚动提示行)。
+
+        每行按终端显示宽度裁剪 (CJK 宽字符感知), 防止超宽描述顶破布局。
+        """
+        items = self._slash_items
+        if not items:
+            return []
+        width = self._term_width()
+        visible = min(len(items), _SLASH_MAX_VISIBLE)
+        start = self._slash_scroll
+        if self._slash_index >= start + visible:
+            start = self._slash_index - visible + 1
+        elif self._slash_index < start:
+            start = self._slash_index
+        window = range(start, min(start + visible, len(items)))
+        rows: List[List[Tuple[str, str]]] = []
+        for i in window:
+            cmd = items[i]
+            sel = (i == self._slash_index)
+            mark = "▶ " if sel else "  "
+            desc = self._command_meta.get(cmd) or t("tui.cmd_meta")
+            line = f"{mark}{cmd}"
+            room = max(1, width - _disp_width(line) - 3)
+            desc = self._clip_dw(desc, room) if _disp_width(desc) > room else desc
+            sel_cls = "class:slashsel" if sel else ""
+            rows.append([
+                (sel_cls or "class:slashcmd", line),
+                (sel_cls, "  "),
+                (sel_cls or "class:slashdesc", desc),
+            ])
+        if len(items) > _SLASH_MAX_VISIBLE:
+            hidden = len(items) - visible
+            hint = t("tui.slash_more", n=hidden, pos=f"{self._slash_index + 1}/{len(items)}")
+            rows.append([("class:slashhint", self._clip_dw(hint, max(1, width - 1)))])
+        out: List[Tuple[str, str]] = []
+        for r_i, row in enumerate(rows):
+            for cls, seg in row:
+                out.append((cls, seg))
+            if r_i < len(rows) - 1:
+                out.append(("", "\n"))
+        return out
+
+    def _clip_parts(self, parts: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        """按终端显示宽度裁剪一行分段 (防文字溢出顶破全屏布局)。
+
+        Window(height=1, wrap_lines=False) 自身不裁切内容: 超宽文本会被终端
+        自行软换行, 把整行布局顶错位 (观感即"文字溢出/状态行跳行")。这里按
+        列宽硬裁并补省略号, 与 prompt_toolkit 内部行为无关地保证单行控件不溢出。
+        """
+        width = self._term_width()
+        out: List[Tuple[str, str]] = []
+        used = 0
+        for cls, seg in parts:
+            if not seg:
+                continue
+            w = _disp_width(seg)
+            if used + w <= width:
+                out.append((cls, seg))
+                used += w
+                continue
+            room = width - used
+            if room > 0:
+                out.append((cls, self._clip_dw(seg, room)))
+            break
+        return out
+
     def _handle_enter(self, event) -> None:
+        # "/" 命令面板展开: Enter 确认高亮项 (填入输入框, 不直接执行 —— 与
+        # Claude Code 一致, 填好后可继续输参数或再按回车执行)
+        if self._slash_open and self._slash_items:
+            self._accept_slash(event)
+            return
         text = self._input.text.strip()
         if not text:
             return
@@ -894,16 +1156,22 @@ class QxtTUI:
             self._app.invalidate()
 
     def _box_width(self) -> int:
-        """盒子/输入框可用宽度 = 真实 App 列宽 (避免与 wrap_lines 的窗口宽度偏差导致错位/圆角外拐)。"""
+        """盒子/输入框可用宽度 = 真实 App 列宽 (避免与 wrap_lines 的窗口宽度偏差导致错位/圆角外拐)。
+
+        2026-10-18 修复文字溢出: 旧实现 ``max(44, w)`` 在窄终端 (<44 列) 下
+        强制 44 宽, 盒子右边框被顶出屏幕, 对话区 (wrap_lines=True) 把超宽行
+        软换行 → 右边框掉到下一行, 观感即"文字溢出/盒子错位"。现完全尊重
+        真实宽度, 仅在探测失败时回退 shutil/80。
+        """
         try:
             if self._app is not None:
                 w = self._app.output.get_size().columns
                 if w and w > 0:
-                    return max(44, w)  # type: ignore[no-any-return]  # columns 为 Any
+                    return int(w)  # type: ignore[no-any-return]  # columns 为 Any
         except Exception:
             pass
         try:
-            return max(44, shutil.get_terminal_size((80, 24)).columns)
+            return shutil.get_terminal_size((80, 24)).columns
         except Exception:
             return 80
 
@@ -952,6 +1220,12 @@ class QxtTUI:
         # 信息行: 标签(蓝次级) + 值(浅色)
         info_rows: List[List[Tuple[str, str]]] = []
         for label, value in info_pairs:
+            label = str(label)
+            value = str(value)
+            # 值超长 (窄屏 / 长绝对路径 / 长模型名) 时按显示宽度截断补省略号,
+            # 否则右侧竖线被顶飞 → 文字溢出 (2026-10-18 修复)。
+            v_room = max(1, info_w - _disp_width(label))
+            value = clip_dw(value, v_room)
             seg = []
             seg.append(("class:primary", "│"))
             seg.append(("", pad))
@@ -1318,9 +1592,19 @@ class QxtTUI:
         单一 Application / 事件循环: 不再有独立 Splash 全屏 App,
         因此不存在双屏 alt-screen 切换在 Windows Terminal(conpty) 下的崩溃。
 
+        启动即把终端窗口/标签标题改为 "Tuan-CLI" (OSC 转义 + ConHost API
+        双通道, 见 win_compat.set_terminal_title); 非 TTY / 失败静默跳过。
+
         若全屏模式在特殊终端下仍崩溃, 自动以内联模式 (full_screen=False,
         不抢占整屏/不走 alt-screen) 重试一次; 仍失败则抛给调用方回退 REPL。
         """
+        # 窗口标题: "Windows powershell" 标签 → "Tuan-CLI" (启动即改, 退出不还原
+        # —— 终端标题无标准查询接口, 竞品 TUI 同样留标题)。
+        try:
+            from .win_compat import set_terminal_title
+            set_terminal_title(TERMINAL_TITLE)
+        except Exception:  # noqa: BLE001 - 标题设置绝不阻断启动
+            pass
         animator = threading.Thread(target=self._animate, name="tuan-anim", daemon=True)
         animator.start()
         try:
@@ -1526,12 +1810,12 @@ class QxtTUI:
         """
         parts: List[Tuple[str, str]] = []
 
-        # 信任确认期: 底栏只显示确认提示 (不展示模型/状态/目录)
+        # 信任确认期: 底栏只显示确认提示 (不展示模型/状态/目录; 超宽裁剪防溢出)
         if self._trust_pending:
-            return [("class:warning", " " + t("tui.trust_footer"))]
+            return self._clip_parts([("class:warning", " " + t("tui.trust_footer"))])
         # 命令确认期: 同上, 底栏让位给确认提示
         if self._confirm_pending:
-            return [("class:warning", " " + t("tui.confirm_footer"))]
+            return self._clip_parts([("class:warning", " " + t("tui.confirm_footer"))])
 
         # 模式徽标 (standard / yolo / plan)
         mode_label = self._mode or "standard"
@@ -1582,7 +1866,9 @@ class QxtTUI:
         # 注: 此处曾显示 "context: X% (est/budget)" 上下文占用条, 已移除 ——
         # 预算靠模型名猜 (所有模型都退化成 131.1k), 用量是字符数估算而非真实 token,
         # 数字既不准确又占版面。需要真实用量请用 /context 或 Web 工作台的上下文面板。
-        return parts
+        # 收尾: 单行控件 (Window height=1 无软换行) 必须按显示宽度裁剪,
+        # 否则 no_key 长提示/长模型名/长目录名会把底栏顶出屏幕 (文字溢出)。
+        return self._clip_parts(parts)
 
     def _git_branch(self) -> str:
         """探测当前 git 分支 (带缓存, 避免每行渲染都调 git)。"""
