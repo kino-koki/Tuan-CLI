@@ -125,6 +125,21 @@ Substack、Reddit、Discord、Spotify、YouTube、Netflix
 Netflix 靠红色极克制，Discord 靠 Blurple 发光 + 肥大圆角，X 靠城市公告板式编码流，
 Uber 靠黑底白字出行极简——把任意两家的暗色语言混在一起会失去各自记忆点。
 
+## 零 emoji 硬约束（产物质量底线）
+
+无论选用哪家公司的设计语言，产出物（HTML 页面、海报、PPT / 幻灯、文档）中
+**一律禁止 emoji 与彩色 pictograph 字符**。原因与替代方案见
+`frontend-design` 技能「七、零 emoji 硬约束」，要点复述：
+
+- emoji 依赖系统字体：缺字则渲染成豆腐方框，字体回退会破坏字重与字号基线；
+- 导出 PDF / PPT 时常丢失或变形；无法参与对比度计算，无障碍检查不通过；
+- 与设计系统的图标语言冲突——图标应来自统一图标库（如 Lucide），而非 Unicode 表情。
+- 状态用图标或文字标签表达；方向用 `->` 这类文本形式，不用 Unicode 排版箭头。
+- 交付前自检零命中：
+  ```bash
+  grep -nP '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}]' <产物文件>
+  ```
+
 ## 参考文件
 
 - `companies/index.md` — 全量快速检索总表（71 家）+ 分组领域索引 + 说明。

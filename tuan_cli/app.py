@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 from pathlib import Path
@@ -259,8 +260,44 @@ def _builtin_skills_dir() -> Path:
         return Path(__file__).resolve().parent / "resources" / "skills" / "builtin"
 
 
-def seed_builtin_skills(config_or_kernel) -> int:
-    """把内置技能首次 seed 到用户技能目录 (同名不覆盖, 尊重用户后续改进)。
+def _skills_manifest_path(manager: "SkillManager") -> Path:
+    """内置技能播种清单 (记录每个 skill 播种时的内容指纹)。"""
+    return manager.dir / ".builtin-skills.json"
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    try:
+        h.update(path.read_bytes())
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
+def seed_builtin_skills(config_or_kernel, force: bool = False) -> int:
+    """把内置技能 seed 到用户技能目录。
+
+    历史行为是「同名不覆盖, 尊重用户后续改进」—— 但这带来一个严重副作用:
+    **内置技能的改进永远传不到已存在的用户目录**。用户在 ~/.tuan/skills/ 下的
+    副本会永久遮蔽 builtin 层 (manager._discover 按目录优先级先到先得), 于是
+    我们在仓库里修 bug / 加章节, 用户端毫无感知。
+
+    改为**按指纹区分对待**:
+    - 目标不存在 → 播种, 记录源文件指纹;
+    - 目标存在且内容与「上次播种的指纹」一致 (即用户没动过) 而源文件已更新 →
+      刷新到新版并更新指纹。这是让改进能落地的关键;
+    - 目标存在但内容与上次指纹不同 → 判定为**用户自行修改**, 原样保留, 不覆盖、
+      不动指纹 (用户改动永远优先);
+    - 无清单记录的老安装 (首次引入本机制) → 把当前内容登记为基线, 从此之后
+      才能正确区分「用户改过」与「内置升级」。
+
+    ``force=True`` 时忽略上述区分, 用内置版本强制覆盖全部同名技能 (会先在
+    skills/ 下留一份 ``.backup-<时间戳>/`` 备份), 供用户主动清理历史副本使用。
+
+    因此「重复调用不再重复播种」的幂等性依然成立: 第二次调用时目标内容已与指纹
+    一致且源也没变, 不会产生任何写操作。
 
     兼容两种入参: Config 直接使用, Kernel 则从中取出 config。
     """
@@ -272,11 +309,56 @@ def seed_builtin_skills(config_or_kernel) -> int:
     src = _builtin_skills_dir()
     if not src.is_dir():
         return 0
+
+    manifest_path = _skills_manifest_path(manager)
+    try:
+        manifest: dict = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            manifest = {}
+    except Exception:  # noqa: BLE001 - 清单缺失/损坏都当作空, 退化为只播种
+        manifest = {}
+
     seeded = 0
+    backup_dir: Optional[Path] = None
+    if force:
+        import time
+        backup_dir = manager.dir / f".backup-{time.strftime('%Y%m%d-%H%M%S')}"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
     for path in sorted(src.glob("*.md")):
         dest = manager.dir / path.name
+        src_hash = _sha256(path)
         if dest.exists():
-            continue
-        shutil.copy(path, dest)
-        seeded += 1
+            if force:
+                # 先备份既有文件再覆盖, 误操作可手工还原
+                try:
+                    shutil.copy2(dest, backup_dir / path.name)
+                except OSError as exc:  # noqa: BLE001
+                    logger.debug("备份内置技能副本失败 %s: %s", path.name, exc)
+                shutil.copy(path, dest)
+                manifest[path.name] = src_hash
+                seeded += 1
+                continue
+            # 已存在: 仅当「用户未改动」且「源已更新」时才刷新
+            last = manifest.get(path.name)
+            cur = _sha256(dest)
+            if last is None:
+                # 老安装首次引入清单: 登记当前内容为基线, 从此能区分用户改动与内置升级
+                manifest[path.name] = cur
+            elif last == cur and last != src_hash:
+                shutil.copy(path, dest)
+                manifest[path.name] = src_hash
+                seeded += 1
+        else:
+            shutil.copy(path, dest)
+            manifest[path.name] = src_hash
+            seeded += 1
+
+    try:
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+    except OSError as exc:  # noqa: BLE001 - 清单写不进去只影响后续刷新, 不致命
+        logger.debug("内置技能指纹清单写入失败: %s", exc)
     return seeded
