@@ -780,6 +780,12 @@ def register_subcommands(sub) -> None:
         default=None,
         help="汇总 JSON 输出路径 (默认 bench/security-bench.json)",
     )
+    sb.add_argument(
+        "--json",
+        action="store_true",
+        help="机器可读模式 (CI): 人类可读日志改走 stderr, stdout 只输出汇总 JSON;"
+        " 全量模式同时把结果追加到 bench/results/ 时间序列存档",
+    )
     sb.set_defaults(safe_cmd="bench")
     srp = ssub.add_parser(
         "report", help="生成安全状态 HTML 报告 (宣传 / 审计 / 交接用)"

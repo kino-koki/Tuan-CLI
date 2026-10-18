@@ -345,6 +345,12 @@ def _cmd_bench(args) -> int:
 
     第三方可用同一条命令在本仓库复现安全数字 (不依赖网络, 不调用模型)。
     """
+    json_mode = bool(getattr(args, "json", False))
+    if json_mode:
+        # 机器可读模式: 人类可读日志改走 stderr, stdout 只留汇总 JSON (CI 解析)。
+        # 每个 CLI 进程只执行一个 safe 子命令, 重绑模块级 console 无副作用。
+        global console
+        console = console.__class__(stderr=True)
     try:
         bench_dir = _bench_dir()
     except FileNotFoundError as exc:
@@ -487,6 +493,19 @@ def _cmd_bench(args) -> int:
         _render_drift_report(results, prev_archive)
     elif full:
         console.print("[yellow]⚠ --full: 未找到可对比的存档 (先不带 --full 跑一次生成基准)[/yellow]")
+
+    if json_mode:
+        # 机器可读输出: stdout 只含汇总 JSON (一行, 可直接 jq/CI 消费)
+        sys.stdout.write(json.dumps(results, ensure_ascii=False, indent=2) + "\n")
+        if not quick:
+            # 时间序列存档: CI 提交 bench/results/ 让安全数字可回看、可画趋势
+            results_dir = bench_dir / "results"
+            results_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            archive = results_dir / f"security-bench-{ts}.json"
+            archive.write_text(json.dumps(results, ensure_ascii=False, indent=2),
+                               encoding="utf-8")
+            console.print(f"[green]✓ 时间序列存档: {archive}[/green]")
     return rc
 
 
