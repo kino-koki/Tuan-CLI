@@ -80,14 +80,53 @@ def test_yolo_auto_approves_non_benign_command(monkeypatch):
 
 
 @pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
-def test_yolo_still_blocks_hard_redline(monkeypatch):
-    """给 yolo 权力但不给免死金牌: 致命红线任何模式都硬拦。"""
+def test_yolo_redline_never_auto_executes(monkeypatch):
+    """YOLO 不得**自动执行**致命红线 —— 必须有人工决定。
+
+    行为变更说明 (原断言是「yolo 下即使人工同意也一律硬拦」):
+    那种实现让用户连"我确认要执行"都说不出口, 实际表现是「开了 yolo 也被拦、
+    且没有任何选择」。现语义为:
+      - 有确认通道 → **必须询问**, 人工放行则执行;
+      - 人工拒绝 → 拦截;
+      - 无确认通道 → fail-closed 拦截。
+    不变的安全底线是: **YOLO 永远不会让红线命令自动执行**。
+    """
     monkeypatch.delenv("TUAN_STRICT_SHELL", raising=False)
     k = _kernel_with_safety()
-    ctx = _build_ctx(k, yolo=True, confirm=lambda p: True)
+
+    # 1) 人工拒绝 → 拦截
+    ctx = _build_ctx(k, yolo=True, confirm=lambda p: False)
     for cmd in ("rm -rf /", "rm -rf /home", ":(){ :|:& };:"):
         reason = _pre_exec_guard(ctx, cmd)
-        assert reason is not None, f"yolo 漏拦致命红线: {cmd}"
+        assert reason is not None, f"yolo 下红线未被拦截: {cmd}"
+
+    # 2) 无确认通道 (headless) → fail-closed, 绝不自动执行
+    ctx = _build_ctx(k, yolo=True, confirm=None)
+    for cmd in ("rm -rf /", "rm -rf /home"):
+        reason = _pre_exec_guard(ctx, cmd)
+        assert reason is not None, f"无确认通道时红线必须 fail-closed: {cmd}"
+        assert "无确认通道" in reason
+
+    # 3) 人工放行 → 执行, 且必须**真的问过一次** (不能是 yolo 悄悄放行)
+    asked = []
+    ctx = _build_ctx(k, yolo=True, confirm=lambda p: asked.append(p) or True)
+    assert _pre_exec_guard(ctx, "rm -rf /") is None
+    assert asked, "红线必须经过人工确认, 不得被 yolo 静默放行"
+
+
+@pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
+def test_redline_requires_human_decision_in_both_modes(monkeypatch):
+    """标准模式与 YOLO 模式对红线的口径必须一致: 都问、都可放行。"""
+    monkeypatch.delenv("TUAN_STRICT_SHELL", raising=False)
+    k = _kernel_with_safety()
+    for yolo in (False, True):
+        asked = []
+        ctx = _build_ctx(k, yolo=yolo, confirm=lambda p: asked.append(p) or True)
+        assert _pre_exec_guard(ctx, "rm -rf /") is None, f"yolo={yolo} 应可人工放行"
+        assert len(asked) == 1, f"yolo={yolo} 必须恰好询问一次"
+
+        ctx = _build_ctx(k, yolo=yolo, confirm=lambda p: False)
+        assert _pre_exec_guard(ctx, "rm -rf /") is not None, f"yolo={yolo} 拒绝后必须拦截"
 
 
 @pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
@@ -231,3 +270,31 @@ def test_confirm_falls_back_to_terminal_without_app():
         assert tui.confirm("ls") is True
     finally:
         builtins.input = real_input
+
+
+@pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
+def test_yolo_asks_instead_of_silently_blocking(monkeypatch):
+    """回归: 此前 YOLO 下critical 级操作被**直接拦掉**, 用户连确认的机会都没有。
+
+    表现是「开了 yolo 也拦我, 而且不让我确认」, 进而模型拿到 [已拦截] 后
+    无路可走, 整个任务停摆。现语义: critical 一律询问, 由人决定。
+    """
+    monkeypatch.delenv("TUAN_STRICT_SHELL", raising=False)
+    k = _kernel_with_safety()
+
+    for cmd in ("rm -rf /", "dd if=/dev/zero of=/dev/sda", "shutdown -h now"):
+        asked = []
+        # 人工拒绝 → 仍必须拦住 (安全底线不变)
+        ctx = _build_ctx(k, yolo=True, confirm=lambda p: asked.append(p) or False)
+        assert _pre_exec_guard(ctx, cmd) is not None, f"YOLO 不得自动放行: {cmd}"
+        assert asked, f"YOLO 下也必须询问, 不能静默拦截: {cmd}"
+
+
+@pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
+def test_yolo_still_auto_approves_ordinary_work(monkeypatch):
+    """确保修复没有把 YOLO 变成「弹窗地狱」: 日常命令仍然零打扰。"""
+    monkeypatch.delenv("TUAN_STRICT_SHELL", raising=False)
+    k = _kernel_with_safety()
+    ctx = _build_ctx(k, yolo=True, confirm=lambda p: False)  # 确认通道恒拒
+    for cmd in ("systemctl restart nginx", "docker rm -f abc", "kill -9 1234"):
+        assert _pre_exec_guard(ctx, cmd) is None, f"YOLO 下不该打断日常命令: {cmd}"
