@@ -144,7 +144,7 @@ TRANSLATIONS = {
     "tui.ask_free_hint": "直接输入你的回答 · Enter 发送",
     "tui.ask_answer": "已选择: {answer}",
     "tui.ask_skipped": "(已跳过)",
-    "tui.scroll_back_hint": "· End 回到底部",
+    "tui.scroll_back_hint": "· PgUp/PgDn 翻页 · Shift+PgUp 逐行 · End 回底",
     "slash.provider_usage": "  用法: /provider set <ENV> <KEY> 保存密钥。密钥只写入 ~/.tuan/.env。",
     "slash.provider_set_done": "已保存 {env} 到 ~/.tuan/.env，本次会话同步生效。",
     "slash.provider_cleared": "已删除 {env} 的密钥配置 (从 .env 与当前环境清除)。",

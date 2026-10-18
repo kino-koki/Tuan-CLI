@@ -144,7 +144,7 @@ TRANSLATIONS = {
     "tui.ask_free_hint": "Antwort eingeben · Enter zum Senden",
     "tui.ask_answer": "Antwort: {answer}",
     "tui.ask_skipped": "(übersprungen)",
-    "tui.scroll_back_hint": "· End zum Ende",
+    "tui.scroll_back_hint": "· PgUp/PgDn blättern · Shift+PgDn zeilenweise · Ende nach unten",
     # ---- Einrichtungsassistent
     "setup.title": "Tuan-CLI Einrichtungsassistent",
     "setup.opt_quick": "Schnelleinrichtung (empfohlen)",
