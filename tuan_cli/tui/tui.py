@@ -273,6 +273,8 @@ class QxtTUI:
         self._slash_index = 0               # 高亮项索引
         self._slash_scroll = 0              # 滚动窗口起始索引
         self._slash_accepting = False       # 程序化写入文本时抑制联动 (防递归)
+        self._slash_arg_mode = False        # 命令参数补全态 (/model <partial> 等)
+        self._slash_arg_prefix = ""         # 参数补全时回填用的命令前缀 (如 "/model ")
 
         # 状态
         self._events: List[Any] = []
@@ -782,6 +784,23 @@ class QxtTUI:
                 or self._trust_pending or self._confirm_pending):
             self._close_slash_menu()
             return
+        # 命令参数补全: /model <partial> 或 /provider <partial> 时列出候选值
+        # (复用 "/" 命令面板: ↑↓ 选择, Enter/Tab 确认填入, Esc 关闭)
+        am = re.match(r'^([+/]?(?:model|provider|providers?))\s+(\S*)$', text)
+        if am:
+            self._slash_arg_mode = True
+            self._slash_arg_prefix = am.group(1) + " "
+            partial = am.group(2).lower()
+            cands = self._arg_completions(am.group(1).lstrip("+/").lower(), partial)
+            if not cands:
+                self._close_slash_menu()
+                return
+            self._slash_items = cands
+            self._slash_index = 0
+            self._slash_scroll = 0
+            self._slash_open = True
+            return
+        self._slash_arg_mode = False
         if text.startswith("/"):
             typed = text[1:]
         elif text.startswith("+/"):
@@ -808,11 +827,41 @@ class QxtTUI:
         self._slash_items = []
         self._slash_index = 0
         self._slash_scroll = 0
+        self._slash_arg_mode = False
         if self._app and self._app.is_running:
             try:
                 self._app.invalidate()
             except Exception:  # noqa: BLE001
                 pass
+
+    def _arg_completions(self, cmd: str, partial: str) -> List[str]:
+        """命令参数补全候选: /model 返回模型 ID 全集, /provider 返回供应商名。
+
+        partial 为空列出全部 (面板可滚动); 否则按前缀过滤。模型 ID 取自各供应商
+        MODEL_LISTS (剥 |free/|paid 标注), 并附供应商名便于 "provider/model" 速选。
+        """
+        try:
+            from ..models.provider_catalog import ALL_PROVIDER_NAMES, MODEL_LISTS
+        except Exception:
+            return []
+        if cmd in ("provider", "providers"):
+            cands = list(ALL_PROVIDER_NAMES)
+        else:  # model
+            seen: set = set()
+            cands = []
+            for _p, models in MODEL_LISTS.items():
+                for m in models:
+                    mid = m.split("|")[0]
+                    if mid not in seen:
+                        seen.add(mid)
+                        cands.append(mid)
+            for p in ALL_PROVIDER_NAMES:
+                if p not in seen:
+                    seen.add(p)
+                    cands.append(p)
+        if partial:
+            return [c for c in cands if c.lower().startswith(partial)]
+        return cands
 
     def _slash_move(self, delta: int) -> None:
         """面板内移动高亮 (循环滚动), 并保持滚动窗口可见。"""
@@ -837,7 +886,11 @@ class QxtTUI:
         if not (self._slash_open and self._slash_items):
             return False
         idx = max(0, min(self._slash_index, len(self._slash_items) - 1))
-        cmd = self._slash_items[idx]
+        if self._slash_arg_mode:
+            cmd = self._slash_arg_prefix + self._slash_items[idx]
+            self._slash_arg_mode = False
+        else:
+            cmd = self._slash_items[idx]
         try:
             from prompt_toolkit.document import Document
 
@@ -1312,8 +1365,7 @@ class QxtTUI:
         self._reason_full += delta
         if len(self._reason_full) > _MAX_REASON_LEN:
             self._reason_full = self._reason_full[:_MAX_REASON_LEN] + "…[思考超长, 已截断]"
-        if self._app and self._app.is_running:
-            self._app.invalidate()
+        self._throttled_invalidate()
 
     def audit(self, cls: str, text: str) -> None:
         """向审计面板追加一行日志 (类标志: textdim/accent/warning 等, 单条截断)。"""
@@ -1323,8 +1375,7 @@ class QxtTUI:
         self._audit_log.append((cls, text))
         if len(self._audit_log) > 500:
             self._audit_log = self._audit_log[-500:]
-        if self._app and self._app.is_running:
-            self._app.invalidate()
+        self._throttled_invalidate()
 
     def end_stream(self) -> None:
         if self._stream_buf:
@@ -2226,4 +2277,17 @@ class QxtTUI:
         保证 CJK/绘图形字符下右边框仍对齐。
         """
         cwd = os.path.abspath(self.workspace)
-   
+        session = getattr(self, "_session_id", "") or "new-session"
+        model = self._model_label or "default"
+        info_pairs = [
+            (f"{t('banner.directory')}: ", cwd),
+            (f"{t('banner.session')}:   ", session),
+            (f"{t('banner.model')}:     ", model),
+            (f"{t('banner.version')}:   ", VERSION),
+        ]
+        for row in self._kimi_box(
+            title=t("tui.welcome_title"),
+            subtitle=t("tui.welcome_subtitle"),
+            info_pairs=info_pairs,
+        ):
+            self._events.append(row)
