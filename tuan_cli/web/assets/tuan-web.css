@@ -23,42 +23,48 @@
    ========================================================================== */
 
 :root {
-  /* ---- 品牌与语义色 ---- */
-  --color-accent: #1783ff;
-  --color-accent-hover: #167ff7;
-  --color-accent-soft: #e8f3ff;
-  --color-accent-bd: rgba(23, 131, 255, .25);
-  --color-success: #0e7a38;
-  --color-danger: #c0392b;
-  --color-danger-soft: #fbeaea;
+  /* ---- 品牌与语义色 (Claude Code 风: 暖珊瑚橙 + 米色系) ---- */
+  --color-accent: #c8664a;
+  --color-accent-hover: #b9573d;
+  --color-accent-soft: #f4e6df;
+  --color-accent-bd: rgba(200, 102, 74, .28);
+  --color-success: #3f9d63;
+  --color-danger: #d2493b;
+  --color-danger-soft: #fae8e4;
+  --color-warn: #c0872e;
 
   /* ---- 文本 ---- */
-  --color-text: rgba(0, 0, 0, .95);
-  --color-text-strong: #000000;
-  --color-text-muted: rgba(0, 0, 0, .68);
-  --color-text-faint: rgba(0, 0, 0, .53);
+  --color-text: #2e2a24;
+  --color-text-strong: #1c1813;
+  --color-text-muted: #6a6256;
+  --color-text-faint: #9a9081;
 
-  /* ---- 表面与描边 ---- */
-  --color-bg: #ffffff;
-  --color-sidebar-bg: #f9fbfc;
-  --color-surface: #f5f5f5;
+  /* ---- 表面与描边 (米色 / 奶油色) ---- */
+  --color-bg: #f6f2e9;
+  --color-sidebar-bg: #efe9db;
+  --color-surface: #fdfaf2;
   --color-surface-raised: #ffffff;
-  --color-hover: rgba(0, 0, 0, .03);
-  --color-line: rgba(0, 0, 0, .13);
-  --color-line-strong: rgba(0, 0, 0, .15);
-  --color-inline-code-bg: rgba(0, 0, 0, .03);
-  --color-user-bubble-bg: #f5f5f5;
-  --color-scrim-strong: rgba(0, 0, 0, .6);
+  --color-hover: rgba(60, 50, 35, .05);
+  --color-line: rgba(60, 50, 35, .14);
+  --color-line-strong: rgba(60, 50, 35, .2);
+  --color-inline-code-bg: rgba(60, 50, 35, .07);
+  --color-user-bubble-bg: #ece4d4;
+  --color-scrim-strong: rgba(40, 33, 22, .42);
+
+  /* ---- 代码块 ---- */
+  --color-code-bg: #efe8d9;
+  --color-code: #2e2a24;
+  --color-code-soft: rgba(60, 50, 35, .06);
 
   /* ---- 输入面板 (composer) ---- */
-  --color-composer-bg: #ffffff;
-  --color-composer-line: rgba(0, 0, 0, .13);
-  --color-composer-focus-line: rgba(0, 0, 0, .25);
-  --color-send-bg: rgba(0, 0, 0, .9);
-  --color-send-bg-hover: #252525;
-  --color-send-bg-disabled: rgba(0, 0, 0, .05);
-  --color-send-icon: #ffffff;
-  --color-send-icon-disabled: rgba(0, 0, 0, .27);
+  --color-composer-bg: #fdfaf2;
+  --color-composer-line: rgba(60, 50, 35, .16);
+  --color-composer-focus-line: rgba(200, 102, 74, .4);
+  --color-send-bg: #2e2a24;
+  --color-send-bg-hover: #1c1813;
+  --color-send-bg-disabled: rgba(60, 50, 35, .08);
+  --color-send-icon: #f6f2e9;
+  --color-send-icon-disabled: rgba(60, 50, 35, .34);
 
   /* ---- 间距 (4px 栅格) ---- */
   --space-05: 2px;
@@ -126,38 +132,43 @@
 
 /* ---------------------------------------------------------------- 深色 */
 [data-color-scheme="dark"] {
-  --color-accent: #1a88ff;
-  --color-accent-hover: #258eff;
-  --color-accent-soft: rgba(26, 136, 255, .1);
-  --color-accent-bd: rgba(26, 136, 255, .28);
-  --color-success: #3fb950;
-  --color-danger: #f85149;
-  --color-danger-soft: rgba(248, 81, 73, .14);
+  --color-accent: #e58a5f;
+  --color-accent-hover: #ef9b73;
+  --color-accent-soft: rgba(229, 138, 95, .14);
+  --color-accent-bd: rgba(229, 138, 95, .32);
+  --color-success: #5fbf7e;
+  --color-danger: #e35d52;
+  --color-danger-soft: rgba(227, 93, 82, .16);
+  --color-warn: #d6a23e;
 
-  --color-text: rgba(255, 255, 255, .9);
-  --color-text-strong: #ffffff;
-  --color-text-muted: rgba(255, 255, 255, .64);
-  --color-text-faint: rgba(255, 255, 255, .5);
+  --color-text: rgba(255, 255, 255, .88);
+  --color-text-strong: #f4efe7;
+  --color-text-muted: rgba(255, 255, 255, .62);
+  --color-text-faint: rgba(255, 255, 255, .45);
 
-  --color-bg: #121212;
-  --color-sidebar-bg: #0d0d0d;
-  --color-surface: #1f1f1f;
-  --color-surface-raised: #292929;
-  --color-hover: rgba(255, 255, 255, .05);
-  --color-line: rgba(255, 255, 255, .12);
-  --color-line-strong: rgba(255, 255, 255, .18);
+  --color-bg: #2b2b28;
+  --color-sidebar-bg: #232321;
+  --color-surface: #343431;
+  --color-surface-raised: #3d3d39;
+  --color-hover: rgba(255, 255, 255, .06);
+  --color-line: rgba(255, 255, 255, .1);
+  --color-line-strong: rgba(255, 255, 255, .16);
   --color-inline-code-bg: rgba(255, 255, 255, .1);
-  --color-user-bubble-bg: #292929;
-  --color-scrim-strong: rgba(0, 0, 0, .75);
+  --color-user-bubble-bg: #3d3d39;
+  --color-scrim-strong: rgba(0, 0, 0, .5);
 
-  --color-composer-bg: #1f1f1f;
+  --color-code-bg: #1d1d1b;
+  --color-code: #f4efe7;
+  --color-code-soft: rgba(255, 255, 255, .05);
+
+  --color-composer-bg: #343431;
   --color-composer-line: rgba(255, 255, 255, .12);
-  --color-composer-focus-line: rgba(255, 255, 255, .25);
-  --color-send-bg: rgba(255, 255, 255, .84);
-  --color-send-bg-hover: rgba(255, 255, 255, .848);
+  --color-composer-focus-line: rgba(229, 138, 95, .4);
+  --color-send-bg: rgba(255, 255, 255, .86);
+  --color-send-bg-hover: rgba(255, 255, 255, .92);
   --color-send-bg-disabled: rgba(255, 255, 255, .1);
-  --color-send-icon: #1f1f1f;
-  --color-send-icon-disabled: rgba(255, 255, 255, .28);
+  --color-send-icon: #2b2b28;
+  --color-send-icon-disabled: rgba(255, 255, 255, .3);
 
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, .34), 0 4px 10px rgba(0, 0, 0, .28);
 }
@@ -165,38 +176,43 @@
 /* "跟随系统" 模式: 系统为深色时套用深色令牌 */
 @media (prefers-color-scheme: dark) {
   [data-color-scheme="system"] {
-    --color-accent: #1a88ff;
-    --color-accent-hover: #258eff;
-    --color-accent-soft: rgba(26, 136, 255, .1);
-    --color-accent-bd: rgba(26, 136, 255, .28);
-    --color-success: #3fb950;
-    --color-danger: #f85149;
-    --color-danger-soft: rgba(248, 81, 73, .14);
+    --color-accent: #e58a5f;
+    --color-accent-hover: #ef9b73;
+    --color-accent-soft: rgba(229, 138, 95, .14);
+    --color-accent-bd: rgba(229, 138, 95, .32);
+    --color-success: #5fbf7e;
+    --color-danger: #e35d52;
+    --color-danger-soft: rgba(227, 93, 82, .16);
+    --color-warn: #d6a23e;
 
-    --color-text: rgba(255, 255, 255, .9);
-    --color-text-strong: #ffffff;
-    --color-text-muted: rgba(255, 255, 255, .64);
-    --color-text-faint: rgba(255, 255, 255, .5);
+    --color-text: rgba(255, 255, 255, .88);
+    --color-text-strong: #f4efe7;
+    --color-text-muted: rgba(255, 255, 255, .62);
+    --color-text-faint: rgba(255, 255, 255, .45);
 
-    --color-bg: #121212;
-    --color-sidebar-bg: #0d0d0d;
-    --color-surface: #1f1f1f;
-    --color-surface-raised: #292929;
-    --color-hover: rgba(255, 255, 255, .05);
-    --color-line: rgba(255, 255, 255, .12);
-    --color-line-strong: rgba(255, 255, 255, .18);
+    --color-bg: #2b2b28;
+    --color-sidebar-bg: #232321;
+    --color-surface: #343431;
+    --color-surface-raised: #3d3d39;
+    --color-hover: rgba(255, 255, 255, .06);
+    --color-line: rgba(255, 255, 255, .1);
+    --color-line-strong: rgba(255, 255, 255, .16);
     --color-inline-code-bg: rgba(255, 255, 255, .1);
-    --color-user-bubble-bg: #292929;
-    --color-scrim-strong: rgba(0, 0, 0, .75);
+    --color-user-bubble-bg: #3d3d39;
+    --color-scrim-strong: rgba(0, 0, 0, .5);
 
-    --color-composer-bg: #1f1f1f;
+    --color-code-bg: #1d1d1b;
+    --color-code: #f4efe7;
+    --color-code-soft: rgba(255, 255, 255, .05);
+
+    --color-composer-bg: #343431;
     --color-composer-line: rgba(255, 255, 255, .12);
-    --color-composer-focus-line: rgba(255, 255, 255, .25);
-    --color-send-bg: rgba(255, 255, 255, .84);
-    --color-send-bg-hover: rgba(255, 255, 255, .848);
+    --color-composer-focus-line: rgba(229, 138, 95, .4);
+    --color-send-bg: rgba(255, 255, 255, .86);
+    --color-send-bg-hover: rgba(255, 255, 255, .92);
     --color-send-bg-disabled: rgba(255, 255, 255, .1);
-    --color-send-icon: #1f1f1f;
-    --color-send-icon-disabled: rgba(255, 255, 255, .28);
+    --color-send-icon: #2b2b28;
+    --color-send-icon-disabled: rgba(255, 255, 255, .3);
 
     --shadow-lg: 0 12px 32px rgba(0, 0, 0, .34), 0 4px 10px rgba(0, 0, 0, .28);
   }
