@@ -7,10 +7,10 @@
 - PromptBudget.apply_caps: 只收紧不放大, 用户调小的值永远优先;
 - budget_for_tier / budgets_from_config: 未知档位回退 full, 半配置逐字段补齐;
 - resolve_prompt_budget: 端到端配置解析;
-- Agent 集成: 小上下文模型 → compact 档 (收紧注入预算);
-  大上下文模型 → full 档 (与历史行为一致);
+- Agent 集成: 小上下文模型 → compact 档 (收紧注入预算 + 只读 SOUL_COMPACT.md);
+  大上下文模型 (>=128k) → full 档 (注入预算放开 + 读 SOUL_FULL.md 完整提示词);
   代码库地图是否注入只由 context.pin_codebase 决定, 分层不越权代劳;
-- resolve_soul_tier: auto 不换 SOUL (零漂移), 显式 compact/full 才换内置档位 SOUL。
+- resolve_soul_tier: auto 不换 SOUL (agent 层按窗口联动定档), 显式 compact/full 才换内置档位 SOUL。
 """
 
 import sys
@@ -75,8 +75,13 @@ class TestInferContextWindow:
 
 class TestResolvePromptTier:
     def test_below_threshold_is_compact(self):
-        assert resolve_prompt_tier(128 * 1024) == COMPACT
-        assert resolve_prompt_tier(200_000) == COMPACT
+        """128k 起即为大上下文 (full); 低于 128k 才是 compact。"""
+        assert resolve_prompt_tier(32 * 1024) == COMPACT
+        assert resolve_prompt_tier(64 * 1024) == COMPACT
+        assert resolve_prompt_tier(128 * 1024 - 1) == COMPACT
+        # 128k 整 (含) 即大上下文模型
+        assert resolve_prompt_tier(128 * 1024) == FULL
+        assert resolve_prompt_tier(200_000) == FULL
 
     def test_above_threshold_is_full(self):
         assert resolve_prompt_tier(1_000_000) == FULL
@@ -88,19 +93,23 @@ class TestResolvePromptTier:
         assert resolve_prompt_tier(DEFAULT_CONTEXT_TIER_THRESHOLD - 1) == COMPACT
 
     def test_forced_tier_override(self):
-        assert resolve_prompt_tier(128 * 1024, tier="full") == FULL
+        assert resolve_prompt_tier(32 * 1024, tier="full") == FULL
         assert resolve_prompt_tier(1_000_000, tier="compact") == COMPACT
-        assert resolve_prompt_tier(128 * 1024, tier=" FULL ") == FULL
+        assert resolve_prompt_tier(32 * 1024, tier=" FULL ") == FULL
 
     def test_auto_and_unknown_tier_do_not_override(self):
-        assert resolve_prompt_tier(128 * 1024, tier="auto") == COMPACT
-        assert resolve_prompt_tier(128 * 1024, tier="banana") == COMPACT
+        """auto/未知档位不覆盖按窗口的判定: 128k 仍算大上下文。"""
+        assert resolve_prompt_tier(128 * 1024, tier="auto") == FULL
+        assert resolve_prompt_tier(128 * 1024, tier="banana") == FULL
+        assert resolve_prompt_tier(32 * 1024, tier="auto") == COMPACT
+        assert resolve_prompt_tier(32 * 1024, tier="banana") == COMPACT
         assert resolve_prompt_tier(1_000_000, tier="") == FULL
 
     def test_invalid_threshold_falls_back_to_default(self):
-        """阈值 <= 0 视为无效 —— 避免误配置把所有模型打成 compact。"""
-        assert resolve_prompt_tier(128 * 1024, threshold=0) == COMPACT
-        assert resolve_prompt_tier(128 * 1024, threshold=-100) == COMPACT
+        """阈值 <= 0 视为无效 —— 回退默认 (128k 下界), 而非误打成 compact。"""
+        assert resolve_prompt_tier(128 * 1024, threshold=0) == FULL
+        assert resolve_prompt_tier(128 * 1024, threshold=-100) == FULL
+        assert resolve_prompt_tier(32 * 1024, threshold=0) == COMPACT
 
     def test_custom_threshold(self):
         assert resolve_prompt_tier(200_000, threshold=100_000) == FULL
@@ -210,11 +219,24 @@ class TestBudgetsFromConfig:
 
 class TestResolvePromptBudget:
     def test_small_model_gets_compact(self):
-        tier, window, budget = resolve_prompt_budget(
-            None, model="deepseek-chat", provider="deepseek")
+        """低于 128k 的窗口才拿 compact 档。
+
+        deepseek-chat 推断出的窗口正好是 128k, 按现行口径 (128k 起即大上下文)
+        属于 full —— 所以这里显式声明 32k 来表达「小模型」语义。
+        """
+        cfg = {"model": {"provider": "deepseek", "model": "deepseek-chat",
+                         "context_window": 32 * 1024}}
+        tier, window, budget = resolve_prompt_budget(cfg)
         assert tier == COMPACT
-        assert window == 128 * 1024
+        assert window == 32 * 1024
         assert budget == prompt_tier.DEFAULT_TIER_BUDGETS[COMPACT]
+
+    def test_128k_model_is_large_context(self):
+        """128k 恰好是大上下文下界 → full 档。"""
+        cfg = {"model": {"provider": "deepseek", "model": "deepseek-chat"}}
+        tier, window, _ = resolve_prompt_budget(cfg)
+        assert window == 128 * 1024
+        assert tier == FULL
 
     def test_large_model_gets_full(self):
         tier, window, budget = resolve_prompt_budget(
@@ -253,7 +275,8 @@ class TestResolvePromptBudget:
 
     def test_configured_budgets_are_honored(self):
         cfg = {
-            "model": {"provider": "deepseek", "model": "deepseek-chat"},
+            "model": {"provider": "deepseek", "model": "deepseek-chat",
+                      "context_window": 32 * 1024},
             "prompt": {"tier": "auto", "tiers": {"compact": {"skill_limit": 5}}},
         }
         tier, _, budget = resolve_prompt_budget(cfg)
@@ -261,7 +284,8 @@ class TestResolvePromptBudget:
         assert budget.skill_limit == 5
 
     def test_invalid_tier_string_falls_back_to_auto(self):
-        cfg = {"model": {"provider": "deepseek", "model": "deepseek-chat"},
+        cfg = {"model": {"provider": "deepseek", "model": "deepseek-chat",
+                         "context_window": 32 * 1024},
                "prompt": {"tier": "banana"}}
         tier, _, _ = resolve_prompt_budget(cfg)
         assert tier == COMPACT
@@ -314,7 +338,11 @@ class TestResolveSoulTier:
         agent._soul_tier = resolve_soul_tier(agent.config)
         assert agent._soul_tier == "compact"
         prompt = agent._build_system()
-        assert "(Compact Tier)" in prompt
+        # 档位 SOUL 以**首行标题**标识 (SOUL_COMPACT.md / SOUL_FULL.md)。
+        # 不能用 "SOUL_FULL.md" not in prompt 这类全文包含判断 —— 两个档位正文
+        # 里互相引用了对方的文件名, 会恒真失败。
+        first_line = prompt.splitlines()[0]
+        assert first_line.startswith("# SOUL_COMPACT.md")
         assert len(prompt) < 20_000
 
     def test_explicit_full_uses_bundled_soul(self, tmp_path, tuan_home):
@@ -327,8 +355,39 @@ class TestResolveSoulTier:
         agent._soul_tier = resolve_soul_tier(agent.config)
         assert agent._soul_tier == "full"
         prompt = agent._build_system()
-        assert "(Full Tier)" in prompt
+        # 同上: 判定首行标题, 不用全文包含 (两档正文互相引用对方文件名)。
+        first_line = prompt.splitlines()[0]
+        assert first_line.startswith("# SOUL_FULL.md")
         assert len(prompt) > 20_000
+
+    def test_auto_large_window_reads_soul_full(self, tmp_path, tuan_home):
+        """回归 (2026-10-18): auto 档 + 大上下文模型 (>=128k) 必须读 SOUL_FULL.md。
+
+        旧行为: auto + full 预算档返回 "" (SOUL.md + 规范段, ~11K 字), 大模型只拿到
+        一份阉割版提示词。现口径: 128k 以上即大上下文模型, 读 SOUL_FULL.md 完整提示词。
+        """
+        agent = TestAgentTierIntegration()._agent(tmp_path, tuan_home,
+                                                 provider="sensenova",
+                                                 model="sensenova-6.8-flash-lite",
+                                                 context_window=0)
+        # 无显式窗口 → 供应商未知 → 兜底 128k → full 档
+        assert agent.context_window == 128 * 1024
+        assert agent.prompt_tier == FULL
+        # agent 层联动 (不是直接调 resolve_soul_tier —— 那个函数对 auto 仍返回 "")
+        assert agent._soul_tier == "full"
+        prompt = agent._system_prompt
+        assert prompt.splitlines()[0].startswith("# SOUL_FULL.md")
+        assert len(prompt) > 20_000
+
+    def test_auto_small_window_reads_soul_compact(self, tmp_path, tuan_home):
+        """auto 档 + 小上下文模型 (<128k) 只读 SOUL_COMPACT.md (小模型专属提示词)。"""
+        agent = TestAgentTierIntegration()._agent(tmp_path, tuan_home,
+                                                 provider="deepseek",
+                                                 model="deepseek-chat",
+                                                 context_window=32 * 1024)
+        assert agent.prompt_tier == COMPACT
+        assert agent._soul_tier == "compact"
+        assert agent._system_prompt.splitlines()[0].startswith("# SOUL_COMPACT.md")
 
 
 # ============================================================ Agent 集成
