@@ -192,6 +192,23 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
                color:var(--color-text-muted);white-space:pre-wrap;line-height:1.75;
                border-top:var(--p-hairline) solid var(--color-line)}
   .reason.open .reason-body{display:block}
+  /* 思考过程流式态: 思考中 = 品牌蓝描边 + 脉冲点; 思考结束自动折叠, 头部留字数 */
+  .reason.streaming{border-color:var(--color-accent);background:var(--color-accent-soft)}
+  .reason.streaming .reason-head{color:var(--color-accent)}
+  .reason-head .dot{width:6px;height:6px;border-radius:50%;background:var(--color-accent);flex:none;
+                    animation:pulse 1.2s var(--ease-out) infinite}
+  .reason:not(.streaming) .reason-head .dot{display:none}
+  @keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
+  .reason-len{margin-left:auto;color:var(--color-text-faint);font-size:var(--text-2xs);
+              font-variant-numeric:tabular-nums}
+  /* 输入栏上方的思考状态 pill: 首 token 到达前也让用户看到"还在思考" + 已用秒数,
+     避免长思考(推理模型静默期可逾分钟)被误判为卡死/中断。 */
+  #think-pill{display:none;align-items:center;gap:var(--space-2);width:100%;
+              padding:var(--space-1) var(--space-3) 0;font-size:var(--text-xs);color:var(--color-text-muted)}
+  #think-pill.on{display:inline-flex}
+  #think-pill .dot{width:6px;height:6px;border-radius:50%;background:var(--color-accent);flex:none;
+                   animation:pulse 1.2s var(--ease-out) infinite}
+  #think-pill .tt{font-variant-numeric:tabular-nums}
   .bubble pre[data-lang]::before{content:attr(data-lang);display:block;font-size:10px;letter-spacing:.08em;
                                  text-transform:uppercase;color:var(--color-text-faint);margin-bottom:var(--space-1-5)}
   .bubble del{color:var(--color-text-faint)}
@@ -495,6 +512,57 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   #trust .lvl p{margin:0;font-size:var(--text-2xs);color:var(--color-text-muted);line-height:1.5}
   #trust .lvl[data-lvl="trusted"]:hover{border-color:var(--color-success,#2da44e)}
   #trust .lvl[data-lvl="untrusted"]:hover{border-color:var(--color-danger)}
+
+  /* ===== 设置面板 (对标 TUI /config /model /permissions) ===== */
+  #settings{display:none;position:fixed;inset:0;background:var(--color-scrim-strong);z-index:var(--z-modal);
+            justify-content:center;align-items:center;padding:var(--space-5)}
+  #settings.open{display:flex}
+  #settings .sbox{background:var(--color-surface-raised);border:var(--p-hairline) solid var(--color-line-strong);
+            border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);width:min(780px,94vw);height:auto;
+            max-height:min(660px,90vh);display:flex;flex-direction:column;overflow:hidden}
+  #settings .shead{display:flex;align-items:center;justify-content:space-between;padding:var(--space-4) var(--space-5);
+            border-bottom:var(--p-hairline) solid var(--color-line);flex:none}
+  #settings .stitle{font-size:var(--text-base);font-weight:var(--weight-semibold);color:var(--color-text-strong);font-family:var(--font-ui)}
+  #settings .sclose{background:transparent;border:none;color:var(--color-text-muted);font-size:16px;cursor:pointer;line-height:1}
+  #settings .sclose:hover{color:var(--color-text)}
+  #settings .sbody{flex:1;display:flex;min-height:0}
+  #settings .snav{width:150px;flex:none;border-right:var(--p-hairline) solid var(--color-line);padding:var(--space-3);
+            overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+  #settings .snav button{text-align:left;background:transparent;border:none;border-radius:var(--radius-md);
+            padding:var(--space-2) var(--space-3);font-size:var(--text-sm);color:var(--color-text-muted);cursor:pointer;font-family:var(--font-ui)}
+  #settings .snav button:hover{background:var(--color-hover);color:var(--color-text)}
+  #settings .snav button.active{background:var(--color-accent-soft);color:var(--color-accent);font-weight:var(--weight-medium)}
+  #settings .scontent{flex:1;overflow-y:auto;padding:var(--space-4) var(--space-5);min-width:0}
+  #settings .ssec{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-faint);
+            margin:var(--space-4) 0 var(--space-1);font-weight:var(--weight-section-label)}
+  #settings .ssec:first-child{margin-top:0}
+  #settings .srow{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);
+            padding:var(--space-2-5) 0;border-bottom:var(--p-hairline) solid var(--color-line);flex-wrap:wrap}
+  #settings .srow.col{flex-direction:column;align-items:stretch}
+  #settings .srow .lab{font-size:var(--text-sm);color:var(--color-text)}
+  #settings .srow .hint{font-size:var(--text-2xs);color:var(--color-text-faint);width:100%;margin-top:2px;line-height:1.5}
+  #settings select,#settings input[type=text],#settings input[type=number],#settings input[type=password]{
+            background:var(--color-bg);color:var(--color-text);border:var(--p-hairline) solid var(--color-line-strong);
+            border-radius:var(--radius-md);padding:var(--space-1-5) var(--space-2);font-size:var(--text-sm);
+            font-family:var(--font-ui);min-width:200px;max-width:340px;outline:none}
+  #settings select:focus,#settings input:focus{border-color:var(--color-accent)}
+  #settings input[type=checkbox]{width:16px;height:16px;accent-color:var(--color-accent);cursor:pointer}
+  #settings .btn{background:var(--color-accent);color:#fff;border:none;border-radius:var(--radius-md);
+            padding:var(--space-2) var(--space-4);font-size:var(--text-sm);cursor:pointer;font-family:var(--font-ui)}
+  #settings .btn:hover{opacity:.9}
+  #settings .btn.ghost{background:transparent;color:var(--color-text);border:var(--p-hairline) solid var(--color-line-strong)}
+  #settings .btn.sm{padding:var(--space-1) var(--space-2-5);font-size:var(--text-xs)}
+  #settings .badge{font-size:var(--text-2xs);padding:1px var(--space-2);border-radius:var(--radius-full);font-family:var(--font-ui)}
+  #settings .badge.ok{background:var(--color-success);color:#fff}
+  #settings .badge.no{background:var(--color-hover);color:var(--color-text-muted)}
+  #settings .kv{font-size:var(--text-xs);color:var(--color-text-muted);font-family:var(--font-mono);word-break:break-all}
+  #settings .note{font-size:var(--text-2xs);color:var(--color-success);margin-top:var(--space-2);min-height:14px}
+  #settings .note.err{color:var(--color-danger)}
+  #settings .cs-opt{display:inline-flex;gap:var(--space-2)}
+  #settings .cs-opt label{display:inline-flex;align-items:center;gap:var(--space-1);font-size:var(--text-sm);
+            color:var(--color-text);cursor:pointer;padding:var(--space-1) var(--space-2);border:var(--p-hairline) solid var(--color-line);
+            border-radius:var(--radius-md)}
+  #settings .cs-opt input{accent-color:var(--color-accent)}
 </style>
 </head>
 <body>
@@ -521,6 +589,10 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.5" width="12.4" height="11" rx="1.6"/><path d="M10 2.5v11"/></svg>
         <span data-i18n="web.panel">面板</span>
       </button>
+      <button class="tb-btn" id="btn-settings" title="设置">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.09a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span data-i18n="web.settings">设置</span>
+      </button>
       <span class="sp"></span>
     </div>
     <div class="foot" style="padding-top:var(--space-05,2px)"><div id="sidefoot">…</div></div>
@@ -533,6 +605,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
     <div id="inputbar">
+      <div id="think-pill"><span class="dot"></span><span id="think-label">思考中</span><span class="tt" id="think-time">0.0s</span></div>
       <div id="composer">
         <div id="file-area"></div>
         <textarea id="inp" rows="1" data-i18n-ph="web.input" placeholder="输入消息..."></textarea>
@@ -589,6 +662,14 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     <button class="lvl" data-lvl="trusted"><h4 data-i18n="web.trust_trusted">完全信任</h4><p data-i18n="web.trust_trusted_d">完整权限（仍受安全引擎约束），可执行 shell 与写操作。</p></button>
     <button class="lvl" data-lvl="limited"><h4 data-i18n="web.trust_limited">受限</h4><p data-i18n="web.trust_limited_d">只读与规划可用，shell 需每次确认。</p></button>
     <button class="lvl" data-lvl="untrusted"><h4 data-i18n="web.trust_untrusted">不信任</h4><p data-i18n="web.trust_untrusted_d">只读，禁止执行 shell 命令。</p></button>
+  </div>
+</div></div>
+
+<div id="settings"><div class="sbox">
+  <div class="shead"><span class="stitle" data-i18n="web.settings">设置</span><button class="sclose" id="settings-close" title="关闭">✕</button></div>
+  <div class="sbody">
+    <nav class="snav" id="settings-nav"></nav>
+    <div class="scontent" id="settings-content"><div class="rp-empty">加载中…</div></div>
   </div>
 </div></div>
 
@@ -1015,8 +1096,10 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   }
   function appendReason(body,text){
     var r=document.createElement('div');r.className='reason';
-    r.innerHTML='<div class="reason-head"><span class="caret">▸</span><span>思考过程</span></div><div class="reason-body"></div>';
-    r.querySelector('.reason-body').textContent=text||'';
+    r.innerHTML='<div class="reason-head"><span class="caret">▸</span><span class="dot"></span><span>'+esc(tr('web.thinking_process','思考过程'))+'</span><span class="reason-len"></span></div><div class="reason-body"></div>';
+    var t=text||'';
+    r.querySelector('.reason-body').textContent=t;
+    r.querySelector('.reason-len').textContent=t.length>999?(Math.round(t.length/1000)+'k 字'):(t.length+' 字');
     r.querySelector('.reason-head').addEventListener('click',function(){r.classList.toggle('open');});
     body.appendChild(r);
     return r;
@@ -1228,6 +1311,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
             if(m.parts&&m.parts.length){
               m.parts.forEach(function(p){
                 if(p.type==='tool'){md+='> 工具 `'+p.name+'`\n>\n> 参数: `'+(p.args||'').replace(/\n/g,' ')+'`\n>\n> 结果: '+(p.out||'(无输出)').replace(/\n/g,'\n> ')+'\n\n';}
+                else if(p.type==='reason'){md+='<details><summary>思考过程</summary>\n\n'+(p.text||'')+'\n\n</details>\n\n';}
                 else if(p.type==='text'){md+=p.text+'\n\n';}
               });
             }else{md+=(m.content||'')+'\n\n';}
@@ -1286,6 +1370,78 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     var flow=am.body;
     var cursor=document.createElement('span');cursor.className='stream-cursor';
     var curSeg=null, curText='', lastTool=null;
+    /* 思考过程 (reasoning) 实时累积: 模型每个 reasoning delta 都新建一个折叠块
+       会堆出几百个碎片块 (观感即"思考过程不可见")。改为与正文文本一样累积 ——
+       一个流式块随 delta 生长, 正文/工具到来时自动折叠, 头部留字数。 */
+    var curReasonText='', curReasonEl=null, curReasonBody=null, curReasonLen=null;
+    var reasonUserToggled=false, reasonQueued=false, reasonRaf=0;
+    var gotAny=false;   /* 本轮是否已收到任何内容 (区分"输出中断"与"空回复") */
+    function ensureReasonBlock(){
+      if(curReasonEl){ if(!finished){flow.appendChild(cursor);} return curReasonEl; }
+      /* 新思考阶段开始: 正文分段复位, 保证后续正文渲染在思考块**之后**
+         (服务端 parts 顺序: reason → text → tool → reason → text ...)。 */
+      curSeg=null; curText='';
+      curReasonText=''; reasonUserToggled=false;
+      var r=document.createElement('div');r.className='reason streaming';
+      r.innerHTML='<div class="reason-head"><span class="caret">▸</span><span class="dot"></span>'
+        +'<span>'+esc(tr('web.thinking_process','思考过程'))+'</span><span class="reason-len"></span></div>'
+        +'<div class="reason-body"></div>';
+      curReasonBody=r.querySelector('.reason-body');
+      curReasonLen=r.querySelector('.reason-len');
+      r.querySelector('.reason-head').addEventListener('click',function(){
+        reasonUserToggled=true; r.classList.toggle('open');
+      });
+      r.classList.add('open');   /* 流式中默认展开, 让思考过程可见 */
+      flow.appendChild(r);
+      curReasonEl=r;
+      if(!finished){flow.appendChild(cursor);}
+      return r;
+    }
+    function reasonSchedule(){
+      if(reasonQueued||finished)return;
+      reasonQueued=true;
+      reasonRaf=requestAnimationFrame(function(){
+        reasonQueued=false;
+        if(finished||!curReasonBody)return;
+        curReasonBody.textContent=curReasonText;
+        if(curReasonLen){
+          curReasonLen.textContent=curReasonText.length>999
+            ?(Math.round(curReasonText.length/1000)+'k 字'):(curReasonText.length+' 字');
+        }
+        flow.appendChild(cursor);scrollBottom();
+      });
+    }
+    function closeReasonBlock(){
+      if(reasonRaf){cancelAnimationFrame(reasonRaf);reasonRaf=0;}
+      reasonQueued=false;
+      var r=curReasonEl;
+      curReasonEl=null; curReasonBody=null; curReasonLen=null;
+      if(!r)return;
+      if(curReasonBody)curReasonBody.textContent=curReasonText;
+      r.classList.remove('streaming');   /* 去掉脉冲点/高亮, 变为普通折叠块 */
+      if(curReasonLen){
+        curReasonLen.textContent=curReasonText.length>999
+          ?(Math.round(curReasonText.length/1000)+'k 字'):(curReasonText.length+' 字');
+      }
+      if(!reasonUserToggled)r.classList.remove('open');  /* 用户没手动展开过 → 自动折叠 */
+    }
+    /* 思考状态 pill: 从发送到首个增量 (reason/delta/tool) 之间显示"思考中 + 秒数" */
+    var thinkPill=document.getElementById('think-pill'),
+        thinkTime=document.getElementById('think-time'),
+        thinkTimer=0, thinkStart=0;
+    function startThinkPill(){
+      if(!thinkPill)return;
+      thinkStart=Date.now(); thinkPill.classList.add('on');
+      if(thinkTimer)clearInterval(thinkTimer);
+      thinkTimer=setInterval(function(){
+        var s=(Date.now()-thinkStart)/1000;
+        if(thinkTime)thinkTime.textContent=s<60?(s.toFixed(1)+'s'):(Math.floor(s/60)+'m '+(s%60).toFixed(0)+'s');
+      },100);
+    }
+    function stopThinkPill(){
+      if(thinkTimer){clearInterval(thinkTimer);thinkTimer=0;}
+      if(thinkPill)thinkPill.classList.remove('on');
+    }
     /* 流式渲染节流: 每个 token 都重渲染整段是 O(n²) —— 回复到 2000 字时累计解析
        量达百万字符级, 越流越卡。改为「一帧最多渲染一次」(rAF 合并), 视觉无差别。
        ⚠ 竞态修复: 早先 rAF 回调不保存句柄、finish() 也只置 renderQueued=false 而
@@ -1310,6 +1466,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     }
     flow.appendChild(cursor);
     scrollBottom();
+    /* 首增量前的"思考中"指示: 推理模型静默期可达分钟级, 没有它用户会判死 */
+    startThinkPill();
 
     abortCtrl=new AbortController();
     var sid=current||'';
@@ -1334,6 +1492,13 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       return pump();
     }).catch(function(e){
       if(e.name!=='AbortError'){appendText(flow,'[错误] '+e.message);}
+      else if(gotAny){
+        /* 用户点"停止": 半截输出要有明确标记, 否则被当成完整答案 */
+        var note=document.createElement('div');note.className='md';
+        note.innerHTML='<p style="color:var(--color-text-faint);font-size:var(--text-xs)">■ '
+          +esc(tr('web.stopped','已停止'))+'</p>';
+        flow.appendChild(note);
+      }
       finish();
     });
 
@@ -1347,11 +1512,17 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       var j;try{j=JSON.parse(data);}catch(e){return;}
       if(ev==='session'){current=j.id;loadSessions();}
       else if(ev==='delta'){
+        stopThinkPill();
+        closeReasonBlock();
+        gotAny=true;
         curText+=j;
         if(!curSeg){curSeg=appendText(flow,'');}
         scheduleRender();
       }
       else if(ev==='tool'){
+        stopThinkPill();
+        closeReasonBlock();
+        gotAny=true;
         curSeg=null;curText='';
         lastTool=appendTool(flow,j.name,j.args);
         if(!finished){flow.appendChild(cursor);scrollBottom();}
@@ -1361,7 +1532,14 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
          中间层把连接保持住不关闭, 就会永远等不到 r.done —— 蓝色光标于是无限
          闪烁。收到 done 立即收口, 与 finish() 幂等。 */
       else if(ev==='done'){finish();}
-      else if(ev==='reason'){appendReason(flow,j);if(!finished){flow.appendChild(cursor);scrollBottom();}}
+      else if(ev==='reason'){
+        /* 思考过程: 累积进同一个流式块 (见 ensureReasonBlock), 不逐 delta 新建 */
+        stopThinkPill();
+        gotAny=true;
+        curReasonText+=(j&&j.text!=null?j.text:j);
+        ensureReasonBlock();
+        reasonSchedule();
+      }
       else if(ev==='approval'){
         /* 危险工具需要确认: 弹审批窗, 把结果回填 /api/approve */
         showApproval({prompt:j.prompt,verdict:j.verdict},function(d){
@@ -1373,7 +1551,16 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
         /* 出错也要把流式光标收掉并复位发送状态 —— 此前只有 done 事件才收,
            Agent 被打断/出错时蓝色光标一直闪, 让人误以为任务还在跑。 */
         endStream();
-        appendText(flow,'[错误] '+(j.message||j));
+        /* 已流出部分内容再出错 = 输出中断 (与"完全没响应"区分开):
+           给出醒目标记, 不让用户把半截输出当成完整答案。 */
+        if(gotAny){
+          var note=document.createElement('div');note.className='md';
+          note.innerHTML='<p style="color:var(--color-danger);font-size:var(--text-xs)">⚠ '
+            +esc(tr('web.interrupted','输出中断'))+' — '+esc(j.message||j)+'</p>';
+          flow.appendChild(note);
+        }else{
+          appendText(flow,'[错误] '+(j.message||j));
+        }
         setRunning(false);
       }
     }
@@ -1383,6 +1570,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       finished=true;
       if(rafId){cancelAnimationFrame(rafId);rafId=0;}
       renderQueued=false;
+      closeReasonBlock();
+      stopThinkPill();
       if(cursor.parentNode)cursor.parentNode.removeChild(cursor);
     }
     function finish(){
@@ -1401,6 +1590,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     if(e.ctrlKey&&e.key==='n'){e.preventDefault();current=null;clearMessages();showWelcome();loadSessions();inp.focus();}
     if(e.ctrlKey&&e.key==='b'){e.preventDefault();togglePanel();}
     if(e.ctrlKey&&e.key==='/'){e.preventDefault();openSlash('');inp.focus();}
+    if(e.ctrlKey&&e.key===','){e.preventDefault();if(SET.open){closeSettings();}else{openSettings();}}
+    if(e.key==='Escape'&&SET.open){closeSettings();}
   });
 
   send.addEventListener('click',sendMsg);
@@ -1856,6 +2047,184 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     }
     /* 其它斜杠命令 (如 /help /status /model ...) 作为普通消息发给 Agent 尝试 */
     return false;
+  }
+
+  /* ================================================================
+     设置面板 (对标 TUI 的 /config /model /permissions 控制面)
+     ================================================================ */
+  var SET={data:null, cat:'模型与供应商', open:false};
+  var SET_CATS=['外观','模型与供应商','模型参数','运行','上下文','权限','沙箱','验证与自治','记忆','技能与提示','网络','MCP','智能路由','后台任务','关于'];
+  function openSettings(){
+    SET.open=true;
+    document.getElementById('settings').classList.add('open');
+    if(!SET.data){loadSettings();}else{renderSettingsNav();renderSettings();}
+  }
+  function closeSettings(){SET.open=false;document.getElementById('settings').classList.remove('open');}
+  document.getElementById('btn-settings').addEventListener('click',openSettings);
+  document.getElementById('settings-close').addEventListener('click',closeSettings);
+  document.getElementById('settings').addEventListener('click',function(e){if(e.target===this)closeSettings();});
+  function loadSettings(){
+    var c=document.getElementById('settings-content');
+    c.innerHTML='<div class="rp-empty">加载中…</div>';
+    fetch('/api/config').then(function(r){return r.json();}).then(function(j){
+      SET.data=j; renderSettingsNav(); renderSettings();
+    }).catch(function(e){ c.innerHTML='<div class="rp-empty">读取失败: '+esc(e.message)+'</div>'; });
+  }
+  function renderSettingsNav(){
+    var nav=document.getElementById('settings-nav'); nav.innerHTML='';
+    SET_CATS.forEach(function(cat){
+      var b=document.createElement('button');
+      b.textContent=cat;
+      if(cat===SET.cat)b.classList.add('active');
+      b.addEventListener('click',function(){SET.cat=cat;renderSettingsNav();renderSettings();});
+      nav.appendChild(b);
+    });
+  }
+  function setNote(el,ok,msg){ if(el){el.textContent=msg||'';el.className='note'+(ok?'':' err');} }
+  function setConfig(key,value,noteEl){
+    return fetch('/api/config/set',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key:key,value:value})}).then(function(r){return r.json();}).then(function(j){
+      if(j.ok&&SET.data){SET.data.values[key]=j.value;}
+      setNote(noteEl,j.ok,j.ok?'已保存':('失败: '+(j.error||'')));
+      return j;
+    }).catch(function(e){ setNote(noteEl,false,'失败: '+e.message); return {ok:false}; });
+  }
+  function sec(t){return '<div class="ssec">'+esc(t)+'</div>';}
+  function fieldRow(m){
+    var v=(SET.data&&SET.data.values)?SET.data.values[m.key]:undefined;
+    var h='<div class="srow"><span class="lab">'+esc(m.label)+'</span>';
+    if(m.type==='enum'){
+      h+='<select data-key="'+esc(m.key)+'">';
+      (m.enum||[]).forEach(function(o){h+='<option value="'+esc(o)+'"'+(String(v)===o?' selected':'')+'>'+esc(o)+'</option>';});
+      h+='</select>';
+    }else if(m.type==='bool'){
+      h+='<input type="checkbox" data-key="'+esc(m.key)+'"'+(v?' checked':'')+'>';
+    }else if(m.type==='int'){
+      h+='<input type="number" step="1" data-key="'+esc(m.key)+'" value="'+(v==null?'':v)+'" style="width:120px">';
+    }else if(m.type==='float'){
+      h+='<input type="number" step="0.1" data-key="'+esc(m.key)+'" value="'+(v==null?'':v)+'" style="width:120px">';
+    }else if(m.type==='list'){
+      h+='<input type="text" data-key="'+esc(m.key)+'" value="'+esc((v||[]).join(', '))+'">';
+      h+='<button class="btn sm" data-savelist="'+esc(m.key)+'">保存</button>';
+    }else{
+      h+='<input type="text" data-key="'+esc(m.key)+'" value="'+esc(v==null?'':v)+'">';
+    }
+    h+='</div>';
+    if(m.hint){h+='<div class="hint">'+esc(m.hint)+'</div>';}
+    return h;
+  }
+  function wireFields(c){
+    Array.prototype.forEach.call(c.querySelectorAll('select[data-key]'),function(el){
+      el.addEventListener('change',function(){setConfig(el.dataset.key,el.value,document.getElementById('set-note'));});
+    });
+    Array.prototype.forEach.call(c.querySelectorAll('input[type=checkbox][data-key]'),function(el){
+      el.addEventListener('change',function(){setConfig(el.dataset.key,el.checked,document.getElementById('set-note'));});
+    });
+    Array.prototype.forEach.call(c.querySelectorAll('input[type=number][data-key]'),function(el){
+      el.addEventListener('change',function(){setConfig(el.dataset.key,el.value,document.getElementById('set-note'));});
+    });
+    Array.prototype.forEach.call(c.querySelectorAll('button[data-savelist]'),function(el){
+      el.addEventListener('click',function(){
+        var key=el.dataset.savelist, inp=c.querySelector('input[data-key="'+key+'"]');
+        setConfig(key,inp?inp.value:'',document.getElementById('set-note'));
+      });
+    });
+  }
+  function renderSettings(){
+    var c=document.getElementById('settings-content'), d=SET.data||{};
+    if(SET.cat==='关于'){renderAbout(c,d);return;}
+    if(SET.cat==='模型与供应商'){renderModel(c,d);return;}
+    if(SET.cat==='外观'){renderAppearance(c,d);return;}
+    var metas=(d.meta||[]).filter(function(m){return m.sec===SET.cat;});
+    var h=''; metas.forEach(function(m){h+=fieldRow(m);});
+    h+='<div class="note" id="set-note"></div>';
+    c.innerHTML=h||'<div class="rp-empty">暂无设置</div>';
+    wireFields(c);
+  }
+  function renderAppearance(c,d){
+    var cur=document.documentElement.dataset.colorScheme||'light';
+    function radio(val,label){return '<label><input type="radio" name="cs" value="'+val+'"'+(cur===val?' checked':'')+'>'+esc(label)+'</label>';}
+    var h=sec('颜色方案')+'<div class="srow"><span class="lab">主题</span><span class="cs-opt">'
+      +radio('light','浅色')+radio('dark','深色')+radio('system','跟随系统')+'</span></div>';
+    (d.meta||[]).filter(function(m){return m.sec==='外观';}).forEach(function(m){h+=fieldRow(m);});
+    h+='<div class="note" id="set-note"></div>';
+    c.innerHTML=h; wireFields(c);
+    Array.prototype.forEach.call(c.querySelectorAll('input[name=cs]'),function(r){
+      r.addEventListener('change',function(){
+        try{localStorage.setItem('tuan-web.color-scheme',r.value);}catch(e){}
+        document.documentElement.dataset.colorScheme=r.value;
+      });
+    });
+  }
+  function renderModel(c,d){
+    var model=d.model||{}, provs=d.providers||[], curProv=model.provider;
+    var h=sec('供应商与模型');
+    h+='<div class="srow"><span class="lab">供应商</span><select id="set-provider"></select></div>';
+    h+='<div class="srow"><span class="lab">模型</span><select id="set-model"></select></div>';
+    h+='<div class="srow col"><span class="lab">API Key</span><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+      +'<input type="password" id="set-apikey" placeholder="输入密钥后保存 (留空保存=清除)" style="flex:1;min-width:220px">'
+      +'<span id="set-keystatus" class="badge no"></span>'
+      +'<button class="btn sm" id="set-keysave">保存密钥</button>'
+      +'<button class="btn sm ghost" id="set-keyclear">清除</button></div></div>';
+    h+='<div class="srow"><span class="lab">端点 base_url</span><span class="kv" id="set-baseurl"></span></div>';
+    h+='<div class="srow"><span class="lab">密钥环境变量</span><span class="kv" id="set-keyenv"></span></div>';
+    h+='<div class="srow"><button class="btn" id="set-applymodel">切换到此模型</button><span class="note" id="set-modelnote" style="margin:0;flex:1"></span></div>';
+    c.innerHTML=h;
+    var psel=c.querySelector('#set-provider'), msel=c.querySelector('#set-model');
+    var groups={};
+    provs.forEach(function(p){var r=p.region||'global';(groups[r]=groups[r]||[]).push(p);});
+    ['cn','global'].forEach(function(reg){
+      if(!groups[reg])return;
+      var og=document.createElement('optgroup'); og.label=(reg==='cn'?'国内':'海外');
+      groups[reg].forEach(function(p){
+        var o=document.createElement('option'); o.value=p.name;
+        o.textContent=p.name+(p.free_tier?' · 免费额度':'');
+        if(p.desc)o.title=p.desc;
+        if(p.name===curProv)o.selected=true; og.appendChild(o);
+      });
+      psel.appendChild(og);
+    });
+    function selProv(){return provs.find(function(x){return x.name===psel.value;});}
+    function fillModels(){
+      var p=selProv(); msel.innerHTML='';
+      var tags=(p&&p.tags)||{};
+      (p&&p.models||[]).forEach(function(m){
+        var o=document.createElement('option'); o.value=m;
+        o.textContent=m+(tags[m]==='free'?' · 免费':(tags[m]==='paid'?' · 付费':''));
+        if(p.name===curProv&&m===model.model)o.selected=true; msel.appendChild(o);
+      });
+      var st=c.querySelector('#set-keystatus');
+      if(p&&p.key_set){st.textContent='已配置';st.className='badge ok';}else{st.textContent='未配置';st.className='badge no';}
+      c.querySelector('#set-baseurl').textContent=(p&&p.base_url)||'';
+      c.querySelector('#set-keyenv').textContent=(p&&p.api_key_env)||'';
+    }
+    psel.addEventListener('change',fillModels); fillModels();
+    function keyAction(key){
+      var p=selProv(); if(!p||!p.api_key_env){setNote(c.querySelector('#set-modelnote'),false,'该供应商无需密钥');return;}
+      fetch('/api/config/apikey',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({env:p.api_key_env,key:key})}).then(function(r){return r.json();}).then(function(j){
+        setNote(c.querySelector('#set-modelnote'),j.ok,j.ok?(key?'密钥已保存 (重启仍生效)':'密钥已清除'):('失败: '+(j.error||'')));
+        if(j.ok){var st=c.querySelector('#set-keystatus');if(key){st.textContent='已配置';st.className='badge ok';}else{st.textContent='未配置';st.className='badge no';}}
+      }).catch(function(e){setNote(c.querySelector('#set-modelnote'),false,'失败: '+e.message);});
+    }
+    c.querySelector('#set-keysave').addEventListener('click',function(){keyAction(c.querySelector('#set-apikey').value.trim());});
+    c.querySelector('#set-keyclear').addEventListener('click',function(){c.querySelector('#set-apikey').value='';keyAction('');});
+    c.querySelector('#set-applymodel').addEventListener('click',function(){
+      var prov=psel.value, mdl=msel.value, key=c.querySelector('#set-apikey').value.trim();
+      fetch('/api/config/model',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({provider:prov,model:mdl,api_key:key})}).then(function(r){return r.json();}).then(function(j){
+        setNote(c.querySelector('#set-modelnote'),j.ok,j.ok?('已切换到 '+prov+'/'+mdl+(j.note?(' · '+j.note):'')):('失败: '+(j.error||'')));
+      }).catch(function(e){setNote(c.querySelector('#set-modelnote'),false,'失败: '+e.message);});
+    });
+  }
+  function renderAbout(c,d){
+    var m=d.model||{};
+    c.innerHTML=sec('关于')
+      +'<div class="srow"><span class="lab">工作区</span><span class="kv">'+esc(d.workspace||'')+'</span></div>'
+      +'<div class="srow"><span class="lab">引擎</span><span class="kv">'+esc(d.engine||'')+'</span></div>'
+      +'<div class="srow"><span class="lab">当前模型</span><span class="kv">'+esc((m.provider||'')+'/'+(m.model||''))+'</span></div>'
+      +'<div class="srow"><span class="lab">端点</span><span class="kv">'+esc(m.base_url||'')+'</span></div>'
+      +'<div class="hint">Web 工作台与 TUI 共用同一份配置 (~/.tuan/config.yaml 与 ~/.tuan/.env)。此处改动即时持久化, 对当前及后续会话生效。</div>';
   }
 
   /* ---- 工作面板的初始加载 (面板打开时才拉, 省流量) ---- */

@@ -135,9 +135,12 @@ def test_frontend_html(server):
 
 def test_asset_css(server):
     css = _get(_url(server, "/assets/tuan-web.css"))
-    assert "--color-accent: #1783ff" in css      # 品牌蓝
+    assert "--color-accent: #1783ff" in css      # 品牌蓝 (TUI 同色)
     assert "--radius-composer: 28px" in css      # 输入面板圆角 (圆润化)
-    assert "--color-sidebar-bg: #f9fbfc" in css  # 侧栏底色
+    # Claude 色系: 亮色米色底 / 暗色软灰底
+    assert "--color-sidebar-bg: #efe9db" in css  # 侧栏底色 (亮色)
+    assert "--color-bg: #f6f2e9" in css          # 页面底色 (亮色米色)
+    assert "--color-sidebar-bg: #232321" in css  # 侧栏底色 (暗色)
     assert "--p-sidebar-w: 264px" in css         # 侧栏宽度
     # 深色主题覆盖齐全
     assert '[data-color-scheme="dark"]' in css
