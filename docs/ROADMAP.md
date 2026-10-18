@@ -27,8 +27,9 @@
 
 ### 阶段一：0.4.0（下一个发版，1–2 周）
 - 把 `[Unreleased]` 的特性与修复正式发版：工作区路径修复、提示词档位、TUI 命令面板、WebUI 流式/思考过程。
-- **补 provider 目录契约测试**：59 个 ProviderPreset 的结构校验（字段完整性、去重、key 命名规范），防止目录漂移。
-- **新增 `examples/` 示例集**（3 个可跑通场景）：安全拦截演示、生态互操作、离线模型（Ollama）。
+- ~~**补 provider 目录契约测试**：58 个 ProviderPreset 的结构校验（字段完整性、去重、key 命名规范），防止目录漂移。~~ ✅ 已完成：`tests/test_provider_catalog_contract.py`（8 个用例，`93da772`）。
+- ~~**新增 `examples/` 示例集**（3 个可跑通场景）：安全拦截演示、生态互操作、离线模型（Ollama）。~~ ✅ 已完成：`examples/{safety_demo,ecosystem_scan,offline_ollama}.py` + README（`e72f347`）。
+- 附加：`tuan safe bench --json` 机器可读输出 + `bench/results/` 时间序列存档，安全数字可直接进 CI（`d943f29`）。
 - 发版动作：版本号 → `0.4.0`，`CHANGELOG` 归档，跑全量测试 + 安全基准 + mypy。
 
 ### 阶段二：0.5.x（API 收缩期，1–2 个月）
