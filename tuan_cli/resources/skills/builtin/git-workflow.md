@@ -34,7 +34,7 @@ Git 不只是版本控制，是团队协作的语言。
 ### 示例
 
 ```bash
-# ✅ 好的提交
+# 推荐: 好的提交
 git commit -m "feat(auth): add JWT refresh token support
 
 Implement automatic token refresh when access token expires.
@@ -42,7 +42,7 @@ Refresh token is stored in httpOnly cookie for security.
 
 Closes #123"
 
-# ❌ 差的提交
+# 反例: 差的提交
 git commit -m "fix bug"  # 什么 bug？怎么修的？
 git commit -m "update"   # 更新了什么？
 git commit -m "wip"      # 工作中的提交不应该进主分支
@@ -79,10 +79,10 @@ git rebase main
 ### 选择指南
 | 场景 | 用 merge | 用 rebase |
 |---|---|---|
-| 公共分支 (已推送) | ✅ | ❌ (危险) |
-| 本地 feature 分支 | ✅ | ✅ |
-| 想保留合并记录 | ✅ | ❌ |
-| 想要线性历史 | ❌ | ✅ |
+| 公共分支 (已推送) | 推荐 | 避免 (危险) |
+| 本地 feature 分支 | 推荐 | 推荐 |
+| 想保留合并记录 | 推荐 | 避免 |
+| 想要线性历史 | 避免 | 推荐 |
 
 ## 合并冲突解决
 

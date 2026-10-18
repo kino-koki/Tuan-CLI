@@ -16,12 +16,12 @@ use_count: 0
 ### N+1 问题 (最常见性能杀手)
 
 ```python
-# ❌ N+1: 1 次查用户 + N 次查订单
+# 反例: N+1: 1 次查用户 + N 次查订单
 users = User.objects.all()
 for user in users:
     orders = Order.objects.filter(user_id=user.id)  # 每个用户一次查询！
 
-# ✅ JOIN 或 prefetch
+# 推荐: JOIN 或 prefetch
 users = User.objects.prefetch_related('orders').all()  # 只有 2 次查询
 # 或
 users = User.objects.annotate(order_count=Count('orders')).all()
@@ -30,30 +30,30 @@ users = User.objects.annotate(order_count=Count('orders')).all()
 ### 索引策略
 
 ```sql
--- ✅ 给 WHERE 条件加索引
+-- 推荐: 给 WHERE 条件加索引
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 
--- ✅ 复合索引 (注意列顺序: 等值在前, 范围在后)
+-- 推荐: 复合索引 (注意列顺序: 等值在前, 范围在后)
 CREATE INDEX idx_orders_user_status ON orders(user_id, status);
 
--- ❌ 不要给低选择性列加索引 (如 gender)
+-- 反例: 不要给低选择性列加索引 (如 gender)
 CREATE INDEX idx_users_gender ON users(gender);  -- 只有 M/F，索引无意义
 ```
 
 ### 避免 SELECT *
 
 ```python
-# ❌ 查所有列 (浪费内存和带宽)
+# 反例: 查所有列 (浪费内存和带宽)
 cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
 
-# ✅ 只查需要的列
+# 推荐: 只查需要的列
 cursor.execute("SELECT id, name, email FROM users WHERE id = ?", (user_id,))
 ```
 
 ## 事务
 
 ```python
-# ✅ 原子操作
+# 推荐: 原子操作
 with db.transaction():
     account_a.balance -= 100
     account_a.save()
@@ -61,7 +61,7 @@ with db.transaction():
     account_b.save()
     # 任何异常自动回滚
 
-# ❌ 非原子 (中间失败导致数据不一致)
+# 反例: 非原子 (中间失败导致数据不一致)
 account_a.balance -= 100
 account_a.save()  # 如果这里成功了...
 account_b.balance += 100
@@ -71,7 +71,7 @@ account_b.save()  # ...但这里失败了，钱就丢了
 ## 连接池
 
 ```python
-# ✅ 使用连接池
+# 推荐: 使用连接池
 from sqlalchemy import create_engine
 engine = create_engine(
     "postgresql://...",
@@ -80,7 +80,7 @@ engine = create_engine(
     pool_recycle=3600,   # 1 小时回收
 )
 
-# ❌ 每次请求创建新连接 (耗尽连接池)
+# 反例: 每次请求创建新连接 (耗尽连接池)
 def handle_request():
     conn = create_engine("postgresql://...").connect()  # 每次都新建！
 ```
@@ -107,17 +107,17 @@ alembic downgrade -1
 ## ORM 使用原则
 
 ```python
-# ✅ 批量操作
+# 推荐: 批量操作
 User.objects.bulk_create([User(name=f"user_{i}") for i in range(1000)])
 
-# ❌ 逐条插入
+# 反例: 逐条插入
 for i in range(1000):
     User.objects.create(name=f"user_{i}")  # 1000 次 INSERT！
 
-# ✅ 更新用 update (绕过 ORM 钩子，直接 SQL)
+# 推荐: 更新用 update (绕过 ORM 钩子，直接 SQL)
 User.objects.filter(is_active=False).update(is_active=True)
 
-# ❌ 逐条更新
+# 反例: 逐条更新
 for user in User.objects.filter(is_active=False):
     user.is_active = True
     user.save()  # N 次 UPDATE！
@@ -126,12 +126,12 @@ for user in User.objects.filter(is_active=False):
 ## 连接泄漏防护
 
 ```python
-# ✅ with 语句自动关闭
+# 推荐: with 语句自动关闭
 with db.connection() as conn:
     result = conn.execute(query)
 # 连接自动归还池
 
-# ❌ 忘记关闭
+# 反例: 忘记关闭
 conn = db.connection()
 result = conn.execute(query)
 # conn 永远不会关闭，连接池耗尽
