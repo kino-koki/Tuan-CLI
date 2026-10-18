@@ -25,7 +25,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
 <title>TUAN · Web Workbench</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23C8664A'/%3E%3Ctext x='32' y='44' font-family='Arial,sans-serif' font-size='30' font-weight='bold' fill='%23FFFFFF' text-anchor='middle'%3ET%3C/text%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231783FF'/%3E%3Ctext x='32' y='44' font-family='Arial,sans-serif' font-size='30' font-weight='bold' fill='%23FFFFFF' text-anchor='middle'%3ET%3C/text%3E%3C/svg%3E">
 <script>
 /* 预涂 color-scheme, 避免首屏闪烁; 顺带从旧键 kimi-web.color-scheme 迁移一次 */
 (function(){try{
@@ -119,6 +119,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   #welcome{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;
            text-align:center;width:100%;height:100%;min-height:340px;margin:auto}
   #tuan-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+  /* 问候语 (hero 态显示, 每次新建会话随机一句, 每 6s 轮换) */
+  #greet{display:none}
   .msg{max-width:var(--p-content-max);margin:0 auto var(--space-5);display:flex;flex-direction:column;gap:var(--space-1-5);width:100%}
   .msg .meta{display:flex;align-items:center;gap:var(--space-3);font-size:var(--text-xs);color:var(--color-text-faint)}
   .msg .meta .who{font-weight:var(--weight-semibold);color:var(--color-text);letter-spacing:.02em;font-size:var(--text-xs)}
@@ -271,14 +273,6 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
         font-family:var(--font-ui);transition:border-color var(--duration-base) var(--ease-out),
         color var(--duration-base) var(--ease-out),background var(--duration-base) var(--ease-out);flex:none}
   #stop:hover{border-color:var(--color-danger);color:var(--color-danger);background:var(--color-danger-soft)}
-  /* 输入条下方: 模型/模式/工作区 chips (官方 K3 标识位) */
-  #model-row{max-width:var(--p-content-max);margin:var(--space-2) auto 0;display:flex;align-items:center;
-             gap:var(--space-1-5);flex-wrap:wrap}
-  #model-row .chip{background:var(--color-surface);border:var(--p-hairline) solid var(--color-line);
-                   border-radius:var(--radius-full);padding:var(--space-05,2px) var(--space-3);
-                   font-size:var(--text-xs);color:var(--color-text-muted);white-space:nowrap;font-family:var(--font-mono)}
-  #model-row .chip b{color:var(--color-text);font-weight:var(--weight-medium);margin-right:var(--space-1)}
-  #model-row .sp{flex:1}
   #upload-btn{background:transparent;border:none;border-radius:var(--radius-md);padding:var(--space-1) var(--space-2);
               color:var(--color-text-faint);cursor:pointer;font-size:var(--text-sm);margin-left:var(--space-1);
               line-height:1.4;display:inline-flex;align-items:center;justify-content:center;
@@ -379,11 +373,14 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
      发出第一条消息后移除 hero, 输入区回落到底部, 布局与常规对话一致。 */
   body.hero #main{justify-content:center}
   body.hero #msgs{flex:none;overflow:visible;padding:0 6vw}
-  body.hero #welcome{height:190px;min-height:0;margin:0;padding:0}
+  body.hero #welcome{height:236px;min-height:0;margin:0;padding:0;justify-content:flex-end}
   body.hero #tuan-canvas{position:absolute;inset:0}
+  body.hero #greet{display:block;width:100%;text-align:center;font-family:var(--font-ui);
+      font-size:22px;font-weight:var(--weight-semibold);color:var(--color-text-strong);
+      letter-spacing:.01em;line-height:1.3;padding:0 0 var(--space-3);animation:greetIn .5s var(--ease-out)}
+  @keyframes greetIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   body.hero #inputbar{border-top:none;background:transparent;padding-bottom:var(--space-2)}
   body.hero #composer{box-shadow:var(--shadow-lg)}
-  body.hero #model-row{justify-content:center}
     /* 常规态: 粒子区不占高度 (欢迎屏仅作隐藏占位) */
   body:not(.hero) #welcome{height:0;min-height:0;overflow:hidden}
 
@@ -452,31 +449,24 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
           padding:2px var(--space-2);cursor:pointer;font-family:var(--font-ui);transition:all var(--duration-base) var(--ease-out)}
   .code-block>.code-head .code-copy:hover{color:var(--color-accent);border-color:var(--color-accent)}
   .code-block>.md pre{border-radius:0 0 var(--radius-md) var(--radius-md);margin:0}
-  /* 语法高亮 token (Claude Code 暖色调; 浅色主题用下方规则覆盖) */
+  /* 语法高亮 token (TUI 蓝调; 浅色主题用下方规则覆盖) */
   .tk-c{color:#8c8475;font-style:italic}
   .tk-s{color:#7fbf95}
-  .tk-n{color:#e58a5f}
+  .tk-n{color:#79c0ff}
   .tk-k{color:#c89fe0}
-  .tk-b{color:#e0b15e}
+  .tk-b{color:#79c0ff}
   .tk-f{color:#7fa8e0}
-  .tk-o{color:#e58a5f}
+  .tk-o{color:#79c0ff}
   :root[data-color-scheme="light"] .md pre{background:var(--color-code-bg,#f6f8fa)}
   :root[data-color-scheme="light"] .code-block>.code-head{background:var(--color-code-bg,#f6f8fa);border-color:var(--color-line)}
   :root[data-color-scheme="light"] .md pre code{color:var(--color-code,#24292f)}
   :root[data-color-scheme="light"] .tk-c{color:#998f7e}
   :root[data-color-scheme="light"] .tk-s{color:#3f7d5a}
-  :root[data-color-scheme="light"] .tk-n{color:#c8664a}
+  :root[data-color-scheme="light"] .tk-n{color:#0550ae}
   :root[data-color-scheme="light"] .tk-k{color:#9b5fb0}
-  :root[data-color-scheme="light"] .tk-b{color:#b9852e}
+  :root[data-color-scheme="light"] .tk-b{color:#0550ae}
   :root[data-color-scheme="light"] .tk-f{color:#3563a8}
-  :root[data-color-scheme="light"] .tk-o{color:#c8664a}
-
-  /* ===== 可交互 chip (模式 / 推理投入) ===== */
-  #model-row .chip.btn{cursor:pointer;transition:all var(--duration-base) var(--ease-out)}
-  #model-row .chip.btn:hover{border-color:var(--color-accent);color:var(--color-text)}
-  #model-row .chip.mode-plan{border-color:var(--color-accent);color:var(--color-accent)}
-  #model-row .chip.mode-yolo{border-color:var(--color-warn,#e3a008);color:var(--color-warn,#e3a008)}
-  #git-chip.dirty{color:var(--color-warn,#e3a008)}
+  :root[data-color-scheme="light"] .tk-o{color:#0550ae}
 
   /* ===== 斜杠命令面板 (对标 TUI /cmd 补全) ===== */
   #slash{display:none;position:absolute;left:0;right:0;bottom:calc(100% + var(--space-1));
@@ -539,6 +529,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     <div id="msgs">
       <div id="welcome">
         <canvas id="tuan-canvas"></canvas>
+        <div id="greet"></div>
       </div>
     </div>
     <div id="inputbar">
@@ -553,15 +544,6 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
           <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8L14 2.5 8 13.5V8.5"/><path d="M2.5 8l5.5.5"/></svg>
         </button>
         <button id="stop">■ 停止</button>
-      </div>
-      <div id="model-row">
-        <span id="t-model" class="chip"></span>
-        <span id="t-mode" class="chip btn" data-i18n-title="web.mode_tip" title="点击切换运行模式"></span>
-        <span id="t-effort" class="chip btn" data-i18n-title="web.effort_tip" title="点击切换推理投入"></span>
-        <span id="t-engine" class="chip">tuan</span>
-        <span class="sp"></span>
-        <span id="git-chip" class="chip" title="git 分支"></span>
-        <span id="t-ws" class="chip"></span>
       </div>
     </div>
   </main>
@@ -623,8 +605,32 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   var modelLabel='';
   /* hero 态 = 对话未开始: 输入区脱离底部、与粒子一起垂直居中 (Kimi 官网经典版式)。
      发出第一条消息即移除, 输入区回落到常规底部布局。 */
-  function showWelcome(){document.body.classList.add('hero');welcomeEl.style.display='flex';startParticles();}
-  function hideWelcome(){document.body.classList.remove('hero');welcomeEl.style.display='none';stopParticles();}
+  /* 欢迎页随机问候语 (每次新建会话随机一句, hero 态每 6s 轮换一条) */
+  var GREETINGS=[
+    '今天想干什么呢？','今天想做点什么？','有什么可以帮你？','来聊聊吧，今天从哪开始？',
+    '准备开始了吗？','今天的目标是什么？','我能帮你做些什么？','有什么新想法？',
+    '从哪儿开始呢？','今天想攻克点什么？','需要我帮你做点什么？','聊聊你的计划吧',
+    '今天状态如何，想做什么？','我准备好了，你说','有什么想让我看看的？','开始今天的探索吧',
+    '想写点代码，还是聊聊天？','今天有什么难题？','我在这儿，随时开始','先从哪件事说起？',
+    '今天想学点或做点什么？','给我个任务吧','准备好了吗，开始？','今天想实现什么？'
+  ];
+  var greetTimer=null;
+  function pickGreet(){
+    var el=document.getElementById('greet');if(!el)return;
+    el.textContent=GREETINGS[Math.floor(Math.random()*GREETINGS.length)];
+    /* 重放入场动画: 先清掉再强制回流, 让 CSS animation 重新触发 */
+    el.style.animation='none';void el.offsetWidth;el.style.animation='';
+  }
+  function showWelcome(){
+    document.body.classList.add('hero');welcomeEl.style.display='flex';startParticles();
+    pickGreet();
+    if(greetTimer)clearInterval(greetTimer);
+    greetTimer=setInterval(pickGreet,6000);
+  }
+  function hideWelcome(){
+    document.body.classList.remove('hero');welcomeEl.style.display='none';stopParticles();
+    if(greetTimer){clearInterval(greetTimer);greetTimer=null;}
+  }
   /* 清空消息区, 但**保留** #welcome —— 它是 #msgs 的子节点。
      此前 6 处直接 msgsEl.innerHTML='' 会把 welcome 一起删掉: welcomeEl 变量仍指向
      那个已脱离文档的孤儿节点, 之后 showWelcome() 只是给孤儿设 display:flex, 而
@@ -704,9 +710,9 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       var w=welcomeEl.clientWidth, h=welcomeEl.clientHeight;
       ctx.clearRect(0,0,w,h);
       var dark=document.documentElement.getAttribute('data-color-scheme')==='dark';
-      /* 主题 token: 浅色 text rgba(0,0,0,.9) + accent #c8664a ; 深色 text rgba(255,255,255,.84) + accent #e58a5f */
+      /* 主题 token: 浅色 text rgba(0,0,0,.9) + accent #1783ff ; 深色 text rgba(255,255,255,.84) + accent #1a88ff */
       var base=dark?'255,255,255':'0,0,0';
-      var brand=dark?'229,138,95':'200,102,74';
+      var brand=dark?'26,136,255':'23,131,255';
       var t=performance.now()/1000;
       var mx=particle.mouse.x, my=particle.mouse.y;
       var parts=particle.parts;
@@ -1140,15 +1146,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     fetch('/api/info').then(function(r){return r.json();}).then(function(j){
       T=j.i18n||{};applyI18n();
       modelLabel=(j.model||'?').split('/').slice(-1)[0]||j.model||'';
-      var ml=esc(modelLabel);
-      document.getElementById('t-model').innerHTML='<b>模型</b> '+ml;
       document.getElementById('ws-name').textContent=j.workspace||'';
       document.getElementById('sidefoot').textContent='TUAN Tuan-CLI · '+(j.workspace||'');
-      document.getElementById('t-ws').innerHTML='<b>ws</b> '+esc((j.workspace||'').split(/[\\/]/).pop()||'');
-      document.getElementById('t-engine').innerHTML='<b>引擎</b> '+esc(j.engine||'tuan');
-      updateModeChip(j.mode);
-      updateEffortChip(j.effort);
-      updateGitChip(j.git);
       /* 工作区信任: 首次打开未知目录时弹确认 (对标 TUI prompt_trust) */
       if(j.trust && j.trust.needs_confirmation){ showTrust(j.trust); }
       /* 注: 侧栏原有一张"安全基准"静态卡片, 已移除 —— 未跑过 bench 时它只会显示
@@ -1190,8 +1189,10 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       if(j.ok){updateEffortChip(j.effort);}else{updateEffortChip(el._effort);}
     }).catch(function(){updateEffortChip(el._effort);});
   }
-  document.getElementById('t-mode').addEventListener('click',cycleMode);
-  document.getElementById('t-effort').addEventListener('click',cycleEffort);
+  /* chip 已从界面移除 (mode/effort/git 改由斜杠命令 /plan /mode /effort /diff 驱动),
+     此处仅保留点击入口以防将来重新加回 chips; 元素不存在则跳过。 */
+  var _tModeEl=document.getElementById('t-mode');if(_tModeEl)_tModeEl.addEventListener('click',cycleMode);
+  var _tEffortEl=document.getElementById('t-effort');if(_tEffortEl)_tEffortEl.addEventListener('click',cycleEffort);
 
   /* ---- git 分支 chip ---- */
   function updateGitChip(git){
@@ -1830,7 +1831,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     if(cmd==='export'){exportMarkdown();return true;}
     if(cmd==='diff'){togglePanel(true);loadTab('diff');return true;}
     if(cmd==='plan'){
-      var cur=(document.getElementById('t-mode')._mode)||'standard';
+      var _mEl=document.getElementById('t-mode');
+      var cur=(_mEl&&_mEl._mode)||'standard';
       var next=cur==='plan'?'standard':'plan';
       fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({mode:next})}).then(function(r){return r.json();}).then(function(j){
