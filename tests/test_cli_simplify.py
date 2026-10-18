@@ -63,7 +63,8 @@ def test_model_no_subcommand_triggers_interactive_chooser(tmp_path):
         rc = commands.cmd_model(build_parser().parse_args(["models"]))
     assert rc == 0
     assert written.get("model.provider") == "deepseek"
-    assert written.get("model.model") == "deepseek-chat"
+    # 默认模型取目录推荐首项 (MODEL_LISTS["deepseek"] 覆盖后为 deepseek-v4-flash)
+    assert written.get("model.model") == "deepseek-v4-flash"
     assert written.get("model.base_url") == PROVIDER_PRESETS["deepseek"]["base_url"]
     assert written.get("model.api_key_env") == PROVIDER_PRESETS["deepseek"]["api_key_env"]
 
