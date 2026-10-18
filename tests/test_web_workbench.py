@@ -455,3 +455,19 @@ def test_frontend_shortcut_help_panel():
         assert key in FRONTEND_HTML, f"快捷键表缺少 {key}"
     # 样式: 键帽视觉
     assert "#settings .kbd-row .kbd" in FRONTEND_HTML, "应有键帽样式"
+
+
+def test_frontend_model_slash_opens_picker():
+    """`/model` 与 `/provider` 应打开模型选择器, 而不是当普通消息发给 Agent。
+
+    回归: 二者此前落在 handleSlash 的兜底分支 (return false), 会被当作消息发给
+    Agent —— 用户拿到一句文字回复却根本没换模型, 而设置面板里其实早就有现成的
+    供应商/模型选择器。同时要认面板补全产生的尾空格形态 "<cmd> "。
+    """
+    from tuan_cli.web.frontend import FRONTEND_HTML
+
+    assert "if(cmd==='model'||cmd==='provider'||cmd==='models')" in FRONTEND_HTML
+    # 打开设置面板并定位到模型页
+    assert "SET.cat='模型与供应商'" in FRONTEND_HTML
+    # 带参数时预选供应商
+    assert "set-provider" in FRONTEND_HTML
