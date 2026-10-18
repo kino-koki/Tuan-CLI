@@ -93,6 +93,8 @@ _CMD_SOURCES = {
     "_resolve_session_target": ".cmd_session",
     # ---- cmd_usercmd (拆分自 cmd_services) ----
     "cmd_usercmd": ".cmd_usercmd",
+    # ---- cmd_web (本地 Web 工作台: tuan web) ----
+    "cmd_web": ".cmd_web",
     # ---- cmd_slash (REPL 斜杠命令) ----
     "_handle_slash": ".cmd_slash",
     "_cmd_image": ".cmd_slash",
