@@ -32,6 +32,27 @@ def _wcswidth(s: str) -> int:
         return _wcswidth_impl(s)
     return sum(2 if ord(c) > 0x2E7F else 1 for c in s)
 
+
+def _display_width(s: str) -> int:
+    """整串的终端显示宽度 —— 宽度计算的热路径, 必须走一次 C 调用而不是逐字 Python 循环。
+
+    渲染每一帧都要给全部历史行算宽度 (见 `_line_heights`)。逐字符调用
+    ``_wcswidth`` 是 Python 层循环, 2000 行历史每帧要多跑几万次函数调用
+    (实测约 30ms/帧), 而流式输出时每帧都要重算, 直接表现为卡顿。
+    ``wcwidth.wcswidth`` 内部是 C 实现且自带组合字符/东亚宽字符处理, 整串调用
+    结果与逐字累加一致。
+
+    例外: 串里含**控制字符**时 ``wcswidth`` 返回 -1 (表示"无法计算"), 此时回退
+    逐字累加, 保持与旧实现一致的行为, 不能让 -1 变成 0 宽度而算错行高。
+    """
+    if not s:
+        return 0
+    if _wcswidth_impl is not None:
+        w = _wcswidth_impl(s)
+        if w >= 0:
+            return w
+    return sum(max(0, _wcswidth(ch)) for ch in s)
+
 from ..i18n import t
 from ..core.prompt_tier import PROVIDER_CONTEXT_WINDOWS
 
@@ -203,17 +224,21 @@ def _ask_user_plain(question: str, options: List[str]) -> str:
 
 
 class _MeasuredWindow(Window):
-    """对话区窗口: 在渲染时记录**实际**分配到的高度。
+    """对话区窗口: 在渲染时记录**实际**分配到的宽度与高度。
 
     对话区高度取决于终端行数、审计面板 (Ctrl+O) 是否展开、`/` 命令面板占几行,
     布局算式很容易和实际差 1~2 行 —— 而虚拟视口要按"正好一屏"切片, 差一行
-    就会露白/截断。prompt_toolkit 在 `write_to_screen` 时把真实高度放在
-    `WritePosition.height`, 这里记下来供 `_viewport_rows()` 使用 (首帧无记录,
-    退化为按终端行数估算, 第二帧起即为精确值)。
+    就会露白/截断。宽度同理: 对话区宽度会被右侧 diff 面板 (Ctrl+D) 吃掉一块,
+    估算值 (`列数-2`) 与真实值不一致时, 长消息的折行数算错, 切片随之错位。
+
+    prompt_toolkit 在 `write_to_screen` 时把真实尺寸放在 `WritePosition` 上,
+    这里记下来供 `_viewport_rows()` / `_log_width()` 使用 (首帧无记录, 退化为
+    按终端尺寸估算, 第二帧起即为精确值)。
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.measured_height = 0
+        self.measured_width = 0
         super().__init__(*args, **kwargs)
 
     def write_to_screen(self, screen: Any, mouse_handlers: Any,
@@ -223,6 +248,9 @@ class _MeasuredWindow(Window):
             h = int(getattr(write_position, "height", 0) or 0)
             if h > 0:
                 self.measured_height = h
+            w = int(getattr(write_position, "width", 0) or 0)
+            if w > 0:
+                self.measured_width = w
         except Exception:  # noqa: BLE001 - 测量失败不影响渲染
             pass
         super().write_to_screen(screen, mouse_handlers, write_position,
@@ -829,29 +857,40 @@ class QxtTUI:
         files = added = removed = 0
         rows: List[Tuple[str, str]] = []
         width = self._diff_panel_width()
+
+        def cut(raw: str) -> str:
+            """按**显示宽度**截断到面板宽度。
+
+            旧实现用 `raw[:width]` 按字符数截断, 对中文/emoji 完全失效 ——
+            一个汉字占 2 列, 一行 60 字的中文注释实际要120 列, 而面板
+            `wrap_lines=False`, 超宽内容会直接顶破布局 (右侧面板压到终端右边界
+            之外, 表现为"溢出/错位")。
+            """
+            return self._clip_dw(raw, max(1, width))
+
         for raw in (proc.stdout or "").splitlines():
             if raw.startswith("diff --git"):
                 files += 1
-                rows.append(("class:primary", raw[:width]))
+                rows.append(("class:primary", cut(raw)))
                 continue
             if raw.startswith(("+++", "---")):
-                rows.append(("class:textdim", raw[:width]))
+                rows.append(("class:textdim", cut(raw)))
                 continue
             if raw.startswith("@@"):
-                rows.append(("class:accent", raw[:width]))
+                rows.append(("class:accent", cut(raw)))
                 continue
             if raw.startswith("+"):
                 added += 1
-                rows.append(("class:diffadd", raw[:width]))
+                rows.append(("class:diffadd", cut(raw)))
                 continue
             if raw.startswith("-"):
                 removed += 1
-                rows.append(("class:diffdel", raw[:width]))
+                rows.append(("class:diffdel", cut(raw)))
                 continue
             if raw.startswith(("index ", "new file", "deleted file", "similarity ")):
-                rows.append(("class:textdim", raw[:width]))
+                rows.append(("class:textdim", cut(raw)))
                 continue
-            rows.append(("class:text", raw[:width]))
+            rows.append(("class:text", cut(raw)))
 
         self._diff_summary = (
             t("tui.diff_summary", files=files, added=added, removed=removed)
@@ -860,32 +899,44 @@ class QxtTUI:
         self._diff_cache = rows
 
     def _render_diff_panel(self):
-        """右侧 diff 面板内容 (对标 Claude Code /diff 的并排实时面板)。"""
+        """右侧 diff 面板内容 (对标 Claude Code /diff 的并排实时面板)。
+
+        该面板的 Window 是 `wrap_lines=False` (diff 需要保持原始行、不折行),
+        因此**每一行都必须在渲染出口按显示宽度硬裁** —— 与对话区不同, 这里
+        一旦超宽就是真的顶破布局 (面板溢出终端右边界 / 把整屏挤错位)。
+        """
         if not self._diff_visible:
             return []
         # 节流刷新: 面板开着时模型连续改文件, 每个重绘帧都 fork git 会拖慢 TUI。
         if time.monotonic() - self._diff_fetched_at > 1.5:
             self._fetch_diff()
 
+        width = max(1, self._diff_panel_width())
+
+        def row(cls: str, text: str) -> Tuple[str, str]:
+            return (cls, self._clip_dw(text, width))
+
         out: List[Tuple[str, str]] = []
-        out.append(("class:primary", t("tui.diff_title")))
+        out.append(row("class:primary", t("tui.diff_title")))
         if self._diff_error:
             out.append(("", "\n"))
-            out.append(("class:textdim", self._diff_error))
+            out.append(row("class:textdim", self._diff_error))
             return out
 
-        out.append(("class:textdim", f" {self._diff_summary}"))
+        out.append(row("class:textdim", f" {self._diff_summary}"))
         out.append(("", "\n"))
-        out.append(("class:textdim", "  " + t("tui.diff_hint")))
+        out.append(row("class:textdim", "  " + t("tui.diff_hint")))
         out.append(("", "\n"))
         if not self._diff_cache:
-            out.append(("class:textdim", "  " + t("tui.diff_clean")))
+            out.append(row("class:textdim", "  " + t("tui.diff_clean")))
             return out
 
         for i, (cls, seg) in enumerate(self._diff_cache):
             if i:
                 out.append(("", "\n"))
-            out.append((cls, seg))
+            # 双重保险: _fetch_diff 已按显示宽度裁过, 这里再裁一次以覆盖
+            # 外部直接写入 _diff_cache 的路径 (测试/未来功能)。
+            out.append(row(cls, seg))
         return out
 
     # ---- 对话区滚动 (自定义光标定位, Windows/conpty 下可靠) ----
@@ -917,7 +968,18 @@ class QxtTUI:
         return int(cols)
 
     def _log_width(self) -> int:
-        """对话区可视列宽 (供软换行高度估算)。"""
+        """对话区可视列宽 (供软换行高度估算)。
+
+        优先用 `_MeasuredWindow` 实测的宽度 —— 对话区实际宽度会被右侧 diff 面板
+        (Ctrl+D) 吃掉一块, 用"终端列数-2"估算会偏大, 长消息折行数算少, 虚拟
+        视口切片随之错位 (表现为回卷时露白/跳行)。首帧尚无实测值时退化为估算。
+        """
+        try:
+            m = int(getattr(self._log_window, "measured_width", 0) or 0)
+        except Exception:
+            m = 0
+        if m > 0:
+            return m
         try:
             cols = self._app.output.get_size().columns if self._app else 0
         except Exception:
@@ -951,7 +1013,7 @@ class QxtTUI:
             if not text:
                 heights.append(1)
                 continue
-            disp = sum(max(0, _wcswidth(ch)) for ch in text)
+            disp = _display_width(text)
             heights.append(max(1, math.ceil(disp / width)))
         return heights
 
@@ -2285,7 +2347,9 @@ class QxtTUI:
                 if not (segs and segs[0][1].startswith(STATUS_BULLET)):
                     segs = [("class:textdim", STATUS_BULLET)] + segs
                 first = False
-            elif indent:
+            elif indent and segs[0][1]:
+                # 空行不加缩进: 否则每行空行都带两个尾随空格, 既在终端里看不见,
+                # 又会被选中复制出去, 还让 diff 里凭空多出空白字符。
                 segs = [("class:text", "  ")] + segs
             out.append(segs)
 
@@ -2304,7 +2368,10 @@ class QxtTUI:
                 push([("class:textdim", f"› {lang}" if lang else "› code")])
                 for cl in self._highlight_code("\n".join(code), lang):
                     out.append(cl)
-                push([("", "")])
+                # 代码块后补一行空行做视觉分隔; 但若后面没有内容 (收尾的代码块),
+                # 或已经是空行, 就别再补 —— 否则空行会与块分隔叠加成两行。
+                if i < n and not (i < n and not lines[i].strip()):
+                    push([("", "")])
             else:
                 push([("class:text", raw)], indent=True)
                 i += 1
@@ -2357,17 +2424,23 @@ class QxtTUI:
             return _split_flat_lines(self._render_boot())
 
         screen: List[List[Tuple[str, str]]] = []
+        prev_role = ""
         for ev in self._events:
             if isinstance(ev, tuple):
                 screen.extend(self._colored_lines(ev[0], ev[1]))
             elif isinstance(ev, list):
                 screen.append(ev)
             else:
-                # 消息块间空行分隔: 对话不再是堆砌文字, 每轮提问/回答自成区块
-                if screen and screen[-1]:
-                    screen.append([])
                 role = "user" if ev.startswith(USER_MESSAGE_BULLET) else "log"
+                # 块间空行分隔, 但**对标 Claude Code 的紧凑排版**做两处收敛:
+                # 1. 提问与其回答之间不空行 —— 一次问答是一个整体, 空行会把它拆成
+                #    两个视觉区块, 是"行距偏松"的最大来源;
+                # 2. 连续空行去重 —— 代码块尾部已补过空行, 块分隔再补一次就变成
+                #    两行空白, 累积起来把对话撑得又长又散。
+                if screen and screen[-1] and not (prev_role == "user" and role == "log"):
+                    screen.append([])
                 screen.extend(self._msg_to_lines(role, ev))
+                prev_role = role
 
         # 本轮工具调用: 折叠成一行摘要 (see N), 展开时逐条; 始终镜像进审计面板
         if self._turn_tool_lines:
