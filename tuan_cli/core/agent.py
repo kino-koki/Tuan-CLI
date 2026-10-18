@@ -759,6 +759,14 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         nudge: bool = True,
     ) -> str:
         """运行后共享收尾: hooks 通知、技能蒸馏、trace 关闭、会话状态落盘。"""
+        # 输出净化 (零 emoji 硬规则兜底): 提示词已要求不输出 emoji, 但提示词是
+        # 请求而非保证。这里在**所有运行路径的公共收尾**做一次确定性清理, 保证
+        # 落盘会话 / 历史回看 / 导出 Markdown 里都不含 emoji —— HTML/PPT 场景下
+        # emoji 会渲染成豆腐方框, 属产物缺陷。放在 hooks/记忆提取**之前**, 让
+        # 下游看到的就是净化后的文本。
+        if answer:
+            from .output_sanitize import strip_emoji
+            answer, _removed = strip_emoji(answer)
         # 流式分片合并落盘的收尾: 把不满阈值的尾部一次冲完, 保证 JSONL 完整
         flusher = getattr(self, "_chunk_flusher", None)
         if flusher is not None:
