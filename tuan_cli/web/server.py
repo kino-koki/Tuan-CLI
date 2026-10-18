@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
 import subprocess
@@ -56,6 +57,9 @@ _SESSIONS_LOCK = threading.RLock()  # 嵌套获取 (save_sessions 在会话锁�
 
 # 待审批的危险操作: {request_id: {"event": Event, "result": bool}}
 _APPROVALS: Dict[str, Dict[str, Any]] = {}
+#: SSE 心跳间隔 (秒): 无事件间隙超过该值就写一行注释, 防代理掐断空闲连接。
+_SSE_HEARTBEAT_SEC = 10.0
+
 _APPROVALS_LOCK = threading.Lock()
 
 # 当前正在跑的对话轮 → 其 SSE 事件队列 (按线程标识索引)。
@@ -281,6 +285,11 @@ class _WebHTTPServer(ThreadingHTTPServer):
 
 class _WebHandler(BaseHTTPRequestHandler):
 
+    # SSE 每事件只有几十字节: Nagle 算法会把小包攒到 "有未确认数据" 才发,
+    # 与 delayed-ACK 叠加后每个事件平白多出 ~40ms 停顿 (Windows 上尤其明显),
+    # 长回复就是数百次卡顿 —— 表现为"响应极其慢/一顿一顿的"。关掉它。
+    disable_nagle_algorithm = True
+
     # ---------------- helpers ----------------
     def _json(self, code: int, payload: Any) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -388,6 +397,9 @@ class _WebHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/slash":
             self._json(200, {"ok": True, "commands": self._owner.slash_commands()})
+            return
+        if path == "/api/config":
+            self._json(200, self._owner.config_snapshot())
             return
         if path == "/api/files":
             qs = parse_qs(parsed.query)
@@ -533,6 +545,24 @@ class _WebHandler(BaseHTTPRequestHandler):
             res = self._owner.set_trust_level(str(body.get("level") or ""))
             self._json(200 if res.get("ok") else 400, res)
             return
+        if path == "/api/config/set":
+            body = self._read_body()
+            res = self._owner.apply_setting(str(body.get("key") or ""), body.get("value"))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/config/model":
+            body = self._read_body()
+            res = self._owner.apply_model(str(body.get("provider") or ""),
+                                          str(body.get("model") or ""),
+                                          str(body.get("api_key") or ""))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/config/apikey":
+            body = self._read_body()
+            res = self._owner.apply_apikey(str(body.get("env") or ""),
+                                           str(body.get("key") or ""))
+            self._json(200 if res.get("ok") else 400, res)
+            return
         self._json(404, {"ok": False, "error": "not found"})
 
     # ---------------- 工作区 shell (! 执行) ----------------
@@ -646,7 +676,9 @@ class _WebHandler(BaseHTTPRequestHandler):
                      "messages": [], "agent": None, "lock": threading.Lock()}
                 _SESSIONS[session_id] = s
             s["messages"].append({"role": "user", "content": message, "tools": []})
-            self._owner.save_sessions()
+            # 防抖落盘: 全量序列化所有会话 (含历史 parts) 在大会话下要数百毫秒,
+            # 同步做会直接推迟首 token。1s 后合并落一次; 回合结束仍有同步保存。
+            self._owner.save_sessions_soon()
         agent = s["agent"]
 
         self.send_response(200)
@@ -721,15 +753,34 @@ class _WebHandler(BaseHTTPRequestHandler):
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
         text_parts: List[str] = []
-        while thread.is_alive() or not q.empty():
+        last_write = time.monotonic()
+        try:
+            while thread.is_alive() or not q.empty():
+                try:
+                    kind, data = q.get(timeout=0.3)
+                except queue.Empty:
+                    # 心跳: 思考期 (推理模型静默可达分钟级) 没有任何事件的间隙,
+                    # 周期性写 SSE 注释行。客户端解析器忽略无 event:/data: 的注释,
+                    # 但代理/中间层见到字节流动就不会因空闲而掐断连接 —— 这是
+                    # "长思考后连接被切断、回复莫名中断" 的直接防线。
+                    if time.monotonic() - last_write >= _SSE_HEARTBEAT_SEC:
+                        self.wfile.write(b": hb\n\n")
+                        self.wfile.flush()
+                        last_write = time.monotonic()
+                    continue
+                if kind == "delta":
+                    text_parts.append(data)
+                self.wfile.write(_sse(kind, data).encode("utf-8"))
+                self.wfile.flush()
+                last_write = time.monotonic()
+        except Exception:  # noqa: BLE001 - 客户端断开 (关闭标签页/断网):
+            # 写失败即浏览器不在了。立即取消本轮生成, 否则 agent 会把整轮
+            # 跑完, 白烧 token 且占着会话锁堵住后续消息 ("容易中断" 的成因之一)。
             try:
-                kind, data = q.get(timeout=0.3)
-            except queue.Empty:
-                continue
-            if kind == "delta":
-                text_parts.append(data)
-            self.wfile.write(_sse(kind, data).encode("utf-8"))
-            self.wfile.flush()
+                agent.cancel()
+            except Exception:  # noqa: BLE001
+                pass
+            return
         self.wfile.write(_sse("done", {"text": "".join(text_parts)}).encode("utf-8"))
         self.wfile.flush()
 
@@ -746,6 +797,20 @@ class _WebHandler(BaseHTTPRequestHandler):
                 "parts": parts,
             })
             self._owner.save_sessions()
+
+
+def _provider_model_ids(preset: Any) -> List[str]:
+    """供应商的可选模型 ID 列表 (剥掉 model_lists 的 |free/|paid 标注)。
+
+    目录里清单项写作 "kimi-k3|paid", 而配置/请求里必须是不带竖线的纯 ID ——
+    Web 设置面板与 CLI 的 tuan model 共用这一口径 (见 cmd_model._strip_model_label)。
+    """
+    ids: List[str] = []
+    for raw in list(getattr(preset, "recommended_models", None) or []) + [getattr(preset, "model", "")]:
+        mid = str(raw).split("|", 1)[0].strip()
+        if mid and mid not in ids:
+            ids.append(mid)
+    return ids
 
 
 class WebServer:
@@ -770,6 +835,7 @@ class WebServer:
         self._mode: Optional[str] = None
         self._effort: Optional[str] = None
         self._httpd: Optional[ThreadingHTTPServer] = None
+        self._save_timer: Optional[threading.Timer] = None
         self._session_file = Path(workspace or ".") / ".tuan" / "web_sessions.json"
         self.load_sessions()
 
@@ -804,6 +870,27 @@ class WebServer:
             tmp.replace(self._session_file)
         except Exception:  # noqa: BLE001
             pass
+
+    def save_sessions_soon(self, delay: float = 1.0) -> None:
+        """防抖落盘: 合并短时间内的多次保存请求。
+
+        全量序列化所有会话 (每条含 parts/工具输出) 在大会话下要数百毫秒;
+        同步调用会直接推迟 SSE 首 token (用户观感: "发出去半天没反应")。
+        这里只排一个定时器, 到点一次性落盘; 回合结束时仍有同步 save_sessions
+        兜底, 防抖窗口内进程退出最多丢最后一两条用户消息。
+        """
+        with _SESSIONS_LOCK:
+            if self._save_timer is not None:
+                return  # 已有一场排队的落盘 (它会取到最新状态)
+            timer = threading.Timer(delay, self._flush_sessions)
+            timer.daemon = True
+            self._save_timer = timer
+            timer.start()
+
+    def _flush_sessions(self) -> None:
+        with _SESSIONS_LOCK:
+            self._save_timer = None
+        self.save_sessions()
 
     # ---------------- 安全状态面板 ----------------
     def security_info(self) -> Dict[str, Any]:
@@ -1227,6 +1314,311 @@ class WebServer:
             out.append({"name": name, "desc": meta.get(name, "")})
         return out
 
+    # ---------------- 设置 (对标 TUI 的 /config /model /permissions) ----------------
+    # 通用标量设置: 前端据此渲染表单, 写回走 /api/config/set。
+    # type: enum(下拉) / int(数字) / float(小数) / bool(开关) / list(逗号分隔文本) / string(文本)
+    # min/max 与 config/validate.py 的 _RULES 同口径 —— Web 端写入前就拦住越界值,
+    # 而不是等 `tuan config validate` 才报错。
+    # sec 即前端左侧导航分组, 需与 frontend.py 的 SET_CATS 保持一致。
+    _SETTINGS_META: List[Dict[str, Any]] = [
+        # ---- 运行 ----
+        {"sec": "运行", "key": "mode.default", "label": "运行模式", "type": "enum",
+         "enum": ["standard", "plan", "yolo"], "hint": "plan=只读规划 / yolo=放权 / standard=默认"},
+        {"sec": "运行", "key": "agent.effort", "label": "推理投入", "type": "enum",
+         "enum": ["low", "medium", "high", "xhigh", "max"], "hint": "low 快省 / max 最深究"},
+        {"sec": "运行", "key": "tools.exposure", "label": "工具暴露档位", "type": "enum",
+         "enum": ["minimal", "standard", "full"], "hint": "传给模型的工具清单大小"},
+        {"sec": "运行", "key": "agent.max_iterations", "label": "最大迭代轮数", "type": "int",
+         "min": 1, "max": 200},
+        {"sec": "运行", "key": "agent.max_retries", "label": "失败重试次数", "type": "int",
+         "min": 0, "max": 10},
+        {"sec": "运行", "key": "agent.auto_memory", "label": "自动记忆", "type": "bool"},
+        {"sec": "运行", "key": "agent.show_reasoning", "label": "显示思考过程", "type": "bool"},
+        {"sec": "运行", "key": "agent.personality", "label": "人设", "type": "string",
+         "hint": "留空=默认; 对应 /personality set"},
+        {"sec": "运行", "key": "agent.subagent_isolation", "label": "子代理隔离方式", "type": "enum",
+         "enum": ["process", "thread"], "hint": "process=进程级沙箱 (推荐) / thread=线程软隔离"},
+        {"sec": "运行", "key": "agent.subagent_max_workers", "label": "子代理并发上限", "type": "int",
+         "min": 1, "max": 16},
+        {"sec": "运行", "key": "agent.subagent_timeout", "label": "子代理超时 (秒)", "type": "int",
+         "min": 5, "max": 3600},
+        # ---- 模型参数 (供应商/模型本身在「模型与供应商」页签) ----
+        {"sec": "模型参数", "key": "model.temperature", "label": "温度 temperature", "type": "float",
+         "min": 0.0, "max": 2.0, "hint": "0=确定性 / 2=最发散"},
+        {"sec": "模型参数", "key": "model.max_tokens", "label": "最大输出 tokens", "type": "int",
+         "min": 1, "max": 1000000},
+        {"sec": "模型参数", "key": "model.context_window", "label": "上下文窗口", "type": "int",
+         "min": 0, "max": 10000000, "hint": "0=按模型名自动推断"},
+        {"sec": "模型参数", "key": "model.stream", "label": "流式输出", "type": "bool"},
+        {"sec": "模型参数", "key": "model.prompt_cache", "label": "提示词缓存", "type": "bool"},
+        {"sec": "模型参数", "key": "model.timeout", "label": "请求超时 (秒)", "type": "int",
+         "min": 1, "max": 600},
+        {"sec": "模型参数", "key": "model.max_retries", "label": "API 重试次数", "type": "int",
+         "min": 0, "max": 10},
+        # ---- 上下文 ----
+        {"sec": "上下文", "key": "context.keep_recent", "label": "保留最近消息数", "type": "int",
+         "min": 1, "max": 100},
+        {"sec": "上下文", "key": "context.budget_tokens", "label": "上下文预算 (tokens)", "type": "int",
+         "min": 1000, "max": 2000000},
+        {"sec": "上下文", "key": "context.compact_trigger", "label": "触发压缩的用量", "type": "int",
+         "min": 1000, "max": 2000000},
+        {"sec": "上下文", "key": "context.compact_strategy", "label": "压缩策略", "type": "enum",
+         "enum": ["smart", "none"]},
+        {"sec": "上下文", "key": "context.pin_codebase", "label": "固定代码库地图", "type": "bool"},
+        {"sec": "上下文", "key": "context.auto_index", "label": "自动索引工作区", "type": "bool"},
+        {"sec": "上下文", "key": "context.index_max_files", "label": "索引文件数上限", "type": "int",
+         "min": 1, "max": 20000},
+        # ---- 权限 ----
+        {"sec": "权限", "key": "permissions.network.allow_domains", "label": "网络域名白名单",
+         "type": "list", "hint": "逗号分隔; 空=不限制"},
+        {"sec": "权限", "key": "permissions.shell.deny_patterns", "label": "Shell 拒绝模式",
+         "type": "list", "hint": "逗号分隔的正则"},
+        {"sec": "权限", "key": "security.network.blocked_domains", "label": "网络黑名单域名",
+         "type": "list", "hint": "逗号分隔"},
+        {"sec": "权限", "key": "security.network.deny_remote_exec", "label": "禁止远程执行", "type": "bool"},
+        {"sec": "权限", "key": "security.network.deny_data_exfil", "label": "禁止数据外泄", "type": "bool"},
+        {"sec": "权限", "key": "mode.yolo_require_confirm", "label": "yolo 仍需确认的操作",
+         "type": "list", "hint": "逗号分隔的工具名; 对应 /permissions"},
+        # ---- 沙箱 ----
+        {"sec": "沙箱", "key": "sandbox.enabled", "label": "启用沙箱", "type": "bool"},
+        {"sec": "沙箱", "key": "sandbox.backend", "label": "沙箱后端", "type": "enum",
+         "enum": ["auto", "local", "docker", "landlock", "seatbelt", "jobobject"],
+         "hint": "auto=按平台自动选择; local=不隔离"},
+        {"sec": "沙箱", "key": "sandbox.deny_unknown_shell", "label": "拒绝未知 shell", "type": "bool"},
+        {"sec": "沙箱", "key": "sandbox.enforce_required", "label": "强制必需沙箱", "type": "bool"},
+        # ---- 验证与自治 ----
+        {"sec": "验证与自治", "key": "verify.enabled", "label": "启用编码验证闭环", "type": "bool",
+         "hint": "对应 /verify"},
+        {"sec": "验证与自治", "key": "verify.auto", "label": "自动验证", "type": "bool"},
+        {"sec": "验证与自治", "key": "verify.max_heal_rounds", "label": "最大自修复轮数", "type": "int",
+         "min": 0, "max": 20},
+        {"sec": "验证与自治", "key": "reflector.enabled", "label": "启用反思器", "type": "bool"},
+        {"sec": "验证与自治", "key": "reflector.max_auto_fix", "label": "反思自动修复上限", "type": "int",
+         "min": 0, "max": 20},
+        {"sec": "验证与自治", "key": "loop.enabled", "label": "启用 devloop", "type": "bool"},
+        {"sec": "验证与自治", "key": "loop.auto_test", "label": "devloop 自动测试", "type": "bool"},
+        {"sec": "验证与自治", "key": "loop.max_iterations", "label": "devloop 最大轮数", "type": "int",
+         "min": 1, "max": 200},
+        {"sec": "验证与自治", "key": "goal.enabled", "label": "启用目标分解", "type": "bool",
+         "hint": "对应 /goal"},
+        {"sec": "验证与自治", "key": "goal.max_auto_iterations", "label": "目标自动迭代上限", "type": "int",
+         "min": 1, "max": 200},
+        # ---- 记忆 ----
+        {"sec": "记忆", "key": "memory.fts_enabled", "label": "全文检索", "type": "bool"},
+        {"sec": "记忆", "key": "memory.auto_extract", "label": "自动提取记忆", "type": "bool"},
+        {"sec": "记忆", "key": "memory.recall_limit", "label": "召回条数", "type": "int",
+         "min": 1, "max": 50},
+        {"sec": "记忆", "key": "memory.notes_enabled", "label": "启用笔记", "type": "bool"},
+        # ---- 技能与提示 ----
+        {"sec": "技能与提示", "key": "skills.enabled", "label": "启用技能", "type": "bool"},
+        {"sec": "技能与提示", "key": "skills.auto_inject", "label": "自动注入技能", "type": "bool"},
+        {"sec": "技能与提示", "key": "skills.inject_limit", "label": "注入技能数上限", "type": "int",
+         "min": 1, "max": 20},
+        {"sec": "技能与提示", "key": "prompt.tier", "label": "提示词档位", "type": "enum",
+         "enum": ["auto", "compact", "full"]},
+        {"sec": "技能与提示", "key": "prompt.cache_stable_prefix", "label": "缓存稳定前缀", "type": "bool"},
+        {"sec": "技能与提示", "key": "prompt.project_doc_max_bytes", "label": "项目文档上限 (字节)",
+         "type": "int", "min": 1024, "max": 1048576},
+        # ---- 网络 ----
+        {"sec": "网络", "key": "network.search_engines", "label": "搜索引擎", "type": "list",
+         "hint": "逗号分隔, 如 duckduckgo, bing"},
+        {"sec": "网络", "key": "network.search_max_results", "label": "搜索结果上限", "type": "int",
+         "min": 1, "max": 1000},
+        {"sec": "网络", "key": "network.fetch_max_chars", "label": "抓取字符上限", "type": "int",
+         "min": 1000, "max": 500000},
+        {"sec": "网络", "key": "network.fetch_timeout", "label": "抓取超时 (秒)", "type": "int",
+         "min": 1, "max": 300},
+        # ---- MCP ----
+        {"sec": "MCP", "key": "mcp.enabled", "label": "启用 MCP", "type": "bool",
+         "hint": "服务器清单见 ~/.tuan/config.yaml 的 mcp.servers"},
+        {"sec": "MCP", "key": "mcp.timeout", "label": "MCP 超时 (秒)", "type": "float",
+         "min": 1.0, "max": 600.0},
+        # ---- 路由 ----
+        {"sec": "智能路由", "key": "router.enabled", "label": "启用智能路由", "type": "bool",
+         "hint": "对应 /route"},
+        {"sec": "智能路由", "key": "router.auto_switch", "label": "自动切换模型", "type": "bool"},
+        {"sec": "智能路由", "key": "router.plan_execute", "label": "规划/执行分离", "type": "bool"},
+        {"sec": "智能路由", "key": "router.budget_limit", "label": "预算上限 (0=不限)", "type": "float",
+         "min": 0.0, "max": 100000.0},
+        {"sec": "智能路由", "key": "router.escalate_on_stuck", "label": "卡住时升级模型", "type": "bool"},
+        {"sec": "智能路由", "key": "router.stuck_threshold", "label": "卡住判定轮数", "type": "int",
+         "min": 1, "max": 50},
+        # ---- 后台 ----
+        {"sec": "后台任务", "key": "background.enabled", "label": "启用后台任务", "type": "bool"},
+        {"sec": "后台任务", "key": "background.max_turns", "label": "后台最大轮数", "type": "int",
+         "min": 1, "max": 1000},
+        {"sec": "后台任务", "key": "cron.enabled", "label": "启用定时任务", "type": "bool"},
+        {"sec": "后台任务", "key": "cron.check_interval", "label": "定时检查间隔 (秒)", "type": "int",
+         "min": 5, "max": 86400},
+        # ---- 外观 ----
+        {"sec": "外观", "key": "ui.show_token_usage", "label": "显示 token 用量", "type": "bool"},
+        {"sec": "外观", "key": "ui.show_cost_report", "label": "显示花费报告", "type": "bool"},
+        {"sec": "外观", "key": "ui.show_reflect_summary", "label": "显示反思摘要", "type": "bool"},
+        {"sec": "外观", "key": "ui.output_style", "label": "输出风格", "type": "enum",
+         "enum": ["default", "compact", "verbose"], "hint": "TUI 的输出密度"},
+    ]
+
+    @staticmethod
+    def _coerce_setting(stype: str, value: Any, options: Any = None) -> Any:
+        if stype == "int":
+            return int(value)
+        if stype == "float":
+            return float(value)
+        if stype == "bool":
+            if isinstance(value, str):
+                return value.strip().lower() in ("1", "true", "yes", "on")
+            return bool(value)
+        if stype == "list":
+            if isinstance(value, list):
+                return [str(x).strip() for x in value if str(x).strip()]
+            return [x.strip() for x in re.split(r"[,\n]", str(value)) if x.strip()]
+        if stype == "enum":
+            allowed = [str(o) for o in (options or [])]
+            v = str(value)
+            if allowed and v not in allowed:
+                raise ValueError(f"可选值: {' / '.join(allowed)}")
+            return v
+        return value
+
+    def config_snapshot(self) -> Dict[str, Any]:
+        """当前设置快照 (值 + 元数据 + 供应商/模型清单 + 已配置的密钥情况)。"""
+        cfg = self._cfg()
+        values: Dict[str, Any] = {}
+        for s in self._SETTINGS_META:
+            values[s["key"]] = cfg.get(s["key"]) if cfg is not None else None
+        providers: List[Dict[str, Any]] = []
+        try:
+            from ..config.loader import read_api_key
+            from ..models.provider_catalog import ALL_PROVIDERS
+            home = None
+            try:
+                from ..config.loader import home_dir
+                home = home_dir()
+            except Exception:  # noqa: BLE001
+                home = None
+            for p in ALL_PROVIDERS:
+                ids = _provider_model_ids(p)
+                if not ids:
+                    try:
+                        from ..models.provider_catalog import get_provider_models
+                        ids = list(get_provider_models(p.name))
+                    except Exception:  # noqa: BLE001
+                        ids = []
+                # 免费/付费标注 (仅用于前端在模型名旁打标签)
+                tags: Dict[str, str] = {}
+                for raw in list(p.recommended_models or []):
+                    mid, sep, tag = str(raw).partition("|")
+                    if sep and tag.strip():
+                        tags[mid.strip()] = tag.strip()
+                env = p.api_key_env
+                key_set = bool(env and (os.environ.get(env) or read_api_key(env, home)))
+                providers.append({
+                    "name": p.name, "desc": p.desc, "tier": p.tier, "region": p.region,
+                    "free_tier": p.free_tier, "category": p.category, "docs_url": p.docs_url,
+                    "key_hint": p.key_hint, "api_key_env": env, "key_set": key_set,
+                    "base_url": p.base_url, "models": ids[:80], "tags": tags,
+                })
+        except Exception:  # noqa: BLE001
+            pass
+        model = {}
+        if cfg is not None:
+            model = {"provider": cfg.get("model.provider"), "model": cfg.get("model.model"),
+                     "base_url": cfg.get("model.base_url"), "api_key_env": cfg.get("model.api_key_env")}
+        return {"ok": True, "values": values, "meta": list(self._SETTINGS_META),
+                "providers": providers, "model": model,
+                "workspace": self.workspace, "engine": self.engine_label}
+
+    def apply_setting(self, key: str, value: Any) -> Dict[str, Any]:
+        """写入单个设置 (持久化到用户层 config.yaml, 并作用于当前会话)。"""
+        meta = next((s for s in self._SETTINGS_META if s["key"] == key), None)
+        if meta is None:
+            return {"ok": False, "error": f"该设置项不允许在 Web 端修改: {key}"}
+        cfg = self._cfg()
+        if cfg is None:
+            return {"ok": False, "error": "配置不可用"}
+        try:
+            coerced = self._coerce_setting(meta["type"], value, meta.get("enum"))
+        except (ValueError, TypeError) as exc:
+            return {"ok": False, "error": f"值类型错误: {exc}"}
+        # 范围校验 (与 config/validate.py 同口径): 越界值直接拒, 不落盘
+        lo, hi = meta.get("min"), meta.get("max")
+        if isinstance(coerced, (int, float)) and not isinstance(coerced, bool):
+            if lo is not None and coerced < lo:
+                return {"ok": False, "error": f"取值过小: 最小 {lo}"}
+            if hi is not None and coerced > hi:
+                return {"ok": False, "error": f"取值过大: 最大 {hi}"}
+        try:
+            cfg.set_user(key, coerced)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        # 副作用: 模式/推理投入需实时翻转到会话 agent
+        if key == "mode.default":
+            self.apply_mode(str(coerced))
+        elif key == "agent.effort":
+            self.apply_effort(str(coerced))
+        return {"ok": True, "key": key, "value": coerced}
+
+    def apply_model(self, provider: str, model: str, api_key: str = "") -> Dict[str, Any]:
+        """切换供应商/模型 (对标 CLI cmd_model), 可选同时写入 API Key。"""
+        cfg = self._cfg()
+        if cfg is None:
+            return {"ok": False, "error": "配置不可用"}
+        provider = str(provider or "").strip()
+        model = str(model or "").strip()
+        if not provider or not model:
+            return {"ok": False, "error": "供应商与模型不能为空"}
+        try:
+            from ..models.provider_catalog import get_provider
+        except Exception:  # noqa: BLE001
+            get_provider = None  # type: ignore
+        preset = get_provider(provider) if get_provider else None
+        if preset is None:
+            return {"ok": False, "error": f"未知供应商: {provider}"}
+        # 模型名必须在目录内 (剥掉 |free/|paid 标注后比对), 防止把拼错的
+        # 模型名写进配置, 却要到运行期发请求时才报错。
+        known = _provider_model_ids(preset)
+        if known and model not in known:
+            return {"ok": False, "error": f"{provider} 没有模型 {model}"}
+        try:
+            cfg.set_user("model.provider", provider)
+            cfg.set_user("model.model", model)
+            if preset.base_url:
+                cfg.set_user("model.base_url", preset.base_url)
+            if preset.api_key_env:
+                cfg.set_user("model.api_key_env", preset.api_key_env)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        env = preset.api_key_env or cfg.get("model.api_key_env")
+        key_note = ""
+        if api_key and env:
+            os.environ[env] = api_key
+            try:
+                from ..config.loader import persist_api_key
+                persist_api_key(env, api_key)
+                key_note = f"已保存密钥 {env} (本次会话 + 重启均生效)"
+            except Exception as exc:  # noqa: BLE001
+                key_note = f"密钥仅本次会话生效 ({exc})"
+        # 模型是运行期按 config 解析的, 无需重建会话; 这里只把新端点回显给前端
+        return {"ok": True, "model": {"provider": provider, "model": model,
+                "base_url": cfg.get("model.base_url"), "api_key_env": env}, "note": key_note}
+
+    def apply_apikey(self, env: str, key: str) -> Dict[str, Any]:
+        """设置 (key 非空) 或清除 (key 空) 某个供应商的 API Key。"""
+        env = (env or "").strip()
+        if not env or "=" in env:
+            return {"ok": False, "error": f"非法的环境变量名: {env!r}"}
+        try:
+            from ..config.loader import persist_api_key, remove_api_key
+            if key:
+                os.environ[env] = key
+                persist_api_key(env, key)
+                return {"ok": True, "env": env, "set": True}
+            os.environ.pop(env, None)
+            remove_api_key(env)
+            return {"ok": True, "env": env, "set": False}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
     # ---------------- 运行 ----------------
     def make_agent(self):
         if self._make_agent_fn is not None:
@@ -1301,4 +1693,9 @@ class WebServer:
         except KeyboardInterrupt:
             pass
         finally:
+            # 冲刷防抖定时器: 否则最后 1 秒内的消息可能没落盘
+            t = self._save_timer
+            if t is not None:
+                t.cancel()
+            self.save_sessions()
             self._httpd.server_close()
