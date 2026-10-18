@@ -129,6 +129,7 @@ TRANSLATIONS = {
     "tui.confirm_invalid_code": "Code stimmt nicht. Gib {code} ein (oder n zum Abbrechen).",
     "tui.exit_ctrl_c": "Ctrl-C beenden",
     "tui.resume_fail": "Sitzungswiederherstellung fehlgeschlagen (Sitzung nicht gefunden)",
+    "tui.slash_more": "  {pos} · ↓ {n} weitere",
     # ---- Einrichtungsassistent
     "setup.title": "Tuan-CLI Einrichtungsassistent",
     "setup.opt_quick": "Schnelleinrichtung (empfohlen)",
