@@ -22,6 +22,7 @@ from .provider_catalog import (
     ProviderPreset, get_provider, get_provider_models,
     get_free_providers, get_cn_providers, get_global_providers,
 )
+from .timeout_policy import resolve_read_timeout
 
 __all__ = [
     "ModelAdapter", "ModelCapabilities", "ModelResponse", "ToolCall",
@@ -83,15 +84,12 @@ def create_adapter(config) -> ModelAdapter:
     base_url = config.get("model.base_url")
     # ---- 思考型模型智能放宽读超时 ----
     # 这类模型思考期可能长时间不吐 token, 分片空闲一旦超过 read_timeout 就被
-    # httpx 判超时 → 反复重试 → "卡死"。按其名特征放宽到验证上限 600s。
-    _model_name = (config.get("model.model", "") or "").lower()
-    _REASONING_HINTS = (
-        "reasoner", "gemini-2.0-flash-thinking", "gemini-2.5", "thinking",
-        "deepseek-r1", "o1", "o3", "claude-thinking",
+    # httpx 判超时 → 反复重试 → "卡死"。口径统一见 timeout_policy: 陈旧的
+    # 低值 (如早期固化下来的 120) 会被抬回下限, 不再让默认值形同虚设。
+    _model_name = (config.get("model.model", "") or "")
+    read_timeout = resolve_read_timeout(
+        config.get("model.read_timeout", 300.0), _model_name
     )
-    read_timeout = float(config.get("model.read_timeout", 300.0))
-    if any(h in _model_name for h in _REASONING_HINTS):
-        read_timeout = max(read_timeout, 600.0)
     if not is_known_provider(provider):
         # 未知 provider = 用户自定义的 OpenAI 兼容网关 (Claude/Gemini/本地等)。
         # 必须给出 base_url, 否则无从连接。
