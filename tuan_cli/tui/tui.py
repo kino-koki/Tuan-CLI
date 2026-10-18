@@ -138,6 +138,11 @@ _STYLE_DICT = {
     "slashcmd": _PRIMARY,             # 命令名 (品牌蓝)
     "slashdesc": _DIM,                # 命令描述 (弱化)
     "slashhint": _MUTED,              # 面板底部操作提示
+    # ---- Diff 实时面板 (Ctrl+D) ----
+    # 用 git 通用配色: 新增=绿, 删除=红。这是 diff 的全球共识, 不按地区习惯翻转 ——
+    # 与「涨跌红绿」的行情配色无关, 这里按开发者肌肉记忆走。
+    "diffadd": "#7ED492",             # + 行: 绿
+    "diffdel": "#F08A8A",             # - 行: 红
 }
 STYLE = Style.from_dict(_STYLE_DICT) if _HAS_PT else None
 
@@ -170,6 +175,58 @@ def _split_flat_lines(paste: List[Tuple[str, str]]) -> List[List[Tuple[str, str]
     if cur:
         lines.append(cur)
     return lines if lines else [[]]
+
+
+def _ask_user_plain(question: str, options: List[str]) -> str:
+    """无界面时 (headless / 应用未启动) 的纯文本提问兜底。
+
+    **绝不能**在全屏 TUI 里调用 —— print/input 会直接写进 prompt_toolkit 掌管的
+    屏幕。调用方 (QxtTUI.ask_user) 已先用 is_running 判定过。
+    """
+    if not options:
+        try:
+            return input(f"? {question}\n> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return ""
+    print(f"\n? {question}")
+    for i, o in enumerate(options, 1):
+        print(f"  {i}. {o}")
+    try:
+        raw = input("> ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return ""
+    if not raw:
+        return options[0]
+    if raw.isdigit() and 1 <= int(raw) <= len(options):
+        return options[int(raw) - 1]
+    return raw
+
+
+class _MeasuredWindow(Window):
+    """对话区窗口: 在渲染时记录**实际**分配到的高度。
+
+    对话区高度取决于终端行数、审计面板 (Ctrl+O) 是否展开、`/` 命令面板占几行,
+    布局算式很容易和实际差 1~2 行 —— 而虚拟视口要按"正好一屏"切片, 差一行
+    就会露白/截断。prompt_toolkit 在 `write_to_screen` 时把真实高度放在
+    `WritePosition.height`, 这里记下来供 `_viewport_rows()` 使用 (首帧无记录,
+    退化为按终端行数估算, 第二帧起即为精确值)。
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.measured_height = 0
+        super().__init__(*args, **kwargs)
+
+    def write_to_screen(self, screen: Any, mouse_handlers: Any,
+                        write_position: Any, parent_style: str,
+                        erase_bg: bool, z_index: Optional[int] = None) -> None:
+        try:
+            h = int(getattr(write_position, "height", 0) or 0)
+            if h > 0:
+                self.measured_height = h
+        except Exception:  # noqa: BLE001 - 测量失败不影响渲染
+            pass
+        super().write_to_screen(screen, mouse_handlers, write_position,
+                                parent_style, erase_bg, z_index)
 
 
 class _TuiLogHandler(logging.Handler):
@@ -313,6 +370,14 @@ class QxtTUI:
         # _resolve_confirm() 唤醒。取代旧的 run_in_terminal(print+input) 方案:
         # 后者把提示打到输入框位置, 长命令直接撑破边框且语义上属于"输入框内容"。
         self._confirm_pending: Optional[Dict[str, Any]] = None
+        # 模型向用户提问态 (ask_user 工具): 与 confirm 同构 —— 工具线程阻塞在
+        # Event 上, 卡片渲染在对话区底部, 用户 ↑↓ 选高亮 / Enter 确认 (也可直接
+        # 敲编号或自由作答) 后由 _resolve_ask() 唤醒。
+        # 此前 TUI 未实现该钩子, ask_user 直接 print()+input() 打到 stdout ——
+        # 在全屏 TUI 里既冲垮布局 (溢出) 又无法正常输入 (选不了)。
+        self._ask_pending: Optional[Dict[str, Any]] = None
+        self._ask_index: int = 0       # 选项高亮项 (自由作答时为 -1 之外的语义, 见 _ask_move)
+        self._ask_free: bool = False   # 用户是否已进入"自由作答"模式 (输入非编号文本)
         self._frame = 0
         self._moon_frame = 0
 
@@ -332,12 +397,24 @@ class QxtTUI:
         self._audit_visible = False           # Ctrl+O 折叠面板开关
         self._audit_log: List[Tuple[str, str]] = []  # (cls, text) 审计行
 
-        # 对话区滚动: 自定义跟随光标定位 (见 _log_cursor_pos), 支持回到历史
-        # `follow` 为 True 时自动钉在最新内容底部; `pin` 为手动上翻时钉住的行号。
+        # Diff 实时面板 (对标 Claude Code 的 /diff 并排实时面板): Ctrl+D 开合。
+        # 面板在渲染时同步取一次工作区 diff, 但按 _diff_fetched_at 节流 (默认 1.5s),
+        # 避免模型连续改文件时每个重绘帧都 fork 一个 git 进程。
+        self._diff_visible = False
+        self._diff_cache: List[Tuple[str, str]] = []   # 已渲染的 (cls, text) 行
+        self._diff_summary = ""                        # 顶部统计行 (N files +A -B)
+        self._diff_error = ""                          # 非 git 仓库 / git 缺失等
+        self._diff_fetched_at = 0.0
+        self._diff_width = 0                           # 0 = 运行时按终端宽度计算
+
+        # 对话区滚动: **虚拟视口** (见 _render_conversation / _scroll_log)。
+        # `_follow` 为 True 时视口钉在最新内容底部 (新内容自动跟随); 手动上翻后
+        # 为 False, `_view_top` 记录视口顶端对应的终端行号, 新内容不再把视图拽走。
+        # (早期实现用 FormattedTextControl.get_cursor_position 伪造"光标行"来驱动
+        #  Window 滚动 —— prompt_toolkit 只会**最小幅度**滚动到该点可见, PgUp 根本
+        #  翻不动一屏, 且逻辑行/终端行错位后中段内容永远够不到, 故改为真视口切片。)
         self._follow = True
-        self._pin = 0
-        self._pin_t = 0        # 滚动钉住位置, 终端行单位 (逻辑行↔终端行换算见 _scroll_log)
-        self._cursor_line = 0
+        self._view_top = 0        # 视口顶端对应的终端行号 (整段内容里的偏移)
         # 工具调用折叠 (Claude/TraeWork 风格 "see"): 本轮工具完成记录先折叠成
         # 一行摘要, Ctrl+O 展开查看每步细节 (同时镜像进审计面板)。
         self._turn_tool_lines: List[str] = []
@@ -345,10 +422,13 @@ class QxtTUI:
 
         # prompt_toolkit
         self._app: Optional[Any] = None
+        # 对话区内容由 `_render_conversation` 自行按视口切片 (只返回当前可见的那些
+        # 终端行), 因此**不注册** get_cursor_position —— 让它保持默认 Point(0,0):
+        # 切片高度恰好等于窗口高度, Window 无需再自行滚动, 二者互不干扰。
+        # (早期靠伪造 get_cursor_position 驱动 Window 滚动, 见 _follow 处注释。)
         self._log_control = FormattedTextControl(
             self._render_conversation,
             show_cursor=False,
-            get_cursor_position=self._log_cursor_pos,
         )
         self._footer_control = FormattedTextControl(self._render_footer)
         self._input = TextArea(
@@ -398,9 +478,10 @@ class QxtTUI:
             input_bottom,
         ])
 
-        # 对话区占满剩余空间: 用普通 Window + 自定义光标定位实现滚动,
-        # 替代 ScrollablePane (后者在 Windows/conpty 下碎滚动且无法回看历史)。
-        self._log_window = Window(
+        # 对话区占满剩余空间: 自绘虚拟视口 (自己切片内容 + 自己算滚动), 不用
+        # ScrollablePane (后者在 Windows/conpty 下碎滚动) 也不用伪造光标定位。
+        # 用 _MeasuredWindow 记录真实高度, 供 _viewport_rows() 精确切片。
+        self._log_window = _MeasuredWindow(
             self._log_control,
             wrap_lines=True,
             height=Dimension(min=1, weight=1),
@@ -444,9 +525,33 @@ class QxtTUI:
         )
         layout = Layout(
             HSplit([
-                conversation,
-                # 审计面板: 仅当展开时占空间
-                audit_wrap,
+                # 主体 (对话区 + 审计面板) 与右侧 diff 面板并排 (Claude Code /diff 同款)。
+                # VSplit 而非手工拼字符: 让 prompt_toolkit 自己分配宽度, 避免在窄终端
+                # 下把对话区压成一条缝。
+                VSplit([
+                    HSplit([
+                        conversation,
+                        # 审计面板: 仅当展开时占空间
+                        audit_wrap,
+                    ]),
+                    ConditionalContainer(
+                        HSplit([
+                            Window(width=1, char="│", style="class:border"),
+                            Window(
+                                FormattedTextControl(
+                                    self._render_diff_panel, show_cursor=False,
+                                    focusable=False,
+                                ),
+                                width=lambda: self._diff_panel_width(),
+                                wrap_lines=False,
+                                style="class:slashbg",
+                            ),
+                        ]),
+                        filter=Condition(
+                            lambda: self._diff_visible and self._diff_panel_available()
+                        ),
+                    ),
+                ]),
                 bottom,
             ])
         )
@@ -499,6 +604,7 @@ class QxtTUI:
         兜底, 但显式解冻能让"用户取消"这一结果被正常回传与记录, 语义更干净。
         """
         self.cancel_confirm()
+        self.cancel_ask()
         self._closed = True
         event.app.exit()
 
@@ -521,28 +627,48 @@ class QxtTUI:
         def _(event):
             self.toggle_audit()
 
-        # ---- 对话区回卷: PgUp/PgDn 上翻/下翻, Home/End 到顶/底 ----
+        # ---- 对话区回卷 (Claude Code 同款): 整屏翻页 / 逐行 / 到顶到底 ----
         # (不用 Ctrl+U/Ctrl+D: 会被输入框的编辑键抢占, 见 TextArea buffer 绑定)
         @kb.add("pageup")
         def _(event):
-            self._scroll_log(-self._page_rows())
+            self._scroll_log(-self._viewport_rows())
             event.app.invalidate()
 
         @kb.add("pagedown")
         def _(event):
-            self._scroll_log(self._page_rows())
+            self._scroll_log(self._viewport_rows())
+            event.app.invalidate()
+
+        # Shift+PgUp/PgDn: 逐行微调 (整屏翻页有时太粗, 尤其快到顶/底时)
+        @kb.add("s-pageup")
+        def _(event):
+            self._scroll_log(-1)
+            event.app.invalidate()
+
+        @kb.add("s-pagedown")
+        def _(event):
+            self._scroll_log(1)
+            event.app.invalidate()
+
+        # Ctrl+↑/↓: 同样逐行翻 (终端不总把 Shift+PgUp 传对时的等价键)
+        @kb.add("c-up")
+        def _(event):
+            self._scroll_log(-1)
+            event.app.invalidate()
+
+        @kb.add("c-down")
+        def _(event):
+            self._scroll_log(1)
             event.app.invalidate()
 
         @kb.add("home")
         def _(event):
-            self._follow = False
-            self._pin_t = 0
+            self._scroll_to_top()
             event.app.invalidate()
 
         @kb.add("end")
         def _(event):
-            self._follow = True
-            self._pin_t = 0
+            self._scroll_to_bottom()
             event.app.invalidate()
 
         # ---- "/" 命令面板: Tab 确认填入, ↑↓ 游走菜单 (关闭时回退默认行为), Esc 关闭 ----
@@ -559,6 +685,10 @@ class QxtTUI:
 
         @kb.add("down")
         def _(event):
+            if self._ask_pending:
+                self._ask_move(1)
+                event.app.invalidate()
+                return
             if self._trust_pending:
                 self._trust_index = 1
                 event.app.invalidate()
@@ -577,6 +707,10 @@ class QxtTUI:
 
         @kb.add("up")
         def _(event):
+            if self._ask_pending:
+                self._ask_move(-1)
+                event.app.invalidate()
+                return
             if self._trust_pending:
                 self._trust_index = 0
                 event.app.invalidate()
@@ -591,6 +725,12 @@ class QxtTUI:
             else:
                 # 同 down: 面板关闭时交还默认行为, 修复 ↑ 历史导航被吞。
                 b.auto_up(count=event.arg or 1)
+
+        @kb.add("c-d")
+        def _(event):
+            """Ctrl+D 开合右侧 diff 实时面板 (Claude Code 同款)。"""
+            self.toggle_diff()
+            event.app.invalidate()
 
         @kb.add("escape")
         def _(event):
@@ -613,6 +753,141 @@ class QxtTUI:
         if self._app and self._app.is_running:
             self._app.invalidate()
 
+    # ---- Diff 实时面板 ----
+
+    def _diff_panel_width(self) -> int:
+        """面板宽度: 取终端宽度的 40%, 钳制在 [32, 64] 列。
+
+        低于 ~90 列时不显示面板 (见 `_diff_panel_available`), 因为左右各留一半后
+        对话区会被压到不可读。
+        """
+        if self._diff_width:
+            return self._diff_width
+        total = self._terminal_cols()
+        w = int(total * 0.4)
+        return max(32, min(64, w))
+
+    def _diff_panel_available(self) -> bool:
+        """终端太窄时不开面板, 避免把对话区压成一条缝。"""
+        return self._terminal_cols() >= 90
+
+    def toggle_diff(self) -> None:
+        """Ctrl+D 开合 diff 面板。"""
+        if not self._diff_visible and not self._diff_panel_available():
+            self._audit_log.append((
+                "class:textdim",
+                t("tui.diff_too_narrow", width=self._terminal_cols()),
+            ))
+            if self._app and self._app.is_running:
+                self._app.invalidate()
+            return
+        self._diff_visible = not self._diff_visible
+        if self._diff_visible:
+            self._diff_fetched_at = 0.0        # 立刻刷新一次
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def _fetch_diff(self) -> None:
+        """同步取一次工作区 diff 并切好颜色。
+
+        只在面板可见时调用; 由 `_render_diff_panel` 按 1.5s 节流触发, 所以这里的
+        开销最多是"每秒不到一次 fork git"。
+        """
+        import os
+        import subprocess
+
+        self._diff_fetched_at = time.monotonic()
+        try:
+            ws = getattr(self, "_workspace", None) or os.getcwd()
+            proc = subprocess.run(  # noqa: S603 - 固定参数, 无用户输入拼接
+                ["git", "diff", "--no-color"], cwd=ws,
+                capture_output=True, text=True, timeout=10, errors="replace",
+            )
+        except FileNotFoundError:
+            self._diff_error = t("tui.diff_no_git")
+            self._diff_cache = []
+            self._diff_summary = ""
+            return
+        except subprocess.TimeoutExpired:
+            self._diff_error = t("tui.diff_timeout")
+            self._diff_cache = []
+            self._diff_summary = ""
+            return
+        except Exception as exc:  # noqa: BLE001 - 面板失败不能影响主界面
+            self._diff_error = t("tui.diff_failed", error=exc)
+            self._diff_cache = []
+            self._diff_summary = ""
+            return
+
+        if proc.returncode != 0 and not proc.stdout:
+            self._diff_error = (proc.stderr or "").strip()[:200] or t("tui.diff_not_repo")
+            self._diff_cache = []
+            self._diff_summary = ""
+            return
+
+        self._diff_error = ""
+        files = added = removed = 0
+        rows: List[Tuple[str, str]] = []
+        width = self._diff_panel_width()
+        for raw in (proc.stdout or "").splitlines():
+            if raw.startswith("diff --git"):
+                files += 1
+                rows.append(("class:primary", raw[:width]))
+                continue
+            if raw.startswith(("+++", "---")):
+                rows.append(("class:textdim", raw[:width]))
+                continue
+            if raw.startswith("@@"):
+                rows.append(("class:accent", raw[:width]))
+                continue
+            if raw.startswith("+"):
+                added += 1
+                rows.append(("class:diffadd", raw[:width]))
+                continue
+            if raw.startswith("-"):
+                removed += 1
+                rows.append(("class:diffdel", raw[:width]))
+                continue
+            if raw.startswith(("index ", "new file", "deleted file", "similarity ")):
+                rows.append(("class:textdim", raw[:width]))
+                continue
+            rows.append(("class:text", raw[:width]))
+
+        self._diff_summary = (
+            t("tui.diff_summary", files=files, added=added, removed=removed)
+            if files else t("tui.diff_clean")
+        )
+        self._diff_cache = rows
+
+    def _render_diff_panel(self):
+        """右侧 diff 面板内容 (对标 Claude Code /diff 的并排实时面板)。"""
+        if not self._diff_visible:
+            return []
+        # 节流刷新: 面板开着时模型连续改文件, 每个重绘帧都 fork git 会拖慢 TUI。
+        if time.monotonic() - self._diff_fetched_at > 1.5:
+            self._fetch_diff()
+
+        out: List[Tuple[str, str]] = []
+        out.append(("class:primary", t("tui.diff_title")))
+        if self._diff_error:
+            out.append(("", "\n"))
+            out.append(("class:textdim", self._diff_error))
+            return out
+
+        out.append(("class:textdim", f" {self._diff_summary}"))
+        out.append(("", "\n"))
+        out.append(("class:textdim", "  " + t("tui.diff_hint")))
+        out.append(("", "\n"))
+        if not self._diff_cache:
+            out.append(("class:textdim", "  " + t("tui.diff_clean")))
+            return out
+
+        for i, (cls, seg) in enumerate(self._diff_cache):
+            if i:
+                out.append(("", "\n"))
+            out.append((cls, seg))
+        return out
+
     # ---- 对话区滚动 (自定义光标定位, Windows/conpty 下可靠) ----
 
     def _page_rows(self) -> int:
@@ -628,6 +903,19 @@ class QxtTUI:
                 rows = 24
         return max(3, rows - 4)
 
+    def _terminal_cols(self) -> int:
+        """终端总列宽 (面板宽度/可用性判定用)。"""
+        try:
+            cols = self._app.output.get_size().columns if self._app else 0
+        except Exception:
+            cols = 0
+        if cols <= 0:
+            try:
+                cols = shutil.get_terminal_size((80, 24)).columns
+            except Exception:
+                cols = 80
+        return int(cols)
+
     def _log_width(self) -> int:
         """对话区可视列宽 (供软换行高度估算)。"""
         try:
@@ -641,16 +929,24 @@ class QxtTUI:
                 cols = 80
         return max(20, cols - 2)
 
-    def _log_line_heights(self) -> List[int]:
-        """每个逻辑行在 wrap_lines 下的终端行高 (宽字符感知)。
+    def _viewport_rows(self) -> int:
+        """对话区视口高度 (终端行数) —— 优先用实测值, 首帧回退估算。"""
+        try:
+            m = int(getattr(self._log_window, "measured_height", 0) or 0)
+        except Exception:
+            m = 0
+        return m if m > 0 else self._page_rows()
 
-        与 prompt_toolkit Window 的换行规则对齐: 按显示宽度断行,
-        空行/零宽内容占 1 终端行。滚动以终端行为单位, 避免长消息
-        (无换行大段) 使逻辑行与终端行错位 → 中间内容翻不到。
+    def _line_heights(self, lines: List[List[Tuple[str, str]]]) -> List[int]:
+        """每个逻辑行在 wrap_lines 下占的终端行数 (宽字符感知)。
+
+        与 prompt_toolkit 的换行规则对齐: 按显示宽度断行; 空行/零宽占 1 行。
+        视口偏移与切片都按**终端行**计量, 避免长消息 (无换行大段) 使逻辑行与
+        终端行错位 → 中间内容永远够不到。
         """
         width = self._log_width()
         heights: List[int] = []
-        for line in self._scrolled_lines(logic_only=True):
+        for line in lines:
             text = "".join(seg for _, seg in line)
             if not text:
                 heights.append(1)
@@ -659,45 +955,92 @@ class QxtTUI:
             heights.append(max(1, math.ceil(disp / width)))
         return heights
 
-    def _terminal_total(self) -> int:
-        return sum(self._log_line_heights())
-
-    def _pin_t_to_logic(self, pin_t: int) -> int:
-        """终端行位置 → 其所在逻辑行索引 (滚动锚点换算)。"""
+    def _line_starts(self, heights: List[int]) -> List[int]:
+        """每个逻辑行的起始终端行号 (前缀和) —— 视口切片的定位依据。"""
+        starts: List[int] = []
         acc = 0
-        heights = self._log_line_heights()
-        for i, h in enumerate(heights):
-            if acc + h > pin_t:
-                return i
+        for h in heights:
+            starts.append(acc)
             acc += h
-        return max(0, len(heights) - 1)
+        return starts
+
+    def _scroll_bounds(self, lines: List[List[Tuple[str, str]]]) -> Tuple[int, int, int]:
+        """返回 (内容总终端行数, 视口高度, 视口顶端最大合法值)。"""
+        total = sum(self._line_heights(lines))
+        vp = self._viewport_rows()
+        return total, vp, max(0, total - vp)
+
+    def _resolve_view_top(self, max_top: int) -> int:
+        """把 `_view_top` 钳到合法范围; follow 时钉在底部。"""
+        if self._follow:
+            self._view_top = max_top
+        else:
+            self._view_top = max(0, min(self._view_top, max_top))
+        return self._view_top
+
+    def _clip_line_rows(self, line: List[Tuple[str, str]], r0: int,
+                        r1: int, width: int) -> List[Tuple[str, str]]:
+        """取一个逻辑行里**显示行 [r0, r1)** 的部分 (视口顶/底切到半行时用)。
+
+        按累计显示宽度判定每个字符落在哪个显示行 (`col // width`); 宽字符按其
+        起始列归属, 与终端实际折行一致。整行命中时原样返回 (免拷贝)。
+        """
+        out: List[Tuple[str, str]] = []
+        col = 0
+        for cls, text in line:
+            if not text:
+                continue
+            buf: List[str] = []
+            for ch in text:
+                if r0 <= (col // width) < r1:
+                    buf.append(ch)
+                col += max(0, _wcswidth(ch))
+            if buf:
+                out.append((cls, "".join(buf)))
+        return out
 
     def _scroll_log(self, delta: int) -> None:
-        """按 delta 终端行上/下滚动对话区。到顶/到底时分别转 follow=False/True。
+        """按 delta 终端行上/下滚动对话区 (正数向下)。
 
-        增量单位为终端行 (软换行后的可视行), 保证每次 PgUp/PgDn 正好一屏、
-        且可一路翻到顶部 —— 修复长消息导致"逻辑行↔终端行错位、中间内容
-        看不了"的问题。
+        单位是**终端行** (软换行后的可视行), 所以 PgUp/PgDn 正好一屏、
+        Ctrl+↑/↓ 正好一行, 且能一路翻到最早的历史。滚到底自动恢复 follow
+        (新内容继续跟随); 滚上去则停止跟随, 新内容不再把视图拽走。
         """
-        total = self._terminal_total()
-        if total <= 0:
+        try:
+            lines = self._scrolled_lines(logic_only=True)
+        except Exception:
             return
+        if not lines:
+            return
+        _, _, max_top = self._scroll_bounds(lines)
         if self._follow:
-            # 首次上翻: 从当前底部位置起算
+            # 首次上翻: 先落到当前底部, 再叠加本次增量
+            self._view_top = max_top
             self._follow = False
-            self._pin_t = max(0, total - self._page_rows())
-        self._pin_t = max(0, min(total - 1, self._pin_t + delta))
-        if self._pin_t >= total - 1:
+        self._view_top = max(0, min(self._view_top + delta, max_top))
+        if self._view_top >= max_top:
             self._follow = True
-            self._pin_t = 0
+            self._view_top = max_top
 
-    def _log_cursor_pos(self):
-        """返回对话区应钉住的光标行号 (FormattedTextControl.get_cursor_position)。
+    def _scroll_to_top(self) -> None:
+        """跳到最早的历史 (停止跟随)。"""
+        self._view_top = 0
+        self._follow = False
 
-        follow 时钉在最后一行 -> Window 自动滚动到底部 (跟随新内容);
-        手动上翻时钉在 _pin -> 视图稳定在被选历史处, 不会因新内容跳动。
-        """
-        return Point(x=0, y=self._cursor_line)
+    def _scroll_to_bottom(self) -> None:
+        """跳回最新内容并恢复跟随。"""
+        self._follow = True
+        self._view_top = 0   # 具体值在渲染时按 max_top 解析
+
+    def _scroll_state(self) -> Tuple[bool, int, int, int]:
+        """(是否已上翻, 视口顶端, 内容总行, 视口高) —— 供底栏显示位置指示。"""
+        try:
+            lines = self._scrolled_lines(logic_only=True)
+        except Exception:
+            return (False, 0, 0, self._viewport_rows())
+        total, vp, max_top = self._scroll_bounds(lines)
+        top = self._resolve_view_top(max_top)
+        return (not self._follow, top, total, vp)
 
     def _current_line_count(self) -> int:
         """当前渲染内容的段落行数 (供滚动钳位)。"""
@@ -988,6 +1331,14 @@ class QxtTUI:
         return out
 
     def _handle_enter(self, event) -> None:
+        # 模型提问态优先级最高: 模型在等用户拍板, 输入框此刻就是选项答复通道
+        # (↑↓ 已由键位路由到 _ask_move; Enter 取高亮项 / 编号 / 自由文本)。
+        # 必须排在 slash 面板与 trust 之前, 否则提问会被当成普通输入吞掉。
+        if self._ask_pending:
+            self._resolve_ask(self._input.text)
+            self._input.buffer.reset()
+            event.app.invalidate()
+            return
         # "/" 命令面板展开: Enter 确认高亮项 (填入输入框, 不直接执行 —— 与
         # Claude Code 一致, 填好后可继续输参数或再按回车执行)
         if self._slash_open and self._slash_items:
@@ -1036,7 +1387,7 @@ class QxtTUI:
         self._turn_tool_lines = []
         self._tool_detail = False
         self._follow = True
-        self._pin = 0
+        self._view_top = 0
 
         # 命令: 支持 `/cmd` 与 Kimi 同款 `+/cmd` (归一化后统一走 on_command)
         cmd = None
@@ -1182,21 +1533,52 @@ class QxtTUI:
         **不擦掉屏幕上已有的内容**, 下一次渲染就把新帧直接画在旧帧下面 ——
         观感正是底栏/状态行"堆叠成两份"。`erase()` 会把光标移回起点并向下擦除,
         之后 `reset()` 才能从干净画布重绘。
-        `leave_alternate_screen=False`: 本 TUI 是全屏 (alternate screen) 应用,
-        不能因为重绘而退出备用屏。
+
+        **两次调用都必须显式传 `leave_alternate_screen=False`** (修"输入框失去渲染"):
+        `Renderer.reset()` 的默认值是 `leave_alternate_screen=True` —— 一旦漏传,
+        它会执行 `output.quit_alternate_screen()` 把这个**全屏 TUI 踢出备用屏缓冲**,
+        终端随即回退到进入 TUI 之前的主屏内容, 而 TUI 仍以为自己全屏绘制,
+        于是输入框 (以及整幅界面) "失去渲染" —— 在 Windows conpty / Windows
+        Terminal 上尤其明显。`erase()` 内部虽已用 `leave_alternate_screen=False`
+        调过一次 `reset()`, 但紧跟着的裸 `reset()` 会用默认值再退出一次备用屏,
+        这正是此前"输入框渲染丢失"的真凶。
+
+        **线程安全** (同源问题): `set_ready`/`boot_error` 由 `_boot` **后台线程**
+        调用 (见 cmd_chat), 而渲染循环跑在主线程。直接在后台线程操作 renderer
+        会与主线程渲染竞争光标位置 / 输出写入, 造成同样的画面错乱。故把重置
+        **投递到主事件循环** (`call_soon_threadsafe`) 执行; 应用尚未进入运行态
+        (无 loop) 时退化为同步调用。
         """
-        try:
-            r = getattr(self._app, "renderer", None)
-            if r is None:
-                return
+        app = self._app
+        if app is None:
+            return
+
+        def _do_reset() -> None:
             try:
-                r.erase(leave_alternate_screen=False)
+                r = getattr(app, "renderer", None)
+                if r is None:
+                    return
+                try:
+                    r.erase(leave_alternate_screen=False)
+                except Exception:
+                    pass
+                if hasattr(r, "reset"):
+                    try:
+                        # 关键: 显式留在备用屏内, 避免 quit_alternate_screen()
+                        r.reset(leave_alternate_screen=False)
+                    except TypeError:  # 老版 pt 无该关键字
+                        r.reset()
             except Exception:
                 pass
-            if hasattr(r, "reset"):
-                r.reset()
+
+        try:
+            loop = getattr(app, "loop", None)
+            if loop is not None and getattr(app, "is_running", False):
+                loop.call_soon_threadsafe(_do_reset)
+                return
         except Exception:
             pass
+        _do_reset()
 
     def boot_error(self, message: str) -> None:
         """内核构建失败: 显示错误态 (不再静默闪退), 用户可读后 Ctrl-Q 退出。"""
@@ -1630,6 +2012,106 @@ class QxtTUI:
         if ev is not None:
             ev.set()
 
+    # ============================================================ 模型提问 (ask_user)
+
+    def ask_user(self, question: str, options: Optional[List[str]] = None) -> str:
+        """模型提问 (ask_user 工具入口): 渲染可选择卡片, 阻塞到用户作答。
+
+        供 `TuiUI.ask_user` 调用。取代工具里的 `print()+input()` —— 在全屏 TUI
+        下那会把文本直接写进 prompt_toolkit 掌管的屏幕, 布局被冲垮 (用户报告的
+        "溢出"), 且 `input()` 在备用屏/ raw 模式下拿不到按键 ("选不了")。
+
+        交互: ↑↓ 移动高亮, Enter 确认; 也可直接敲编号 (1..N) 或任意文字
+        (自由作答)。options 为空时退化为纯自由作答。
+        """
+        q = str(question or "").strip()
+        opts = [str(o).strip() for o in (options or []) if str(o).strip()]
+
+        app = self._app
+        running = app is not None and getattr(app, "is_running", False)
+        if not running:
+            # headless / 应用未启动: 没有界面可挂卡片, 退回纯文本询问
+            return _ask_user_plain(q, opts)
+
+        done = threading.Event()
+        pending: Dict[str, Any] = {
+            "question": q,
+            "options": opts,
+            "event": done,
+            "result": None,     # None = 未作答 (被取消)
+        }
+        self._ask_pending = pending
+        self._ask_index = 0
+        self._ask_free = False
+        self._follow = True      # 提问卡片必须可见: 强制回到底部
+        try:
+            app.invalidate()
+        except Exception:  # noqa: BLE001
+            pass
+
+        # 阻塞等待。0.5s 心跳轮询防死锁: 卡片被取消或应用退出时不能永远挂着。
+        while not done.wait(timeout=0.5):
+            if self._ask_pending is not pending:
+                break
+            if not getattr(app, "is_running", True):
+                pending["result"] = None
+                break
+        return str(pending.get("result") or "")
+
+    def _ask_move(self, delta: int) -> None:
+        """↑↓ 移动选项高亮 (无选项时忽略)。"""
+        pending = self._ask_pending
+        if not pending:
+            return
+        opts = pending.get("options") or []
+        if not opts:
+            return
+        n = len(opts)
+        self._ask_free = False
+        self._ask_index = max(0, min(n - 1, self._ask_index + delta))
+
+    def _resolve_ask(self, text: str) -> None:
+        """提交提问答案并唤醒等待中的工具线程。
+
+        - 纯 ↑↓+Enter (输入框为空) → 取当前高亮项;
+        - 敲了编号 (1..N) → 取对应项;
+        - 其它任意文本 → 自由作答。
+        """
+        pending = self._ask_pending
+        if not pending:
+            return
+        opts: List[str] = pending.get("options") or []
+        raw = (text or "").strip()
+        if not raw:
+            # 空回车 = 确认当前高亮项 (无选项则视为跳过)
+            ans = opts[self._ask_index] if opts else ""
+        elif raw.isdigit() and opts and 1 <= int(raw) <= len(opts):
+            ans = opts[int(raw) - 1]
+        else:
+            ans = raw
+        pending["result"] = ans
+        self._ask_pending = None
+        self._ask_free = False
+        try:
+            self.append_log(f"{SUCCESS_MARK} {t('tui.ask_answer', answer=ans or t('tui.ask_skipped'))}",
+                            cls="class:success")
+        except Exception:  # noqa: BLE001
+            pass
+        ev = pending.get("event")
+        if ev is not None:
+            ev.set()
+
+    def cancel_ask(self) -> None:
+        """取消挂起中的提问 (退出/Ctrl-C 兜底), 按"未作答"解冻工具线程。"""
+        pending = self._ask_pending
+        if not pending:
+            return
+        self._ask_pending = None
+        pending["result"] = None
+        ev = pending.get("event")
+        if ev is not None:
+            ev.set()
+
     # ============================================================ 运行
 
     def _run_submit(self, text: str) -> None:
@@ -1859,25 +2341,20 @@ class QxtTUI:
         return out
 
     def _scrolled_lines(self, logic_only: bool = False) -> List[List[Tuple[str, str]]]:
-        """构建对话区完整内容 (段落行列表), 并按滚动状态钉住光标行号。
+        """构建对话区**完整**内容 (段落行列表) —— 不做视口裁剪。
+
+        裁剪由 `_viewport_slice` 负责 (本方法始终返回全量历史, 滚动位置
+        `_view_top` 单独记录)。`logic_only` 参数为兼容旧调用保留, 已无差别。
 
         - 工具完成记录默认折叠为一行 "see N tool calls", Ctrl+O 展开逐条;
         - 返回的 list 每项是一行 (list[ (cls,text) ])。
         """
         # 信任确认态优先: 未知目录首次访问时整屏显示确认卡片 (不显示对话区)
         if self._trust_pending:
-            paste = self._render_trust_confirm()
-            if logic_only:
-                return [[seg for seg in line] for line in _split_flat_lines(paste)]
-            self._cursor_line = 0
-            return _split_flat_lines(paste)
+            return _split_flat_lines(self._render_trust_confirm())
 
         if self._booting or self._boot_error:
-            paste = self._render_boot()
-            if logic_only:
-                return [[seg for seg in line] for line in _split_flat_lines(paste)]
-            self._cursor_line = 0
-            return _split_flat_lines(paste)
+            return _split_flat_lines(self._render_boot())
 
         screen: List[List[Tuple[str, str]]] = []
         for ev in self._events:
@@ -1920,24 +2397,54 @@ class QxtTUI:
         # 是修复"确认框撑破输入框边框"的关键 —— 它现在是内容, 不是输入提示。
         if self._confirm_pending:
             screen.extend(_split_flat_lines(self._render_confirm_card()))
+        # 模型提问卡片: 同样追加在对话区底部 (输入框上方), 跟随虚拟视口切片。
+        # 优先级高于确认卡 —— 提问是模型在等用户拍板, 必须先于一切被看见。
+        if self._ask_pending:
+            screen.extend(_split_flat_lines(self._render_ask_card()))
 
-        if not logic_only:
-            # 滚动定位: follow -> 钉在最后一行 (Window 自动滚到底); 否则钉在 _pin_t
-            # (终端行单位) 映射回逻辑行, 保证长消息下也能逐屏回看顶部。
-            n = len(screen)
-            if self._follow:
-                self._pin = 0
-                self._pin_t = 0
-                self._cursor_line = n - 1
-            else:
-                self._pin_t = max(0, min(self._pin_t, self._terminal_total() - 1))
-                self._pin = self._pin_t_to_logic(self._pin_t)
-                self._cursor_line = self._pin
         return screen
 
+    def _viewport_slice(self, screen: List[List[Tuple[str, str]]]) -> List[List[Tuple[str, str]]]:
+        """把整段对话按当前视口切成**正好一屏**的行 (Claude Code 式虚拟滚动)。
+
+        只返回终端行区间 [view_top, view_top+vp) 覆盖到的逻辑行; 首/尾逻辑行
+        被切到半行时按显示行裁剪 (`_clip_line_rows`), 因此返回内容的实际高度
+        恒等于视口高度 —— Window 无需再自行滚动, 上翻/下翻都是精确整屏位移。
+        """
+        if not screen:
+            return screen
+        total, vp, max_top = self._scroll_bounds(screen)
+        top = self._resolve_view_top(max_top)
+        if total <= vp:
+            return screen                      # 内容不足一屏: 全部显示 (顶部对齐)
+        width = self._log_width()
+        heights = self._line_heights(screen)
+        starts = self._line_starts(heights)
+        bottom = top + vp
+        out: List[List[Tuple[str, str]]] = []
+        used = 0
+        for i, line in enumerate(screen):
+            s = starts[i]
+            e = s + heights[i]
+            if e <= top or s >= bottom:
+                continue
+            r0 = max(0, top - s)
+            r1 = min(heights[i], bottom - s)
+            # 防御: 估算高度与真实折行略有出入时, 宁可少给一行也不要超出视口
+            if used + (r1 - r0) > vp:
+                break
+            out.append(line if (r0 == 0 and r1 >= heights[i])
+                       else self._clip_line_rows(line, r0, r1, width))
+            used += r1 - r0
+        return out or screen[-1:]
+
     def _render_conversation(self):
-        """扁平化对话内容供 FormattedTextControl 渲染 (行间加 \\n)。"""
-        screen = self._scrolled_lines()
+        """扁平化**当前视口**的对话内容供 FormattedTextControl 渲染 (行间加 \\n)。
+
+        这里返回的不是整段历史, 而是按 `_view_top` 切好的一屏 —— 这正是"能真正
+        回看上面记录"的关键: 内容再长也只渲染可见的那几行, 翻页即改切片起点。
+        """
+        screen = self._viewport_slice(self._scrolled_lines())
         if not screen:
             return [("class:textdim", t("tui.ready_empty"))]
         flat: List[Tuple[str, str]] = []
@@ -1983,6 +2490,11 @@ class QxtTUI:
         # 信任确认期: 底栏只显示确认提示 (不展示模型/状态/目录; 超宽裁剪防溢出)
         if self._trust_pending:
             return self._clip_parts([("class:warning", " " + t("tui.trust_footer"))])
+        # 模型提问期: 底栏让位给选项提示 (↑↓ 选择 · Enter 确认)
+        if self._ask_pending:
+            opts = (self._ask_pending or {}).get("options") or []
+            hint = t("tui.ask_opt_hint") if opts else t("tui.ask_free_hint")
+            return self._clip_parts([("class:warning", " " + hint)])
         # 命令确认期: 同上, 底栏让位给确认提示
         if self._confirm_pending:
             return self._clip_parts([("class:warning", " " + t("tui.confirm_footer"))])
@@ -2033,12 +2545,31 @@ class QxtTUI:
         if git_branch:
             parts.append(("class:textdim", f"  {git_branch.replace(' ', '')}"))
 
+        # 回卷位置指示: 一旦用户上翻离开底部就高亮提示 (Claude Code 同款),
+        # 否则"看不到最新回复"会让人误以为界面卡住。回到底部自动消失。
+        parts.extend(self._scroll_indicator())
+
         # 注: 此处曾显示 "context: X% (est/budget)" 上下文占用条, 已移除 ——
         # 预算靠模型名猜 (所有模型都退化成 131.1k), 用量是字符数估算而非真实 token,
         # 数字既不准确又占版面。需要真实用量请用 /context 或 Web 工作台的上下文面板。
         # 收尾: 单行控件 (Window height=1 无软换行) 必须按显示宽度裁剪,
         # 否则 no_key 长提示/长模型名/长目录名会把底栏顶出屏幕 (文字溢出)。
         return self._clip_parts(parts)
+
+    def _scroll_indicator(self) -> List[Tuple[str, str]]:
+        """底栏回卷指示片段 (未上翻时返回空)。
+
+        上翻后显示 `↑ 已上翻 42/411 行 · End 回底` —— 让用户明确知道自己不在
+        底部, 以及怎么回去 (否则"看不到最新回复"很像界面卡死)。
+        """
+        try:
+            scrolled, top, total, vp = self._scroll_state()
+        except Exception:  # noqa: BLE001 - 指示器绝不阻断底栏渲染
+            return []
+        if not scrolled or total <= vp:
+            return []
+        return [("class:warning", f"  ↑ {top + 1}/{total}"),
+                ("class:textdim", f" {t('tui.scroll_back_hint')}")]
 
     def _git_branch(self) -> str:
         """探测当前 git 分支 (带缓存, 避免每行渲染都调 git)。"""
@@ -2268,6 +2799,49 @@ class QxtTUI:
         out.append(("class:primary", "╰" + "─" * (width - 2) + "╯\n"))
         out.append(("", "\n"))
         out.append(("class:textdim", "  " + clip_dw(t("tui.confirm_prompt"), max(1, inner - 2)) + "\n"))
+        return out
+
+    def _render_ask_card(self) -> List[Tuple[str, str]]:
+        """模型提问卡片 (Claude Code 同款): 问题 + 可选列表 + 高亮项。
+
+        渲染在对话区底部 (与确认卡片同位), 因此天然进入虚拟视口切片 —— 长问题
+        自动折行、超长选项按显示宽度裁剪, 不会再把输入框/边框顶破。
+        """
+        pending = self._ask_pending or {}
+        width = self._box_width()
+        inner = max(1, width - 2)
+        pad = "  "
+        clip_dw = self._clip_dw
+        opts: List[str] = list(pending.get("options") or [])
+        sel = max(0, min(len(opts) - 1, self._ask_index)) if opts else -1
+
+        def row(segs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+            return self._box_row(segs, inner, pad)
+
+        out: List[Tuple[str, str]] = [("class:primary", "╭" + "─" * (width - 2) + "╮\n")]
+        out += row([("class:warning", "? " + clip_dw(t("tui.ask_title"), max(1, inner - 2)))])
+        out.append(("", "\n"))
+        # 问题正文: 逐行折行铺开, 保证长问题不溢出卡片
+        for ln in str(pending.get("question", "")).split("\n"):
+            for seg in self._wrap_dw(ln, max(1, inner - 4)):
+                out += row([("class:text", seg)])
+                out.append(("", "\n"))
+        # 选项: 高亮项加 ▸ 前缀 + 反显, 未选项缩进对齐
+        if opts:
+            out.append(("", "\n"))
+            for i, o in enumerate(opts):
+                marker = "▸ " if i == sel else "  "
+                cls = "class:success" if i == sel else "class:text"
+                out += row([(cls, marker + clip_dw(f"{i + 1}. {o}", max(1, inner - 4)))])
+                out.append(("", "\n"))
+            out += row([("class:textdim",
+                         clip_dw(t("tui.ask_opt_hint"), max(1, inner - 2)))])
+            out.append(("", "\n"))
+        else:
+            out += row([("class:textdim",
+                         clip_dw(t("tui.ask_free_hint"), max(1, inner - 2)))])
+            out.append(("", "\n"))
+        out.append(("class:primary", "╰" + "─" * (width - 2) + "╯\n"))
         return out
 
     def _show_welcome(self) -> None:
