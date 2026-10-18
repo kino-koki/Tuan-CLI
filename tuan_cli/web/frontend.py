@@ -563,6 +563,13 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
             color:var(--color-text);cursor:pointer;padding:var(--space-1) var(--space-2);border:var(--p-hairline) solid var(--color-line);
             border-radius:var(--radius-md)}
   #settings .cs-opt input{accent-color:var(--color-accent)}
+  /* 快捷键速查: 键帽 + 说明, 与设置面板其余行保持同一栅格 */
+  #settings .srow.kbd-row{gap:var(--space-3);border-bottom:var(--p-hairline) solid var(--color-line)}
+  #settings .kbd-row .kbd{flex:none;font-family:var(--font-mono);font-size:var(--text-xs);
+            background:var(--color-hover);color:var(--color-text);border:var(--p-hairline) solid var(--color-line-strong);
+            border-radius:var(--radius-sm);padding:2px var(--space-2);min-width:120px;text-align:center;
+            box-shadow:0 1px 0 var(--color-line-strong)}
+  #settings .kbd-row .lab{flex:1;min-width:0}
 </style>
 </head>
 <body>
@@ -2053,7 +2060,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
      设置面板 (对标 TUI 的 /config /model /permissions 控制面)
      ================================================================ */
   var SET={data:null, cat:'模型与供应商', open:false};
-  var SET_CATS=['外观','模型与供应商','模型参数','运行','上下文','权限','沙箱','验证与自治','记忆','技能与提示','网络','MCP','智能路由','后台任务','关于'];
+  var SET_CATS=['外观','模型与供应商','模型参数','运行','上下文','权限','沙箱','验证与自治','记忆','技能与提示','网络','MCP','智能路由','后台任务','键盘快捷键','关于'];
   function openSettings(){
     SET.open=true;
     document.getElementById('settings').classList.add('open');
@@ -2135,11 +2142,49 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     if(SET.cat==='关于'){renderAbout(c,d);return;}
     if(SET.cat==='模型与供应商'){renderModel(c,d);return;}
     if(SET.cat==='外观'){renderAppearance(c,d);return;}
+    if(SET.cat==='键盘快捷键'){renderShortcuts(c);return;}
     var metas=(d.meta||[]).filter(function(m){return m.sec===SET.cat;});
     var h=''; metas.forEach(function(m){h+=fieldRow(m);});
     h+='<div class="note" id="set-note"></div>';
     c.innerHTML=h||'<div class="rp-empty">暂无设置</div>';
     wireFields(c);
+  }
+  /* 键盘快捷键速查: 此前 6+ 个快捷键只在代码里存在, 界面无任何入口, 用户
+     无从发现。集中列在设置面板, 与 TUI 快捷键面板对位。 */
+  var SHORTCUTS=[
+    ['全局',[
+      ['Ctrl + K','聚焦会话搜索'],
+      ['Ctrl + N','新建会话'],
+      ['Ctrl + B','开合右侧工作面板'],
+      ['Ctrl + /','打开斜杠命令面板'],
+      ['Ctrl + ,','打开 / 关闭设置'],
+      ['Ctrl + E','导出当前会话为 Markdown'],
+    ]],
+    ['输入框',[
+      ['Enter','发送'],
+      ['Shift + Enter','换行'],
+      ['↑ / ↓','历史消息 / 命令面板游走'],
+      ['Esc','关闭命令面板 / @ 提及 / 设置'],
+      ['@','唤起工作区文件提及'],
+      ['/', '开头','唤起斜杠命令面板'],
+    ]],
+    ['会话流',[
+      ['拖动滚动条 / 滚轮','浏览历史'],
+      ['点击代码块「复制」','复制代码到剪贴板'],
+    ]],
+  ];
+  function renderShortcuts(c){
+    var h='';
+    SHORTCUTS.forEach(function(g){
+      h+=sec(g[0]);
+      h+='<div class="srow kbd-row"><span class="kbd">'+esc(g[1][0][0])+'</span><span class="lab">'+esc(g[1][0][1])+'</span></div>';
+      g[1].slice(1).forEach(function(k){
+        h+='<div class="srow kbd-row"><span class="kbd">'+esc(k[0])+'</span><span class="lab">'+esc(k[1])+'</span></div>';
+      });
+    });
+    h+='<div class="hint" style="margin-top:var(--space-3)">快捷键在浏览器窗口聚焦于工作台时生效; '
+      +'若输入框未响应, 先点击页面任意空白处聚焦。</div>';
+    c.innerHTML=h;
   }
   function renderAppearance(c,d){
     var cur=document.documentElement.dataset.colorScheme||'light';
