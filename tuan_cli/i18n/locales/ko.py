@@ -129,6 +129,7 @@ TRANSLATIONS = {
     "tui.confirm_invalid_code": "확인 코드가 일치하지 않습니다. {code}를 입력하세요(n으로 취소).",
     "tui.exit_ctrl_c": "Ctrl-C 종료",
     "tui.resume_fail": "세션 복원 실패 (세션을 찾을 수 없음)",
+    "tui.slash_more": "  {pos} · ↓ {n}개 더",
     # ---- 설정 마법사
     "setup.title": "투안-CLI 설정 마법사",
     "setup.opt_quick": "빠른 설정 (권장)",

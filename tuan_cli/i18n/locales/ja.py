@@ -129,6 +129,7 @@ TRANSLATIONS = {
     "tui.confirm_invalid_code": "確認コードが一致しません。{code} を入力してください（n でキャンセル）。",
     "tui.exit_ctrl_c": "Ctrl-C 終了",
     "tui.resume_fail": "セッションの復元に失敗しました (セッションが見つかりません)",
+    "tui.slash_more": "  {pos} · ↓ あと {n} 件",
     # ---- セットアップウィザード
     "setup.title": "青小団 セットアップウィザード",
     "setup.opt_quick": "クイックセットアップ (推奨)",

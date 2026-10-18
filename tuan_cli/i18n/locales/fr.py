@@ -129,6 +129,7 @@ TRANSLATIONS = {
     "tui.confirm_invalid_code": "Code incorrect. Saisissez {code} (ou n pour annuler).",
     "tui.exit_ctrl_c": "Ctrl-C quitter",
     "tui.resume_fail": "Échec de la reprise de session (session introuvable)",
+    "tui.slash_more": "  {pos} · ↓ {n} de plus",
     # ---- Assistant de configuration
     "setup.title": "Assistant de configuration Tuan-CLI",
     "setup.opt_quick": "Configuration rapide (recommandé)",
