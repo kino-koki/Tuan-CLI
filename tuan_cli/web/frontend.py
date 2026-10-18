@@ -1977,9 +1977,17 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       el.classList.toggle('sel',i===slashSel);
     });
   }
+  /* 无参命令: 选中即执行, 省掉"回车补全 → 再回车执行"的二次按键。
+     其余命令仍只做补全 (填入输入框), 用户可继续输参数再回车。 */
+  var SLASH_NOARG={ '/model':1,'/models':1,'/provider':1,'/export':1,'/diff':1,'/clear':1,'/plan':1 };
   function pickSlash(i){
     var c=slashItems[i];if(!c)return;
-    inp.value=c.name+' ';closeSlash();autoGrow();inp.focus();
+    inp.value=c.name+' ';closeSlash();autoGrow();
+    if(SLASH_NOARG[c.name]){
+      sendMsg();   /* 立即执行; sendMsg 内部会清空输入框 */
+      return;
+    }
+    inp.focus();
   }
   function updateSlash(){
     var v=inp.value;
