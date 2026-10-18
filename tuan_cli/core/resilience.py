@@ -142,6 +142,9 @@ class AgentResilience:
         fb = pool[0]
 
         api_key = os.environ.get(fb.api_key_env) or os.environ.get("TUAN_API_KEY")
+        # 口径与主链路一致 (models.timeout_policy): 陈旧的低 read_timeout 会被兜底,
+        # 否则「主模型超时 → 切兜底 → 兜底也超时」, 退避重试只会放大等待。
+        from ..models.timeout_policy import resolve_read_timeout
         adapter = adapter_cls(
             base_url=fb.base_url,
             model=fb.model,
@@ -150,7 +153,9 @@ class AgentResilience:
             max_tokens=config.get("model.max_tokens", 8192),
             timeout=config.get("model.timeout", 120),
             connect_timeout=config.get("model.connect_timeout", 10.0),
-            read_timeout=float(config.get("model.read_timeout", 300.0)),
+            read_timeout=resolve_read_timeout(
+                config.get("model.read_timeout", 300.0), fb.model
+            ),
             prompt_cache=config.get("model.prompt_cache", True),
         )
         info = {"provider": fb.provider, "model": fb.model, "adapter": adapter}
