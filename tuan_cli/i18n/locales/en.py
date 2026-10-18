@@ -144,7 +144,7 @@ TRANSLATIONS = {
     "tui.ask_free_hint": "Type your answer · Enter to send",
     "tui.ask_answer": "Answered: {answer}",
     "tui.ask_skipped": "(skipped)",
-    "tui.scroll_back_hint": "· End to bottom",
+    "tui.scroll_back_hint": "· PgUp/PgDn to page · Shift+PgUp linewise · End to bottom",
     "tui.resume_fail": "Session resume failed (session not found)",
     # ---- Setup wizard
     "setup.title": "Tuan-CLI Setup Wizard",
