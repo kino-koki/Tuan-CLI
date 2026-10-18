@@ -129,6 +129,7 @@ TRANSLATIONS = {
     "tui.confirm_invalid_code": "確認碼不符，請輸入 {code}（或 n 取消）。",
     "tui.exit_ctrl_c": "Ctrl-C 離開",
     "tui.resume_fail": "會話恢復失敗 (找不到指定會話)",
+    "tui.slash_more": "  {pos} · ↓ 還有 {n} 條命令",
     # ---- setup 精靈
     "setup.title": "青小團初始化精靈",
     "setup.opt_quick": "快速設定 (推薦)",

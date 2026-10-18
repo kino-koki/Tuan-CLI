@@ -129,6 +129,7 @@ TRANSLATIONS = {
     "tui.confirm_invalid_code": "Код не совпадает. Введите {code} (или n для отмены).",
     "tui.exit_ctrl_c": "Ctrl-C выход",
     "tui.resume_fail": "Не удалось возобновить сессию (сессия не найдена)",
+    "tui.slash_more": "  {pos} · ↓ ещё {n}",
     # ---- Мастер настройки
     "setup.title": "Мастер настройки Туан-CLI",
     "setup.opt_quick": "Быстрая настройка (рекомендуется)",
