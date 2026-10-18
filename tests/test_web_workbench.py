@@ -436,3 +436,22 @@ def test_frontend_js_parses():
         assert p.returncode == 0, f"前端 JS 语法错误 (整页交互会全失效):\n{p.stderr[:1200]}"
     finally:
         Path(tmp).unlink(missing_ok=True)
+
+
+def test_frontend_shortcut_help_panel():
+    """设置面板应提供「键盘快捷键」速查页。
+
+    回归: Ctrl+K/N/B///,/E 等 6+ 个快捷键此前只存在于代码里, 界面无任何入口,
+    用户无从发现。此处钉住导航项、渲染函数与键位数据三者齐全。
+    """
+    from tuan_cli.web.frontend import FRONTEND_HTML
+
+    assert "键盘快捷键" in FRONTEND_HTML, "设置导航应含「键盘快捷键」"
+    assert "function renderShortcuts" in FRONTEND_HTML, "应有快捷键渲染函数"
+    assert "var SHORTCUTS=[" in FRONTEND_HTML, "应有快捷键数据表"
+    assert "SET.cat==='键盘快捷键'" in FRONTEND_HTML, "renderSettings 应分发到快捷键页"
+    # 键位数据非空: 至少覆盖 Ctrl+K 等核心键
+    for key in ("Ctrl + K", "Ctrl + N", "Ctrl + B", "Ctrl + E"):
+        assert key in FRONTEND_HTML, f"快捷键表缺少 {key}"
+    # 样式: 键帽视觉
+    assert "#settings .kbd-row .kbd" in FRONTEND_HTML, "应有键帽样式"
