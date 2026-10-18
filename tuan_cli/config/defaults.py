@@ -288,6 +288,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # 可选值: 专业/元气/傲娇/温柔/幽默/毒舌/学霸/极客/禅师/邻家 (或英文 key)
         # 留空 = 自动分配 (基于 workspace 路径 hash, 确定性)
         "personality": "",
+        # 默认工作目录: Agent 未显式指定 --workspace 时的运行位置。
+        # 留空 = 尊重当前目录 (CWD) —— 旧版曾默认强制 D:\Tuan-Workspace 并 chdir,
+        # 已废除 (2026-10-18: 修复「无论进入什么目录都强制跳转独立工作区」)。
+        # 设为绝对路径则固定落到该目录。环境变量 TUAN_WORKSPACE 优先级更高。
+        # 解析逻辑见 paths.default_workspace()。
+        "workspace": "",
         # 熔断器 (第三道韧性防线): 连续失败达阈值后快速失败, 不再浪费重试预算打已故障上游。
         # 默认关闭 (enabled=False), 与历史行为完全一致; 长任务 / 弱网场景可开启。
         "circuit_breaker": {
@@ -408,7 +414,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # tier: auto=按上下文窗口自动定档 / compact=强制小型 / full=强制大型 (实测后手动定档)。
         "tier": "auto",
         # 分档阈值 (token): 模型上下文窗口 >= 此值即拿 full 档。
-        "context_tier_threshold": 1000000,
+        # 128k (131072) = 「大上下文模型」下界 (与 core.prompt_tier.LARGE_CONTEXT_WINDOW_MIN
+        # 保持一致): 128k/200k/1M 窗口都是主流大模型配置, 按 1M 划线会把 128k 模型
+        # 错误降级成 compact 档 (提示词被阉割成 SOUL_COMPACT.md)。改此值需同步 prompt_tier。
+        "context_tier_threshold": 128 * 1024,
         # 各档注入预算上限 (cap): 实际生效值 = min(上面的用户配置, 该档上限)。
         # 只收紧不放大 —— 用户显式调小的值永远优先; full 档上限远高于默认值, 行为与旧版一致。
         # 只管「注入多少」, 不决定「注入什么」(代码库地图看 context.pin_codebase)。

@@ -1,6 +1,12 @@
-"""提示词分层 (Prompt Tier) —— 按模型上下文窗口规模选择注入预算。
+"""提示词分层 (Prompt Tier) —— 按模型上下文窗口规模选择注入预算与 SOUL 档位。
 
-待办4: 上下文小于 1M 的模型读「小型」提示词, 上下文大于 1M 的模型读「大」提示词。
+已落地 (原待办4): 上下文小于阈值的模型读「小型」提示词, 上下文大于阈值的模型读
+「大」提示词。小模型侧: 动态段按 compact 预算收紧, 稳定前缀只读
+SOUL_COMPACT.md (小模型专属提示词, 自包含全部必要规范); 大模型侧:
+**窗口 >= 128k 即「大上下文模型」, 读 SOUL_FULL.md 完整提示词**
+(2026-10-18 修正: 此前 auto + full 档走 SOUL.md + 规范段的旧拼装, 大模型只拿到
+阉割版提示词; 现统一为「128k 以上 = 大上下文模型 = SOUL_FULL.md」)。
+联动逻辑见 core/agent.py ``_resolve_soul_tier``。
 
 为什么需要分层
 --------------
@@ -21,7 +27,9 @@
 - ``full`` (大提示词): 放开预算, 上限远高于内置默认值, 对用户配置**完全透明**
   (即: 与历史行为逐字节一致)。
 
-阈值默认 ``1_000_000`` token, 由配置 ``prompt.context_tier_threshold`` 覆盖。
+阈值默认 ``131_072`` (128k) token, 由配置 ``prompt.context_tier_threshold`` 覆盖。
+**窗口 >= 128k 的模型即「大上下文模型」**, 拿 full 档 (完整 SOUL_FULL.md 提示词);
+低于 128k 才是 compact 档。
 
 上下文窗口推断优先级
 --------------------
@@ -39,8 +47,12 @@
 ------------------------------------------------------------
 1. **预算分层** (动态段): 始终生效。auto 按上下文窗口自动定档, 控制技能数、
    记忆笔记行数、项目指令文件字节数、长期记忆长度、是否钉代码库地图。
-2. **SOUL 换档** (稳定前缀): 仅显式 ``compact`` / ``full`` 生效, 见 resolve_soul_tier。
-   auto 不换 SOUL —— 避免默认把所有人从 ``SOUL.md`` + 规范段换成另一份模板。
+2. **SOUL 换档** (稳定前缀):
+   - 显式 ``compact`` / ``full``: 直接换用内置档位 SOUL (SOUL_COMPACT.md /
+     SOUL_FULL.md), 预算同步切换。
+   - ``auto`` (默认): 由 agent 层按窗口联动 (见 ``core/agent.py::_resolve_soul_tier``)
+     —— 窗口 >= 128k (full 档) 读 ``SOUL_FULL.md`` (大上下文模型拿完整提示词),
+     窗口 < 128k (compact 档) 读 ``SOUL_COMPACT.md`` (小上下文模型拿精简提示词)。
 """
 
 from __future__ import annotations
@@ -55,11 +67,23 @@ COMPACT: str = "compact"
 FULL: str = "full"
 TIER_NAMES: Tuple[str, str] = (COMPACT, FULL)
 
-#: 分档阈值: 窗口 >= 此值的模型拿 full 档, 小于此值的拿 compact 档。
-DEFAULT_CONTEXT_TIER_THRESHOLD: int = 1_000_000
+#: 大上下文模型的下界: 上下文窗口 >= 128k (131_072) 的模型即视为「大上下文模型」,
+#: 拿 full 档提示词; 低于此值才是 compact 档。
+#:
+#: 早先这里是 1_000_000, 只有百万级模型才够格叫「大上下文」—— 这与通行认知和
+#: 用户预期都不符: 128k/200k 窗口已是主流模型的标准配置, 按 1M 划线会把它们
+#: 错误降级成 compact 档, 代价是技能条目被收紧、正文改走 skill_read, 以及
+#: SOUL 被换成小模型模板 (见 ``_resolve_soul_tier``)。按 128k 划线后, 「大上下文
+#: 模型」= 窗口 >= 128k, 与兜底默认窗口 DEFAULT_CONTEXT_WINDOW 对齐 —— 推不出
+#: 真实窗口的模型也因此拿到 full 档 (默认按「够大」处理, 与默认值自洽)。
+LARGE_CONTEXT_WINDOW_MIN: int = 128 * 1024
 
-#: 完全无法推断时的兜底窗口 (保守, 宁可拿 compact 也不冒溢出风险)。
-DEFAULT_CONTEXT_WINDOW: int = 128 * 1024
+#: 分档阈值: 窗口 >= 此值的模型拿 full 档, 小于此值的拿 compact 档。
+DEFAULT_CONTEXT_TIER_THRESHOLD: int = LARGE_CONTEXT_WINDOW_MIN
+
+#: 完全无法推断时的兜底窗口 (取大上下文下界: 与上面的分档线自洽, 推不出真实
+#: 窗口时按 128k 处理, 即默认算大上下文模型)。
+DEFAULT_CONTEXT_WINDOW: int = LARGE_CONTEXT_WINDOW_MIN
 
 #: ``prompt.tier`` 默认值: 按上下文窗口自动定档。
 DEFAULT_TIER: str = "auto"
@@ -151,6 +175,23 @@ def infer_context_window(
     return _window_from_provider(provider)
 
 
+def is_large_context(context_window: Any) -> bool:
+    """判定是否属于「大上下文模型」: 窗口 >= 128k 即是。
+
+    这是全项目「大上下文模型」的唯一判定口径 —— 提示词分档 (full/compact)、
+    SOUL 模板选择 (SOUL_FULL.md)、技能预算、人设层都以此为准, 避免各处各写
+    一套阈值导致同一模型在不同环节被当成不同档。
+
+    Args:
+        context_window: 上下文窗口 token 数; 非正数/非法值一律判 False。
+    """
+    try:
+        win = int(context_window)
+    except (TypeError, ValueError):
+        return False
+    return win >= LARGE_CONTEXT_WINDOW_MIN
+
+
 # ============================================================ 分档
 
 def resolve_prompt_tier(
@@ -161,7 +202,7 @@ def resolve_prompt_tier(
     """按上下文窗口定档, 允许 ``tier`` 强制覆盖。
 
     - ``tier`` 为 ``compact`` / ``full`` 时直接采信 (用户实测后的手动定档)。
-    - ``tier`` 为 ``auto``/空/未知时按窗口与阈值判定。
+    - ``tier`` 为 ``auto``/空/未知时按窗口与阈值判定 (默认阈值 = 128k 下界)。
     - ``threshold`` <= 0 视为无效, 回退默认阈值 (避免误配置把所有模型打成 compact)。
     """
     key = (tier or "").strip().lower()
@@ -320,16 +361,14 @@ def resolve_soul_tier(
 ) -> str:
     """决定稳定前缀是否切换到「内置档位 SOUL」(SOUL_COMPACT.md / SOUL_FULL.md)。
 
-    语义分两层, 避免默认行为突变:
-    - ``prompt.tier == "auto"`` (默认): 返回 ``""`` —— 只做**预算分层**
-      (收紧动态段的技能数 / 笔记行数 / 指令文件字节 / 长期记忆长度),
-      稳定前缀仍用 ``SOUL.md`` + 各规范段逐字节拼装, 与历史完全一致。
+    语义分两层:
     - ``prompt.tier == "compact"`` / ``"full"`` (显式): 返回该档位名 ——
-      稳定前缀改用内置档位 SOUL (compact ≈1.3K 字 / full ≈26K 字, 自包含全部规范),
+      稳定前缀改用内置档位 SOUL (compact ≈精简 / full ≈26K 字, 自包含全部规范),
       预算同步切换到对应档。
-
-    也就是说: 「小型提示词 / 大提示词」的**自动**伸缩由预算分层承担 (安全、可回退);
-    要彻底换掉整份系统提示词, 用显式 compact/full 主动选择。
+    - ``prompt.tier == "auto"`` (默认): 本函数返回 ``""``, 由 **agent 层按解析出的
+      预算档位联动** (见 ``core/agent.py::_resolve_soul_tier``): 窗口 >= 128k
+      (full 档, 大上下文模型) 用 ``SOUL_FULL.md``, 窗口 < 128k (compact 档,
+      小上下文模型) 用 ``SOUL_COMPACT.md``。
     """
     want = (tier or _cfg_get(config, "prompt.tier", DEFAULT_TIER) or DEFAULT_TIER)
     key = str(want).strip().lower()
