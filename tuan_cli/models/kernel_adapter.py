@@ -28,6 +28,7 @@ from ..runtime.contract import (
 from ..runtime import generate
 from ..runtime.provider_service import ProviderConfig, build_provider
 from ..models.base import ModelAdapter, ModelCapabilities, ModelResponse, ToolCall as _ToolCall
+from .timeout_policy import resolve_read_timeout
 
 
 def _to_kernel_message(d: Dict[str, Any]) -> Message:
@@ -126,11 +127,9 @@ def create_kernel_adapter(config) -> KernelModelAdapter:
     """从青小团 Config 构造 KernelModelAdapter（统一入口开关：model.backend=kernel）。"""
     # 透传三段式超时: 早先只传 max_tokens/temperature, 导致 kernel 后端拿不到
     # model.read_timeout, 退回 _http.build_client 的硬编码值（长上下文必超时）。
-    read_timeout = float(config.get("model.read_timeout", 300.0) or 300.0)
+    # 口径统一走 timeout_policy (含下限兜底), 避免两个后端各写一份而漂移。
     model_name = str(config.get("model.model", "") or "")
-    # 思考型模型静默思考更久, 与 legacy 传输层(models/__init__.py)保持同一放宽口径
-    if any(h in model_name for h in ("reasoner", "thinking", "deepseek-r1", "o1", "o3")):
-        read_timeout = max(read_timeout, 600.0)
+    read_timeout = resolve_read_timeout(config.get("model.read_timeout", 300.0), model_name)
 
     provider_cfg = ProviderConfig(
         type=config.get("model.provider", "openai"),
