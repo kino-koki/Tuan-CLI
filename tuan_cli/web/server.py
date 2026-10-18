@@ -554,7 +554,9 @@ class _WebHandler(BaseHTTPRequestHandler):
             body = self._read_body()
             res = self._owner.apply_model(str(body.get("provider") or ""),
                                           str(body.get("model") or ""),
-                                          str(body.get("api_key") or ""))
+                                          str(body.get("api_key") or ""),
+                                          str(body.get("base_url") or ""),
+                                          str(body.get("api_key_env") or ""))
             self._json(200 if res.get("ok") else 400, res)
             return
         if path == "/api/config/apikey":
@@ -1558,13 +1560,21 @@ class WebServer:
             self.apply_effort(str(coerced))
         return {"ok": True, "key": key, "value": coerced}
 
-    def apply_model(self, provider: str, model: str, api_key: str = "") -> Dict[str, Any]:
-        """切换供应商/模型 (对标 CLI cmd_model), 可选同时写入 API Key。"""
+    def apply_model(self, provider: str, model: str, api_key: str = "",
+                    base_url: str = "", api_key_env: str = "") -> Dict[str, Any]:
+        """切换供应商/模型 (对标 CLI cmd_model), 可选同时写入 API Key。
+
+        目录内供应商: 端点与密钥环境变量取预设; 目录外供应商 (自定义 OpenAI
+        兼容端点, 如桌面 APP 手动录入的网关): 必须显式传 base_url, 可带
+        api_key_env —— 与 cli/cmd_model.py 的自定义端点分支同一口径。
+        """
         cfg = self._cfg()
         if cfg is None:
             return {"ok": False, "error": "配置不可用"}
         provider = str(provider or "").strip()
         model = str(model or "").strip()
+        base_url = str(base_url or "").strip()
+        api_key_env = str(api_key_env or "").strip()
         if not provider or not model:
             return {"ok": False, "error": "供应商与模型不能为空"}
         try:
@@ -1572,23 +1582,28 @@ class WebServer:
         except Exception:  # noqa: BLE001
             get_provider = None  # type: ignore
         preset = get_provider(provider) if get_provider else None
-        if preset is None:
-            return {"ok": False, "error": f"未知供应商: {provider}"}
-        # 模型名必须在目录内 (剥掉 |free/|paid 标注后比对), 防止把拼错的
-        # 模型名写进配置, 却要到运行期发请求时才报错。
-        known = _provider_model_ids(preset)
-        if known and model not in known:
-            return {"ok": False, "error": f"{provider} 没有模型 {model}"}
+        if preset is None and not base_url:
+            return {"ok": False, "error": f"未知供应商: {provider} (自定义端点需提供 base_url)"}
+        # 模型名校验仅对目录内供应商生效 (剥掉 |free/|paid 标注后比对),
+        # 防止把拼错的模型名写进配置, 却要到运行期发请求时才报错。
+        if preset is not None:
+            known = _provider_model_ids(preset)
+            if known and model not in known:
+                return {"ok": False, "error": f"{provider} 没有模型 {model}"}
         try:
             cfg.set_user("model.provider", provider)
             cfg.set_user("model.model", model)
-            if preset.base_url:
-                cfg.set_user("model.base_url", preset.base_url)
-            if preset.api_key_env:
-                cfg.set_user("model.api_key_env", preset.api_key_env)
+            if preset is not None:
+                if preset.base_url:
+                    cfg.set_user("model.base_url", preset.base_url)
+                if preset.api_key_env:
+                    cfg.set_user("model.api_key_env", preset.api_key_env)
+            else:
+                cfg.set_user("model.base_url", base_url)
+                cfg.set_user("model.api_key_env", api_key_env or "CUSTOM_API_KEY")
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        env = preset.api_key_env or cfg.get("model.api_key_env")
+        env = (preset.api_key_env if preset else api_key_env) or cfg.get("model.api_key_env")
         key_note = ""
         if api_key and env:
             os.environ[env] = api_key
@@ -1598,6 +1613,23 @@ class WebServer:
                 key_note = f"已保存密钥 {env} (本次会话 + 重启均生效)"
             except Exception as exc:  # noqa: BLE001
                 key_note = f"密钥仅本次会话生效 ({exc})"
+        # 关键: Agent 的 model_adapter 是内核启动时按当时 config 缓存的
+        # (core/agent.py: self.model = kernel.require("model_adapter"))。只改配置
+        # 不重建适配器, 密钥/端点仍是旧快照 —— 与 CLI 热切换同一模式: unprovide+provide。
+        try:
+            from ..models import create_adapter as _create_adapter
+            kernel = getattr(self, "kernel", None)
+            if kernel is not None:
+                kernel.unprovide("model_adapter")
+                kernel.provide("model_adapter", _create_adapter(cfg), owner="web")
+                # 中途换供应商/模型: 已缓存会话的 agent 也热刷新, 立即生效
+                with _SESSIONS_LOCK:
+                    for s in _SESSIONS.values():
+                        a = s.get("agent")
+                        if a is not None and hasattr(a, "model"):
+                            a.model = kernel.require("model_adapter")
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"适配器重建失败: {exc}"}
         # 模型是运行期按 config 解析的, 无需重建会话; 这里只把新端点回显给前端
         return {"ok": True, "model": {"provider": provider, "model": model,
                 "base_url": cfg.get("model.base_url"), "api_key_env": env}, "note": key_note}
