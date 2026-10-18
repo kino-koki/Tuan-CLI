@@ -21,13 +21,13 @@ use_count: 0
 ## 输入验证
 
 ```python
-# ✅ 白名单验证
+# 推荐: 白名单验证
 def validate_username(name: str) -> str:
     if not re.match(r'^[a-zA-Z0-9_]{3,20}$', name):
         raise ValueError(f"Invalid username: {name}")
     return name
 
-# ❌ 黑名单过滤 (总会漏掉新型攻击)
+# 反例: 黑名单过滤 (总会漏掉新型攻击)
 def validate_username_bad(name: str) -> str:
     if '<script>' in name:  # 只防 XSS，不防 SQL 注入
         raise ValueError("Invalid")
@@ -37,13 +37,13 @@ def validate_username_bad(name: str) -> str:
 ## SQL 注入防护
 
 ```python
-# ✅ 参数化查询
+# 推荐: 参数化查询
 cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
 
-# ❌ 字符串拼接
+# 反例: 字符串拼接
 cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")  # SQL 注入！
 
-# ❌ ORM 的 raw query 也要参数化
+# 反例: ORM 的 raw query 也要参数化
 User.objects.raw(f"SELECT * FROM users WHERE id = {user_id}")  # 同样危险
 ```
 
@@ -52,10 +52,10 @@ User.objects.raw(f"SELECT * FROM users WHERE id = {user_id}")  # 同样危险
 ```python
 import subprocess
 
-# ✅ 参数列表 (不经过 shell)
+# 推荐: 参数列表 (不经过 shell)
 subprocess.run(["git", "status"], check=True)
 
-# ❌ 字符串拼接 (shell 注入)
+# 反例: 字符串拼接 (shell 注入)
 subprocess.run(f"git {user_input}", shell=True)  # user_input 可以是 "; rm -rf /"
 ```
 
@@ -64,26 +64,26 @@ subprocess.run(f"git {user_input}", shell=True)  # user_input 可以是 "; rm -r
 ```python
 import os
 
-# ✅ 从环境变量读取
+# 推荐: 从环境变量读取
 api_key = os.environ.get("API_KEY")
 if not api_key:
     raise RuntimeError("API_KEY not set")
 
-# ❌ 硬编码
+# 反例: 硬编码
 api_key = "sk-1234567890abcdef"  # 永远不要这样做！
 
-# ❌ 写入日志
+# 反例: 写入日志
 logger.info(f"Using API key: {api_key}")  # 密钥泄露！
 ```
 
 ## XSS 防护
 
 ```python
-# ✅ 转义输出
+# 推荐: 转义输出
 from markupsafe import escape
 html = f"<p>{escape(user_input)}</p>"
 
-# ❌ 直接插入
+# 反例: 直接插入
 html = f"<p>{user_input}</p>  # user_input 可以是 <script>alert('xss')</script>"
 ```
 
@@ -92,21 +92,21 @@ html = f"<p>{user_input}</p>  # user_input 可以是 <script>alert('xss')</scrip
 ```python
 from pathlib import Path
 
-# ✅ 规范化 + 检查前缀
+# 推荐: 规范化 + 检查前缀
 def safe_path(base: str, user_path: str) -> Path:
     resolved = (Path(base) / user_path).resolve()
     if not str(resolved).startswith(str(Path(base).resolve())):
         raise ValueError("Path traversal detected")
     return resolved
 
-# ❌ 直接拼接
+# 反例: 直接拼接
 dangerous = Path(base) / user_path  # user_path 可以是 "../../etc/passwd"
 ```
 
 ## 权限控制
 
 ```python
-# ✅ RBAC: 基于角色的访问控制
+# 推荐: RBAC: 基于角色的访问控制
 def check_permission(user: User, resource: Resource, action: str) -> bool:
     role = user.role
     if role == "admin":
@@ -117,7 +117,7 @@ def check_permission(user: User, resource: Resource, action: str) -> bool:
         return True
     return False  # 默认拒绝
 
-# ❌ 硬编码权限
+# 反例: 硬编码权限
 if user.name == "admin":  # 用户名可以被伪造！
     allow_all()
 ```

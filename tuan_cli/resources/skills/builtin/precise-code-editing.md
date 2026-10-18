@@ -25,12 +25,12 @@ Claude Code 级别的代码编辑 = 精准定位 + 最小改动 + 验证闭环�
 - 不要在 new_string 里"顺便"改别的东西
 
 ```
-# ✅ 正确: 精确匹配一个函数
+# 正确: 精确匹配一个函数
 edit_file("path/to/file.py",
     old_string="def process(data):\n    return data * 2",
     new_string="def process(data: List[str]) -> List[str]:\n    return [d * 2 for d in data]")
 
-# ❌ 错误: 一次改太多，review 看不出改了啥
+# 错误: 一次改太多，review 看不出改了啥
 edit_file("path/to/file.py",
     old_string="整个文件内容...",
     new_string="重写后的内容...")

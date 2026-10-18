@@ -14,7 +14,7 @@ use_count: 0
 ## 资源命名
 
 ```
-✅ 正确:
+正确:
 GET    /api/v1/users          # 列表
 GET    /api/v1/users/123      # 单个
 POST   /api/v1/users          # 创建
@@ -22,7 +22,7 @@ PUT    /api/v1/users/123      # 全量更新
 PATCH  /api/v1/users/123      # 部分更新
 DELETE /api/v1/users/123      # 删除
 
-❌ 错误:
+错误:
 GET /api/v1/getUsers          # 动词不应该是 URL 的一部分
 POST /api/v1/user/create      # 同上
 GET /api/v1/user/delete/123   # DELETE 应该用 HTTP 方法
@@ -109,11 +109,11 @@ Accept: application/vnd.myapi.v2+json
 
 | 方法 | 幂等 | 说明 |
 |---|---|---|
-| GET | ✅ | 多次请求结果相同 |
-| PUT | ✅ | 全量替换 |
-| DELETE | ✅ | 删除多次结果相同 |
-| POST | ❌ | 可能创建多个 |
-| PATCH | ❌ | 取决于实现 |
+| GET | 是 | 多次请求结果相同 |
+| PUT | 是 | 全量替换 |
+| DELETE | 是 | 删除多次结果相同 |
+| POST | 否 | 可能创建多个 |
+| PATCH | 否 | 取决于实现 |
 
 POST 幂等化：客户端生成 `Idempotency-Key`，服务端去重。
 
