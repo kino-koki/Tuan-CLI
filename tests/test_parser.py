@@ -42,6 +42,29 @@ def test_all_subcommands_have_func_default():
         assert "func" in sub._defaults, f"子命令 {name} 缺少 func 默认值"
 
 
+def test_every_subcommand_func_is_resolvable():
+    """每个子命令的 func 必须真的能解析到可调用对象。
+
+    回归: `tuan web` 曾因 commands.py::_CMD_SOURCES 漏登记 cmd_web 而在
+    运行时抛 AttributeError —— func 默认值存在但惰性路由取不到, 上面的
+    "有 func" 检查抓不到。这里对全部子命令逐一解析, 保证不重蹈覆辙。
+    """
+    parser_obj = build_parser()
+    sub_actions = [a for a in parser_obj._actions if isinstance(a, argparse._SubParsersAction)]
+    assert len(sub_actions) == 1
+    unresolvable = []
+    for name, sub in sub_actions[0].choices.items():
+        func_name = sub._defaults.get("func")
+        if not func_name:
+            continue  # improve 等父命令由叶子设置
+        try:
+            resolved = parser._resolve_func(func_name)
+            assert callable(resolved), f"{name} -> {func_name} 解析结果不可调用"
+        except Exception as exc:  # noqa: BLE001
+            unresolvable.append(f"{name} -> {func_name} ({exc.__class__.__name__})")
+    assert not unresolvable, "无法解析的子命令: " + ", ".join(unresolvable)
+
+
 def test_subcommand_func_values():
     cases = {
         "dev": ("cmd_dev", ["task"]),
