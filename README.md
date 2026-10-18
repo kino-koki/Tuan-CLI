@@ -37,7 +37,7 @@ The core idea: **the model does the thinking; the harness makes that thinking ru
 |---|---|
 | 🛡️ **Safety-first** | Four gates: static risk scoring, blast-radius pre-blocking, YOLO-redline floor, transactional ledger with exact `/undo` |
 | 🎯 **Developer experience** | Benign dev commands pass with zero confirmation, `/undo` has your back, 40+ slash commands, `tuan safe allow` for explicit opt-outs, YOLO to skip repeat prompts |
-| 🔌 **Model-agnostic** | 57 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
+| 🔌 **Model-agnostic** | 58 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
 | 🧠 **Three main loops** | ReAct / Planner-Execute / DevLoop — pluggable; one kernel, different "thinking rhythms" |
 | 🔧 **Microkernel** | One-line `@plugin`, service registry, append-only event bus, hook middleware |
 | 🗂️ **Memory** | SQLite FTS5 + session event stream; three-tier memory, `/undo`, checkpoint, replay, Trajectory export |
@@ -85,7 +85,7 @@ class MyTool(Plugin):
 
 ## Version number & repository history (transparent disclosure)
 
-**Why `0.3.1` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (57 providers + local Ollama), three main loops, microkernel plugin architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Why `0.3.1` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (58 providers + local Ollama), three main loops, microkernel plugin architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Version semantics | Meaning |
 |---|---|
@@ -142,7 +142,7 @@ tuan --print run "Hi, describe yourself in one sentence."
 | Command | What it's for |
 |---|---|
 | `tuan` | Interactive TUI (Kimi Code skin) |
-| `tuan setup` / `tuan models` | Configure providers / list 57 providers & 1100+ models |
+| `tuan setup` / `tuan models` | Configure providers / list 58 providers & 1100+ models |
 | `tuan models update` | Update the model/provider catalog locally: merge the built-in lists into `~/.tuan/models_catalog.json` (offline, preserves user-added entries; `--check` reports diffs only, `--background` runs async) |
 | `tuan agent` | Named agents (`.claude/agents`-compatible, 3-tier discovery) |
 | `tuan acp` | Run an ACP server so VSCode / Zed / JetBrains can drive you |
