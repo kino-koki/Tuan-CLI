@@ -39,19 +39,28 @@ def test_msg_to_lines_user_block_bg():
 # ---------------------------------------------------------------- 排版分组
 
 def test_scrolled_lines_separates_message_blocks():
-    """str 消息块之间插入空行, 对话不再是堆砌文字。"""
+    """消息块之间的空行规则 (对标 Claude Code 的紧凑排版)。
+
+    两条规则:
+    1. 提问与其回答**之间不留空行** —— 一次问答是一个整体, 空行会把它拆成
+       两个视觉区块, 这是"行距偏松"的最大来源;
+    2. 其余块间仍留一个空行, 保证多轮对话可读。
+    """
     tui = _tui()
     tui.append_log("✨ 第一问")
     tui.append_log("第一答")
     tui.append_log("✨ 第二问")
     screen = tui._scrolled_lines()
-    # 三个消息块 -> 两块间各有一个空行 (共 2 个空行)
+
+    # 问1→答1 不空行; 答1→问2 留 1 个空行
     blank_rows = sum(1 for line in screen if not line)
-    assert blank_rows == 2
-    # 顺序保持: 消息内容仍在
-    flat = ["".join(seg for _, seg in line) for line in screen if line]
-    assert any("第一问" in row for row in flat)
-    assert any("第一答" in row for row in flat)
+    assert blank_rows == 1, "问答之间不应有空行, 仅轮次之间保留一个"
+
+    flat = ["".join(seg for _, seg in line) for line in screen]
+    # 提问与紧邻的回答必须物理相邻
+    i_q = next(i for i, r in enumerate(flat) if "第一问" in r)
+    i_a = next(i for i, r in enumerate(flat) if "第一答" in r)
+    assert i_a == i_q + 1, "提问与回答应紧邻, 中间不得有空行"
 
 
 def test_scrolled_lines_no_double_sparkle_in_full_pipeline():
