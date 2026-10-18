@@ -471,3 +471,13 @@ def test_frontend_model_slash_opens_picker():
     assert "SET.cat='模型与供应商'" in FRONTEND_HTML
     # 带参数时预选供应商
     assert "set-provider" in FRONTEND_HTML
+
+
+def test_frontend_noarg_slash_executes_in_one_enter():
+    """无参命令选中即执行, 省掉"回车补全 → 再回车"的二次按键。"""
+    from tuan_cli.web.frontend import FRONTEND_HTML
+
+    assert "var SLASH_NOARG=" in FRONTEND_HTML, "应有无参命令表"
+    assert "sendMsg();" in FRONTEND_HTML, "pickSlash 应能直接执行"
+    for cmd in ("/model", "/export", "/diff", "/plan"):
+        assert cmd in FRONTEND_HTML, f"无参命令表缺少 {cmd}"
