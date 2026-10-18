@@ -991,13 +991,60 @@ class QxtTUI:
                 cols = 80
         return max(20, cols - 2)
 
+    def _visible_log_rows(self) -> int:
+        """对话区**理论上限**可视行数: 按当前布局从终端总行数里逐项扣减。
+
+        为什么需要它: `_viewport_rows()` 信任 `_MeasuredWindow.measured_height`,
+        而那个值是**上一帧** write_to_screen 时记下的。布局刚变化的帧 (Ctrl+O 展开
+        审计面板 / 打开 "/" 命令面板 / 输入框长到多行 / 切换 diff 面板 / 终端改大小),
+        实测值还是旧的"大高度", 于是 `_viewport_slice` 会切出比窗口**能显示的更多行**。
+        多出来的行会让 prompt_toolkit 的 Window 触发它自己的内部滚动 —— 于是"我们的
+        视口"和"Window 的滚动"两套机制打架, 表现就是上翻后内容被顶掉、翻不动。
+
+        这里算出当前布局下的**上界**, 供 `_viewport_rows()` 做钳制。
+        """
+        try:
+            rows = self._app.output.get_size().rows if self._app else 0
+        except Exception:
+            rows = 0
+        if rows <= 0:
+            try:
+                rows = shutil.get_terminal_size((80, 24)).lines
+            except Exception:
+                rows = 24
+        # 输入框边框 3 行 + 底栏 1 行
+        budget = rows - 4
+        # "/" 命令面板: 最多 _SLASH_MAX_VISIBLE 行 + 1 行边框
+        if getattr(self, "_slash_open", False) and getattr(self, "_slash_items", None):
+            try:
+                budget -= int(self._slash_menu_rows()) + 1
+            except Exception:
+                budget -= _SLASH_MAX_VISIBLE + 1
+        # 审计面板: 展开时约占 45% 高度 (与 _MeasuredWindow 里的说明一致)
+        if getattr(self, "_audit_visible", False):
+            budget = int(budget * 0.55)
+        # 命令确认卡片 / 提问卡片按需占据底部若干行
+        for attr in ("_confirm_pending", "_ask_pending"):
+            if getattr(self, attr, None):
+                budget -= 12
+                break
+        return max(3, budget)
+
     def _viewport_rows(self) -> int:
-        """对话区视口高度 (终端行数) —— 优先用实测值, 首帧回退估算。"""
+        """对话区视口高度 (终端行数) —— 实测值优先, 但**必须按当前布局钳制上界**。
+
+        早期实现无条件相信实测高度, 布局变化的帧里它会过期, 导致切片超过窗口高度,
+        进而触发 Window 的内部滚动, 把我们的视口顶掉 (见 `_visible_log_rows`)。
+        """
         try:
             m = int(getattr(self._log_window, "measured_height", 0) or 0)
         except Exception:
             m = 0
-        return m if m > 0 else self._page_rows()
+        ceiling = self._visible_log_rows()
+        if m > 0:
+            # 实测值可能来自上一帧的旧布局; 取与当前布局上界的较小者。
+            return max(3, min(m, ceiling))
+        return ceiling
 
     def _line_heights(self, lines: List[List[Tuple[str, str]]]) -> List[int]:
         """每个逻辑行在 wrap_lines 下占的终端行数 (宽字符感知)。
@@ -1113,11 +1160,20 @@ class QxtTUI:
             return 0
 
     def _render_audit(self):
-        """审计面板内容: 顶部标题 + 思考全文 + 审计日志 (kimi 折叠思考)。"""
-        line: List[Tuple[str, str]] = [("class:primary", t("tui.audit_title"))]
+        """审计面板内容: 顶部标题 + 思考全文 + 审计日志 (kimi 折叠思考)。
+
+        面板是 `wrap_lines=True`, 正文长文本会软换行 (正常)。但标题与
+        "Ctrl+O 收起" 提示拼在同一行, i18n 变长 (德/俄语) 或窄终端下会超宽,
+        这里按显示宽度裁剪以免首行被折成两行、标题与正文错位。
+        """
+        width = max(8, self._log_width())
+        head = self._clip_dw(t("tui.audit_title"), width)
         if not self._audit_visible:
-            return line
-        line.append(("class:textdim", "  Ctrl+O 收起"))
+            return [("class:primary", head)]
+        hint = self._clip_dw("Ctrl+O", width - _disp_width(head) - 2)
+        line: List[Tuple[str, str]] = [("class:primary", head)]
+        if hint:
+            line.append(("class:textdim", "  " + hint))
         out: List[List[Tuple[str, str]]] = [line]
         # 进行中的思考 (实时)
         if self._reason_full:
@@ -1347,19 +1403,24 @@ class QxtTUI:
             sel = (i == self._slash_index)
             mark = "▶ " if sel else "  "
             desc = self._command_meta.get(cmd) or t("tui.cmd_meta")
-            line = f"{mark}{cmd}"
-            room = max(1, width - _disp_width(line) - 3)
-            desc = self._clip_dw(desc, room) if _disp_width(desc) > room else desc
+            # 该面板 wrap_lines=False, 故**整行**必须 ≤ width: 命令名、分隔空格、
+            # 描述三者按顺序瓜分预算。旧实现只裁描述、且分隔符恒为2 列,
+            # 在12~16 列的极窄终端下 "  /provider  " 这类行仍会算出 13 列。
+            head = self._clip_dw(f"{mark}{cmd}", width)
+            gap_room = max(0, width - _disp_width(head))
+            gap = " " * min(2, gap_room)
+            rest = gap_room - _disp_width(gap)
+            desc = self._clip_dw(desc, rest) if rest > 0 else ""
             sel_cls = "class:slashsel" if sel else ""
             rows.append([
-                (sel_cls or "class:slashcmd", line),
-                (sel_cls, "  "),
+                (sel_cls or "class:slashcmd", head),
+                (sel_cls, gap),
                 (sel_cls or "class:slashdesc", desc),
             ])
         if len(items) > _SLASH_MAX_VISIBLE:
             hidden = len(items) - visible
             hint = t("tui.slash_more", n=hidden, pos=f"{self._slash_index + 1}/{len(items)}")
-            rows.append([("class:slashhint", self._clip_dw(hint, max(1, width - 1)))])
+            rows.append([("class:slashhint", self._clip_dw(hint, width))])
         out: List[Tuple[str, str]] = []
         for r_i, row in enumerate(rows):
             for cls, seg in row:
@@ -1679,14 +1740,20 @@ class QxtTUI:
         返回 List[行]; 每行是 (class, text) 分段列表, 便于在 events 路径逐行渲染,
         保证 CJK/绘图形字符下右边框仍对齐。
         """
-        width = self._box_width()           # 真实 App 列宽, 全宽
-        inner = max(1, width - 2)            # 边框内侧显示列数 (= 宽度 - 左右两个 │), 右侧竖线对齐
+        width, inner = self._box_budget()    # 真实 App 列宽, 全宽
         pad = "  "
-        pad_w = 2
+        pad_w = _disp_width(pad)
         logo_w = max(_disp_width(r) for r in KIMI_LOGO)
         gap_w = 2
-        head_text_w = max(4, inner - pad_w - logo_w - gap_w)
-        info_w = max(4, inner - pad_w)
+        # 窄屏 (放不下 logo + 至少 4 列文字) 时把文字挪到 logo 下方另起 ——
+        # 旧实现用 max(4, ...) 强行保底 4 列文字, 在 16 列终端下整行算成
+        # 2+logo+2+4+2 远大于 inner, 右边框被顶到下一行 (观感即"文字溢出")。
+        stacked = (inner - pad_w - gap_w) < (logo_w + 4)
+        info_w = max(1, inner - pad_w)
+        if stacked:
+            head_text_w = info_w
+        else:
+            head_text_w = max(4, inner - pad_w - logo_w - gap_w)
 
         def clip_dw(s: str, n: int) -> str:
             if _disp_width(s) > n:
@@ -1698,38 +1765,51 @@ class QxtTUI:
                 return res
             return s + " " * (n - _disp_width(s))
 
-        # 头部两行: 吉祥物 + 右侧文字并排 (row0 蓝标题 / row1 蓝次级)
+        # 头部两行: 吉祥物 + 右侧文字并排 (row0 蓝标题 / row1 蓝次级);
+        # 窄屏则 logo 独占两行, 文字在其后另起, 保证每行 ≤ inner。
         head: List[List[Tuple[str, str]]] = []
         rights = [clip_dw(title, head_text_w), clip_dw(subtitle, head_text_w)]
         for i, lg in enumerate(KIMI_LOGO):
             seg: List[Tuple[str, str]] = []
             seg.append(("class:primary", "│"))
             seg.append(("", pad))
-            seg.append(("class:title", lg.ljust(max(1, logo_w))))
-            seg.append(("", "  "))
-            r = rights[i]
-            seg.append(("class:title" if i == 0 else "class:boxsub", r))
-            rp = max(0, (inner - pad_w - logo_w - gap_w) - _disp_width(r))
-            seg.append(("", " " * rp))
+            if stacked:
+                seg.append(("class:title", lg.ljust(max(1, logo_w))))
+                seg.append(("", " " * max(0, inner - pad_w - logo_w)))
+            else:
+                seg.append(("class:title", lg.ljust(max(1, logo_w))))
+                seg.append(("", "  "))
+                r = rights[i]
+                seg.append(("class:title" if i == 0 else "class:boxsub", r))
+                rp = max(0, (inner - pad_w - logo_w - gap_w) - _disp_width(r))
+                seg.append(("", " " * rp))
             seg.append(("class:primary", "│"))
             head.append(seg)
+        if stacked:
+            for i, r in enumerate(rights):
+                if not r.strip():
+                    continue
+                seg = [("class:primary", "│"), ("", pad),
+                       ("class:title" if i == 0 else "class:boxsub", r),
+                       ("", " " * max(0, info_w - _disp_width(r))),
+                       ("class:primary", "│")]
+                head.append(seg)
 
         # 信息行: 标签(蓝次级) + 值(浅色)
         info_rows: List[List[Tuple[str, str]]] = []
         for label, value in info_pairs:
-            label = str(label)
+            # 极窄终端下标签本身就放不下 (如"Directory: " 12 列而可用仅 8 列),
+            # 旧实现只裁 value、label 全宽输出 → 整行超宽, 右边框被顶飞。
+            # 这里把标签和值放进同一个预算里按顺序分配。
+            label = self._clip_dw(str(label), info_w)
             value = str(value)
-            # 值超长 (窄屏 / 长绝对路径 / 长模型名) 时按显示宽度截断补省略号,
-            # 否则右侧竖线被顶飞 → 文字溢出 (2026-10-18 修复)。
-            v_room = max(1, info_w - _disp_width(label))
-            value = clip_dw(value, v_room)
-            seg = []
-            seg.append(("class:primary", "│"))
+            v_room = max(0, info_w - _disp_width(label))
+            value = clip_dw(value, v_room) if v_room > 0 else ""
+            seg: List[Tuple[str, str]] = [("class:primary", "│")]
             seg.append(("", pad))
             seg.append(("class:boxsub", label))
             seg.append(("class:text", value))
-            rp = max(0, info_w - _disp_width(label) - _disp_width(value))
-            seg.append(("", " " * rp))
+            seg.append(("", " " * max(0, info_w - _disp_width(label) - _disp_width(value))))
             seg.append(("class:primary", "│"))
             info_rows.append(seg)
 
@@ -1757,19 +1837,30 @@ class QxtTUI:
             if i < len(box_rows) - 1:
                 out.append(("", "\n"))
         out.append(("", "\n"))
+        # 启动态的几行文本也按宽度裁剪: 状态串 (含 i18n 与错误详情) 与提示行
+        # 在窄终端下会超宽 → 软换行把加载屏顶乱。
+        budget = max(4, self._box_width() - 2)
+
+        def emit(cls: str, text: str) -> None:
+            out.append((cls, self._clip_dw(text, budget) + "\n"))
+
         if self._boot_error:
-            out.append(("class:error", f"  ✗ {self._boot_error}\n"))
-            out.append(("class:textdim", f"  {t('tui.exit_ctrl_c')}\n"))
+            emit("class:error", f"  ✗ {self._boot_error}")
+            emit("class:textdim", f"  {t('tui.exit_ctrl_c')}")
         elif self._boot_progress >= 100:
-            out.append(("class:success", f"  {SUCCESS_MARK} {t('fs.ready')}\n"))
+            emit("class:success", f"  {SUCCESS_MARK} {t('fs.ready')}")
         else:
-            out.append(("class:text", f"  {frame} {self._boot_status}\n"))
-        bar_len = 30
+            emit("class:text", f"  {frame} {self._boot_status}")
+        # 进度条按终端宽度自适应: 固定 30 格 = 37 列, 窄终端 (<40 列) 下
+        # 整行超宽 → 软换行把加载屏顶成两行, 观感即"溢出/错位"。
+        # 这里把可用宽度扣掉缩进、方括号、百分比和空格后作为条长。
+        bar_len = max(3, min(30, budget - 6))
         filled = int(self._boot_progress / 100 * bar_len)
+        filled = max(0, min(bar_len, filled))
         bar = "█" * filled + "░" * (bar_len - filled)
-        out.append(("class:dim", f"  [{bar}] {self._boot_progress}%\n"))
+        emit("class:dim", f"  [{bar}] {self._boot_progress}%")
         out.append(("", "\n"))
-        out.append(("class:dim", f"  {t('tui.exit_ctrl_c')}\n"))
+        emit("class:dim", f"  {t('tui.exit_ctrl_c')}")
         return out
 
     # ============================================================ 流式 / 工具
@@ -2446,14 +2537,16 @@ class QxtTUI:
         if self._turn_tool_lines:
             if self._tool_detail:
                 for ln in self._turn_tool_lines:
-                    screen.append([("class:textdim", ln)])
+                    screen.append([("class:textdim", self._fit(ln))])
             else:
                 n = len(self._turn_tool_lines)
-                screen.append([("class:primary", f"▸ see {n} tool calls (Ctrl+O)")])
+                screen.append([("class:primary", self._fit(
+                    f"▸ see {n} tool calls (Ctrl+O)"))])
 
         # 流式
         if self._streaming and self._stream_buf:
-            screen.append([("class:text", STATUS_BULLET + self._stream_buf.lstrip(chr(10)))])
+            screen.append([("class:text", self._fit(
+                STATUS_BULLET + self._stream_buf.lstrip(chr(10))))])
         elif self._busy and not self._running and not self._streaming and not self._moon_suppressed:
             moon = _MOON_FRAMES[self._moon_frame % len(_MOON_FRAMES)]
             screen.append([("class:primary", f"{moon} {t('tui.thinking')}")])
@@ -2461,7 +2554,8 @@ class QxtTUI:
         for name in self._running:
             elapsed = self._tool_start_times.get(name)
             elapsed_str = f" ({time.monotonic() - elapsed:.1f}s)" if elapsed else ""
-            screen.append([("class:textdim", t("tui.tool_run", name=name, time=elapsed_str))])
+            screen.append([("class:textdim", self._fit(
+                t("tui.tool_run", name=name, time=elapsed_str)))])
 
         if not screen:
             screen.append([("class:textdim", t("tui.ready_empty"))])
@@ -2533,10 +2627,13 @@ class QxtTUI:
         parts: List[Tuple[str, str]] = []
         if self._trust_pending:
             parts.append(("class:warning", f"? {t('tui.trust_title')}"))
-            return parts
+            return self._clip_parts(parts)
+        if self._ask_pending:
+            parts.append(("class:warning", f"? {t('tui.ask_title')}"))
+            return self._clip_parts(parts)
         if self._confirm_pending:
             parts.append(("class:warning", f"? {t('tui.confirm_title')}"))
-            return parts
+            return self._clip_parts(parts)
         if self._booting:
             frame = _SPLASH_FRAMES[self._frame % len(_SPLASH_FRAMES)]
             parts.append(("class:primary", f"{frame} {t('tui.boot_starting')}"))
@@ -2549,7 +2646,9 @@ class QxtTUI:
             parts.append(("class:primary", f"  [{t('tui.plan_badge')}]"))
         if self._model_label:
             parts.append(("class:text", f"  {self._model_label}"))
-        return parts
+        # header 也是 height=1 的单行控件: 长模型名 (provider/model 很长) 会顶破
+        # 顶部一行, 必须按显示宽度硬裁。
+        return self._clip_parts(parts)
 
     def _render_footer(self):
         """单行底部状态栏: 模式 + 命令提示 + 模型 + 状态 + 目录 + git + context。
@@ -2730,10 +2829,22 @@ class QxtTUI:
         if self._app and self._app.is_running:
             self._app.invalidate()
 
+    def _fit(self, s: str) -> str:
+        """把一行文本裁到对话区可视宽度 (供流式/工具行等超长单行使用)。
+
+        对话区是 `wrap_lines=True`, 长文本软换行本身没问题; 但流式缓冲、
+        工具耗时行这类"本应是一行"的元素被折成多行会让人误以为内容重复或
+        界面卡住, 故在构造时就裁到一屏宽。
+        """
+        return self._clip_dw(s, max(8, self._log_width()))
+
     def _clip_dw(self, s: str, n: int) -> str:
-        """按显示宽度截断到 ≤ n, 末尾补省略号 (省略号占 1 列, 不超上限)。"""
+        if n <= 0:
+            return ""
         if _disp_width(s) <= n:
             return s
+        if n == 1:
+            return "…"
         res = ""
         for ch in s:
             if _disp_width(res) + _disp_width(ch) > n - 1:  # 留 1 列给 "…"
@@ -2745,38 +2856,54 @@ class QxtTUI:
                  pad: str = "  ") -> List[Tuple[str, str]]:
         """把一段 (cls, text) 拼成带左右边框的一行, 右侧对齐竖线。
 
-        内容总宽超过 inner-2 时从最后一段按显示宽度截断 (补省略号),
-        防止窄屏下长标题/说明/选项行撑破右边框。供信任确认卡片与命令
-        确认卡片共用, 保证两类卡片排版完全一致。
+        内容总宽超过可用宽度时从第一段起按显示宽度截断 (补省略号),
+        防止窄屏下长标题/说明/选项行撑破右边框。供信任确认卡片、命令
+        确认卡片与模型提问卡片共用, 保证几类卡片排版完全一致。
+
+        可用宽度按 `pad` 的**实际**显示宽度推导 (旧实现硬编码 `-2`, 一旦
+        调用方传不同 pad 就会算错; 且 `inner` 很小时结果为负, 补空格数
+        变正数后整行仍超宽)。
         """
+        pad_w = _disp_width(pad)
+        avail = max(0, inner - pad_w)      # 左右边框各占 1 列, 已由 inner 排除
         body_w = sum(_disp_width(s) for _, s in segs)
-        if body_w > inner - 2:
-            avail = inner - 2
+        if body_w > avail:
             clipped: List[Tuple[str, str]] = []
+            rest = avail
             for cls, s in segs:
                 w = _disp_width(s)
-                if w <= avail:
+                if w <= rest:
                     clipped.append((cls, s))
-                    avail -= w
-                else:
-                    clipped.append((cls, self._clip_dw(s, avail)))
-                    avail = 0
-                    break
+                    rest -= w
+                    continue
+                if rest > 0:
+                    clipped.append((cls, self._clip_dw(s, rest)))
+                rest = 0
+                break
             segs = clipped
             body_w = sum(_disp_width(s) for _, s in segs)
         line: List[Tuple[str, str]] = [("class:primary", "│")]
         line.append(("", pad))
         line.extend(segs)
-        line.append(("", " " * max(0, inner - 2 - body_w)))
+        line.append(("", " " * max(0, avail - body_w)))
         line.append(("class:primary", "│"))
         return line
+
+    def _box_budget(self) -> Tuple[int, int]:
+        """卡片盒子宽度预算 = (总宽, 边框内侧宽度)。
+
+        终端窄到连 3 列都不到时 (Windows conpty 窗口被拖到极窄会出现),
+        直接返回 (4, 2) 之类的安全下限: 边框算式 `width-2` 为负会让
+        `"─" * (width-2)` 变成空串、上下边框退化成 `╭╮`, 排版整体垮掉。
+        """
+        width = max(4, self._box_width())
+        return width, max(2, width - 2)
 
     def _render_trust_confirm(self) -> List[Tuple[str, str]]:
         """Kimi/Claude Code 风格信任确认卡片 (全宽盒子, 复用欢迎盒排版)。"""
         pending = self._trust_pending or {}
         ws = str(pending.get("workspace", ""))
-        width = self._box_width()
-        inner = max(1, width - 2)   # 边框内侧显示列数
+        width, inner = self._box_budget()   # 边框内侧显示列数
         pad = "  "
 
         clip_dw = self._clip_dw
@@ -2847,8 +2974,7 @@ class QxtTUI:
         也不该出现在那儿。现在卡片渲染在对话区底部, 输入框只负责收 y/n。
         """
         pending = self._confirm_pending or {}
-        width = self._box_width()
-        inner = max(1, width - 2)
+        width, inner = self._box_budget()
         pad = "  "
         clip_dw = self._clip_dw
 
@@ -2881,8 +3007,7 @@ class QxtTUI:
         自动折行、超长选项按显示宽度裁剪, 不会再把输入框/边框顶破。
         """
         pending = self._ask_pending or {}
-        width = self._box_width()
-        inner = max(1, width - 2)
+        width, inner = self._box_budget()
         pad = "  "
         clip_dw = self._clip_dw
         opts: List[str] = list(pending.get("options") or [])

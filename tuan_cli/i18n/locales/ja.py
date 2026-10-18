@@ -144,7 +144,7 @@ TRANSLATIONS = {
     "tui.ask_free_hint": "回答を入力 · Enter で送信",
     "tui.ask_answer": "回答: {answer}",
     "tui.ask_skipped": "(スキップ)",
-    "tui.scroll_back_hint": "· End で最下部へ",
+    "tui.scroll_back_hint": "· PgUp/PgDn でページ送り · Shift+PgUp で1行 · End で最下部",
     # ---- セットアップウィザード
     "setup.title": "青小団 セットアップウィザード",
     "setup.opt_quick": "クイックセットアップ (推奨)",

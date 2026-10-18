@@ -144,7 +144,7 @@ TRANSLATIONS = {
     "tui.ask_free_hint": "直接輸入你的回答 · Enter 送出",
     "tui.ask_answer": "已選擇: {answer}",
     "tui.ask_skipped": "(已跳過)",
-    "tui.scroll_back_hint": "· End 回到底部",
+    "tui.scroll_back_hint": "· PgUp/PgDn 翻頁 · Shift+PgUp 逐行 · End 回底",
     # ---- setup 精靈
     "setup.title": "青小團初始化精靈",
     "setup.opt_quick": "快速設定 (推薦)",

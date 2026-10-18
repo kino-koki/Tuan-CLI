@@ -144,7 +144,7 @@ TRANSLATIONS = {
     "tui.ask_free_hint": "Escribe tu respuesta · Enter para enviar",
     "tui.ask_answer": "Respuesta: {answer}",
     "tui.ask_skipped": "(omitido)",
-    "tui.scroll_back_hint": "· End al final",
+    "tui.scroll_back_hint": "· PgUp/PgDn para paginar · Mayús+PgUp línea a línea · Fin al final",
     # ---- Asistente de configuración
     "setup.title": "Asistente de configuración de Tuan-CLI",
     "setup.opt_quick": "Configuración rápida (recomendado)",
