@@ -37,25 +37,31 @@ dependencies = [
     "prompt_toolkit>=3.0",
     # Python < 3.11 无内置 tomllib, 旧版本回退用 tomli 解析 pyproject (迁移/探测场景)
     "tomli>=2.0; python_version < '3.11'",
+    # --- 以下原为可选 extra, 但实际属于「默认入口会用到」的必需依赖, 现提为核心 ---
+    # 提为核心理由: 目标机「装完即用」不该再手工补装。用户反馈的「必须依赖全部直接
+    # 放进包里面」即指这些 —— 它们不是锦上添花的可选能力, 而是缺了就会降级或报错。
+    # yaml: config/loader.py 的 YAML 解析与 ecosystem 生态探测都走它; 不装会退到
+    # 内置极简解析器, 用户的 config.yaml 语义被静默改写(注释/嵌套/多行失效)。
+    "pyyaml>=6.0",
+    # openai: OpenAI 兼容传输层; 绝大多数用户走的就是这条(且 model_lists 里
+    # zhipu/sensenova/硅基流动等均为 OpenAI 兼容), 缺了等于主力路径不可用。
+    "openai>=1.40",
+    # pydantic: MCP 子系统配置模型 (kernel/mcp/config.py 惰性导入)。用户只要配了
+    # 任一 MCP server 就会走到, 不装直接 MCP 不可用 —— 而 MCP 是默认能力之一。
+    "pydantic>=2.0",
+    "typing_extensions>=4.0",
+    # cryptography: crypto 引擎的 AES-GCM 实现。默认走 CTR+HMAC 纯 Python 回退,
+    # 但那是「功能可用、非工业级」; 加密存储属默认信任面, 按必需依赖随包分发。
+    "cryptography>=41.0",
 ]
 
 [project.optional-dependencies]
-# yaml: PyYAML 用于 YAML 配置/生态探测解析。不安装时 config/loader.py 自动降级
-# 内置极简解析器, ecosystem 探测与 doctor 检查各自 try/except 兜底 (功能可用,
-# 仅 YAML 高级语法/注释解析能力降级)。
-yaml = ["pyyaml>=6.0"]
-# repl: prompt_toolkit 增强交互 (补全/历史/快捷键)。不安装时 ui/repl.py 自动
-# 降级为裸 input 输入 (功能可用, 无补全与行编辑增强)。
+# 注: pyyaml / openai / prompt_toolkit / pydantic / typing_extensions /
+# cryptography 已上移为**核心依赖**(见 [project.dependencies])—— 它们属于默认
+# 入口会用到的必需能力, 不再作为可选 extra。下面只保留真正的「按需才装」。
+# repl: prompt_toolkit 增强交互 (补全/历史/快捷键)。已随核心依赖安装, 此 extra
+# 保留仅为兼容旧文档/脚本里的 `pip install ".[repl]"` 写法。
 repl = ["prompt_toolkit>=3.0"]
-# openai 仅作 OpenAI 兼容传输层使用, 核心逻辑 (路由/护栏/工具) 不依赖它。
-# 使用本地/Ollama/Anthropic 等非 OpenAI 场景可不安装; 需要 OpenAI 兼容端点时再装。
-openai = ["openai>=1.40"]
-# crypto: AES-GCM 工业级认证加密 (替代纯 Python CTR+HMAC 回退)
-# 不安装时 crypto 引擎自动回退 CTR+HMAC, 功能可用但非工业级。
-crypto = ["cryptography>=41.0"]
-# MCP 子系统仅在真正配置 MCP server 时解析配置 (kernel/mcp/config.py 惰性导入 pydantic),
-# 故 pydantic/typing_extensions 放此处而非核心依赖; 用 MCP 时 `pip install ".[mcp]"`。
-mcp = ["pydantic>=2.0", "typing_extensions>=4.0"]
 # backend_dev 工具启动 FastAPI/Flask 开发服务器时才需要, 默认不安装。
 backend = ["fastapi", "flask", "flask-cors", "uvicorn"]
 # otel: OpenTelemetry 观测 (导出 traces/metrics 到标准 OTLP 后端)。不安装时

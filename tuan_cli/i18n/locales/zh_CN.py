@@ -128,7 +128,8 @@ TRANSLATIONS = {
     "tui.audit_title": "审计与思考",
     "tui.audit_empty": "暂无思考过程记录。",
     "tui.cmd_meta": "命令",
-    "tui.cmd_hint": "+/命令",
+    "tui.cmd_hint": "/ 命令",
+    "tui.slash_more": "  {pos} · ↓ 还有 {n} 条命令",
     "slash.provider_usage": "  用法: /provider set <ENV> <KEY> 保存密钥。密钥只写入 ~/.tuan/.env。",
     "slash.provider_set_done": "已保存 {env} 到 ~/.tuan/.env，本次会话同步生效。",
     "slash.provider_cleared": "已删除 {env} 的密钥配置 (从 .env 与当前环境清除)。",
@@ -184,4 +185,8 @@ TRANSLATIONS = {
     "web.mcp_none": "未接入 MCP server",
     "web.running": "执行中…",
     "web.denied": "已拒绝执行。",
+    "web.thinking": "思考中",
+    "web.thinking_process": "思考过程",
+    "web.interrupted": "输出中断",
+    "web.stopped": "已停止",
 }

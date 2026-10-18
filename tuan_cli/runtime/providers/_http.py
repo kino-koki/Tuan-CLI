@@ -59,18 +59,31 @@ def build_client(
     *,
     timeout: float = 120.0,
     connect_timeout: float = 10.0,
+    read_timeout: Optional[float] = None,
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> httpx.AsyncClient:
-    """构造一个带默认超时与鉴权头的 httpx 异步客户端。"""
+    """构造一个带默认超时与鉴权头的 httpx 异步客户端。
+
+    超时按三段拆分（**关键**）:
+    - ``connect``/``write``/``pool``: 建连与写请求体, 短超时即可, 快速失败;
+    - ``read``: 流式场景下是**分片之间的最大空闲间隔**, 不是整轮总时长。
+
+    早先这里只写 ``httpx.Timeout(timeout, connect=connect_timeout)``, 把 read
+    也钉死在 120s —— 长上下文 + 思考型模型静默思考常超过该值, 于是表现为
+    「模型响应总是超时」。现在 read 走独立参数, 默认取 ``max(timeout, 300)``。
+    """
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     if extra_headers:
         headers.update(extra_headers)
+    read = float(read_timeout) if read_timeout else max(float(timeout), 300.0)
     return httpx.AsyncClient(
         base_url=base_url.rstrip("/"),
         headers=headers,
-        timeout=httpx.Timeout(timeout, connect=connect_timeout),
+        timeout=httpx.Timeout(
+            read, connect=connect_timeout, write=connect_timeout, pool=connect_timeout
+        ),
     )
 
 

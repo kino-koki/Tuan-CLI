@@ -183,4 +183,8 @@ TRANSLATIONS = {
     "web.mcp_none": "MCP-сервер не подключён",
     "web.running": "Выполняется…",
     "web.denied": "Отклонено — не выполнено.",
+    "web.thinking": "Размышление",
+    "web.thinking_process": "Процесс размышления",
+    "web.interrupted": "Вывод прерван",
+    "web.stopped": "Остановлено",
 }

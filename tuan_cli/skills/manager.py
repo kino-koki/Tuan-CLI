@@ -44,9 +44,16 @@ _BUILTIN_DIR = Path(__file__).resolve().parent.parent / "resources" / "skills" /
 # 僵尸技能判定: 超过该天数未使用且 use_count=0 视为僵尸
 ZOMBIE_DAYS = 30
 
-# always 技能注入正文的行数预算: 常驻守则总量受控, 超限截断并提示
-# (防止多个 always 技能正文吃掉整个上下文窗口)。
+# always 技能注入正文的**单个**技能行数预算: 常驻守则总量受控, 超限截断并提示。
 _ALWAYS_BODY_MAX_LINES = 60
+
+# always 技能注入正文的**全局**行数总预算。
+# 早先只有「单个技能 60 行」这一道闸, 而 activation=always 的技能在
+# core/prompts.py 里是无条件前置的、不受 skills.inject_limit 约束 —— 于是
+# 每加一个 always 技能就往系统提示里永久塞一份正文, 叠加后上下文被吃光
+# (表现为「skills 注入极大」)。这里给出总量天花板, 多出来的 always 技能
+# 降级成注册表条目(名称+描述), 正文改由 skill_read 按需取, 行为不变。
+_ALWAYS_BODY_TOTAL_MAX_LINES = 150
 
 
 def _cap_lines(text: str, max_lines: int) -> str:
@@ -599,21 +606,49 @@ class SkillManager:
         if not skills:
             return ""
         parts = ["## 可复用技能 (按需加载: 相关技能先用 skill_read 读取完整步骤再执行)"]
+        # always 正文的全局剩余预算(行)。full_body=True 是调用方显式要求全文
+        # (子代理预加载等), 此时不设总闸, 否则会静默丢正文。
+        budget = 0 if full_body else _ALWAYS_BODY_TOTAL_MAX_LINES
+        demoted: List[str] = []
         for s in skills:
             desc = s.short_description or s.description
-            if s.activation == "always" or full_body:
+            if s.activation == "always" and not full_body:
+                # 该给多少行: 单技能上限与全局剩余取小; 全局用尽则降级为注册表条目。
+                if budget <= 0:
+                    demoted.append(s.ui_name)
+                    parts.append(
+                        f"- **{s.ui_name}** ({s.slug}, {s.activation}): {desc}"
+                        f"  [常驻正文预算已用尽, 用 skill_read 读取完整步骤]"
+                    )
+                    continue
+                allow = min(_ALWAYS_BODY_MAX_LINES, budget)
+                body = _cap_lines(s.body, allow)
+                budget -= min(len(s.body.splitlines()), allow)
+                entry = (
+                    f"- **{s.ui_name}** ({s.slug}, {s.activation}): {desc}"
+                    f"  [正文已注入]\n\n{body}"
+                )
+                parts.append(entry)
+            elif full_body:
                 body = _cap_lines(s.body, _ALWAYS_BODY_MAX_LINES)
                 entry = (
                     f"- **{s.ui_name}** ({s.slug}, {s.activation}): {desc}"
                     f"  [正文已注入]\n\n{body}"
                 )
+                parts.append(entry)
             else:
                 entry = f"- **{s.ui_name}** ({s.slug}, {s.activation}): {desc}"
                 if s.triggers:
                     entry += f" 触发: {', '.join(s.triggers[:6])}"
-            parts.append(entry)
-        parts.append(
+                parts.append(entry)
+        rule = (
             "决策规则: 任务相关时才 skill_read 读取全文并按其步骤执行; "
             "always 技能正文已注入, 直接遵守无需再读; 无关技能一律不读。"
         )
+        if demoted:
+            rule += (
+                f" (注: {'、'.join(demoted)} 的正文因常驻预算上限未注入, "
+                "相关时用 skill_read 读取。)"
+            )
+        parts.append(rule)
         return "\n\n".join(parts)

@@ -51,6 +51,35 @@ def _is_remote(server_config: Any) -> bool:
     return False
 
 
+def _is_missing_executable(exc: BaseException) -> bool:
+    """判断异常是否「可执行文件未安装/不在 PATH」。
+
+    WinError 2 (系统找不到指定的文件) / ENOENT / FileNotFoundError 均为此类。
+    这类失败是**环境配置问题**而非运行时故障：用户可能压根没装这个 server
+    （例如只想要 provider 而没装对应 npm/pypi 包）。因此不该用 warning 刷屏，
+    只在 debug 级别留痕，避免每次启动都看到两行刺眼的失败提示。
+    """
+    if isinstance(exc, FileNotFoundError):
+        return True
+    if isinstance(exc, OSError) and getattr(exc, "winerror", None) == 2:
+        return True
+    # FileNotFoundError 的子类在部分场景被包装为别的异常，errno=2 (ENOENT) 兜底
+    if getattr(exc, "errno", None) == 2:
+        return True
+    msg = str(exc)
+    return "[WinError 2]" in msg or "No such file or directory" in msg
+
+
+def _log_mcp_failure(server_name: str, exc: BaseException, *, remote: bool = False) -> None:
+    """统一 MCP 接入失败日志：按「可执行文件缺失」与否分流日志级别。"""
+    prefix = f"MCP 远程 server '{server_name}'" if remote else f"MCP server '{server_name}'"
+    if _is_missing_executable(exc):
+        # 未安装：debug 级静默。配置里留着不影响功能，装上即自动生效。
+        log.debug("%s 未接入(未安装可执行文件, 已跳过): %s", prefix, exc)
+    else:
+        log.warning("%s 接入失败: %s", prefix, exc)
+
+
 def _build_security_policy(server_config: Dict[str, Any], global_config: Any) -> MCPSecurityPolicy:
     """构建安全策略 (服务器级配置覆盖全局配置)。"""
     security_config = server_config.get("security", {})
@@ -265,8 +294,10 @@ class MCPPlugin(Plugin):
                     self._register_tool(registry, client, spec)
                 log.info("MCP server '%s' 已接入, 工具 %d 个", client.name, len(client.list_tools()))
             except Exception as exc:  # noqa: BLE001
-                # 非致命: 单个 server 接入失败不影响其余功能, warning 级避免刷屏
-                log.warning("MCP server '%s' 接入失败: %s", client.name, exc)
+                # 非致命: 单个 server 接入失败不影响其余功能。
+                # 「可执行文件未安装」降到 debug 静默(配置可留着, 装了即生效),
+                # 其余真实故障仍 warning。
+                _log_mcp_failure(client.name, exc)
 
         # ---- 融合层：远程 http/sse server（默认关闭） ----
         if multitransport_enabled:
@@ -316,7 +347,7 @@ class MCPPlugin(Plugin):
                 if entry.status == "connected":
                     log.info("MCP 远程 server '%s'(%s) 已接入", entry.name, entry.transport)
                 else:
-                    log.warning("MCP 远程 server '%s' 接入失败: %s", entry.name, entry.error)
+                    _log_mcp_failure(entry.name, entry.error, remote=True)
         except Exception as exc:  # noqa: BLE001
             log.error("MCP 融合层（多传输）启动失败: %s", exc)
 

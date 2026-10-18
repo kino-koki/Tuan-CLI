@@ -10,6 +10,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import json
 import os
@@ -65,7 +66,7 @@ def cmd_dev(args) -> int:
     from .cmd_chat import _apply_mode_override
     mode = _apply_mode_override(kernel, getattr(args, "mode", None),
                                 yes=getattr(args, "yolo", False))
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     agent = create_agent(kernel, workspace)
     seed_builtin_skills(kernel)
 
@@ -310,7 +311,7 @@ def cmd_run(args) -> int:
         config.set_user("agent.effort", args.effort)
     if getattr(args, "model", None):
         config.set_user("model.model", args.model)
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     # ---- 四层边界 · Project 层自动生效: headless 任务启动即确保 .tuan/ 存在 (幂等) ----
     # bare 模式仍初始化 (.tuan/ 落在工作区内, 不污染用户全局配置); 失败静默不阻断任务。
     try:
@@ -464,7 +465,7 @@ def cmd_agent(args) -> int:
     from .cmd_chat import _apply_mode_override
     mode = _apply_mode_override(kernel, getattr(args, "mode", None),
                                 yes=getattr(args, "yes", False))
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     agent = create_agent(kernel, workspace)
 
     from ..core.background import submit_background
@@ -586,7 +587,7 @@ def cmd_undo(args) -> int:
     if getattr(args, "impact", False):
         return cmd_impact(args)
     from ..core.ledger import MutationLedger
-    workspace = str(Path(getattr(args, "workspace", None) or os.getcwd()).resolve())
+    workspace = str(Path(getattr(args, "workspace", None) or default_workspace()).resolve())
     kernel = build_kernel(getattr(args, "profile", "default"))
     config = kernel.require("config")
     ledger = MutationLedger(workspace, config)
@@ -625,7 +626,7 @@ def cmd_impact(args) -> int:
     """CLI: tuan impact — 展示操作账本与影响半径。"""
     from datetime import datetime
     from ..core.ledger import MutationLedger
-    workspace = str(Path(getattr(args, "workspace", None) or os.getcwd()).resolve())
+    workspace = str(Path(getattr(args, "workspace", None) or default_workspace()).resolve())
     kernel = build_kernel(getattr(args, "profile", "default"))
     config = kernel.require("config")
     ledger = MutationLedger(workspace, config)

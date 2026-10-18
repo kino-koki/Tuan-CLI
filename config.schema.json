@@ -125,6 +125,11 @@
     "agent": {
       "type": "object",
       "properties": {
+        "workspace": {
+          "type": "string",
+          "default": "",
+          "description": "Agent 默认工作目录。留空 = D:\\Tuan-Workspace (自动创建, 与仓库/系统目录隔离); 绝对路径则固定。环境变量 TUAN_WORKSPACE 优先级更高。"
+        },
         "max_iterations": {
           "type": "integer",
           "default": 30,

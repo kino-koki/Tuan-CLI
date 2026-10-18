@@ -10,6 +10,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 
@@ -20,7 +21,7 @@ def _build_engine(agent):
     """从 agent.workspace 构造 GoalEngine (注入可选配置)。"""
     from ..core.goal_mode import GoalEngine
 
-    workspace = getattr(agent, "workspace", None) or os.getcwd()
+    workspace = getattr(agent, "workspace", None) or default_workspace()
     max_iter = 10
     auto_continue = True
     enabled = True

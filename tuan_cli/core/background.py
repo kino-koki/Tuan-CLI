@@ -16,6 +16,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import logging
 import json
@@ -581,7 +582,7 @@ def submit_background(kernel: Kernel, agent: Agent, task: str, workspace: str) -
 def wait_for_job(kernel: Kernel, job_id: str, timeout: float = 0) -> str:
     """模块级便捷函数: 阻塞等待后台任务结束, 返回结果文本 (供 cli/commands 调用)。"""
     config = kernel.require("config")
-    workspace = getattr(config, "workspace", None) or os.getcwd()
+    workspace = getattr(config, "workspace", None) or default_workspace()
     runner = BackgroundRunner(kernel, config, workspace)
     job = runner.wait(job_id, timeout=timeout or None)
     if job is None:

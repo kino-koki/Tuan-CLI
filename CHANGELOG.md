@@ -5,6 +5,101 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-10-18
+### 修复: 目录强制跳转 + 大上下文模型提示词阉割
+
+- **修复「无论进入什么目录都强制转 D:\DeliveryOptimization\Tuan-Workspace」**
+  (`tuan_cli/paths.py`): 默认行为从「强制 chdir 进入内置 D 盘独立目录」改为
+  **尊重用户启动时的当前目录 (CWD)** —— 不跳转、不创建。`default_workspace()`
+  解析顺序改为 `TUAN_WORKSPACE` > `agent.workspace` 配置 > CWD; 同时补读
+  `~/.tuan/config.yaml` 的 `agent.workspace` (旧实现只读 settings.json,
+  文档与实现不一致)。旧行为降级为 opt-in: `TUAN_AUTO_WORKSPACE=1` 恢复
+  「自动进入内置独立工作区」; `TUAN_FORCE_WORKSPACE=1` 绝对强制不受影响。
+  同步清理 `~/.tuan/config.yaml` 里钉死旧目录的 `agent.workspace` 行。
+
+- **修复「模型实际看到的提示词是一份极阉割版」**: 128k 以上大上下文模型
+  现在读 SOUL_FULL.md 完整提示词 (~31K 字, 自包含全部规范), 不再拿
+  SOUL.md + 规范段的旧拼装 (~11K 字) 或 SOUL_COMPACT.md 精简版。
+  - `config/defaults.py`: `prompt.context_tier_threshold` 默认值 1000000
+    (1M) → 131072 (128k), 与 `core/prompt_tier.py` 的
+    `LARGE_CONTEXT_WINDOW_MIN` 口径对齐 —— 旧默认值把 128k 模型误判成
+    compact 档, 是「阉割版提示词」的直接病根;
+  - `core/agent.py::_resolve_soul_tier`: auto 档联动改为 full → `FULL`
+    (读 SOUL_FULL.md), compact → `COMPACT` (读 SOUL_COMPACT.md),
+    口径统一为「窗口 >= 128k 即大上下文模型, 拿完整提示词」。
+
+- **测试**: `tests/test_prompt_tier.py` 新增 auto 档大小窗口的 SOUL 联动
+  回归用例; 新建 `tests/test_workspace_paths.py` (17 项场景: 默认不跳转 /
+  显式优先 / opt-in 旧行为 / fail-open)。
+
+### 新增: / 命令面板 + TUI 文字溢出修复 + 终端标题
+
+- **新增 Claude Code 同款 `/` 命令面板** (`tuan_cli/tui/tui.py`): 输入框输入
+  `/` (或 Kimi 式 `+/`) 即在输入框上方自动高亮列出全部 55 个内置命令,
+  `↑↓` 循环选择, `Enter`/`Tab` 确认填入输入框 (可继续输参数, 再回车执行),
+  `Esc` 关闭; 支持前缀过滤 (`/mo` → `/model` `/mode`), 面板 9 行封顶 +
+  滚动跟随, 每行按终端显示宽度 (CJK 宽字符感知) 硬裁防溢出。取代
+  prompt_toolkit 自带补全菜单 (输入框贴屏幕底部时下拉菜单无处渲染)。
+  boot / 信任确认 / 命令确认态不展开, 思考中允许预敲 (不吞按键)。
+
+- **修复 TUI 文字溢出**: `_box_width()` 不再对窄终端强制 `max(44, w)`
+  (旧值把盒子右边框顶出屏幕, 对话区软换行后右边框掉行, 观感即「文字溢出/
+  盒子错位」), 改为完全尊重真实列宽; 新增 `_clip_parts()` 对
+  `height=1, wrap_lines=False` 的单行窗口 (底栏/信任/确认态) 按列宽硬裁并
+  补省略号; kimi 欢迎盒信息行同步裁剪; `/` 面板描述行逐行裁剪。
+
+- **新增终端标题**: TUI 启动即把 Windows Terminal 标签页 / ConHost 标题
+  从 "Windows powershell" 改为 "Tuan-CLI" (`tui/win_compat.py::
+  set_terminal_title` —— OSC 0 转义序列 + Win32 `SetConsoleTitleW`
+  双通道, 非 TTY 或失败静默跳过), 可用 `TUAN_TERMINAL_TITLE` 覆盖。
+
+- **i18n**: `tui.cmd_hint` 改为 "/ 命令" (与面板行为一致), 新增
+  `tui.slash_more` 滚动提示 ("↓ 还有 N 条命令")。
+
+- **测试**: 新建 `tests/test_tui_slash_menu.py` (32 项: 开合/过滤/循环导航/
+  Enter·Tab 填入/预敲/9 行封顶/滚动跟随/CJK 裁剪/窄终端盒宽/_clip_parts/
+  终端标题双通道); 既有 5 个 TUI 测试文件 66 项全部通过, 无回归。
+
+### 新增: WebUI 可见思考过程 + 修复流式慢/易中断
+
+- **WebUI 思考过程可见** (`tuan_cli/web/frontend.py`): 思考 (reasoning) delta
+  改为**累积进单个流式块** —— 此前每个 delta 新建一个折叠块, 思考型模型
+  一轮吐出几百个 delta 就堆出几百个碎片块, 观感即"思考过程不可见"。
+  现在: 流式中思考块自动展开 + 品牌蓝描边 + "思考中"脉冲点, 正文/工具
+  到来时自动折叠, 头部留字数 (`思考过程 · 128 字`), 用户也可手动展开/收起;
+  历史重开 (parts) 与 Markdown 导出同样呈现思考过程。
+
+- **新增"思考中"状态指示**: 输入栏上方 pill 实时显示已思考秒数
+  (推理模型静默期可达分钟级), 首增量到达即消失 —— 避免长思考被误判为
+  卡死/无响应。
+
+- **修复"响应极其慢"**:
+  - `core/agent.py` + `core/agent_helpers.py::ChunkFlusher`: token delta
+    合并落盘 —— 此前每个 delta 都同步 `open()+write()+flush()` 一次会话
+    JSONL, 流式速度下等于在输出线程上挂磁盘瓶颈 (实测 600 delta → 600 次
+    写盘; 合并后 5 次, 拼接结果完全一致);
+  - `web/server.py`: SSE 连接开 `TCP_NODELAY` (Nagle + delayed-ACK 叠加
+    让每个小事件平白多出 ~40ms 停顿); 消息开始的会话全量序列化改**防抖**
+    (1s 合并落一次), 不再推迟首 token。
+
+- **修复"容易中断"**:
+  - `core/retry.py::StreamInterrupted` + `core/resilience.py`: 已流出部分
+    token/思考后的失败**不再重试** —— 重试会让模型把整个回答重新生成一遍,
+    UI 上叠加成"重复/乱码"输出且等待翻倍 (实测中断后调用次数 3 → 1);
+  - `web/server.py`: 思考期每 10s 写 SSE 心跳注释, 防代理/中间层掐断
+    空闲连接; 客户端断开 (关闭标签页) 立即取消本轮生成, 不再白烧 token;
+  - 前端: 已流出部分内容后出错显示 "⚠ 输出中断" 标记, 用户点停止显示
+    "■ 已停止" —— 半截输出不再被误当成完整答案。
+
+- **i18n**: 10 种语言同步新增 `web.thinking` / `web.thinking_process` /
+  `web.interrupted` / `web.stopped`。
+
+- **测试**: 新建 `tests/test_web_reasoning.py` (21 项: ChunkFlusher 批量/
+  顺序/幂等/语义一致、StreamInterrupted 不重试、resilience partial-fatal、
+  reason 事件端到端 + parts 合并、防抖落盘、TCP_NODELAY、前端静态检查、
+  10 语言键完整); 真实 Agent 端到端验证 600 delta → 5 行落盘、中断后
+  零重试。
+
 ## [0.3.1] - 2026-10-12
 ### 仓库卫生 + 品牌归属整改 + 安全默认值加固
 

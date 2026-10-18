@@ -16,6 +16,7 @@ Python >= 3.10（禁 3.11+ 语法）；不引入第三方依赖。
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 import sys
@@ -212,7 +213,7 @@ class HeadlessDriver:
         else:
             self._model_name = config.get("model.model", "unknown")
 
-        workspace = self.config.add_dir or os.getcwd()
+        workspace = self.config.add_dir or default_workspace()
         os.makedirs(workspace, exist_ok=True)
 
         agent = create_agent(

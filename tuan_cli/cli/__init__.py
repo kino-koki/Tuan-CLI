@@ -49,7 +49,22 @@ def main(argv: list | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     if args and args[0] == "--desktop":
         return _run_desktop(args[1:])
+    # 工作目录: 默认尊重用户启动时的当前目录 (CWD), 不跳转 (2026-10-18 修正,
+    # 修复「无论进入什么目录都强制转 D:\DeliveryOptimization\Tuan-Workspace」)。
+    # 显式 --workspace / TUAN_WORKSPACE / agent.workspace 时用指定目录;
+    # TUAN_AUTO_WORKSPACE=1 可恢复旧行为 (自动进入内置独立工作区)。见 paths.py。
+    _enter_default_workspace(args)
     return _parser_main()
+
+
+def _enter_default_workspace(args: list) -> None:
+    """主入口钩子: 创建并进入默认工作目录 (失败不阻断启动)。"""
+    try:
+        from ..paths import maybe_enter_default_workspace
+
+        maybe_enter_default_workspace(args)
+    except Exception:  # noqa: BLE001 - 位置选择不可阻塞启动
+        pass
 
 
 def _run_desktop(args: list) -> int:

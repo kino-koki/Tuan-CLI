@@ -183,4 +183,8 @@ TRANSLATIONS = {
     "web.mcp_none": "Ningún servidor MCP conectado",
     "web.running": "Ejecutando…",
     "web.denied": "Denegado — no ejecutado.",
+    "web.thinking": "Pensando",
+    "web.thinking_process": "Proceso de pensamiento",
+    "web.interrupted": "Salida interrumpida",
+    "web.stopped": "Detenido",
 }

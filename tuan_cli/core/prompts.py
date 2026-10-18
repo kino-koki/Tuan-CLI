@@ -19,13 +19,15 @@ Git 上下文 → 技能注册表快照。
 工具说明不进 system (function schema 自带), 避免重复。文案极简, 每条都有信息量。
 
 提示词分层 (按模型上下文窗口伸缩注入预算): 判定与预算表在 core.prompt_tier,
-本模块只负责按传入的预算值装配文案。小上下文模型 (<1M) 拿 compact 档,
-大上下文模型 (>=1M) 拿 full 档; full 档上限远高于默认值, 行为与历史逐字节一致。
+本模块只负责按传入的预算值装配文案。小上下文模型 (<128k) 拿 compact 档,
+大上下文模型 (>=128k, 即「大上下文模型」) 拿 full 档; full 档上限远高于默认值,
+稳定前缀读 SOUL_FULL.md 完整提示词 (自包含全部规范)。
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import platform
 import shutil
 import subprocess
@@ -34,6 +36,8 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from ..i18n import LANGUAGES, normalize_language
+
+log = logging.getLogger(__name__)
 
 
 # 项目级指令文件名 (对标 Claude Code 的 CLAUDE.md; AGENTS.md 为社区通用约定,
@@ -628,10 +632,26 @@ def build_system_prompt_dynamic(
             (s for s in all_skills if s.name not in always_names),
             key=lambda s: (-s.priority, -s.use_count),
         )
-        top_skills = always_skills + others[: max(0, skill_limit - len(always_skills))]
+        # always 技能恒在 (声明了始终需要), 但它们**占用** skill_limit 名额:
+        # 若 always 数量 >= skill_limit, 这里会算成 0 个可选技能, 于是注册表里
+        # 一条热门技能都进不去 —— 对标 Claude Code 的「提到才注入」会退化成
+        # 「什么都不提示」。因此保底留 1 个名额给非 always 技能。
+        quota = max(1, skill_limit - len(always_skills))
+        top_skills = always_skills + others[:quota]
         rendered = skill_manager.render_for_prompt(top_skills)
         if rendered:
             parts.append(rendered)
+            # token 埋点: skills 是系统提示里最容易失控的一段(正文按行预算,
+            # 但技能数量随用户安装增长)。debug 级别记录, 便于定位上下文膨胀。
+            try:
+                from ..context.manager import estimate_tokens
+
+                log.debug(
+                    "技能注入: %d 个 (always=%d), 正文约 %d tokens",
+                    len(top_skills), len(always_skills), estimate_tokens(rendered),
+                )
+            except Exception:  # noqa: BLE001 - 埋点失败不影响提示词构建
+                pass
 
     # 9. 输出风格 (对标 Claude Code 的 Output Styles): default 不注入。
     if output_style:

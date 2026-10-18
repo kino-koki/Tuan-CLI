@@ -28,6 +28,7 @@ class KimiChatProvider(OpenAILegacyChatProvider):
         extra_headers: Optional[dict] = None,
         timeout: float = 120.0,
         connect_timeout: float = 10.0,
+        read_timeout: float = 300.0,
     ) -> None:
         super().__init__(
             base_url=base_url,
@@ -39,4 +40,5 @@ class KimiChatProvider(OpenAILegacyChatProvider):
             extra_headers=extra_headers,
             timeout=timeout,
             connect_timeout=connect_timeout,
+            read_timeout=read_timeout,
         )

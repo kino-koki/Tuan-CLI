@@ -20,7 +20,7 @@ import os
 import time
 from typing import Any, Callable, Dict, Optional
 
-from .retry import RetryPolicy, RateLimiter, CircuitBreaker, classify_error
+from .retry import RetryPolicy, RateLimiter, CircuitBreaker, classify_error, StreamInterrupted
 
 log = logging.getLogger(__name__)
 
@@ -264,7 +264,7 @@ class AgentResilience:
         if fallback:
             self._refresh_sticky(model)
 
-        # 主模型已输出部分 token 再失败 → 不转移 (重放会造成重复输出)
+        # 主模型已输出部分 token / 思考再失败 → 不转移也不重试 (重放会造成重复输出)
         tokens_emitted = [False]
 
         def _wrapped_on_token(t: str) -> None:
@@ -272,14 +272,33 @@ class AgentResilience:
             if on_token is not None:
                 on_token(t)
 
+        def _wrapped_on_reason(t: str) -> None:
+            tokens_emitted[0] = True
+            if on_reason is not None:
+                on_reason(t)
+
+        def _guarded():
+            """模型调用: 已流出内容后的失败转为 StreamInterrupted (不可重试)。
+
+            读超时/连接重置若发生在已流出半截回答之后, 重试会让模型把整个
+            回答重新生成一遍 —— UI 上表现为"同样的内容出现两次/乱码", 且
+            等待时长翻倍。StreamInterrupted 被 RetryPolicy 原样上抛。
+            """
+            try:
+                return model.chat(
+                    messages, tools=tools, stream=stream,
+                    on_token=_wrapped_on_token, on_reason=_wrapped_on_reason,
+                )
+            except Exception as exc:  # noqa: BLE001
+                if tokens_emitted[0]:
+                    raise StreamInterrupted(str(exc)) from exc
+                raise
+
         def _attempt():
             self._rate_limiter.acquire()
             try:
                 return self.retry_policy.call(
-                    lambda: model.chat(
-                        messages, tools=tools, stream=stream,
-                        on_token=_wrapped_on_token, on_reason=on_reason,
-                    ),
+                    _guarded,
                     label=label,
                     emit=self.kernel.emit,
                     on_rate_limit_notice=on_reason,
