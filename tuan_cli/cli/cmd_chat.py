@@ -10,6 +10,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import json
 import os
@@ -232,7 +233,7 @@ def _prepare_agent(args, workspace: str, session_id: str, on_progress=None):
 def cmd_chat(args) -> int:
     """交互式对话 (默认命令)。"""
     _auto_first_run()
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     # A4 事件溯源: 为本次会话(REPL/TUI/print 整体)生成一个独立可回放的 session_id
     session_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
 
@@ -564,7 +565,7 @@ def _run_turn(agent, user_input: str, config: Config, stream: bool | None = None
     # Rewind (A2): 每次用户输入前自动保存会话快照到 .tuan/snapshots/
     try:
         from ..core.rewind import RewindManager
-        _ws = getattr(getattr(agent, "ctx", None), "workspace", None) or os.getcwd()
+        _ws = getattr(getattr(agent, "ctx", None), "workspace", None) or default_workspace()
         _sid = getattr(getattr(agent, "session", None), "session_id", "")
         RewindManager(_ws, config=config).snapshot(
             agent.messages, reason="user_input", session_id=_sid)
@@ -794,7 +795,7 @@ def cmd_doctor(args) -> int:
 
     # ---- 工作区 git 状态 ----
     console.print("\n工作区")
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     try:
         r = subprocess.run(
             ["git", "-C", workspace, "status", "--porcelain"],

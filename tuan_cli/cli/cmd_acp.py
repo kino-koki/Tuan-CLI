@@ -10,6 +10,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 import sys
@@ -84,7 +85,7 @@ def cmd_acp(args) -> int:
     ensure_language(config)
     seed_builtin_skills(kernel)
 
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     agent_info = {"name": "青小团 Qingxiaotuan CLI", "version": __version__}
 
     # 鉴权开关（内部密钥）：`acp.auth_secret` 配置项或环境变量 TUAN_ACP_AUTH_TOKEN。

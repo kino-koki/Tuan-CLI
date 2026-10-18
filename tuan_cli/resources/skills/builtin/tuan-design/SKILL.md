@@ -17,8 +17,9 @@ description: >
   作品集等 HTML 产物需要先选定一家风格起点时使用。
 license: MIT
 metadata:
-  version: "2.1"
+  version: "2.2"
   changelog: |
+    v2.2 目录定本：清单文件由 builtin/ 根下迁入本包 tuan-design/SKILL.md，使下方全部 `companies/...` 相对路径按技能包根 解析成立（此前清单与 companies/ 不在同一层，路径悬空）。
     v2.1 修复定本：修正 Netflix 重复收录（原 17/24 两份合并为 17 一份，
     编号顺延，总数为 71 家独立公司）；为全部公司规格补充核验说明字段；
     修正路由表（移除 Tesla 参考项、消除 Uber 重复、统一 Slack/Typeform
@@ -47,6 +48,9 @@ metadata:
 清单进一步打磨。
 
 ## 目录与读取方式
+
+路径均相对本清单文件所在目录（`tuan-design/`）解析。
+
 
 - `companies/index.md` — **全量快速检索总表**（71 家 × 画布色/强调色/字体/记忆点）+
   分组领域索引。选型先读这一份。

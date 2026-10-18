@@ -141,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="使用指定 profile (~/.tuan/profiles/<name>)",
     )
     parser.add_argument("--patch", help="一次性配置覆盖文件 (dsh 风格, 整值替换)")
-    parser.add_argument("--workspace", help="工作区目录 (默认当前目录)")
+    parser.add_argument("--workspace", help="工作区目录 (默认当前目录; agent.workspace 配置或 TUAN_WORKSPACE 环境变量可改; TUAN_AUTO_WORKSPACE=1 恢复旧式独立工作区)")
     parser.add_argument("--model", help="临时覆盖模型名 (如 deepseek-v4-free)")
     parser.add_argument(
         "--effort",

@@ -103,6 +103,7 @@ class AnthropicChatProvider(ChatProvider):
         extra_headers: Optional[Dict[str, str]] = None,
         timeout: float = 120.0,
         connect_timeout: float = 10.0,
+        read_timeout: float = 300.0,
         thinking_effort: Optional[str] = None,
     ) -> None:
         self._base_url = base_url
@@ -113,6 +114,7 @@ class AnthropicChatProvider(ChatProvider):
         self._extra_headers = extra_headers or {}
         self._timeout = timeout
         self._connect_timeout = connect_timeout
+        self._read_timeout = read_timeout
         self.thinking_effort = thinking_effort
         self.max_completion_tokens = max_tokens
 
@@ -162,6 +164,7 @@ class AnthropicChatProvider(ChatProvider):
             None,  # Anthropic 用 x-api-key，不走 Bearer
             timeout=self._timeout,
             connect_timeout=self._connect_timeout,
+            read_timeout=self._read_timeout,
             extra_headers=headers,
         )
 

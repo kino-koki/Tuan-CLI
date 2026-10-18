@@ -11,6 +11,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 
@@ -21,7 +22,7 @@ def cmd_worktree(args) -> int:
     """Worktree 层: git worktree 并行实验。"""
     from ..core.worktree_layer import WorktreeError, WorktreeLayer
 
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     layer = WorktreeLayer(workspace)
     sub = getattr(args, "worktree_cmd", None) or "list"
     name = getattr(args, "name", "") or ""

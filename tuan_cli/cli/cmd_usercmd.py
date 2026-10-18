@@ -1,6 +1,7 @@
 """`tuan usercmd` —— 列出用户自定义斜杠命令 (拆分自 cmd_services.py)。"""
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 
@@ -17,7 +18,7 @@ def build_kernel(*a, **k):
 def cmd_usercmd(args) -> int:
     """CLI: tuan usercmd [list] — 列出用户自定义斜杠命令。"""
     from ..cli.user_commands import load_user_commands
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     try:
         kernel = build_kernel(getattr(args, "profile", "default"))
     except Exception as exc:  # noqa: BLE001

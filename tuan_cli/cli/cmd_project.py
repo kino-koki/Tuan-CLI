@@ -10,6 +10,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 
@@ -21,7 +22,7 @@ def cmd_project(args) -> int:
     """Project 层: 项目级记忆/配置/工作区隔离。"""
     from ..core.project_layer import ProjectLayer
 
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     config = Config(profile=getattr(args, "profile", "default"),
                     patch_file=getattr(args, "patch", None))
     layer = ProjectLayer(workspace, config)
