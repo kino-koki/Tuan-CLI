@@ -23,11 +23,11 @@
    ========================================================================== */
 
 :root {
-  /* ---- 品牌与语义色 (Claude Code 风: 暖珊瑚橙 + 米色系) ---- */
-  --color-accent: #c8664a;
-  --color-accent-hover: #b9573d;
-  --color-accent-soft: #f4e6df;
-  --color-accent-bd: rgba(200, 102, 74, .28);
+  /* ---- 品牌与语义色 (TUI 品牌蓝 + 米色系) ---- */
+  --color-accent: #1783ff;
+  --color-accent-hover: #167ff7;
+  --color-accent-soft: #e8f3ff;
+  --color-accent-bd: rgba(23, 131, 255, .25);
   --color-success: #3f9d63;
   --color-danger: #d2493b;
   --color-danger-soft: #fae8e4;
@@ -59,7 +59,7 @@
   /* ---- 输入面板 (composer) ---- */
   --color-composer-bg: #fdfaf2;
   --color-composer-line: rgba(60, 50, 35, .16);
-  --color-composer-focus-line: rgba(200, 102, 74, .4);
+  --color-composer-focus-line: rgba(23, 131, 255, .4);
   --color-send-bg: #2e2a24;
   --color-send-bg-hover: #1c1813;
   --color-send-bg-disabled: rgba(60, 50, 35, .08);
@@ -132,10 +132,10 @@
 
 /* ---------------------------------------------------------------- 深色 */
 [data-color-scheme="dark"] {
-  --color-accent: #e58a5f;
-  --color-accent-hover: #ef9b73;
-  --color-accent-soft: rgba(229, 138, 95, .14);
-  --color-accent-bd: rgba(229, 138, 95, .32);
+  --color-accent: #1a88ff;
+  --color-accent-hover: #258eff;
+  --color-accent-soft: rgba(26, 136, 255, .1);
+  --color-accent-bd: rgba(26, 136, 255, .28);
   --color-success: #5fbf7e;
   --color-danger: #e35d52;
   --color-danger-soft: rgba(227, 93, 82, .16);
@@ -163,7 +163,7 @@
 
   --color-composer-bg: #343431;
   --color-composer-line: rgba(255, 255, 255, .12);
-  --color-composer-focus-line: rgba(229, 138, 95, .4);
+  --color-composer-focus-line: rgba(26, 136, 255, .35);
   --color-send-bg: rgba(255, 255, 255, .86);
   --color-send-bg-hover: rgba(255, 255, 255, .92);
   --color-send-bg-disabled: rgba(255, 255, 255, .1);
@@ -176,10 +176,10 @@
 /* "跟随系统" 模式: 系统为深色时套用深色令牌 */
 @media (prefers-color-scheme: dark) {
   [data-color-scheme="system"] {
-    --color-accent: #e58a5f;
-    --color-accent-hover: #ef9b73;
-    --color-accent-soft: rgba(229, 138, 95, .14);
-    --color-accent-bd: rgba(229, 138, 95, .32);
+    --color-accent: #1a88ff;
+    --color-accent-hover: #258eff;
+    --color-accent-soft: rgba(26, 136, 255, .1);
+    --color-accent-bd: rgba(26, 136, 255, .28);
     --color-success: #5fbf7e;
     --color-danger: #e35d52;
     --color-danger-soft: rgba(227, 93, 82, .16);
@@ -207,7 +207,7 @@
 
     --color-composer-bg: #343431;
     --color-composer-line: rgba(255, 255, 255, .12);
-    --color-composer-focus-line: rgba(229, 138, 95, .4);
+    --color-composer-focus-line: rgba(26, 136, 255, .35);
     --color-send-bg: rgba(255, 255, 255, .86);
     --color-send-bg-hover: rgba(255, 255, 255, .92);
     --color-send-bg-disabled: rgba(255, 255, 255, .1);
