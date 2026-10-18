@@ -8,6 +8,7 @@
 """
 
 from __future__ import annotations
+from ...paths import default_workspace
 
 import os
 import subprocess
@@ -272,7 +273,7 @@ def mcp_sandbox_execute(
     **kwargs,
 ) -> str:
     """在沙箱中执行 MCP 工具调用。"""
-    workspace = getattr(ctx, 'workspace', '') or os.getcwd()
+    workspace = getattr(ctx, 'workspace', '') or default_workspace()
     
     sandbox = MCPSandbox(
         workspace=workspace,

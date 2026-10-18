@@ -30,13 +30,13 @@ from .model_router import AgentModelRouter
 from .resilience import AgentResilience
 from .observability import AgentObservability
 from .prompts import build_system_prompt, build_task_context
-from .prompt_tier import (FULL, PromptBudget, budget_for_tier,
+from .prompt_tier import (COMPACT, FULL, PromptBudget, budget_for_tier,
                           resolve_prompt_budget, resolve_soul_tier)
 from .tool_executor import ToolExecutor
 from .auto_route import AutoRouter, RouteSession, tool_messages_of_turn
 from .agent_helpers import (
     SKILL_NUDGE, summarize_messages, should_nudge,
-    detect_verify_write_tools,
+    detect_verify_write_tools, ChunkFlusher,
 )
 from .loop_provider import LoopProvider, ReActLoop
 from .agent_loop_fusion import (
@@ -123,10 +123,13 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
             trace_id=self._obs.trace_id,
         )
 
-        # 提示词分层 (待办4): 按当前模型上下文窗口定档, 小上下文模型收紧注入预算。
+        # 提示词分层 (待办4 已落地): 按当前模型上下文窗口定档, 小上下文模型收紧注入预算。
+        # 稳定前缀档位 (_soul_tier): auto 下按窗口联动 —— >=128k 大上下文模型读
+        # SOUL_FULL.md 完整提示词, <128k 小上下文模型只读 SOUL_COMPACT.md。
         # 解析失败一律回退 full 档 (== 历史行为), 绝不因分层逻辑把提示词打坏。
         self.prompt_tier, self.context_window, self.prompt_budget = self._resolve_prompt_tier()
-        # 稳定前缀是否换用内置档位 SOUL (仅显式 compact/full 时; auto 保持历史拼装)。
+        # 稳定前缀档位: 显式 compact/full 采信用户; auto 下按窗口联动
+        # (大上下文读 SOUL_FULL.md, 小上下文读 SOUL_COMPACT.md)。
         self._soul_tier = self._resolve_soul_tier()
 
         # 大上下文: 把代码库地图钉进系统提示 (延迟构建, 避免启动被 Ctrl+C 打断)。
@@ -177,13 +180,29 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         return tier, window, budget
 
     def _resolve_soul_tier(self) -> str:
-        """稳定前缀的 SOUL 档位: 只有显式 compact/full 才换用内置档位 SOUL。
+        """稳定前缀的 SOUL 档位 —— 大上下文模型读 SOUL_FULL.md, 小上下文读 SOUL_COMPACT.md。
 
-        ``prompt.tier=auto`` 返回 "" —— 自动分层只收缩注入预算 (动态段),
-        稳定前缀仍按历史方式从 SOUL.md + 各规范段逐字节拼装, 零行为突变。
+        - ``prompt.tier`` 显式 ``compact`` / ``full``: 采信用户选择 (历史行为)。
+        - ``prompt.tier=auto`` (默认): 按解析出的预算档位联动 ——
+          窗口 >= 128k (full 档, 即「大上下文模型」) → ``FULL``, 稳定前缀读
+          SOUL_FULL.md 完整提示词 (自包含全部规范, 跳过其余附加段);
+          窗口 < 128k (compact 档) → ``COMPACT``, 只读 SOUL_COMPACT.md
+          小模型专属提示词 (自包含全部必要规范, 跳过其余附加段),
+          否则 8k/32k 窗口会被稳定前缀本身挤爆。
+
+        2026-10-18 修正: auto + full 档原先返回 ``""`` (SOUL.md + 规范段拼装,
+        约 11K 字), 大上下文模型因此只拿到一份阉割版提示词。现按
+        「128k 以上即大上下文模型, 读 SOUL_FULL.md」的口径统一 (用户需求)。
+        异常一律回退 "" (默认拼装), 分层打坏不影响会话。
         """
         try:
-            return resolve_soul_tier(self.config)
+            explicit = resolve_soul_tier(self.config)
+            if explicit:
+                return explicit
+            # auto: 按上下文窗口联动 —— 大上下文读 SOUL_FULL.md, 小上下文读 SOUL_COMPACT.md
+            if self.prompt_tier in (COMPACT, FULL):
+                return self.prompt_tier
+            return ""
         except Exception as exc:  # noqa: BLE001
             log.debug("SOUL 档位解析失败, 回退默认拼装: %s", exc)
             return ""
@@ -676,11 +695,20 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         self._session_append("session.update", status="initialized")
         self._session_append("task.update", status="running")
 
-        # 包装 on_token: 增量落盘
+        # 包装 on_token: 增量落盘 (分片合并 —— 逐 delta 同步写盘会拖慢流式输出,
+        # 见 ChunkFlusher; 上一轮未冲完的先冲掉, 防跨轮串块)
         raw_on_token = on_token
+        prev_flusher = getattr(self, "_chunk_flusher", None)
+        if prev_flusher is not None:
+            prev_flusher.flush()
+        flusher = ChunkFlusher(
+            lambda text: self._session_append("agent_message_chunk", text=text)
+        )
+        self._chunk_flusher = flusher
+
         def _wrapped_on_token(delta: str) -> None:
             if delta:
-                self._session_append("agent_message_chunk", text=delta)
+                flusher.add(delta)
             if raw_on_token:
                 raw_on_token(delta)
         on_token = _wrapped_on_token
@@ -731,6 +759,10 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         nudge: bool = True,
     ) -> str:
         """运行后共享收尾: hooks 通知、技能蒸馏、trace 关闭、会话状态落盘。"""
+        # 流式分片合并落盘的收尾: 把不满阈值的尾部一次冲完, 保证 JSONL 完整
+        flusher = getattr(self, "_chunk_flusher", None)
+        if flusher is not None:
+            flusher.flush()
         if answer and not answer.startswith("[模型错误]") and not self._cancel_event.is_set():
             self._notify_hook("Stop", {"reason": "stop", "answer": answer[:1000]})
             self._auto_memory_extract(answer)

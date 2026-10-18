@@ -128,7 +128,8 @@ TRANSLATIONS = {
     "tui.audit_title": "Audit & Reasoning",
     "tui.audit_empty": "No reasoning captured yet.",
     "tui.cmd_meta": "command",
-    "tui.cmd_hint": "+/cmd",
+    "tui.cmd_hint": "/ commands",
+    "tui.slash_more": "  {pos} · ↓ {n} more",
     "tui.resume_fail": "Session resume failed (session not found)",
     # ---- Setup wizard
     "setup.title": "Tuan-CLI Setup Wizard",
@@ -184,4 +185,8 @@ TRANSLATIONS = {
     "web.mcp_none": "No MCP server connected",
     "web.running": "Running…",
     "web.denied": "Denied — not executed.",
+    "web.thinking": "Thinking",
+    "web.thinking_process": "Thinking process",
+    "web.interrupted": "Output interrupted",
+    "web.stopped": "Stopped",
 }

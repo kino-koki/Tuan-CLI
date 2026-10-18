@@ -1,6 +1,7 @@
 """`tuan hooks` 与 `/hooks` —— 用户级 Hooks 管理 (拆分自 cmd_services.py)。"""
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import json
 import os
@@ -18,7 +19,7 @@ def build_kernel(*a, **k):
 def cmd_hooks(args) -> int:
     """用户级 Hooks 管理: 列出 / 测试 / 启用 / 禁用。"""
     sub = getattr(args, "hook_cmd", None)
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     if sub == "list":
         return _hooks_list(workspace)
     if sub == "test":

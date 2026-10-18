@@ -12,6 +12,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 from pathlib import Path
@@ -40,7 +41,7 @@ def cmd_rewind(args) -> int:
     """会话 Rewind: 把指定会话回退到之前的快照。"""
     from ..core.rewind import RewindError, RewindManager, rewind_session_file
 
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     sid = getattr(args, "session_id", "") or ""
 
     # --list: 只读列出当前工作区的快照

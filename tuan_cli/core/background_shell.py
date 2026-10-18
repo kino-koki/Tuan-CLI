@@ -21,6 +21,7 @@ job id 而不阻塞当前回合; 进程在守护线程里持续跑, 输出被流
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import json
 import logging
@@ -250,7 +251,7 @@ class BackgroundShellManager:
                 f"或用 TUAN_BG_SHELL_MAX 提高上限)")
 
         job = ShellJob("shl-" + uuid.uuid4().hex[:8], command,
-                       cwd or os.getcwd(), self.home, time.time())
+                       cwd or default_workspace(), self.home, time.time())
         with self._lock:
             self._jobs[job.job_id] = job
 

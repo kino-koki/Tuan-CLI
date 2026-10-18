@@ -43,6 +43,13 @@ class ProviderConfig:
     temperature: float = 0.7
     extra_headers: Optional[Dict[str, str]] = None
     effort: Optional[str] = None  # 推理投入 low/medium/high (Fable 5 等 always-on thinking 模型深度控制)
+    # --- 超时三段式 (与 legacy 传输层保持一致, 见 models/openai_compat.py) ---
+    # connect_timeout: 建连/写请求体/池等待的上限, 短即可;
+    # read_timeout: **流式分片之间的最大空闲间隔**, 不是整轮总时长 —— 长上下文
+    #   大模型首字慢、思考型模型静默思考很久, 用它当总超时会导致「总是超时」。
+    timeout: float = 120.0
+    connect_timeout: float = 10.0
+    read_timeout: float = 300.0
 
     def resolve_api_key(self) -> Optional[str]:
         if self.api_key:
@@ -66,6 +73,12 @@ def build_provider(cfg: ProviderConfig) -> ChatProvider:
     """按配置构造一个 ChatProvider 实例（统一入口）。"""
     base_url = cfg.base_url or _DEFAULT_BASE_URLS.get(cfg.type)
     api_key = cfg.resolve_api_key()
+    # 超时三段式统一下发: 各 provider 内部再拆成 httpx 的 connect/read。
+    timeouts = {
+        "timeout": cfg.timeout,
+        "connect_timeout": cfg.connect_timeout,
+        "read_timeout": cfg.read_timeout,
+    }
     if cfg.type == "anthropic" or _resolve_protocol(cfg) == "anthropic":
         return AnthropicChatProvider(
             base_url=base_url or "https://api.anthropic.com/v1",
@@ -75,6 +88,7 @@ def build_provider(cfg: ProviderConfig) -> ChatProvider:
             temperature=cfg.temperature,
             extra_headers=cfg.extra_headers,
             thinking_effort=cfg.effort,
+            **timeouts,
         )
     if not base_url:
         raise ValueError(
@@ -86,6 +100,7 @@ def build_provider(cfg: ProviderConfig) -> ChatProvider:
             base_url=base_url, api_key=api_key, model=cfg.model,
             max_tokens=cfg.max_tokens, temperature=cfg.temperature,
             is_nvidia=is_nv, extra_headers=cfg.extra_headers,
+            **timeouts,
         )
     # 默认 OpenAILegacyChatProvider（Kimi 也走这条）
     if cfg.type == "kimi":
@@ -93,11 +108,13 @@ def build_provider(cfg: ProviderConfig) -> ChatProvider:
             base_url=base_url, api_key=api_key, model=cfg.model,
             max_tokens=cfg.max_tokens, temperature=cfg.temperature,
             extra_headers=cfg.extra_headers,
+            **timeouts,
         )
     return OpenAILegacyChatProvider(
         base_url=base_url, api_key=api_key, model=cfg.model,
         max_tokens=cfg.max_tokens, temperature=cfg.temperature,
         is_nvidia=is_nv, extra_headers=cfg.extra_headers,
+        **timeouts,
     )
 
 

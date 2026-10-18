@@ -605,7 +605,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
     <div id="inputbar">
-      <div id="think-pill"><span class="dot"></span><span id="think-label">思考中</span><span class="tt" id="think-time">0.0s</span></div>
+      <div id="think-pill"><span class="dot"></span><span id="think-label" data-i18n="web.thinking">思考中</span><span class="tt" id="think-time">0.0s</span></div>
       <div id="composer">
         <div id="file-area"></div>
         <textarea id="inp" rows="1" data-i18n-ph="web.input" placeholder="输入消息..."></textarea>

@@ -1277,6 +1277,19 @@ class QxtTUI:
 
     # ============================================================ 流式 / 工具
 
+    def _throttled_invalidate(self, min_interval: float = 0.033) -> None:
+        """限频刷新: 高频事件 (流式/审计) 每帧至多刷新一次 (~30fps), 减少闪烁与 CPU。
+
+        低频事件 (begin_tool/end_tool) 仍即时刷新; 末态由 end_stream/submit finally
+        兜底刷新, 不会因限频漏画最终画面。
+        """
+        if not (self._app and self._app.is_running):
+            return
+        now = time.monotonic()
+        if now - getattr(self, "_last_invalidate", 0.0) >= min_interval:
+            self._last_invalidate = now
+            self._app.invalidate()
+
     def stream_assistant(self, delta: str) -> None:
         if not delta:
             return
@@ -1289,8 +1302,7 @@ class QxtTUI:
             self._events.append(f"{STATUS_BULLET}{head.lstrip(chr(10))}…[流式超长, 已分段]")
             if len(self._events) > 5000:
                 del self._events[: len(self._events) - 4000]
-        if self._app and self._app.is_running:
-            self._app.invalidate()
+        self._throttled_invalidate()
 
     def stream_reason(self, delta: str) -> None:
         """接收模型推理分片, 累积成思考全文, 写入审计面板 (全文有界, 超长截断)。"""
@@ -1654,20 +1666,127 @@ class QxtTUI:
 
     # ============================================================ 渲染: 对话区
 
+    # ============================================================ Markdown 渲染 (代码语法高亮)
+    # pygments token 类别 -> 暗色主题十六进制前景 (GitHub Dark 风, 与品牌蓝协调)
+    _CODE_TOKEN_COLORS: Dict[str, str] = {
+        "Keyword": "#FF7B72",
+        "Keyword.Constant": "#79C0FF",
+        "Name.Function": "#D2A8FF",
+        "Name.Class": "#FFA657",
+        "Name.Builtin": "#79C0FF",
+        "Name.Decorator": "#D2A8FF",
+        "Name.Namespace": "#C9D1D9",
+        "String": "#A5D6FF",
+        "String.Doc": "#A5D6FF",
+        "String.Escape": "#FFA657",
+        "Number": "#79C0FF",
+        "Comment": "#7D8590",
+        "Operator": "#FF7B72",
+        "Punctuation": "#C9D1D9",
+        "Literal": "#A5D6FF",
+        "Generic.Deleted": "#FFA198",
+        "Generic.Inserted": "#7EE787",
+        "Generic.Strong": "#C9D1D9 bold",
+        "Generic.Emph": "#C9D1D9 italic",
+        "Text": "#C9D1D9",
+    }
+    _CODE_DEFAULT = "#C9D1D9"
+
+    def _color_for_token(self, ttype) -> str:
+        """pygments token 类型 -> 十六进制前景色 (从具体到通用逐级回退)。"""
+        for t in ttype.split():
+            parts = str(t).split(".")
+            key = ".".join(parts[1:]) if len(parts) > 1 else parts[0]
+            if key in self._CODE_TOKEN_COLORS:
+                return self._CODE_TOKEN_COLORS[key]
+        return self._CODE_DEFAULT
+
+    def _highlight_code(self, code: str, lang: str) -> List[List[Tuple[str, str]]]:
+        """按语言做 pygments 语法着色, 返回逐逻辑行的 (颜色, 文本) 段列表。
+
+        每段仅前景着色 (不铺背景), 以区别于正文; 每行即一个逻辑行, 供对话区
+        软换行高度估算; 无法识别的语言回落纯文本。
+        """
+        from pygments.lexers import get_lexer_by_name
+        from pygments.token import Token as _PToken
+        code = code.rstrip("\n")
+        try:
+            lexer = get_lexer_by_name((lang or "text").lower(), stripnl=False)
+            tokens = list(lexer.get_tokens(code))
+        except Exception:
+            tokens = [(_PToken.Text, code)]
+        lines: List[List[Tuple[str, str]]] = []
+        cur: List[Tuple[str, str]] = []
+        for ttype, value in tokens:
+            color = self._color_for_token(ttype)
+            for idx, piece in enumerate(value.split("\n")):
+                if idx > 0:
+                    lines.append(cur)
+                    cur = []
+                if piece:
+                    cur.append((color, piece))
+        if cur:
+            lines.append(cur)
+        if not lines:
+            lines.append([("", "")])
+        return [ln if ln else [("", "")] for ln in lines]
+
+    def _render_markdown_message(self, text: str) -> List[List[Tuple[str, str]]]:
+        """把助手消息按 Markdown 渲染: 代码块语法高亮 + 语言标签, 其余纯文本。
+
+        首行带 ● 状态符 (若事件已带则复用, 避免双 bullet); 正文延续行缩进 2 格;
+        代码块以 `› lang` 标签引导、块内不缩进、结束补空行分隔。返回逻辑行列表。
+        """
+        import re
+        fence_re = re.compile(r"^\s*```(\w*)\s*$")
+        text = str(text)
+        if text.startswith(STATUS_BULLET):
+            text = text[len(STATUS_BULLET):]
+        lines = text.lstrip("\n").split("\n")
+        out: List[List[Tuple[str, str]]] = []
+        first = True
+
+        def push(segs: List[Tuple[str, str]], indent: bool = False) -> None:
+            nonlocal first
+            if first:
+                if not (segs and segs[0][1].startswith(STATUS_BULLET)):
+                    segs = [("class:textdim", STATUS_BULLET)] + segs
+                first = False
+            elif indent:
+                segs = [("class:text", "  ")] + segs
+            out.append(segs)
+
+        i, n = 0, len(lines)
+        while i < n:
+            raw = lines[i]
+            m = fence_re.match(raw)
+            if m:
+                lang = m.group(1) or ""
+                code: List[str] = []
+                i += 1
+                while i < n and not lines[i].strip().startswith("```"):
+                    code.append(lines[i])
+                    i += 1
+                i += 1  # 跳过结束围栏 (若存在)
+                push([("class:textdim", f"› {lang}" if lang else "› code")])
+                for cl in self._highlight_code("\n".join(code), lang):
+                    out.append(cl)
+                push([("", "")])
+            else:
+                push([("class:text", raw)], indent=True)
+                i += 1
+        return out
+
     def _msg_to_lines(self, role: str, text: str) -> List[List[Tuple[str, str]]]:
-        # 用户消息: 整块暖金底 (气泡感) + 金色正文; log: 弱化前缀 + 常规正文。
-        # 事件可能已带 bullet 前缀 (写入时角色标记), 渲染时防重复叠加 (修复双 ✨)。
+        # 用户消息: 整块暖金底 (气泡感) + 金色正文; 助手消息走 Markdown 渲染。
         if role == "user":
             bullet = USER_MESSAGE_BULLET
             userbg = "class:roleuser bg:#2b2416"
             bcls = ccls = cont = userbg
         else:
-            bullet = STATUS_BULLET
-            bcls = "class:textdim"
-            ccls = "class:text"
-            cont = "class:text"
-        # 兜底: 事件文本整体以换行开头时 (源自流式分段/外部注入), 先剥掉前导换行,
-        # 避免 bullet (✨/●) 单独成行、正文缩进错行。
+            # log/助手: 直接走 Markdown (代码块语法高亮), 不再逐行纯文本。
+            return self._render_markdown_message(text)
+        # 事件可能已带 bullet 前缀 (写入时角色标记), 渲染时防重复叠加 (修复双 ✨)。
         lines = str(text).lstrip("\n").split("\n")
         out: List[List[Tuple[str, str]]] = []
         for i, ln in enumerate(lines):
@@ -2107,17 +2226,4 @@ class QxtTUI:
         保证 CJK/绘图形字符下右边框仍对齐。
         """
         cwd = os.path.abspath(self.workspace)
-        session = getattr(self, "_session_id", "") or "new-session"
-        model = self._model_label or "default"
-        info_pairs = [
-            (f"{t('banner.directory')}: ", cwd),
-            (f"{t('banner.session')}:   ", session),
-            (f"{t('banner.model')}:     ", model),
-            (f"{t('banner.version')}:   ", VERSION),
-        ]
-        for row in self._kimi_box(
-            title=t("tui.welcome_title"),
-            subtitle=t("tui.welcome_subtitle"),
-            info_pairs=info_pairs,
-        ):
-            self._events.append(row)
+   

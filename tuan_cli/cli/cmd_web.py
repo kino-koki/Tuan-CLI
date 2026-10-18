@@ -5,6 +5,7 @@
 无外链 CDN, 断网可用。模型无关, 复用 create_agent 运行时。
 """
 from __future__ import annotations
+from ..paths import default_workspace
 
 import logging
 import os
@@ -32,7 +33,7 @@ def cmd_web(args) -> int:
         return 1
 
     config: Config = kernel.require("config")
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     host = getattr(args, "host", None) or "127.0.0.1"
     port = int(getattr(args, "port", 0) or 8090)
 

@@ -25,6 +25,16 @@ MAX_BACKOFF_WAIT = 60.0
 DEFAULT_RETRY_ON = (408, 429, 500, 502, 503, 504)
 
 
+class StreamInterrupted(RuntimeError):
+    """流式响应已输出部分内容后才失败。
+
+    这类失败**不能重试**: 重跑会让模型把整个回答重新生成一遍, 已流出的
+    半截内容 + 重跑的完整内容在 UI 上叠加成"重复/乱码"输出, 且把一次
+    中断放大成两倍时长。调用方 (AgentResilience) 在 on_token 已触发过后
+    把底层异常转换成本类; RetryPolicy 见到即停止重试, 原样上抛。
+    """
+
+
 # ------------------------------------------------------------ 错误分类 / Retry-After
 
 def classify_error(exc: Exception) -> tuple:
@@ -74,6 +84,7 @@ class RetryPolicy:
         retry_on=DEFAULT_RETRY_ON,
         sleep: Optional[Callable[[float], None]] = None,
         rng: Optional[Callable[[float, float], float]] = None,
+        max_timeout_retries: int = 2,
     ) -> None:
         self.max_retries = int(max_retries)
         self.backoff = float(backoff)
@@ -81,6 +92,9 @@ class RetryPolicy:
         self.retry_on = set(retry_on)
         self._sleep = sleep or _default_sleep
         self._rng = rng or _default_rng
+        #: 超时类错误的独立重试上限 (默认 2 次 = 总共最多 3 次尝试中的后 2 次重试)。
+        #: 超时单次代价远高于其它瞬时错误, 不单独收敛会把等待放大到十几分钟。
+        self.max_timeout_retries = max(1, int(max_timeout_retries))
 
     @classmethod
     def from_config(cls, config) -> "RetryPolicy":
@@ -89,6 +103,7 @@ class RetryPolicy:
             backoff=config.get("agent.retry_backoff", 2.0),
             jitter=config.get("agent.retry_jitter", 0.3),
             retry_on=set(config.get("agent.retry_on", list(DEFAULT_RETRY_ON))),
+            max_timeout_retries=config.get("agent.max_timeout_retries", 2),
         )
 
     # ------------------------------------------------------------ 等待计算
@@ -118,6 +133,9 @@ class RetryPolicy:
         for attempt in range(1, self.max_retries + 1):
             try:
                 return fn()
+            except StreamInterrupted:
+                # 已流出部分 token 后的失败: 重试只会造成重复输出, 直接上抛
+                raise
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
                 kind, status = classify_error(exc)
@@ -135,6 +153,11 @@ class RetryPolicy:
                 else:
                     retriable = status in self.retry_on
                 if not retriable or attempt >= self.max_retries:
+                    break
+                # 超时单独收敛重试次数: 单次读超时的代价极高 (动辄数分钟),
+                # 满额重试 × 退避会把「等不到」放大成十几分钟的静默卡死, 看起来
+                # 就是「模型一直转圈/总是超时」。限流/服务端错误照常满额重试。
+                if kind == "timeout" and attempt >= self.max_timeout_retries:
                     break
                 wait = self.wait_for(attempt, kind, exc)
                 if emit:

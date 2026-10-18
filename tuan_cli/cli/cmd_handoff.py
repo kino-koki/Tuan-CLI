@@ -10,6 +10,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 from pathlib import Path
@@ -48,7 +49,7 @@ def cmd_chat_handoff(args) -> int:
         console.print(f"[handoff] 会话 {session_file.stem} 没有可交接的消息")
         return 1
 
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     config = Config(profile=getattr(args, "profile", "default"),
                     patch_file=getattr(args, "patch", None))
     handoff = ChatHandoff(workspace, config)

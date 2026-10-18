@@ -12,6 +12,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 import sys
@@ -192,5 +193,5 @@ def run_onboarding(
 def cmd_onboarding(args) -> int:
     """`tuan onboarding` CLI 入口。"""
     skip = bool(getattr(args, "skip", False))
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
     return run_onboarding(Path(workspace), skip=skip)

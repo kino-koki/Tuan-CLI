@@ -21,6 +21,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import os
 from dataclasses import dataclass, field
@@ -113,13 +114,13 @@ class CodeDevEngine:
             pass
 
     def forge_context(self, task: str, top_k: int = 8, root: Optional[str] = None) -> RetrievalResult:
-        root = root or self.workspace or os.getcwd()
+        root = root or self.workspace or default_workspace()
         idx = self._index(root)
         return idx.retrieve(task, top_k=top_k)
 
     # ---------------------------------------------------------------- 验证
     def verify(self, cwd: Optional[str] = None, extra_commands=None) -> VerificationReport:
-        cwd = cwd or self.workspace or os.getcwd()
+        cwd = cwd or self.workspace or default_workspace()
         return self.verifier.verify(cwd, extra_commands=extra_commands, kernel=self.kernel)
 
     # ---------------------------------------------------------------- 分解
@@ -155,7 +156,7 @@ class CodeDevEngine:
         executor: Optional[_Exec] = None,
         _force_spawn: bool = False,
     ) -> DevelopResult:
-        cwd = cwd or self.workspace or os.getcwd()
+        cwd = cwd or self.workspace or default_workspace()
         notes: List[str] = []
 
         # 1) 检索（确定性, 零模型调用）

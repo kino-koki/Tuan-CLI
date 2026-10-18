@@ -20,6 +20,7 @@
 """
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import hashlib
 import os
@@ -42,23 +43,34 @@ _PROJECT_DOC_MAX = 32 * 1024
 _PROJECT_DOC_NAMES = ("TUAN.md", "QXT.md", "AGENTS.md", "CLAUDE.md")
 
 # 配置文件里允许出现的顶层键 (未知键 -> 警告而非错误)
-_KNOWN_TOP_KEYS = {
-    "model",
-    "mode",
-    "skills",
-    "memory",
-    "hooks",
-    "permissions",
-    "language",
-    "ui",
-    "network",
-    "mcp",
-    "engine",
-    "fusion",
+def _known_top_keys() -> set:
+    """配置里合法的顶层段 = DEFAULT_CONFIG 的键 + 一批历史/兼容段。
+
+    早先这里是一份手抄白名单, 长期没跟 defaults.py 同步 —— 于是把用户**按官方
+    文档写的** agent/context/logging/loop/router 等段误报成「未知顶层字段/
+    拼写错误」, 而真正的历史兼容段反而漏检。现改为以 defaults 为权威来源自动
+    取键, 再并上兼容段, 新增配置段不会再漂移。
+    """
+    keys = set()
+    try:
+        from ..config.defaults import DEFAULT_CONFIG
+
+        keys |= set(DEFAULT_CONFIG.keys())
+    except Exception:  # noqa: BLE001 - 导入失败退回兼容段
+        pass
+    return keys | _LEGACY_TOP_KEYS
+
+
+# defaults.py 未声明但历史版本接受、且被文档提及过的顶层段。
+_LEGACY_TOP_KEYS = {
     "acp",
+    "fusion",
+    "logging",
     "onboarding",
     "version",
 }
+
+_KNOWN_TOP_KEYS = _known_top_keys()
 
 
 # ------------------------------------------------------------------ finding 构造
@@ -174,7 +186,7 @@ def _check_config(home: Path, fix: bool) -> List[Dict[str, Any]]:
             )
 
     # ---- 未知顶层字段 (警告, 不阻塞) ----
-    unknown = sorted(k for k in data.keys() if k not in _KNOWN_TOP_KEYS)
+    unknown = sorted(k for k in data.keys() if k not in _known_top_keys())
     if unknown:
         findings.append(
             _f(
@@ -680,7 +692,7 @@ def cmd_doctor(args) -> int:
     as_json = bool(getattr(args, "json", False))
     network = bool(getattr(args, "network", False))
     compact = bool(getattr(args, "compact", False))
-    workspace = getattr(args, "workspace", None) or os.getcwd()
+    workspace = getattr(args, "workspace", None) or default_workspace()
 
     findings = run_checks(Path(workspace), fix=fix, network=network)
     exit_code = _exit_code(findings)

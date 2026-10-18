@@ -1,6 +1,7 @@
 """`tuan session` —— 会话管理 (拆分自 cmd_services.py)。"""
 
 from __future__ import annotations
+from ..paths import default_workspace
 
 import datetime
 import json
@@ -150,7 +151,7 @@ def cmd_session(args) -> int:
             console.print(f"启动失败: {exc}")
             return 1
         config = kernel.require("config")
-        workspace = getattr(args, "workspace", None) or os.getcwd()
+        workspace = getattr(args, "workspace", None) or default_workspace()
         agent = create_agent(kernel, workspace)
         seed_builtin_skills(kernel)
         loaded = _resume_session(agent, target)

@@ -183,4 +183,8 @@ TRANSLATIONS = {
     "web.mcp_none": "未接入 MCP server",
     "web.running": "執行中…",
     "web.denied": "已拒絕執行。",
+    "web.thinking": "思考中",
+    "web.thinking_process": "思考過程",
+    "web.interrupted": "輸出中斷",
+    "web.stopped": "已停止",
 }

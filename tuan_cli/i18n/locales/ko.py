@@ -183,4 +183,8 @@ TRANSLATIONS = {
     "web.mcp_none": "연결된 MCP 서버 없음",
     "web.running": "실행 중…",
     "web.denied": "거부되었습니다. 실행하지 않았습니다.",
+    "web.thinking": "생각 중",
+    "web.thinking_process": "사고 과정",
+    "web.interrupted": "출력이 중단되었습니다",
+    "web.stopped": "중지됨",
 }
