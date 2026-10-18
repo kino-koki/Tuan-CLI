@@ -2052,6 +2052,26 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       }).catch(function(){});
       return true;
     }
+    /* /model 与 /provider: 直接打开设置面板的「模型与供应商」页选模型,
+       而不是把 /model 当普通消息发给 Agent (那只会得到一句文字回复, 无法真正
+       切换模型)。
+       注意: 斜杠面板选中后会把命令补成 "<cmd> " (带尾空格) 再交回输入框, 所以
+       这里既要认 "/model" 也要认 "/model " 两种形态 —— 否则用户第一次回车
+       补全后必须再按一次回车才生效。 */
+    if(cmd==='model'||cmd==='provider'||cmd==='models'){
+      openSettings();
+      SET.cat='模型与供应商';
+      renderSettingsNav();
+      renderSettings();
+      if(arg){
+        var _ps=document.getElementById('set-provider');
+        if(_ps&&arg.indexOf('/')===-1){
+          _ps.value=arg;
+          _ps.dispatchEvent(new Event('change'));
+        }
+      }
+      return true;
+    }
     /* 其它斜杠命令 (如 /help /status /model ...) 作为普通消息发给 Agent 尝试 */
     return false;
   }
