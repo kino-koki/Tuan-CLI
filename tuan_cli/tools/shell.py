@@ -82,10 +82,11 @@ def _strict_shell_enabled(yolo: bool = False) -> bool:
     - 未显式设置时: standard 开启 (保守默认), yolo 关闭。
 
     yolo 下安全并不依赖严格兜底, 而是由三层硬保障托底:
-      1) 致命红线 (YOLO_REDLINE) —— 无论什么模式都硬拦, 永不确认放行;
-      2) 极高危 (warning>=5) —— 仍需人工, 不自动执行;
+      1) 致命红线 —— 任何模式都**不自动执行**; 但有确认通道时会把决定权交回
+         人 (YOLO 也不例外), 只有无确认通道才 fail-closed;
+      2) 极高危 (warning>=5) —— 同样要求 5 次人工确认, YOLO 不豁免;
       3) 沙箱隔离 —— 命令在受限环境内执行, 逃逸面已被收敛。
-    即"给 yolo 适当的权力", 而非无脑全放行。
+    即"给 yolo 适当的权力"(不拿琐碎确认打断), 而非"对真正危险的也不告知"。
     """
     raw = os.environ.get("TUAN_STRICT_SHELL")
     if raw is not None and raw.strip():
@@ -297,7 +298,9 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
             summary = ast_result.summary()
             ctx.safety_severity = "critical"
             suffix = "" if ctx.confirm is not None else "\n(当前无确认通道, 无法请求人工放行)"
-            if not getattr(ctx, "yolo", False) and ctx.confirm is not None:
+            # YOLO 也要问: critical 意味着脚本里有 os.system("rm -rf /") 这类调用,
+            # 「自动批准」不等于「剥夺人的知情权」。与硬红线同口径。
+            if ctx.confirm is not None:
                 warning = (
                     f"⚠️ Python AST 扫描检测到致命危险调用:\n{command}\n{summary}\n"
                     "安全引擎建议不要执行。确认要人工放行吗? (仅本次生效)"
@@ -405,11 +408,33 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
             except Exception as exc:  # noqa: BLE001
                 log.debug("safety_check 调用失败 (红线拦截不受影响): %s", exc)
         advice = _risk_to_advice(reasons, previews)
-        suffix = "" if ctx.confirm is not None else "\n(当前无确认通道, 无法请求人工放行)"
         ctx.safety_severity = "critical"
+        # 「不自动执行」≠「不告诉人」。
+        # 红线命令在任何模式下都**不得自动执行**, 但只要有确认通道, 就必须把决定权
+        # 交回给人 —— 此前这里直接 return 掉, 用户连"我确认要执行"都说不出口,
+        # 于是表现为「开了 yolo 也被拦、而且没有任何选择」。安全性质不变:
+        # 无人确认时一律拒绝; YOLO 也不会让它自动跑。
+        if ctx.confirm is not None:
+            warning = (
+                "⚠️ 命中致命操作红线, 自动执行已被禁止。\n"
+                f"{command}\n{advice}\n"
+                "若确需执行 (确认文件系统/OS 已妥善备份), 可人工放行本次操作。"
+            )
+            try:
+                if ctx.confirm(warning):
+                    _emitSecurityEvent("security.command.blocked", {
+                        "reason": "hard_redline_released_by_human",
+                        "severity": "critical",
+                    })
+                    return None
+            except Exception as exc:  # noqa: BLE001 - 确认异常维持拦截 (fail-closed)
+                log.debug("硬红线人工放行确认异常, 维持拦截: %s", exc)
+            _emitSecurityEvent("security.command.blocked", {"reason": "hard_redline", "severity": "critical"})
+            return f"[已拦截] 用户未放行致命操作红线命令: {command}\n{advice}"
+        # 无确认通道 (headless / 无人值守): fail-closed, 且明确告知原因
         _emitSecurityEvent("security.command.blocked", {"reason": "hard_redline", "severity": "critical"})
-        return (f"[已拦截] 命中致命操作红线, 即使在 YOLO 模式也禁止自动执行: {command}\n"
-                + advice + suffix)
+        return (f"[已拦截] 命中致命操作红线, 任何模式下都不会自动执行: {command}\n"
+                + advice + "\n(当前无确认通道, 无法请求人工放行)")
 
     # ======== 2) 白名单检查 (Trae 模式: 用户同意后自动执行) ========
     # 白名单优先级永远低于黑名单: 上面已经检查过红线, 能到这里说明不在红线中
@@ -422,7 +447,8 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
         # 白名单命中, 但仍需检查是否包含危险子模式 (防御纵深)
         warning_level = get_warning_level(command)
         if warning_level >= 5 and not getattr(ctx, "yolo", False):
-            # 即使白名单, 极高风险命令仍需5次确认
+            # 即使白名单, 极高风险命令仍需5次确认 (YOLO 除外 —— 那里由下方 step3
+            # 统一走 5 次确认, 避免同一操作弹两轮窗)
             if ctx.confirm is not None:
                 confirmer = _get_confirmer()
                 confirmer.set_confirm_fn(ctx.confirm)
@@ -467,17 +493,18 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
     # ======== 3) 多阶段确认 (非白名单命令) ========
     warning_level = get_warning_level(command)
     if warning_level >= 5:
-        # 极高风险: YOLO 模式或 无确认通道 → 硬拦 (fail-closed);
-        # 非 YOLO 且有确认通道 → 弹 5 次确认, 用户通过才放行 (仅本次)。
-        # 这样形成「硬红线 (永不确认)」与「可确认关键级 (极端 5 次确认)」两个清晰层级。
+        # 极高危: 一律要人工确认 —— **YOLO 也不例外**。
+        # YOLO 的语义是「别拿琐碎确认打断我」, 不是「剥夺我对危险操作的决定权」。
+        # 此前 yolo 直接硬拦, 与本函数上方设计注释「极高危仍需人工, 不自动执行」
+        # 自相矛盾, 也让用户无法在确知风险时继续工作。
+        # 唯一 fail-closed 的情形是**没有确认通道** (headless / 无人值守)。
         ctx.safety_severity = "critical"
-        if getattr(ctx, "yolo", False) or ctx.confirm is None:
-            return (f"[已拦截] 极高风险操作 (需要5次确认), "
-                    f"{'YOLO 模式禁止自动执行' if getattr(ctx, 'yolo', False) else '当前无确认通道'}: {command}")
+        if ctx.confirm is None:
+            return f"[已拦截] 极高风险操作 (需5次确认), 当前无确认通道: {command}"
         confirmer = _get_confirmer()
         confirmer.set_confirm_fn(ctx.confirm)
         if not confirmer.confirm(command, 5, "极高风险操作"):
-            return f"[已拦截] 用户在第5次警告中拒绝执行: {command}"
+            return f"[已拦截] 用户未放行极高风险操作: {command}"
     elif warning_level >= 3:
         # 高风险: 有确认通道时弹3次确认; 无确认通道时不做硬拦截,
         # 落到 step4 附加安全建议 (与「high 级仅提示、不硬拦」的设计一致, 见各 test_high_*)
