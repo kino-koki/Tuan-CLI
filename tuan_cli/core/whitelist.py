@@ -228,48 +228,6 @@ class WhitelistManager:
 
 # ------------------------------------------------------------ 警告级别管理
 
-# 极高风险命令: 至少弹5次警告
-_EXTREME_RISK_PATTERNS = [
-    r"rm\s+-[a-zA-Z]*[rR][a-zA-Z]*[fF]\s+/",          # rm -rf /
-    r"rm\s+-[a-zA-Z]*[fF][a-zA-Z]*[rR]\s+/",          # rm -fr /
-    r"dd\s+if=.*\s+of=/dev/sd",                        # dd 写磁盘
-    r"mkfs\s+",                                        # mkfs 创建文件系统
-    r"format\s+[a-zA-Z]:",                             # format 磁盘
-    r"shutdown\s+",                                    # shutdown 关机
-    r"halt\s+",                                        # halt 关机
-    r"poweroff\s+",                                    # poweroff 关机
-    r"reboot\s+",                                      # reboot 重启
-    r"init\s+[06]",                                    # init 0/6
-    r"systemctl\s+(poweroff|reboot|halt)",             # systemctl 关机/重启
-    r"chmod\s+-[Rr]\s+0{3,}\s+/",                     # chmod -R 000 /
-    r"chown\s+-[Rr]\s+root\s+/",                      # chown -R root /
-    r"drop\s+table",                                   # DROP TABLE
-    r"drop\s+database",                                # DROP DATABASE
-    r"delete\s+from\s+.*;?",                           # DELETE FROM
-    r"Remove-Item\s+.*-Recurse\s+.*-Force",           # PowerShell 递归强删
-    r"Stop-Computer",                                  # PowerShell 关机
-    r"Restart-Computer",                               # PowerShell 重启
-    r"git\s+push\s+.*--force",                         # git push --force
-    r"git\s+push\s+.*-f",                              # git push -f
-]
-
-# 高风险命令: 至少弹3次警告
-_HIGH_RISK_PATTERNS = [
-    r"chmod\s+777",                                    # chmod 777
-    r"git\s+reset\s+--hard",                           # git reset --hard
-    r"git\s+clean\s+-[a-zA-Z]*f",                      # git clean -f
-    r"git\s+checkout\s+--\s+\.",                      # git checkout -- .
-    r"docker\s+rm\s+-f",                               # docker rm -f
-    r"docker\s+rmi\s+-f",                              # docker rmi -f
-    r"kubectl\s+delete",                               # kubectl delete
-    r"iptables\s+-F",                                  # iptables -F
-    r"alter\s+table\s+.*\s+drop",                      # ALTER TABLE DROP
-    r"kill\s+-9",                                      # kill -9
-    r"pkill\s+",                                       # pkill
-    r"killall\s+",                                     # killall
-]
-
-
 def get_warning_level(command: str) -> int:
     """获取命令的警告级别.
 
@@ -278,25 +236,13 @@ def get_warning_level(command: str) -> int:
     - 3: 高风险 (必须弹3次警告)
     - 0: 普通命令 (白名单直接放行)
     """
-    # 降误杀: 良性开发命令直接返回 0 (不弹确认), 但仍由 is_hard_redline / score 兜底判定
-    # 不可逆破坏 (rm -rf /、force push 等); 写系统关键路径会被 _SYSTEM_PATH_RE 排除出良性集合。
-    from ..ext.safety_engine import is_benign_dev_command
-    if is_benign_dev_command(command):
-        return 0
+    from ..ext.safety_engine import SafetyEngine
 
-    import re as _re
-    cmd_lower = command.lower()
-
-    # 极高风险检测
-    for pattern in _EXTREME_RISK_PATTERNS:
-        if _re.search(pattern, cmd_lower, _re.IGNORECASE):
-            return 5
-
-    # 高风险检测
-    for pattern in _HIGH_RISK_PATTERNS:
-        if _re.search(pattern, cmd_lower, _re.IGNORECASE):
-            return 3
-
+    risk = SafetyEngine().score({"command": command})["risk"]
+    if risk == "critical":
+        return 5
+    if risk == "high":
+        return 3
     return 0
 
 

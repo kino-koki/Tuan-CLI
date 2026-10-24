@@ -11,7 +11,7 @@ print() 都直接写 stdout。在 QxtTUI (prompt_toolkit 全屏 Application) 运
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 
 class TuiUI:
@@ -78,6 +78,19 @@ class TuiUI:
 
     def mascot_set(self, state: str) -> None:
         pass
+
+    # ------------------------------------------------------------ 模型提问
+    def ask_user(self, question: str, options: Optional[List[str]] = None) -> str:
+        """TUI 内提问: 渲染可选择卡片并阻塞等待 (与 QxtTUI.ask_user 同路径)。
+
+        `ask_user` 工具 (session_tools._ask_user_handler) 优先探测 `ctx.ui` 上的
+        本钩子; 命中即走对话区卡片 (↑↓ 选择 / Enter 确认), 不再 print()+input()
+        把文本直接写进全屏 TUI 的屏幕。
+        """
+        try:
+            return str(self._tui.ask_user(question, options or []) or "")
+        except Exception:  # noqa: BLE001
+            return ""
 
     # ------------------------------------------------------------ 交互确认
     def confirm(self, prompt: str, *, expected: Optional[str] = None,

@@ -23,14 +23,9 @@ def build_kernel(*a, **k):
 
 def _load_service(args) -> Tuple[Any, Any]:
     kernel = build_kernel(profile=getattr(args, "profile", "default"),
-                           patch_file=getattr(args, "patch", None))
-    # 确保插件已激活 (build_kernel 已 activate_all)
+                            patch_file=getattr(args, "patch", None))
+    # build_kernel 已 activate_all, self_improve 服务已就绪
     svc = kernel.get("self_improve")
-    if svc is None:
-        # 兜底: 手动注册激活
-        kernel.register(SelfImprovePlugin())
-        kernel.activate_all()
-        svc = kernel.get("self_improve")
     return svc, kernel
 
 
@@ -92,4 +87,3 @@ def _do_apply(svc) -> int:
 from .parser import _register_command
 _register_command("cmd_improve", ".improve_cli")
 # 注意: parser.py 的 _auto_register() 已导入本模块，无需手动调用 _register_command
-

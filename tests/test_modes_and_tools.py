@@ -14,7 +14,7 @@ from tuan_cli.tools.filesystem import glob, move_file, delete_file, write_file
 
 def test_default_mode_is_standard(tuan_home):
     cfg = Config()
-    assert cfg.mode == "standard"
+    assert cfg.mode == "chat"
     assert not cfg.is_yolo()
     assert cfg.tool_auto_approve("delete_file") is False
 

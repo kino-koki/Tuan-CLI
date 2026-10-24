@@ -6,7 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - 2026-10-18
-### 修复: 目录强制跳转 + 大上下文模型提示词阉割
+### 新增: 免费层扩充 (商汤日日新公测免费 + 4 家完全免费) + 供应商/模型清单校准
+
+- **免费层 (category=免费层) 从 2 家扩到 6 家** (`tuan_cli/models/provider_catalog.py`):
+  - 新增 **商汤日日新 SenseNova** 入免费层 (A 区): 2026-10 核实 Token Plan 公测期
+    "完全免费开放" —— Free 档 ¥0/月、60000 积分/5h、无需绑卡, `sensenova-6.8-flash-lite`
+    / `sensenova-u1-fast` 全部 |free; 端点 `token.sensenova.cn/v1`, 国内直连。
+  - **Groq** (B 区) 与 **Cloudflare Workers AI** (C 区) 分类改标 "免费层"
+    (tier=free 保持不变): 免费档速率受限但零费用、注册即用无需绑卡。
+  - **OpenCode Zen** (A 区) 免费档口径修正: `deepseek-v4-free` 实测零费用可用,
+    由 tier=cheap/free_tier=False 改为 tier=free/free_tier=True, 归入免费层。
+  - FREE_TIER_NAMES (free_tier=True 全名单) 由 16 → 18 家 (加 sensenova / opencode-zen)。
+  - 回归测试: `tests/test_free_tier_custom.py::test_sensenova_in_free_tier` (原
+    `test_sensenova_in_china_mainstream` 改写)。
+
+- **供应商/模型清单校准** (58 家供应商 / 1440 模型条目, 全 README 数字对齐):
+  - `qiniu` (七牛): 模型清单 8 → 26 (补 GLM-5.x 全系 / Kimi-K3 免费档 /
+    Nemotron-3-Ultra 免费档 / 豆包 Seed-2.x / MiniMax-M2.5 等, 来源 qiniu.com 模型广场实查);
+  - `hunyuan` (腾讯混元): 模型清单 2 → 15 (官方文档实查: hy3 / hy4-preview /
+    a13b / role / translation / vision / embedding 全系);
+  - `sensenova` 模型清单注释同步公测期完全免费口径;
+  - 修正 9 份 README (zh-CN/zh-GAT/ja/ko/de/es/fr/pt-BR/ru + en) 供应商 57→58、
+    模型 1100+→1400+; `SUPPORTED_MODELS.md` / 包内 docstring 同步 58 家;
+  - `scripts/verify_doc_numbers.py` 现全部一致 (58 家 / 1440 条目 / 38 子命令)。
+
+### 修复: 目录强制跳转 + 大上下文模型提示词阉割 + 内置资源目录解析断裂
+
+- **修复「大上下文模型读不到 SOUL_FULL.md」的资源目录解析 bug**
+  (`tuan_cli/config/defaults.py`): 旧实现 `Path(str(resources.files("tuan_cli.resources")))`
+  把 `importlib.resources` 返回的 `MultiplexedPath` 对象直接 `str()` 后包成 `Path`,
+  在 Windows 下 `is_dir()` 恒为 `False` —— 于是 `_load_builtin_soul` 永远拿不到
+  SOUL_FULL.md / SOUL_COMPACT.md, 所有模型(无论窗口大小)实际都退化成 ~3.8K 字的
+  兜底文案 `_FALLBACK_SOUL`, 与「>128k 模型读 31K 字 SOUL_FULL」的预期完全脱节。
+  现改为鸭子类型展开: `MultiplexedPath` 迭代出各子包 `Traversable` 取 `str`,
+  单一 `Traversable` 直接 `str`, 再追加源码相对路径兜底; 候选逐一 `is_dir()` +
+  `SOUL.md` 存在性校验, 取第一个通过者。修复后实测: 200k/1M 窗口模型系统提示
+  30962 字且以 `# SOUL_FULL` 开头, 8k/128k 窗口读 SOUL_COMPACT.md (7698 字),
+  边界 128000 < 131072 → compact 符合「>128K 才读 SOUL_FULL」口径。
+  回归测试: `tests/test_prompt_tier.py::TestResolveResourcesDir` (3 个用例)。
 
 - **修复「无论进入什么目录都强制转 D:\DeliveryOptimization\Tuan-Workspace」**
   (`tuan_cli/paths.py`): 默认行为从「强制 chdir 进入内置 D 盘独立目录」改为
@@ -99,6 +136,254 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason 事件端到端 + parts 合并、防抖落盘、TCP_NODELAY、前端静态检查、
   10 语言键完整); 真实 Agent 端到端验证 600 delta → 5 行落盘、中断后
   零重试。
+
+### 修复: TUI 输入框失去渲染 (备用屏被误退出 + 后台线程重绘)
+
+- **根因**: `tui/tui.py::_reset_renderer` 调用 `Renderer.reset()` 时**漏传
+  `leave_alternate_screen`**。该参数默认 `True`, 于是每次 boot→ready /
+  boot→error 切换都会执行 `output.quit_alternate_screen()` —— 把这个
+  **全屏 TUI 踢出备用屏缓冲**, 终端回退到进入 TUI 之前的主屏内容, 而 TUI
+  仍按全屏绘制, 于是输入框 (乃至整幅界面) "失去渲染" (Windows conpty /
+  Windows Terminal 尤其明显)。实测转义序列: 旧实现每次启动多发一条
+  `ESC[?1049l` (退出备用屏), 新实现 0 条。
+  - 修复: `erase()` 与 `reset()` **两次都显式传 `leave_alternate_screen=False`**,
+    全程留在备用屏内重绘 (`_reset_renderer`); 老版 prompt_toolkit 无该
+    关键字时回退原调用。
+
+- **同源线程安全**: `set_ready` / `boot_error` 由 `_boot` **后台线程** 调用
+  (见 `cmd_chat.py`), 而渲染循环在主线程 —— 后台线程直接操作 renderer 会与
+  主线程渲染竞争光标位置/输出写入, 造成同样的画面错乱。修复: 运行态下把重置
+  **投递到主事件循环** (`loop.call_soon_threadsafe`) 执行, 应用未进入运行态
+  时退化为同步调用。
+
+- **测试**: 新建 `tests/test_tui_render_reset.py` (3 项: erase/reset 均留在
+  备用屏、完整 set_ready 路径不退出备用屏、运行态重置投递到事件循环而非在
+  调用线程直接操作 renderer)。
+
+### 修复: 多数供应商模型清单缺失 (官方有模型但 Tuan-CLI 列不出来)
+
+- **根因**: `models/model_lists.py` 里有 **11 个供应商完全没有条目**, 而
+  `provider_catalog.py` 只对 `MODEL_LISTS` 中存在的键覆盖 `recommended_models`
+  → 这些供应商的模型清单恒为空 (`get_provider_models()` 返回 `[]`), 表现为
+  「官方明明提供几十个模型, Tuan-CLI 里一个都没有 / 严重不符」。
+
+- **补齐 11 家** (现 58/58 供应商全覆盖):
+  - 本地/自托管 (OpenAI 兼容, 模型由用户拉取, 统一标注 `|free`):
+    `ollama` (13)、`lmstudio` (7)、`vllm` (5)、`local` (4)、`llamacpp` (3) ——
+    取各生态当下最常用模型标签作快速选择建议;
+  - 云厂商 (真实官方模型 ID): `snowflake` (17)、`watsonx` (13)、
+    `deepseek-azure` (3)、`inference` (7);
+  - `huawei-obs` / `aimon` 标注为占位并附注释: 前者 `base_url` 指向 OBS
+    对象存储 (非对话 API), 后者是护栏/评估服务而非标准对话 LLM, 接入前需
+    确认端点与模型名。
+
+- 每家清单第一项仍为推荐默认模型 (`provider_catalog` 同步 `_p.model`),
+  `local_catalog` 导出随之包含全部 58 家。
+
+### 修复: i18n `tui.slash_more` 缺 8 语言 (键位对齐测试红)
+
+- `de/es/fr/ja/ko/pt_BR/ru/zh_TW` 补齐 `tui.slash_more` (「/ 命令面板还有
+  N 条」提示), 10 语言键集合重新对齐 —— `tests/test_i18n.py` 33 项全绿。
+
+### 修复: `test_web_settings` 模型热切换用例桩对象缺 `unprovide`
+
+- `web/server.py::_set_model` 的模型热切换会 `kernel.unprovide("model_adapter")`
+  再 `provide(...)` 重建适配器; 而 `tests/test_web_settings.py` 的 `_FakeKernel`
+  桩只实现了 `require()`, 导致该路径以
+  「适配器重建失败: '_FakeKernel' object has no attribute 'unprovide'」失败。
+  现给桩补上 `provide`/`unprovide` (签名与 `core/kernel.py` 一致) 并让
+  `require` 优先返回已注册服务 —— `tests/test_web_settings.py` 23 项全绿。
+
+### 备注: 本机 pytest 需避开系统临时目录 `E:\Temp`
+
+- 本机 `E:\Temp` 存在磁盘结构损坏: pytest 的 tmpdir "garbage" 回收会抛
+  `OSError: [WinError 1393] 磁盘结构损坏且无法读取`, 表现为大批用例在 setup
+  阶段集体 ERROR (与被测代码无关)。跑测试前把临时目录重定向到健康路径即可:
+
+  ```bash
+  export TMP="$PWD/.pytest_tmp/tmpbase" TEMP="$PWD/.pytest_tmp/tmpbase"
+  .venv/Scripts/python.exe -m pytest tests/ --basetemp=.pytest_tmp/bt
+  ```
+
+### 新增: TUI 对话区虚拟视口回卷 (真正能翻看历史, Claude Code 同款)
+
+- **问题**: 对话一屏放不下后, 上面的记录再也回不去 —— 像 PowerShell 窗口一样
+  一旦溢出就只能看到最新那屏。根因是旧实现用
+  `FormattedTextControl.get_cursor_position` 伪造一个"光标行"来驱动 prompt_toolkit
+  的 `Window` 滚动, 而 `Window` 只会**最小幅度**滚动到该点可见: PgUp 根本翻不动
+  一屏 (只挪几行); 更糟的是一旦逻辑行与终端行错位 (长消息软换行), 中段内容
+  **永远够不到**。
+
+- **改为真虚拟视口** (`tui/tui.py`):
+  - `_MeasuredWindow` 在 `write_to_screen` 时记录对话区**实测**高度 (视口行数)。
+    之所以要实测: 对话区高度取决于终端行数、审计面板 (Ctrl+O) 是否展开、
+    `/` 命令面板占几行, 布局算式极易差 1~2 行, 而切片必须"正好一屏"才不露白/截断;
+  - `_render_conversation` 只返回**当前视口覆盖到的那几行** (首尾切到半行时按
+    显示行裁剪, `_clip_line_rows` 宽字符按起始列归属), 返回内容高度恒等于视口,
+    `Window` 无需再自行滚动, 翻页即改切片起点;
+  - 移除旧的伪造光标定位机制 (`_cursor_line` / `_pin` / `_pin_t` /
+    `_pin_t_to_logic` / `_terminal_total` / `_log_cursor_pos`), 不再注册
+    `get_cursor_position`;
+  - 滚动量统一以**终端行**为单位, 长消息折行后中段内容也能逐屏翻到。
+
+- **键位** (Claude Code 同款): `PgUp`/`PgDn` 整屏 · `Ctrl+↑`/`Ctrl+↓` 与
+  `Shift+PgUp`/`Shift+PgDn` 逐行 · `Home`/`End` 到顶/底。
+
+- **跟随语义**: 底部自动跟随最新内容; 一旦上翻就**停止跟随**, 新内容不会把
+  视图拽走 (可安心读历史), 滚到底自动恢复跟随。
+
+- **位置指示**: 上翻后底栏显示 `↑ 43/620 · End 回到底部`, 避免"看不到最新回复"
+  被误判成界面卡死; 回到底部自动消失。
+
+- **i18n**: 10 语言新增 `tui.scroll_back_hint`; `tui.scroll_hint` 补上逐行键位。
+
+- **测试**: 新建 `tests/test_tui_scrollback.py` (17 项: 每屏行数恒等于视口 /
+  整屏位移无重叠无跳空 / 顶部可达 / 底部跟随 / 上翻后不被新内容拽走 / 半行裁剪 /
+  长行折行后仍可逐屏翻 / 内容不足一屏 / 位置指示出现与消失)。
+
+### 修复: 模型给选项时 TUI 溢出且无法选择 (ask_user 未接界面)
+
+- **根因** (`ask_user` 工具 → 全屏 TUI 断链, 三处):
+  1. `core/agent.py` 构造 `ToolContext(...)` 时**没传 `ui=`** → `ctx.ui is None`;
+  2. `ui/tui_bridge.py::TuiUI` **没有** `ask_user` 方法;
+  3. 于是 `tools/session_tools.py::_ask_user_handler` 的钩子探测必然失败, 退回
+     `print(f"\n? {q}") + input("> ")` —— 在 prompt_toolkit 全屏 TUI 下, 这**直接
+     写 stdout**: prompt_toolkit 掌管的屏幕被冲垮 (用户报告的"溢出"), 且
+     `input()` 在备用屏 / raw 模式下收不到按键 ("选不了")。原代码注释
+     "当前内置 UI 未注入" 正是对此的自述。
+
+- **修复**:
+  - `QxtTUI.ask_user(question, options)`: 与 `confirm()` 同构的挂起式卡片 ——
+    工具线程阻塞在 `threading.Event`, 卡片渲染在对话区底部, 用户
+    **↑↓ 选高亮 / Enter 确认**, 也可直接敲编号 (1..N) 或任意文字 (自由作答);
+    `cancel_ask()` 在 Ctrl-Q/退出时解冻, 不会让模型线程永久挂死;
+  - `TuiUI.ask_user` 桥接转发到 QxtTUI;
+  - `Agent` 把 `_ui_singleton.ui` 注入 `ctx.ui` (惰性代理, TUI 启动后
+    `attach_ui()` 指向 `TuiUI`, 普通 CLI 下仍是原 UI);
+  - **安全阀**: `_fullscreen_tui_active()` 探测全屏 TUI 是否在跑; 即使钩子因
+    任何原因失效, 也**禁止**再走 `print()/input()`, 改为返回"无法交互"降级让
+    模型自行决策 —— 从根上杜绝"工具把全屏界面写坏"。
+
+- **不溢出**: 卡片走既有的虚拟视口切片 + `_box_row`/`_wrap_dw`, 问题正文自动
+  折行、超长选项按显示宽度裁剪, 卡片再高也不会把输入框/边框顶破。
+
+- **i18n**: 10 语言新增 `tui.ask_title` / `tui.ask_opt_hint` / `tui.ask_free_hint`
+  / `tui.ask_answer` / `tui.ask_skipped`。
+
+- **测试**: 新建 `tests/test_tui_ask_user.py` (16 项: 挂起与卡片可见 / ↑↓ 移动
+  与边界 / Enter 取高亮 / 编号选择 / 自由作答 / 取消解冻 / 无选项退化 / 卡片与
+  对话区不超宽 / 多选项不撑破视口 / 桥接转发 / 工具走钩子不 print / 安全阀拦截 /
+  探测器判定 / headless 兜底)。实机端到端验证: 工具经 `ctx.ui` 拿到卡片,
+  ↑↓+Enter 返回所选项, 全程不碰 stdout。
+
+### 修复: TUI 残余溢出 (系统排查 11 条渲染路径 × 12 种终端宽度)
+
+上一轮修了「模型给选项时溢出且无法选择」(ask_user 未接界面), 但用户反馈
+**TUI 还是有溢出**。本轮做了系统排查而非逐个打补丁: 写审计探针, 在
+200/120/100/80/60/44/40/32/24/20/16/12 共 12 种列宽下把每条渲染路径都跑一遍,
+量出每一行的实际显示宽度。
+
+- **判定标准 (关键)**: 对话区/审计面板的 Window 是 `wrap_lines=True`, 长消息
+  软换行是**正常**的, 内容超宽本身不是 bug; 真正的 bug 是 `wrap_lines=False`
+  的**单行控件** —— 它们不会软换行, 一旦超宽就被终端折成两行, 把整幅全屏
+  布局顶错位。据此把 11 条路径分成两类分别处理。
+
+- **`wrap_lines=False` 单行控件 (真 bug, 全部已修)**:
+  - `diff 面板` (`_fetch_diff` + `_render_diff_panel`): 用 `raw[:width]` 按
+    **字符数**截断, 一个汉字占 2 列 → 中文 diff 行实际宽度可达预算两倍,
+    直接顶出终端右边界。改为按显示宽度裁剪 (`_clip_dw`), 并在渲染出口再加
+    一道统一硬裁 (标题/摘要/提示/错误信息此前完全没裁)。
+  - `slash 面板` (`_render_slash_menu`): 只裁描述, 命令名 `mark+cmd` 与固定
+    2 列分隔符全宽输出 → 12 列终端下算出 13 列。改为命令名/分隔符/描述三者
+    按顺序瓜分宽度预算。
+  - `header` (`_render_header`): 完全没裁剪, 长模型名 (`provider/model`)
+    顶破顶栏。补 `_clip_parts`, 并补上此前缺失的 ask 分支。
+
+- **折行控件里"本应一行"的元素 (真 bug, 全部已修)**:
+  - `启动进度条`: 固定 30 格 = 37 列, 窄终端 (<40 列) 必溢出 → 改为按
+    可用宽度自适应 (3~30 格)。
+  - `启动屏状态行`: 状态串/i18n/错误详情不裁 → 统一按宽度裁剪。
+  - `流式缓冲` / `在途工具行` / `工具详情行` (`_tool_detail=True` 分支):
+    折成多行会让人误以为界面在重复刷同一段内容或卡住。新增 `_fit()` 统一
+    裁到一屏宽, 三处调用点全部接上 (工具详情行是补跑时才发现的遗漏)。
+
+- **卡片与欢迎盒 (真 bug, 全部已修)**:
+  - `欢迎盒信息行`: 极窄终端下**标签本身** (如 "Directory: ") 就超预算, 旧
+    实现只裁 value、标签全宽输出 → 右边框被顶飞。标签与值改为瓜分同一预算。
+  - `欢迎盒头部`: `head_text_w = max(4, ...)` 在窄屏强行保底 4 列文字, 16 列
+    终端下整行算成 2+logo+2+4+2 远大于 inner。改为窄屏时**文字挪到 logo
+    下方另起** (竖排), 不再硬挤。
+  - `_box_row`: 可用宽度硬编码 `-2` (假定 pad 恒为 2 列), `inner` 很小时补
+    空格数为负仍超宽。改为按 pad 的**实际**显示宽度推导, 并对 `n<=0` 返回
+    空串而不是 "…" (凭空多出 1 列)。
+  - `_box_budget()`: 新增。极窄终端 (conpty 窗口拖到最小) 下 `width-2` 为负
+    会让边框退化成 `╭╮`、上下边框对不齐, 统一给 4 列安全下限。三张卡片
+    (信任/命令确认/模型提问) 全部改用它。
+
+- **虚拟视口宽度实测 (回卷正确性)**:
+  `_line_heights` 用 `_log_width()`(= 列数-2) 估算折行, 但对话区实际宽度会被
+  右侧 diff 面板吃掉一块 —— 估算偏大 → 长消息折行数算少 → 切片错位 (回卷
+  露白/跳行)。`_MeasuredWindow` 现在除高度外**同时记录宽度**
+  (`WritePosition.width`), `_log_width()` 优先用实测值, 首帧无记录时回退估算。
+  这与之前 `_viewport_rows()` 用实测高度的修法同源: 虚拟视口要"正好一屏",
+  宽高都必须精确。
+
+- **测试**: 新建 `tests/test_tui_no_overflow.py` (135 项), 按控件类型分别
+  断言 —— 单行控件每行显示宽度必须 ≤ 终端列宽, 卡片每行必须 ≤ 宽度且自带
+  折行; 另含 `_clip_dw` 边界 (`n<=0` / `n==1`)、`_box_row` 宽度算式、
+  `_box_budget` 下限、`_MeasuredWindow` 宽高记录、流式/工具行裁剪等。
+  相关回归 (TUI + i18n + 模型清单 + web) **340 项全绿**。
+
+- **顺带修好的 pytest 环境问题**: 本机 `E:\Temp` 磁盘结构损坏
+  (`WinError 1393`), 且 WorkBuddy 的 `sitecustomize.py` 拦截 `shutil.rmtree`
+  走回收站 —— 两者叠加会让**任何**用到 `tmp_path` 的用例在 setup 阶段
+  集体 ERROR (实测 933 errors 级联, 根因都是这条)。规避: `TMP`/`TEMP` 与
+  `--basetemp` 指向 `C:\Users\28726\.workbuddy-pytest\`, 并设
+  `CODEBUDDY_SAFE_DELETE_ENABLED=0`。设了之后同样的 broad 回归 933 → 0。
+
+### 新增: 鼠标滚轮回看对话历史 (Claude Code 同款)
+
+用户要求「在命令行终端内, 使用鼠标向上/向下滑动, 可完整查看对话历史」。
+
+- **为什么不能靠"猜键名"实现**: prompt_toolkit 的鼠标事件走**两条互斥通道**
+  (见其 `key_binding/bindings/mouse.py`):
+  - `Keys.Vt100MouseEvent` — 解析 VT100/xterm/SGR 序列
+    (`ESC [ < 64 ; col ; row M`), Linux/macOS 走这条;
+  - `Keys.WindowsMouseEvent` — Windows 原生控制台 `MOUSE_EVENT_RECORD`
+    (见 `input/win32.py::_handle_mouse`: 靠 `MOUSE_WHEELED` 标志 +
+    `ButtonState` 正负判方向)。**本项目用户在 Windows 上走的正是这条。**
+  两条都必须注册, 否则在 Windows 上滚轮完全无反应。滚轮**不是**独立键名 ——
+  `<scroll-up>` 在本版 pt 里解析会直接 `ValueError`, 只能靠
+  `event.data.event_type` (`SCROLL_UP` / `SCROLL_DOWN`) 区分滚轮与点击。
+
+- **交互约定** (`_mouse_wheel` / `_wheel_owner`):
+  - 无交互卡片时: 滚轮上下翻历史, 一格 = 3 终端行 (`_MOUSE_WHEEL_LINES`),
+    与 PgUp/PgDn/Ctrl+↑↓ **共用同一套 `_scroll_log` 状态机** —— 翻到底
+    自动恢复跟随, 上翻后新内容不把视图拽走;
+  - 模型提问卡片 (ask_user)、信任确认、`/` 命令面板激活时: **滚轮让位给
+    卡片**, 语义与 ↑↓ 键完全一致(移动选项高亮)。这是刻意的 —— 那几种
+    状态下上下键是"选择选项", 滚轮若也拿去翻页, 用户就会看到"选项列表在
+    动但翻的是历史", 即上一轮 ask_user「能看不能选」的同类问题;
+  - 点击/移动事件**不消费**, 交回终端 —— 否则鼠标左键拖选复制会失效。
+
+- **开关与代价**: `mouse_support=True` 会让终端上报鼠标, 代价是**鼠标左键
+  拖选复制被终端截走**(选不中文字)。这是滚轮与文本选择在终端里的固有权衡,
+  Claude Code 同样如此。提供 `TUAN_NO_MOUSE=1` 临时关掉滚轮上报、恢复文本
+  选择(新增模块级 `_env_flag`)。内联模式兜底路径(全屏崩溃后的重试)仍保持
+  `mouse_support=False` —— 那是稳定性最敏感的路径。
+
+- **i18n**: 10 种语言的 `tui.scroll_hint` 加上滚轮入口并整体精简
+  (zh_CN 由 90 列压到 78 列, 比改动前的 84 列更短, 不会加剧窄屏折行)。
+
+- **测试**: 新建 `tests/test_tui_mouse_wheel.py` (18 项)。**关键坑**: 不能用
+  "往管道灌转义序列"验证 —— `prompt_toolkit/input/vt100.py` 顶部就
+  `assert sys.platform != "win32"`, 在 Windows 上根本构造不出 VT100 输入,
+  灌序列永远不会被解析成 MouseEvent(实测: 注入 800 次滚轮, 视口纹丝不动)。
+  故测试直接构造 win32 通道真实产生的 `KeyPress(MouseEvent)` 驱动绑定, 与
+  用户实机路径一致且不依赖平台。覆盖: 方向与行数精确性 / 上下往返无漂移 /
+  到顶到最早 / 到底恢复跟随 / 内容不足一屏不动 / 三种卡片态让位且钳位 /
+  非滚轮事件不翻页(含直接验绑定层只认 SCROLL_*)/ `TUAN_NO_MOUSE` /
+  提示文案含滚轮。相关回归 **358 项全绿**。
 
 ## [0.3.1] - 2026-10-12
 ### 仓库卫生 + 品牌归属整改 + 安全默认值加固

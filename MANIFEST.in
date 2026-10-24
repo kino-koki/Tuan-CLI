@@ -4,3 +4,5 @@ include CHANGELOG.md
 include pyproject.toml
 recursive-include tuan_cli/resources *.md
 recursive-include tuan_cli/resources *.yaml *.yml *.json
+# §11 打包红线: Android 端免责书随 sdist 分发 (APK 侧再走 SHA256 校验)。
+include Tuan-App/legal/ANDROID8_DISCLAIMER.md

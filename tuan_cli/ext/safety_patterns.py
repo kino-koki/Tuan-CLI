@@ -45,6 +45,20 @@ _CRITICAL_PATTERNS = [
      "redirect to raw disk (重定向写入磁盘设备, 含 NVMe/virtio/IDE)"),
     (r"\blvremove\b|\bzfs\s+destroy\b|\bparted\b[^\n]*\brm\b",
      "volume/partition destroy (销毁卷或分区)"),
+    (r"\bsgdisk\b[^\n]*\s-(?:Z|z|o)\b",
+     "sgdisk zap (清空分区表)"),
+    (r"\bvssadmin\b[^\n]*\bdelete\b[^\n]*\bshadows\b",
+     "vssadmin delete shadows (删除卷影副本, 破坏勒索恢复能力)"),
+    (r"\bmv\b[^\n]*\s/(?:etc|usr|var|bin|sbin|lib|lib64|boot|root|dev|proc|sys|opt|home|srv|run)(?:/|\s|$)",
+     "move system directory (移动系统目录, 可能导致系统不可用)"),
+    (r"\buserdel\b[^\n]*\s+root\b",
+     "userdel root (删除 root 账户及其文件)"),
+    (r"\b(?:cat|tac|less|more|head|tail|nl|bat|type)\b[^\n]*"
+     r"(?:~?/\.ssh/(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/\s]+_key)(?!\.pub\b)|"
+     r"/root/\.ssh/|/etc/shadow\b)",
+     "read private key (读取 SSH 私钥或系统凭据)"),
+    (r"\bchmod\b(?=[^\n]*\-[Rr]\b)(?=[^\n]*\b7777?\b)(?=[^\n]*\s/(?:\s|$))",
+     "chmod -R 777 / (递归开放系统目录全部权限)"),
     # ---- 系统关机 / 重启 ----
     (r"\b(shutdown|halt|poweroff|reboot)\b", "system shutdown/reboot (系统关机或重启)"),
     (r"\b(?:init|telinit)\s+[06]\b", "init/telinit 0/6 (系统关机或重启)"),
@@ -306,6 +320,9 @@ _CRITICAL_PATTERNS = [
 _HIGH_PATTERNS = [
     # 注: rm 递归强删已升级为 critical (见 has_recursive_rm), 不再列在 high。
     (r"chmod\b[^\n]*\b777\b", "chmod 777 (全权限修改)"),
+    (r"\bkill\s+-9\b", "kill -9 (强制终止进程)"),
+    (r"\bpkill\s+", "pkill (按名称终止进程)"),
+    (r"\bkillall\s+", "killall (终止全部同名进程)"),
     (r"git\s+reset\s+--hard", "git reset --hard (硬重置)"),
     (r"ALTER\s+TABLE\s+.*\s+DROP", "alter table drop column (修改表结构删除列)"),
     (r"UPDATE\s+.*\s+SET.*WHERE.*=", "bulk update (批量更新数据)"),
@@ -369,8 +386,6 @@ _HIGH_PATTERNS = [
     (r"\bgit\s+reflog\s+expire\b[^\n]*--all\b", "git reflog expire --all (清空引用日志)"),
     # 移除不可变标志 (破坏防篡改保护)
     (r"\bchattr\s+-i\b", "chattr -i (移除不可变标志)"),
-    # 信号升级: 强制终止全部同名进程 / 强制杀指定
-    (r"\bpkill\s+-9\b", "pkill -9 (强制杀进程)"),
     # Windows 管理类 (破坏性但运维常见, 提升至 flag 确认而非硬拦截)
     (r"\bschtasks\b[^\n]*/delete\b", "schtasks delete (删除计划任务)"),
     (r"\bsc\b[^\n]*(?:stop|delete)\b", "sc stop/delete (停止或删除服务)"),
@@ -428,13 +443,10 @@ _MEDIUM_PATTERNS = [
     (r"sudo\s+", "超级用户权限"),
     (r">\s*/etc/", "写入系统配置"),
     (r"mv\s+.*/etc/", "移动系统文件"),
-    (r"kill\s+-9", "强制终止进程"),
     # 服务管理
     (r"systemctl\s+(stop|disable)\s+\S+", "systemctl stop/disable (停止/禁用服务)"),
     (r"service\s+\S+\s+stop", "service stop (停止服务)"),
     # 进程管理
-    (r"\bpkill\s+", "pkill (按名称杀进程)"),
-    (r"\bkillall\s+", "killall (杀全部同名进程)"),
     # 权限变更
     (r"chmod\s+000\s+", "chmod 000 (移除所有权限)"),
     (r"chown\s+root\s+", "chown root (变更 root 所有权)"),

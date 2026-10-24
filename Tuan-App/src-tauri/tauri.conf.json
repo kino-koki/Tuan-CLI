@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tuan-Chat",
+  "version": "0.1.0",
+  "identifier": "com.tuan.chat",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": "npm run sync:engine && npm run dev",
+    "beforeBuildCommand": "npm run build && npm run sync:engine"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Tuan-Chat",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 880,
+        "minHeight": 560,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "resources": {
+      "../engine/tuan_cli": "engine/tuan_cli",
+      "../engine/requirements.txt": "engine/requirements.txt"
+    }
+  }
+}

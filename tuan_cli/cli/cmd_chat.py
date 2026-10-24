@@ -32,7 +32,7 @@ from ..i18n import ensure_language, t
 from ..ui.plain_console import console
 from ._ui_singleton import ui
 from .cmd_config import _validate_config
-from .cmd_slash import list_slash_commands, slash_command_meta
+from .cmd_slash import list_slash_commands, slash_command_meta, slash_command_tiers
 
 
 # ---- app 链惰性加载: 构建内核 (~1s) 只在真正进入交互/需要内核时才付出 ----
@@ -355,7 +355,8 @@ def cmd_chat(args) -> int:
                      on_cancel=lambda: state["agent"].cancel() if state["agent"] else None,
                      on_command=command_in_tui,
                      commands=list_slash_commands(),
-                     command_meta=slash_command_meta())
+                     command_meta=slash_command_meta(),
+                     command_tiers=slash_command_tiers())
         # 立即接管 UI 与日志: 在 _boot 线程 (内核构建 → MCP 接入) 之前完成
         # logging 重定向, 否则 MCP 接入失败等 stdout 输出会在加载动画期间
         # 裸写终端污染全屏 (观感"被报错刷屏")。
@@ -842,14 +843,20 @@ def cmd_doctor(args) -> int:
 # ===================================================================== 模式覆盖辅助
 
 def _apply_mode_override(kernel, mode: Optional[str], yes: bool = False) -> str:
-    """应用模式覆盖 (不写用户配置, 避免污染后续启动)。"""
+    """应用模式覆盖 (不写用户配置, 避免污染后续启动)。
+
+    旧三档体系 (standard/yolo/plan) 向后兼容; 新五模式通过 switch_mode 走 TUI/Web。
+    """
     if yes:
         effective = "yolo"
     elif mode:
         effective = mode
     else:
-        effective = kernel.require("config").mode
-    if effective != kernel.require("config").mode:
+        # 读取原始配置值 (不经过五模式别名解析), 保持旧三档兼容
+        config = kernel.require("config")
+        mode_data = config.get("mode", {}) or {}
+        effective = str(mode_data.get("default") or "standard")
+    if effective != str(kernel.require("config").get("mode", {}).get("default", "standard")):
         config = kernel.require("config")
         config.data.setdefault("mode", {})["default"] = effective
     return effective

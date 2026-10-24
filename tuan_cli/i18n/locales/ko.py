@@ -100,7 +100,7 @@ TRANSLATIONS = {
     "tui.boot_error_title": "[시작 실패]",
     "tui.boot_error_hint": "Ctrl-Q 로 종료; ~/.tuan/config.yaml 과 로그를 확인한 후 다시 시도하세요.",
     "tui.readonly_hint": "메시지를 입력하여 시작, /help 로 전체 명령 보기.",
-    "tui.scroll_hint": "PgUp/PgDn 히스토리 스크롤 · Ctrl+↑/↓ 한 줄씩 · Home/End 맨 위/아래 · Ctrl+O 도구 상세",
+    "tui.scroll_hint": "휠 스크롤 · PgUp/PgDn 히스토리 · Ctrl+↑/↓ 한 줄 · Home/End 맨 위/아래 · Ctrl+O 도구",
     "tui.no_key_hint": "● {env} 가 설정되지 않음 — /provider 로 설정하세요.",
     "tui.booting_wait": "투안-CLI이 아직 시작 중입니다. 잠시 기다려 주세요…",
     "tui.busy_wait": "투안-CLI이 처리 중입니다. 잠시 기다려 주세요…",

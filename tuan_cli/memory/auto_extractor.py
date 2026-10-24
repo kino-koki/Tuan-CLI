@@ -215,3 +215,15 @@ def build_extractor(kernel: Any = None) -> Optional[AutoMemoryExtractor]:
         except Exception:  # noqa: BLE001
             enabled = True
     return AutoMemoryExtractor(store=store, enabled=enabled)
+
+
+def should_extract_for_mode(mode_id: str) -> bool:
+    """判断当前模式是否启用自动记忆提取。
+
+    按模式的 memory_write_allowed 能力决定:
+    - chat: 允许（但强制只写记忆沙箱，不写工作区文件）
+    - collaboration/gantong/lingma/boundless: 允许
+    - boundless on android: 禁用（平台策略）
+    """
+    from ..modes.policy import get_mode_policy
+    return get_mode_policy(mode_id).memory_write_allowed()

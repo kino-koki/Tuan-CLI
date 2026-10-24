@@ -18,9 +18,11 @@ from tuan_cli.config.loader import Config
 from tuan_cli.config.plugin import ConfigPlugin
 from tuan_cli.tools.external import ExternalToolsPlugin
 from tuan_cli.tools.shell import ShellPlugin, _pre_exec_guard, YOLO_REDLINE, is_redline
+from tuan_cli.tools import shell as shell_module
 from tuan_cli.tools.base import ToolContext
 from tuan_cli.core.whitelist import MultiStageConfirm, get_warning_level
 from tuan_cli.ext.safety_engine import SafetyEngine, is_benign_dev_command, is_hard_redline
+from tuan_cli.ext.security_gate import SecurityGate
 
 AVAIL = set(ExternalEngineManager().list_engines())
 HAVE_SAFETY = "safety" in AVAIL
@@ -103,6 +105,36 @@ def test_yolo_redline_still_blocked():
     reason = _pre_exec_guard(ctx, "git push --force origin main")
     assert reason is not None
     assert "红线" in reason or "已拦截" in reason
+
+
+def test_shell_security_gate_precedes_whitelist(monkeypatch):
+    """SecurityGate 必须在 shell 主路径白名单之前拦截伪装成良性的系统目录移动。"""
+    k = _kernel_with_safety()
+    monkeypatch.setattr(
+        shell_module,
+        "_get_whitelist_manager",
+        lambda: MagicMock(is_whitelisted=lambda command: True),
+    )
+    commands = [
+        "mv /etc /tmp/backup",
+        "userdel -r root",
+        "cat ~/.ssh/id_rsa",
+        "chmod -R 777 /",
+        "chmod 777 /var/www",
+    ]
+    for command in commands:
+        ctx = _build_ctx(k, yolo=True)
+        reason = _pre_exec_guard(ctx, command)
+        assert reason is not None, f"shell 安全闸门漏拦: {command}"
+        assert "已拦截" in reason, reason
+
+
+def test_security_gate_uses_shared_high_risk_rules_in_yolo():
+    for command in ("chmod 777 /var/www", "kill -9 1234", "pkill -f worker"):
+        verdict = SecurityGate(yolo=True).decide_shell(command)
+        assert verdict.needs_confirm(), command
+        assert verdict.severity == "high", command
+    assert SecurityGate(yolo=True).decide_shell("ls -la src/").allows()
 
 
 @pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")

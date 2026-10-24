@@ -84,10 +84,14 @@ def _validate_config(config) -> list[tuple]:
         err("API Key", f"未配置密钥 (期望环境变量 {env_name})")
 
     mode = config.get("mode.default", "standard")
-    if mode in ("standard", "yolo"):
+    from ..modes.registry import resolve_mode_id
+
+    try:
+        resolve_mode_id(str(mode))
         ok("mode.default", mode)
-    else:
-        err("mode.default", f"应为 standard/yolo, 当前: {mode!r}")
+    except ValueError:
+        err("mode.default", f"应为五模式 ID 或别名 (标准: gantong/lingma/chat/boundless/collaboration; "
+                            f"别名: standard/yolo/plan), 当前: {mode!r}")
 
     effort = config.get("agent.effort", "high")
     if effort in ("low", "medium", "high"):

@@ -11,10 +11,36 @@ dsh 的规则: patch 替换目标键的整个值, 而非深度合并其中的子
 
 from __future__ import annotations
 
+from importlib import resources
 from pathlib import Path
 from typing import Any, Dict
 
 APP_DIR_NAME = ".tuan"
+
+# 内置资源目录 (SOUL_FULL.md / SOUL_COMPACT.md / SOUL.md / skills 等):
+# 优先 importlib.resources (pip install 后走 wheel 包内 resources),
+# 回退到相对源码路径。注意: MultiplexedPath 不能直接 Path() 转换,
+# 必须取 .root / 迭代后取第一项。
+def _resolve_resources_dir() -> Path:
+    candidates: list[Path] = []
+    try:
+        res = resources.files("tuan_cli.resources")
+        # MultiplexedPath 可迭代出各子包 Traversable; 单一 Traversable
+        # (Path) 不可迭代。鸭子类型判断, 避免 import importlib.resources.abc。
+        if hasattr(res, "__iter__"):
+            for item in res:
+                candidates.append(Path(str(item)))
+        else:
+            candidates.append(Path(str(res)))
+    except Exception:
+        pass
+    candidates.append(Path(__file__).resolve().parent.parent / "resources")
+    for cand in candidates:
+        if cand.is_dir() and (cand / "SOUL.md").exists():
+            return cand
+    return candidates[0]
+
+_RESOURCES_DIR = _resolve_resources_dir()
 
 # 更名前 (命令 tuan → tuan) 的旧配置目录候选。首次启动时若新目录不存在而旧目录存在,
 # 自动迁移 (见 config/loader.py::migrate_legacy_home), 不静默丢弃用户配置。
@@ -371,11 +397,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "fetch_max_chars": 15000,          # web_fetch 抓取正文最大字符数 (token 节省)
         "fetch_timeout": 30,               # 网络请求超时 (秒)
     },
-    # 运行模式: standard (默认, 危险操作逐项确认) / yolo (全部自动批准, 风险自担)
+    # 运行模式（§3 五模式 + 历史三档别名兼容）:
+    #   current: 当前模式 ID（仅通过 switch_mode 写入，不在默认中预置）
+    #   default: 历史兼容字段，新默认 "chat"（最小权限）；旧值 standard/yolo/plan 全部保留为别名
+    #   locked: 锁定模式，除 boundless→降级 外一律拒绝切换
+    #   allow_switch: 允许的目标模式列表（空=不限制）
+    #   yolo_require_confirm: YOLO 模式下仍强制确认的工具列表
     "mode": {
-        "default": "standard",
-        # YOLO 模式下仍保留的"最后红线": 这些工具即便在 yolo 也强制确认
-        # (留空 = 全部自动批准; 一般只保留不可逆/对外暴露的操作)
+        "current": "chat",
+        "default": "chat",
+        "locked": False,
+        "allow_switch": [],
         "yolo_require_confirm": [],
     },
     "permissions": {

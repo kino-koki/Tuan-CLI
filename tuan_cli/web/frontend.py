@@ -1247,14 +1247,18 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   }
 
   /* ---- 模式 / 推理投入 chip (可点击切换) ---- */
-  var MODE_ORDER=['standard','plan','yolo'];
+  var MODE_ORDER=['chat','collaboration','lingma','gantong','boundless'];
+  var MODE_LABEL={chat:'闲聊',collaboration:'协同',lingma:'灵码',gantong:'感通',boundless:'无界'};
+  var MODE_ALIAS={standard:'collaboration',yolo:'boundless',plan:'chat'};
   var EFFORT_ORDER=['low','medium','high'];
-  var MODE_LABEL={standard:'standard',plan:'plan 只读',yolo:'yolo 放权'};
+  function resolveModeId(m){return MODE_ALIAS[m]||m;}
   function updateModeChip(mode){
     var el=document.getElementById('t-mode');if(!el)return;
-    el.innerHTML='<b>mode</b> '+esc(mode||'standard');
-    el.className='chip btn'+(mode==='plan'?' mode-plan':(mode==='yolo'?' mode-yolo':''));
-    el._mode=mode||'standard';
+    var id=resolveModeId(mode||'chat');
+    var lbl=MODE_LABEL[id]||id;
+    el.innerHTML='<b>mode</b> '+esc(lbl)+' ('+esc(id)+')';
+    el.className='chip btn'+(id==='chat'?' mode-chat':(id==='boundless'?' mode-yolo':(id==='collaboration'?' mode-plan':'')));
+    el._mode=id;
   }
   function updateEffortChip(effort){
     var el=document.getElementById('t-effort');if(!el)return;
@@ -1263,12 +1267,13 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   }
   function cycleMode(){
     var el=document.getElementById('t-mode');if(!el)return;
-    var i=MODE_ORDER.indexOf(el._mode||'standard');
+    var cur=resolveModeId(el._mode||'chat');
+    var i=MODE_ORDER.indexOf(cur);
     var next=MODE_ORDER[(i+1)%MODE_ORDER.length];
     fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({mode:next})}).then(function(r){return r.json();}).then(function(j){
-      if(j.ok){updateModeChip(j.mode);}else{updateModeChip(el._mode);}
-    }).catch(function(){updateModeChip(el._mode);});
+      if(j.ok){updateModeChip(j.mode);}else{updateModeChip(cur);}
+    }).catch(function(){updateModeChip(cur);});
   }
   function cycleEffort(){
     var el=document.getElementById('t-effort');if(!el)return;
@@ -2038,8 +2043,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
     if(cmd==='diff'){togglePanel(true);loadTab('diff');return true;}
     if(cmd==='plan'){
       var _mEl=document.getElementById('t-mode');
-      var cur=(_mEl&&_mEl._mode)||'standard';
-      var next=cur==='plan'?'standard':'plan';
+      var cur=(_mEl&&_mEl._mode)||'chat';
+      var next=cur==='chat'?'collaboration':'chat';
       fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({mode:next})}).then(function(r){return r.json();}).then(function(j){
         if(j.ok)updateModeChip(j.mode);

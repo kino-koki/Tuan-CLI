@@ -116,6 +116,8 @@ def test_agent_system_prompt_equals_stable_builder_output(tmp_path, tuan_home):
         project_doc_max_bytes=doc_bytes,
         long_memory_max_chars=long_mem,
         user_mode=agent.user_mode,
+        tier=agent._soul_tier,
+        config=config,
     )
     assert agent.messages[0]["role"] == "system"
     assert agent.messages[0]["content"] == expected, "system 提示不应含任何任务相关内容"

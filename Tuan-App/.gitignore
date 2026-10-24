@@ -1,0 +1,20 @@
+node_modules/
+# dist 为构建产物，不入库。
+# 但 tauri-build 在生成资源归档时会用 `git ls-files` 列举前端文件，
+# 若 dist 被完全忽略会导致前端资源无法嵌入 exe（表现为窗口白屏）。
+# 因此这里保留 dist 的"未跟踪但可列举"状态：negate 让 git 仍能看到文件。
+dist/*
+!dist/
+!dist/index.html
+!dist/assets/
+!dist/assets/**
+!dist/icons/
+!dist/icons/**
+!dist/data/
+!dist/data/**
+!dist/avatars/
+!dist/avatars/**
+src-tauri/target/
+src-tauri/gen/
+*.log
+.DS_Store

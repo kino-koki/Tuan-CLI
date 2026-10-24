@@ -100,7 +100,7 @@ TRANSLATIONS = {
     "tui.boot_error_title": "[起動失敗]",
     "tui.boot_error_hint": "Ctrl-Q で終了; ~/.tuan/config.yaml とログを確認してから再試行してください。",
     "tui.readonly_hint": "メッセージを入力して開始、/help で全コマンド表示。",
-    "tui.scroll_hint": "PgUp/PgDn で履歴スクロール · Ctrl+↑/↓ 1行ずつ · Home/End で先頭/末尾 · Ctrl+O ツール詳細",
+    "tui.scroll_hint": "ホイールでスクロール · PgUp/PgDn 履歴 · Ctrl+↑/↓ 1行 · Home/End 先頭/末尾 · Ctrl+O ツール",
     "tui.no_key_hint": "● {env} が未設定 — /provider で設定してください。",
     "tui.booting_wait": "青小団はまだ起動中です。お待ちください…",
     "tui.busy_wait": "青小団が処理中です。お待ちください…",

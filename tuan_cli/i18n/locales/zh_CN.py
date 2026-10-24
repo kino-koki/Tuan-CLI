@@ -87,7 +87,7 @@ TRANSLATIONS = {
     "tui.boot_error_title": "[启动失败]",
     "tui.boot_error_hint": "按 Ctrl-Q 退出; 可检查 ~/.tuan/config.yaml 与日志后重试。",
     "tui.readonly_hint": "输入消息开始对话，/help 查看全部命令。",
-    "tui.scroll_hint": "PgUp/PgDn 翻看历史 · Ctrl+↑/↓ 逐行 · Home/End 到顶/底 · Ctrl+O 展开工具详情",
+    "tui.scroll_hint": "滚轮翻看 · PgUp/PgDn 历史 · Ctrl+↑/↓ 逐行 · Home/End 到顶/底 · Ctrl+O 工具详情",
     "tui.no_key_hint": "● 未配置 {env} — /provider set {env} <KEY> 设置。",
     "tui.booting_wait": "青小团正在启动中，请稍候…",
     "tui.busy_wait": "青小团正在处理中，请稍候…",

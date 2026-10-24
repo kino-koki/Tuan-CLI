@@ -179,20 +179,18 @@ def cmd_help(args) -> int:
     topic = getattr(args, "topic", None)
 
     if topic == "quickstart":
-        # 显示快速上手指南
         _show_quickstart()
         return 0
     elif topic:
-        # 显示特定子命令帮助（使用 argparse 的默认行为）
+        # 显示特定子命令帮助：通过 parser 解析该子命令的 --help，避免 sys.argv 全局修改
+        from .parser import build_parser
+        parser = build_parser()
         try:
-            sys.argv = ["tuan", topic, "--help"]
-            from .parser import main
-            return main()
-        except SystemExit:
-            # argparse 的 exit 会被捕获
-            return 0
+            parser.parse_args([topic, "--help"])
+        except SystemExit as exc:
+            return int(exc.code) if isinstance(exc.code, int) else 0
+        return 2
     else:
-        # 显示总览（包含快速上手指南链接）
         _show_overview()
         return 0
 
@@ -205,7 +203,7 @@ def _show_overview() -> None:
 [bold]青小团 CLI (Tuan-CLI) 帮助总览[/bold]
 
 [bold]快速开始：[/bold]
-  • [cyan]tuan quickstart[/cyan]  - 查看快速上手指南（推荐新手）
+  • [cyan]tuan help quickstart[/cyan] - 查看快速上手指南（推荐新手）
   • [cyan]tuan setup[/cyan]        - 首次运行初始化向导
   • [cyan]tuan --version[/cyan]    - 查看当前版本
 
@@ -232,18 +230,36 @@ def _show_overview() -> None:
 def _show_quickstart() -> None:
     """显示快速上手指南（从 docs/QUICKSTART.md 读取）。"""
     from ..ui.plain_console import console
+    from pathlib import Path
     import os
 
-    quickstart_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "docs", "QUICKSTART.md")
+    # 多种路径解析策略，兼容源码树、pip 安装、冻结可执行文件等场景
+    candidates = []
+    # 1. 相对于当前模块文件（源码树: tuan_cli/cli/ -> 项目根 -> docs/）
+    candidates.append(Path(__file__).resolve().parent.parent.parent / "docs" / "QUICKSTART.md")
+    # 2. 相对于 CWD（用户从项目根运行）
+    candidates.append(Path.cwd() / "docs" / "QUICKSTART.md")
+    # 3. 相对于 package 安装位置
+    try:
+        import importlib.resources
+        pkg = importlib.resources.files("tuan_cli")
+        candidates.append(pkg.parent / "docs" / "QUICKSTART.md")
+    except Exception:
+        pass
 
-    if not os.path.exists(quickstart_path):
-        console.print(f"[red]快速上手指南未找到: {quickstart_path}[/red]")
-        console.print("[yellow]请确保 docs/QUICKSTART.md 文件存在。[/yellow]")
+    quickstart_path = None
+    for p in candidates:
+        if p.is_file():
+            quickstart_path = p
+            break
+
+    if quickstart_path is None:
+        console.print(f"[red]快速上手指南未找到[/red]")
+        console.print("[yellow]请确保 docs/QUICKSTART.md 文件存在于项目根目录。[/yellow]")
         return
 
     try:
-        with open(quickstart_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = quickstart_path.read_text(encoding="utf-8")
 
         # 简单的 Markdown 到 Console 的转换（只保留标题和粗体）
         lines = content.split("\n")

@@ -23,12 +23,12 @@ from ..config import home_dir
 
 MARKER_NAME = ".tuan_onboarding_done"
 
-# 快速上手卡片: 5 个最常用命令
+# 快速上手卡片: 从配置模型到开始使用
 QUICK_START = [
-    ("tuan chat", "直接进入交互式对话 (默认行为)"),
+    ("tuan setup", "配置模型供应商、模型和 API Key"),
+    ("tuan", "进入交互式对话"),
+    ('tuan run "任务"', "执行一次性任务"),
     ("/goal <目标>", "目标模式: 自动循环直到完成"),
-    ("! <shell 命令>", "在会话里直接跑 shell 命令"),
-    ("/init", "扫描当前仓库生成 TUAN.md 项目规则"),
     ("/help", "查看全部斜杠命令与快捷键"),
 ]
 
@@ -76,7 +76,7 @@ def _is_interactive() -> bool:
 def _print_welcome() -> None:
     print()
     print("  欢迎使用青小团 tuan!  🎯")
-    print("  一个会成长、微内核插件化的 Windows 原生 Agent CLI。")
+    print("  一个会成长、微内核插件化的跨平台 Agent CLI。")
     print("  我能读代码、跑测试、改文件、提交 git —— 边做边学, 越用越顺手。")
     print()
 
@@ -127,7 +127,7 @@ def run_onboarding(
 
     - skip=True: 只写完成标记, 不交互;
     - 非交互 (CI/管道): 只打印快速上手卡片并写标记, 不提问;
-    - 交互: 走完整欢迎/选模型/生成 TUAN.md/自动记忆/快速上手流程。
+    - 交互: 欢迎用户, 可直接启动模型配置向导, 并展示快速上手命令。
     """
     home = Path(home) if home else home_dir()
     workspace = Path(workspace) if workspace else Path.cwd()
@@ -148,45 +148,24 @@ def run_onboarding(
         return 0
 
     # ---- 交互式引导 ----
-    # 1. provider/model 选择 (轻量: 列出已知 provider, 让用户选或跳过)
-    print("  第一步: 选择默认模型供应商 (可稍后用 `tuan models set` 改)")
-    try:
-        from ..models.provider_catalog import PROVIDER_CATEGORIES
+    print("  第一步: 配置模型")
+    if _ask_yes_no("现在运行模型配置向导吗?", default=True):
+        from .cmd_setup import cmd_setup
 
-        names = list(PROVIDER_CATEGORIES)[:8]
-    except Exception:  # noqa: BLE001
-        names = []
-    if names:
-        for i, n in enumerate(names, 1):
-            print(f"    {i}. {n}")
-        print("    0. 跳过 (稍后自己配)")
-        try:
-            pick = input("  选择供应商编号 > ").strip()
-        except (EOFError, KeyboardInterrupt):
-            pick = "0"
-        if pick.isdigit() and 1 <= int(pick) <= len(names):
-            print(
-                f"  已记下偏好: {names[int(pick) - 1]} (用 `tuan models set <provider> <model>` 完成配置)"
-            )
-        else:
-            print("  已跳过供应商选择。")
+        setup_rc = cmd_setup(None)
+        if setup_rc != 0:
+            return setup_rc
     else:
-        print("  (未枚举到内置供应商, 跳过; 可用 `tuan models` 配置)")
+        print("  已跳过配置。稍后运行 `tuan setup` 配置模型和 API Key。")
 
-    # 2. 是否生成 TUAN.md (当前是 git 仓库时提议)
+    print("  自动记忆默认开启; 可在会话中使用 `/memory off` 关闭, `/memory on` 开启。")
     if _detect_git_repo(workspace):
-        if _ask_yes_no("当前是 git 仓库, 要现在生成 TUAN.md 项目规则吗?", default=True):
-            print("  好的, 启动后输入 /init 即可生成 (或现在运行 tuan init)。")
+        print("  项目规则: 在会话中运行 `/init` 扫描仓库并生成 TUAN.md。")
 
-    # 3. 自动记忆 (默认开)
-    mem = _ask_yes_no("启用自动记忆 (我会记住你的偏好并在下次会话沿用)?", default=True)
-    print(f"  自动记忆: {'已启用' if mem else '已关闭'} (可用 `tuan memory` 查看)")
-
-    # 4. 快速上手卡片
     _print_quick_start()
 
     mark_onboarding_done(home)
-    print('  引导完成! 输入 `tuan` 开始对话, 或 `tuan run "任务"` 跑一次性任务。')
+    print('  引导完成! 输入 `tuan` 开始对话, 或运行 `tuan run "任务"`。')
     return 0
 
 

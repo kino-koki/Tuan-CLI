@@ -71,12 +71,24 @@ try:
     from prompt_toolkit.output.base import DummyOutput
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.keys import Keys
     _HAS_PT = True
 except Exception:
     # prompt_toolkit 是可选依赖, 缺失时本模块仍必须可导入 —— cli/cmd_chat.py 会
     # import 本文件取配色/常量, 若在 `class _SlashCompleter(Completer)` 处 NameError,
     # 整个 CLI 会连带炸掉。这里补占位符号: 类定义能通过, 真正用到补全时才报清晰错误。
     _HAS_PT = False
+
+
+# prompt_toolkit 缺失时的占位符: 键位绑定只在 _HAS_PT 为真时构建, 这里只是让
+# 模块级名字 `Keys` 可解析。
+class _MissingKeys:
+    def __getattr__(self, _name: str) -> str:
+        return f"<missing:{_name}>"
+
+
+if not _HAS_PT:  # pragma: no cover - 仅在无 prompt_toolkit 环境
+    Keys = _MissingKeys()      # type: ignore[assignment]
 
     class Completer:  # type: ignore[no-redef]
         """占位基类: prompt_toolkit 缺失时仅为让下面的类定义通过。"""
@@ -100,6 +112,7 @@ _DIM = "#888888"
 _MUTED = "#6B6B6B"
 _BORDER = "#5A5A5A"
 _ACCENT = "#5BC0BE"
+_BG_PANEL = "#1E2836"     # 面板背景色 (补全菜单用，与 _BORDER 同色系)
 _SUCCESS = "#4EC87E"
 _WARNING = "#E8A838"
 _ERROR = "#E85454"
@@ -164,6 +177,14 @@ _STYLE_DICT = {
     # 与「涨跌红绿」的行情配色无关, 这里按开发者肌肉记忆走。
     "diffadd": "#7ED492",             # + 行: 绿
     "diffdel": "#F08A8A",             # - 行: 红
+    # ---- 补全菜单 ("/" 命令提示)：对齐主色板 ----
+    "completion-menu":                         f"bg:{_BG_PANEL} {_TEXT}",
+    "completion-menu.completion":              f"bg:{_BG_PANEL} {_TEXT}",
+    "completion-menu.completion.current":      f"bg:{_PRIMARY} {_TEXT}",
+    "completion-menu.meta.completion":         f"bg:{_BG_PANEL} {_DIM}",
+    "completion-menu.meta.completion.current": f"bg:{_PRIMARY} {_MUTED}",
+    "completion-menu.multi-column-meta":       f"bg:{_BG_PANEL} {_DIM}",
+    "completion-menu.border":                  _BORDER,
 }
 STYLE = Style.from_dict(_STYLE_DICT) if _HAS_PT else None
 
@@ -181,6 +202,16 @@ def _disp_width(text: str) -> int:
         return sum(get_cwidth(ch) for ch in text)
     except Exception:
         return len(text)
+
+
+def _env_flag(name: str) -> bool:
+    """读布尔环境变量: 1/true/yes/on 为真, 0/false/no/off/空 为假。
+
+    用于给 TUI 行为开关提供"不改代码就能关"的逃生通道 (如 TUAN_NO_MOUSE
+    关闭滚轮上报以恢复鼠标选中文本)。
+    """
+    v = str(os.environ.get(name, "") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
 
 
 def _split_flat_lines(paste: List[Tuple[str, str]]) -> List[List[Tuple[str, str]]]:
@@ -289,13 +320,25 @@ class _SlashCompleter(Completer):
 
     只对以 `/` 或 `+/` 开头的输入弹出命令提示; 选择补全项时会把 `+` 前缀
     一并写回, 使 `+/help` 这类命令能直接被回车执行。
+
+    传入 ``tiers`` (命令 -> "core"|"expert"|"hidden") 后: 空输入 `/` 时
+    仅返回核心层命令 (≤ 20 项, 防止 55 项菜单压垮屏幕); 输入具体前缀时
+    保留全量补全 (专家层命令按前缀可达)。
     """
 
-    def __init__(self, words: List[str], metas: Optional[Dict[str, str]] = None) -> None:
+    def __init__(
+        self,
+        words: List[str],
+        metas: Optional[Dict[str, str]] = None,
+        tiers: Optional[Dict[str, str]] = None,
+    ) -> None:
         self._words = list(words)
         self._metas = dict(metas or {})
+        self._tiers: Dict[str, str] = dict(tiers or {})
 
     def get_completions(self, document, complete_event):  # noqa: C901
+        from ..cli.slash_tier import slash_command_tier
+
         text = document.text_before_cursor
         # 仅在命令前缀下补全: `/xxx` 或 `+/xxx`
         if text.startswith("+/"):
@@ -310,6 +353,18 @@ class _SlashCompleter(Completer):
         for w in self._words:
             name = w[1:]  # 去掉前导 "/"
             if rest and not name.startswith(rest):
+                continue
+            # 有 tiers 配置时使用传入的 tiers; 无 tiers 时用模块级 slash_command_tier
+            if self._tiers:
+                tier = self._tiers.get("/" + name, "core")
+            else:
+                from ..cli.slash_tier import slash_command_tier
+                tier = slash_command_tier("/" + name)
+            # 隐藏层命令永不进入补全菜单 (仅 /help 全量列出)
+            if tier == "hidden":
+                continue
+            # 空输入时仅补全核心层 (有 tiers 配置且未输入前缀才启用过滤)
+            if not rest and self._tiers and tier != "core":
                 continue
             full = plus + w
             yield Completion(
@@ -340,6 +395,7 @@ class QxtTUI:
         on_command: Optional[Callable[[str], Optional[str]]] = None,
         commands: Optional[List[str]] = None,
         command_meta: Optional[Dict[str, str]] = None,
+        command_tiers: Optional[Dict[str, str]] = None,
     ) -> None:
         self.on_submit = on_submit
         self.on_cancel = on_cancel
@@ -349,6 +405,9 @@ class QxtTUI:
         # Kimi 同款 `+/命令` 补全词表: 传入则启用补全, 缺省 (兼容旧调用) 则不启用。
         self._commands: List[str] = list(commands or [])
         self._command_meta: Dict[str, str] = dict(command_meta or {})
+        # 命令层级表 (命令 -> "core"|"expert"|"hidden"): 空前缀时仅展开核心层,
+        # 前缀匹配时全量展开 (专家层命令按首字母可达)。缺省 None 保持旧行为。
+        self._command_tiers: Dict[str, str] = dict(command_tiers or {})
         # "/" 命令面板状态 (Claude Code 同款: 输入 / 自动高亮列出全部命令,
         # ↑↓ 选择, Enter/Tab 确认填入, Esc 关闭)。取代 prompt_toolkit 自带
         # 补全菜单 —— 后者在输入框位于屏幕底部时下拉菜单无处渲染 (被底栏/
@@ -602,24 +661,31 @@ class QxtTUI:
         except Exception:
             pass
 
+        # 鼠标滚轮回看历史 (Claude Code 同款)。开启后终端把滚轮上报为转义序列,
+        # 代价是**鼠标左键拖选复制被终端截走**(选不中文字)。可用
+        # TUAN_NO_MOUSE=1 临时关掉滚轮、恢复文本选择。
+        mouse = not _env_flag("TUAN_NO_MOUSE")
+
         try:
             self._app = Application(
                 layout=layout,
                 key_bindings=self._build_keys(),
                 style=STYLE,
                 full_screen=True,
-                mouse_support=False,
+                mouse_support=mouse,
                 output=output,
             )
         except Exception as exc:
             if type(exc).__name__ != "NoConsoleScreenBufferError":
                 raise
+            # DummyOutput 不上报鼠标, 但键位绑定仍保留滚轮处理 ——
+            # 部分终端 (conpty 的部分模式) 由应用层注入 MouseEvent。
             self._app = Application(
                 layout=layout,
                 key_bindings=self._build_keys(),
                 style=STYLE,
                 full_screen=True,
-                mouse_support=False,
+                mouse_support=mouse,
                 output=DummyOutput(),
             )
 
@@ -698,6 +764,37 @@ class QxtTUI:
         def _(event):
             self._scroll_to_bottom()
             event.app.invalidate()
+
+        # ---- 鼠标滚轮: 回看对话历史 (Claude Code 同款) ----
+        # prompt_toolkit 把鼠标事件送进按键系统, 分两条通道 (见
+        # prompt_toolkit/key_binding/bindings/mouse.py):
+        #   - `Keys.Vt100MouseEvent`: VT100/xterm/SGR 序列 (终端上报
+        #     `ESC [ < 64 ; col ; row M` 等), conpty 走这条;
+        #   - `Keys.WindowsMouseEvent`: Windows 原生控制台鼠标事件。
+        # 两条都要接, 且**只能靠 event.data 的 event_type 区分滚轮与点击** ——
+        # 滚轮不是独立键名 (`<scroll-up>` 在本版本 pt 里解析不出来)。
+        # Shift+方向键也一并接: 部分终端把滚轮降级报成它。
+        @kb.add(Keys.Vt100MouseEvent)
+        @kb.add(Keys.WindowsMouseEvent)
+        def _(event):
+            data = getattr(event, "data", None)
+            etype = getattr(data, "event_type", None)
+            name = getattr(etype, "name", "") or str(etype)
+            if name == "SCROLL_UP":
+                self._mouse_wheel(event, up=True)
+                return
+            if name == "SCROLL_DOWN":
+                self._mouse_wheel(event, up=False)
+                return
+            # 点击/移动: 不消费, 交回默认 (终端自己做选中复制)
+
+        @kb.add("s-up")
+        def _(event):
+            self._mouse_wheel(event, up=True)
+
+        @kb.add("s-down")
+        def _(event):
+            self._mouse_wheel(event, up=False)
 
         # ---- "/" 命令面板: Tab 确认填入, ↑↓ 游走菜单 (关闭时回退默认行为), Esc 关闭 ----
         @kb.add("c-i")  # Tab
@@ -1210,6 +1307,51 @@ class QxtTUI:
         except Exception:
             pass
 
+    # ============================================================ 鼠标滚轮
+
+    #: 一次滚轮 notch 翻多少终端行。终端无法上报 notch 数量, 统一按 3 行 ——
+    #: 与浏览器/Claude Code 的手感接近, 又不至于一格就翻出屏幕。
+    _MOUSE_WHEEL_LINES = 3
+
+    def _wheel_owner(self) -> bool:
+        """当前是否有交互卡片占用"上下"语义 —— 有则滚轮让位给卡片。
+
+        模型提问 (ask_user)、首次信任确认、"/" 命令面板这三种状态下,
+        ↑↓ 是"在选项之间移动", 不是"翻历史"。若滚轮此时也拿去翻页,
+        用户会看到选项列表却在滚动一个静止的画面 —— 表现为"能看不能选"。
+        """
+        return bool(self._ask_pending or self._trust_pending
+                    or self._confirm_pending
+                    or (self._slash_open and self._slash_items))
+
+    def _mouse_wheel(self, event, up: bool) -> None:
+        """滚轮事件入口: 按终端行上下平移对话区视口。
+
+        `up=True` 向历史方向 (内容下移), `up=False` 回到最新。
+        """
+        if self._wheel_owner():
+            # 卡片态: 滚轮与 ↑↓ 键同义 —— 在选项之间移动高亮。
+            delta = -1 if up else 1
+            if self._ask_pending:
+                self._ask_move(delta)
+            elif self._trust_pending:
+                # 信任卡是两项 radiolist (0=信任 / 1=只读); 与 ↑↓ 键行为一致:
+                # up 直接回 0、down 直接到 1 (而不是循环切换)。
+                self._trust_index = 0 if up else 1
+            elif self._slash_open and self._slash_items:
+                self._slash_move(delta)
+            try:
+                event.app.invalidate()
+            except Exception:  # noqa: BLE001 - 无 app 时忽略
+                pass
+            return
+        # 一格滚轮 = _MOUSE_WHEEL_LINES 终端行, 快速滑动才能翻整屏
+        self._scroll_log(-self._MOUSE_WHEEL_LINES if up else self._MOUSE_WHEEL_LINES)
+        try:
+            event.app.invalidate()
+        except Exception:  # noqa: BLE001 - 无 app 时忽略
+            pass
+
     # ============================================================ "/" 命令面板
 
     def _term_width(self) -> int:
@@ -1273,7 +1415,14 @@ class QxtTUI:
             self._close_slash_menu()
             return
         low = typed.lower()
-        items = [c for c in self._commands if c[1:].lower().startswith(low)]
+        # 有空输入 (仅 "/" 或 "+/") 且配置了层级: 仅展开核心层 (≤ 20 项)
+        # 输入具体前缀时保留全量匹配 (专家层命令按首字母可达)
+        from ..cli.slash_tier import slash_command_tier as _tier_fn
+        if not low:
+            items = [c for c in self._commands if _tier_fn(c) == "core"]
+        else:
+            items = [c for c in self._commands
+                     if c[1:].lower().startswith(low) and _tier_fn(c) != "hidden"]
         if not items:
             self._close_slash_menu()
             return
@@ -2320,6 +2469,8 @@ class QxtTUI:
                         key_bindings=self._app.key_bindings,
                         style=STYLE,
                         full_screen=False,
+                        # 内联模式是崩溃兜底路径, 鼠标上报在这里最可能加剧
+                        # 不稳定 —— 保守关掉, 滚轮不可用但键盘 PgUp/PgDn 照常。
                         mouse_support=False,
                     )
                     self._app.run()
