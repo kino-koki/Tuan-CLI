@@ -38,6 +38,7 @@
 | 🔧 **微内核** | `@plugin` 一行声明，服务注册表、append-only 事件总线、hook 中间件 |
 | 🗂️ **记忆** | SQLite FTS5 + 会话事件流；三层记忆、`/undo`、checkpoint、replay、Trajectory 导出 |
 | 🧩 **生态** | MCP + ACP + **Claude Code / Hermes Agent 互操作**：技能 / 命名 Agent / 记忆 / SOUL / MCP 配置三方双向搬运（`tuan ecosystem`），彼此开箱即用 |
+| 🤝 **Agent-of-Agents** | 一条 WebSocket 统管本机所有编码 Agent：Claude Code / Codex / Hermes / DeepSeek Harness / Kimi Code，按 `mode` + 健康度自动择优路由；运行态"委派不搬家" |
 | 🌍 **十种语言** | 默认简体中文，界面随机给你换语种，接口也本地化 |
 | 🐍 **纯 Python** | 大面积 `.py` 实现，MIT，想怎么啃怎么啃 |
 
@@ -93,6 +94,25 @@ tuan ecosystem link                        # 反向挂载：让 Claude Code/Herm
 - **会话内自动生效**：Claude Code 装过的技能、Hermes 蒸馏出的技能，青小团直接可用（`~/.claude/skills`、`~/.hermes/skills` 已进搜索目录）；`tuan ecosystem serve` 把 tuan 的能力以 MCP server 暴露，Claude Code / Hermes 会话里直接多出 `tuan_*` 工具（记忆检索/写入、技能清单/读取、headless 任务派发）。
 - **委派不搬家**：`claude_code_run` / `hermes_run` 两个工具让青小团把任务交给对方完整环境执行（对方用自己的配置/记忆/技能/MCP）。
 - 完整文档：[`docs/ecosystem_bridge.md`](docs/ecosystem_bridge.md)（格式对照表 / 安全设计 / 目录结构）。
+
+---
+
+## Agent-of-Agents：一块面板统管本机所有 Agent
+
+上文的生态桥在本体之间搬运**资产**。而 Agent-of-Agents 调度层（`tuan_cli/web/dispatch_server.py` + `tuan_cli/agents/`）搬运的是**任务**——它把你的手机或浏览器变成一块遥控器，统管本机装好的每一个编码 Agent。
+
+- **五家适配器，一套协议。** Claude Code、Codex、Hermes、DeepSeek Harness、Kimi Code 各有一个轻量 `AgentAdapter`——一次 PATH 探测、一个 `build_command`、一套流式 `AgentEvent` 协议。不 fork、不复刻任何一个 Agent，青小团只驱动它们原生的 CLI。
+- **按 mode + 健康度自动择优。** 任务带一个 `mode`（`chat` / `collaboration` / `lingma` / `gantong` / `boundless`），路由器给每个**已安装且健康**的 Agent 按 `weights[mode]` 打分取最高；不健康的直接跳过；若一个可用的都没有，返回干净的 `NO_AGENT_AVAILABLE`，而不是静默兜底。
+- **显式指定，fail-closed。** 传 `agent: "codex"` 可钉死引擎；未知 id 返回 `AGENT_NOT_FOUND`、没装返回 `AGENT_UNHEALTHY`——和青小团其余部分一样，越权即拒绝。
+- **委派不搬家·运行态版。** 这是生态桥的运行态孪生：不是把技能*搬进*青小团，而是把*整桩任务*交给对方的原生环境执行——它的配置、记忆、技能、MCP 都原样不动。桥搬运资产，调度层跑活。
+- **流式 + 审批。** 每家 Agent 经同一条 WebSocket 流式回传 `text` / `tool_call` / `stderr` / `approval` 事件；高风险步骤弹出 `[TUAN_APPROVAL]` 闸门，手机端可允许或拒绝，远程操控也不掉安全底线。
+
+```bash
+python -m tuan_cli.web.dispatch_server --port 8788   # WebSocket 在 ws://HOST:8788/tuan/dispatch/v1
+# 手机 / WebUI → 选 mode → 青小团路由到本机最合适 Agent → 事件流回传
+```
+
+- 协议文档：[`docs/TUAN-DISPATCH-PROTOCOL.md`](docs/TUAN-DISPATCH-PROTOCOL.md)（事件 schema、hello 握手、审批流）。
 
 ---
 

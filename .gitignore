@@ -154,8 +154,14 @@ github token*
 # 个人待办/备忘笔记（根目录）。历史教训: `26.10.13午代办` 曾因未忽略而被提交,
 # 把一枚真实的 GitHub PAT 推到了远端仓库 —— 从此任何 *代办* 一律不入库。
 *代办*
-# .build_tmp/ 是打包/构建中间产物 (dist-assets-backup 等), 含本机路径, 不入库。
+# .build_tmp/ 是打包/构建中间产物 (dist-assets-backup 等) 与 Node 编译缓存
+# (NODE_COMPILE_CACHE 落点), 含本机路径, 不入库。
+# 注: 规则必须带点——旧规则只写了 /build_tmp/, 而实际目录是 .build_tmp/, 从未生效。
 /build_tmp/
+.build_tmp/
+# 匹配「.venv 后跟下划线或点 + 任意后缀」, 避免把项目正式 .venv/ 之外的临时环境提交进去。
+.venv.*/
+*.venv/
 # 一次性推送脚本: 面向单次全量迁移的临时工具, 不走版本控制。
 # 脚本内绝不硬编码凭据 (只读 GITHUB_TOKEN 环境变量), 但仍属个人操作留痕, 不入库。
 push_api.py
@@ -172,3 +178,24 @@ Tuan-Chat/
 # 项目约定: 根级 `_` 前缀文件均为本地临时/抓取产物（_cda_* / _tmp_* / _dsh_* / _redteam_* 等），
 # 不入库。历史上根目录堆积过 20+ 个此类脚本，此规则一劳永逸。已归档副本在 _repo_archive/。
 /_*
+
+# ===== Tuan-App 桌面/移动端工程（仅源码入库，忽略依赖/构建/运行产物） =====
+# Tuan-App 是独立的桌面/移动应用工程（Tauri + Android + 前端），体积 ~1.3GB 绝大多数是
+# node_modules / 引擎虚拟环境 / 打包产物 / 运行日志。仅保留应用源码入库，避免二进制与
+# 构建产物污染 MIT 主仓（与已忽略的 Tuan-Chat/ 同理）。
+Tuan-App/node_modules/
+Tuan-App/engine/
+Tuan-App/dist/
+Tuan-App/release/
+Tuan-App/.scratch/
+Tuan-App/avatars/
+Tuan-App/legal/
+Tuan-App/public/
+Tuan-App/**/build/
+Tuan-App/**/.gradle/
+Tuan-App/**/target/
+Tuan-App/*.log
+Tuan-App/*.tsbuildinfo
+Tuan-App/*.jpg
+Tuan-App/*.png
+Tuan-App/package-lock.json
