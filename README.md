@@ -43,6 +43,7 @@ The core idea: **the model does the thinking; the harness makes that thinking ru
 | 🔧 **Microkernel** | One-line `@plugin`, service registry, append-only event bus, hook middleware |
 | 🗂️ **Memory** | SQLite FTS5 + session event stream; three-tier memory, `/undo`, checkpoint, replay, Trajectory export |
 | 🧩 **Ecosystem** | MCP + ACP + **Claude Code / Hermes Agent interop**: skills / named agents / memory / SOUL / MCP configs move both ways (`tuan ecosystem`), out-of-the-box |
+| 🤝 **Agent-of-Agents** | One WebSocket, every local agent: Claude Code / Codex / Hermes / DeepSeek Harness / Kimi Code, auto-routed by `mode` + health; "delegate, don't migrate" at runtime |
 | 🌍 **Ten languages** | zh-CN default, native localization of the whole UI |
 | 🐍 **Pure Python** | Large `.py` codebase, MIT-licensed |
 
@@ -170,6 +171,25 @@ tuan ecosystem link                        # reverse-mount: Claude Code/Hermes c
 - **Automatic in-session**: skills Claude Code or Hermes already installed are usable in tuan immediately (`~/.claude/skills`, `~/.hermes/skills` are on the search path); `tuan ecosystem serve` exposes tuan as an MCP server so Claude Code / Hermes sessions gain `tuan_*` tools (memory search/write, skill list/read, headless task dispatch).
 - **Delegate, don't migrate**: `claude_code_run` / `hermes_run` tools hand tasks to the other agent's full native environment (their own config, memory, skills, MCP).
 - Full doc: [`docs/ecosystem_bridge.md`](docs/ecosystem_bridge.md) (format map / security design / layout).
+
+---
+
+## Agent-of-Agents: one pane to steer every local agent
+
+The ecosystem bridge above moves *assets* between agent communities. The Agent-of-Agents dispatch layer (`tuan_cli/web/dispatch_server.py` + `tuan_cli/agents/`) moves *tasks* — it turns your phone or browser into a single remote control for every coding agent installed on your machine.
+
+- **Five adapters, one protocol.** Claude Code, Codex, Hermes, DeepSeek Harness and Kimi Code each get a thin `AgentAdapter` — a PATH probe, a `build_command`, and a streaming `AgentEvent` protocol. No agent is forked or re-implemented; tuan just drives their native CLI.
+- **Auto-routing by mode + health.** A task carries a `mode` (`chat` / `collaboration` / `lingma` / `gantong` / `boundless`). The router scores every installed, *healthy* agent by `weights[mode]` and picks the best; unhealthy agents are skipped, and if none are available you get a clean `NO_AGENT_AVAILABLE` instead of a silent fallback.
+- **Explicit override, fail-closed.** Send `agent: "codex"` to pin an engine; unknown ids return `AGENT_NOT_FOUND`, missing installs return `AGENT_UNHEALTHY`. Same fail-closed posture as the rest of tuan.
+- **Delegate, don't migrate — live.** This is the runtime twin of the ecosystem bridge: instead of copying a skill *into* tuan, you hand the *whole task* to the other agent in its own native environment — its config, memory, skills and MCP stay put. The bridge imports assets; the dispatch layer runs work.
+- **Streaming + approval.** Every agent streams `text` / `tool_call` / `stderr` / `approval` events over one WebSocket. High-risk steps surface a `[TUAN_APPROVAL]` gate your phone can allow or deny, so remote control never drops the safety floor.
+
+```bash
+python -m tuan_cli.web.dispatch_server --port 8788   # WebSocket at ws://HOST:8788/tuan/dispatch/v1
+# phone / WebUI → pick mode → tuan routes to the best local agent → stream events back
+```
+
+- Protocol: [`docs/TUAN-DISPATCH-PROTOCOL.md`](docs/TUAN-DISPATCH-PROTOCOL.md) (event schema, hello handshake, approval flow).
 
 ---
 
