@@ -100,7 +100,7 @@ TRANSLATIONS = {
     "tui.boot_error_title": "[Échec du démarrage]",
     "tui.boot_error_hint": "Appuyez sur Ctrl-Q pour quitter; vérifiez ~/.tuan/config.yaml et les journaux, puis réessayez.",
     "tui.readonly_hint": "Saisissez un message pour commencer, /help pour toutes les commandes.",
-    "tui.scroll_hint": "PgUp/PgDn pour parcourir l'historique · Ctrl+↑/↓ ligne par ligne · Home/End début/fin · Ctrl+O détails",
+    "tui.scroll_hint": "Molette · PgUp/PgDn historique · Ctrl+↑/↓ ligne · Home/End début/fin · Ctrl+O outils",
     "tui.no_key_hint": "● Aucune clé API configurée pour {env} — exécutez /provider.",
     "tui.booting_wait": "Tuan-CLI démarre encore, patientez…",
     "tui.busy_wait": "Tuan-CLI travaille, patientez…",

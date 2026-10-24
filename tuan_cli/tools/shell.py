@@ -32,7 +32,7 @@ from ..core.background_shell import (
     is_bg_command, run_in_background, strip_bg_prefix, get_manager,
 )
 from ..ext.safety_engine import is_redline as _engine_is_redline
-from ..ext.safety_engine import is_hard_redline, is_benign_dev_command
+from ..ext.safety_engine import is_benign_dev_command
 from ..ext.ast_scan import scan_shell_command as _ast_scan_command
 from ..ext.script_isolation import check_script_isolation as _check_script_isolation
 from .base import Tool, ToolContext, string_prop
@@ -396,7 +396,20 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
     # ======== 1) 硬红线 (最高优先级, 永远拦截, 含 YOLO 模式) ========
     # 使用 is_hard_redline: 仅文件系统/OS 级毁灭操作永不自动执行;
     # SQL 破坏性操作 (DROP/DELETE/TRUNCATE) 不在此列, 走下方 step3/step4 的极端确认流程。
-    if is_hard_redline(command):
+    from ..ext.security_gate import SecurityGate
+    gate_verdict = SecurityGate(
+        yolo=bool(getattr(ctx, "yolo", False)),
+    ).decide_shell(command, confirmable_redline=True)
+    if gate_verdict.blocks():
+        if not any("致命红线" in reason for reason in gate_verdict.reasons):
+            ctx.safety_severity = gate_verdict.severity
+            _emitSecurityEvent("security.command.blocked", {
+                "reason": "; ".join(gate_verdict.reasons) or "security_gate_denied",
+                "severity": gate_verdict.severity,
+            })
+            return f"[已拦截] 安全闸门拒绝执行: {command}\n原因: " + "; ".join(
+                gate_verdict.reasons
+            )
         reasons: list[str] = []
         previews: list[str] = []
         svc = ctx.kernel.get("safety_check") if ctx.kernel else None
@@ -435,6 +448,7 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
         _emitSecurityEvent("security.command.blocked", {"reason": "hard_redline", "severity": "critical"})
         return (f"[已拦截] 命中致命操作红线, 任何模式下都不会自动执行: {command}\n"
                 + advice + "\n(当前无确认通道, 无法请求人工放行)")
+    gate_requires_confirmation = gate_verdict.needs_confirm()
 
     # ======== 2) 白名单检查 (Trae 模式: 用户同意后自动执行) ========
     # 白名单优先级永远低于黑名单: 上面已经检查过红线, 能到这里说明不在红线中
@@ -443,7 +457,8 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
     session_allowed = getattr(ctx, "allowed_tools", None)
     _session_match = bool(session_allowed is not None
                           and getattr(session_allowed, "allows_bash", lambda c: False)(command))
-    if wl_manager.is_whitelisted(command) or _session_match:
+    if not gate_requires_confirmation and (
+            wl_manager.is_whitelisted(command) or _session_match):
         # 白名单命中, 但仍需检查是否包含危险子模式 (防御纵深)
         warning_level = get_warning_level(command)
         if warning_level >= 5 and not getattr(ctx, "yolo", False):
@@ -511,13 +526,15 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
         # YOLO: 用户已预先授权自动批准 → 跳过 3 次确认直接放行。能走到这里说明
         # 该命令既非致命红线 (step1 已拦) 也非极高危 (warning>=5 已硬拦), 属于
         # yolo 授权范围内的"高风险但可控", 放行符合 yolo 语义。
-        if getattr(ctx, "yolo", False):
+        if getattr(ctx, "yolo", False) and not gate_requires_confirmation:
             log.info("YOLO 自动批准高风险命令 (warning=%d): %s", warning_level, command)
         elif ctx.confirm is not None:
             confirmer = _get_confirmer()
             confirmer.set_confirm_fn(ctx.confirm)
             if not confirmer.confirm(command, 3, "高风险操作"):
                 return f"[已拦截] 用户在第3次警告中拒绝执行: {command}"
+        elif gate_requires_confirmation:
+            return f"[已拦截] 高风险操作需人工确认, 当前无确认通道: {command}"
 
     # ======== 4) 继续原来的 safety_check 流程 ========
     if ctx.kernel is None:

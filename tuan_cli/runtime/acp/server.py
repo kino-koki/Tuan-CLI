@@ -37,6 +37,7 @@ from .codec import (
 from .protocol import (
     AcpConn,
     AUTHENTICATE,
+    ELICITATION_CREATE,
     INITIALIZE,
     LOGOUT,
     SESSION_CANCEL,
@@ -104,6 +105,16 @@ class AcpServer(AcpConn):
         self._pending: Dict[Any, "asyncio.Future[Dict[str, Any]]"] = {}
         self._writer: Any = None
 
+        # server 自身即AcpConn（反向 RPC 的对端是 client）。把它交给 bridge，
+        # 权限请求才能真正下发到 IDE 客户端 —— 否则 bridge 拿不到连接，
+        # confirm回调返回 None，whitelist 会fail-closed 拒绝所有高危命令。
+        binder = getattr(agent_provider, "bind_conn", None)
+        if callable(binder):
+            try:
+                binder(self, "")
+            except Exception:  # noqa: BLE001 - 绑定失败不阻断启动（权限将走拒绝）
+                pass
+
     # ============================================================ AcpConn 实现
     async def session_update(self, notification: Dict[str, Any]) -> None:
         """发送一条 ``session/update`` 通知。"""
@@ -132,6 +143,53 @@ class AcpServer(AcpConn):
             self._pending.pop(rid, None)
         if resp.get("error") is not None:
             raise RuntimeError(f"request_permission error: {resp['error']}")
+        return resp.get("result", {}) or {}
+
+    async def elicitation_create(
+        self, *, session_id: str, message: str, options: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """发起 ``elicitation/create`` 反向 RPC：向 IDE 用户提问（带选项）。
+
+        这是「模型给选项让用户选」在 IDE 侧的出口 —— 与 TUI 的
+        ``QxtTUI.ask_user`` 卡片是同一能力的两个宿主实现。缺了它, IDE 里
+        模型只能自问自答, 用户全程看不到问题, 只在最终回复里读到模型的"假设"。
+
+        ``options`` 形如 ``[{"value": "裸机 systemd", "label": "..."}]``；
+        为空时退化为自由文本输入（客户端按schema 渲染文本框）。
+        """
+        rid = self._next_req_id()
+        loop = asyncio.get_event_loop()
+        fut: "asyncio.Future[Dict[str, Any]]" = loop.create_future()
+        self._pending[rid] = fut
+        schema: Dict[str, Any] = (
+            {
+                "type": "object",
+                "properties": {
+                    "choice": {
+                        "type": "string",
+                        "title": message,
+                        "enum": [str(o.get("value", "")) for o in options],
+                    }
+                },
+                "required": ["choice"],
+            }
+            if options else
+            {"type": "object", "properties": {"answer": {"type": "string",
+                                                    "title": message}},
+             "required": ["answer"]}
+        )
+        await self._write(
+            encode_request(
+                rid, ELICITATION_CREATE,
+                {"sessionId": session_id, "message": message, "schema": schema},
+            )
+        )
+        try:
+            resp = await fut
+        finally:
+            self._pending.pop(rid, None)
+        if resp.get("error") is not None:
+            raise RuntimeError(f"elicitation_create error: {resp['error']}")
         return resp.get("result", {}) or {}
 
     # ============================================================ 主循环

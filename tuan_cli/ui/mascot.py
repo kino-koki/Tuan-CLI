@@ -47,6 +47,20 @@ BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇",
 _LOGO_LINE1 = "▐█▛█▛█▌"
 _LOGO_LINE2 = "▐█████▌"
 
+# VS Code variant: half-block/quadrant characters replaced with full blocks
+# to avoid 1px rendering gaps in VS Code integrated terminal (xterm.js).
+# CMD / PowerShell / Windows Terminal render the original correctly — this
+# variant is only used when we detect a VS Code terminal environment.
+_LOGO_LINE1_VSCODE = "███████"
+_LOGO_LINE2_VSCODE = "███████"
+
+
+def _in_vscode_terminal() -> bool:
+    """Detect if running in VS Code integrated terminal."""
+    import os
+    return bool(os.environ.get("VSCODE_PID")) or \
+           os.environ.get("TERM_PROGRAM", "").lower() == "vscode"
+
 # 状态图标 (单字符)
 _STATE_ICONS = {
     IDLE: "◦",
@@ -140,12 +154,19 @@ class Mascot:
         布局:
           ▐█▛█▛█▌  🌑  ← logo + spinner
           ▐█████▌  ●   ← logo + 状态图标
+
+        VS Code 终端中, 半块/象限字符 (▐▛▌) 会渲染出 1px 间隙;
+        此时自动切换为实心全块变体, 非 VS Code 环境保持原样。
         """
         f = self._frame if frame is None else (frame % len(MOON_FRAMES))
         spin = MOON_FRAMES[f]
         icon = _STATE_ICONS.get(self.state, "◦")
-        line1 = f"  {_LOGO_LINE1}  {spin}"
-        line2 = f"  {_LOGO_LINE2}  {icon}"
+        if _in_vscode_terminal():
+            line1 = f"  {_LOGO_LINE1_VSCODE}  {spin}"
+            line2 = f"  {_LOGO_LINE2_VSCODE}  {icon}"
+        else:
+            line1 = f"  {_LOGO_LINE1}  {spin}"
+            line2 = f"  {_LOGO_LINE2}  {icon}"
         return f"{line1}\n{line2}"
 
     # ---------------------------------------------------------- SVG 动态

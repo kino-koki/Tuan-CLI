@@ -21,7 +21,7 @@ from typing import Any, List, Tuple
 
 from .. import __version__
 
-PACKAGE_NAME = "tuan_cli"
+PACKAGE_NAME = "tuan-cli"
 PYPI_URL = f"https://pypi.org/pypi/{PACKAGE_NAME}/json"
 
 

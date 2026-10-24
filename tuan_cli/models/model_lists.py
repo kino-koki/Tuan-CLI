@@ -687,14 +687,32 @@ MODEL_LISTS: Dict[str, List[str]] = {
         "qwen/qwen-2-7b-instruct|paid",
     ],
     "qiniu": [
+        "kimi-k3-free|free",
+        "nemotron-3-ultra-550b-a55b-free|free",
+        "kimi-k3|paid",
         "deepseek-v4-pro|paid",
+        "deepseek-v4-flash|paid",
         "deepseek-v3|paid",
         "qwen3.7-max|paid",
         "qwen3.7-plus|paid",
+        "glm-5.3|paid",
         "glm-5.2|paid",
-        "moonshot-v1-128k|paid",
-        "doubao-2.0-pro-256k|paid",
+        "glm-5.1|paid",
+        "glm-5|paid",
         "minimax-m3|paid",
+        "minimax-m2.5|paid",
+        "kimi-k2.6|paid",
+        "kimi-k2.7-code|paid",
+        "doubao-seed-2.1-pro|paid",
+        "doubao-seed-2.1-turbo|paid",
+        "doubao-seed-2.0-pro|paid",
+        "doubao-seed-2.0-lite|paid",
+        "doubao-seed-2.0-mini|paid",
+        "doubao-seed-2.0-code|paid",
+        "step-3.7-flash|paid",
+        "moonshot-v1-128k|paid",
+        "qwen-plus|paid",
+        "glm-4-plus|paid",
     ],
     "siliconflow": [
         "deepseek-ai/DeepSeek-V4-Flash|paid",
@@ -1227,8 +1245,9 @@ MODEL_LISTS: Dict[str, List[str]] = {
         "nemotron-3.5-lightning-free|free",
         "muse-spark-1.3-contributor-free|free",
     ],
-    # 商汤日日新 SenseNova (中国主流, Token Plan, token.sensenova.cn/v1):
-    # flash-lite 系列积分/免费额度; 官方当前主打 6.8/6.7 两代 Flash-Lite + U1-Fast。
+    # 商汤日日新 SenseNova (免费层, Token Plan, token.sensenova.cn/v1):
+    # 2026-10 公测期完全免费 (Free 档 ¥0/月, 60k 积分/5h), 全部模型 |free;
+    # 付费 Lite/Pro 档位即将上线后需复查本清单。
     "sensenova": [
         "sensenova-6.8-flash-lite|free",
         "sensenova-6.7-flash-lite|free",
@@ -1335,6 +1354,19 @@ MODEL_LISTS: Dict[str, List[str]] = {
     "hunyuan": [
         "hy4-preview|paid",
         "hy3|paid",
+        "hunyuan-turbo|paid",
+        "hunyuan-pro|paid",
+        "hunyuan-lite|paid",
+        "hunyuan-standard|paid",
+        "hunyuan-t1|paid",
+        "hunyuan-a13b|paid",
+        "hunyuan-role-latest|paid",
+        "hunyuan-translation|paid",
+        "hunyuan-translation-lite|paid",
+        "hunyuan-t1-vision|paid",
+        "hunyuan-turbos-vision|paid",
+        "hunyuan-turbos-vision-video|paid",
+        "hunyuan-embedding|paid",
     ],
     "hunyuan-cloud": [
         "hunyuan-turbo|paid",
@@ -1452,5 +1484,116 @@ MODEL_LISTS: Dict[str, List[str]] = {
         "Meta-Llama-3.3-70B-Instruct|paid",
         "Llama-4-Scout-17B-16E-Instruct|paid",
         "DeepSeek-V3-0324|paid",
+    ],
+    # ──────────────────────────────────────────────────────────────
+    # 本地 / 自托管端点 (OpenAI 兼容, 模型由用户自行拉取/加载):
+    # 下列为各生态当下最常用模型标签, 仅作快速选择建议; 实际可用模型以本地服务为准。
+    # 本地推理无云端计费, 统一标注 |free。
+    # ──────────────────────────────────────────────────────────────
+    "ollama": [
+        "llama3.3|free",
+        "llama3.2|free",
+        "llama3.1|free",
+        "qwen2.5|free",
+        "qwen2.5-coder|free",
+        "deepseek-r1|free",
+        "deepseek-coder-v2|free",
+        "mistral|free",
+        "mistral-nemo|free",
+        "gemma2|free",
+        "phi4|free",
+        "codellama|free",
+        "command-r|free",
+    ],
+    "lmstudio": [
+        "llama-3.3-70b-instruct|free",
+        "qwen2.5-72b-instruct|free",
+        "deepseek-r1-distill-llama-70b|free",
+        "mistral-nemo-instruct-2407|free",
+        "gemma-2-9b-it|free",
+        "phi-4|free",
+        "llama-3.1-8b-instruct|free",
+    ],
+    "vllm": [
+        "meta-llama/Llama-3.3-70B-Instruct|free",
+        "Qwen/Qwen2.5-72B-Instruct|free",
+        "deepseek-ai/DeepSeek-V3|free",
+        "mistralai/Mistral-Large-Instruct|free",
+        "google/gemma-2-9b-it|free",
+    ],
+    "local": [
+        "llama3.3|free",
+        "qwen2.5|free",
+        "deepseek-r1|free",
+        "mistral|free",
+    ],
+    "llamacpp": [
+        "llama-3.3-70b-instruct|free",
+        "qwen2.5-7b-instruct|free",
+        "deepseek-r1-distill-qwen-7b|free",
+    ],
+    # ──────────────────────────────────────────────────────────────
+    # 其余云厂商 (真实可调用的官方模型 ID)。
+    # ──────────────────────────────────────────────────────────────
+    "snowflake": [
+        "llama3.3-70b|paid",
+        "llama3.1-405b|paid",
+        "llama3.1-70b|paid",
+        "llama3.1-8b|paid",
+        "mistral-large2|paid",
+        "mistral-7b|paid",
+        "mixtral-8x7b|paid",
+        "gemma-7b|paid",
+        "gemma-2-9b|paid",
+        "reka-core|paid",
+        "reka-flash|paid",
+        "jamba-instruct|paid",
+        "snowflake-arctic|paid",
+        "deepseek-r1|paid",
+        "deepseek-v3|paid",
+        "llama3.2-3b|paid",
+        "llama3.2-1b|paid",
+    ],
+    "watsonx": [
+        "ibm/granite-3-8b-instruct|paid",
+        "ibm/granite-3-3-8b-instruct|paid",
+        "ibm/granite-20b-code-instruct|paid",
+        "ibm/granite-13b-instruct-v2|paid",
+        "ibm/granite-4-8b-instruct|paid",
+        "meta-llama/llama-3-3-70b-instruct|paid",
+        "meta-llama/llama-3-1-70b-instruct|paid",
+        "meta-llama/llama-3-1-8b-instruct|paid",
+        "mistralai/mistral-large|paid",
+        "mistralai/mixtral-8x7b-instruct-v01|paid",
+        "google/gemma-2-9b-it|paid",
+        "google/gemma-2-27b-it|paid",
+        "snowflake/arctic|paid",
+    ],
+    "deepseek-azure": [
+        "DeepSeek-V3|paid",
+        "DeepSeek-R1|paid",
+        "DeepSeek-V3-0324|paid",
+    ],
+    "inference": [
+        "meta-llama/Llama-3.3-70B-Instruct|paid",
+        "meta-llama/Llama-3.1-405B-Instruct|paid",
+        "deepseek-ai/DeepSeek-V3|paid",
+        "deepseek-ai/DeepSeek-R1|paid",
+        "Qwen/Qwen2.5-72B-Instruct|paid",
+        "meta-llama/Llama-3.1-8B-Instruct|paid",
+        "mistralai/Mixtral-8x22B-Instruct-v0.1|paid",
+    ],
+    # 华为云 obs 端点: 注意 base_url 当前指向 OBS 对象存储 (非对话 API), 下列为盘古模型占位,
+    # 接入前需确认实际对话端点与模型名 (暂以 |paid 标注, 待 base_url 修正后复核)。
+    "huawei-obs": [
+        "pangu-large|paid",
+        "pangu-7b|paid",
+        "pangu-35b|paid",
+        "pangu-65b|paid",
+        "pangu-pro|paid",
+    ],
+    # Aimon: 主打 AI 护栏/质量观测 (guardrail/评估), 非标准对话 LLM; 下列占位待核实。
+    "aimon": [
+        "aimon-rail|free",
     ],
 }

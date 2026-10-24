@@ -1,10 +1,17 @@
-"""LLM API provider catalog — 57 out-of-box provider presets.
+"""LLM API provider catalog — 58 out-of-box provider presets.
 
 Each preset: base_url, model, api_key_env, desc, tier (1=free, 2=mid, 3=high),
 free_tier, region (cn/global), category, recommended_models, docs_url, key_hint.
 
-Categories: A. China mainstream (13) B. International (19) C. Aggregators (8)
-D. Cloud platforms (8) E. Free tier (2) F. Self-hosted (5) G. Extras (6)
+Categories (按 category 字段归组, 与登记分区 A-G 解耦):
+A. 中国主流 (13) B. 国际主流 (19) C. 聚合网关 (7) D. 云平台 (8)
+E. 免费层 (6: nvidia-nim / agnes-ai / groq / cloudflare / opencode-zen / sensenova)
+F. 本地部署 (5) G. 补充 (并入 B/C/D)
+
+"免费层" category = 完全免费 (注册即用、无需绑卡、可持续免费额度), 是
+`tuan models list-providers` / `tuan setup` "只看免费"筛选的核心名单。
+部分供应商虽登记在 A/B/C 区 (如 zhipu/siliconflow 的免费模型), 只要满足
+free_tier=True 同样进入免费筛选 —— 完整名单见 FREE_TIER_NAMES。
 """
 
 from __future__ import annotations
@@ -65,17 +72,18 @@ _A_CHINA_MAINSTREAM: List[ProviderPreset] = [
         recommended_models=["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash"],
         docs_url="https://platform.deepseek.com/api-docs",
     ),
-    # OpenCode Zen (AI SDK 网关, 需自填 API Key; 免费层实测仅 DeepSeek V4 免费档可用)
+    # OpenCode Zen (AI SDK 网关): 免费档 deepseek-v4-free 零费用, 注册即用无需绑卡,
+    # 实测免费层仅此模型可用, 故作为默认模型 (清单第一项)。归类于 E 区免费层。
     ProviderPreset(
         name="opencode-zen",
         base_url="https://opencode.ai/zen/v1",
         model="deepseek-v4-free",
         api_key_env="OPENCODE_ZEN_API_KEY",
-        desc="OpenCode Zen (AI SDK 网关, 需填写 API Key; 免费档仅 DeepSeek V4 可用)",
-        tier="cheap", free_tier=False, region="global", category="聚合网关",
+        desc="OpenCode Zen 免费档 (deepseek-v4-free 零费用; 注册即用, 无需绑卡; 其余模型付费)",
+        tier="free", free_tier=True, region="global", category="免费层",
         recommended_models=["deepseek-v4-free"],
         docs_url="https://opencode.ai/zen",
-        key_hint="OpenCode Zen API Key 形如 zen_xxxx (登录 opencode.ai/zen 控制台创建)",
+        key_hint="OpenCode Zen API Key 形如 zen_xxxx (登录 opencode.ai/zen 控制台免费创建)",
     ),
     ProviderPreset(
         name="qwen",
@@ -107,19 +115,22 @@ _A_CHINA_MAINSTREAM: List[ProviderPreset] = [
         recommended_models=["glm-4-flash", "glm-4-plus", "glm-4-long", "glm-4v-plus"],
         docs_url="https://open.bigmodel.cn/dev/howuse/introduction",
     ),
-    # 商汤日日新 SenseNova (Token Plan: sensenova.cn 官网注册, 积分制/免费额度;
+    # 商汤日日新 SenseNova (Token Plan: sensenova.cn 官网注册;
     # OpenAI 兼容端点 token.sensenova.cn/v1, 默认模型 sensenova-6.8-flash-lite。
     # 企业大装置端点 api.sensenova.cn/compatible-mode/v2 亦可, 模型名不同)
+    # 2026-10 核实: Token Plan 公测期"完全免费开放" — Free 档 ¥0/月,
+    # 60000 积分/5h 限流 (sensenova-6.8-flash-lite / sensenova-u1-fast),
+    # 无需绑卡, 注册即可获取 API Key。
     ProviderPreset(
         name="sensenova",
         base_url="https://token.sensenova.cn/v1",
         model="sensenova-6.8-flash-lite",
         api_key_env="SENSENOVA_API_KEY",
-        desc="商汤日日新 SenseNova Token Plan (sensenova-6.8-flash-lite 多模态, 积分/免费额度)",
-        tier="cheap", free_tier=False, region="cn", category="中国主流",
+        desc="商汤日日新 SenseNova Token Plan 公测期完全免费 (6.8-flash-lite 多模态, 60k 积分/5h, 无需绑卡)",
+        tier="free", free_tier=True, region="cn", category="免费层",
         recommended_models=["sensenova-6.8-flash-lite", "sensenova-6.7-flash-lite", "sensenova-u1-fast"],
-        docs_url="https://www.sensenova.cn",
-        key_hint="日日新 Token Plan API Key: sensenova.cn 登录后获取 (形如 sk-xxx, 积分制)",
+        docs_url="https://www.sensenova.cn/token-plan",
+        key_hint="日日新 Token Plan API Key: platform.sensenova.cn/console/keys 免费申请 (形如 sk-xxx)",
     ),
     ProviderPreset(
         name="doubao",
@@ -206,11 +217,12 @@ _A_CHINA_MAINSTREAM: List[ProviderPreset] = [
         base_url="https://tokenhub.tencentmaas.com/v1",
         model="hy4-preview",
         api_key_env="HUNYUAN_API_KEY",
-        desc="腾讯混元 Hunyuan (hy4-preview 770B/1M 上下文旗舰, hy3 高性价比)",
+        desc="腾讯混元 Hunyuan (hy4-preview 770B/1M 上下文旗舰; 首次开通送 100 万 token "
+             "免费资源包, 1 年有效, 国内直连)",
         tier="cheap", free_tier=False, region="cn", category="中国主流",
         recommended_models=["hy4-preview", "hy3"],
         docs_url="https://cloud.tencent.com/document/product/1729",
-        key_hint="腾讯云 TokenHub API Key (tokenhub.tencentmaas.com 控制台创建, 形如 tk-xxxx)",
+        key_hint="腾讯云 TokenHub API Key (tokenhub.tencentmaas.com 控制台创建, 形如 tk-xxxx; 新用户免费 100 万 token)",
     ),
 ]
 
@@ -304,10 +316,11 @@ _B_INTERNATIONAL: List[ProviderPreset] = [
         base_url="https://api.groq.com/openai/v1",
         model="llama-3.3-70b-versatile",
         api_key_env="GROQ_API_KEY",
-        desc="Groq (超快推理, Llama/Mixtral, 有免费额度)",
-        tier="free", free_tier=True, region="global", category="国际主流",
-        recommended_models=["llama-3.3-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it"],
+        desc="Groq (超快推理, 免费档速率受限但零费用: llama-3.3-70b 免费, 注册即用无需绑卡)",
+        tier="free", free_tier=True, region="global", category="免费层",
+        recommended_models=["llama-3.3-70b-versatile", "llama-3.3-70b-reasoning"],
         docs_url="https://console.groq.com/docs",
+        key_hint="Groq API Key 在 console.groq.com/keys 免费申请 (gsk_ 前缀)",
     ),
     ProviderPreset(
         name="fireworks",
@@ -391,10 +404,11 @@ _C_AGGREGATORS: List[ProviderPreset] = [
         base_url="https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
         model="@cf/meta/llama-3.3-70b-instruct-fp16",
         api_key_env="CLOUDFLARE_API_TOKEN",
-        desc="Cloudflare Workers AI (llama-4-scout 边缘推理, 有免费额度)",
-        tier="free", free_tier=True, region="global", category="聚合网关",
+        desc="Cloudflare Workers AI (免费档 10k 单元/月, 注册即用无需绑卡, Llama 系免费)",
+        tier="free", free_tier=True, region="global", category="免费层",
         recommended_models=["@cf/meta/llama-3.3-70b-instruct-fp16", "@cf/qwen/qwen1.5-14b-chat-awq"],
         docs_url="https://developers.cloudflare.com/workers-ai/",
+        key_hint="Cloudflare API Token (免费账户即可; 需把 {account_id} 替换为你的账号 ID)",
     ),
     ProviderPreset(
         name="github-models",
@@ -411,11 +425,13 @@ _C_AGGREGATORS: List[ProviderPreset] = [
         base_url="https://api.qnaigc.com/v1",
         model="deepseek-v3",
         api_key_env="QINIU_API_KEY",
-        desc="七牛云 AI (聚合 160+ 模型, 同时兼容 OpenAI / Anthropic 两套接口, 新用户送免费额度)",
+        desc="七牛云 AI 大模型推理 (聚合 DeepSeek/Qwen/GLM/Kimi/豆包等全系列, "
+             "新用户送 300 万全模型共享免费 token 资源包, 国内直连; "
+             "同时兼容 OpenAI / Anthropic 两套接口)",
         tier="cheap", free_tier=False, region="cn", category="聚合网关",
         recommended_models=["deepseek-v3", "qwen-plus", "glm-4-plus", "moonshot-v1-128k"],
         docs_url="https://developer.qiniu.com/aitokenapi",
-        key_hint="七牛云控制台 -> AI 推理服务 -> API Key",
+        key_hint="七牛云控制台 -> AI 推理服务 -> API Key (新用户免费 300 万 token 资源包)",
     ),
 ]
 
@@ -479,7 +495,8 @@ _D_CLOUD_PLATFORMS: List[ProviderPreset] = [
 # =====================================================================
 # E. 免费层 (2 家: nvidia-nim / agnes-ai)
 # 注: 真·免费 (不绑卡、有可持续免费额度) 的完整名单见 FREE_TIER_NAMES;
-#     groq/cerebras/github-models/cloudflare 等已在 B/C 分区定义, 此处不重复登记。
+#     groq/cloudflare (B/C 区, 免费层归类) / opencode-zen (A 区, 免费层归类) /
+#     sensenova (A 区, 免费层归类, 2026-10 公测期完全免费) 已在原分区定义, 此处不重复登记。
 #     Z.AI 已移出 (与 zhipu 同属智谱一家, 不该在免费名单占两个名额)。
 # =====================================================================
 
@@ -489,7 +506,7 @@ _E_FREE_TIER: List[ProviderPreset] = [
         base_url="https://integrate.api.nvidia.com/v1",
         model="nvidia/llama-3.3-70b-instruct",
         api_key_env="NVIDIA_API_KEY",
-        desc="NVIDIA NIM (GPU 优化推理, Llama/Mistral, 有免费额度)",
+        desc="NVIDIA NIM (GPU 优化推理, Llama/Mistral 免费档, 注册即用无需绑卡)",
         tier="free", free_tier=True, region="global", category="免费层",
         recommended_models=["nvidia/llama-3.3-70b-instruct", "nvidia/mistral-nemo-12b-instruct"],
         docs_url="https://docs.api.nvidia.com/nim-reference/",
@@ -526,7 +543,7 @@ _E_FREE_TIER: List[ProviderPreset] = [
 ]
 
 # =====================================================================
-# G. 补充供应商 (确保去重后总计 57 家唯一供应商)
+# G. 补充供应商 (确保去重后总计 58 家唯一供应商)
 # =====================================================================
 
 _G_EXTRA: List[ProviderPreset] = [

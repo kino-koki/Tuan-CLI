@@ -1,0 +1,829 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* === Theme tokens (ported visual design; self-authored) === */
+:root {
+  /* 暖米色浅色主题 */
+  --bg-tuan-main: #f0eee7;
+  --bg-tuan-sidebar: #eceae3;
+  --border-tuan: #e2ddd2;
+  --text-tuan-main: #373734;
+  --text-tuan-secondary: #6f6e69;
+  --bg-tuan-accent: #1f1e1c;
+  --bg-tuan-hover: #e8e4db;
+  --bg-tuan-btn-hover: #e2ddd2;
+  --bg-tuan-input: #ffffff;
+  /* 品牌橙的"柔和版"：供思考光点、扩散环等发光元素使用。
+     原先直接用实心 #d97757，在深色底上是刺眼的高亮亮点（过曝）。 */
+  --tuan-accent-soft: #c2603f;
+  /* 选中态描边：浅色下用近黑强调 */
+  --tuan-selected-border: #1f1e1c;
+  /* 立绘预览底色：立绘多为浅底图，用中性浅灰比纯白柔和，避免过曝 */
+  --tuan-art-bg: #f4f2ec;
+  /* 危险色：浅色下深红可读；深色下需提亮，否则在炭底上几乎发黑 */
+  --tuan-danger: #b9382c;
+  --tuan-danger-bg: #fdf0ee;
+  /* 链接/免费标签：浅色下蓝色与绿点 */
+  --tuan-link: #4a7fb5;
+  --tuan-ok: #2e7d4f;
+  --tuan-ok-bg: #e7f0e9;
+  /* 标题字色：暖米主题下略带褐调 */
+  --tuan-heading: #373734;
+  /* 卡片/浮层阴影分档，浅色下压低不透明度以免糊边 */
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.05);
+  --shadow-hover: 0 4px 14px rgba(0, 0, 0, 0.07);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.1);
+}
+
+.dark {
+  /* 暖炭深色主题 */
+  --bg-tuan-main: #26251f;
+  --bg-tuan-sidebar: #211f1b;
+  --border-tuan: #3d3a33;
+  --text-tuan-main: #ece9e2;
+  --text-tuan-secondary: #a8a39a;
+  --bg-tuan-accent: #ece9e2;
+  --bg-tuan-hover: #302e29;
+  --bg-tuan-btn-hover: #3a3731;
+  --bg-tuan-input: #302e29;
+  /* 深色下品牌橙提亮一档，保证在炭色背景上仍可辨认，
+     但刻意不拉到高亮区，避免与正文争抢注意力。 */
+  --tuan-accent-soft: #e0896a;
+  /* 深色下若仍用近黑描边，选中态会"消失"在背景里；改用浅色高对比描边 */
+  --tuan-selected-border: #ece9e2;
+  --tuan-art-bg: #211f1b;
+  --tuan-danger: #f08a7d;
+  --tuan-danger-bg: #3a211e;
+  --tuan-link: #7fb0e0;
+  --tuan-ok: #6fc793;
+  --tuan-ok-bg: #23301f;
+  --tuan-heading: #ece9e2;
+  /* 深色底上黑色阴影不可见，改用稍亮一档的暖色投影模拟层次 */
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-hover: 0 4px 14px rgba(0, 0, 0, 0.36);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.48);
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  width: 100%;
+}
+
+/* 主题切换动画：颜色变化平滑过渡 */
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: 0.2s;
+  transition-timing-function: ease-in-out;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+body {
+  font-family: 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-tuan-main);
+  color: var(--text-tuan-main);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 所有弹性子项允许收缩，避免固定宽卡片把窄屏撑出横向滚动 */
+* {
+  min-width: 0;
+}
+
+/* === Claude Code 风格按钮 === */
+@layer components {
+  /* 主操作：近黑实心、全圆角 */
+  .cc-btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full bg-[#1f1e1c] text-white transition-colors hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed dark:bg-[#34312E] dark:text-[#ece9e2] dark:hover:bg-[#3e3935];
+  }
+  /* 次操作：细边框幽灵、全圆角 */
+  .cc-btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full border border-tuan-border text-tuan-textSecondary transition-colors hover:bg-tuan-hover hover:text-tuan-text disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  /* 胶囊选择器（供应商/模型）：透明底、细边框、全圆角 */
+  .cc-pill {
+    @apply bg-transparent border border-tuan-border rounded-full px-2.5 py-1 text-[13px] outline-none text-tuan-textSecondary disabled:opacity-50;
+  }
+}
+
+/* Claude Code 风格菊花动画：SVG 圆环 + stroke-dasharray 缺口，匀速旋转。
+   - 旋转只用 transform: rotate()（GPU 合成，低端 WebView 不掉帧），
+     不再依赖 border: dashed + border-top-color: transparent 的浏览器差异。
+   - SVG circle 用 pathLength="100" 归一化，stroke-dasharray="75 25"
+     就是稳定的 3/4 弧 + 1/4 缺口，跟尺寸/线宽解耦。
+   - 颜色走 currentColor，容器 .cc-spinner 上给 var(--tuan-accent-soft)，
+     浅/深色主题下都已经是品牌橙（浅 #c2603f / 深 #e0896a），对比足够。
+   - 保留极淡的同色描边轨道（stroke-opacity: .25），缺口经过时不消失、
+     让"环"始终可辨。原版没有中心呼吸点，.cc-spinner-core 已删除。 */
+@keyframes cc-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.cc-spin {
+  animation: cc-spin 0.8s linear infinite;
+  flex: none;
+}
+
+.cc-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--tuan-accent-soft);
+  /* 让 16px 菊花在 13–14px 正文里视觉上贴着文字中线 */
+  vertical-align: -0.28em;
+  line-height: 0;
+}
+.cc-spinner-lg {
+  width: 20px;
+  height: 20px;
+}
+.cc-spinner svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform-origin: 50% 50%;
+  animation: cc-spin 0.8s linear infinite;
+  will-change: transform;
+}
+/* 底色轨道：几乎透明的同色环，让缺口经过时"圆环"轮廓不散 */
+.cc-spinner .cc-spinner-track {
+  fill: none;
+  stroke: currentColor;
+  stroke-opacity: 0.25;
+  stroke-width: 2;
+}
+/* 主弧：3/4 圈，缺口在旋转中始终可见 */
+.cc-spinner .cc-spinner-ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 75 25;
+}
+
+/* 流式生成光标：柔和呼吸闪烁 */
+@keyframes cc-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+.cc-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.12em;
+  border-radius: 2px;
+  background: var(--text-tuan-secondary);
+  animation: cc-cursor-blink 1.1s ease-in-out infinite;
+}
+
+/* === 官方星芒动画 ===
+   首页与已完成消息中的星芒保持静止；仅在流式生成时缓慢匀速旋转，
+   避免静态元素一直空转。 */
+@keyframes tuan-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+/* 流式生成：9 秒一周的慢速线性旋转，克制不抢眼 */
+.tuan-spin-thinking {
+  animation: tuan-spin 9s linear infinite;
+  will-change: transform;
+}
+/* 静息态：24 秒一周，几乎察觉不到——立绘/星芒在正常对话里保持"活着但安静" */
+.tuan-spin-slow {
+  animation: tuan-spin 24s linear infinite;
+  will-change: transform;
+}
+
+/* awa 立绘：轻微上下浮动 + 几乎不可察觉的呼吸缩放 */
+@keyframes awa-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-3px) scale(1.015); }
+}
+.awa-breathe {
+  animation: awa-breathe 4.2s ease-in-out infinite;
+  will-change: transform;
+}
+/* 思考态：呼吸加快 */
+.awa-breathe-thinking {
+  animation: awa-breathe 1.9s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* 思考中：柔和光点。低端机（如骁龙 660）box-shadow 动画会触发重绘，
+   改用 GPU 友好的 transform: scale + opacity 扩散环 */
+@keyframes think-glow-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.6); opacity: 0.55; }
+}
+.think-glow {
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  /* 透明度下调：原来 1.0 的实心橙点在深色底上属于过曝亮点 */
+  background: var(--tuan-accent-soft);
+  will-change: transform, opacity;
+  animation: think-glow-pulse 1.6s ease-in-out infinite;
+}
+
+/* 流式中助手头像外圈柔和光晕：伪元素扩散，避免 box-shadow 重绘。
+   用在 <span class="think-ring absolute inset-0 rounded-lg"> 上，
+   套在头像容器的外层（不裁剪），让环能扩散到边界之外。 */
+@keyframes think-ring-pulse {
+  0% { transform: scale(1); opacity: 0.45; }
+  70%, 100% { transform: scale(1.55); opacity: 0; }
+}
+.think-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.5px solid var(--tuan-accent-soft);
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: think-ring-pulse 1.6s ease-out infinite;
+}
+
+/* 形象入场：轻微上浮 + 淡入 */
+@keyframes mascot-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.mascot-in {
+  animation: mascot-in 0.5s ease-out both;
+}
+
+/* 侧栏下拉菜单展开：轻微上浮 + 淡入，与 mascot-in 风格一致 */
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.menu-pop {
+  animation: menu-in 0.18s ease-out both;
+  transform-origin: top left;
+}
+
+/* 菊花本身是暖橙，深色炭底上略欠对比 —— 轻微提亮 + 提饱和，
+   既能被看清，又不至于刺眼（过曝）。浅色模式不做任何处理。 */
+.dark .tuan-logo-img {
+  filter: brightness(1.16) saturate(1.05);
+}
+/* 深色模式下的立绘预览底色已由 --tuan-art-bg 处理；
+   这里防止透明立绘在深底上出现"贴纸白边"的观感。 */
+.tuan-art-img {
+  background: var(--tuan-art-bg);
+}
+
+button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+button:focus {
+  outline: none;
+}
+/* 键盘导航时才显示焦点环（避免鼠标点击时出现难看的外框）。
+   不写死 border-radius，让 outline 跟随元素原有圆角（输入卡 22px、按钮全圆角），
+   否则会出现"圆角方框套在圆角卡外"的视觉错位。
+   颜色改为半透明深色，降低刺眼感；阴影替代 outline 以支持任意圆角。 */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-tuan-main), 0 0 0 3.5px var(--tuan-accent-soft);
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* 兜底圆角：任何未显式指定圆角的原生控件都保持柔和圆角 */
+input,
+select,
+textarea {
+  border-radius: 10px;
+}
+option {
+  border-radius: 8px;
+}
+
+/* === 圆角统一 ===
+   原先各页圆角尺度不一（rounded-lg / xl / 2xl 混用），
+   视觉上像"有的卡片磨了边、有的没磨"。这里定一个三档规范供复用。 */
+.tuan-radius-card {
+  border-radius: 16px;
+}
+.tuan-radius-panel {
+  border-radius: 20px;
+}
+.tuan-radius-pop {
+  border-radius: 14px;
+}
+
+/* 全局兜底：只作用于"卡片型"容器（同时有边框且有底色的块），
+   且放在组件类之后加载，权重极低（0,0,1 + 属性选择器）。
+   刻意不覆盖 .rounded-* 显式声明，也避开 border-t 之类的分隔线。 */
+.tuan-card {
+  background: var(--bg-tuan-input);
+  border: 1px solid var(--border-tuan);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+}
+.dark .tuan-card {
+  box-shadow: var(--shadow-soft);
+}
+
+/* 输入卡（聊天框）：hover 时阴影加深；focus-within 时描边画在卡片内沿。
+   原先 focus-within 用 --bg-tuan-btn-hover（近黑）做边框色，视觉上像"黑色外框"
+   突兀且与卡片本身边框（--border-tuan 浅灰）落差过大。这里改用半透明深灰，
+   保持层次但不刺眼；圆角与基础态一致，不会出现焦点环错位。
+
+   焦点环错位修复：全局 :focus-visible 会给卡片内的 <textarea> 加一圈橘色
+   box-shadow 环，但 textarea 的 border-radius（10px，来自全局兜底）与卡片的
+   22px 不匹配，导致描边圆角内缩、与卡片边缘错位。这里让卡片内子控件的
+   :focus-visible 环失效，改由卡片自身的 :focus-within 在 22px 圆角上统一
+   表达焦点态。
+
+   焦点环外扩修复（第二轮）：原实现用外扩 box-shadow（0 0 0 3.5px）画描边，
+   描边会超出卡片边界一圈，视觉上像"外挂在卡片上的一圈线"。现改用 inset
+   box-shadow，从盒子内沿画起，描边永远不超出卡片边界，视觉宽度恒等于卡片
+   宽度。描边圆角用 border-radius: inherit 跟随卡片，卡片圆角若改，描边跟着改。 */
+.tuan-input-card {
+  position: relative;
+  background: var(--bg-tuan-input);
+  border: 1px solid var(--border-tuan);
+  border-radius: 22px;
+  box-shadow: var(--shadow-soft);
+  transition:
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+.tuan-input-card:hover {
+  box-shadow: var(--shadow-hover);
+}
+/* 卡片内子控件（textarea / select / button）不触发全局橘色焦点环，
+   避免 10px 圆角环套在 22px 圆角卡上产生视觉错位。 */
+.tuan-input-card :focus-visible,
+.tuan-input-card :focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+/* 焦点环：用伪元素 + inset box-shadow 实现，描边画在卡片内沿，
+   圆角用 border-radius: inherit 跟随卡片，描边永不超出卡片边界。 */
+.tuan-input-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 0 transparent;
+  transition: box-shadow 0.2s ease;
+  pointer-events: none;
+}
+.tuan-input-card:focus-within::after {
+  box-shadow: inset 0 0 0 2px var(--tuan-accent-soft);
+}
+
+/* 无障碍：系统开启"减弱动态效果"时停掉所有自转/呼吸/扩散动画 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Slim scrollbars matching the light/dark theme */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--bg-tuan-btn-hover);
+  border-radius: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: var(--bg-tuan-btn-hover);
+  border-radius: 8px;
+}
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 6px;
+}
+.sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--bg-tuan-btn-hover);
+}
+
+/* 竖屏（手机 / Android）适配 */
+@media (max-width: 820px) {
+  [class*="px-8"] {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+  .greeting-title {
+    font-size: 28px !important;
+    line-height: 1.3 !important;
+    white-space: normal !important;
+  }
+  /* 双列表单在窄屏改为单列，避免挤压溢出 */
+  .narrow-single-col {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* 触屏设备（手机）没有 hover，操作按钮常显 */
+@media (pointer: coarse) {
+  .conv-actions {
+    opacity: 1 !important;
+  }
+}
+
+/* ===== 助手回复 Markdown：对齐 Claude Code 的暖纸质感 ===== */
+.reply-card {
+  background: var(--bg-tuan-input);
+  border: 1px solid var(--border-tuan);
+  border-radius: 16px;
+  padding: 14px 18px;
+  box-shadow: var(--shadow-soft);
+}
+
+.tuan-md {
+  font-size: 15.5px;
+  line-height: 1.75;
+  color: var(--text-tuan-main);
+  word-break: break-word;
+}
+.tuan-md > *:first-child { margin-top: 0; }
+.tuan-md > *:last-child { margin-bottom: 0; }
+/* 流式期间也走完整 Markdown 解析（见 ReplyMarkdown 的 sanitizePartialMarkdown），
+   正文排版与定稿态一致，"流式 → 定稿"不再有视觉跳变。 */
+.tuan-md p { margin: 0.55em 0; }
+.tuan-md h1, .tuan-md h2, .tuan-md h3, .tuan-md h4 {
+  font-weight: 600;
+  color: var(--tuan-heading);
+  margin: 1.1em 0 0.5em;
+  line-height: 1.4;
+}
+.tuan-md h1 { font-size: 1.35em; }
+.tuan-md h2 { font-size: 1.2em; padding-bottom: 0.25em; border-bottom: 1px solid var(--border-tuan); }
+.tuan-md h3 { font-size: 1.08em; }
+.tuan-md ul, .tuan-md ol { margin: 0.55em 0; padding-left: 1.5em; }
+.tuan-md ul { list-style: disc; }
+.tuan-md ol { list-style: decimal; }
+.tuan-md li { margin: 0.28em 0; }
+.tuan-md blockquote {
+  margin: 0.7em 0;
+  padding: 0.35em 1em;
+  border-left: 3px solid var(--tuan-accent-soft);
+  color: var(--text-tuan-secondary);
+  background: var(--bg-tuan-hover);
+  border-radius: 0 10px 10px 0;
+}
+.tuan-md-link { color: var(--tuan-link); text-decoration: none; }
+.tuan-md-link:hover { text-decoration: underline; }
+
+/* 内联代码：pre 代码块内的 code 由 .tuan-codeblock code 控制，这里只命中行内 */
+.tuan-md code:not(pre code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--bg-tuan-hover);
+  color: var(--tuan-accent-soft);
+  padding: 2px 6px;
+  border-radius: 7px;
+}
+.tuan-md strong { font-weight: 600; color: var(--tuan-heading); }
+.tuan-md hr {
+  margin: 1em 0;
+  border: none;
+  border-top: 1px solid var(--border-tuan);
+}
+.tuan-md img {
+  max-width: 100%;
+  border-radius: 12px;
+  margin: 0.5em 0;
+}
+/* GFM 表格：横向可滚动，圆角边框，斑马纹 */
+.tuan-md table {
+  width: 100%;
+  margin: 0.8em 0;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  display: block;
+  overflow-x: auto;
+}
+.tuan-md th,
+.tuan-md td {
+  border: 1px solid var(--border-tuan);
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.tuan-md th {
+  background: var(--bg-tuan-hover);
+  font-weight: 600;
+  color: var(--tuan-heading);
+}
+.tuan-md tr:nth-child(even) td { background: var(--bg-tuan-hover); }
+
+.tuan-codeblock {
+  margin: 0.8em 0;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border-tuan);
+  background: #26251f;
+  color: #e9e5db;
+}
+.tuan-codeblock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: #1f1e1a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.tuan-codeblock-lang {
+  font-size: 12px;
+  color: #b9b2a4;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  text-transform: lowercase;
+}
+.tuan-codeblock-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #b9b2a4;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 7px;
+}
+.tuan-codeblock-copy:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.tuan-codeblock pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+.tuan-codeblock code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13.5px;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+/* ===================================================================
+   移动端 / 原生壳适配（26.10.23 代办 §8 的 W-4 / W-5 / W-6 / W-8）
+
+   约束：必须跑在 Android 8.0 的 Chrome 68 WebView 上，
+     - 只用 env() / calc() / min() / clamp()（68 均支持）；
+     - 不用 color-mix()、容器查询、:has()、100dvh；
+     - 每个 env() 都带 0px 兜底，桌面端（无安全区）行为完全不变。
+   =================================================================== */
+
+/* --- W-6 安全区变量：env() 带 0px 兜底，桌面端恒为 0 --- */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  /* W-8 软键盘偏移量，由 mobile.ts 的 attachKeyboardAvoidance 动态写入 */
+  --kb-offset: 0px;
+}
+
+/* 刘海 / 挖孔：标题栏与顶栏内容向下让出 */
+#root {
+  padding-top: var(--sat);
+}
+/* 左侧栏整列避开左安全区 */
+.tuan-app-shell,
+.app-shell {
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+  box-sizing: border-box;
+}
+/* 底部输入区：让出底部安全区（Home Indicator）+ 软键盘偏移 */
+.input-dock {
+  padding-bottom: calc(12px + var(--sab) + var(--kb-offset));
+}
+/* 全屏浮层（审批卡 / 设置页）：四边都留安全区 */
+.overlay-full {
+  padding: calc(var(--sat) + 16px) calc(var(--sar) + 16px)
+    calc(var(--sab) + 16px) calc(var(--sal) + 16px);
+  box-sizing: border-box;
+}
+
+/* --- W-4 模式 / 供应商 / 模型 切换行 ---
+   三个胶囊平铺在输入卡底部一行，窄屏（Windows 窄窗口 / 手机横屏）
+   会被挤成 40px 宽的一坨，文字全被 truncate 吃掉。
+   这里把它做成可换行的 flex 容器：宽屏一行铺开，窄屏自动折成两行，
+   且每个胶囊都有稳定的最小可点区域。 */
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.model-row .cc-pill {
+  /* 稳定最小宽度：比原来的 72px 稍宽，中文两字 + 边距不至于被截 */
+  min-width: 68px;
+  max-width: 100%;
+  padding: 6px 12px;
+  /* 触摸目标不小于 32px，手机端可点 */
+  min-height: 30px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.model-row .cc-pill:hover:not(:disabled) {
+  background: var(--bg-tuan-hover);
+}
+.model-row .cc-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* 运行模式胶囊：按风险分档着色，无界（L4）用危险色描边暗示高权限 */
+.mode-pill {
+  font-weight: 500;
+}
+.mode-pill[data-level="L0"] {
+  color: var(--text-tuan-secondary);
+}
+.mode-pill[data-level="L2"] {
+  border-color: var(--tuan-link);
+  color: var(--tuan-link);
+}
+.mode-pill[data-level="L3"] {
+  border-color: var(--tuan-accent-soft);
+  color: var(--tuan-accent-soft);
+}
+.mode-pill[data-level="L4"] {
+  border-color: var(--tuan-danger);
+  color: var(--tuan-danger);
+  background: var(--tuan-danger-bg);
+}
+/* 当前模式提示：一句话说明，窄屏隐藏，避免和切换行抢空间 */
+.mode-hint {
+  font-size: 12px;
+  color: var(--text-tuan-secondary);
+  line-height: 1.4;
+  margin-right: 4px;
+}
+
+/* --- W-5 断点阶梯：820 / 640 / 480 三档，替代原来 820 → 直跳的断层 ---
+   只调间距与尺寸，不改结构；clamp() 让 padding 在平板与手机两端都不离谱。 */
+@media (max-width: 820px) {
+  .app-shell {
+    /* 累加而不是覆盖安全区，否则刘海屏左右两侧会被洗掉 */
+    padding-left: calc(clamp(12px, 3vw, 28px) + var(--sal));
+    padding-right: calc(clamp(12px, 3vw, 28px) + var(--sar));
+  }
+  .input-dock {
+    padding-left: clamp(12px, 3vw, 24px);
+    padding-right: clamp(12px, 3vw, 24px);
+  }
+  .tuan-md {
+    font-size: 15px;
+    line-height: 1.7;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding-left: calc(clamp(10px, 3.5vw, 18px) + var(--sal));
+    padding-right: calc(clamp(10px, 3.5vw, 18px) + var(--sar));
+  }
+  .input-dock {
+    padding-left: clamp(10px, 3.5vw, 16px);
+    padding-right: clamp(10px, 3.5vw, 16px);
+  }
+  /* 切换行折行后收紧行距 */
+  .model-row {
+    gap: 6px;
+    row-gap: 6px;
+  }
+  .model-row .cc-pill {
+    min-width: 60px;
+    padding: 5px 10px;
+    font-size: 12.5px;
+  }
+  .mode-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-shell {
+    padding-left: calc(clamp(8px, 3.5vw, 14px) + var(--sal));
+    padding-right: calc(clamp(8px, 3.5vw, 14px) + var(--sar));
+  }
+  .input-dock {
+    padding-left: clamp(8px, 3.5vw, 12px);
+    padding-right: clamp(8px, 3.5vw, 12px);
+  }
+  .model-row .cc-pill {
+    min-width: 56px;
+    min-height: 28px;
+    padding: 4px 9px;
+    font-size: 12px;
+  }
+  /* 输入卡内边距同步收紧，避免挤掉发送键 */
+  .tuan-input-card {
+    border-radius: 18px;
+  }
+  .greeting-title {
+    font-size: 24px !important;
+  }
+}
+
+/* 横屏（高度受限）：压缩输入区上下留白，把高度让给消息流 */
+@media (orientation: landscape) and (max-height: 500px) {
+  .input-dock {
+    padding-top: 4px;
+    padding-bottom: calc(4px + var(--sab) + var(--kb-offset));
+  }
+  .model-row .cc-pill {
+    min-height: 28px;
+  }
+}
+
+/* 侧栏抽屉滑入/滑出：小屏侧栏改为抽屉后需要有过渡 */
+.sidebar-drawer {
+  transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+.sidebar-drawer-closed {
+  transform: translateX(-100%);
+}
+.sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.32);
+  animation: menu-in 0.18s ease-out both;
+}
+
+/* ===== W-6 组件层安全区接入 =====
+   上面 :root / #root / .input-dock / .overlay-full 只是基础设施，
+   下面这几条把安全区真正接到具体组件上，否则刘海屏 / 圆角屏下
+   顶部菜单会被挖孔压住、底部会压 Home Indicator。 */
+
+/* 侧栏面板（常驻 md+ 与抽屉态共用同一个 <aside>）：上下让出安全区，
+   否则刘海屏顶部菜单图标被挖孔压住、底部用户卡被 Home Indicator 盖住 */
+.sidebar-fixed {
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  box-sizing: border-box;
+}
+/* 消息流顶部：避免第一条消息贴到刘海 */
+.chat-scroll {
+  padding-top: calc(var(--sat) + 8px);
+}
+/* 全宽页（设置 / 会话列表 / 引导）：四边都留安全区 */
+.page-shell {
+  padding: calc(var(--sat) + 24px) calc(var(--sar) + 32px)
+    calc(var(--sab) + 24px) calc(var(--sal) + 32px);
+  box-sizing: border-box;
+}
+/* 底部免责行：Home Indicator 会压到它 */
+.footer-note {
+  padding-bottom: var(--sab);
+  box-sizing: border-box;
+}
+/* 「回到底部」浮钮：贴 Home Indicator */
+.scroll-bottom-btn {
+  bottom: calc(1rem + var(--sab));
+}
+
+

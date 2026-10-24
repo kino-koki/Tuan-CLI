@@ -91,6 +91,16 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         self._goal_check_prompt: Optional[str] = None  # 条件检查提示 (让快速模型判断是否满足)
         self.ctx = ToolContext(kernel=kernel, workspace=workspace, confirm=confirm, yolo=self.yolo)
         self.ctx.plan_mode = self.plan_mode
+        # UI 句柄: ask_user 工具靠它把"模型提问"渲染进对话区卡片, 而不是
+        # print()+input() 直接写 stdout (在全屏 TUI 下会冲垮布局且无法输入)。
+        # 取 _ui_singleton.ui 惰性代理: TUI 启动后 attach_ui() 会把它指向
+        # TuiUI, 普通 CLI/headless 下则是原 UI, 两者都实现了 ask_user 钩子或
+        # 安全降级; 拿不到时留 None, 由工具自行走交互/降级分支。
+        try:
+            from ..cli._ui_singleton import ui as _shared_ui
+            self.ctx.ui = _shared_ui
+        except Exception:  # noqa: BLE001 - 取不到不影响其它工具
+            self.ctx.ui = None
         # 同一列表对象: checkpoint 工具经 ctx.conversation 截断对话流 (rewind)
         self.ctx.conversation = self.messages
         # 反向引用: 让工具 handler 能同步 agent 级状态 (如 enter/exit_plan_mode 同步 plan_mode)

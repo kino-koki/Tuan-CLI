@@ -7,7 +7,8 @@
 >
 > **安全是优先项，不是可选项**；同时**不拿「打扰」冒充安全**。
 >
-> - **安全优先**：危险命令在**执行前**被拦（影响半径预演 → 硬红线 → 多阶段确认才放行），每一次写操作进事务账本，`/undo` 精确回滚；YOLO 模式也绕不过硬红线。
+> - **安全优先**：危险命令在**执行前**被拦（影响半径预演 → 硬红线 → 多阶段确认才放行），每一次写操作进事务账本，`/undo` 精确回滚。
+> - **安全语义**：YOLO/`--yolo` 会自动批准通常需要确认的操作，但**不会**绕过硬红线。`--isolation` 提供引擎/进程级隔离，以减小影响半径并限制故障影响；它不是完整的系统级沙箱，也不能替代命令审批。
 > - **保留开发体验**：文件读写、`git` 常规操作、包管理、跑测试、lint 等良性开发命令判定为 `none` —— **零确认、零拦截**（`safety_engine.is_benign_dev_command`）。只有真正危险的才升级为提示或拦截。
 > - **可复现的度量**：我们的目标是「危险命令少放行、良性命令少打扰」，数字**必须由第三方可复现**，不卖无法验证的绝对承诺。内部基准见 [`bench/`](bench/README.md)：1 万条 bash/通用对抗样本 + 5 千条 PowerShell 对抗样本 + 2310 个手工绕过载荷（含灾难后果级断言）。**一条命令 `tuan safe bench` 全程本地复现**（不依赖网络与模型），`tuan safe report` 生成自包含 HTML 安全报告。当前代码实测（2026-09）：对抗样本 10k → 拦截召回 100% / 标记召回 100% / 误杀率 1.87% / 绕过 0；PowerShell 5k → 正确率 100% / 漏放 0 / 误杀 0；绕过矩阵 2310 载荷 → 绕过 0 / 误杀 1 / 灾难意图类别 100% 拦截。其中刻意保留了一些 fail-closed 的保守升级（如 `nc` 端口探测、`tar|ssh` 外传形态），误杀数字即来自这类保守判定，请以本地重跑为准。
 > - **生态互操作**：不重复造生态，把 Claude Code / Hermes Agent 在本机积累的技能、命名 Agent、记忆、SOUL 人格与 MCP 配置**直接拿来用**（`tuan ecosystem`，一条命令双向搬运）；反向用 MCP 把自己挂进它们（`tuan ecosystem link`）——一个 Harness，三个生态的积累共用。
@@ -32,7 +33,7 @@
 |---|---|
 | 🛡️ **安全优先** | 四道闸：静态评分、影响半径预拦截、YOLO 红线兜底、事务化账本 `/undo` 精确回滚 |
 | 🎯 **开发体验** | 良性开发命令零确认零拦截、`/undo` 兜底、40+ 斜杠命令、`tuan safe allow` 显式放行、YOLO 一键省掉重复确认 |
-| 🔌 **模型无关** | 57 家供应商 + 本地 Ollama + 运行时热切换 + 自动路由（`router.*`） |
+| 🔌 **模型无关** | 58 家供应商 + 本地 Ollama + 运行时热切换 + 自动路由（`router.*`） |
 | 🧠 **三种主循环** | ReAct / Planner-Execute / DevLoop，可插拔，"同一个内核跑不同的思考节奏" |
 | 🔧 **微内核** | `@plugin` 一行声明，服务注册表、append-only 事件总线、hook 中间件 |
 | 🗂️ **记忆** | SQLite FTS5 + 会话事件流；三层记忆、`/undo`、checkpoint、replay、Trajectory 导出 |
@@ -97,7 +98,7 @@ tuan ecosystem link                        # 反向挂载：让 Claude Code/Herm
 
 ## 版本号与仓库历史（透明披露）
 
-**为什么现在是 `0.3.1`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的诚实口径：**`0.x` 阶段意味着公共 API（CLI 接口、配置 schema、工具协议、插件契约）尚未冻结**，仍可能随迭代调整。Tuan-CLI 功能面已相当完整（安全拦截/事务回滚、模型无关热切换（57 家供应商 + 本地 Ollama）、三种主循环、微内核插件架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等，均配有测试），但**版本号反映的是接口稳定度，不是功能完成度**——功能齐全 ≠ API 该冻结。`1.0` 预留给公共 API 真正稳定、敢于承诺向后兼容之时。此前：破坏性变更在 `0.x` 内升 MINOR（并附迁移提示）、兼容功能升 MINOR、修复升 PATCH（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。
+**为什么现在是 `0.3.1`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的诚实口径：**`0.x` 阶段意味着公共 API（CLI 接口、配置 schema、工具协议、插件契约）尚未冻结**，仍可能随迭代调整。Tuan-CLI 功能面已相当完整（安全拦截/事务回滚、模型无关热切换（58 家供应商 + 本地 Ollama）、三种主循环、微内核插件架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等，均配有测试），但**版本号反映的是接口稳定度，不是功能完成度**——功能齐全 ≠ API 该冻结。`1.0` 预留给公共 API 真正稳定、敢于承诺向后兼容之时。此前：破坏性变更在 `0.x` 内升 MINOR（并附迁移提示）、兼容功能升 MINOR、修复升 PATCH（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。
 
 | 版本号语义 | 说明 |
 |---|---|
@@ -156,7 +157,7 @@ tuan --print run "你好，一句话介绍你自己"
 | 命令 | 干啥 |
 |---|---|
 | `tuan` | 交互式 TUI（Kimi Code 皮肤） |
-| `tuan setup` / `tuan models` | 配供应商 / 列出模型（57 家供应商、1100+ 内置模型） |
+| `tuan setup` / `tuan models` | 配供应商 / 列出模型（58 家供应商、1400+ 内置模型） |
 | `tuan models update` | 本地更新模型/供应商目录：把内置最新清单合并写入 `~/.tuan/models_catalog.json`（离线、保留用户自建条目；`--check` 只报差异、`--background` 后台执行） |
 | `tuan agent` | 命名 Agents（`.claude/agents` 兼容 + 三层发现） |
 | `tuan acp` | 启动 ACP server，让 VS Code / Zed / JetBrains 来驱动你 |

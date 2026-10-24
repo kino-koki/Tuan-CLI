@@ -264,6 +264,24 @@ def has_auth_overwrite(text: str) -> bool:
     return False
 
 
+def _has_unresolved_dangerous_substitution(text: str) -> bool:
+    """Fail closed when a destructive command name is fused to dynamic substitution."""
+    destructive = {
+        "rm", "chmod", "chown", "userdel", "wipefs", "shred", "blkdiscard",
+        "lvremove", "vgremove", "pvremove", "sgdisk", "parted", "dd", "mkfs",
+        "format", "shutdown", "reboot", "halt", "poweroff",
+    }
+    for segment in _segments(text):
+        parts = _strip_sudo(segment.split())
+        if not parts:
+            continue
+        token = parts[0].strip("'\"").rsplit("/", 1)[-1].lower()
+        if any(token.startswith(name + "$(") or token.startswith(name + "`")
+               for name in destructive):
+            return True
+    return False
+
+
 def has_force_push(text: str) -> bool:
     """强推: git push -f / --force / --force-with-lease[=x], 不受旗标顺序影响;
     `+refspec` (git 强推语法, 如 push origin +main) 同样视为强推。
@@ -936,6 +954,14 @@ def _mention_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
+def _mask_mentioned_literals(text: str) -> str:
+    """Blank quoted literals that are only mentioned by a non-executing text command."""
+    chars = list(text)
+    for start, end in _mention_spans(text):
+        chars[start:end] = " " * (end - start)
+    return "".join(chars)
+
+
 def _iter_interpreter_payloads(text: str):
     """迭代命令中所有解释器内联载荷 (已去包裹引号)。
 
@@ -1024,6 +1050,29 @@ def is_benign_dev_command(text: str) -> bool:
     # 解释器内联载荷含破坏性内容 → 不是良性命令
     if _interpreter_payload_dangerous(text):
         return False
+    if _has_unresolved_dangerous_substitution(text):
+        return False
+    normalized = _normalize(text)
+    # Token-based redlines (including dangerous commands behind substitutions) must
+    # also bypass the benign-command fast path used by score() and warning levels.
+    if _eval_is_unverifiable(text):
+        return False
+    if (re.search(r"\brm\b", normalized, re.IGNORECASE) and has_recursive_rm(text)
+            or re.search(r"\bpush\b", normalized, re.IGNORECASE) and has_force_push(text)
+            or re.search(r"\b(?:del|rd|rmdir|erase)\b", normalized, re.IGNORECASE)
+            and has_win_recursive_delete(text)
+            or re.search(r"\b(?:shutdown|halt|poweroff|reboot|init|systemctl)\b",
+                         normalized, re.IGNORECASE)
+            and has_system_shutdown(text)
+            or re.search(r"\bln\b", normalized, re.IGNORECASE) and has_auth_overwrite(text)):
+        return False
+    # A benign command prefix must never suppress a match from the shared risk library.
+    # Mask mentioned literals only for risk matching; preserve the original arguments for
+    # benign classification (e.g. `cat 'a b.txt'` and `echo 'chmod 777 /'`).
+    pattern_text = _mask_mentioned_literals(text)
+    normalized = _normalize(pattern_text)
+    if _match_any(normalized, _CRITICAL_PATTERNS + _HIGH_PATTERNS + _MEDIUM_PATTERNS):
+        return False
     segs = _segments(text) or [text]
     return all(_segment_is_benign(s) for s in segs)
 
@@ -1044,7 +1093,8 @@ def is_hard_redline(command: str) -> bool:
     与 is_redline() 的区别: 排除 SQL 破坏性操作 (DROP/DELETE/TRUNCATE), 后者走
     「可确认关键级」流程。本函数仅供 shell 护栏 step1 使用, 以保持「硬红线」语义纯净。
     """
-    if _eval_is_unverifiable(command):
+    if (_eval_is_unverifiable(command)
+            or _has_unresolved_dangerous_substitution(command)):
         return True
     if _is_base64_pipeline_dangerous(command):
         return True
@@ -1058,10 +1108,11 @@ def is_hard_redline(command: str) -> bool:
             or has_win_recursive_delete(command) or has_system_shutdown(command)
             or has_auth_overwrite(command)):
         return True
-    if _match_any(command, _REDLINE_PATTERNS):
+    pattern_text = _mask_mentioned_literals(command)
+    if _match_any(pattern_text, _REDLINE_PATTERNS):
         return True
     # 归一化后 (PowerShell -EncodedCommand / 命令替换解码等) 的红线模式也要命中
-    if _match_any(_normalize(command), _REDLINE_PATTERNS):
+    if _match_any(_mask_mentioned_literals(_normalize(pattern_text)), _REDLINE_PATTERNS):
         return True
     return False
 
@@ -1080,7 +1131,8 @@ def is_redline(command: str) -> bool:
     返回 True 即代表「命中致命/危险操作」; 其中文件系统/OS 级毁灭操作同时构成硬红线
     (见 is_hard_redline), SQL 破坏性操作则由调用方按可确认关键级处理。
     """
-    if _eval_is_unverifiable(command):
+    if (_eval_is_unverifiable(command)
+            or _has_unresolved_dangerous_substitution(command)):
         return True
     if _is_base64_pipeline_dangerous(command):
         return True
@@ -1092,10 +1144,11 @@ def is_redline(command: str) -> bool:
             or has_win_recursive_delete(command) or has_system_shutdown(command)
             or has_auth_overwrite(command)):
         return True
-    if _match_any(command, _REDLINE_PATTERNS) or _sql_redline(command):
+    pattern_text = _mask_mentioned_literals(command)
+    if _match_any(pattern_text, _REDLINE_PATTERNS) or _sql_redline(command):
         return True
     # 归一化后 (PowerShell -EncodedCommand / 命令替换解码等) 的红线模式也要命中
-    if _match_any(_normalize(command), _REDLINE_PATTERNS):
+    if _match_any(_mask_mentioned_literals(_normalize(pattern_text)), _REDLINE_PATTERNS):
         return True
     return False
 

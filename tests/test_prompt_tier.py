@@ -33,6 +33,66 @@ from tuan_cli.core.prompt_tier import (
 )
 
 
+# ============================================================ 内置资源目录解析
+
+class TestResolveResourcesDir:
+    """_RESOURCES_DIR 必须解析到真实存在的目录, 且 SOUL.md 在其内。
+
+    回归: 旧实现把 importlib.resources 返回的 MultiplexedPath 直接 Path() 包裹,
+    Windows 下 is_dir() 误报 False, 导致 _load_builtin_soul 永远读不到
+    SOUL_FULL.md / SOUL_COMPACT.md, 所有大上下文模型实际都退化成兜底文案。
+    """
+
+    def test_resources_dir_exists_and_has_soul(self):
+        from tuan_cli.config.defaults import _RESOURCES_DIR
+
+        assert _RESOURCES_DIR.is_dir(), (
+            f"_RESOURCES_DIR={_RESOURCES_DIR} 不是有效目录, "
+            "SOUL_FULL.md / SOUL_COMPACT.md 将无法加载"
+        )
+        assert (_RESOURCES_DIR / "SOUL.md").exists(), "resources 目录缺少 SOUL.md"
+        assert (_RESOURCES_DIR / "SOUL_FULL.md").exists(), "resources 目录缺少 SOUL_FULL.md"
+        assert (_RESOURCES_DIR / "SOUL_COMPACT.md").exists(), "resources 目录缺少 SOUL_COMPACT.md"
+
+    def test_load_builtin_soul_full_not_empty(self):
+        """大上下文模型应实际拿到 SOUL_FULL.md 内容 (而非空串/兜底)。"""
+        from tuan_cli.core.prompts import _load_builtin_soul
+
+        full = _load_builtin_soul("full")
+        compact = _load_builtin_soul("compact")
+        assert len(full) > 10_000, f"SOUL_FULL.md 加载结果异常短: {len(full)} 字"
+        assert "SOUL_FULL" in full or "青小团" in full, "SOUL_FULL 内容未包含预期的身份声明"
+        assert len(compact) > 1_000, f"SOUL_COMPACT.md 加载结果异常短: {len(compact)} 字"
+
+    def test_large_window_model_gets_soul_full_in_prompt(self):
+        """端到端: 200k 窗口模型的系统提示词应包含 SOUL_FULL 开头。"""
+        import copy
+        from tuan_cli.config.defaults import DEFAULT_CONFIG
+        from tuan_cli.config.loader import Config
+        from tuan_cli.core.prompts import build_system_prompt_stable
+        from tuan_cli.core.prompt_tier import resolve_prompt_budget, COMPACT, FULL
+
+        cfg = Config.__new__(Config)
+        cfg.profile = "default"
+        cfg.bare = True
+        cfg.home = Path(__file__).parent.parent / ".scratch"
+        cfg.data = copy.deepcopy(DEFAULT_CONFIG)
+        cfg.data["model"] = {"provider": "anthropic", "model": "claude-sonnet-4",
+                             "context_window": 200_000}
+
+        tier, _win, _budget = resolve_prompt_budget(cfg)
+        soul_tier = tier if tier in (COMPACT, FULL) else ""
+        assert soul_tier == FULL, f"200k 窗口应解析为 full 档, 实际 {soul_tier}"
+
+        prompt = build_system_prompt_stable(
+            home=cfg.home, reply_language="zh-CN", user_mode=False, tier=soul_tier,
+        )
+        assert prompt.startswith("# SOUL_FULL"), (
+            "200k 窗口模型的系统提示词应以 SOUL_FULL.md 开头, "
+            f"实际第一行: {prompt.splitlines()[0][:60]!r}"
+        )
+
+
 # ============================================================ 窗口推断
 
 class TestInferContextWindow:

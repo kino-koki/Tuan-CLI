@@ -54,6 +54,9 @@ class EventType(str, Enum):
     # ---- Hook ----
     HOOK_EXECUTED = "hook.executed"
 
+    # ---- 模式 ----
+    MODE_CHANGED = "mode.changed"
+
     # ---- 内部运维 ----
     EVENT_OVERFLOW = "event.overflow"  # 事件历史截断时触发, payload: {"evicted": int, "remaining": int}
 
@@ -72,6 +75,7 @@ class EventType(str, Enum):
 #                        "failure_count": int, "diagnosis": str}
 # HookExecutedPayload:  {"event": str, "status": str,       — hook.executed
 #                        "detail": str, "hook": str}
+# ModeChangedPayload:   {"from": str, "to": str, "reason": str, "ts": float}  — mode.changed
 
 
 # ---- 便捷 emit/on 函数 ----

@@ -96,8 +96,14 @@ def cmd_acp(args) -> int:
     if auth_secret:
         from ..acp import KernelAcpBridge, KernelAcpServer
 
+        # 不传 make_agent —— 让 bridge 自己惰性 create_agent 并接上 confirm=
+        # (经session/request_permission 反向 RPC 向 IDE 请求授权)。
+        # 此前这里传了 `make_agent=lambda: create_agent(kernel, workspace)`,
+        # 既没 confirm 又绕过了 bridge 的权限接线, 导致 ACP 进程里所有高危命令
+        # 被 whitelist 的 fail-closed 分支**静默拒绝** —— 用户在 IDE 里既看不到
+        # 授权弹窗, 也看不到拒绝原因。
         bridge = KernelAcpBridge(
-            make_agent=lambda: create_agent(kernel, workspace),
+            kernel=kernel,
             workspace=workspace,
         )
         server = KernelAcpServer(

@@ -79,7 +79,7 @@ ide/vscode/
 前置：Node.js ≥ 22（开发环境已验证 v22.23.2 / npm 10.9.8），且 `tuan` 已在 PATH 中（或在 VS Code 设置里改 `tuan_cli.command`）。
 
 ```powershell
-cd "E:\Tuan-CLI\ide\vscode"
+cd "ide\vscode"    # 从仓库根（含 Tuan-App/ 与 tuan_cli/ 的目录）进入
 npm install
 npx tsc --noEmit        # 类型检查，零错误即通过
 npx tsc                 # 编译到 out/

@@ -11,7 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-ROOT = Path(r"E:\Tuan-CLI\Tuan-Chat")
+# 相对脚本位置解析；应用目录为 Tuan-App（原写死的 Tuan-Chat 目录并不存在）
+ROOT = Path(__file__).resolve().parents[1] / "Tuan-App"
 SKIP_DIRS = {"node_modules", "engine-py", "release", "dist", ".git", ".github", "build", "public"}
 SKIP_FILES = {"claude-thinking-sprite.css", "claude-thinking-sprite.html", "claude-thinking-sprite.svg"}
 PATTERNS = re.compile(r"Claude|claude|Anthropic|anthropic")
