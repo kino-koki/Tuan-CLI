@@ -117,18 +117,20 @@ def test_setup_pick_builtin_preset(monkeypatch):
     assert env == "DEEPSEEK_API_KEY"
 
 
-def test_sensenova_in_china_mainstream():
-    """商汤日日新 SenseNova 应归入"中国主流"分类, Token Plan 端点。"""
+def test_sensenova_in_free_tier():
+    """商汤日日新 SenseNova Token Plan 公测期完全免费, 应归入"免费层"分类。"""
     p = get_provider("sensenova")
     assert p is not None
-    assert p.category == "中国主流"
+    assert p.category == "免费层"
+    assert p.free_tier is True and p.tier == "free"
+    assert p.region == "cn"  # 国内平台
     assert p.base_url.startswith("https://token.sensenova.cn/")
     assert p.model == "sensenova-6.8-flash-lite"
-    cn = {x.name for x in PROVIDER_CATEGORIES.get("中国主流", [])}
-    assert "sensenova" in cn
+    free_names = {x.name for x in PROVIDER_CATEGORIES.get("免费层", [])}
+    assert "sensenova" in free_names
     models = get_provider_models("sensenova")
     assert models
-    assert any(m.endswith("|free") for m in models)  # flash-lite 有 Token Plan 免费额度
+    assert any(m.endswith("|free") for m in models)  # 公测期全部 |free
 
 
 def test_every_provider_in_a_category_still_holds():

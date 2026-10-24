@@ -24,17 +24,32 @@ from tuan_cli.web.server import WebServer
 
 
 class _FakeKernel:
-    """只提供 config 的极简 kernel (设置面板只需要它)。"""
+    """极简 kernel: 提供 config, 并支持 model_adapter 热切换 (provide/unprovide)。
+
+    模型切换接口 (web/server.py::_set_model) 会 ``kernel.unprovide("model_adapter")``
+    再 ``kernel.provide("model_adapter", ..., owner="web")`` 重建适配器, 因此桩对象
+    必须实现这两个方法, 否则该路径会以 "适配器重建失败: ... has no attribute
+    'unprovide'" 失败。签名与 core/kernel.py 保持一致。
+    """
 
     def __init__(self):
         self._cfg: Config | None = None
+        self._services: dict = {}
 
     def require(self, name: str):
+        if name in self._services:
+            return self._services[name]
         if name == "config":
             if self._cfg is None:
                 self._cfg = Config()
             return self._cfg
         raise KeyError(name)
+
+    def provide(self, service: str, impl, owner: str = "") -> None:
+        self._services[service] = impl
+
+    def unprovide(self, service: str) -> None:
+        self._services.pop(service, None)
 
 
 @pytest.fixture()

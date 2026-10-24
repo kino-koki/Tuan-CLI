@@ -125,16 +125,18 @@ def _system_roots() -> list:
         except Exception:  # noqa: BLE001
             pass
     # Windows: SystemRoot (通常 C:\Windows) 与 Program Files
-    sysroot = os.environ.get("SystemRoot") or r"C:\Windows"
-    try:
-        roots.append(Path(sysroot))
-    except Exception:  # noqa: BLE001
-        pass
-    for p in (r"C:\Program Files", r"C:\Program Files (x86)"):
+    # (仅限 Windows, 避免在 POSIX 上产生无意义的相对路径)
+    if os.name == "nt":
+        sysroot = os.environ.get("SystemRoot") or r"C:\Windows"
         try:
-            roots.append(Path(p))
+            roots.append(Path(sysroot))
         except Exception:  # noqa: BLE001
             pass
+        for p in (r"C:\Program Files", r"C:\Program Files (x86)"):
+            try:
+                roots.append(Path(p))
+            except Exception:  # noqa: BLE001
+                pass
     return roots
 
 

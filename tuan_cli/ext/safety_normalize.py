@@ -7,6 +7,7 @@
 import base64
 import os
 import re
+import shlex
 import unicodedata
 from typing import List
 
@@ -301,7 +302,52 @@ def _inline_command_subs(text: str, max_iter: int = 8) -> str:
     _CMD_SUB_RE = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 
     def _sub(m):
-        return m.group(1) if m.group(1) is not None else m.group(2)
+        body = m.group(1) if m.group(1) is not None else m.group(2)
+
+        def _unresolved():
+            # Preserve the executed substitution body as a separate scan segment. Its
+            # output is unknown, but dropping the body can hide nested destructive calls.
+            return "__tuan_unresolved_command_substitution__ ; " + body
+
+        try:
+            parts = shlex.split(body, posix=True)
+        except ValueError:
+            return _unresolved()
+        if parts and _cmd_name(parts[0]) == "echo":
+            values = parts[1:]
+            echo_flags = set()
+            while values and values[0] in ("-n", "-e", "-E", "-ne", "-en", "-nE", "-En"):
+                echo_flags.update(values.pop(0)[1:])
+            if "e" in echo_flags and "E" not in echo_flags:
+                values = [_decode_ansi_c_escapes(value) for value in values]
+            return " ".join(values).rstrip("\n")
+        if parts and _cmd_name(parts[0]) == "printf" and len(parts) >= 2:
+            fmt, *args = parts[1:]
+            output: list[str] = []
+            arg_index = 0
+            i = 0
+            while i < len(fmt):
+                if fmt[i] != "%":
+                    output.append(fmt[i])
+                    i += 1
+                    continue
+                if i + 1 < len(fmt) and fmt[i + 1] == "%":
+                    output.append("%")
+                    i += 2
+                    continue
+                conversion = re.match(r"%[-+ #0-9.]*([a-zA-Z])", fmt[i:])
+                if not conversion or conversion.group(1) not in ("s", "b"):
+                    return _unresolved()
+                value = args[arg_index] if arg_index < len(args) else ""
+                arg_index += 1
+                if conversion.group(1) == "b":
+                    value = _decode_ansi_c_escapes(value)
+                output.append(value)
+                i += conversion.end()
+            if arg_index < len(args):
+                return _unresolved()
+            return "".join(output)
+        return _unresolved()
 
     cur = text
     for _ in range(max_iter):
@@ -701,5 +747,3 @@ def _normalize(text: str) -> str:
     # 安全修复: Glob 展开 — 展开通配符为实际路径
     cleaned = _expand_globs(cleaned)
     return cleaned
-
-

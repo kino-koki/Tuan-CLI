@@ -156,6 +156,26 @@ def build_todo_read_tool() -> Tool:
 
 # ------------------------------------------------------------------ ask_user
 
+def _fullscreen_tui_active() -> bool:
+    """当前是否有全屏 TUI (QxtTUI) 正在接管终端屏幕。
+
+    为 True 时禁止 print()/input(): 全屏 Application 拥有屏幕, 直接写 stdout
+    会破坏渲染并让 input() 失效。
+    """
+    try:
+        from ..cli import _ui_singleton
+        ui_obj = getattr(_ui_singleton, "_ui", None)
+        # attach_ui 后 _ui 是 TuiUI, 内部持有 QxtTUI; 直接引用会引入循环 import,
+        # 故按类名 + 属性探测, 不 import tui 模块。
+        tui = getattr(ui_obj, "_tui", None)
+        if tui is None:
+            return False
+        app = getattr(tui, "_app", None)
+        return bool(app is not None and getattr(app, "is_running", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _ask_user_handler(ctx: ToolContext, question: Any = "", options: Any = None,
                       **_kwargs) -> str:
     q = str(question or "").strip()
@@ -163,14 +183,27 @@ def _ask_user_handler(ctx: ToolContext, question: Any = "", options: Any = None,
         return "[错误] ask_user 需要 question 参数"
     opts = [str(o).strip() for o in (options or []) if str(o).strip()]
 
-    # 扩展点: TUI 可在 ctx.ui 上注入 ask_user 钩子 (当前内置 UI 未注入, 走终端交互)
+    # 扩展点: TUI 在 ctx.ui 上注入 ask_user 钩子 (QxtTUI.attach_ui -> TuiUI),
+    # 提问渲染成对话区可选卡片 (↑↓/Enter), 不碰 stdout。
     ui_handle = getattr(ctx, "ui", None)
     if ui_handle is not None and hasattr(ui_handle, "ask_user"):
         try:
             ans = ui_handle.ask_user(q, opts)
-            return f"用户回答: {ans}"
-        except Exception:  # noqa: BLE001
+            return f"用户回答: {ans}" if ans else "用户未回答本次提问 (已跳过), 请基于现有信息继续并说明你的假设。"
+        except Exception:  # noqa: BLE001 - 钩子失效时走下面的安全分支
             pass
+
+    # **安全阀**: 全屏 TUI 正在接管屏幕时, 绝不能 print()+input() —— 那会把文本
+    # 直接写进 prompt_toolkit 的屏幕缓冲, 冲垮布局 (用户报告的"溢出"), 且
+    # input() 在备用屏/raw 模式下拿不到按键 ("选不了")。此处直接按"无法交互"
+    # 降级, 让模型自行决策, 而不是把界面写坏。
+    if _fullscreen_tui_active():
+        lines = ["[无法交互] TUI 正在全屏运行, 该提问无法在此交互。"]
+        lines.append(f"问题: {q}")
+        if opts:
+            lines.append("选项: " + " | ".join(opts))
+        lines.append("请基于现有信息选择最合理的方案继续执行, 并在最终回复中向用户说明该假设。")
+        return "\n".join(lines)
 
     import sys
     if sys.stdin.isatty() and sys.stdout.isatty():

@@ -1191,23 +1191,31 @@ class WebServer:
     def apply_mode(self, mode: str) -> Dict[str, Any]:
         """设置运行模式并实时作用于当前所有会话 agent (以及后续新建的)。
 
-        - plan: 只读规划模式 (agent.plan_mode=True, yolo=False)
-        - yolo: 放权模式 (agent.yolo=True, plan_mode=False)
-        - standard: 默认 (两者皆 False)
-        同时把覆盖写回配置 (与 CLI _apply_mode_override 同口径, 不污染后续启动之外的状态)。
+        五模式体系 (感通/灵码/闲聊/无界/协同)，旧三档 standard/yolo/plan 作为别名保留。
+        使用 switch_mode 执行 R1–R7 切换规则校验，同时把覆盖写回配置。
         """
         mode = str(mode or "").strip().lower()
-        if mode not in ("standard", "yolo", "plan"):
+        # 五模式 ID + 旧三档别名
+        VALID_MODES = {"gantong", "lingma", "chat", "boundless", "collaboration",
+                        "standard", "yolo", "plan"}
+        if mode not in VALID_MODES:
             return {"ok": False, "error": f"未知模式: {mode}"}
-        self._mode = mode
+        # 使用 switch_mode 执行 R1-R7 校验 (force=True 表示 Web 端用户显式切换)
+        from ..modes.switcher import switch_mode, current_mode
+        ok, reason = switch_mode(mode, force=True)
+        if not ok:
+            return {"ok": False, "error": reason}
+        resolved = current_mode()
+        self._mode = resolved
         cfg = self._cfg()
         if cfg is not None:
             try:
-                cfg.data.setdefault("mode", {})["default"] = mode
+                cfg.data.setdefault("mode", {})["current"] = resolved
             except Exception:  # noqa: BLE001
                 pass
-        pm = mode == "plan"
-        yl = mode == "yolo"
+        # 向后兼容: boundless → yolo=True, chat → plan_mode=True
+        pm = resolved == "chat"
+        yl = resolved == "boundless"
         with _SESSIONS_LOCK:
             for s in _SESSIONS.values():
                 a = s.get("agent")
@@ -1223,7 +1231,8 @@ class WebServer:
                         a.effective_tool_set()
                 except Exception:  # noqa: BLE001
                     pass
-        return {"ok": True, "mode": mode, **self.mode_effort()}
+        return {"ok": True, "mode": resolved, "name": resolved, "reason": reason,
+                **self.mode_effort()}
 
     def apply_effort(self, effort: str) -> Dict[str, Any]:
         """设置推理投入档位 (low/medium/high), 实时作用于配置 (agent 运行期读取)。"""

@@ -100,7 +100,7 @@ TRANSLATIONS = {
     "tui.boot_error_title": "[Falha ao iniciar]",
     "tui.boot_error_hint": "Pressione Ctrl-Q para sair; verifique ~/.tuan/config.yaml e os logs e tente novamente.",
     "tui.readonly_hint": "Digite uma mensagem para começar, /help para todos os comandos.",
-    "tui.scroll_hint": "PgUp/PgDn para rolar o histórico · Ctrl+↑/↓ linha a linha · Home/End topo/fim · Ctrl+O detalhes",
+    "tui.scroll_hint": "Roda do mouse · PgUp/PgDn histórico · Ctrl+↑/↓ linha · Home/End topo/fim · Ctrl+O ferramentas",
     "tui.no_key_hint": "● Sem API Key configurada para {env} — execute /provider.",
     "tui.booting_wait": "O Tuan-CLI ainda está iniciando, aguarde…",
     "tui.busy_wait": "O Tuan-CLI está processando, aguarde…",

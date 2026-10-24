@@ -36,4 +36,5 @@ def main(out: Path) -> None:
 
 
 if __name__ == '__main__':
-    main(Path(r'E:\Tuan-CLI\Tuan-App\src-tauri\icons\icon.ico'))
+    # 相对脚本位置解析：scripts/ -> 仓库根 -> Tuan-App/src-tauri/icons/
+    main(Path(__file__).resolve().parents[1] / 'Tuan-App' / 'src-tauri' / 'icons' / 'icon.ico')

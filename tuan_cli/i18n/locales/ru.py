@@ -100,7 +100,7 @@ TRANSLATIONS = {
     "tui.boot_error_title": "[Ошибка запуска]",
     "tui.boot_error_hint": "Нажмите Ctrl-Q для выхода; проверьте ~/.tuan/config.yaml и логи, затем повторите.",
     "tui.readonly_hint": "Введите сообщение для начала, /help — все команды.",
-    "tui.scroll_hint": "PgUp/PgDn прокрутка истории · Ctrl+↑/↓ по строкам · Home/End верх/низ · Ctrl+O детали инструментов",
+    "tui.scroll_hint": "Колесо мыши · PgUp/PgDn история · Ctrl+↑/↓ по строкам · Home/End верх/низ · Ctrl+O детали",
     "tui.no_key_hint": "● API-ключ для {env} не настроен — выполните /provider.",
     "tui.booting_wait": "Туан-CLI ещё запускается, подождите…",
     "tui.busy_wait": "Туан-CLI работает, подождите…",

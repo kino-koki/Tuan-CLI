@@ -7,7 +7,8 @@
 >
 > **Sicherheit ist Priorität, keine Option** — und **Unterbrechen ist kein Ersatz für Sicherheit**.
 >
-> - **Sicherheit zuerst**: Gefährliche Befehle werden *vor* ihrem Lauf blockiert (Wirkradius-Vorschau → harte Redline → mehrstufige Bestätigung). Jeder Write läuft durch ein transaktionales Hauptbuch, damit `/undo` exakt zurückrollen kann. YOLO überschreitet harte Redlines trotzdem nicht.
+> - **Sicherheit zuerst**: Gefährliche Befehle werden *vor* ihrem Lauf blockiert (Wirkradius-Vorschau → harte Redline → mehrstufige Bestätigung). Jeder Write läuft durch ein transaktionales Hauptbuch, damit `/undo` exakt zurückrollen kann.
+> - **Sicherheitssemantik**: YOLO/`--yolo` genehmigt automatisch Aktionen, die normalerweise eine Bestätigung erfordern, umgeht aber **keine** harten Redlines. `--isolation` bietet Isolation auf Engine-/Prozessebene, um den Wirkungsradius und die Ausbreitung von Fehlern zu begrenzen; es ist **keine** vollständige Betriebssystem-Sandbox und ersetzt nicht die Befehlsfreigabe.
 > - **Entwickler-Erlebnis bleibt erhalten**: Datei-Lesen/Schreiben, routinemäßige `git`-Operationen, Paketinstallationen, Testläufe und Linter werden mit `none` bewertet — **keine Bestätigung, kein Blockieren** (`safety_engine.is_benign_dev_command`). Nur wirklich gefährliche Aktionen werden zu Rat oder Blockade.
 > - **Reproduzierbare Messwerte**: Unser Ziel ist„weniger gefährliche Befehle schlupfen durch, weniger harmlose Befehle nerven", und jede Zahl, die wir veröffentlichen, **muss von Dritten reproduzierbar sein** — keine unverifizierbaren Absolutversprechen. Benchmarks liegen in [`bench/`](bench/README.md): 10k adversariale bash/generic Samples + 5k PowerShell Samples + 2.310 handgemachte Bypass-Payloads (mit Consequence-Level-Disaster-Assertions). **Ein Befehl, `tuan safe bench`, reproduziert alles lokal** (kein Netz, kein Modell); `tuan safe report` erzeugt einen selbständigen HTML-Sicherheitsreport. Gemessen am aktuellen Code (2026-09): adversarial 10k → block recall 100 % / flag recall 100 % / false-positive 1,87 % / bypass 0; PowerShell 5k → accuracy 100 % / misses 0 / false positives 0; bypass matrix 2.310 payloads → bypass 0 / false positive 1 / disaster-intent classes 100 % blockiert. Einige bewusst fail-closed-konservative Eskalationen bleiben (z. B. `nc`-Port-Probes, `tar|ssh`-exfil-geformte Payloads) und erklären die False-Positive-Zahlen; bitte lokal nachlaufen.
 > - **Ökosystem-Interop**: Wir bauen keine Ökosysteme neu — wir **wiederverwenden, was Claude Code / Hermes Agent auf dieser Maschine schon angesammelt haben** (Skills, benannte Agents, Memory, SOUL-Persona, MCP-Configs). `tuan ecosystem` bewegt Assets in beide Richtungen in einem Befehl; `tuan ecosystem link` mountet tuan über MCP zurück hinein. Ein Harness, drei Ökosysteme an Assets.
@@ -37,7 +38,7 @@ Die Kernidee: **das Modell denkt, der Harness lässt es sicher und kontrolliert 
 |---|---|
 | 🛡️ **Sicherheit zuerst** | Vier Tore: statisches Risikoscoring, Wirkradius-Pre-Block, YOLO-Redline-Fußboden, transaktionales Hauptbuch mit exaktem `/undo` |
 | 🎯 **Entwickler-Erlebnis** | Harmlose Dev-Befehle passieren ohne Bestätigung, `/undo` hat deinen Rücken, 40+ Slash-Befehle, `tuan safe allow` für explizite Opt-outs, YOLO für Wiederholungen |
-| 🔌 **Modellneutral** | 57 Anbieter + lokales Ollama + Hot-Swap zur Laufzeit + automatisches Routing (`router.*`) |
+| 🔌 **Modellneutral** | 58 Anbieter + lokales Ollama + Hot-Swap zur Laufzeit + automatisches Routing (`router.*`) |
 | 🧠 **Drei Hauptschleifen** | ReAct / Planner-Execute / DevLoop — austauschbar; ein Kernel, verschiedene „Denkrhythmen" |
 | 🔧 **Microkernel** | Einzeiliges `@plugin`, Service-Registry, append-only Event-Bus, Hook-Middleware |
 | 🗂️ **Gedächtnis** | SQLite FTS5 + Session-Event-Stream; dreistufiger Speicher, `/undo`, Checkpoint, Replay, Trajectory-Export |
@@ -85,7 +86,7 @@ class MyTool(Plugin):
 
 ## Versionsnummer & Repository-Historie (transparente Offenlegung)
 
-**Warum `0.3.1` und nicht `1.0`?** Ehrliche [SemVer](https://semver.org/)-Semantik: **eine `0.x`-Version bedeutet, dass die öffentliche API (CLI-Oberfläche, Konfigurationsschema, Tool-Protokoll, Plugin-Vertrag) noch nicht eingefroren ist** und sich zwischen Releases noch ändern kann. Tuan-CLI bietet bereits einen breiten Funktionsumfang — Sicherheits-Gating / transaktionales Rollback, modellneutraler Hot-Swap (57 Anbieter + lokales Ollama), drei Hauptschleifen, Microkernel-Plugin-Architektur, dreistufiger Speicher, Ökosystem-Interop (MCP / ACP / Claude Code / Hermes-Brücke), Subagents & Swarm, Cron & Hintergrundaufgaben, Goal-Modus & präzise Berechtigungen — alles durch Tests abgedeckt. Aber **die Versionsnummer spiegelt die Stabilität der Schnittstelle, nicht die Vollständigkeit der Funktionen**: ein vollständiger Funktionsumfang heißt nicht, dass die API eingefroren werden sollte. `1.0` ist für den Zeitpunkt reserviert, an dem die öffentliche API wirklich stabil ist und wir Rückwärtskompatibilität zusagen können. Bis dahin: Breaking Changes heben MINOR innerhalb von `0.x` (mit Migrationshinweisen), kompatible Funktionen MINOR, Fixes PATCH (siehe [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Warum `0.3.1` und nicht `1.0`?** Ehrliche [SemVer](https://semver.org/)-Semantik: **eine `0.x`-Version bedeutet, dass die öffentliche API (CLI-Oberfläche, Konfigurationsschema, Tool-Protokoll, Plugin-Vertrag) noch nicht eingefroren ist** und sich zwischen Releases noch ändern kann. Tuan-CLI bietet bereits einen breiten Funktionsumfang — Sicherheits-Gating / transaktionales Rollback, modellneutraler Hot-Swap (58 Anbieter + lokales Ollama), drei Hauptschleifen, Microkernel-Plugin-Architektur, dreistufiger Speicher, Ökosystem-Interop (MCP / ACP / Claude Code / Hermes-Brücke), Subagents & Swarm, Cron & Hintergrundaufgaben, Goal-Modus & präzise Berechtigungen — alles durch Tests abgedeckt. Aber **die Versionsnummer spiegelt die Stabilität der Schnittstelle, nicht die Vollständigkeit der Funktionen**: ein vollständiger Funktionsumfang heißt nicht, dass die API eingefroren werden sollte. `1.0` ist für den Zeitpunkt reserviert, an dem die öffentliche API wirklich stabil ist und wir Rückwärtskompatibilität zusagen können. Bis dahin: Breaking Changes heben MINOR innerhalb von `0.x` (mit Migrationshinweisen), kompatible Funktionen MINOR, Fixes PATCH (siehe [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Versionssemantik | Bedeutung |
 |---|---|
@@ -142,7 +143,7 @@ tuan --print run "Hallo, stell dich in einem Satz vor."
 | Befehl | Wofür |
 |---|---|
 | `tuan` | Interaktives TUI (Kimi-Code-Skin) |
-| `tuan setup` / `tuan models` | Anbieter konfigurieren / 57 Anbieter & 1100+ Modelle listen |
+| `tuan setup` / `tuan models` | Anbieter konfigurieren / 58 Anbieter & 1400+ Modelle listen |
 | `tuan models update` | Modell-/Anbieter-Katalog lokal aktualisieren: eingebaute Listen in `~/.tuan/models_catalog.json` mergen (offline, behält Benutzer-Einträge; `--check` zeigt nur Diffs, `--background` läuft asynchron) |
 | `tuan agent` | Benannte Agents (`.claude/agents`-kompatibel, 3-Ebenen-Discovery) |
 | `tuan acp` | ACP-Server starten, damit VSCode / Zed / JetBrains dich steuern kann |

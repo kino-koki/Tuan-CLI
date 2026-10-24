@@ -12,8 +12,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
-# git 可执行: 优先 PATH, 回退 MinGit (Windows 无 git 的宿主环境)
-GIT = shutil.which("git") or shutil.which("git.exe") or r"F:\tools\mingit\cmd\git.exe"
+# git 可执行: 优先 PATH (跨机器可移植, 不依赖固定盘符)
+GIT = shutil.which("git") or shutil.which("git.exe")
+if not GIT:
+    print("ERROR: 未找到 git 可执行文件, 请安装 Git 或将其加入 PATH。")
+    sys.exit(1)
 
 run = lambda *a: subprocess.run([GIT, *a], cwd=ROOT, capture_output=True, text=True)
 

@@ -163,8 +163,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        choices=["standard", "yolo", "plan"],
-        help="运行模式: standard(默认,需确认) / yolo(自动批准) / plan(只读规划)",
+        choices=[
+            "standard", "yolo", "plan",
+            "gantong", "lingma", "chat", "boundless", "collaboration",
+        ],
+        help="运行模式: 旧三档 standard(默认,需确认) / yolo(自动批准,硬红线仍阻止) / plan(只读规划) "
+             "或五模式 gantong(感通) / lingma(灵码) / chat(闲聊) / boundless(无界) / collaboration(协同); "
+             "切换请用 tuan mode switch <id>",
     )
     parser.add_argument(
         "--permission-mode",
@@ -186,7 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--yolo",
         action="store_true",
-        help="无限制模式: 危险操作自动批准 (等同于 --mode yolo)",
+        help="YOLO 模式: 自动批准通常需确认的操作,但硬红线仍会阻止 (等同于 --mode yolo)",
     )
     parser.add_argument(
         "--plan",
@@ -340,19 +345,14 @@ def main() -> int:
             '  管道输出可用: tuan --print chat "你的任务" (直接输出到 stdout)\n\n'
         )
         return 2
-    # tuan help [<子命令>]: 只读打印帮助, 不进入交互、不写配置 (与 `tuan --help` / `tuan <子命令> --help` 等效)
+    # tuan help [<子命令>]: 只读打印帮助, 不进入交互、不写配置
+    # (与 `tuan --help` / `tuan <子命令> --help` 等效)
+    # 直接通过 cmd_help 处理 (包含 quickstart 特殊话题、子命令帮助等逻辑)
     if getattr(args, "cmd", None) == "help":
-        topic = getattr(args, "topic", None)
-        if not topic:
-            parser.print_help()
-            return 0
-        # 复用 argparse 公共能力: `tuan <topic> --help` 会打印该子命令帮助并退出。
-        # 非法子命令由 argparse 自行报错 (exit 2); --help 触发 exit 0。
-        try:
-            parser.parse_args([topic, "--help"])
-        except SystemExit as exc:
-            return int(exc.code) if isinstance(exc.code, int) else 0
-        return 2
+        func = args.func
+        if callable(func):
+            return int(func(args))
+        return int(_resolve_func(func)(args))
     # 无子命令: 默认进入交互式对话 (tuan 直接开界面)。
     # fast_chat 内部把加载屏内嵌进 QxtTUI (单 Application), 内核后台构建, 杜绝双屏切换崩溃。
     if not getattr(args, "cmd", None):

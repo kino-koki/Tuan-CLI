@@ -7,7 +7,8 @@
 >
 > **Safety is a priority, not an option** — and **interruption is not a substitute for safety**.
 >
-> - **Safety first**: dangerous commands are blocked *before* they run (blast-radius preview → hard redline → multi-stage confirmation). Every write is journaled in a transactional ledger for exact `/undo`. YOLO mode still cannot cross a hard redline.
+> - **Safety first**: dangerous commands are blocked *before* they run (blast-radius preview → hard redline → multi-stage confirmation). Every write is journaled in a transactional ledger for exact `/undo`.
+> - **Safety semantics**: YOLO/`--yolo` automatically approves operations that would normally require confirmation, but does **not** bypass hard redlines. `--isolation` provides engine/process-level isolation to reduce blast radius and contain failures; it is *not* a full OS sandbox and does not replace command approval.
 > - **Developer experience preserved**: file reads/writes, routine `git` operations, package installs, test runs and linters are scored `none` — **zero confirmation, zero blocking** (`safety_engine.is_benign_dev_command`). Only genuinely dangerous actions escalate to advice or blocking.
 > - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,310 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `tuan safe bench`, reproduces everything locally** (no network, no model); `tuan safe report` emits a self-contained HTML security report. Current code measured (2026-09): adversarial 10k → block recall 100% / flag recall 100% / false-positive 1.87% / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 2,310 payloads → bypass 0 / false positive 1 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
 > - **Ecosystem interop**: we don't rebuild ecosystems — we **reuse what Claude Code / Hermes Agent already accumulated** on this machine (skills, named agents, memory, SOUL persona, MCP configs). `tuan ecosystem` moves assets both ways in one command; `tuan ecosystem link` mounts tuan back into them over MCP. One harness, three ecosystems' worth of assets.
@@ -142,7 +143,7 @@ tuan --print run "Hi, describe yourself in one sentence."
 | Command | What it's for |
 |---|---|
 | `tuan` | Interactive TUI (Kimi Code skin) |
-| `tuan setup` / `tuan models` | Configure providers / list 58 providers & 1100+ models |
+| `tuan setup` / `tuan models` | Configure providers / list 58 providers & 1400+ models |
 | `tuan models update` | Update the model/provider catalog locally: merge the built-in lists into `~/.tuan/models_catalog.json` (offline, preserves user-added entries; `--check` reports diffs only, `--background` runs async) |
 | `tuan agent` | Named agents (`.claude/agents`-compatible, 3-tier discovery) |
 | `tuan acp` | Run an ACP server so VSCode / Zed / JetBrains can drive you |

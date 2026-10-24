@@ -11,6 +11,7 @@
 安全加固**不是可选开关**——它已默认编入运行时主链路，无需任何配置即可生效：
 
 - **每个工具调用都过统一安全闸门** (`core/tool_executor.py`)：内置工具 / shell / 文件写 / MCP 工具统一经 `SecurityGate` 裁决（fail-closed），危险操作（致命红线、MCP 参数注入、文件写入危险内容等）默认拦截，不依赖任何显式开关。
+- **Shell 风险规则单一来源**：Shell 执行前的 `SecurityGate`、警告分级和 `SafetyEngine.score()` 共用 `tuan_cli.ext.safety_patterns` 风险模式；危险命令不会因 `mv`、`cat` 等良性命令前缀或用户白名单而跳过规则，YOLO 下命中高风险规则仍要求明确确认。
 - **审计溯源默认开启**：所有工具调用的安全决策（允许/拒绝）写入 `security_auditor` 审计日志（AEAD 加密 + 防篡改链），落盘到 `~/.tuan/security-audit.jsonl`（或 `audit/security_events.jsonl`），任何会话均可追溯。
 - **网络出口与入站监听** 的门控在 shell 执行路径默认生效（见 §3）。
 - **MCP 工具** 的描述注入扫描与参数注入扫描默认生效。

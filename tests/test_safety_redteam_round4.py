@@ -17,10 +17,12 @@
 同时保证新增模式不误伤常见良性开发命令。
 """
 from tuan_cli.ext.safety_engine import (
+    is_benign_dev_command,
     is_hard_redline,
     is_redline,
 )
 from tuan_cli.ext.safety_engine import SafetyEngine
+from tuan_cli.core.whitelist import get_warning_level
 
 _ENGINE = SafetyEngine()
 
@@ -111,3 +113,50 @@ def test_new_patterns_do_not_break_benign():
         assert not is_hard_redline(cmd), f"良性命令不应命中硬红线: {cmd!r}"
         assert _ENGINE.score({"command": cmd})["risk"] == "none", \
             f"良性命令 score 应为 none: {cmd!r}"
+
+
+def test_benign_prefix_cannot_suppress_shared_risk_patterns():
+    """危险模式先于 cat/mv 等日常命令前缀生效，且运行时警告级别共用评分规则。"""
+    dangerous = [
+        "mv /etc /tmp/backup",
+        "userdel -r root",
+        "cat ~/.ssh/id_rsa",
+        "chmod -R 777 /",
+        "lvremove -y /dev/vg/lv",
+        "wipefs -a /dev/sda",
+        "sgdisk -Z /dev/sda",
+        "vssadmin delete shadows /all /quiet",
+    ]
+    for command in dangerous:
+        assert not is_benign_dev_command(command), command
+        assert is_hard_redline(command), command
+        assert _ENGINE.score({"command": command})["risk"] == "critical", command
+        assert get_warning_level(command) == 5, command
+
+    assert is_benign_dev_command("echo 'chmod 777 / is dangerous'")
+    assert _ENGINE.score({"command": "echo 'chmod 777 / is dangerous'"})["risk"] == "none"
+
+
+def test_command_substitution_echo_output_is_analyzed():
+    commands = [
+        "rm$(echo ' -rf /')",
+        "rm`echo ' -rf /'`",
+        "rm$(printf ' %s' '-rf /')",
+        "rm`printf '%b' '\\040-rf\\040/'`",
+        "rm$(printf '%c' ' ' )-rf /",
+        "echo $(rm -rf /)",
+    ]
+    for command in commands:
+        assert not is_benign_dev_command(command), command
+        assert is_hard_redline(command), command
+        assert is_redline(command), command
+
+    assert not is_redline("echo $(date)")
+    assert not is_redline("echo $(grep 'rm -rf /' file.txt)")
+    assert not is_redline("cat $(ls *.txt)")
+
+
+def test_warning_level_reuses_shared_high_risk_severity():
+    for command in ("kill -9 1234", "pkill -f worker", "killall worker"):
+        assert _ENGINE.score({"command": command})["risk"] == "high"
+        assert get_warning_level(command) == 3

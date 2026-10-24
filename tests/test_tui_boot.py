@@ -210,6 +210,7 @@ def test_input_bar_uses_horizontal_scroll_not_wrap():
 # ---- 滚动: 内容超窗时, follow 钉底部, 上翻后 pin 生效, 到底恢复 follow ----
 
 def test_scroll_pin_and_follow_to_bottom():
+    """虚拟视口: 默认跟随底部, 上翻离开跟随, 下翻到底恢复跟随。"""
     tui = _make_tui()
     tui.set_ready(_FakeConfig(), _FakeAgent(), ".")
     for i in range(40):  # 造足够多的行
@@ -218,15 +219,28 @@ def test_scroll_pin_and_follow_to_bottom():
     assert n >= 40
     # 默认跟随底部
     assert tui._follow is True
-    # 上翻一页 -> 离开跟随, pin_t (终端行单位) 生效; 渲染锚点映射回逻辑行
-    tui._scroll_log(-101)
-    assert tui._follow is False
-    assert 0 <= tui._pin_t < tui._terminal_total()
-    lines = tui._scrolled_lines()
-    assert tui._pin == tui._cursor_line == tui._pin_t_to_logic(tui._pin_t)
-    # 大幅下滚 (终端行总量) -> 到达底部 -> 恢复跟随
-    tui._scroll_log(tui._terminal_total())
+    total, vp, max_top = tui._scroll_bounds(tui._scrolled_lines(logic_only=True))
+    assert total > vp, "样本应超过一屏, 否则测不出滚动"
+    assert max_top > 0
+    # 渲染一次 -> follow 解析到最底部
+    tui._render_conversation()
     assert tui._follow is True
+    assert tui._view_top == max_top
+    # 上翻一页 -> 离开跟随, _view_top (终端行单位) 前移
+    tui._scroll_log(-vp)
+    assert tui._follow is False
+    assert 0 <= tui._view_top < max_top
+    # 大幅下滚 (总行数) -> 到达底部 -> 恢复跟随并钉回底部
+    tui._scroll_log(total)
+    assert tui._follow is True
+    assert tui._view_top == max_top
+    # 跳顶 / 回底
+    tui._scroll_to_top()
+    assert tui._follow is False and tui._view_top == 0
+    tui._scroll_to_bottom()
+    assert tui._follow is True
+    tui._render_conversation()
+    assert tui._view_top == max_top
 
 
 # ---- 输入框历史: 连续重复输入不入史, ↑/↓ 回看更干净 ----

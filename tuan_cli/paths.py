@@ -24,9 +24,10 @@ CWD 兜底什么都不做。
 
 opt-in 旧行为
 ------------
-``TUAN_AUTO_WORKSPACE=1``: 恢复「未显式指定时自动进入内置 D 盘独立目录」
+``TUAN_AUTO_WORKSPACE=1``: 恢复「未显式指定时自动进入独立工作区」
 (首次自动创建 + chdir)。适合确实需要「无论从哪启动都落同一个隔离工作区」
-的场景 (安全隔离诉求), 默认关闭。
+的场景 (安全隔离诉求), 默认关闭。工作区位于 ``~\\Tuan-Workspace``
+(用户主目录下, 跨机器可移植, 不依赖任何固定盘符)。
 
 ``TUAN_FORCE_WORKSPACE=1``: 绝对强制 —— 忽略 env/CLI/config 的显式指定,
 一律进入 ``TUAN_WORKSPACE`` 指向的目录 (未设则用内置默认)。
@@ -45,20 +46,21 @@ from typing import List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
-#: 工作目录目录名 (opt-in 自动工作区模式下, D 盘根下可用时用这个名字)。
+#: 工作目录目录名 (opt-in 自动工作区模式下使用)。
 WORKSPACE_DIR_NAME = "Tuan-Workspace"
 
-#: opt-in 自动工作区的首选: ``D:\\DeliveryOptimization\\Tuan-Workspace``。
+#: opt-in 自动工作区的首选: 用户主目录下的独立工作区 (跨机器可移植)。
 #: 仅 ``TUAN_AUTO_WORKSPACE=1`` / ``TUAN_FORCE_WORKSPACE=1`` 时才会用到。
-DEFAULT_WORKSPACE_DIR = Path("D:/DeliveryOptimization") / WORKSPACE_DIR_NAME
-
-#: D 盘根不可写时 (学校/企业管控软件常见), 探测 D 盘一级子目录的上限个数。
-_D_PROBE_LIMIT = 20
+#: 历史上曾硬编码 ``D:\\DeliveryOptimization\\Tuan-Workspace`` —— 换台设备或
+#: 没有 D 盘的机器上, 该路径不可用, 是「目录写死」的典型问题; 现改为
+#: ``~\\Tuan-Workspace`` (Windows) / ``~/.tuan/workspace`` 同源位置, 与
+#: 配置/会话目录一致, 任何有用户主目录的机器都能落地。
+DEFAULT_WORKSPACE_DIR = Path.home() / WORKSPACE_DIR_NAME
 
 #: 环境变量覆盖入口。
 WORKSPACE_ENV_VAR = "TUAN_WORKSPACE"
 
-#: opt-in 开关: 置 1 后恢复旧行为 (未显式指定时自动进入内置 D 盘独立工作区)。
+#: opt-in 开关: 置 1 后恢复旧行为 (未显式指定时自动进入独立工作区)。
 AUTO_WORKSPACE_ENV_VAR = "TUAN_AUTO_WORKSPACE"
 
 #: 兼容旧版的逃生开关 (默认已不跳转, 此变量现为恒真无操作, 保留防脚本报错)。
@@ -123,25 +125,11 @@ def _ensure_dir(path: Path) -> Optional[Path]:
 def _fallback_candidates() -> List[Path]:
     """opt-in 自动工作区候选链: 首选不可用时的回退 (按序尝试)。
 
-    覆盖两类真实环境:
-    - **DeliveryOptimization 被锁/不存在** (精简镜像机器): 退到 D 盘下某个可写
-      子目录里的同名独立文件夹 —— 仍然在 D 盘, 仍然与仓库/系统目录隔离;
-    - **没有 D 盘** (单 C 盘机器): 退到 tuan 自己的 home (``~/.tuan/workspace``),
-      与配置/会话同源, 不会污染用户文档目录。
+    首选 (``~\\Tuan-Workspace``, 跨机器可移植) 不可写时, 退到 tuan 自己的
+    home (``~/.tuan/workspace``, 与配置/会话同源)。位置选择永不应成为启动
+    阻塞项: 若全部失败, 调用方回退 CWD。
     """
     out: List[Path] = []
-    root = Path("D:/")
-    if root.is_dir():
-        try:
-            children = sorted(
-                (p for p in root.iterdir() if p.is_dir() and not p.name.startswith("$")),
-                key=lambda p: p.name,
-            )[:_D_PROBE_LIMIT]
-        except OSError:
-            children = []
-        for child in children:
-            out.append(child / WORKSPACE_DIR_NAME)
-    # 最后落 tuan 自己的 home 下 (与 ~/.tuan 配置同源, 单盘机器/全锁环境的保底)
     try:
         from .config.loader import home_dir
 
@@ -191,10 +179,12 @@ def default_workspace() -> str:
 
 
 def auto_workspace() -> str:
-    """opt-in 旧行为的工作目录解析: env > config > 内置 D 盘候选链 > CWD。
+    """opt-in 旧行为的工作目录解析: env > config > 内置独立工作区 > CWD。
 
     仅 ``TUAN_AUTO_WORKSPACE=1`` / ``TUAN_FORCE_WORKSPACE=1`` 时使用:
     未显式指定时进入内置独立工作区 (首次自动创建), 与仓库/系统/用户目录隔离。
+    首选位置为 ``~\\Tuan-Workspace`` (跨机器可移植); 不可写时退到
+    ``~/.tuan/workspace`` (与配置/会话同源); 全部失败则回退 CWD。
     """
     resolved = _resolve_explicit()
     if resolved:

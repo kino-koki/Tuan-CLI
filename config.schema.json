@@ -522,10 +522,40 @@
           "enum": [
             "standard",
             "yolo",
-            "plan"
+            "plan",
+            "gantong",
+            "lingma",
+            "chat",
+            "boundless",
+            "collaboration"
           ],
-          "default": "standard",
-          "description": "默认运行模式: standard(逐项确认) / yolo(全部自动批准) / plan(只读规划)。"
+          "default": "chat",
+          "description": "默认运行模式: 旧三档 standard(→collaboration) / yolo(→boundless) / plan(→chat) 保留为别名; 新五模式 gantong(感通) / lingma(灵码) / chat(闲聊) / boundless(无界) / collaboration(协同)。"
+        },
+        "current": {
+          "type": "string",
+          "enum": [
+            "gantong",
+            "lingma",
+            "chat",
+            "boundless",
+            "collaboration"
+          ],
+          "default": "chat",
+          "description": "当前生效的模式 ID（五模式体系，§3）。默认 chat（最低权限）。"
+        },
+        "locked": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否锁定模式（§3 R7）：锁定后除 boundless→降级外所有切换均被拒绝。"
+        },
+        "allow_switch": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "允许切换的目标模式 ID 列表（空=不限制）。"
         },
         "yolo_require_confirm": {
           "type": "array",
@@ -534,7 +564,7 @@
         }
       },
       "additionalProperties": true,
-      "description": "运行模式。"
+      "description": "运行模式配置。支持旧三档别名（standard/yolo/plan）与新五模式（gantong/lingma/chat/boundless/collaboration）。"
     },
     "permissions": {
       "type": "object",
