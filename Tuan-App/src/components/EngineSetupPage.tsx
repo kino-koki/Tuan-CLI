@@ -55,17 +55,17 @@ function requirementsCmd(root?: string): string {
 }
 
 /**
- * 引擎安装向导。
+ * 引擎安装向导（豆包 × CodeX 风格，2026-10-25 恢复完整动效层）。
  *
- * 与 BootScreen 共用 OnboardKit 设计语言（Claude 桌面端口径）：同底、同卡、
- * 同打勾、同菊花、同进度条——是主界面"第一次开机"的延伸，不像一个外来网页。
- * 版式上采用 Claude 设置面板式的清单：四步收在一张卡片里，行间发丝分隔，
- * 步骤指示位是 26px 细边圆（序号 → 爬动菊花 → 陶土橘打勾）。
+ * 与 BootScreen 共用 OnboardKit 设计语言：同底、同卡、同打勾、同菊花、
+ * 同进度条——是主界面"第一次开机"的延伸，不像一个外来网页。
+ * 版式上采用清单式步骤卡：行间发丝分隔，步骤指示位是 26px 细边圆
+ * （序号 → 爬动菊花 → 陶土橘打勾），整组以 onboard-card-in 交错落入。
  *
  * 诚实原则：不做假下载表演。三步引导全部给**真实可复制**的命令（终端深色
  * chip，与聊天代码块同款），第四步的「重新检测」是真实回调 Rust
- * `check_engine`；通过即放行。随时可走「降级模式」先用起来——装好引擎后
- * 从标题栏状态灯随时回来。
+ * `check_engine`；通过即放行（onboard-success-glow 柔光扩散）。
+ * 随时可走「降级模式」先用起来——装好引擎后从标题栏状态灯随时回来。
  */
 export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegraded, onReady, manual }: Props) {
   const [done, setDone] = useState<Record<string, boolean>>({});
@@ -136,16 +136,16 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
     return (
       <OnboardShell>
         <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-          <div className="onboard-in relative mb-6">
-            <BrandMark size="lg" />
-            <span className="absolute -bottom-1 -right-1">
+          <div className="boot-item-in relative mb-6">
+            <BrandMark size="lg" className="boot-float" />
+            <span className="onboard-success-glow absolute -bottom-1 -right-1 inline-flex rounded-full">
               <OnboardCheck size="lg" />
             </span>
           </div>
-          <h1 className="onboard-in onboard-hero text-[24px] font-semibold text-tuan-heading mb-2" style={{ animationDelay: '0.08s' }}>
+          <h1 className="boot-item-in onboard-hero text-[24px] font-semibold text-tuan-heading mb-2" style={{ animationDelay: '0.14s' }}>
             本地引擎已就绪
           </h1>
-          <p className="onboard-in text-[14px] text-tuan-textSecondary" style={{ animationDelay: '0.14s' }}>
+          <p className="boot-item-in text-[14px] text-tuan-textSecondary" style={{ animationDelay: '0.22s' }}>
             正在进入青小团…
           </p>
         </div>
@@ -158,7 +158,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
     return (
       <OnboardShell scroll>
         <div className="mx-auto w-full max-w-[520px] py-14">
-          <div className="onboard-in flex flex-col items-center text-center mb-8">
+          <div className="onboard-card-in flex flex-col items-center text-center mb-8">
             <BrandMark size="lg" className="mb-5" />
             <h1 className="onboard-hero text-[22px] font-semibold text-tuan-heading mb-2">
               本地引擎已就绪
@@ -167,7 +167,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
               青小团的「身体」在线，完整 Agent 能力（工具调用 / 安全闸门 / 可撤销操作）全部可用。
             </p>
           </div>
-          <div className="onboard-in tuan-card px-5 py-4 space-y-1.5" style={{ animationDelay: '0.08s' }}>
+          <div className="onboard-card-in tuan-card px-5 py-4 space-y-1.5" style={{ animationDelay: '0.08s' }}>
             {engineStatus.app_version && (
               <div className="flex justify-between text-[13px]"><span className="text-tuan-textSecondary">外壳版本</span><span className="text-tuan-text font-mono">v{engineStatus.app_version}</span></div>
             )}
@@ -181,7 +181,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
               <div className="flex gap-4 text-[13px]"><span className="flex-none text-tuan-textSecondary">引擎目录</span><span className="truncate text-tuan-text font-mono" title={engineStatus.engine_root}>{engineStatus.engine_root}</span></div>
             )}
           </div>
-          <div className="onboard-in mt-10 flex justify-center" style={{ animationDelay: '0.14s' }}>
+          <div className="onboard-card-in mt-10 flex justify-center" style={{ animationDelay: '0.14s' }}>
             <button
               onClick={onEnterDegraded}
               className="cc-btn-ghost h-10 px-5 text-[14px]"
@@ -200,7 +200,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
     <OnboardShell scroll>
       <div className="mx-auto w-full max-w-[520px] py-14">
         {/* 头部：品牌标识 + 欢迎语（衬线仅此一处，同 ChatView 空态问候语） */}
-        <div className="onboard-in flex flex-col items-center text-center mb-10">
+        <div className="onboard-card-in flex flex-col items-center text-center mb-10">
           <BrandMark size="lg" className="mb-5" />
           <h1 className="onboard-hero text-[24px] font-semibold text-tuan-heading mb-2">
             欢迎使用青小团
@@ -212,7 +212,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
         </div>
 
         {/* 诊断信息（真实数据） */}
-        <div className="onboard-in tuan-card mb-6 px-5 py-4" style={{ animationDelay: '0.06s' }}>
+        <div className="onboard-card-in tuan-card mb-6 px-5 py-4" style={{ animationDelay: '0.06s' }}>
           <div className="mb-1 text-[12px] text-tuan-textSecondary">自检结果</div>
           <div className="break-all font-mono text-[13px] text-tuan-text">
             {engineStatus.reason || '本地引擎不可用'}
@@ -220,18 +220,19 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
         </div>
 
         {/* 进度（与启动序列同一条进度条） */}
-        <div className="onboard-in mb-6" style={{ animationDelay: '0.1s' }}>
+        <div className="onboard-card-in mb-6" style={{ animationDelay: '0.1s' }}>
           <OnboardProgress pct={pct} />
         </div>
 
         {/* 四步引导：一张清单卡，行间发丝分隔（Claude 设置面板式） */}
-        <div className="onboard-in tuan-card overflow-hidden" style={{ animationDelay: '0.14s' }}>
+        <div className="onboard-card-in tuan-card overflow-hidden" style={{ animationDelay: '0.14s' }}>
           {steps.map((s, i) => {
             const isDone = !!done[s.key];
             return (
               <div
                 key={s.key}
-                className={`px-5 py-4 ${i > 0 ? 'border-t border-tuan-border' : ''}`}
+                className={`boot-item-in px-5 py-4 ${i > 0 ? 'border-t border-tuan-border' : ''}`}
+                style={{ animationDelay: `${0.18 + i * 0.08}s` }}
               >
                 <div className="flex items-start space-x-3.5">
                   <div className="pt-0.5">
@@ -277,7 +278,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
           })}
 
           {/* 第 4 步：重新检测 */}
-          <div className="border-t border-tuan-border px-5 py-4">
+          <div className="boot-item-in border-t border-tuan-border px-5 py-4" style={{ animationDelay: '0.42s' }}>
             <div className="flex items-start space-x-3.5">
               <div className="pt-0.5">
                 <OnboardStepDot n={4} done={false} busy={rechecking} />
@@ -305,7 +306,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
         </div>
 
         {/* 底部：降级通道 / 返回 */}
-        <div className="onboard-in mt-10 flex flex-col items-center space-y-3" style={{ animationDelay: '0.2s' }}>
+        <div className="onboard-card-in mt-10 flex flex-col items-center space-y-3" style={{ animationDelay: '0.5s' }}>
           <button
             onClick={onEnterDegraded}
             className="cc-btn-ghost h-10 px-5 text-[14px]"

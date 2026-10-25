@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import BrandMark from './BrandMark';
-import { CrawlerSpinner, OnboardCheck, OnboardProgress, OnboardShell } from './OnboardKit';
+import { OnboardCheck, OnboardProgress, OnboardShell } from './OnboardKit';
 
 export interface BootEngineStatus {
   ok: boolean;
@@ -27,16 +27,11 @@ function engineLine(s: BootEngineStatus | null): { text: string; tone: 'ok' | 'w
 }
 
 /**
- * 启动加载序列。
+ * 启动加载序列（豆包 × CodeX 风格，2026-10-25 恢复完整动效层）。
  *
- * 设计语言与 EngineSetupPage 共用 OnboardKit（Claude 桌面端口径）：
- * 同底、同卡、同打勾、同菊花、同进度条——是主界面"开机一刻"的延伸，
- * 不是另一个产品。与上一版的区别：**不做任何表演**——
- * 没有呼吸光晕、没有标识浮动、没有弹跳勾选，全场只有一次
- * 「淡入 + 6px 微下沉」，然后如实逐项打勾。
- *
- * - 视觉：品牌标识安静出场（与 ChatView 空态同一枚 BrandMark）；
- * - 节奏：清单逐项落入、打勾小缩放淡入、3px 细进度条；
+ * - 视觉：品牌标识呼吸柔光（boot-halo）+ 轻浮动（boot-float，豆包的温暖感）；
+ * - 节奏：CodeX 式清单逐项落入（boot-item-in）、打勾弹跳（boot-check-pop）、
+ *   等待态细旋转环（boot-spinner）、3px 细进度条；
  * - 诚实：第三行「本地引擎」反映真实 check_engine 结果——
  *   就绪 / 未启用（降级）/ 检测中，不表演假进度；
  * - 退出：全部就绪后 0.4s 自动淡出；任意点击或按键立即跳过；
@@ -51,7 +46,7 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
     if (doneRef.current) return;
     doneRef.current = true;
     setLeaving(true);
-    window.setTimeout(onDone, 240);
+    window.setTimeout(onDone, 350);
   };
 
   // 时间推进：清单按固定节奏逐项点亮
@@ -105,23 +100,28 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
       aria-label="正在启动"
     >
       <div className="onboard-shell flex flex-col items-center justify-center">
-        {/* 品牌标识：安静出场——无光晕、无浮动（与 ChatView 空态同一枚 BrandMark） */}
-        <div className="onboard-in mb-8">
-          <BrandMark size="lg" />
+        {/* 品牌标识 + 呼吸柔光（豆包式温暖感） */}
+        <div className="boot-item-in relative mb-10 flex h-[128px] w-[128px] items-center justify-center">
+          <div className="boot-halo" />
+          <BrandMark size="xl" className="boot-float relative" />
         </div>
 
-        {/* 启动清单：与安装向导同款卡片（.tuan-card：白底 + 发丝边 + 16px 圆角） */}
-        <div className="onboard-in tuan-card w-[320px] max-w-full px-5 py-4" style={{ animationDelay: '0.08s' }}>
+        {/* 清单：与安装向导同款卡片（.tuan-card：白底 + 发丝边 + 16px 圆角） */}
+        <div className="boot-item-in tuan-card w-[320px] max-w-full px-5 py-4" style={{ animationDelay: '0.08s' }}>
           <div className="space-y-2.5">
-            {rows.map((r) => {
+            {rows.map((r, i) => {
               const st = stateOf(r);
               return (
-                <div key={r.key} className="flex h-7 items-center">
+                <div
+                  key={r.key}
+                  className="boot-item-in flex h-7 items-center"
+                  style={{ animationDelay: `${0.16 + i * 0.12}s` }}
+                >
                   <span className="flex h-4 w-4 flex-none items-center justify-center">
                     {st === 'done' ? (
                       <OnboardCheck />
                     ) : (
-                      <CrawlerSpinner className="!h-[14px] !w-[14px]" />
+                      <span className="boot-spinner" />
                     )}
                   </span>
                   <span
@@ -154,7 +154,7 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
         </div>
 
         {engineStatus?.app_version && (
-          <div className="onboard-in mt-6 text-[11px] text-tuan-textSecondary" style={{ animationDelay: '0.16s' }}>
+          <div className="boot-item-in mt-6 text-[11px] text-tuan-textSecondary" style={{ animationDelay: '0.6s' }}>
             Tuan-Chat v{engineStatus.app_version}
           </div>
         )}
