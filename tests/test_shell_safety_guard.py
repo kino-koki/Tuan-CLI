@@ -108,7 +108,16 @@ def test_yolo_redline_still_blocked():
 
 
 def test_shell_security_gate_precedes_whitelist(monkeypatch):
-    """SecurityGate 必须在 shell 主路径白名单之前拦截伪装成良性的系统目录移动。"""
+    """SecurityGate 必须在 shell 主路径白名单之前拦截伪装成良性的系统目录移动。
+
+    边界说明 (与 YOLO 契约统一后):
+      白名单不能放过**灾难级**操作 (致命红线 / warning_level>=5 极高危) ——
+      哪怕用户把整条命令加白、哪怕开着 yolo、哪怕没有确认通道, 都必须拦下。
+      但 warning_level==3 的高危命令 (如 `chmod 777 /var/www`) 属于
+      「用户已预先授权」的范围: yolo 语义是"别拿琐碎确认打断我", 该命令会走
+      tools/shell.py 的分级阶梯 —— standard 弹 3 次确认, yolo 自动放行。
+      这条边界由 test_yolo_permission_and_confirm_card.py 锁定。
+    """
     k = _kernel_with_safety()
     monkeypatch.setattr(
         shell_module,
@@ -116,11 +125,11 @@ def test_shell_security_gate_precedes_whitelist(monkeypatch):
         lambda: MagicMock(is_whitelisted=lambda command: True),
     )
     commands = [
-        "mv /etc /tmp/backup",
-        "userdel -r root",
-        "cat ~/.ssh/id_rsa",
-        "chmod -R 777 /",
-        "chmod 777 /var/www",
+        "mv /etc /tmp/backup",              # 致命红线 (wl=5)
+        "userdel -r root",                  # 致命红线 (wl=5)
+        "cat ~/.ssh/id_rsa",                # 致命红线 (wl=5)
+        "chmod -R 777 /",                   # 致命红线 (wl=5)
+        "dd if=/dev/zero of=/dev/sda",      # 极高危 (wl=5, 非硬红线)
     ]
     for command in commands:
         ctx = _build_ctx(k, yolo=True)
@@ -130,11 +139,29 @@ def test_shell_security_gate_precedes_whitelist(monkeypatch):
 
 
 def test_security_gate_uses_shared_high_risk_rules_in_yolo():
-    for command in ("chmod 777 /var/www", "kill -9 1234", "pkill -f worker"):
+    """闸门与共享打分库口径一致: 等级一致, 但**不替调用方决定要不要问**。
+
+    闸门的职责是「这条命令多危险」(severity), 而不是「当前模式要不要问」
+    (needs_confirm) —— 后者由 tools/shell.py 的分级阶梯按模式统一执行:
+      warning_level >= 5 → 5 次确认 (YOLO 也不豁免);
+      warning_level >= 3 → standard 弹 3 次确认; YOLO 自动放行。
+    早期版本在闸门里硬塞了一条「YOLO 不豁免 risk==high → CONFIRM」, 导致
+    shell.py 的 YOLO 自动批准分支成为死代码, 表现为「开了 yolo 还在为
+    docker rm -f / kubectl delete 弹 3 次确认」。
+    """
+    from tuan_cli.ext.safety_score import SafetyEngine
+
+    engine = SafetyEngine()
+    for command in ("chmod 777 /var/www", "kill -9 1234", "pkill -f worker", "ls -la src/"):
         verdict = SecurityGate(yolo=True).decide_shell(command)
-        assert verdict.needs_confirm(), command
-        assert verdict.severity == "high", command
+        expected = engine.score({"command": command})["risk"] or "none"
+        assert verdict.severity == expected, f"{command}: 闸门等级应与打分库一致"
+    # 高危命令在 YOLO 下不再由闸门强制确认 (交给调用方的阶梯)
+    verdict = SecurityGate(yolo=True).decide_shell("chmod 777 /var/www")
+    assert not verdict.needs_confirm(), verdict.reasons
     assert SecurityGate(yolo=True).decide_shell("ls -la src/").allows()
+    # 灾难级仍由闸门硬拦 —— 安全底线不变
+    assert SecurityGate(yolo=True).decide_shell("rm -rf /").blocks()
 
 
 @pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
