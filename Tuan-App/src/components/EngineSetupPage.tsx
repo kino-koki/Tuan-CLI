@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Check, RefreshCw, ArrowRight, CircleDashed } from 'lucide-react';
+import { Check, RefreshCw, ArrowRight } from 'lucide-react';
 import type { BootEngineStatus } from './BootScreen';
 import BrandMark from './BrandMark';
 import {
+  BrailleSpinner,
   OnboardCheck,
-  OnboardCommand,
   OnboardProgress,
   OnboardShell,
-  OnboardStepDot,
+  TermCommand,
+  TermWindow,
 } from './OnboardKit';
 
 interface Props {
@@ -54,18 +55,30 @@ function requirementsCmd(root?: string): string {
   return `pip install -r "${dir}\\requirements.txt"`;
 }
 
+/** 品牌标识位：呼吸柔光 + 轻浮动 + 交错落入（与启动序列同一枚 BrandMark）。 */
+function BrandHero({ size }: { size: 'lg' | 'xl' }) {
+  const box = size === 'xl' ? 'h-[128px] w-[128px]' : 'h-[112px] w-[112px]';
+  return (
+    <div className={`boot-item-in relative mx-auto mb-10 flex ${box} items-center justify-center`}>
+      <div className="boot-halo" />
+      <BrandMark size={size} className="boot-float relative" />
+    </div>
+  );
+}
+
 /**
- * 引擎安装向导（豆包 × CodeX 风格，2026-10-25 恢复完整动效层）。
+ * 引擎安装向导（CodeX 式 TUI 安装终端）。
  *
- * 与 BootScreen 共用 OnboardKit 设计语言：同底、同卡、同打勾、同菊花、
- * 同进度条——是主界面"第一次开机"的延伸，不像一个外来网页。
- * 版式上采用清单式步骤卡：行间发丝分隔，步骤指示位是 26px 细边圆
- * （序号 → 爬动菊花 → 陶土橘打勾），整组以 onboard-card-in 交错落入。
+ * 结构照抄 OpenAI Codex 的首次运行安装引导：一扇终端窗口（三点窗饰 +
+ * 等宽标题栏 + 底部状态栏），窗内 `>_` 标识行 + meta 行（engine / python
+ * 实时自检值）、`!` 诊断行、进度条，然后是编号步骤（01–04）：每步给出
+ * `$` 前缀的真实可复制命令（终端 chip，与聊天代码块同款底色）和审批式
+ * `[ ]/[x]` 完成标记（Codex approval prompt 的口径）；第 4 步「重新检测」
+ * 是真实回调 Rust `check_engine`，通过后窗口内打勾 + 柔光扩散收尾。
  *
- * 诚实原则：不做假下载表演。三步引导全部给**真实可复制**的命令（终端深色
- * chip，与聊天代码块同款），第四步的「重新检测」是真实回调 Rust
- * `check_engine`；通过即放行（onboard-success-glow 柔光扩散）。
- * 随时可走「降级模式」先用起来——装好引擎后从标题栏状态灯随时回来。
+ * 诚实原则：不做假下载表演。随时可走「降级模式」先用起来——装好引擎后
+ * 从标题栏状态灯随时回来。动效与启动序列同 vocab（halo / float /
+ * item-in / check-pop / card-in / success-glow）。
  */
 export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegraded, onReady, manual }: Props) {
   const [done, setDone] = useState<Record<string, boolean>>({});
@@ -130,62 +143,84 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
 
   const doneCount = steps.filter((s) => done[s.key]).length;
   const pct = success ? 100 : Math.round((doneCount / 4) * 100);
+  const appVersion = engineStatus.app_version;
+  const engineVersion = engineStatus.engine_version;
 
-  // ===== 成功态：与启动序列同一套"品牌 + 打勾"收尾 =====
+  // ===== 成功态：终端窗口内的打勾收尾（柔光扩散后自动进入）=====
   if (success) {
     return (
       <OnboardShell>
-        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-          <div className="boot-item-in relative mb-6">
-            <BrandMark size="lg" className="boot-float" />
-            <span className="onboard-success-glow absolute -bottom-1 -right-1 inline-flex rounded-full">
-              <OnboardCheck size="lg" />
-            </span>
-          </div>
-          <h1 className="boot-item-in onboard-hero text-[24px] font-semibold text-tuan-heading mb-2" style={{ animationDelay: '0.14s' }}>
-            本地引擎已就绪
-          </h1>
-          <p className="boot-item-in text-[14px] text-tuan-textSecondary" style={{ animationDelay: '0.22s' }}>
-            正在进入青小团…
-          </p>
+        <div className="flex-1 flex flex-col items-center justify-center px-6">
+          <TermWindow
+            className="boot-item-in w-[400px] max-w-full"
+            title="tuan-chat — engine setup"
+            right={appVersion ? `v${appVersion}` : undefined}
+          >
+            <div className="flex flex-col items-center py-7 text-center">
+              <span className="onboard-success-glow inline-flex rounded-full">
+                <OnboardCheck size="lg" />
+              </span>
+              <div className="tuan-mono boot-item-in mt-6 text-[13px] text-tuan-text" style={{ animationDelay: '0.2s' }}>
+                engine: ready
+              </div>
+              <p className="boot-item-in mt-1.5 text-[13px] text-tuan-textSecondary" style={{ animationDelay: '0.28s' }}>
+                正在进入青小团…
+              </p>
+            </div>
+          </TermWindow>
         </div>
       </OnboardShell>
     );
   }
 
-  // ===== 手动打开且引擎已就绪：只展示信息卡（无需安装步骤）=====
+  // ===== 手动打开且引擎已就绪：只展示状态窗口（CodeX /status 的口径）=====
   if (manual && engineStatus.ok) {
     return (
       <OnboardShell scroll>
         <div className="mx-auto w-full max-w-[520px] py-14">
-          <div className="onboard-card-in flex flex-col items-center text-center mb-8">
-            <BrandMark size="lg" className="mb-5" />
-            <h1 className="onboard-hero text-[22px] font-semibold text-tuan-heading mb-2">
-              本地引擎已就绪
-            </h1>
-            <p className="text-[14px] leading-relaxed text-tuan-textSecondary max-w-[440px]">
+          <BrandHero size="lg" />
+          <TermWindow
+            className="onboard-card-in w-full"
+            title="tuan-chat — status"
+            right={appVersion ? `v${appVersion}` : undefined}
+            footer={<span>{engineStatus.ok ? 'engine: ready' : 'engine: not ready'}</span>}
+          >
+            <div className="flex items-center gap-2">
+              <span className="term-prompt">&gt;_</span>
+              <span className="tuan-mono text-[13px] font-medium text-tuan-text">青小团 Tuan-Chat</span>
+            </div>
+            <div className="mt-4 space-y-1.5">
+              {engineStatus.app_version && (
+                <div className="flex gap-4 text-[13px]">
+                  <span className="tuan-mono w-[64px] flex-none text-tuan-textSecondary">shell</span>
+                  <span className="tuan-mono text-tuan-text">v{engineStatus.app_version}</span>
+                </div>
+              )}
+              {engineStatus.engine_version && (
+                <div className="flex gap-4 text-[13px]">
+                  <span className="tuan-mono w-[64px] flex-none text-tuan-textSecondary">engine</span>
+                  <span className="tuan-mono text-tuan-text">v{engineStatus.engine_version}</span>
+                </div>
+              )}
+              {engineStatus.python && (
+                <div className="flex gap-4 text-[13px]">
+                  <span className="tuan-mono w-[64px] flex-none text-tuan-textSecondary">python</span>
+                  <span className="tuan-mono min-w-0 truncate text-tuan-text" title={engineStatus.python}>{engineStatus.python}</span>
+                </div>
+              )}
+              {engineStatus.engine_root && (
+                <div className="flex gap-4 text-[13px]">
+                  <span className="tuan-mono w-[64px] flex-none text-tuan-textSecondary">root</span>
+                  <span className="tuan-mono min-w-0 truncate text-tuan-text" title={engineStatus.engine_root}>{engineStatus.engine_root}</span>
+                </div>
+              )}
+            </div>
+            <p className="mt-4 text-[13px] leading-relaxed text-tuan-textSecondary">
               青小团的「身体」在线，完整 Agent 能力（工具调用 / 安全闸门 / 可撤销操作）全部可用。
             </p>
-          </div>
-          <div className="onboard-card-in tuan-card px-5 py-4 space-y-1.5" style={{ animationDelay: '0.08s' }}>
-            {engineStatus.app_version && (
-              <div className="flex justify-between text-[13px]"><span className="text-tuan-textSecondary">外壳版本</span><span className="text-tuan-text font-mono">v{engineStatus.app_version}</span></div>
-            )}
-            {engineStatus.engine_version && (
-              <div className="flex justify-between text-[13px]"><span className="text-tuan-textSecondary">引擎版本</span><span className="text-tuan-text font-mono">v{engineStatus.engine_version}</span></div>
-            )}
-            {engineStatus.python && (
-              <div className="flex gap-4 text-[13px]"><span className="flex-none text-tuan-textSecondary">Python</span><span className="truncate text-tuan-text font-mono" title={engineStatus.python}>{engineStatus.python}</span></div>
-            )}
-            {engineStatus.engine_root && (
-              <div className="flex gap-4 text-[13px]"><span className="flex-none text-tuan-textSecondary">引擎目录</span><span className="truncate text-tuan-text font-mono" title={engineStatus.engine_root}>{engineStatus.engine_root}</span></div>
-            )}
-          </div>
+          </TermWindow>
           <div className="onboard-card-in mt-10 flex justify-center" style={{ animationDelay: '0.14s' }}>
-            <button
-              onClick={onEnterDegraded}
-              className="cc-btn-ghost h-10 px-5 text-[14px]"
-            >
+            <button onClick={onEnterDegraded} className="cc-btn-ghost h-10 px-5 text-[14px]">
               <span>返回</span>
               <ArrowRight size={15} />
             </button>
@@ -198,119 +233,123 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
   // ===== 四步安装向导 =====
   return (
     <OnboardShell scroll>
-      <div className="mx-auto w-full max-w-[520px] py-14">
-        {/* 头部：品牌标识 + 欢迎语（衬线仅此一处，同 ChatView 空态问候语） */}
-        <div className="onboard-card-in flex flex-col items-center text-center mb-10">
-          <BrandMark size="lg" className="mb-5" />
-          <h1 className="onboard-hero text-[24px] font-semibold text-tuan-heading mb-2">
-            欢迎使用青小团
-          </h1>
-          <p className="max-w-[440px] text-[14px] leading-relaxed text-tuan-textSecondary">
-            本地引擎还没就绪。它是青小团的「身体」——负责把想法变成真实、可撤销的操作。
-            按下面四步装好它，大约需要两分钟；想先用起来，也可以随时以纯对话模式进入。
-          </p>
-        </div>
+      <div className="mx-auto w-full max-w-[560px] py-14">
+        <BrandHero size="lg" />
 
-        {/* 诊断信息（真实数据） */}
-        <div className="onboard-card-in tuan-card mb-6 px-5 py-4" style={{ animationDelay: '0.06s' }}>
-          <div className="mb-1 text-[12px] text-tuan-textSecondary">自检结果</div>
-          <div className="break-all font-mono text-[13px] text-tuan-text">
-            {engineStatus.reason || '本地引擎不可用'}
+        <TermWindow
+          className="onboard-card-in w-full"
+          title="tuan-chat — engine setup"
+          right={appVersion ? `v${appVersion}` : undefined}
+          footer={
+            <>
+              <span>4 steps · degraded mode available anytime</span>
+              <span>{pct}%</span>
+            </>
+          }
+        >
+          {/* `>_` 标识行 + meta 行（实时自检值） */}
+          <div className="flex items-center gap-2">
+            <span className="term-prompt">&gt;_</span>
+            <span className="tuan-mono text-[13px] font-medium text-tuan-text">青小团 Tuan-Chat</span>
           </div>
-        </div>
+          <div className="tuan-mono term-meta">
+            <span className="term-meta-key">engine:</span>{' '}
+            {engineStatus.ok ? `ready${engineVersion ? ` · v${engineVersion}` : ''}` : 'not ready'}
+          </div>
+          <div className="tuan-mono term-meta">
+            <span className="term-meta-key">python:</span> {engineStatus.python || 'not found'}
+          </div>
 
-        {/* 进度（与启动序列同一条进度条） */}
-        <div className="onboard-card-in mb-6" style={{ animationDelay: '0.1s' }}>
-          <OnboardProgress pct={pct} />
-        </div>
+          {/* 诊断行（CodeX 的错误信息位：`!` + 等宽正文） */}
+          <div className="term-note">
+            <span className="text-tuan-danger">!</span> {engineStatus.reason || '本地引擎不可用'}
+          </div>
 
-        {/* 四步引导：一张清单卡，行间发丝分隔（Claude 设置面板式） */}
-        <div className="onboard-card-in tuan-card overflow-hidden" style={{ animationDelay: '0.14s' }}>
-          {steps.map((s, i) => {
-            const isDone = !!done[s.key];
-            return (
-              <div
-                key={s.key}
-                className={`boot-item-in px-5 py-4 ${i > 0 ? 'border-t border-tuan-border' : ''}`}
-                style={{ animationDelay: `${0.18 + i * 0.08}s` }}
-              >
-                <div className="flex items-start space-x-3.5">
-                  <div className="pt-0.5">
-                    <OnboardStepDot n={i + 1} done={isDone} />
+          {/* 进度 */}
+          <div className="mt-4">
+            <OnboardProgress pct={pct} label={false} />
+          </div>
+
+          {/* 编号步骤 01–03：命令 chip + 审批式完成标记 */}
+          <div className="mt-5 space-y-5">
+            {steps.map((s, i) => {
+              const isDone = !!done[s.key];
+              return (
+                <div key={s.key} className="boot-item-in" style={{ animationDelay: `${0.1 + i * 0.08}s` }}>
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-4 w-4 flex-none items-center justify-center">
+                      {isDone ? (
+                        <OnboardCheck />
+                      ) : (
+                        <span className="tuan-mono text-[12px] text-tuan-textSecondary">
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                      )}
+                    </span>
+                    <h3 className="text-[14px] font-medium text-tuan-text">{s.title}</h3>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-[11.5px] text-tuan-textSecondary tabular-nums">第 {i + 1} 步</span>
-                      <h3 className="text-[14.5px] font-medium text-tuan-text">{s.title}</h3>
-                    </div>
-                    <p className="mt-1 text-[13px] leading-relaxed text-tuan-textSecondary">{s.body}</p>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-tuan-textSecondary">{s.body}</p>
 
-                    {/* 可复制命令（终端 chip，与聊天代码块同款底色） */}
-                    <OnboardCommand
-                      text={s.cmd}
-                      note={s.cmdNote}
-                      copied={copied === s.key}
-                      onCopy={() => copy(s.key, s.cmd)}
+                  <TermCommand
+                    text={s.cmd}
+                    note={s.cmdNote}
+                    copied={copied === s.key}
+                    onCopy={() => copy(s.key, s.cmd)}
+                  />
+                  {s.alt && (
+                    <TermCommand
+                      text={s.alt}
+                      note={s.altNote}
+                      copied={copied === s.key + '-alt'}
+                      onCopy={() => copy(s.key + '-alt', s.alt!)}
                     />
-                    {s.alt && (
-                      <OnboardCommand
-                        text={s.alt}
-                        note={s.altNote}
-                        copied={copied === s.key + '-alt'}
-                        onCopy={() => copy(s.key + '-alt', s.alt!)}
-                      />
-                    )}
+                  )}
 
-                    {/* 标记完成 */}
-                    <button
-                      onClick={() => setDone((d) => ({ ...d, [s.key]: !d[s.key] }))}
-                      className={`mt-3 inline-flex items-center space-x-1.5 text-[12.5px] transition-colors ${
-                        isDone ? 'text-tuan-accentSoft' : 'text-tuan-textSecondary hover:text-tuan-text'
-                      }`}
-                    >
-                      {isDone ? <Check size={13} /> : <CircleDashed size={13} />}
-                      <span>{isDone ? '已完成' : '标记为已完成'}</span>
-                    </button>
-                  </div>
+                  {/* 审批式完成标记（CodeX approval prompt 的 `[ ]/[x]` 口径） */}
+                  <button
+                    onClick={() => setDone((d) => ({ ...d, [s.key]: !d[s.key] }))}
+                    className={`mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] transition-colors ${
+                      isDone ? 'text-tuan-accentSoft' : 'text-tuan-textSecondary hover:text-tuan-text'
+                    }`}
+                  >
+                    <span className="tuan-mono">{isDone ? '[x]' : '[ ]'}</span>
+                    <span>{isDone ? '已完成' : '标记为已完成'}</span>
+                  </button>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
 
-          {/* 第 4 步：重新检测 */}
-          <div className="boot-item-in border-t border-tuan-border px-5 py-4" style={{ animationDelay: '0.42s' }}>
-            <div className="flex items-start space-x-3.5">
-              <div className="pt-0.5">
-                <OnboardStepDot n={4} done={false} busy={rechecking} />
+            {/* 第 4 步：重新检测（真实回调 Rust check_engine） */}
+            <div className="boot-item-in" style={{ animationDelay: '0.34s' }}>
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-4 w-4 flex-none items-center justify-center">
+                  {rechecking ? (
+                    <BrailleSpinner className="text-tuan-accentSoft" />
+                  ) : (
+                    <span className="tuan-mono text-[12px] text-tuan-textSecondary">04</span>
+                  )}
+                </span>
+                <h3 className="text-[14px] font-medium text-tuan-text">重新检测</h3>
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center space-x-2">
-                  <span className="text-[11.5px] text-tuan-textSecondary tabular-nums">第 4 步</span>
-                  <h3 className="text-[14.5px] font-medium text-tuan-text">重新检测</h3>
-                </div>
-                <p className="mt-1 text-[13px] leading-relaxed text-tuan-textSecondary">
-                  装好后点这里，应用会真实地重新检查一遍。通过后直接进入主界面。
-                </p>
-                {recheckErr && <p className="mt-2 text-[12.5px] text-tuan-danger">{recheckErr}</p>}
-                <button
-                  onClick={recheck}
-                  disabled={rechecking}
-                  className="cc-btn-accent mt-3 h-9 px-4 text-[13.5px] font-medium"
-                >
-                  <RefreshCw size={14} className={rechecking ? 'animate-spin' : ''} />
-                  <span>{rechecking ? '检测中…' : '重新检测'}</span>
-                </button>
-              </div>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-tuan-textSecondary">
+                装好后点这里，应用会真实地重新检查一遍。通过后直接进入主界面。
+              </p>
+              {recheckErr && <p className="mt-2 text-[12.5px] text-tuan-danger">{recheckErr}</p>}
+              <button
+                onClick={recheck}
+                disabled={rechecking}
+                className="cc-btn-accent mt-3 h-9 px-4 text-[13.5px] font-medium"
+              >
+                <RefreshCw size={14} className={rechecking ? 'animate-spin' : ''} />
+                <span>{rechecking ? '检测中…' : '重新检测'}</span>
+              </button>
             </div>
           </div>
-        </div>
+        </TermWindow>
 
         {/* 底部：降级通道 / 返回 */}
-        <div className="onboard-card-in mt-10 flex flex-col items-center space-y-3" style={{ animationDelay: '0.5s' }}>
-          <button
-            onClick={onEnterDegraded}
-            className="cc-btn-ghost h-10 px-5 text-[14px]"
-          >
+        <div className="onboard-card-in mt-10 flex flex-col items-center space-y-3" style={{ animationDelay: '0.42s' }}>
+          <button onClick={onEnterDegraded} className="cc-btn-ghost h-10 px-5 text-[14px]">
             <span>{manual ? '返回' : '先以降级模式进入'}</span>
             <ArrowRight size={15} />
           </button>
