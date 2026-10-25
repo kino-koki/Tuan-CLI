@@ -115,6 +115,35 @@ body {
   .cc-pill {
     @apply bg-transparent border border-tuan-border rounded-full px-2.5 py-1 text-[13px] outline-none text-tuan-textSecondary disabled:opacity-50;
   }
+  /* 键盘徽标（⌘K 面板 / 状态栏 / 标题栏共用）：小圆角、细边、等宽数字 */
+  .cc-kbd {
+    @apply inline-flex items-center justify-center gap-0.5 rounded-md border border-tuan-border bg-tuan-input px-1.5 text-[10.5px] font-medium leading-[18px] text-tuan-textSecondary;
+    min-width: 18px;
+    height: 18px;
+  }
+}
+
+/* === Claude Code 桌面 ⌘K 命令面板动效 === */
+@keyframes cc-palette-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.cc-palette-in {
+  animation: cc-palette-in 0.16s ease-out both;
+}
+.cc-palette-overlay {
+  animation: cc-fade-in 0.16s ease-out both;
+}
+@keyframes cc-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+/* 低端机/系统减少动效偏好：面板直接呈现，不做位移 */
+@media (prefers-reduced-motion: reduce) {
+  .cc-palette-in,
+  .cc-palette-overlay {
+    animation: none;
+  }
 }
 
 /* Claude Code 风格菊花动画：SVG 圆环 + stroke-dasharray 缺口，匀速旋转。

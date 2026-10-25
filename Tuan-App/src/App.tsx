@@ -12,6 +12,7 @@ import GuidePage from './components/GuidePage';
 import ErrorBoundary from './components/ErrorBoundary';
 import type { PageKey } from './components/Sidebar';
 import TitleBar from './components/TitleBar';
+import CommandPalette, { type PaletteAction } from './components/CommandPalette';
 import { engineChat, setEngineAvailable } from './platform/engine';
 import {
   attachBackNav,
@@ -20,16 +21,48 @@ import {
   attachOrientation,
   installNav,
 } from './platform/mobile';
-import { getMode, needsConfirmSwitch, platformBlockReason, type ModeId } from './platform/modes';
+import { getMode, MODES, needsConfirmSwitch, platformBlockReason, type ModeId } from './platform/modes';
 import { store, applyTheme, uid } from './store/config';
 import type { Conversation, PendingApproval, Provider, ToolEvent } from './types';
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import {
+  MessageSquarePlus,
+  MessageCircle,
+  FileText,
+  Code2,
+  Palette,
+  Zap,
+  Cpu,
+  Server,
+  FolderKanban,
+  Package,
+  Wrench,
+  Blocks,
+  Puzzle,
+  BookOpen,
+  Settings,
+  SunMoon,
+} from 'lucide-react';
+
+/** 五模式在命令面板中的图标（modes.ts 只存语义，图标属表现层，在此映射） */
+const MODE_ICONS: Record<ModeId, React.ReactNode> = {
+  chat: <MessageCircle size={16} />,
+  collaboration: <FileText size={16} />,
+  lingma: <Code2 size={16} />,
+  gantong: <Palette size={16} />,
+  boundless: <Zap size={16} />,
+};
 
 export default function App() {
   type View = 'chat' | PageKey;
   const [page, setPage] = useState<View>('chat');
   const [collapsed, setCollapsed] = useState(false);
-  const isNarrow = () => typeof window !== 'undefined' && window.innerWidth < 820;
+  // ⌘K 命令面板开关（Claude Code 桌面标志性交互）
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 820,
+  );
+  const isNarrow = () => narrow;
   const [theme, setTheme] = useState<'light' | 'dark'>(() => store.theme());
   const [avatarMode, setAvatarMode] = useState<'anime' | 'default'>(() => store.avatarMode());
   const [agentMode, setAgentMode] = useState<boolean>(() => store.agentMode());
@@ -88,8 +121,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (isNarrow()) setCollapsed(true);
-    const onResize = () => setCollapsed(isNarrow());
+    const onResize = () => {
+      const n = typeof window !== 'undefined' && window.innerWidth < 820;
+      setNarrow(n);
+      if (n) setCollapsed(true);
+    };
+    onResize();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
@@ -137,37 +174,46 @@ export default function App() {
     };
   }, []);
 
-  // 全局快捷键
+  // 全局快捷键（桌面端 ⌘ / Windows Ctrl 双覆盖，对齐 Claude Code 桌面习惯）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Ctrl+N: 新建对话
-      if (e.ctrlKey && e.key === 'n') {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      // ⌘N: 新建对话
+      if (k === 'n') {
         e.preventDefault();
         newChat();
       }
-      // Ctrl+O: 打开设置
-      if (e.ctrlKey && e.key === 'o') {
+      // ⌘K: 命令面板
+      else if (k === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+      // ⌘O: 打开设置
+      else if (k === 'o') {
         e.preventDefault();
         setPage('settings');
       }
-      // Ctrl+G: 打开指南
-      if (e.ctrlKey && e.key === 'g') {
+      // ⌘,: 打开设置（桌面端惯例，与 ⌘O 等价）
+      else if (e.key === ',') {
+        e.preventDefault();
+        setPage('settings');
+      }
+      // ⌘G: 打开指南
+      else if (k === 'g') {
         e.preventDefault();
         setPage('guide');
       }
-      // Ctrl+B: 切换侧栏
-      if (e.ctrlKey && e.key === 'b') {
+      // ⌘B: 切换侧栏
+      else if (k === 'b') {
         e.preventDefault();
         setCollapsed((c) => !c);
-      }
-      // Escape: 返回聊天页
-      if (e.key === 'Escape' && page !== 'chat') {
-        setPage('chat');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [page]);
+  }, []);
 
   // ===== 移动端 / 原生壳适配（W-2 / W-3 / W-7 / W-8）=====
   // 侧栏抽屉、伪路由返回栈、横竖屏复位、软键盘避让四件事的触发源各不相同
@@ -257,6 +303,74 @@ export default function App() {
     setError('');
     setPage('chat');
   };
+
+  // ⌘K 命令面板动作表：随状态实时重建（约 20 项，构建成本可忽略）。
+  // 模式项带风险提示，L4（无界）用危险色描边；模型/供应商反映当前可用集合。
+  const paletteActiveProvider = providers.find((p) => p.id === providerId) ?? providers[0];
+  const paletteModels = paletteActiveProvider?.models.filter((m) => m.enabled) ?? [];
+  const paletteActions: PaletteAction[] = [
+    {
+      id: 'new-chat',
+      label: '新建对话',
+      group: '对话',
+      icon: <MessageSquarePlus size={16} />,
+      shortcut: '⌘N',
+      run: newChat,
+    },
+    ...MODES.map((m): PaletteAction => ({
+      id: `mode-${m.id}`,
+      label: `切换到「${m.name}」模式`,
+      group: '模式',
+      icon: MODE_ICONS[m.id],
+      hint: m.tagline,
+      danger: m.level === 'L4',
+      keywords: `${m.name} ${m.tagline} mode ${m.level}`,
+      run: () => changeMode(m.id),
+    })),
+    ...paletteModels.slice(0, 15).map((m): PaletteAction => ({
+      id: `model-${m.id}`,
+      label: m.name,
+      group: '模型',
+      icon: <Cpu size={16} />,
+      hint: paletteActiveProvider?.name,
+      keywords: m.id,
+      run: () => setModel(m.id),
+    })),
+    ...providers.map((p): PaletteAction => ({
+      id: `provider-${p.id}`,
+      label: p.name,
+      group: '供应商',
+      icon: <Server size={16} />,
+      hint: p.id === providerId ? '当前' : undefined,
+      run: () => setProviderId(p.id),
+    })),
+    ...[
+      { key: 'chats' as PageKey, label: '聊天记录', icon: <MessageCircle size={16} /> },
+      { key: 'projects' as PageKey, label: '项目', icon: <FolderKanban size={16} /> },
+      { key: 'artifacts' as PageKey, label: '成品', icon: <Package size={16} /> },
+      { key: 'skills' as PageKey, label: '技能', icon: <Wrench size={16} /> },
+      { key: 'mcp' as PageKey, label: 'MCP 服务', icon: <Blocks size={16} /> },
+      { key: 'plugins' as PageKey, label: '插件', icon: <Puzzle size={16} /> },
+      { key: 'guide' as PageKey, label: '使用教程', icon: <BookOpen size={16} /> },
+      { key: 'settings' as PageKey, label: '设置', icon: <Settings size={16} />, shortcut: '⌘,' },
+    ].map((n): PaletteAction => ({
+      id: `nav-${n.key}`,
+      label: n.label,
+      group: '导航',
+      icon: n.icon,
+      hint: page === n.key ? '当前' : undefined,
+      shortcut: n.shortcut,
+      run: () => setPage(n.key),
+    })),
+    {
+      id: 'sys-theme',
+      label: theme === 'dark' ? '切换到浅色主题' : '切换到深色主题',
+      group: '系统',
+      icon: <SunMoon size={16} />,
+      keywords: 'theme dark light 主题',
+      run: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
+    },
+  ];
 
   const send = async (text: string) => {
     const provider = providers.find((p) => p.id === providerId) ?? providers[0];
@@ -468,7 +582,7 @@ export default function App() {
 
   return (
     <div className="h-full flex flex-col bg-tuan-main app-shell">
-      <TitleBar onToggleSidebar={() => setCollapsed((c) => !c)} />
+      <TitleBar onToggleSidebar={() => setCollapsed((c) => !c)} onOpenPalette={() => setPaletteOpen(true)} />
       {/* 离线提示 */}
       {!online && (
         <div className="flex items-center justify-center gap-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 text-[12.5px] text-amber-800 dark:text-amber-300">
@@ -489,23 +603,40 @@ export default function App() {
                 page={page === 'chat' ? 'chats' : page}
                 onNavigate={(p) => {
                   setPage(p);
-                  if (isNarrow()) setCollapsed(true);
+                  if (narrow) setCollapsed(true);
                 }}
                 onNewChat={() => {
                   newChat();
-                  if (isNarrow()) setCollapsed(true);
+                  if (narrow) setCollapsed(true);
                 }}
                 recent={convs.map((c) => ({ id: c.id, title: c.title, ts: c.updatedAt }))}
                 activeId={activeId}
               onOpenConv={(id) => {
                 openConv(id);
-                if (isNarrow()) setCollapsed(true);
+                if (narrow) setCollapsed(true);
               }}
               onRename={renameConv}
               onDelete={deleteConv}
+                collapsed={false}
+                isNarrow={narrow}
             />
           </div>
         </>
+      )}
+      {/* 桌面端折叠：64px 图标轨（Claude Code 桌面风格），不渲染遮罩 */}
+      {collapsed && !narrow && (
+        <Sidebar
+          page={page === 'chat' ? 'chats' : page}
+          onNavigate={(p) => setPage(p)}
+          onNewChat={() => newChat()}
+          recent={convs.map((c) => ({ id: c.id, title: c.title, ts: c.updatedAt }))}
+          activeId={activeId}
+          onOpenConv={openConv}
+          onRename={renameConv}
+          onDelete={deleteConv}
+          collapsed={true}
+          isNarrow={false}
+        />
       )}
 
       {page === 'chat' && (
@@ -521,6 +652,7 @@ export default function App() {
           }}
           onModelChange={setModel}
           messages={activeConv?.messages ?? []}
+          title={activeConv?.title}
           streaming={streaming}
           error={error}
           tools={tools}
@@ -536,6 +668,8 @@ export default function App() {
           onOpenSettings={() => setPage('settings')}
           mode={mode}
           onModeChange={changeMode}
+          onNewChat={newChat}
+          onOpenPalette={() => setPaletteOpen(true)}
         />
       )}
       {page === 'chats' && (
@@ -576,6 +710,11 @@ export default function App() {
         )}
         </ErrorBoundary>
       </div>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        actions={paletteActions}
+      />
     </div>
   );
 }
