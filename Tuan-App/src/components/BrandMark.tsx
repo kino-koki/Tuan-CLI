@@ -17,7 +17,7 @@ import { Sparkles } from 'lucide-react';
 interface Props {
   /** 尺寸档位，默认 sm */
   size?: 'sm' | 'md' | 'lg' | 'xl';
-  /** 追加样式类（如进场动画 onboard-in） */
+  /** 追加样式类（如浮动动画 boot-float） */
   className?: string;
   /** 无障碍名称与悬浮提示 */
   title?: string;

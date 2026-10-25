@@ -4,16 +4,19 @@ import { Check } from 'lucide-react';
 /**
  * 加载 / 安装引导共享套件（BootScreen 与 EngineSetupPage 共用）。
  *
- * 设计语言：Claude 桌面端（claude.ai 桌面应用）——
+ * 设计语言：豆包的温暖呼吸感（柔光 / 圆角 / 轻浮动）
+ *            + CodeX 安装引导的清单式打勾（逐项落入 / 弹跳勾选 / 细进度条）。
  * - 底色 `bg-tuan-main`（与主界面同底的暖米纸，不做额外氛围色）；
  * - 卡片 = 白底 + 发丝边 + 16px 圆角 + 极轻投影（.tuan-card，与内部页一致）；
  * - 主按钮 = 陶土橘胶囊（cc-btn-accent），次按钮 = 细边幽灵（cc-btn-ghost）；
- * - 打勾 = 陶土橘实心圆 + 奶白勾，落入时只有 160ms 小缩放淡入（不弹跳）；
+ * - 打勾 = 陶土橘实心圆 + 奶白勾，落入时弹跳（boot-check-pop：scale 0→1.25→1）；
  * - 等待态 = 与聊天「思考中」同源的 12 瓣爬动菊花（cc-spinner，见 index.css）；
  * - 进度 = 3px 细轨 + 陶土橘填充 + 等宽数字；
  * - 命令 = 终端深色 chip（与聊天代码块同款 .tuan-codeblock 底色），可复制；
  * - hero 行才用衬线（Georgia，仅问候位，同 ChatView 空态），其余全部无衬线；
- * - 动效全场只有一种：淡入 + 6px 微下沉（onboard-in，220ms）——安静是这种风格的脸；
+ * - 动效 vocab：呼吸光晕（boot-halo）/ 标识浮动（boot-float）/ 逐行落入
+ *   （boot-item-in）/ 弹跳打勾（boot-check-pop）/ 细旋转环（boot-spinner）/
+ *   卡片交错落入（onboard-card-in）/ 成功柔光（onboard-success-glow）；
  * - 安全区：.onboard-shell 四边让出刘海 / Home Indicator；
  * - prefers-reduced-motion 下所有动效降级为直接呈现。
  *
@@ -56,13 +59,13 @@ export function CrawlerSpinner({ className = '' }: { className?: string }) {
 /**
  * 打勾徽标：陶土橘实心圆 + 奶白勾（Claude 桌面端品牌色口径）。
  * 尺寸：sm = 清单行 / 步骤指示位（16px）；lg = 成功态（44px）。
- * 落入时只有克制的小缩放淡入（onboard-check-in），reduced-motion 下直接呈现。
+ * 落入时弹跳落入（boot-check-pop：scale 0 → 1.25 → 1），reduced-motion 下直接呈现。
  */
 export function OnboardCheck({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   if (size === 'lg') {
     return (
       <span
-        className="onboard-check-in inline-flex h-11 w-11 flex-none items-center justify-center rounded-full bg-tuan-accentSoft"
+        className="boot-check-pop inline-flex h-11 w-11 flex-none items-center justify-center rounded-full bg-tuan-accentSoft"
         role="img"
         aria-label="完成"
       >
@@ -72,7 +75,7 @@ export function OnboardCheck({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   }
   return (
     <span
-      className="onboard-check-in inline-flex h-4 w-4 flex-none items-center justify-center rounded-full bg-tuan-accentSoft"
+      className="boot-check-pop inline-flex h-4 w-4 flex-none items-center justify-center rounded-full bg-tuan-accentSoft"
       role="img"
       aria-label="完成"
     >
