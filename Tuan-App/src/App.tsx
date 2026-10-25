@@ -13,7 +13,9 @@ import ErrorBoundary from './components/ErrorBoundary';
 import type { PageKey } from './components/Sidebar';
 import TitleBar from './components/TitleBar';
 import CommandPalette, { type PaletteAction } from './components/CommandPalette';
-import { engineChat, setEngineAvailable } from './platform/engine';
+import BootScreen, { type BootEngineStatus } from './components/BootScreen';
+import EngineSetupPage from './components/EngineSetupPage';
+import { engineChat, setEngineAvailable, isAndroid } from './platform/engine';
 import {
   attachBackNav,
   attachKeyboardAvoidance,
@@ -64,15 +66,12 @@ export default function App() {
   );
   const isNarrow = () => narrow;
   const [theme, setTheme] = useState<'light' | 'dark'>(() => store.theme());
-  const [avatarMode, setAvatarMode] = useState<'anime' | 'default'>(() => store.avatarMode());
   const [agentMode, setAgentMode] = useState<boolean>(() => store.agentMode());
   const [mode, setMode] = useState<ModeId>(() => store.mode());
   const [providers, setProviders] = useState<Provider[]>(() => store.providers());
   const [convs, setConvs] = useState<Conversation[]>(() => store.conversations());
   const [projects, setProjects] = useState<Project[]>(() => store.projects<Project>());
   const [activeId, setActiveId] = useState<string | undefined>();
-  // 每次点「新建对话」自增，作为发送前空首页立绘的稳定随机种子（避免重渲染换图）
-  const [newChatSeq, setNewChatSeq] = useState(0);
   const [providerId, setProviderId] = useState<string>(() => store.providerId());
   const [model, setModel] = useState<string>(() => store.model());
   const [streaming, setStreaming] = useState(false);
@@ -81,41 +80,58 @@ export default function App() {
   const [approval, setApproval] = useState<PendingApproval | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const abortRef = useRef<AbortController | null>(null);
+  // 启动加载序列（豆包 × CodeX 风格）：引擎自检返回前不消失
+  const [booting, setBooting] = useState(true);
+  // 引擎安装向导：桌面端引擎缺失时自动弹出，也可从标题栏状态灯手动打开
+  const [setupOpen, setSetupOpen] = useState(false);
   // 引擎状态：启动时检查，用于显示状态指示器 + 引擎不可用时降级直连
-  const [engineStatus, setEngineStatus] = useState<{
-    ok: boolean;
-    reason: string;
-    python: string;
-    app_version?: string;
-    engine_version?: string;
-    engine_root?: string;
-  }>({
+  const [engineStatus, setEngineStatus] = useState<BootEngineStatus>({
     ok: false,
     reason: '',
     python: '',
   });
+  /** 引擎自检是否已有过一次真实返回（决定 BootScreen 第三行何时落笔） */
+  const [engineChecked, setEngineChecked] = useState(false);
+
+  const applyEngineResult = (r: any) => {
+    const next: BootEngineStatus = {
+      ok: !!r.ok,
+      reason: r.reason ?? '',
+      python: r.python ?? '',
+      app_version: r.app_version,
+      engine_version: r.engine_version,
+      engine_root: r.engine_root,
+    };
+    setEngineAvailable(next.ok);
+    setEngineStatus(next);
+    setEngineChecked(true);
+    return next;
+  };
+
+  /** 重新检测引擎：安装向导第 4 步的真实回调 */
+  const recheckEngine = async (): Promise<BootEngineStatus> => {
+    if (!isTauri()) return { ok: false, reason: '非 Tauri 环境', python: '' };
+    const r: any = await invoke('check_engine');
+    return applyEngineResult(r);
+  };
 
   // 启动时引擎自检
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+      setEngineChecked(true);
+      return;
+    }
     let cancelled = false;
     invoke('check_engine')
       .then((r: any) => {
         if (cancelled) return;
-        setEngineAvailable(!!r.ok);
-        setEngineStatus({
-          ok: !!r.ok,
-          reason: r.reason ?? '',
-          python: r.python ?? '',
-          app_version: r.app_version,
-          engine_version: r.engine_version,
-          engine_root: r.engine_root,
-        });
+        applyEngineResult(r);
       })
       .catch((e) => {
         if (cancelled) return;
         setEngineAvailable(false);
         setEngineStatus({ ok: false, reason: String(e), python: '' });
+        setEngineChecked(true);
       });
     return () => { cancelled = true; };
   }, []);
@@ -131,7 +147,6 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
   useEffect(() => applyTheme(theme), [theme]);
-  useEffect(() => store.saveAvatarMode(avatarMode), [avatarMode]);
   useEffect(() => store.saveAgentMode(agentMode), [agentMode]);
   useEffect(() => store.saveMode(mode), [mode]);
   useEffect(() => store.saveProviders(providers), [providers]);
@@ -293,7 +308,6 @@ export default function App() {
 
   const newChat = () => {
     setActiveId(undefined);
-    setNewChatSeq((n) => n + 1);
     setError('');
     setPage('chat');
   };
@@ -369,6 +383,15 @@ export default function App() {
       icon: <SunMoon size={16} />,
       keywords: 'theme dark light 主题',
       run: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
+    },
+    {
+      id: 'sys-engine-setup',
+      label: '引擎安装向导',
+      group: '系统',
+      icon: <Wrench size={16} />,
+      hint: engineStatus.ok ? '引擎已就绪' : '本地引擎未就绪',
+      keywords: 'engine setup install 引擎 安装 向导',
+      run: () => setSetupOpen(true),
     },
   ];
 
@@ -580,9 +603,48 @@ export default function App() {
     setProjects((prev) => prev.filter((p) => p.id !== id));
   };
 
+  // 桌面端（Windows/macOS）引擎缺失 → 走安装引导；Android 本就没有本地引擎，不弹
+  const engineMissing = isTauri() && !isAndroid() && engineChecked && !engineStatus.ok;
+  const setupAuto = engineMissing && !store.engineSetupDismissed();
+  const showSetup = setupAuto || setupOpen;
+
+  // 启动加载序列：引擎自检真实返回前不消失（BootScreen 内部等待）
+  if (booting) {
+    return (
+      <BootScreen
+        engineStatus={engineChecked ? engineStatus : null}
+        onDone={() => setBooting(false)}
+      />
+    );
+  }
+
+  // 引擎安装引导（豆包 × CodeX 风格）：自动弹出或从标题栏/命令面板手动打开
+  if (showSetup) {
+    return (
+      <EngineSetupPage
+        engineStatus={engineStatus}
+        manual={setupOpen && !setupAuto}
+        onRecheck={recheckEngine}
+        onEnterDegraded={() => {
+          if (setupAuto) store.saveEngineSetupDismissed(true);
+          setSetupOpen(false);
+        }}
+        onReady={() => {
+          setSetupOpen(false);
+          setPage('chat');
+        }}
+      />
+    );
+  }
+
   return (
     <div className="h-full flex flex-col bg-tuan-main app-shell">
-      <TitleBar onToggleSidebar={() => setCollapsed((c) => !c)} onOpenPalette={() => setPaletteOpen(true)} />
+      <TitleBar
+        onToggleSidebar={() => setCollapsed((c) => !c)}
+        onOpenPalette={() => setPaletteOpen(true)}
+        engineMissing={engineMissing}
+        onOpenSetup={() => setSetupOpen(true)}
+      />
       {/* 离线提示 */}
       {!online && (
         <div className="flex items-center justify-center gap-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 text-[12.5px] text-amber-800 dark:text-amber-300">
@@ -642,7 +704,6 @@ export default function App() {
       {page === 'chat' && (
         <ChatView
           convId={activeId}
-          newChatSeq={newChatSeq}
           providers={providers}
           providerId={providerId || providers[0]?.id}
           model={model}
@@ -658,7 +719,6 @@ export default function App() {
           tools={tools}
           approval={approval}
           onApprove={approve}
-          avatarMode={avatarMode}
           onSend={send}
           onStop={stop}
           onDeleteMessage={deleteMessage}
@@ -693,8 +753,6 @@ export default function App() {
         <SettingsPage
           providers={providers}
           onChange={setProviders}
-          avatarMode={avatarMode}
-          onAvatarModeChange={setAvatarMode}
           agentMode={agentMode}
           onAgentModeChange={setAgentMode}
           theme={theme}

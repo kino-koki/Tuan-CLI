@@ -1,13 +1,16 @@
-import { PanelLeft, Menu, Search } from 'lucide-react';
+import { PanelLeft, Menu, Search, Wrench } from 'lucide-react';
 
 interface Props {
   onToggleSidebar: () => void;
   /** 打开 ⌘K 命令面板 */
   onOpenPalette: () => void;
+  /** 桌面端本地引擎缺失：显示可点的状态灯，引导去装引擎 */
+  engineMissing?: boolean;
+  onOpenSetup?: () => void;
 }
 
 /** 可拖拽的自定义标题栏（细条 + 左侧控制区 + 右侧 ⌘K 指令入口，贴近 Claude Code 桌面）。 */
-export default function TitleBar({ onToggleSidebar, onOpenPalette }: Props) {
+export default function TitleBar({ onToggleSidebar, onOpenPalette, engineMissing, onOpenSetup }: Props) {
   return (
     <div
       className="h-[44px] flex items-center select-none bg-tuan-bg border-b border-tuan-border z-40 flex-shrink-0"
@@ -32,6 +35,18 @@ export default function TitleBar({ onToggleSidebar, onOpenPalette }: Props) {
       <div className="flex-1 text-center md:hidden text-[15px] font-medium text-tuan-textSecondary pr-10">
         Tuan-Chat
       </div>
+      {/* 引擎状态灯：本地引擎缺失时可点击，打开安装向导 */}
+      {engineMissing && onOpenSetup && (
+        <button
+          onClick={onOpenSetup}
+          className="flex items-center gap-1.5 h-[26px] px-2.5 mr-1 rounded-full border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-[11.5px] text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+          title="本地引擎未就绪 — 点击打开安装向导"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
+          <Wrench size={12} />
+          <span className="hidden sm:inline">引擎未就绪</span>
+        </button>
+      )}
       {/* ⌘K 命令面板入口：桌面端显示为搜索条（Claude Code 桌面风格），窄屏退化为图标按钮 */}
       <div className="pr-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <button
