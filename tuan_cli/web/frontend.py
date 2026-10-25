@@ -1397,10 +1397,21 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   function loadSessions(){
     fetch('/api/sessions').then(function(r){return r.json();}).then(function(j){
       allSessions=j.sessions||[];
+      /* T-6.2: 成功拉取后缓存会话列表, 供离线时展示 */
+      try{localStorage.setItem('tuan-web.sessions-cache',JSON.stringify(allSessions));}catch(e){}
+      renderSessions();
+    }).catch(function(){
+      /* T-6.2: 离线 → 渲染上次缓存的会话列表 */
+      try{var c=localStorage.getItem('tuan-web.sessions-cache');
+        if(c){allSessions=JSON.parse(c);renderSessions();}}catch(e){}
+    });
+  }
+  function renderSessions(){
       var filtered=filterSessions(searchBox.value.trim());
       sessionsEl.innerHTML='';
       filtered.forEach(function(s){
         var d=document.createElement('div');d.className='sess'+(s.id===current?' active':'');
+        d.dataset.sid=s.id; /* T-6.1: 触控手势按 id 定位会话 */
         var t=document.createElement('span');t.className='t';
         t.textContent=(s.forked_from?'⑂ ':'')+s.title;
         if(s.forked_from){t.title='分支自 '+(allSessions.find(function(x){return x.id===s.forked_from;})||{}).title||s.forked_from;}
@@ -1412,13 +1423,13 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
         sh.addEventListener('click',function(ev){ ev.stopPropagation(); window.open('/api/share?session='+encodeURIComponent(s.id),'_blank'); });
         f.addEventListener('click',function(ev){ ev.stopPropagation(); forkSession(s.id); });
         x.addEventListener('click',function(ev){ ev.stopPropagation();
+          if(!confirm('删除该会话? 此操作不可恢复。'))return; /* 删除二次确认语义 */
           fetch('/api/sessions?session='+encodeURIComponent(s.id),{method:'DELETE'}).then(function(r){return r.json();}).then(function(j){
             if(j.ok){ if(current===s.id){current=null;clearMessages();showWelcome();} loadSessions(); }
           });
         });
         sessionsEl.appendChild(d);
       });
-    }).catch(function(){});
   }
   function filterSessions(q){
     if(!q){return allSessions;}
@@ -1430,8 +1441,16 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   function loadHistory(){
     if(!current){clearMessages();showWelcome();return;}
     fetch('/api/history?session='+encodeURIComponent(current)).then(function(r){return r.json();}).then(function(j){
-      if(j.ok){renderHistory(j.messages);}
-    }).catch(function(){});
+      if(j.ok){
+        /* T-6.2: 缓存当前会话历史, 离线时可回看 */
+        try{localStorage.setItem('tuan-web.history-'+current,JSON.stringify(j.messages||[]));}catch(e){}
+        renderHistory(j.messages);
+      }
+    }).catch(function(){
+      /* T-6.2: 离线 → 渲染缓存的历史 */
+      try{var c=localStorage.getItem('tuan-web.history-'+current);
+        if(c){renderHistory(JSON.parse(c));}}catch(e){}
+    });
   }
 
   function fmtPct(v){ return v==null?'-':(Math.round(Number(v)*100)+'%'); }
@@ -2577,11 +2596,118 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       +'<div class="hint">Web 工作台与 TUI 共用同一份配置 (~/.tuan/config.yaml 与 ~/.tuan/.env)。此处改动即时持久化, 对当前及后续会话生效。</div>';
   }
 
+  /* ================================================================
+     T-2.6 设置引擎同步 / T-6.1 触控手势 / T-6.2 离线模式
+     ================================================================ */
+  /* ---- T-2.6: 启动时拉取 /api/settings 并应用 (失败则回退 localStorage 缓存) ---- */
+  var TSETTINGS={};
+  function applySettings(s){
+    if(!s)return;
+    TSETTINGS=s;
+    try{localStorage.setItem('tuan-web.settings',JSON.stringify(s));}catch(e){}
+    /* theme: light/dark/system —— 与首屏预涂同一套键 */
+    if(s.theme==='light'||s.theme==='dark'||s.theme==='system'){
+      document.documentElement.dataset.colorScheme=s.theme;
+      try{localStorage.setItem('tuan-web.color-scheme',s.theme);}catch(e){}
+    }
+    /* accentColor: 强调色直接覆盖 CSS 变量, 全站即时生效 */
+    if(s.accentColor){document.documentElement.style.setProperty('--color-accent',s.accentColor);}
+    /* fontSize: 数字按 px 应用到正文 */
+    if(s.fontSize){document.body.style.fontSize=Number(s.fontSize)+'px';}
+  }
+  function bootSettings(){
+    fetch('/api/settings').then(function(r){return r.json();}).then(function(j){
+      if(j.ok){applySettings(j.settings||{});}
+    }).catch(function(){
+      try{var c=localStorage.getItem('tuan-web.settings');if(c)applySettings(JSON.parse(c));}catch(e){}
+    });
+  }
+  /* 供设置分片调用: 写入任意键设置并同步引擎 (落盘在服务端) */
+  function saveSettings(patch){
+    return fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(patch)}).then(function(r){return r.json();}).then(function(j){
+      if(j.ok){applySettings(j.settings||{});}return j;
+    }).catch(function(){return {ok:false};});
+  }
+
+  /* ---- T-6.2: 离线指示器 (navigator.onLine) + 缓存会话/历史 ---- */
+  var offBanner=null;
+  function ensureOfflineBanner(){
+    if(offBanner)return offBanner;
+    offBanner=document.createElement('div');
+    offBanner.id='offline-banner';
+    offBanner.textContent='离线模式 · 显示缓存内容';
+    offBanner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;display:none;'
+      +'background:var(--color-warning,#b2620a);color:#fff;text-align:center;'
+      +'font-size:12px;padding:4px 8px;';
+    document.body.appendChild(offBanner);
+    return offBanner;
+  }
+  function refreshOfflineBanner(){
+    ensureOfflineBanner().style.display=navigator.onLine?'none':'block';
+  }
+  window.addEventListener('online',function(){refreshOfflineBanner();loadSessions();loadHistory();});
+  window.addEventListener('offline',refreshOfflineBanner);
+
+  /* ---- T-6.1: 会话行触控手势 —— 左滑删除 / 右滑新建 ---- */
+  var tchX=0,tchY=0,tchRow=null,tchSwiped=false;
+  sessionsEl.addEventListener('touchstart',function(ev){
+    if(ev.touches.length!==1)return;
+    var t=ev.touches[0];
+    tchX=t.clientX;tchY=t.clientY;tchSwiped=false;
+    tchRow=ev.target.closest?ev.target.closest('.sess'):null;
+  },{passive:true});
+  sessionsEl.addEventListener('touchmove',function(ev){
+    if(!tchRow||ev.touches.length!==1)return;
+    var t=ev.touches[0],dx=t.clientX-tchX,dy=t.clientY-tchY;
+    /* 横滑占主导 (>1.5x 纵向) 才跟手位移, 纵向滚动不干预 */
+    if(Math.abs(dx)>10&&Math.abs(dx)>Math.abs(dy)*1.5){
+      tchSwiped=true;
+      tchRow.style.transition='none';
+      tchRow.style.transform='translateX('+dx+'px)';
+    }
+  },{passive:true});
+  sessionsEl.addEventListener('touchend',function(ev){
+    if(!tchRow)return;
+    var row=tchRow;tchRow=null;
+    var dx=ev.changedTouches[0].clientX-tchX;
+    row.style.transition='';
+    row.style.transform='';
+    if(!tchSwiped)return;
+    tchSwiped=false;
+    var sid=row.dataset.sid;
+    if(dx<-50){
+      /* 左滑 → 删除 (二次确认属前端分片; 此处给浏览器默认确认兜底) */
+      if(sid&&confirm('删除该会话? 此操作不可恢复。')){
+        fetch('/api/sessions?session='+encodeURIComponent(sid),{method:'DELETE'}).then(function(r){return r.json();}).then(function(j){
+          if(j.ok){if(current===sid){current=null;clearMessages();showWelcome();}loadSessions();}
+        }).catch(function(){});
+      }
+    }else if(dx>50){
+      /* 右滑 → 新建会话 (与新建按钮同一行为) */
+      current=null;clearMessages();showWelcome();loadSessions();
+    }
+  });
+
+  /* ---- T-6.1: 下拉刷新 (消息流顶部下拉 → 重拉会话列表与当前历史) ---- */
+  var ptrStartY=0,ptrArmed=false;
+  msgsEl.addEventListener('touchstart',function(ev){
+    if(ev.touches.length!==1)return;
+    ptrStartY=ev.touches[0].clientY;
+    ptrArmed=(msgsEl.scrollTop<=0); /* 仅在顶部才响应 */
+  },{passive:true});
+  msgsEl.addEventListener('touchmove',function(ev){
+    if(!ptrArmed||ev.touches.length!==1)return;
+    var dy=ev.touches[0].clientY-ptrStartY;
+    if(dy>60){ptrArmed=false;loadSessions();loadHistory();}
+  },{passive:true});
+
   /* ---- 工作面板的初始加载 (面板打开时才拉, 省流量) ---- */
   togglePanel(false);
 
   loadSlash();
   loadInfo();loadSessions();
+  bootSettings();refreshOfflineBanner();
   /* 初始: 显示欢迎屏并启动粒子 */
   showWelcome();
 })();

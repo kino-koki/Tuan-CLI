@@ -55,6 +55,9 @@ def non_loopback_warning(host: str, port: int) -> str:
 _SESSIONS: Dict[str, Dict[str, Any]] = {}
 _SESSIONS_LOCK = threading.RLock()  # 嵌套获取 (save_sessions 在会话锁内落盘)
 
+# T-2.6: Web UI 用户偏好 (任意键) 读写锁 —— ThreadingHTTPServer 每请求一线程, 防并发写盘交错。
+_SETTINGS_LOCK = threading.RLock()
+
 # 待审批的危险操作: {request_id: {"event": Event, "result": bool}}
 _APPROVALS: Dict[str, Dict[str, Any]] = {}
 #: SSE 心跳间隔 (秒): 无事件间隙超过该值就写一行注释, 防代理掐断空闲连接。
@@ -471,6 +474,10 @@ class _WebHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(render_share_html(snap).encode("utf-8"))
             return
+        if path == "/api/settings":
+            # T-2.6: 读取 Web UI 用户偏好 (任意键, 前端分片据此做引擎同步)
+            self._json(200, {"ok": True, "settings": self._owner.settings_snapshot()})
+            return
         self._json(404, {"ok": False, "error": "not found"})
 
     def do_POST(self) -> None:
@@ -565,6 +572,15 @@ class _WebHandler(BaseHTTPRequestHandler):
                                            str(body.get("key") or ""))
             self._json(200 if res.get("ok") else 400, res)
             return
+        if path == "/api/settings":
+            # T-2.6: 接受设置 JSON 对象, 任意键合并存储并落盘 (重启后保留)
+            body = self._read_body()
+            if not isinstance(body, dict) or not body:
+                self._json(400, {"ok": False, "error": "settings 必须是非空 JSON 对象"})
+                return
+            self._owner.apply_settings(body)
+            self._json(200, {"ok": True, "settings": self._owner.settings_snapshot()})
+            return
         self._json(404, {"ok": False, "error": "not found"})
 
     # ---------------- 工作区 shell (! 执行) ----------------
@@ -651,7 +667,12 @@ class _WebHandler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             sid = (qs.get("session") or [""])[0]
             if not sid:
-                self._json(400, {"ok": False, "error": "missing session"})
+                # T-3.6: 不带 session 参数 = 删除全部会话 (前端侧栏"清空全部"入口)
+                with _SESSIONS_LOCK:
+                    count = len(_SESSIONS)
+                    _SESSIONS.clear()
+                    self._owner.save_sessions()
+                self._json(200, {"ok": True, "deleted": count})
                 return
             with _SESSIONS_LOCK:
                 if sid not in _SESSIONS:
@@ -799,6 +820,8 @@ class _WebHandler(BaseHTTPRequestHandler):
                 "parts": parts,
             })
             self._owner.save_sessions()
+            # T-5.2: 本轮结束后检查预算用量, 达阈值则告警 (内部已去重, 不阻塞)
+            self._owner.check_budget_alert(session_id)
 
 
 def _provider_model_ids(preset: Any) -> List[str]:
@@ -839,7 +862,13 @@ class WebServer:
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._save_timer: Optional[threading.Timer] = None
         self._session_file = Path(workspace or ".") / ".tuan" / "web_sessions.json"
+        # T-2.6: Web UI 用户偏好落盘文件 (主题/字号/预算告警阈值等任意键, 重启后保留)
+        self._settings_file = Path(workspace or ".") / ".tuan" / "web_settings.json"
+        self._settings: Dict[str, Any] = {}
+        # T-5.2: 预算告警去重状态 —— 会话id -> 已告警档位 (0 未告警 / 80 已达阈值 / 100 已用满)
+        self._budget_notified: Dict[str, int] = {}
         self.load_sessions()
+        self.load_settings()
 
     # ---------------- 会话持久化 ----------------
     def load_sessions(self) -> int:
@@ -872,6 +901,41 @@ class WebServer:
             tmp.replace(self._session_file)
         except Exception:  # noqa: BLE001
             pass
+
+    # ---------------- Web UI 设置持久化 (T-2.6) ----------------
+    def load_settings(self) -> None:
+        """启动时从磁盘加载 Web UI 用户偏好; 读失败按空设置处理, 不影响服务启动。"""
+        try:
+            if not self._settings_file.exists():
+                return
+            data = json.loads(self._settings_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                self._settings = data
+        except Exception:  # noqa: BLE001
+            self._settings = {}
+
+    def save_settings(self) -> None:
+        """把 Web UI 用户偏好原子写盘 (<workspace>/.tuan/web_settings.json)。"""
+        try:
+            self._settings_file.parent.mkdir(parents=True, exist_ok=True)
+            with _SETTINGS_LOCK:
+                data = dict(self._settings)
+            tmp = self._settings_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+            tmp.replace(self._settings_file)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def settings_snapshot(self) -> Dict[str, Any]:
+        """当前 Web UI 用户偏好快照 (/api/settings GET 返回体)。"""
+        with _SETTINGS_LOCK:
+            return dict(self._settings)
+
+    def apply_settings(self, values: Dict[str, Any]) -> None:
+        """合并写入 Web UI 用户偏好: 任意键均接受并存储, 随后落盘持久化。"""
+        with _SETTINGS_LOCK:
+            self._settings.update(values)
+        self.save_settings()
 
     def save_sessions_soon(self, delay: float = 1.0) -> None:
         """防抖落盘: 合并短时间内的多次保存请求。
@@ -995,6 +1059,50 @@ class WebServer:
         sessions.sort(key=lambda x: x["est_tokens"], reverse=True)
         return {"window": window, "sessions": sessions[:20],
                 "total_est_tokens": sum(s["est_tokens"] for s in sessions)}
+
+    # ---------------- 预算告警 (T-5.2) ----------------
+    def check_budget_alert(self, session_id: str) -> None:
+        """每轮对话结束后检查上下文用量, 达阈值 (默认 80%) / 用满 (100%) 各告警一次。
+
+        阈值取自 Web UI 设置 budgetAlertPct (/api/settings 任意键), 默认 80。
+        按会话档位去重: 80% 与 100% 每档只告警一次; 用量回落到阈值以下后档位复位,
+        下次爬升可重新告警。推送复用 core.remote_control.notify (T-5.3, 无配对
+        远程设备时仅落日志)。任何异常静默吞掉 —— 告警不能反噬对话主流程。
+        """
+        try:
+            info = self.context_info()
+            window = int(info.get("window") or 0)
+            used = int(info.get("total_est_tokens") or 0)
+            if window <= 0:
+                return
+            ratio = used / window * 100.0
+            try:
+                threshold = float(self._settings.get("budgetAlertPct", 80))
+            except (TypeError, ValueError):
+                threshold = 80.0
+            if threshold <= 0:
+                return
+            prev = self._budget_notified.get(session_id, 0)
+            # 用量明显回落 (低于阈值 10 个点) → 复位档位, 允许下轮重新告警
+            if ratio < threshold - 10:
+                self._budget_notified[session_id] = 0
+                prev = 0
+            level = 100 if ratio >= 100 else (int(threshold) if ratio >= threshold else 0)
+            if level <= prev:
+                return
+            self._budget_notified[session_id] = level
+            pct = f"{ratio:.0f}%"
+            if level >= 100:
+                title = "预算已用满 100%"
+                body = f"上下文已用 {pct} (估算 {used}/{window} tokens), 建议开新会话或压缩历史。"
+            else:
+                title = f"预算告警 {pct}"
+                body = f"上下文已用 {pct} (估算 {used}/{window} tokens), 超过阈值 {threshold:.0f}%。"
+            # T-5.3: 复用 remote_control 推送通道 (日志落证 + 远程设备推送)
+            from ..core.remote_control import notify as rc_notify
+            rc_notify(title, body, kind="budget")
+        except Exception:  # noqa: BLE001
+            pass
 
     def mcp_status(self) -> List[Dict[str, Any]]:
         """已接入的 MCP server 状态。"""

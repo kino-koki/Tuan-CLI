@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -319,3 +320,56 @@ class RemoteControl:
             "connected_at": rs.connected_at,
             "push_enabled": rs.push_enabled,
         }
+
+
+# ================================================================ 模块级通知辅助
+# T-5.3: Web 工作台 (完成/失败/预算告警) 复用 RemoteControl 同一条推送通道,
+# 不新增外部依赖。有活跃且开启推送的远程会话 → 走 on_notification 回调下发;
+# 无论是否有推送对象, 都写一条日志留证。任何异常都吞掉, 通知通道绝不反噬主流程。
+
+_NOTIFY_LOCK = threading.Lock()
+_notify_rc: Optional["RemoteControl"] = None
+
+
+def _shared_rc() -> Optional["RemoteControl"]:
+    """懒构建一个共享 RemoteControl 实例 (配对/推送状态持久在 ~/.tuan)。"""
+    global _notify_rc
+    if _notify_rc is not None:
+        return _notify_rc
+    try:
+        from ..config.loader import home_dir
+        rc = RemoteControl(home_dir())
+        rc._load_sessions()
+        _notify_rc = rc
+        return rc
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def notify(title: str, body: str, kind: str = "info") -> bool:
+    """发送一条通知 (任务完成 / 失败 / 预算告警等)。
+
+    参数:
+        title: 通知标题 (简短, 如 "预算告警")
+        body:  通知正文 (人可读, 中文)
+        kind:  通知类别 (info / success / error / budget) —— 仅用于日志归类
+
+    返回:
+        True = 至少推送到一个已配对且开启推送的远程设备;
+        False = 无活跃推送对象 (此时已落日志, 不影响主流程)。
+    """
+    # 证据 1: 日志 —— 验收时据此证明告警确实触发过
+    log.warning("[通知][%s] %s — %s", kind, title, body)
+    pushed = False
+    try:
+        rc = _shared_rc()
+        if rc is None:
+            return False
+        # 证据 2: 推送 —— 复用 send_notification 的回调机制 (远程设备已配对时)
+        for sid, rs in rc._sessions.items():
+            if rs.push_enabled and rs.is_active:
+                if rc.send_notification(sid, title, body, priority="high" if kind == "budget" else "normal"):
+                    pushed = True
+    except Exception:  # noqa: BLE001
+        pass
+    return pushed
