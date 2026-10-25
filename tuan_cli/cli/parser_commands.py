@@ -980,6 +980,40 @@ def register_subcommands(sub) -> None:
     hsub.add_parser("status", help="展示当前加固态势: 加密后端/审计落盘/SBOM/网络策略")
     p.set_defaults(func="cmd_harden")
 
+    # ---- skills / craft (registry 远程技能与组件) ----
+    sk = sub.add_parser(
+        "skills",
+        help="从 Tuan-Skills / Tuan-Craft 远程 registry 管理技能与组件",
+    )
+    sksub = sk.add_subparsers(dest="skills_action")
+    sksub.add_parser("list", help="列出远程 registry 可用的 skill")
+    sksub.add_parser("installed", help="列出本地已安装的 skill (builtin/用户级/项目级)")
+    sin = sksub.add_parser("install", help="安装一个 skill 到 ~/.tuan/skills/<name>/")
+    sin.add_argument("name", help="skill 名称 (Tuan-Skills registry 里的 name)")
+    sup = sksub.add_parser("update", help="更新已安装 skill (重新拉远程)")
+    sup.add_argument("name", help="skill 名称")
+    srm = sksub.add_parser("remove", help="删除已安装 skill (只删用户级副本)")
+    srm.add_argument("name", help="skill 名称")
+    spull = sksub.add_parser("pull", help="一次性 pull registry 全部 skill 到本地")
+    spull.add_argument("--force", "-f", action="store_true", help="覆盖已存在的 skill")
+    sksub.add_parser("cache", help="清除 registry 本地缓存 (1h TTL)")
+    sksub.add_parser("seed", help="把 builtin/ 内置 skill 播种到 ~/.tuan/skills/ (去预制化第一步)")
+    # Tuan-Craft 组件工坊 (挂在 skills 下方便发现, 也提供独立 craft 子命令)
+    sksub.add_parser("craft-list", help="列出 Tuan-Craft 组件工坊")
+    sci = sksub.add_parser("craft-install", help="安装 craft 组件到 ~/.tuan/craft/<name>/")
+    sci.add_argument("name", help="组件名")
+    sk.set_defaults(func="cmd_skills")
+
+    # 同时注册独立 craft 命令 (两种入口等价)
+    cr = sub.add_parser("craft", help="Tuan-Craft 组件工坊 (感通模式组件)")
+    crsub = cr.add_subparsers(dest="skills_action")  # 复用 skills_action 分流
+    crsub.add_parser("list", help="列出远程可用的 craft 组件")
+    crsub.add_parser("installed", help="列出本地已安装的 craft 组件")
+    ci = crsub.add_parser("install", help="安装 craft 组件到 ~/.tuan/craft/<name>/")
+    ci.add_argument("name", help="组件名")
+    cr.set_defaults(func="cmd_skills", craft_mode=True)
+
+
     # ---- migrate (旧版 ~/.kimi 配置/会话 → 新版 ~/.tuan 迁移) ----
     p = sub.add_parser(
         "migrate", help="旧版 ~/.kimi 配置/会话 → 新版 一键迁移 (检测/执行/状态)"

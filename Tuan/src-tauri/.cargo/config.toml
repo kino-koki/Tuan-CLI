@@ -1,4 +1,0 @@
-# Use the MinGW GCC toolchain (D:\ucrt64\bin on PATH) for Windows GNU targets.
-[target.x86_64-pc-windows-gnu]
-linker = "gcc"
-ar = "gcc-ar"

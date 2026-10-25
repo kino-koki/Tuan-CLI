@@ -195,23 +195,7 @@ Tuan-App/
 # 不入库。历史上根目录堆积过 20+ 个此类脚本，此规则一劳永逸。已归档副本在 _repo_archive/。
 /_*
 
-# ===== Tuan-App 桌面/移动端工程（仅源码入库，忽略依赖/构建/运行产物） =====
-# Tuan-App 是独立的桌面/移动应用工程（Tauri + Android + 前端），体积 ~1.3GB 绝大多数是
-# node_modules / 引擎虚拟环境 / 打包产物 / 运行日志。仅保留应用源码入库，避免二进制与
-# 构建产物污染 MIT 主仓（与已忽略的 Tuan-Chat/ 同理）。
-Tuan/node_modules/
-Tuan/engine/
-Tuan/dist/
-Tuan/release/
-Tuan/.scratch/
-Tuan/avatars/
-Tuan/legal/
-Tuan/public/
-Tuan/**/build/
-Tuan/**/.gradle/
-Tuan/**/target/
-Tuan/*.log
-Tuan/*.tsbuildinfo
-Tuan/*.jpg
-Tuan/*.png
-Tuan/package-lock.json
+# ===== Tuan 桌面/移动端工程（整体不入库） =====
+# Tuan/ 是独立的桌面/移动应用工程（Tauri + Android + 前端），与主仓 tuan_cli（MIT）不同源，
+# 由并发 Agent 后台独立维护，整体不入库，避免污染主仓（与已忽略的 Tuan-Chat/、Tuan-App/ 同理）。
+Tuan/

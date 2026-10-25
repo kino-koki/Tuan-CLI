@@ -1,7 +1,7 @@
 # Tuan-CLI
 
 > **« Model + Harness = Agent. »** — on sépare « comment penser » de « comment l'exécuter en sécurité », et on vous remet les deux clés.
-> Un harness d'agents IA en pur Python, sécurité d'abord, agnostique du modèle. `v0.3.1` · MIT · Python ≥ 3.10
+> Un harness d'agents IA en pur Python, sécurité d'abord, agnostique du modèle. `v0.3.3` · MIT · Python ≥ 3.10
 
 > ### Positionnement : un agent sécurité d'abord — sans sacrifier l'expérience développeur
 >
@@ -10,7 +10,7 @@
 > - **Sécurité d'abord** : les commandes dangereuses sont bloquées *avant* qu'elles s'exécutent (aperçu du rayon d'impact → ligne rouge dure → confirmation multi-étapes). Chaque écriture est journalisée dans un livre transactionnel pour un `/undo` exact.
 > - **Sémantique de sécurité** : YOLO/`--yolo` approuve automatiquement les opérations qui nécessitent normalement une confirmation, mais ne contourne **pas** les lignes rouges dures. `--isolation` fournit une isolation au niveau du moteur/processus pour réduire le rayon d'impact et contenir les défaillances ; ce n'est **pas** un bac à sable complet du système d'exploitation et cela ne remplace pas l'approbation des commandes.
 > - **Expérience développeur préservée** : lectures/écritures de fichiers, opérations `git` courantes, installations de paquets, exécutions de tests et linters sont notées `none` — **zéro confirmation, zéro blocage** (`safety_engine.is_benign_dev_command`). Seules les actions réellement dangereuses escaladent vers conseil ou blocage.
-> - **Mesures reproductibles** : notre objectif est « moins de commandes dangereuses s'échappent, moins de commandes bénignes harcèlent », et tout nombre que nous publions **doit être reproductible par un tiers** — aucune promesse absolue invérifiable. Les benchmarks vivent dans [`bench/`](bench/README.md) : 10k échantillons adversariaux bash/generic + 5k échantillons PowerShell + 2.310 payloads de bypass faits main (avec assertions au niveau de conséquences catastrophiques). **Une seule commande, `tuan safe bench`, reproduit tout localement** (sans réseau, sans modèle) ; `tuan safe report` émet un rapport de sécurité HTML autonome. Code actuel mesuré (2026-09) : adversarial 10k → rappel de blocage 100 % / rappel de flag 100 % / faux positif 1,87 % / bypass 0 ; PowerShell 5k → précision 100 % / ratés 0 / faux positifs 0 ; matrice de bypass 2.310 payloads → bypass 0 / faux positif 1 / classes d'intention catastrophique 100 % bloquées. Quelques escalades délibérément conservatrices de fail-closed restent (p. ex. sondages de port `nc`, payloads de forme exfiltration `tar|ssh`) et expliquent les chiffres de faux positifs ; veuillez relancer localement.
+> - **Mesures reproductibles** : notre objectif est « moins de commandes dangereuses s'échappent, moins de commandes bénignes harcèlent », et tout nombre que nous publions **doit être reproductible par un tiers** — aucune promesse absolue invérifiable. Les benchmarks vivent dans [`bench/`](bench/README.md) : 10k échantillons adversariaux bash/generic + 5k échantillons PowerShell + 2.321 payloads de bypass faits main (avec assertions au niveau de conséquences catastrophiques). **Une seule commande, `tuan safe bench`, reproduit tout localement** (sans réseau, sans modèle) ; `tuan safe report` émet un rapport de sécurité HTML autonome. Code actuel mesuré (2026-10) : adversarial 10k → rappel de blocage 100 % / rappel de flag 100 % / faux positif 0,09 % (1) / bypass 0 ; PowerShell 5k → précision 100 % / ratés 0 / faux positifs 0 ; matrice de bypass 2.321 payloads → bypass 0 / faux positif 1 / classes d'intention catastrophique 100 % bloquées. Quelques escalades délibérément conservatrices de fail-closed restent (p. ex. sondages de port `nc`, payloads de forme exfiltration `tar|ssh`) et expliquent les chiffres de faux positifs ; veuillez relancer localement.
 > - **Interopérabilité d'écosystèmes** : on ne reconstruit pas les écosystèmes — on **réutilise ce que Claude Code / Hermes Agent ont déjà accumulé** sur cette machine (skills, agents nommés, mémoire, persona SOUL, configs MCP). `tuan ecosystem` déplace les actifs dans les deux sens en une seule commande ; `tuan ecosystem link` remonte tuan en eux via MCP. Un seul harness, la valeur de trois écosystèmes en actifs.
 
 **Langue/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · **Français** · [Deutsch](README_de.md) · [Русский](README_ru.md)
@@ -90,7 +90,7 @@ class MyTool(Plugin):
 
 | Sémantique de version | Signification |
 |---|---|
-| `0.3.1` (actuel) | **API pas encore gelée** : `0.x` autorise des ajustements cassants, annoncés avec des pistes de migration ; rétrocompatibilité non promise |
+| `0.3.3` (actuel) | **API pas encore gelée** : `0.x` autorise des ajustements cassants, annoncés avec des pistes de migration ; rétrocompatibilité non promise |
 | `1.0` (réservé) | Activé lorsque l'API publique sera gelée et la rétrocompatibilité promise ; c'est seulement alors que les changements cassants montent MAJOR (`2.0`) |
 
 **Note sur l'historique Git (transparence open source) :** l'historique des commits de ce dépôt a été **volontairement reconstruit le 2026-09-26 — l'historique initial des commits a été délibérément écrasé par l'auteur** ; l'évolution commit par commit antérieure à cette date n'est plus conservée. Le code actuel est entièrement revoyable, de l'architecture à l'implémentation ; pour l'évolution des fonctionnalités antérieure à 2026-09-26, fiez-vous aux enregistrements de version de [CHANGELOG.md](CHANGELOG.md) (la discipline de version n'est pas affectée). Nous choisissons de le divulguer franchement — sans fard, sans rien cacher.
@@ -199,7 +199,7 @@ Les règles résolvent toujours `deny > ask > allow`. Blanchez avec `tuan safe a
 
 - **Corpus adversarial** `bench/safety_bench_10k.py` — 10.000 commandes bash/generic (ensemencées 20260906, reproductibles) ; rapporte rappel de blocage / rappel de flag / taux de faux positifs / bypasses.
 - **Corpus PowerShell** `bench/bench_powershell_safety.py` — 5.000 échantillons (2.300 dangereux / 2.700 bénins) ; rapporte précision / ratés / faux positifs.
-- **Matrice de bypass** `bench/bypass_matrix.py` — 2.310 payloads adversariaux faits main ; au-delà de la correspondance de motifs, elle vérifie **par classe de conséquence catastrophique** si chaque classe d'intention catastrophique a été réellement bloquée.
+- **Matrice de bypass** `bench/bypass_matrix.py` — 2.321 payloads adversariaux faits main ; au-delà de la correspondance de motifs, elle vérifie **par classe de conséquence catastrophique** si chaque classe d'intention catastrophique a été réellement bloquée.
 
 ```bash
 tuan safe bench                 # exécution complète (~3 min)
@@ -209,15 +209,15 @@ tuan safe report                # rapport de sécurité HTML autonome (partageab
 tuan safe report --release      # RELEASE : chiffres + horodatage + commit git liés (pas de chiffres périmés)
 ```
 
-Mesuré sur le code actuel (2026-09-19, reproductible via `tuan safe bench`) :
+Mesuré sur le code actuel (2026-10-25, reproductible via `tuan safe bench`) :
 
 | Suite | Taille | Métrique clé | Bypasses | Faux positifs |
 |---|---|---|---|---|
-| Adversarial | 10.000 | rappel de blocage 100 % · rappel de flag 100 % · FP 1,87 % | 0 | — |
+| Adversarial | 10.000 | rappel de blocage 100 % · rappel de flag 100 % · FP 0,09 % (1) | 0 | — |
 | PowerShell | 5.000 | précision 100 % · ratés 0 | 0 | 0 |
-| Matrice de bypass | 2.310 | classes d'intention catastrophique 100 % bloquées | 0 | 1 |
+| Matrice de bypass | 2.321 | classes d'intention catastrophique 100 % bloquées | 0 | 1 |
 
-Avis : la matrice de bypass est délibérément fail-closed et conserve quelques escalades conservatrices (sondages Unicode-variante de `nc`, payloads de forme exfiltration `tar|ssh`), qui produisent des faux positifs « bénin mais marqué » ; le 1,87 % de FP dans la suite adversarial vient du même conservatisme. Les chiffres sont autoritatifs comme relancés localement avec `tuan safe bench`.
+Avis : la matrice de bypass est délibérément fail-closed et conserve quelques escalades conservatrices (sondages Unicode-variante de `nc`, payloads de forme exfiltration `tar|ssh`), qui produisent des faux positifs « bénin mais marqué » ; le 0,09 % (1) de FP dans la suite adversarial vient du même conservatisme. Les chiffres sont autoritatifs comme relancés localement avec `tuan safe bench`.
 
 **Gate de chiffres en CI** : le job `safety-benchmarks` dans `.github/workflows/security-ci.yml` relance les trois suites à chaque push et les compare à l'archive commitée — toute régression (bypasses, une classe de désastre ne se bloque plus complètement, une hausse claire de FP) **fait échouer la CI**. L'archive `bench/security-bench.json` correspond 1:1 au tableau du README.
 
@@ -260,7 +260,7 @@ tuan --print run "Salut, une ligne." # smoke
 ```
 
 - **Discipline i18n** : README_zh-CN est le maître de référence ; chaque langue est une localisation vivante, zéro dérive — **aucune traduction mécanique.**
-- **Version** : `v0.3.1` (une lignée `0.x` — l'API n'est pas encore gelée) ; les ajustements cassants arrivent avec préavis + notes de migration, et `1.0` est réservé au gel de l'API.
+- **Version** : `v0.3.3` (une lignée `0.x` — l'API n'est pas encore gelée) ; les ajustements cassants arrivent avec préavis + notes de migration, et `1.0` est réservé au gel de l'API.
 - **En profondeur** : signatures des moteurs et un tour de vis de nouvel outil vivent dans l'appendice de `README_zh-CN.md`.
 
 ---

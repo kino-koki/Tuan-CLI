@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 # YAML 后端门面: 有 PyYAML 就用 PyYAML (完整规范), 否则用内置 stdlib 实现。
 # 两者对本仓库全部 YAML 文件解析结果一致, 因此 PyYAML 可真正作为可选依赖。
 from .. import _yaml  # noqa: E402
+from ..core.errors import ConfigError
 
 from .defaults import (
     APP_DIR_NAME,
@@ -445,7 +446,8 @@ class Config:
         key = self.api_key()
         if not key:
             env_name = self.get("model.api_key_env", "DEEPSEEK_API_KEY")
-            raise RuntimeError(
+            # ConfigError (kind="config"): 让重试策略立即失败, 并支持 C-2 友好模板渲染
+            raise ConfigError(
                 f"未配置 API Key。请设置环境变量 {env_name} (推荐写入 ~/.tuan/.env), "
                 f"或运行 `tuan setup`。"
             )
