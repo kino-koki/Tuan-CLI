@@ -338,7 +338,12 @@ pub async fn run_tool(
                         Err(e) => return ToolOutput::err(format!("读取响应失败：{e}")),
                     };
                     let body = if body.len() > MAX_HTTP_BYTES {
-                        format!("{}…（响应过大已截断）", &body[..MAX_HTTP_BYTES])
+                        // 字节切片可能落在 UTF-8 多字节字符中间导致 panic：先退回合法边界再截断
+                        let mut end = MAX_HTTP_BYTES;
+                        while !body.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        format!("{}…（响应过大已截断）", &body[..end])
                     } else {
                         body
                     };

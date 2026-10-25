@@ -74,11 +74,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run safety benchmarks (10k adversarial + 5k PowerShell + 2,310 bypass payloads)
-        # 备份 git 存档后覆盖工作区汇总, 让 report 使用 CI 实跑数字
+      - name: Run safety benchmarks (10k adversarial + 5k PowerShell + 2,497 bypass payloads)
+        # 备份 git 存档后覆盖工作区汇总, 让 report 使用 CI 实跑数字。
+        # 注意: 本 job 跑在 ubuntu-latest 上, 所以下面三套**确定性**基准 (钉死种子)
+        # 实际是在 Linux 上执行的 —— 与 Windows 存档通过同一门禁, 本身就是跨平台验证。
         run: |
           cp bench/security-bench.json /tmp/security-bench.ref.json
           python -m tuan_cli safe bench --out bench/security-bench.json
+
+      - name: Platform portability (POSIX/Linux/macOS payloads, 274 assertions)
+        # 在本机 (Linux) 上跑 POSIX/Linux/macOS 载荷, 锁定检测层无平台相关逻辑。
+        # 与 Windows 上的运行互为交叉验证: 两边数字都必须一致。
+        run: python -m pytest tests/test_platform_portability.py -q
 
       - name: Gate — numbers must not regress vs committed archive
         run: |

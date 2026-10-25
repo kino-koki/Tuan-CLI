@@ -465,7 +465,9 @@ fn extract_bvid(url: &str) -> Option<String> {
     let bv = u.find("BV")?;
     let after = &u[bv + 2..];
     let end = after.find('?').unwrap_or(after.find('/').unwrap_or(after.find('#').unwrap_or(after.len())));
-    let bv_id = format!("BV{}", &after[..end.min(12)]);
+    // BV 号固定 10 位 ASCII：按字符边界取前 10 个字符，避免字节切片落在多字节字符上
+    let n = after.char_indices().nth(10).map(|(i, _)| i).unwrap_or(after.len());
+    let bv_id = format!("BV{}", &after[..n.min(end)]);
     if bv_id.len() >= 10 {
         Some(bv_id)
     } else {

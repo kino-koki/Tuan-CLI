@@ -122,6 +122,7 @@ tuan --print run "你好，一句話介紹你自己"
 |---|---|
 | `tuan` | 互動 TUI（Kimi Code 皮） |
 | `tuan setup` / `tuan models` | 配供應商 / 列出 58 家供應商 & 1400+ 模型 |
+| `tuan sessions` / `--continue` / `--resume <id>` / `setup --skip` | 列出/恢復/刪除已存工作階段，可從命令列直接續跑；首次執行自動彈出設定精靈（`setup --skip` 跳過） |
 | `tuan agent` | 命名 Agents（相容 `.claude/agents`，三層發現） |
 | `tuan acp` | 開 ACP server，讓 VS Code / Zed / JetBrains 來驅動你 |
 | `tuan cron` | 定時背景任務 |

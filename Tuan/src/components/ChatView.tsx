@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Spinner from './Spinner';
 import {
   ArrowUp,
   ChevronUp,
   Settings,
-  BookOpen,
   Slash,
+  BookOpen,
   Plus,
   Square,
   Copy,
@@ -29,6 +30,11 @@ import {
   Mail,
   Palette,
   Volume2,
+  MessageCircle,
+  Eye,
+  Wand2,
+  Infinity,
+  Paperclip,
 } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke, isTauri } from '@tauri-apps/api/core';
@@ -44,7 +50,7 @@ import { speakWithSettings, stopSpeech, TTS_ENGINE_URL as ENGINE_WEB_URL } from 
 const SLASH_FALLBACK: { name: string; desc: string }[] = [
   { name: '/help', desc: '显示帮助' },
   { name: '/model', desc: '切换/查看模型' },
-  { name: '/mode', desc: '切换运行模式（感通/灵码/闲聊/无界/协同）' },
+  { name: '/mode', desc: '切换权限模式（标准/只读/无界）' },
   { name: '/memory', desc: '查看记忆' },
   { name: '/clear', desc: '清空对话上下文' },
   { name: '/compact', desc: '手动压缩上下文（折叠旧历史）' },
@@ -97,13 +103,14 @@ interface Props {
   onDeleteMessage?: (msgId: string) => void;
   onEditMessage?: (msgId: string, newText: string) => void;
   onRetry?: () => void;
-  onOpenGuide?: () => void;
   onOpenSettings?: () => void;
+  /** 空态「开始引导」按钮（动手式引导教程入口） */
+  onStartOnboarding?: () => void;
   /** 新建对话（聊天页头部「新建」按钮） */
   onNewChat?: () => void;
   /** 打开 ⌘K 命令面板（状态栏入口） */
   onOpenPalette?: () => void;
-  /** 五模式：闲聊 / 协同 / 灵码 / 感通 / 无界。当前模式；切换走 onModeChange。 */
+  /** 三档权限模式：标准 / 只读 / 无界。当前模式；切换走 onModeChange。 */
   mode: ModeId;
   onModeChange: (m: ModeId) => void;
 }
@@ -119,17 +126,26 @@ function greeting(): string {
 /** 模式 L0–L4 风险点颜色（与 index.css 的 mode-pill 分档保持一致） */
 const LEVEL_COLORS: Record<string, string> = {
   L0: 'var(--text-tuan-secondary)',
+  L1: 'var(--tuan-textSecondary)',
   L2: 'var(--tuan-link)',
   L3: 'var(--tuan-accent-soft)',
   L4: 'var(--tuan-danger)',
 };
 
-/** composer 模式弹层选项（桌面端）：名称 + tagline + 风险点 */
+/** 模式图标（TRAE/Claude 菜单按钮式：触发钮 + 弹层选项共用） */
+const MODE_ICONS: Record<ModeId, React.ReactNode> = {
+  auto: <MessageCircle size={14} />,
+  plan: <Eye size={14} />,
+  yolo: <Infinity size={14} />,
+};
+
+/** composer 模式弹层选项（桌面端）：名称 + tagline + 风险点 + 图标 */
 const MODE_SELECT_OPTIONS: SelectOption[] = MODES.map((m) => ({
   value: m.id,
   label: m.name,
   sub: m.tagline,
   dot: LEVEL_COLORS[m.level],
+  icon: MODE_ICONS[m.id],
 }));
 
 /**
@@ -161,7 +177,7 @@ const EXPERT_CARDS: ExpertCard[] = [
     persona: '资深前端工程师',
     workflow: '先读现状 → 小步改动 → 每步构建验证',
     deliver: '类型全绿、构建通过、不留死代码',
-    mode: 'lingma',
+    mode: 'auto',
     prompt:
       '你是一名资深前端工程师。工作流程：先理解现有代码结构，小步修改，每步跑构建与类型检查验证。交付标准：TypeScript 全绿、构建通过、不引入多余依赖。现在请帮我：\n\n',
   },
@@ -172,7 +188,7 @@ const EXPERT_CARDS: ExpertCard[] = [
     persona: '严谨的后端工程师',
     workflow: '理清接口与数据流 → 增量实现 → 边界验证',
     deliver: '接口可测、异常有兜底、不破坏现有调用',
-    mode: 'lingma',
+    mode: 'auto',
     prompt:
       '你是一名严谨的后端工程师。工作流程：先理清接口契约与数据流，增量实现，并验证边界与异常路径。交付标准：接口可测、错误有兜底、不破坏既有调用。现在请帮我：\n\n',
   },
@@ -183,7 +199,7 @@ const EXPERT_CARDS: ExpertCard[] = [
     persona: '产品设计师',
     workflow: '先定视觉方向 → 落到设计令牌 → 逐屏走查',
     deliver: '与现有设计语言一致、无重叠裁切、响应式可用',
-    mode: 'gantong',
+    mode: 'auto',
     prompt:
       '你是一名资深产品设计师。工作流程：先确定视觉方向，把配色与间距落到设计令牌，最后逐屏走查。交付标准：与产品现有设计语言一致、元素无重叠裁切、窄屏可用。现在请帮我：\n\n',
   },
@@ -194,7 +210,7 @@ const EXPERT_CARDS: ExpertCard[] = [
     persona: '较真的 QA 工程师',
     workflow: '列用例矩阵 → 补关键路径 → 跑回归',
     deliver: '关键路径有用例、边界有覆盖、结论可复现',
-    mode: 'lingma',
+    mode: 'auto',
     prompt:
       '你是一名较真的测试工程师。工作流程：先列出用例矩阵，补充关键路径与边界场景，再运行回归。交付标准：关键路径有测试、边界有覆盖、结论可复现。现在请帮我：\n\n',
   },
@@ -205,7 +221,7 @@ const EXPERT_CARDS: ExpertCard[] = [
     persona: '谨慎的安全审计员',
     workflow: '先摸清风险面 → 逐项核对 → 给出缓解建议',
     deliver: '问题可复现、风险分级、给出可落地修复',
-    mode: 'collaboration',
+    mode: 'auto',
     prompt:
       '你是一名谨慎的安全审计员。工作流程：先摸清风险面，逐项核对依赖、权限与敏感操作，再给出缓解建议。交付标准：问题可复现、风险分级明确、修复建议可落地。现在请帮我：\n\n',
   },
@@ -216,7 +232,7 @@ const EXPERT_CARDS: ExpertCard[] = [
     persona: '敏锐的内容编辑',
     workflow: '先定受众与目标 → 起草 → 按交付标准自检',
     deliver: '标题抓人、结构清楚、字数与语气符合场景',
-    mode: 'chat',
+    mode: 'auto',
     prompt:
       '你是一名敏锐的内容编辑。工作流程：先明确受众与目标，起草内容，再按交付标准自检。交付标准：标题抓人、结构清楚、语气与字数符合场景。现在请帮我：\n\n',
   },
@@ -244,45 +260,7 @@ function formatRelativeTime(ts: number): string {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
-/** 菊花花瓣数：12 片，正好铺满一圈，爬动步进 30° */
-const CRAWLER_PETALS = Array.from({ length: 12 }, (_, i) => i);
-
-/**
- * Claude Code 桌面端风格菊花「爬动」动画：一圈 12 片花瓣，
- * 高亮的花瓣头沿圆周顺时针逐片点亮、尾随渐隐，像一条毛毛虫在圆环上爬。
- *
- * - 只动画 opacity（GPU 合成友好，低端 WebView 不掉帧）；
- * - 每片花瓣用负 animation-delay 错开相位，静态布局即可，无需 JS 定时器；
- * - 颜色走 currentColor（继承容器 --tuan-accent-soft），浅/深主题都清晰。
- * 思考中 / 输出中 / 工具执行中统一用它。
- */
-function Spinner({ className = '' }: { className?: string }) {
-  return (
-    <span className={`cc-spinner ${className}`.trim()} aria-hidden="true">
-      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
-        {CRAWLER_PETALS.map((i) => {
-          const rad = (i * 30 * Math.PI) / 180;
-          const x1 = 10 + Math.cos(rad) * 6.2;
-          const y1 = 10 + Math.sin(rad) * 6.2;
-          const x2 = 10 + Math.cos(rad) * 9.2;
-          const y2 = 10 + Math.sin(rad) * 9.2;
-          return (
-            <line
-              key={i}
-              x1={x1.toFixed(2)}
-              y1={y1.toFixed(2)}
-              x2={x2.toFixed(2)}
-              y2={y2.toFixed(2)}
-              className="cc-crawler-petal"
-              style={{ animationDelay: `${(-i * 1000) / 12}ms` }}
-            />
-          );
-        })}
-      </svg>
-    </span>
-  );
-}
-
+/** 菊花花瓣数：12 片，正好铺满一圈，爬动步进 30°（共享组件 Spinner 内定义） */
 function toolIcon(name: string) {
   const n = name.toLowerCase();
   if (n.includes('file') || n.includes('read') || n.includes('edit') || n.includes('write')) return FileText;
@@ -308,7 +286,7 @@ function ThoughtBlock({ text, streaming, startedAt }: { text: string; streaming:
         className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-tuan-textSecondary hover:bg-tuan-hover transition-colors"
       >
         {streaming ? (
-          <Spinner className="cc-spinner-lg" />
+          <Spinner className="cc-spinner-lg" animate />
         ) : (
           <Check size={14} className="text-emerald-600 dark:text-emerald-400" />
         )}
@@ -347,7 +325,7 @@ function ToolCard({ tool }: { tool: ToolEvent }) {
           <span className="font-medium text-tuan-text">{tool.name}</span>
           {tool.status === 'running' && (
             <span className="inline-flex items-center gap-1 text-tuan-textSecondary">
-              <Spinner /> 执行中
+              <Spinner animate /> 执行中
             </span>
           )}
           {tool.status === 'done' && <Check size={13} className="text-emerald-600 dark:text-emerald-400" />}
@@ -412,7 +390,7 @@ function ApprovalCard({
     }
   }, [approval.verdict]);
 
-  const high = verdict?.risk == null || /high|high|危|危|block|deny/i.test(verdict.risk ?? 'high');
+  const high = verdict?.risk == null || /high|危|block|deny/i.test(verdict.risk ?? 'high');
 
   return (
     <div
@@ -510,8 +488,8 @@ export default function ChatView({
   onDeleteMessage,
   onEditMessage,
   onRetry,
-  onOpenGuide,
   onOpenSettings,
+  onStartOnboarding,
   onNewChat,
   onOpenPalette,
   mode,
@@ -831,7 +809,7 @@ export default function ChatView({
             className="cc-btn-ghost w-9 h-9 !p-0 flex-none"
             title="添加本地文件"
           >
-            <Plus size={19} />
+            <Paperclip size={19} />
           </button>
           {draft.length > 0 && (
             <button
@@ -852,7 +830,7 @@ export default function ChatView({
               {draft.length}
             </span>
           )}
-          {/* 运行模式：闲聊 / 协同 / 灵码 / 感通 / 无界，切换即时生效并持久化。
+          {/* 权限模式：标准 / 只读 / 无界，切换即时生效并持久化。
               data-level 驱动 CSS 里的风险分档着色（L0 中性 → L4 危险色）。
               桌面端为 Claude 桌面式弹层（带 tagline + 风险点），窄屏回落原生 select。 */}
           {desktop ? (
@@ -862,7 +840,7 @@ export default function ChatView({
               onChange={(v) => onModeChange(v as ModeId)}
               title={getMode(mode).tagline}
               dataLevel={getMode(mode).level}
-              className="cc-pill mode-pill min-w-[72px] max-w-[110px] justify-center"
+              className="cc-menu-btn mode-pill min-w-[64px] justify-start"
             />
           ) : (
             <select
@@ -871,7 +849,7 @@ export default function ChatView({
               style={{ borderRadius: 9999 }}
               title={getMode(mode).tagline}
               data-level={getMode(mode).level}
-              className="cc-pill mode-pill flex-none min-w-[72px] max-w-[110px] text-left truncate"
+              className="cc-menu-btn mode-pill flex-none min-w-[64px] text-left truncate"
             >
               {MODES.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -885,14 +863,14 @@ export default function ChatView({
               value={activeProvider?.id ?? ''}
               options={providerSelectOptions}
               onChange={onProviderChange}
-              className="cc-pill min-w-0 sm:min-w-[72px] sm:max-w-[120px] justify-center"
+              className="cc-menu-btn min-w-0 sm:min-w-[64px] justify-start"
             />
           ) : (
             <select
               value={activeProvider?.id ?? ''}
               onChange={(e) => onProviderChange(e.target.value)}
               style={{ borderRadius: 9999 }}
-              className="cc-pill min-w-0 flex-1 sm:flex-none sm:min-w-[72px] sm:max-w-[120px] text-left truncate"
+              className="cc-menu-btn min-w-0 flex-1 sm:flex-none sm:min-w-[64px] text-left truncate"
             >
               {providers.length === 0 && <option>请先在设置添加供应商</option>}
               {providers.map((p) => (
@@ -908,7 +886,7 @@ export default function ChatView({
               options={modelSelectOptions}
               onChange={onModelChange}
               disabled={enabledModels.length === 0}
-              className="cc-pill min-w-0 sm:min-w-[72px] sm:max-w-[130px] justify-center"
+              className="cc-menu-btn min-w-0 sm:min-w-[64px] justify-start"
             />
           ) : (
             <select
@@ -916,7 +894,7 @@ export default function ChatView({
               onChange={(e) => onModelChange(e.target.value)}
               disabled={enabledModels.length === 0}
               style={{ borderRadius: 9999 }}
-              className="cc-pill min-w-0 flex-1 sm:flex-none sm:min-w-[72px] sm:max-w-[130px] text-left truncate"
+              className="cc-menu-btn min-w-0 flex-1 sm:flex-none sm:min-w-[64px] text-left truncate"
             >
               {enabledModels.length === 0 && <option>暂无模型</option>}
               {enabledModels.map((m) => (
@@ -1057,13 +1035,13 @@ export default function ChatView({
                     去配置供应商
                   </button>
                 )}
-                {onOpenGuide && (
+                {onStartOnboarding && (
                   <button
-                    onClick={onOpenGuide}
+                    onClick={onStartOnboarding}
                     className="cc-btn-ghost h-9 px-4 text-[13.5px] inline-flex items-center gap-1.5"
                   >
                     <BookOpen size={14} />
-                    使用教程
+                    开始引导
                   </button>
                 )}
               </div>
@@ -1152,7 +1130,7 @@ export default function ChatView({
                       </div>
                     ) : (
                       <>
-                        <div className="max-w-[85%] w-fit bg-tuan-hover text-tuan-text px-3.5 py-2.5 text-[16px] leading-relaxed font-[350] whitespace-pre-wrap break-words rounded-2xl">
+                        <div className="max-w-[85%] w-fit bg-tuan-hover text-tuan-text px-3.5 py-2.5 text-[16px] leading-relaxed font-[350] whitespace-pre-wrap break-words rounded-xl">
                           {m.content}
                         </div>
                         {m.ts && (
@@ -1212,7 +1190,7 @@ export default function ChatView({
                         />
                       ) : (
                         isStreamingMsg && (
-                          <div className="mb-2 rounded-2xl border border-tuan-border bg-tuan-input px-3 py-2 text-[13px] text-tuan-textSecondary inline-flex items-center gap-2">
+                          <div className="mb-2 rounded-xl border border-tuan-border bg-tuan-input px-3 py-2 text-[13px] text-tuan-textSecondary inline-flex items-center gap-2">
                             <Spinner />
                             思考中…
                           </div>

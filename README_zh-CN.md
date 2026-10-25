@@ -182,6 +182,7 @@ tuan --print run "你好，一句话介绍你自己"
 |---|---|
 | `tuan` | 交互式 TUI（Kimi Code 皮肤） |
 | `tuan setup` / `tuan models` | 配供应商 / 列出模型（58 家供应商、1400+ 内置模型） |
+| `tuan sessions` / `--continue` / `--resume <id>` / `setup --skip` | 列出/恢复/删除已存会话，可从命令行直接续跑；首次运行自动弹出配置向导（`setup --skip` 跳过） |
 | `tuan models update` | 本地更新模型/供应商目录：把内置最新清单合并写入 `~/.tuan/models_catalog.json`（离线、保留用户自建条目；`--check` 只报差异、`--background` 后台执行） |
 | `tuan agent` | 命名 Agents（`.claude/agents` 兼容 + 三层发现） |
 | `tuan acp` | 启动 ACP server，让 VS Code / Zed / JetBrains 来驱动你 |

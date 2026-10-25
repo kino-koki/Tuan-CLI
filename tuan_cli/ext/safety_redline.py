@@ -89,6 +89,10 @@ def _rm_targets(parts: list[str]) -> list[str]:
     return targets
 
 
+# 系统认证文件路径 (passwd / shadow / sudoers / gshadow): 出现在写入类命令里
+# 意味着篡改认证数据, 属于硬红线。模块级编译, 避免热路径上每次调用重新编译。
+_AUTH_FILE_RE = re.compile(r"/etc/(?:passwd|shadow|sudoers|gshadow)\b")
+
 # 系统级 / 根级 危险删除目标: 删了就是灾难, 必须硬红线。
 _DANGEROUS_RM_TARGET_RE = re.compile(
     r"""^(?:
@@ -250,7 +254,8 @@ def has_auth_overwrite(text: str) -> bool:
         _EXEC_SINK_RE.search(re.sub(r"'[^']*'|\"[^\"]*\"", " ", text))
         or _CMD_SUB_ANY_RE.search(text)
     )
-    auth_file = re.compile(r"/etc/(?:passwd|shadow|sudoers|gshadow)\b")
+    # 性能修复: 原先在函数体内 re.compile, 每次调用都重新编译。
+    auth_file = _AUTH_FILE_RE
     for seg in _scan_variants(text):
         parts = _strip_sudo(seg.split())
         if not parts:
@@ -282,12 +287,21 @@ def _has_unresolved_dangerous_substitution(text: str) -> bool:
     return False
 
 
-def has_force_push(text: str) -> bool:
+def has_force_push(text: str, *, include_lease: bool = True) -> bool:
     """强推: git push -f / --force / --force-with-lease[=x], 不受旗标顺序影响;
     `+refspec` (git 强推语法, 如 push origin +main) 同样视为强推。
 
     全量扫描 push 之后的所有 token (不在首个 remote/refspec 操作数处截断),
-    覆盖 `git push origin main --force` 这类旗标后置写法。"""
+    覆盖 `git push origin main --force` 这类旗标后置写法。
+
+    ``include_lease=False`` 时仅判定「无条件强推」(--force / -f / +refspec),
+    排除 --force-with-lease: 后者只在远端引用未被他人推进时才推送, 不覆盖他人
+    提交, 是官方推荐的**安全强推**。把它与 --force 同等列为硬红线会自相矛盾 ——
+    safe_alternatives 明确推荐用户改用 --force-with-lease, 而硬红线让它永不执行,
+    推荐的安全路径等于不存在。故 lease 形态走确认流程 (flag/confirm), 不进硬红线。
+    """
+    found_force = False
+    found_lease = False
     for seg in _scan_variants(text):
         parts = seg.split()
         names = [_cmd_name(p) for p in parts]
@@ -300,14 +314,29 @@ def has_force_push(text: str) -> bool:
                 break  # -- 之后是纯位置参数, 不再收集旗标
             if tok.startswith("+"):
                 return True  # +refspec: git 的强制推送语法
+            if tok == "--force-with-lease" or tok.startswith("--force-with-lease="):
+                found_lease = True
+                continue
             if tok.startswith("--force"):
-                return True  # --force / --force-with-lease[=...]
+                found_force = True
+                continue
             if tok.startswith("-") and len(tok) > 1:
                 short_letters += tok[1:]
             # 操作数 (remote/refspec) 不截断扫描, 覆盖旗标后置变体
         if "f" in short_letters:
-            return True
-    return False
+            found_force = True
+    if found_force:
+        return True
+    return bool(found_lease and include_lease)
+
+
+def has_unconditional_force_push(text: str) -> bool:
+    """无条件强推: --force / -f / +refspec (不含 --force-with-lease)。
+
+    供 is_hard_redline 使用: 这类推送会直接覆盖远端他人提交, 属不可逆破坏, 永不
+    自动执行; 而 --force-with-lease 是安全强推, 走确认流程即可 (见 has_force_push)。
+    """
+    return has_force_push(text, include_lease=False)
 
 
 def has_win_recursive_delete(text: str) -> bool:
@@ -350,15 +379,58 @@ def has_system_shutdown(text: str) -> bool:
 # 这些模式仅作正则补充, 供 score() 与 is_redline 共用, 保证「单一来源」口径一致。
 
 
+_PATTERN_CACHE: dict[str, re.Pattern] = {}
+
+
+def _compiled(pattern: str) -> re.Pattern:
+    """按字符串缓存编译后的正则。
+
+    性能修复: ``_match_any`` 每条命令要跑 ~160 个模式, 每条命令又被调用十几次。
+    原先直接 ``re.search(pattern_string, ...)`` 每次都用字符串字面量重编译,
+    cProfile 实测 250 条命令产生 48 万次 ``re._compile`` (占 ~1.6s)。
+    这里编译一次后复用, 语义完全不变。
+    """
+    pat = _PATTERN_CACHE.get(pattern)
+    if pat is None:
+        pat = re.compile(pattern, re.IGNORECASE)
+        _PATTERN_CACHE[pattern] = pat
+    return pat
+
+
+_suppressed_fn: object = None
+_suppressed_fn_tried: bool = False
+
+
+def _get_suppressed_fn():
+    """懒加载并缓存 blacklist_override.is_suppressed。
+
+    性能修复: 原实现在函数体内写 ``from ..core.blacklist_override import is_suppressed``,
+    而 ``_label_suppressed`` 每条命令被调用 ~1300 次 (cProfile 实测 32 万次函数级
+    import, 占 ~1.6s)。import 虽然命中 sys.modules 缓存, 但每次仍要做属性解析与
+    字典查找。改为模块级懒加载一次。
+    """
+    global _suppressed_fn, _suppressed_fn_tried
+    if not _suppressed_fn_tried:
+        _suppressed_fn_tried = True
+        try:
+            from ..core.blacklist_override import is_suppressed
+            _suppressed_fn = is_suppressed
+        except Exception:  # noqa: BLE001
+            _suppressed_fn = None
+    return _suppressed_fn
+
+
 def _label_suppressed(label: str) -> bool:
     """判断某个黑名单模式 label 是否被用户本地抑制 (黑名单减负)。
 
     见 core/blacklist_override.py: 用户可在本地声明抑制某些模式 label 关键字。
     任何异常 (导入失败/读取失败) 一律视为「未抑制」, 保持默认拦截口径。
     """
+    fn = _get_suppressed_fn()
+    if fn is None:
+        return False
     try:
-        from ..core.blacklist_override import is_suppressed
-        return is_suppressed(label)
+        return bool(fn(label))
     except Exception:  # noqa: BLE001
         return False
 
@@ -369,12 +441,19 @@ def _match_any(text: str, patterns) -> bool:
     命中前先检查该模式 label 是否被用户本地抑制 (黑名单减负): 被抑制的模式跳过,
     不计入命中。注意这**只**影响正则模式库; rm -rf / force push / shutdown 等
     token 化硬红线走独立判定, 不受此影响。
+
+    多行文本**逐行扫描**: 模式库里大量正则用 `[^\n]` 约束 (语义是「同一行内」),
+    而换行本身是 shell 命令分隔符 —— 归一化后的文本常是多行的。整段扫描时
+    `[^\n]*` 无法跨行, 多行载荷会漏判; 逐行扫描既补上漏判, 又把单次扫描长度
+    限制在单个命令行内, 避免长文本上产生平方级以上的回溯耗时。
     """
-    for pattern, label in patterns:
-        if _label_suppressed(label):
-            continue
-        if re.search(pattern, text, re.IGNORECASE):
-            return True
+    lines = text.split("\n") if "\n" in text else (text,)
+    for line in lines:
+        for pattern, label in patterns:
+            if _label_suppressed(label):
+                continue
+            if _compiled(pattern).search(line):
+                return True
     return False
 
 
@@ -723,26 +802,28 @@ def _is_base64_pipeline_dangerous(command: str) -> bool:
     3. 任一层命中即返回 True (fail-closed)
     """
     normalized = _normalize(command).lower()
-    # 检查是否同时包含 base64 解码和管道到 shell
+    # 检查是否包含 base64 解码
     has_b64_decode = bool(_BASE64_DECODE_RE.search(normalized))
+    if not has_b64_decode:
+        return False
+    # **解码优先 (0.3.2 修复的漏放)**: 只要整条命令含 base64 解码, 就尝试把密文解出来
+    # 并对结果做红线判定 —— 不依赖 shell 形态是否成立。
+    #
+    # 旧实现要求 `has_echo_b64` / `has_pipe_shell` 先成立才尝试解码, 但 `_normalize`
+    # 会剥掉 `$( ` 这类前缀:
+    #     _normalize("$(echo cm0gLXJmIC8= | base64 -d)") -> "cm0gLXJmIC8= | base64 -d"
+    # echo 被一并吃掉, `_ECHO_B64_PIPE_RE` 匹配失败, 两个分支全灭, 整条命令 risk=none。
+    # 而 bash 实测证明命令替换在**命令位置**真的会执行:
+    #     $ $(echo "echo DECODED")   # 打印 DECODED, 解码串被当成程序执行
+    # 所以「解出来是红线」本身就是充分条件, 无需再看形态。
+    for seg in _try_decode_base64_segments(command):
+        if is_redline(seg):
+            return True
+    # 场景1: base64 解码 + 管道到 shell (GuardFall D类)。静态分析无法解码所有编码
+    # 方式, 所以即使解码未命中红线, 这个组合本身也保守拦截。
     has_pipe_shell = bool(_PIPE_TO_SHELL_RE.search(normalized))
-    has_echo_b64 = bool(_ECHO_B64_PIPE_RE.search(normalized))
-    # 场景1: echo '...' | base64 -d | sh (完整管道链)
-    if has_b64_decode and has_pipe_shell:
-        # 尝试解码 base64 内容并检测
-        decoded_segments = _try_decode_base64_segments(command)
-        for seg in decoded_segments:
-            if is_redline(seg):
-                return True
-        # 即使解码失败或内容未命中红线, base64→shell 管道组合本身就是高风险
-        # 因为静态分析无法可靠解码所有编码方式, 保守拦截
+    if has_pipe_shell:
         return True
-    # 场景2: echo payload | base64 -d (无管道到 shell, 但可能通过重定向执行)
-    if has_echo_b64 and has_b64_decode:
-        decoded_segments = _try_decode_base64_segments(command)
-        for seg in decoded_segments:
-            if is_redline(seg):
-                return True
     return False
 
 
@@ -807,7 +888,7 @@ _INTERP_PAYLOAD_PROG_RE = re.compile(
           |subprocess\.(?:run|call|Popen|check_output|check_call)
           |child_process\.exec\w*|Runtime\.getRuntime\(\)\.exec|shutil\.rmtree)
         \s*\([^()]*?
-        ["'](?:rm|sh|bash|zsh|mkfs|dd|wipefs|shred|blkdiscard|fdisk|sgdisk|parted
+        ["'](?:(?:[\w./\\:-]+/)?)(?:rm|sh|bash|zsh|ksh|dash|mkfs|dd|wipefs|shred|blkdiscard|fdisk|sgdisk|parted
           |diskpart|format|del|rd|rmdir|erase)\b
     )""",
     re.IGNORECASE | re.VERBOSE,
@@ -921,6 +1002,17 @@ _MENTION_VERB_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 解释器「代码」调用: sh -c / python -c / perl -e / ruby -e / node -e / php -r / lua -e。
+# 出现在段首的这类调用表示其后的引号串是**待执行代码**, 不是被"提及"的文本 ——
+# 即使同段还出现 echo (如 `echo $(python3 -c "...")`), 引号内容仍会被真正执行,
+# 绝不能享受提及豁免。旧实现只按 echo/grep 判提及, 导致反向 shell 载荷被当作
+# echo 的"输出文本"跳过检测 (实测漏放 2 条: python / perl 反弹 shell 变体)。
+_INTERP_CODE_ARG_RE = re.compile(
+    r'\b(?:/[\w./+-]*/)?(?:sh|bash|zsh|ksh|dash|fish|python\d?|perl|ruby|node(?:js)?|'
+    r'php|lua|tclsh)\s+(?:-[A-Za-z]*[ce][A-Za-z]*\b|-e\b|-c\b)',
+    re.IGNORECASE,
+)
+
 _EXEC_SINK_RE = re.compile(
     r'\|\s*(?:ba|z|k|fi|da|a|c|tc)?sh\b'                    # | sh / | bash
     r'|\|\s*(?:python\d*|perl|ruby|node|php|lua)\b'          # | python
@@ -972,6 +1064,11 @@ def _mention_spans(text: str) -> list[tuple[int, int]]:
         # 只在当前段内查找提及动词 (避免跨 &&/; 把前段动词算进来)
         cut = max(head.rfind(c) for c in ";&|\n")
         seg_head = head[cut + 1:]
+        # 解释器 -c/-e 的参数是代码: 引号内容会被执行, 不构成"提及"。
+        # 否则 `echo $(python3 -c "...subprocess.call(['/bin/sh'])")` 会因段内出现
+        # echo 而把整段反弹 shell 载荷当作文本跳过检测 (实测漏放)。
+        if _INTERP_CODE_ARG_RE.search(seg_head):
+            continue
         if _MENTION_VERB_RE.search(seg_head):
             spans.append((m.start(), m.end()))
     return spans
@@ -1180,7 +1277,9 @@ def is_hard_redline(command: str) -> bool:
     # echo $(grep 'rm -rf /' f) 归一化后变成裸的 grep rm -rf / f, has_* 会误命中。
     # 抹除只针对「文本类动词直接参数且无全局执行汇」的引号区间, 见 _mention_spans。
     pattern_text = _mask_mentioned_literals(command)
-    if (has_dangerous_recursive_rm(pattern_text) or has_force_push(pattern_text)
+    # force push 在此只判「无条件强推」: --force-with-lease 是安全强推 (远端未变才推),
+    # 不进硬红线, 交确认流程处理 (否则推荐的安全替代方案会被本函数永久拦死)。
+    if (has_dangerous_recursive_rm(pattern_text) or has_unconditional_force_push(pattern_text)
             or has_win_recursive_delete(pattern_text) or has_system_shutdown(pattern_text)
             or has_auth_overwrite(pattern_text)):
         return True

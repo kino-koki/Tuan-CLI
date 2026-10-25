@@ -1,4 +1,4 @@
-import { PanelLeft, Menu, Search, Wrench } from 'lucide-react';
+import { PanelLeft, Search, Wrench } from 'lucide-react';
 
 interface Props {
   onToggleSidebar: () => void;
@@ -17,13 +17,6 @@ export default function TitleBar({ onToggleSidebar, onOpenPalette, engineMissing
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="h-full flex items-center gap-0.5 px-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        <button
-          onClick={onToggleSidebar}
-          className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-tuan-textSecondary hover:text-tuan-text transition-colors"
-          title="菜单"
-        >
-          <Menu size={18} className="opacity-80" />
-        </button>
         <button
           onClick={onToggleSidebar}
           className="p-1.5 hidden md:flex hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-tuan-textSecondary hover:text-tuan-text transition-colors"
