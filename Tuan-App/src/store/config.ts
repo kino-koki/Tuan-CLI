@@ -5,11 +5,12 @@ const KEY_PROVIDERS = 'tuan.providers';
 const KEY_CONVERSATIONS = 'tuan.conversations';
 const KEY_PROJECTS = 'tuan.projects';
 const KEY_THEME = 'tuan.theme';
-const KEY_AVATAR_MODE = 'tuan.avatarMode';
 const KEY_AGENT_MODE = 'tuan.agentMode';
 const KEY_MODE = 'tuan.mode';
 const KEY_PROVIDER_ID = 'tuan.providerId';
 const KEY_MODEL = 'tuan.model';
+/** 引擎安装向导是否已被用户明确跳过（持久化：跳过就不再每次启动弹） */
+const KEY_ENGINE_SETUP_DISMISSED = 'tuan.engineSetupDismissed';
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -51,25 +52,6 @@ export const store = {
   saveTheme(t: 'light' | 'dark') {
     write(KEY_THEME, t);
   },
-  /**
-   * 助手形象档（历史兼容字段，已无 UI 入口）。
-   *
-   * 二次元立绘已成为唯一助手形象，不再有"官方星芒 vs 模型形象"的选择。
-   * 返回类型收敛为 'anime' | 'default'：
-   *  - 读取 localStorage 中的任何历史值（'default' / 'awa' / 'community'）
-   *    一律归一为 'anime'。
-   *  - 'default' 仅保留在类型联合中以便外部代码不报错，实际上函数永远返回 'anime'。
-   *
-   * 字段保留是为了兼容旧 localStorage 数据，避免升级时报错或丢数据。
-   */
-  avatarMode(): 'anime' | 'default' {
-    // 读一次以确保 localStorage 被消费（历史值不再影响行为）
-    read<string>(KEY_AVATAR_MODE, 'anime');
-    return 'anime';
-  },
-  saveAvatarMode(m: 'anime' | 'default') {
-    write(KEY_AVATAR_MODE, m);
-  },
   /** 安卓端轻量 Agent：开启后可联网搜索/抓取/算数；关闭则退化为纯对话。 */
   agentMode(): boolean {
     return read<boolean>(KEY_AGENT_MODE, true);
@@ -96,6 +78,13 @@ export const store = {
   },
   saveModel(v: string) {
     write(KEY_MODEL, v);
+  },
+  /** 引擎安装向导跳过标记：true = 不再自动弹出（仍可从标题栏状态灯手动打开） */
+  engineSetupDismissed(): boolean {
+    return read<boolean>(KEY_ENGINE_SETUP_DISMISSED, false);
+  },
+  saveEngineSetupDismissed(v: boolean) {
+    write(KEY_ENGINE_SETUP_DISMISSED, v);
   },
 };
 
