@@ -184,19 +184,19 @@ Tuan-Chat/
 # Tuan-App 是独立的桌面/移动应用工程（Tauri + Android + 前端），体积 ~1.3GB 绝大多数是
 # node_modules / 引擎虚拟环境 / 打包产物 / 运行日志。仅保留应用源码入库，避免二进制与
 # 构建产物污染 MIT 主仓（与已忽略的 Tuan-Chat/ 同理）。
-Tuan-App/node_modules/
-Tuan-App/engine/
-Tuan-App/dist/
-Tuan-App/release/
-Tuan-App/.scratch/
-Tuan-App/avatars/
-Tuan-App/legal/
-Tuan-App/public/
-Tuan-App/**/build/
-Tuan-App/**/.gradle/
-Tuan-App/**/target/
-Tuan-App/*.log
-Tuan-App/*.tsbuildinfo
-Tuan-App/*.jpg
-Tuan-App/*.png
-Tuan-App/package-lock.json
+Tuan/node_modules/
+Tuan/engine/
+Tuan/dist/
+Tuan/release/
+Tuan/.scratch/
+Tuan/avatars/
+Tuan/legal/
+Tuan/public/
+Tuan/**/build/
+Tuan/**/.gradle/
+Tuan/**/target/
+Tuan/*.log
+Tuan/*.tsbuildinfo
+Tuan/*.jpg
+Tuan/*.png
+Tuan/package-lock.json
