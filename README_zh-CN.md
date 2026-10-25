@@ -122,7 +122,7 @@ tuan dispatch serve --port 8788            # WebSocket 在 ws://HOST:8788/tuan/d
 
 ## 版本号与仓库历史（透明披露）
 
-**为什么现在是 `0.3.1`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的诚实口径：**`0.x` 阶段意味着公共 API（CLI 接口、配置 schema、工具协议、插件契约）尚未冻结**，仍可能随迭代调整。Tuan-CLI 功能面已相当完整（安全拦截/事务回滚、模型无关热切换（58 家供应商 + 本地 Ollama）、三种主循环、微内核插件架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等，均配有测试），但**版本号反映的是接口稳定度，不是功能完成度**——功能齐全 ≠ API 该冻结。`1.0` 预留给公共 API 真正稳定、敢于承诺向后兼容之时。此前：破坏性变更在 `0.x` 内升 MINOR（并附迁移提示）、兼容功能升 MINOR、修复升 PATCH（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。
+**为什么现在是 `0.3.3`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的诚实口径：**`0.x` 阶段意味着公共 API（CLI 接口、配置 schema、工具协议、插件契约）尚未冻结**，仍可能随迭代调整。Tuan-CLI 功能面已相当完整（安全拦截/事务回滚、模型无关热切换（58 家供应商 + 本地 Ollama）、三种主循环、微内核插件架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等，均配有测试），但**版本号反映的是接口稳定度，不是功能完成度**——功能齐全 ≠ API 该冻结。`1.0` 预留给公共 API 真正稳定、敢于承诺向后兼容之时。此前：破坏性变更在 `0.x` 内升 MINOR（并附迁移提示）、兼容功能升 MINOR、修复升 PATCH（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。
 
 | 版本号语义 | 说明 |
 |---|---|

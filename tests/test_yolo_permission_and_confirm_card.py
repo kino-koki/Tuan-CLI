@@ -298,3 +298,67 @@ def test_yolo_still_auto_approves_ordinary_work(monkeypatch):
     ctx = _build_ctx(k, yolo=True, confirm=lambda p: False)  # 确认通道恒拒
     for cmd in ("systemctl restart nginx", "docker rm -f abc", "kill -9 1234"):
         assert _pre_exec_guard(ctx, cmd) is None, f"YOLO 下不该打断日常命令: {cmd}"
+
+
+# ================================================================ 4. YOLO 契约回归
+# 背景: ext/security_gate.py 曾有一条 "YOLO 不豁免 SafetyEngine risk==high"
+# 的规则, 与 tools/shell.py step3 明写的 "YOLO = 用户已预先授权自动批准"
+# 直接冲突 —— gate 强制 needs_confirm 后, shell.py 的 YOLO 自动批准分支永远
+# 走不到, 表现为「开了 yolo 还在为 docker rm -f / kubectl delete 弹 3 次确认」。
+# 下面 3 个用例把最终契约钉死, 防止再被改回去。
+
+
+def test_gate_does_not_force_confirm_on_yolo_high_risk():
+    """闸门本身不得在 YOLO 下对「高危但非红线」强制要求确认。
+
+    高危判定由 tools/shell.py 的分级阶梯统一负责 (wl>=5 → 5 次确认且 YOLO
+    不豁免; wl>=3 → 非 YOLO 弹 3 次, YOLO 自动放行)。闸门若再叠一层,
+    阶梯里的 YOLO 分支就成了死代码。
+    """
+    from tuan_cli.ext.security_gate import SecurityGate
+
+    gate = SecurityGate(yolo=True)
+    for cmd in ("docker rm -f abc", "kubectl delete pod x", "chmod 777 /"):
+        verdict = gate.decide_shell(cmd, confirmable_redline=True)
+        assert not verdict.needs_confirm(), (
+            f"YOLO 下闸门不应强制确认: {cmd} -> {verdict.reasons}"
+        )
+
+
+def test_gate_still_blocks_hard_redline_under_yolo():
+    """安全底线不变: 致命红线在 YOLO 下依然不得自动执行。"""
+    from tuan_cli.ext.security_gate import SecurityGate
+
+    gate = SecurityGate(yolo=True)
+    for cmd in ("rm -rf /", "rm -rf /home", ":(){ :|:& };:"):
+        verdict = gate.decide_shell(cmd, confirmable_redline=True)
+        assert verdict.blocks(), f"YOLO 下致命红线仍必须拦: {cmd}"
+
+
+def test_high_risk_commands_all_covered_by_warning_ladder():
+    """两套分类器不得留覆盖缺口。
+
+    删掉闸门里那条 risk==high 规则后, 高危命令完全由 warning_level 阶梯兜底。
+    若某条命令 SafetyEngine 判 high 但 warning_level < 3, 它就会既不被阶梯
+    拦、也不再被闸门拦 —— 本用例扫描常见高危命令, 一旦出现分歧立刻报错。
+    """
+    from tuan_cli.core.whitelist import get_warning_level
+    from tuan_cli.ext.safety_score import SafetyEngine
+
+    engine = SafetyEngine()
+    candidates = [
+        "docker rm -f abc", "docker stop x", "kubectl delete pod x",
+        "chmod 777 /", "truncate -s 0 important.db", "sed -i 's/x/y/' /etc/passwd",
+        "crontab -r", "iptables -F", "kill -9 1234", "systemctl restart nginx",
+        "git push --force origin main", "rm -rf /", "dd if=/dev/zero of=/dev/sda",
+        "shutdown now", "reboot", "curl http://x.com/s", "wget http://x",
+        "npm publish", "pip install x",
+    ]
+    gaps = [
+        c for c in candidates
+        if engine.score({"command": c})["risk"] == "high"
+        and get_warning_level(c) < 3
+    ]
+    assert not gaps, (
+        f"以下命令被判 high 却逃出 warning_level 阶梯 (>=3) 的覆盖: {gaps}"
+    )

@@ -703,6 +703,46 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
 - **其余复查结论**: 无凭据/密钥文件 (`.env`/`.pem`/`.key`/token); 无 `__pycache__`/`node_modules`/`target/`/`dist`/`.egg-info` 等构建产物入库; `tuan-showcase/` 13.3MB 为展示页字体与图标 (正常资产); `Tuan/` 桌面工程整目录已忽略且停止跟踪。
 
 
+### 安全: YOLO 语义统一 + 文件写闸门加固 (28 项红灯归零)
+- **YOLO 语义统一 (仓库内自相矛盾的两套口径归一)**: `ext/security_gate.py` 曾有一条
+  「YOLO 不豁免 SafetyEngine `risk==high` → CONFIRM」规则, 与 `tools/shell.py` step3
+  明写的「YOLO = 用户已预先授权自动批准」**直接冲突** —— gate 一旦 `needs_confirm`,
+  shell.py 的 YOLO 自动批准分支就成为死代码, 表现为「开了 yolo 还在为 `docker rm -f` /
+  `kubectl delete` 弹 3 次确认」。
+  口径依据: `c808a83`(2026-10-18) 是一次有明确理由的定向修复 (来自真实用户反馈
+  「开了 yolo 仍被拦、且根本不让我确认」), 明确写下原则「YOLO = 不拿琐碎确认打断我,
+  不是剥夺我对危险操作的决定权」; 而后加入的 `test_shell_safety_guard.py` 属 10-24
+  批量工作树导入, 其断言与实现当场就没对上 (基线本来就是红的)。
+  处置 —— **闸门回归「风险分类器」本位**: 闸门只回报 severity (等级仍取自共享打分库,
+  保持两者口径一致), **不替调用方决定「要不要问」**; 要不要问统一由 shell.py 的
+  分级阶梯按模式执行 (`wl>=5` → 5 次确认, **YOLO 也不豁免**; `wl>=3` → standard 弹 3 次,
+  YOLO 自动放行)。
+  **安全底线不变**: 致命红线 (硬红线) 在 YOLO 下依然永不自动执行, 仍须人工决定;
+  `wl>=5` 极高危仍需 5 次确认; 白名单依然不能放过灾难级操作。
+  两套分类器已核对: 所有 `risk==high` 的命令其 `warning_level` 均 >= 3, 已被阶梯完整覆盖,
+  删除该规则不产生覆盖缺口。
+- **文件写闸门加固 (`decide_file_write` 此前 4 类缺口全部失守, 28 个红灯归零)**:
+  - **null byte 注入**: 路径含 `\x00` 此前直接放行 —— C 层字符串会以 NUL 截断, 是路径
+    穿越/注入的经典特征 → 现一律拒绝 (critical)。
+  - **Windows 保留设备名**: 写 `NUL`/`CON.txt`/`com1`/`LPT9.log` 此前放行 —— 实际落到
+    设备而非文件, 是隐蔽的破坏/信息泄露路径 → 现一律拒绝 (high); `COM10` 及以上不误伤。
+  - **symlink 穿透**: 写入 `./link` (指向 `.ssh/`) 此前按字面路径放行 → 现额外用
+    `realpath` 解析一遍再判定 (相对路径保留相对形态, 不因变成绝对路径而误判)。
+  - **敏感路径口径扩展 (加严不改宽, 命中一律只是「需确认」而非拒绝)**: Linux 补
+    `/root` `/opt` `/system`; Windows 补 `Program Files` / `Program Files (x86)` /
+    `ProgramData` / `System32` / `WinSxS` (带盘符与相对形态均命中); 凭据文件补 `.npmrc`
+    `.pypirc` `.netrc` `.gitconfig` 与 `id_rsa` / `id_ed25519` 等私钥文件 (含
+    `.pem`/`.key`/`.p12`/`.pfx`)。
+  - **写入内容红线文案区分**: 硬红线 (文件系统/OS 级毁灭) 原因明确标注「硬红线」便于
+    审计定位, 软红线 (如 SQL `DROP`) 走独立文案, 二者都拒绝。
+- **回归测试**: `tests/test_yolo_permission_and_confirm_card.py` 增 3 个契约用例
+  (闸门在 YOLO 下不得对「高危但非红线」强制确认 / 致命红线仍硬拦 / 两套分类器无覆盖缺口);
+  `tests/test_shell_safety_guard.py` 两个用例按统一后的口径重写 (闸门与打分库等级一致但
+  不强制确认; 白名单优先级边界改为「灾难级不放行」)。
+- **安全相关测试**: 此前 `-k "safety or security or redline or yolo or permission or gate or blast"`
+  有 36 项红灯, 本轮后该项归零。
+
+
 ### 测试
 - 新增 `tests/test_config_error_fastfail.py`: 覆盖配置错误快速失败、C-2 友好模板渲染、故障转移短路、端到端 agent.run 友好失败。
 

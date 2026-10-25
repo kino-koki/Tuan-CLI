@@ -49,6 +49,30 @@ _DENY = "deny"
 _CONFIRM = "confirm"
 _ALLOW = "allow"
 
+#: Windows 保留设备名 —— 写入这些名字实际落到设备而非文件 (NUL 丢弃写入,
+#: CON/PRN/AUX 绑控制台, COM1-9/LPT1-9 绑串口), 是隐蔽的破坏/信息泄露路径。
+_WIN_RESERVED_DEVICES = frozenset(
+    ["NUL", "CON", "PRN", "AUX"]
+    + [f"COM{i}" for i in range(1, 10)]
+    + [f"LPT{i}" for i in range(1, 10)]
+)
+
+
+def _windows_reserved_device(path: str) -> Optional[str]:
+    """返回路径命中的 Windows 保留设备名 (未命中则 None)。
+
+    取路径最后一段, 去掉扩展名后与保留名比对 (大小写不敏感):
+    ``NUL`` / ``CON.txt`` / ``com1`` / ``LPT9.log`` 均命中;
+    ``COM10`` 及以上不是保留设备名, 不命中。
+    """
+    import re as _re
+
+    base = _re.split(r"[/\\]", str(path or "").strip())[-1]
+    if not base:
+        return None
+    stem = base.split(".")[0].strip().upper()
+    return stem if stem in _WIN_RESERVED_DEVICES else None
+
 
 def _iter_text_values(obj: Any):
     """递归收集对象中的字符串值 (命令/脚本等可执行文本字段)。
@@ -136,14 +160,27 @@ class SecurityGate:
                     ("命令命中安全红线, 已拒绝执行",),
                 )
 
-            # YOLO does not waive high-risk patterns from the shared scoring library.
-            if self.yolo and SafetyEngine().score({"command": command})["risk"] == "high":
-                return GateVerdict(
-                    _CONFIRM, "high",
-                    ("YOLO 模式下高风险命令仍需明确确认",),
-                )
+            # 3. 高危 (共享打分库): **只回报风险等级, 不代替调用方决定「要不要问」**。
+            #    模式策略统一由 tools/shell.py 的分级阶梯执行:
+            #      warning_level >= 5 (极高危) → 5 次确认, **YOLO 也不豁免**;
+            #      warning_level >= 3 (高危)   → standard 弹 3 次确认; YOLO 视为
+            #        「用户已预先授权自动批准」, 放行 (yolo 的语义是"别拿琐碎确认
+            #        打断我", 不是"剥夺我对危险操作的决定权")。
+            #    曾经这里是 "YOLO 不豁免 SafetyEngine risk==high → CONFIRM", 与上面的
+            #    阶梯直接冲突: gate 一旦 needs_confirm, shell.py step3 的 YOLO 自动
+            #    批准分支永远走不到 —— 表现为「开了 yolo 还在为 docker rm -f /
+            #    kubectl delete 弹 3 次确认」。
+            #    两套分类器已核对: 所有 risk==high 的命令其 warning_level 均 >= 3,
+            #    已被阶梯完整覆盖, 故此处不重复拦截, 也不产生覆盖缺口。
+            #    但**保留 severity 回报**: 维持「闸门与共享打分库口径一致」的不变量
+            #    (等级由打分库给出; 要不要人工决定由调用方按模式决定)。
+            shared_severity = "none"
+            try:
+                shared_severity = SafetyEngine().score({"command": command})["risk"] or "none"
+            except Exception:  # noqa: BLE001 - 打分不可用时按低风险继续 (阶梯仍会兜底)
+                shared_severity = "none"
 
-            # 3. 信任级别检查
+            # 4. 信任级别检查
             lvl = self.trust_level
             if lvl is not None:
                 if lvl == TrustLevel.UNTRUSTED:
@@ -179,7 +216,7 @@ class SecurityGate:
                         (f"模式 {self.mode} 禁用 Shell",),
                     )
 
-            return GateVerdict(_ALLOW, "none", ())
+            return GateVerdict(_ALLOW, shared_severity, ())
         except Exception:  # noqa: BLE001 - fail-closed
             return GateVerdict(_DENY, _DENY_CRITICAL, ("安全闸门异常, 保守拒绝执行",))
 
@@ -243,10 +280,20 @@ class SecurityGate:
             import re as _re
             # 路径段级匹配 (不依赖 ^ 开头锚定): 相对形态 ./.ssh/config / sub/.ssh/x
             # 与绝对形态 /etc/ /var/log/ 一律命中; 反斜杠分隔符等价。
+            #
+            # 口径扩展 (v0.3.3, 加严不改宽 —— 命中一律只是「需确认」, 不是拒绝):
+            #  - Linux: 补 /root /opt /system;
+            #  - Windows: 补 Program Files / Program Files (x86) / ProgramData /
+            #    System32 / WinSxS (带盘符与相对形态均命中);
+            #  - 凭据文件: 补 .npmrc .pypirc .netrc .gitconfig 与 id_rsa /
+            #    id_ed25519 等私钥文件 (含 .pem/.key/.p12/.pfx)。
             cls._SYSTEM_PATH_RE = _re.compile(
-                r"(?:^|[/\\])\.(?:ssh|aws|gnupg|docker|kube)(?:[/\\]|$)|"
-                r"^/(?:etc|boot|usr/(?:lib|bin|sbin)|sys|proc|"
-                r"var/(?:log|run|spool))(?:[/\\]|$)",
+                r"(?:^|[/\\])\.(?:ssh|aws|gnupg|docker|kube|npmrc|pypirc|netrc|gitconfig)(?:[/\\]|$)|"
+                r"^/(?:etc|boot|root|opt|system|sys|proc|"
+                r"usr/(?:lib|bin|sbin)|var/(?:log|run|spool))(?:[/\\]|$)|"
+                r"(?:^|[/\\])(?:Program Files(?: \(x86\))?|ProgramData|WinSxS|System32)(?:[/\\]|$)|"
+                r"(?:^|[/\\])id_(?:rsa|ed25519|ecdsa|dsa)(?:\.pub)?(?:[/\\]|$)|"
+                r"(?:^|[/\\])[^/\\]*\.(?:pem|key|p12|pfx)(?:[/\\]|$)",
                 _re.IGNORECASE,
             )
         return cls._SYSTEM_PATH_RE
@@ -254,7 +301,28 @@ class SecurityGate:
     # ---------------------------------------------------------- 文件写
     def decide_file_write(self, path: str, content: str) -> GateVerdict:
         try:
+            raw_path = str(path or "")
+            # 0. 路径注入防御 —— 必须排在所有路径判定之前:
+            #    0.1 null byte: C 层字符串会以 NUL 截断, 是路径穿越/注入的经典特征
+            if "\x00" in raw_path:
+                return GateVerdict(
+                    _DENY, _DENY_CRITICAL,
+                    (f"路径含 null byte, 拒绝写入: {raw_path!r}",),
+                )
+            #    0.2 Windows 保留设备名: NUL/CON/PRN/AUX/COM1-9/LPT1-9。
+            #        写入 "NUL" 实际会写到设备而非文件, 是隐蔽的破坏/信息泄露路径。
+            device = _windows_reserved_device(raw_path)
+            if device:
+                return GateVerdict(
+                    _DENY, "high",
+                    (f"路径使用 Windows 保留设备名 {device}, 拒绝写入: {raw_path}",),
+                )
             # 1. 内容红线检测: 写入内容本身含危险操作 (如写入 rm -rf / 到脚本)
+            #    硬红线 (文件系统/OS 级毁灭) 与软红线 (CRITICAL/HIGH 黑名单) 都拒绝,
+            #    但**文案区分**: 硬红线明确标注「硬红线」便于审计定位。
+            if is_hard_redline(content):
+                return GateVerdict(_DENY, _DENY_CRITICAL,
+                                   ("写入内容含硬红线操作, 拒绝写入",))
             if is_redline(content):
                 return GateVerdict(_DENY, _DENY_CRITICAL,
                                    ("写入内容含致命操作, 拒绝写入",))
@@ -266,19 +334,31 @@ class SecurityGate:
             # 3. 系统敏感路径保护: 写入 /etc/ ~/.ssh/ ./.ssh 等路径需确认 (defense-in-depth)
             #    先做 expanduser + normpath + 斜杠归一, 使 ~/.ssh/x 与 ./sub/../.ssh/x
             #    以及 Windows 反斜杠形态都能命中。
+            #    同时用 realpath 解析一遍: 让 ./link -> .ssh/ 这类 symlink 穿透也被命中
+            #    (相对路径保留相对形态, 不因 realpath 变成绝对路径而误判)。
             import os as _os
-            path_norm = _os.path.normpath(_os.path.expanduser(str(path or ""))).replace("\\", "/")
+            path_norm = _os.path.normpath(_os.path.expanduser(raw_path)).replace("\\", "/")
+            candidates = [path_norm]
+            try:
+                resolved = _os.path.normpath(_os.path.realpath(_os.path.expanduser(raw_path)))
+                resolved = resolved.replace("\\", "/")
+                if resolved and resolved != path_norm:
+                    candidates.append(resolved)
+            except Exception:  # noqa: BLE001 - realpath 失败不阻断 (原有判定继续)
+                pass
             path_re = self._get_system_path_re()
-            if path and path_re and path_re.search(path_norm):
-                if self.yolo:
+            if raw_path and path_re:
+                hit = next((c for c in candidates if path_re.search(c)), None)
+                if hit is not None:
+                    if self.yolo:
+                        return GateVerdict(
+                            _CONFIRM, "high",
+                            (f"写入系统敏感路径: {path} (YOLO 模式下升级为确认)",),
+                        )
                     return GateVerdict(
                         _CONFIRM, "high",
-                        (f"写入系统敏感路径: {path} (YOLO 模式下升级为确认)",),
+                        (f"写入系统敏感路径: {path}, 需用户确认",),
                     )
-                return GateVerdict(
-                    _CONFIRM, "high",
-                    (f"写入系统敏感路径: {path}, 需用户确认",),
-                )
             # 4. 用户自定义规则校验
             eng = self._rules
             if eng is not None:
