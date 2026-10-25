@@ -26,11 +26,19 @@
 锚点与别名 (``&x`` / ``*x``)、标签 (``!!str``)、复杂键、跨行引用的深层嵌套流式结构。
 这些都不是本项目 YAML 的用法; 抛出明确错误好过悄悄给错数据。
 
-已知有意分歧: YAML 1.1 的六十进制整数 (``12:30:45`` -> 45045) 不实现 —— 那是 PyYAML
-的一个反直觉行为, 没有真实配置依赖它, 解析成字符串更安全。
+已知有意分歧 (与 PyYAML 逐条核对过, 有意不走它的路)
+------------------------------------------------------
+1. YAML 1.1 的六十进制整数 (``12:30:45`` -> 45045) 与八进制整数 (``017`` -> 15)
+   都不实现 —— 那是 PyYAML 的反直觉行为, 没有真实配置依赖它, 解析成字符串更安全。
+2. **映射键一律是字符串**, 不做类型推断。PyYAML 按 YAML 1.1 把 ``yes`` / ``on`` /
+   ``true`` 键推成 ``True``、把 ``null`` 键推成 ``None``, 使用者按字符串名取值会静默
+   取空; YAML 1.2 核心 schema 本就要求键为字符串, 这里跟随 1.2 (见 ``_unquote_key``)。
 
-正确性策略: 本实现与已安装的 PyYAML 做过差分测试 (见 ``.scratch/test_yaml_shim.py``),
-在仓库全部 YAML 文件上解析结果一致。PyYAML 仍可作为可选增强安装
+正确性策略: 差分测试在 ``tests/test_yaml_shim.py`` —— 它必须直接调
+``_stdlib_safe_load`` / ``_stdlib_safe_dump``, 不能调 ``safe_load``。原因: 本模块末尾的
+后端选择逻辑在 PyYAML 可用时会把 ``safe_load`` **重绑定到 PyYAML**, 那时拿 ``safe_load``
+做对照等于让 PyYAML 跟自己比, 差分测试会永远绿灯、拦不住任何回归。这一条是 0.3.2 修的
+方法论漏洞 (历史上那次"5/5 全通过"就是这样造成的假阴性)。PyYAML 仍可作为可选增强安装
 (``pip install tuan-cli[yaml]``) —— 装了就自动用 PyYAML 的完整实现, 没装则用本模块。
 """
 
@@ -160,6 +168,31 @@ def _decode_double(body: str) -> str:
     return "".join(out)
 
 
+def _unquote_key(s: str) -> str:
+    """解析**映射键**: 只剥引号与转义, 绝不做类型推断。
+
+    映射键一律保持字符串, 这是与 PyYAML 的**有意分歧** (同 YAML 1.1 六十进制整数
+    的处理方式)。原因:
+
+    1. PyYAML 按 YAML 1.1 把 ``yes`` / ``on`` / ``true`` 推断成 ``True``, 把 ``null``
+       推断成 ``None``。于是 ``yes: 1`` 解析成 ``{True: 1}``, 使用者按字符串名
+       ``cfg["yes"]`` 取不到值 —— 静默错。
+    2. 更糟的是这些键会**以 bool/None 形态流入后续代码**, 而后续多处对键做
+       ``.strip()`` / 切片等操作, 触发 ``AttributeError: 'bool' object has no
+       attribute 'strip'`` —— 配置文件里出现 ``yes:`` ``no:`` ``on:`` ``true:`` 这类
+       键就会让整个配置加载崩溃。这是 0.3.2 修掉的真实崩溃。
+    3. YAML 1.2 核心 schema 本身也把键限定为字符串, 这里的行为与 1.2 一致。
+    """
+    s = s.strip()
+    if not s:
+        return ""
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        return _decode_double(s[1:-1])
+    if len(s) >= 2 and s[0] == "'" and s[-1] == "'":
+        return s[1:-1].replace("''", "'")
+    return s
+
+
 def _unquote(s: str) -> Any:
     """解析单个标量 (含引号与类型推断)。"""
     s = s.strip()
@@ -230,7 +263,11 @@ def _split_key(s: str) -> Tuple[Optional[str], Optional[str]]:
             depth -= 1
         elif ch == ":" and depth == 0:
             if j + 1 >= len(s) or s[j + 1] in " \t":
-                return _unquote(s[:j].strip()) or "", s[j + 1:].strip()
+                # 键走 _unquote_key: 不做类型推断, 避免 ``yes`` / ``null`` 被推断成
+                # True / None 后在下游 ``.strip()`` 上崩溃 (见 _unquote_key 说明)。
+                # 旧写法 ``_unquote(...) or ""`` 还有一个 falsy 陷阱: 键 ``no`` /
+                # ``off`` / ``false`` 被推断成 False, ``False or ""`` 会静默变成空串键。
+                return _unquote_key(s[:j]), s[j + 1:].strip()
     return None, None
 
 
@@ -282,7 +319,7 @@ def _parse_flow(s: str, line_no: int) -> Any:
                 k, v = _split_key(part)
                 out[k] = _parse_flow(v, line_no) if v else None
             else:
-                out[_unquote(part)] = None
+                out[_unquote_key(part)] = None
         return out
     return _unquote(s)
 
@@ -453,6 +490,34 @@ def _parse_node(
     return val, nxt
 
 
+def _parse_child(lines: List[str], i: int, indent: int, ends_nl: bool) -> Tuple[Any, int]:
+    """解析 ``key:`` 之下的子节点。
+
+    先按子缩进 (``indent + 1``) 找; 找不到时再允许**与父键同缩进的序列**。
+    这是 YAML 的合法写法:
+
+        a:
+        - 1
+        - 2
+        # => {'a': [1, 2]}
+
+    同缩进的**映射**仍不在此列 (那是非法 YAML), 所以这里只放行 `- ` 起始的行。
+    旧实现只查 ``indent + 1``, 会把上面的例子静默解析成 ``{'a': None}`` —— 数据丢失
+    且不报错, 是 0.3.2 修掉的真实缺陷。
+    """
+    val, i = _parse_node(lines, i, indent + 1, ends_nl)
+    if val is None:
+        j = i
+        while j < len(lines) and _is_noise(lines[j]):
+            j += 1
+        if j < len(lines) and not _is_doc_boundary(lines[j]):
+            ind2 = _indent_of(lines[j])
+            s2 = _split_trailing_comment(lines[j][ind2:])
+            if ind2 == indent and (s2.startswith("- ") or s2 == "-"):
+                val, i = _parse_seq(lines, j, indent, ends_nl)
+    return val, i
+
+
 def _parse_seq(
     lines: List[str], i: int, indent: int, ends_nl: bool
 ) -> Tuple[List[Any], int]:
@@ -508,11 +573,13 @@ def _parse_map(
         k, rest = _split_key(s)
         if k is None:
             raise ScannerError(f"第 {i} 行: 期望 'key: value', 实际 {first[:40]!r}")
-        key = _unquote(k)
+        # 键在 _split_key 内已用 _unquote_key 解引号; 此处不再 _unquote 二次推断
+        # (旧写法会把键 ``yes`` 再推成 True, 进而触发下游 .strip() 崩溃)。
+        key = k
         if rest:
             i = _assign_value(out, key, rest, lines, i, indent, ends_nl)
         else:
-            val, i = _parse_node(lines, i, indent + 1, ends_nl)
+            val, i = _parse_child(lines, i, indent, ends_nl)
             out[key] = val
         return _continue_map(out, lines, i, indent, ends_nl)
 
@@ -544,9 +611,9 @@ def _continue_map(
         k, rest = _split_key(s)
         if k is None:
             raise ScannerError(f"第 {i + 1} 行: 期望 'key: value', 实际 {s[:40]!r}")
-        key = _unquote(k)
+        key = k  # 已在 _split_key 内解引号, 不再二次类型推断 (见 _unquote_key)
         if not rest:
-            val, i = _parse_node(lines, i + 1, indent + 1, ends_nl)
+            val, i = _parse_child(lines, i + 1, indent, ends_nl)
             out[key] = val
             continue
         i = _assign_value(out, key, rest.strip(), lines, i + 1, ind, ends_nl)

@@ -144,6 +144,7 @@ tuan --print run "Oi, descreva-se em uma frase."
 |---|---|
 | `tuan` | TUI interativo (skin Kimi Code) |
 | `tuan setup` / `tuan models` | Configurar provedor / listar 58 provedores e 1400+ modelos |
+| `tuan sessions` / `--continue` / `--resume <id>` / `setup --skip` | Listar/retomar/excluir sessões salvas; retomar direto da CLI; o assistente de configuração roda no primeiro uso (`setup --skip` pula) |
 | `tuan models update` | Atualizar o catálogo de modelos/provedores localmente: mesclar as listas embutidas em `~/.tuan/models_catalog.json` (offline, preserva entradas adicionadas pelo usuário; `--check` reporta só diffs, `--background` roda assíncrono) |
 | `tuan agent` | Agentes nomeados (compatível `.claude/agents`, descoberta de 3 níveis) |
 | `tuan acp` | Sobe um servidor ACP pra VSCode / Zed / JetBrains te dirigirem |

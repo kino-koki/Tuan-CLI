@@ -70,7 +70,7 @@ pub fn resolve_python(exe_dir: &Path) -> Result<PathBuf> {
     // 1. 打包的便携式运行时
     let bundled = exe_dir.join("engine").join("python").join(if cfg!(windows) { "python.exe" } else { "python" });
     if bundled.is_file() {
-        return Ok(bunded);
+        return Ok(bundled);
     }
 
     // 2. 环境变量覆盖（显式意图，优先于本机的自动产物）

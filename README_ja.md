@@ -122,6 +122,7 @@ tuan --print run "こんにちは、あなたを一言で自己紹介して"
 |---|---|
 | `tuan` | 対話型 TUI（Kimi Code スキン） |
 | `tuan setup` / `tuan models` | プロバイダ設定 / 58 プロバイダ & 1400+ モデル一覧 |
+| `tuan sessions` / `--continue` / `--resume <id>` / `setup --skip` | 保存済みセッションの一覧・再開・削除。CLI から直接再開可能。初回起動時はセットアップウィザードが自動起動（`setup --skip` でスキップ） |
 | `tuan agent` | 名前付きエージェント（`.claude/agents` 互換、3 層ディスカバリ） |
 | `tuan acp` | ACP server 起動、VSCode / Zed / JetBrains に駆動される |
 | `tuan cron` | 定期バックグラウンドタスク |

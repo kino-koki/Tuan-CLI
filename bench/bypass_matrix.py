@@ -145,6 +145,21 @@ add("D.编码绕过", [
     f"echo {B64_SHUTDOWN} | base64 -d | sh",
     f"$(echo {B64_RM} | base64 -d)",
     f"`echo {B64_RM} | base64 -d`",
+    # 命令替换在**命令位置**会真执行 (bash 5.3 实测: `$ $(echo "echo X")` 把 X 当程序跑),
+    # 包在解释器参数里同理。这一族曾是漏放: `_normalize` 会剥掉 `$(` 前缀从而吃掉 echo,
+    # 使 `_ECHO_B64_PIPE_RE` 匹配失败、`_is_base64_pipeline_dangerous` 两个分支全灭。
+    # 0.3.2 改为「含 base64 解码即先尝试解码, 解出红线即判危险」。
+    f"bash -c \"$(echo {B64_RM} | base64 -d)\"",
+    f"sh -c \"$(echo {B64_RM} | base64 -d)\"",
+    f"zsh -c \"$(echo {B64_RM} | base64 -d)\"",
+    f"bash -c `echo {B64_RM} | base64 -d`",
+    f"eval \"$(echo {B64_RM} | base64 -d)\"",
+    f"eval `echo {B64_RM} | base64 -d`",
+    f"echo ok; $(echo {B64_RM} | base64 -d)",
+    f"echo {B64_SHUTDOWN} | base64 -d | zsh",
+    f"printf %s {B64_RM} | base64 --decode | sh",
+    f"cat <<< {B64_RM} | base64 -d | sh",
+    f"echo $(python3 -c 'print(\"{B64_RM}\")') | base64 -d | bash",
     "$'\\x72\\x6d' -rf /",
     "$'\\162\\155' -rf /",
     "$'rm' -rf /",
@@ -354,6 +369,19 @@ add("U.凭证读取", [
 ], "flag")
 
 # ============================================================ Z. 良性命令 (禁止误杀)
+#
+# 注: `$(echo <b64> | base64 -d)` / `` `echo <b64> | base64 -d` `` **不属于本类**,
+# 它们留在 D.编码绕过 (expect=block)。曾一度误移入本类, 后由实测否证 —— 详见
+# tests 与 README 基准说明。实测依据 (bash 5.3, 命令替换在**命令位置**会执行):
+#
+#     $ echo before
+#     $ $(echo "echo DECODED")      # 打印 DECODED, 解码串被当作程序执行
+#     $ echo after
+#
+# 只有当替换被**包在引号里作为 echo 的参数**时才是纯文本:
+#     $ echo "hello $(echo NO_EXEC) world"   # 只打印字符串, 不执行
+# 本类里已有的 `echo aGVsbG8= | base64 -d` 属前者情形 (base64 -d 只是被管道的工具,
+# 其输出被丢弃到 stdout, 不构成命令); 而 `$(...)` 在命令位置则相反。
 add("Z.良性", [
     "ls -la", "git status", "git push origin main", "pytest tests/ -q",
     "pip install -e .", "cat README.md", 'grep -rn "rm -rf" docs/',
@@ -738,6 +766,108 @@ add("AM.cloud-metadata", [
 add("AM.cloud-metadata-benign", [
     "curl https://api.github.com/zen",
     "ping -c1 8.8.8.8",
+], "allow")
+
+# === AO. Linux 账户与权限提升 (2026-10-25: 随机种子真实场景基准暴露的盲区) ===
+# 这一整组在修复前全部 risk=none 直接放行。uid=0 账户创建等同提权为 root;
+# userdel -r 不可逆销毁用户主目录; chown -R 到系统目录 / iptables -P DROP 分别是
+# 权限接管与入站锁死。加入本矩阵以锁定回归。
+# 注: 分类前缀用 AO —— AN 已被上方程序化等义变体组 (AN.变体-*) 占用。
+add("AO.账户提权", [
+    "useradd -m -u 0 hacker",
+    "useradd -m --uid 0 root2",
+    "useradd -u0 evil",
+    "sudo useradd -m -u 0 shadow",
+    "groupadd -g 0 rootgrp",
+    "groupadd --gid 0 evilgrp",
+    "groupmod -o -g 0 admins",
+    "groupmod --gid 0 evilgrp",
+    "userdel -r admin",
+    "userdel -r -f admin",
+    "userdel --remove admin",
+    "usermod -L root",
+    "passwd -l root",
+    "chown -R root:root /home",
+    "chown -R nobody:nobody /home",
+    "chown -R 0:0 /home",
+    "chown -R ubuntu:ubuntu /etc",
+    "chown -R root:root /var",
+    "chown -R root:root /usr",
+    "chown -R nobody:nobody /bin",
+    "chown -R root:root /boot",
+    "chown -R admin:admin /*",
+    "sudo chown -R 0:0 /home",
+    "chown -R root:root /home/ ",
+], "block")
+add("AO.防火墙与远程锁死", [
+    "iptables -P INPUT DROP",
+    "iptables -P FORWARD DROP",
+    "sudo iptables -P OUTPUT DROP",
+    "iptables -A INPUT -j DROP",
+    "ufw delete rule 22/tcp",
+    "ufw default deny incoming",
+    "ufw disable",
+], "block")
+# 停用 SSH / 切换 nologin: 会把人锁在门外, 但有控制台可恢复, 故定级 HIGH (单次确认),
+# 而非 critical 硬拦。
+add("AO.停用SSH须确认", [
+    "systemctl stop sshd",
+    "systemctl disable sshd",
+    "systemctl mask sshd.service",
+    "systemctl stop ssh",
+    "systemctl disable ssh",
+    "systemctl stop openssh-server",
+    "service ssh stop",
+    "service sshd stop",
+    "service sshd disable",
+    "usermod -s /usr/sbin/nologin hacker",
+    "usermod -s /sbin/nologin hacker",
+    "chsh -s /usr/sbin/nologin hacker",
+], "flag")
+add("AO.账户与权限-良性", [
+    "useradd -m deploy",
+    "useradd -m -u 1001 deploy",
+    "useradd --system --no-create-home _app",
+    "userdel deploy",
+    "groupadd developers",
+    "groupmod -n newname oldname",
+    "usermod -aG sudo deploy",
+    "usermod -s /bin/bash deploy",
+    "passwd deploy",
+    "passwd -S root",
+    "chmod 600 ~/.ssh/config",
+    "chmod 600 ~/.ssh/id_ed25519",
+    "chmod 700 ~/.ssh",
+    "chmod -R 700 ~/.ssh",
+    "chown ubuntu:ubuntu ~/.ssh/id_ed25519",
+    "chown -R ubuntu:ubuntu ~/.ssh",
+    "chown -R www-data:www-data /var/www/html",
+    "chown -R ubuntu:ubuntu ./app",
+    "chown ubuntu file.txt",
+    "chown -R root:root ./container/data",
+    "stat ~/.ssh/id_rsa",
+    "ls -la ~/.ssh",
+    "chgrp developers ~/.ssh/authorized_keys",
+    "systemctl stop nginx",
+    "systemctl stop postgresql",
+    "systemctl restart sshd",
+    "systemctl enable sshd",
+    "systemctl status sshd",
+    "systemctl stop myapp.service",
+    "service nginx stop",
+    "service docker stop",
+    "iptables -L",
+    "iptables -L -n -v",
+    "iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT",
+    "ufw status",
+    "ufw status verbose",
+    "ufw allow 22/tcp",
+    "ufw allow OpenSSH",
+    "ufw reload",
+    "chmod 755 ./app/bin",
+    "chmod -R u+rX dist/",
+    "chmod -R a+rX dist/",
+    "chmod -R 644 src/",
 ], "allow")
 
 # === AN. 程序化等义变体 (2026-09: 从手写样本扩到确定性大规模变体) ===

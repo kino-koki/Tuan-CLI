@@ -147,6 +147,7 @@ tuan --print run "Hi, describe yourself in one sentence."
 |---|---|
 | `tuan` | Interactive TUI (Kimi Code skin) |
 | `tuan setup` / `tuan models` | Configure providers / list 58 providers & 1400+ models |
+| `tuan sessions` / `--continue` / `--resume <id>` / `setup --skip` | List/resume/remove saved sessions; resume right from the CLI; first run auto-launches the setup wizard (bypass with `setup --skip`) |
 | `tuan models update` | Update the model/provider catalog locally: merge the built-in lists into `~/.tuan/models_catalog.json` (offline, preserves user-added entries; `--check` reports diffs only, `--background` runs async) |
 | `tuan agent` | Named agents (`.claude/agents`-compatible, 3-tier discovery) |
 | `tuan acp` | Run an ACP server so VSCode / Zed / JetBrains can drive you |

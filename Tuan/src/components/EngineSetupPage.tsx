@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import { Check, RefreshCw, ArrowRight } from 'lucide-react';
-import type { BootEngineStatus } from './BootScreen';
 import BrandMark from './BrandMark';
+
+/** 引擎自检结果（BootScreen 移除后由本页定义并导出，App 与设置页共用） */
+export interface BootEngineStatus {
+  ok: boolean;
+  reason: string;
+  python: string;
+  app_version?: string;
+  engine_version?: string;
+  engine_root?: string;
+}
 import {
   BrailleSpinner,
   OnboardCheck,

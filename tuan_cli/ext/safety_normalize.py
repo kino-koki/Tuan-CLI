@@ -478,7 +478,26 @@ def _expand_globs(text: str) -> str:
             return token
         matches = _bounded_glob(bare)
         if matches:
-            return ' '.join(matches[:_GLOB_MAX_MATCHES])
+            # 安全修复: 只限条数不够 —— 单 token 命中 1000 条路径时, 展开文本可达
+            # 3 万字符, 后续每条正则都要在这段长串上扫描, 而模式库里有多条
+            # 含 [\s\S]* 嵌套前瞻的正则 (tar-over-ssh / reverse-shell), 复杂度
+            # 随长度平方甚至更高地放大。实测 `python3 -m pytest tests/test_*.py`
+            # (命中 290 个真实测试文件) 让单条命令的完整评估耗时 22.2 秒 —— 一条
+            # 日常测试命令就能卡死 Agent。因此同时限制**展开后总字符数**: 超出后
+            # 截断匹配, 保留代表性样本供红线检测, 并把原文本一并保留以免漏判。
+            out = ' '.join(matches[:_GLOB_MAX_MATCHES])
+            if len(out) > _GLOB_MAX_TOTAL_CHARS:
+                kept: list[str] = []
+                acc = 0
+                for m in matches:
+                    add = len(m) + 1
+                    if acc + add > _GLOB_MAX_TOTAL_CHARS:
+                        break
+                    kept.append(m)
+                    acc += add
+                out = ' '.join(kept)
+                out += f" …({len(matches) - len(kept)} 个匹配已省略)"
+            return out
         return token
 
     # 安全修复: 逐行处理后再用换行拼回 (同 _resolve_symlinks, 防止 "\n" 分隔符丢失)。
@@ -490,6 +509,10 @@ def _expand_globs(text: str) -> str:
 _GLOB_MAX_DEPTH = 6          # ** 允许穿越的最大目录层数
 _GLOB_MAX_MATCHES = 1000     # 单 token 展开结果条数上限
 _GLOB_MAX_ITERATIONS = 5000  # 单次展开最多执行的目录迭代次数 (超时保护)
+# 单 token 展开后的**总字符数**上限。条数上限挡不住「1000 个长路径」造成的文本膨胀,
+# 而膨胀后的长串会让下游含 [\s\S]* 嵌套前瞻的正则产生平方级以上的耗时 (实测单条
+# 命令 22 秒)。这是真正的 DoS 面: 攻击者只要让 Agent 分析一条带 glob 的命令即可卡死。
+_GLOB_MAX_TOTAL_CHARS = 1500
 
 
 def _bounded_glob(pattern: str) -> List[str]:

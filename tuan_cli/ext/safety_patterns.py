@@ -191,8 +191,12 @@ _CRITICAL_PATTERNS = [
     # ---- 数据外泄: tar 归档 (含密钥/凭证) 经管道传到远端 ssh ----
     # 两个顺序无关的前瞻: 命中 `tar ... | ssh` 管道 且 命令中含密钥/凭证类敏感路径。
     # 仅匹配密钥/凭证类 (不含 /home|/etc 目录), 避免把 `tar /home/me | ssh` 正常备份误判。
-    (r"(?=[\s\S]*\btar\b[\s\S]*\|\s*ssh\b)"
-     r"(?=[\s\S]*(?:~?/\.ssh(?:/|\b)|~?/\.aws(?:/|\b)|id_rsa|\.env\b|credentials|/etc/shadow|/etc/passwd))",
+    # 安全修复: 原用 `[\s\S]*` 跨全文本扫描, 复杂度随文本长度平方以上放大 —— 在
+    # glob 展开后的长串上单条模式耗时 1.03s (见 safety_normalize._GLOB_MAX_TOTAL_CHARS
+    # 注释里的 22 秒案例)。改为 `[^\n]*` 行内语义, 并由 _match_any 逐行扫描覆盖
+    # 多行载荷, 语义不变但扫描范围受单行长度限制。
+    (r"(?=[^\n]*\btar\b[^\n]*\|\s*ssh\b)"
+     r"(?=[^\n]*(?:~?/\.ssh(?:/|\b)|~?/\.aws(?:/|\b)|id_rsa|\.env\b|credentials|/etc/shadow|/etc/passwd))",
      "tar over ssh with secret path (敏感归档外泄到远端)"),
     # ---- 数据外泄: netcat 读敏感文件外发 ----
     (r"\bnc\b[^\n]*<\s*[^\n]*(?:ssh|aws|\.env\b|id_rsa|shadow|passwd|credentials)",
@@ -213,8 +217,30 @@ _CRITICAL_PATTERNS = [
     # ---- git push 删远程引用 (冒号语法: git push origin :ref) ----
     (r"git\s+push\b[^\n]*\s:\s*\S+", "git push :ref (删除远程分支/标签)"),
     # ---- 远程拉取即执行 (curl|wget ... | sh) —— 经典 RCE 投递链 ----
-    (r"\b(?:curl|wget)\b[^\n]*\|\s*(?:ba)?sh\b", "remote fetch pipe to shell (下载即执行 RCE)"),
+    # 安全修复: 原模式 `\|\s*(?:ba)?sh\b` 要求 `|` 后紧跟 shell 名, 中间的
+    # **路径前缀**会整个绕过 —— `curl http://x | /bin/sh` / `| /bin/bash` /
+    # `| /usr/bin/zsh` 全放行 (跨平台可移植性测试发现)。改为允许任意路径前缀,
+    # 并把常见 shell 名全部列出: sh/bash/zsh/ksh/dash/ash/fish, 以及
+    # Windows 侧的 powershell/pwsh/cmd。
+    (r"\b(?:curl|wget|fetch|lynx|links)\b[^\n]*\|\s*"
+     r"(?:(?:\S*[/\\])?)"
+     r"(?:sh|bash|zsh|ksh|dash|ash|fish|es|tcsh|csh|powershell|pwsh|cmd|python3?|perl|ruby|node|php)"
+     r"\b", "remote fetch pipe to shell (下载即执行 RCE)"),
+    # `curl x | /usr/bin/env bash` —— env 间接寻址绕过上面的路径前缀规则。
+    (r"\b(?:curl|wget)\b[^\n]*\|\s*(?:\S*[/\\])?(?:env|xargs|nohup)\s+"
+     r"(?:\S*[/\\])?(?:sh|bash|zsh|ksh|dash|ash|fish|powershell|pwsh|cmd)\b",
+     "remote fetch pipe to shell via env (下载即执行 RCE)"),
     (r"\bwget\b[^\n]*\-O[\s-]*\|", "wget -O- pipe to shell (下载即执行 RCE)"),
+    # ---- 磁盘分区工具: 对块设备执行非只读操作即破坏性 ----
+    # `fdisk -l` (仅列分区表) / `sgdisk -p` / `sgdisk --print` / `parted ... print`
+    # 都是只读查询, 不算危险; 只有带写动作 (新建/删除/清空分区) 才拦。
+    (r"\bfdisk\b(?![^\n]*(?:\s-l\b|\s--list\b|\s--read-only\b))(?=[^\n]*(?:/dev/|/mnt/|/sys/|/run/))",
+     "fdisk 分区 (改写磁盘分区表)"),
+    (r"\bsgdisk\b(?![^\n]*(?:\s-p\b|\s--print\b|\s-i\b|\s--info\b|\s--print-tree\b|\s-v\b|\s--verify\b))"
+     r"(?=[^\n]*(?:/dev/|/mnt/))",
+     "sgdisk 分区 (改写磁盘分区表)"),
+    (r"\bparted\b[^\n]*(?![^\n]*(?:\sprint\b|\sprint-free\b))(?:\bmklabel\b|\bmkpart\b|\brm\s+\d+\b|\bdelete\b)",
+     "parted 分区 (新建/删除分区)"),
     # ---- NoSQL / 内存库 毁灭性操作 ----
     (r"\b(?:mongo|mongosh)\b[^\n]*--eval[^\n]*(?:dropDatabase|drop\s*\(|dropCollection)",
      "mongo dropDatabase (MongoDB 删库)"),
@@ -247,14 +273,47 @@ _CRITICAL_PATTERNS = [
      "iptables default ACCEPT (防火墙默认放行)"),
     (r"\bchmod\b[^\n]*-x\b[^\n]*/(?:usr|bin|sbin)/",
      "chmod -x on system binary (移除系统可执行文件执行位)"),
+    # ---- 账户 / 权限提升 (随机种子真实场景基准暴露的盲区) ----
+    # 以下命令在修复前全部 risk=none 直接放行, 属于真实的提权与账户销毁路径。
+    (r"\buseradd\b[^\n]*(?:\s-u\s*0\b|--uid[=\s]+0\b)",
+     "useradd uid=0 (新建 uid=0 账户, 等同 root 提权)"),
+    (r"\bgroupadd\b[^\n]*(?:\s-g\s*0\b|--gid[=\s]+0\b)",
+     "groupadd gid=0 (新建 gid=0 组, 等同 root 组)"),
+    (r"\bgroupmod\b[^\n]*(?:\s-g\s*0\b|--gid[=\s]+0\b)",
+     "groupmod gid=0 (组 id 改为 0, 提权)"),
+    (r"\b(?:usermod|chfn|chsh)\b[^\n]*\s-L\b[^\n]*\broot\b",
+     "usermod -L root (锁定 root 账户, 导致无法登录的拒绝服务)"),
+    (r"\bpasswd\b[^\n]*\s-l\b[^\n]*\broot\b",
+     "passwd -l root (锁定 root 密码, 拒绝服务)"),
+    (r"\buserdel\b[^\n]*(?:\s-r\b|--remove\b)",
+     "userdel -r (删除用户及其主目录, 不可逆)"),
+    (r"\bgroupdel\b\s+\S+",
+     "groupdel (删除用户组)"),
+    # chown -R 到系统关键目录: 已有红线只覆盖目标恰好是 `/`, 于是
+    # `chown -R root:root /home` / `chown -R nobody:nobody /*` 全放行。
+    # 注意要求目录名后紧跟行尾或「/ + 空白」—— 只命中系统目录**本身**, 不误伤
+    # `chown -R www-data:www-data /var/www/html` 这类常规 web 部署操作。
+    # macOS 的 /System 与 /Library 一并覆盖: chown -R root:wheel /System 会破坏
+    # SIP 保护的只读文件系统所有权, 与 Linux 侧同属系统目录所有权接管。
+    (r"\bchown\b[^\n]*-[Rr]\b[^\n]*\s/(?:home|etc|var|usr|bin|sbin|boot|root|lib|lib64|opt|srv|run|proc|sys|System|Library)(?:/\s|$)",
+     "chown -R 系统目录 (递归变更系统目录所有权)"),
+    (r"\bchown\b[^\n]*-[Rr]\b[^\n]*\s/\*",
+     "chown -R /* (递归变更全盘所有权)"),
+    # 防火墙默认拒绝 = 入站全部锁死; 与上面的 ACCEPT 对称, 一并列 critical。
+    (r"\biptables\b[^\n]*-P\s+(?:INPUT|FORWARD|OUTPUT)\s+DROP",
+     "iptables default DROP (防火墙默认拒绝, 入站锁死)"),
+    (r"\biptables\b[^\n]*-A\s+INPUT\b[^\n]*-j\s+DROP",
+     "iptables INPUT DROP (入站拒绝规则)"),
+    (r"\bufw\b[^\n]*(?:disable|delete\s+rule|default\s+deny\s+incoming)",
+     "ufw disable/delete/default-deny (关闭或收紧防火墙)"),
     (r"SELINUX\s*=\s*(?:disabled|permissive)", "SELinux disabled (写入配置关闭 SELinux)"),
     # ---- 存储 / 卷 / 分区销毁 ----
     (r"\bumount\s+-a", "umount -a (卸载所有文件系统)"),
     (r"\bswapoff\s+-a", "swapoff -a (关闭全部交换空间)"),
     (r"\b(?:lvremove|vgremove|pvremove)\b", "LVM remove (删除逻辑卷/卷组/物理卷)"),
     (r"\bmdadm\b[^\n]*--zero-superblock", "mdadm zero-superblock (销毁 RAID 元数据)"),
-    (r"\bsgdisk\b[^\n]*\s-(?:Z|z|o)\b", "sgdisk zap (清空分区表)"),
-    (r"\bparted\b[^\n]*\bmklabel\b", "parted mklabel (重建分区表)"),
+    # sgdisk zap / parted mklabel 已由上方「磁盘分区工具」规则统一覆盖
+    # (含只读查询排除), 此处不再重复。
     # ---- macOS / Windows 灭毁与反恢复 ----
     (r"\bdiskutil\b[^\n]*\b(?:eraseDisk|eraseVolume|zeroDisk|secureErase)\b",
      "diskutil erase (抹除磁盘/卷)"),
@@ -264,6 +323,29 @@ _CRITICAL_PATTERNS = [
      "vssadmin delete shadows (删除卷影副本, 破坏勒索恢复能力)"),
     (r"\bwbadmin\b[^\n]*\bdelete\b[^\n]*\bcatalog\b",
      "wbadmin delete catalog (删除 Windows 备份目录)"),
+    # macOS 完整性与内核扩展: SIP 关闭后系统可被任意改写; 从临时目录加载 kext
+    # 是典型的持久化后门手法。跨平台可移植性测试发现这几类此前全放行。
+    (r"\bcsrutil\b[^\n]*\b(?:disable|clear-auth-file)\b",
+     "csrutil disable (关闭系统完整性保护 SIP)"),
+    (r"\bkextload\b[^\n]*\s(?:/tmp/|/var/tmp/|/dev/shm/|/Users/[^\n]*/(?!Applications\b)|~/|\./)",
+     "kextload from temp (从临时/用户目录加载内核扩展, 持久化)"),
+    (r"\bsystemextensionsctl\b[^\n]*\bremove\b", "systemextensionsctl remove (移除系统扩展)"),
+    # macOS 钥匙串 / 证书: 删除根证书会破坏 TLS 校验信任链; 导入证书则可能
+    # 植入中间人根 CA。仅匹配删除/导入动作, `security find-*` / `show-*` /
+    # `list-*` / `unlock-*` 是只读查询或钥匙串管理。
+    (r"\bsecurity\b[^\n]*\b(?:delete|remove)-certificate\b",
+     "security delete/remove certificate (删除证书, 破坏信任链)"),
+    (r"\bsecurity\b[^\n]*\bimport\b",
+     "security import certificate (导入证书, 可能植入中间人根 CA)"),
+    # `defaults write` 面向系统级域 (/Library/Preferences 或 com.apple.* 全局)
+    # 是 macOS 常见持久化手段; 但 `defaults write com.apple.Safari ...` 之类
+    # 面向用户 App 域的操作极常见, 故只锁系统级域。
+    (r"\bdefaults\b[^\n]*\bwrite\b[^\n]*\s/(?:Library/Preferences|System/Library)",
+     "defaults write system domain (写入系统级偏好, 持久化)"),
+    # macOS SIP 保护的只读卷被移动 / 抹除。要求路径以空白或行尾结束,
+    # 允许 `/System` 本体或 `/System/子路径` (`mv /System/Library /tmp/`)。
+    (r"\bmv\b[^\n]*\s/System(?:/\S+)?(?:\s|$)", "mv /System (移动 macOS 系统卷内容)"),
+    (r"\bchmod\b[^\n]*-[Rr]\b[^\n]*\s/System(?:/\S+)?(?:\s|$)", "chmod -R /System (改 macOS 系统卷权限)"),
     # ---- 写入系统持久化目录 (计划任务 / 自启动 / init) ----
     # 只匹配"写入方向": 重定向目标 / tee 目标 / cp|mv|install 的最后一个操作数,
     # 避免把 `cp /etc/crontab /tmp/backup` 这类读取备份误判为持久化。
@@ -318,11 +400,28 @@ _CRITICAL_PATTERNS = [
 ]
 
 _HIGH_PATTERNS = [
+    # 远程访问通道停用 = 服务器被锁在门外 (有控制台可恢复, 故列 high 而非 critical)。
+    # 修复前 `systemctl stop sshd` 只落到 medium 的通用「停止服务」兜底, 实际判 allow,
+    # 随机种子真实场景基准里反复漏放。`systemctl` 是「动作在前」, `service` 是
+    # 「服务名在前」, 两种语序都要覆盖。
+    (r"\b(?:systemctl)\s+(?:stop|disable|mask)\b[^\n]*\b(?:sshd?|ssh[-_]?server|openssh)\b",
+     "stop ssh service (停用 SSH, 远程访问被锁死)"),
+    (r"\bservice\s+(?:sshd?|ssh[-_]?server|openssh)\s+(?:stop|disable|halt)\b",
+     "service ssh stop (停用 SSH, 远程访问被锁死)"),
+    (r"\b(?:usermod|chsh)\b[^\n]*\s-(?:s|shell)\b[^\n]*\s/(?:usr/)?(?:s?bin/(?:nologin|false))\b",
+     "nologin shell (把账户切成不可登录)"),
     # 注: rm 递归强删已升级为 critical (见 has_recursive_rm), 不再列在 high。
+    # 注: kill -9 / pkill / killall 已从本表下移至 _MEDIUM_PATTERNS (见其处注释) ——
+    # 信号操作不会销毁数据, 不具 chmod 777 同级的扩散破坏性。
+    # 例外: **按名称广播 + 强制信号**的组合仍留在 high。`pkill -9 nginx` 会一次性
+    # SIGKILL 掉所有同名进程 (可能含关键服务), 风险比定向 `kill -9 <pid>` 高一档。
     (r"chmod\b[^\n]*\b777\b", "chmod 777 (全权限修改)"),
-    (r"\bkill\s+-9\b", "kill -9 (强制终止进程)"),
-    (r"\bpkill\s+", "pkill (按名称终止进程)"),
-    (r"\bkillall\s+", "killall (终止全部同名进程)"),
+    (r"\b(?:pkill|killall)\b[^\n]*(?:\s-\s*(?:9|KILL|SIGKILL)\b|\s--signal\s+(?:9|KILL|SIGKILL)\b)",
+     "pkill -9 (按名称强制终止全部同名进程)"),
+    # `kill -9 0` 打到调用者的整个进程组, `kill -9 1` 打 init/systemd —— 都是广播形态,
+    # 与定向 `kill -9 1234` 不同档。
+    (r"\bkill\b[^\n]*(?:-\s*(?:9|KILL|SIGKILL)|--signal\s+(?:9|KILL|SIGKILL))[^\n]*\s(?:0|1)\b",
+     "kill -9 0/1 (强杀整个进程组或 init)"),
     (r"git\s+reset\s+--hard", "git reset --hard (硬重置)"),
     (r"ALTER\s+TABLE\s+.*\s+DROP", "alter table drop column (修改表结构删除列)"),
     (r"UPDATE\s+.*\s+SET.*WHERE.*=", "bulk update (批量更新数据)"),
@@ -362,7 +461,10 @@ _HIGH_PATTERNS = [
      "write cron drop-in (写入计划任务目录, 持久化)"),
     (r"(?:>+\s*|tee\s+)\s*/etc/cron\S*",
      "write cron drop-in (写入计划任务目录, 持久化)"),
-    (r">\s*/var/log", "overwrite system log (覆盖/清空系统日志)"),
+    # 注: `> /var/log` 日志写入不在 high 档 —— 它只作用于单个日志文件, 不具
+    # chmod 777 / git reset --hard 同级的扩散性破坏, 已移至 _MEDIUM_PATTERNS。
+    # 旧规则把 `echo started >> /var/log/myapp/app.log` 这类应用日志追加判成 high,
+    # 是过度升级 (实测误杀 10k 基准)。
     # Git 不可逆变体
     (r"git\s+push\b[^\n]*--delete", "git push --delete (删除远程分支)"),
     (r"git\s+branch\b[^\n]*\s-[Dd]\b", "git branch -D (强制删除分支)"),
@@ -379,7 +481,12 @@ _HIGH_PATTERNS = [
     (r"\bhistory\s+-c\b", "history -c (清除命令历史)"),
     (r"\bunset\b[^\n]*HISTFILE", "unset HISTFILE (禁用历史)"),
     # 读取敏感凭证 / 密钥文件
-    (r"\b(?:cat|tac|less|more|head|tail|nl|bat|type)\b[^\n]*(?:/etc/shadow|/etc/passwd|~?/\.ssh/|~?/\.aws/|id_rsa|\.env\b|/\.aws/credentials)",
+    # 文本处理动词一并覆盖: awk/sed/grep/tee/sort/uniq/xargs/cut/tr 都能把密钥
+    # 内容读出或重定向到别处 (`awk {print} ~/.ssh/id_rsa > /tmp/x` 是真实外泄)。
+    # `tee` 尤其危险 —— 它一边显示一边写文件。
+    (r"\b(?:cat|tac|less|more|head|tail|nl|bat|type|awk|sed|grep|egrep|fgrep|zgrep"
+     r"|tee|sort|uniq|cut|tr|paste|join|xargs|wc|xsl|csvlook)\b"
+     r"[^\n]*(?:/etc/shadow|/etc/passwd|~?/\.ssh/|~?/\.aws/|id_rsa|\.env\b|/\.aws/credentials)",
      "read sensitive file (读取敏感凭证/密钥)"),
     # Git 不可逆变体 (扩展): 删除标签 / 清空全部 reflog
     (r"\bgit\s+tag\b[^\n]*\s-[dD]\b", "git tag -d (删除标签)"),
@@ -447,6 +554,14 @@ _MEDIUM_PATTERNS = [
     (r"systemctl\s+(stop|disable)\s+\S+", "systemctl stop/disable (停止/禁用服务)"),
     (r"service\s+\S+\s+stop", "service stop (停止服务)"),
     # 进程管理
+    # 注: kill -9 / pkill / killall 从 _HIGH_PATTERNS 下移至 medium —— 信号操作
+    # 不会销毁数据, 破坏性远低于 chmod 777 / git reset --hard。仍需人工确认
+    # (is_benign_dev_command 返回 False → 严格模式确认), 但不再触发多级确认。
+    (r"\bkill\s+-9\b", "kill -9 (强制终止进程)"),
+    (r"\bpkill\s+", "pkill (按名称终止进程)"),
+    (r"\bkillall\s+", "killall (终止全部同名进程)"),
+    # 日志写入: 覆盖/清空系统日志, 影响范围限于单个日志文件
+    (r">\s*/var/log", "overwrite system log (覆盖/清空系统日志)"),
     # 权限变更
     (r"chmod\s+000\s+", "chmod 000 (移除所有权限)"),
     (r"chown\s+root\s+", "chown root (变更 root 所有权)"),

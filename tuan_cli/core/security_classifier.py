@@ -55,6 +55,87 @@ class ClassificationResult:
 
 # ============================================================ 语义特征提取
 
+# 只读 / 元数据动词: 它们不搬运文件内容, 也不算修改。
+# 用于把「读取 /etc/shadow」与「外传 /etc/shadow」区分开 —— 前者是常规系统巡检
+# (`cat /etc/passwd` 是最常见的系统查看命令), 后者才需要硬拦。
+_READONLY_OR_META_VERBS = r"(?:cat|less|more|head|tail|grep|egrep|fgrep|zgrep|awk|sed" \
+                          r"|stat|ls|find|wc|file|test|type|which|whereis|readlink|du" \
+                          r"|df|chmod|chown|chgrp|sha256sum|md5sum|wc)"
+
+# **纯只读**动词: 不含 chmod/chown/chgrp 这些「改变权限或属主」的动作。
+# SSH 密钥与系统认证文件在这里语义相反, 必须分开处理:
+#   ~/.ssh/id_rsa  —— chmod/chown 多半是**收紧**权限 (`chmod 600`) 或归属调整, 良性;
+#   /etc/shadow    —— chmod/chown 多半是**削弱**安全 (`chmod 777` = 密码全局可读,
+#                     `chown evil:evil` = 认证文件属主被接管), 危险。
+# 把 chmod/chown 放进认证文件的豁免, 实测让 `chmod 777 /etc/shadow` 直接放行。
+_READONLY_VERBS_STRICT = r"(?:cat|less|more|head|tail|grep|egrep|fgrep|zgrep|awk|sed" \
+                         r"|stat|ls|find|wc|file|test|type|which|whereis|readlink|du|df" \
+                         r"|sha256sum|md5sum)"
+
+# sudo / env 赋值 / 子 shell 前缀, 剥掉后才是真正执行的动词。
+# 注意 `env` 必须在这里: `env FOO=1 chown root ~/.ssh/config` 这类用法常见,
+# 漏掉它会让动词判定落在 `env` 上, 权限收紧的良性命令被误拦 (实测回归)。
+_EXEC_PREFIX_RE = re.compile(r"^(?:sudo|nohup|time|command|exec|env|timeout)\s+")
+_ENV_ASSIGN_RE = re.compile(r"^(?:\w+=\S+\s+)+")
+_SUBSHELL_C_RE = re.compile(r"^(?:bash|sh|zsh|dash|ksh)\s+-[^\s]*c\s+(['\"])(.+)\1\s*$")
+
+# 只读动词只有在「没有把内容写出去」时才算只读。一旦出现重定向 / 管道 / tee /
+# cp / mv / rsync / scp, 内容就被搬走了, 不再只是查看 ——
+# `awk {print} ~/.ssh/id_rsa > /tmp/x` 是真实外泄, 不能被豁免。
+_EXFIL_HINT_RE = re.compile(
+    r"(?:\s>[^\s0-9]|\s>>\s*|[^<]\|\s|\btee\b|\bcp\b|\bmv\b|\brsync\b|\bscp\b"
+    r"|\bzip\b|\btar\b|\bbase64\b|\bxxd\b|\biconv\b|\bnc\b|\bncat\b|\bcurl\b|\bwget\b)",
+    re.IGNORECASE,
+)
+
+
+def _leading_verb_is_readonly_or_meta(command: str, strict: bool = False) -> bool:
+    """判断命令「实际执行的动词」是否属于只读 / 元数据操作。
+
+    必须按**含敏感路径的那一段**判断, 不能锚在整条命令开头:
+    `true; cat /etc/passwd` 这类前缀会把锚点判断绕过去 (实测在对抗 10k seed 20260906
+    上造成 8 条误拦)。也解一层 `bash -c '...'` 子 shell, 因为 `bash -c 'cat /etc/passwd'`
+    实际执行的仍是 cat。
+
+    strict=True 时排除 chmod/chown/chgrp —— 这些动作改变权限或属主, 对 ~/.ssh 密钥
+    多半是收紧 (良性), 但对 /etc/shadow 多半是削弱安全 (危险)。
+    """
+    _verbs = _READONLY_VERBS_STRICT if strict else _READONLY_OR_META_VERBS
+    for _seg in re.split(r"[;&|]+", command):
+        _seg = _seg.strip()
+        if not _seg:
+            continue
+        _m = _SUBSHELL_C_RE.match(_seg)
+        if _m:
+            _seg = _m.group(2).strip()
+        _seg = _EXEC_PREFIX_RE.sub("", _seg)
+        _seg = _ENV_ASSIGN_RE.sub("", _seg)
+        if re.match(_verbs + r"\b", _seg):
+            return True
+    return False
+
+
+def _is_keychain_query(command: str) -> bool:
+    """判断命令是否只是 macOS 钥匙串的**查询/管理**动作。
+
+    `security show-keychain` / `list-keychains` / `find-generic-password` /
+    `find-certificate` / `dump-keychain` / `unlock-keychain` 是常规钥匙串运维,
+    不该因为字符串里出现 "keychain" 就被 +权重顶到 deny。真正危险的动作是
+    `import` (植入证书) 与 `delete/remove-certificate` (破坏信任链), 那些由
+    safety_patterns 的专门规则负责, 不依赖本特征。
+    """
+    for _seg in re.split(r"[;&|]+", command):
+        _seg = _seg.strip()
+        if not _seg:
+            continue
+        _seg = _EXEC_PREFIX_RE.sub("", _seg)
+        _seg = _ENV_ASSIGN_RE.sub("", _seg)
+        if re.match(r"(?:security|security\s+(?:show|list|find|dump|unlock|set-attr|read)\b)",
+                    _seg):
+            return True
+    return False
+
+
 class CommandFeatures:
     """从命令中提取语义安全特征。
 
@@ -66,6 +147,13 @@ class CommandFeatures:
         """提取命令的语义特征。"""
         c = command.strip()
         features: Dict[str, Any] = {}
+
+        # 安全修复: 语法级特征 (重定向 / 命令分隔符) 必须在**引号外**才成立。
+        # 否则 `echo '> /dev/null'` 这种「提及」会被当成真实重定向,
+        # `python3 -c 'import sys; print(...)'` 里引号内的 ; 会被当成命令分隔符,
+        # 良性命令因此被误判为「隐藏输出 + 命令链」。内容级特征 (访问 .ssh 路径、
+        # base64 关键字等) 仍用 c, 避免放过 `cat 'echo rm -rf /'` 这类真实引用。
+        c_noquote = re.sub(r"'[^']*'|\"[^\"]*\"", " ", c)
 
         # 1. 管道链长度 (长管道链 = 更复杂的意图, 更可能隐藏恶意)
         pipe_count = c.count("|")
@@ -111,17 +199,23 @@ class CommandFeatures:
         ))
         features["has_setcap"] = bool(re.search(r'\bsetcap\b', c, re.IGNORECASE))
 
-        # 6. 文件系统越界迹象
-        features["writes_to_etc"] = bool(re.search(r'>\s*/etc/', c))
-        features["writes_to_usr"] = bool(re.search(r'>\s*/usr/', c))
-        features["writes_to_dev"] = bool(re.search(r'>\s*/dev/', c))
+        # 6. 文件系统越界迹象 (均用 c_noquote: 重定向是 shell 语法, 引号内的不算)
+        features["writes_to_etc"] = bool(re.search(r'>\s*/etc/', c_noquote))
+        features["writes_to_usr"] = bool(re.search(r'>\s*/usr/', c_noquote))
+        # 安全修复: 原写法 `>\s*/dev/` 把 >/dev/null 也算成「写设备文件」(+40, 直接
+        # 顶到 deny 阈值)。重定向到 /dev/null 是丢弃输出的通用写法, 无害。改为只匹配
+        # 真正的块设备 / 磁盘, 未知设备名按危险处理 (fail-closed)。
+        features["writes_to_dev"] = bool(re.search(
+            r'>\s*/dev/(?:sd[a-z]|nvme|vd[a-z]|xvd[a-z]|hd[a-z]|disk[0-9]|'
+            r'mapper/|cciss/|md[0-9]|dasd|sd[a-z]+[0-9])', c_noquote, re.IGNORECASE
+        ))
         features["accesses_home"] = bool(re.search(r'~/|\\$HOME', c))
         features["accesses_dotfiles"] = bool(re.search(
             r'\\.(?:ssh|aws|gnupg|config|env)', c
         ))
 
         # 7. 隐藏/混淆迹象
-        features["has_hidden_output"] = bool(re.search(r'>\s*/dev/null', c))
+        features["has_hidden_output"] = bool(re.search(r'>\s*/dev/null', c_noquote))
         features["has_noecho"] = bool(re.search(r'\bnoecho\b', c, re.IGNORECASE))
         features["has_ansi_escape"] = bool(re.search(r'\\e\\[|\\x1[bB]', c))
         features["has_unicode_tricks"] = bool(re.search(
@@ -129,8 +223,17 @@ class CommandFeatures:
         ))
 
         # 8. 多命令组合 (&& / ; / || 串联 = 可能执行额外操作)
-        features["has_command_chain"] = bool(re.search(r'&&|\\|\\||;', c))
-        features["chain_length"] = len(re.split(r'&&|\\|\\||;', c))
+        # 安全修复 1: 原模式 r'&&|\\|\\||;' 是错的 —— 原文想写 `||`, 但 raw string 里
+        # `\\` 是字面反斜杠, 展开后 alternation 里出现了空分支, 于是**任何命令**都命中,
+        # has_command_chain 恒为 True; 连带 re.split 返回 len(command), chain_length
+        # 退化成「字符串长度」(实测 `npm install` → 13)。后果是良性命令只要带了
+        # >/dev/null 就会叠加「隐藏输出+命令链」组合加分被打成 deny, 是真实使用场景
+        # 下硬拦误杀的第一大成因。这里改回正确的 `\|` 写法。
+        # 安全修复 2: 引号内的 ; && || 不是 shell 分隔符 (如
+        # `python3 -c 'import sys; print(sys.version)'`), 必须先屏蔽引号串再判分隔符,
+        # 否则一条无害的 python -c 就被判成「命令链」。
+        features["has_command_chain"] = bool(re.search(r"&&|\|\||;", c_noquote))
+        features["chain_length"] = len(re.split(r"&&|\|\||;", c_noquote))
 
         # 9. 管道到 shell (GuardFall 核心向量)
         features["has_pipe_to_shell"] = bool(re.search(
@@ -138,10 +241,13 @@ class CommandFeatures:
             c, re.IGNORECASE,
         ))
 
-        # 10. 写操作特征
-        features["has_redirect"] = bool(re.search(r'>|>>', c))
-        features["has_append"] = bool(re.search(r'>>', c))
-        features["has_overwrite"] = bool(re.search(r'(?<!>)>(?!>)', c))
+        # 10. 写操作特征 (c_noquote: 引号内的 > 是内容不是语法)
+        features["has_redirect"] = bool(re.search(r'>|>>', c_noquote))
+        features["has_append"] = bool(re.search(r'>>', c_noquote))
+        # 安全修复: 原写法 `(?<!>)>(?!>)` 会把 `2>` / `1>` / `&>` (stderr 重定向与
+        # 文件描述符复制) 也算成「覆写」, 于是每条 `2>/dev/null` 都命中。真正的覆写
+        # 是裸 `>` 指向文件路径, 排除编号 fd 与 `&>` 后的复制重定向。
+        features["has_overwrite"] = bool(re.search(r'(?<![0-9&>])>(?!>)', c_noquote))
 
         # 10. 环境变量操作
         features["has_env_export"] = bool(re.search(r'\bexport\b', c, re.IGNORECASE))
@@ -218,9 +324,30 @@ class CommandFeatures:
         ))
 
         # 17. 敏感文件访问检测
+        # 安全修复: ssh-keygen -lf / -y / -L / -F / -e 只读取密钥指纹或公钥, 是只读
+        # 操作, 不该被当作私钥外泄 (+65 直接顶到 deny)。仅在密钥文件出现在
+        # 复制/外传上下文 (cp/scp/rsync/tar/cat/base64/...) 时才算敏感访问。
+        # 排除 ssh-keygen 只读查询, 以及 chmod/chown/chgrp/stat/ls 这类**权限与元数据**
+        # 操作 —— 它们不搬运密钥内容, `chmod 600 ~/.ssh/config` 甚至是收紧权限的
+        # 安全加固动作, 硬拦只会逼用户绕过工具。
+        # 注意: 必须按「含敏感路径的那一段」判断, 不能锚在整条命令开头 ——
+        # `true; chmod 600 ~/.ssh/config` 这类前缀会把锚点判断绕过去, 实测造成
+        # 8 条误拦 (对抗 10k seed 20260906: 1 条 → 13 条)。
+        _ssh_meta = False
+        for _seg in re.split(r'[;&|]+', c):
+            _seg = _seg.strip()
+            if not _seg or '.ssh/' not in _seg:
+                continue
+            # 有重定向 / 管道 / 拷贝类动作时, 内容已被搬走, 不算「只看一眼」。
+            if _leading_verb_is_readonly_or_meta(_seg) and not _EXFIL_HINT_RE.search(_seg):
+                _ssh_meta = True
+            break
         features["accesses_ssh_keys"] = bool(re.search(
-            r'\.ssh/(?:id_rsa|id_ed25519|authorized_keys|known_hosts|config)', c
-        ))
+            r'\.ssh/(?:id_rsa|id_ed25519|id_ecdsa|id_dsa|'
+            r'authorized_keys|known_hosts|config)', c
+        )) and not bool(re.search(
+            r'\bssh-keygen\b[^|;&]*\s-(?:l|lf|y|L|F|e)\b', c, re.IGNORECASE
+        )) and not _ssh_meta
         features["accesses_env_files"] = bool(re.search(
             r'(?:\.env|\.env\.|env\.local|env\.production|credentials?)\b', c, re.IGNORECASE
         ))
@@ -229,10 +356,24 @@ class CommandFeatures:
         ))
         features["accesses_password_db"] = bool(re.search(
             r'(?i)(?:keychain|pass\.store|password.*\.db|login\.keychain)', c
-        ))
+        )) and not _is_keychain_query(c)
+        # /etc/shadow|passwd|sudoers: 同 ssh 密钥一样的「读 vs 搬运」区分。
+        # `cat /etc/passwd` 是最常见的系统巡检命令 (该文件按设计就是全局可读的),
+        # `less /etc/passwd` / `stat /etc/passwd` 同理; 它们不该被 +65 顶到 deny。
+        # 只有出现在写入 (>)、外传 (cp/scp/rsync/tar/base64/curl -d) 上下文才算风险。
+        # 注意这里用 **strict** 模式 —— chmod/chown/chgrp 对认证文件多半是削弱安全
+        # (`chmod 777 /etc/shadow` = 密码全局可读), 不能像 ~/.ssh 那样当权限收紧放行。
+        _auth_readonly = False
+        for _seg in re.split(r'[;&|]+', c):
+            _seg = _seg.strip()
+            if not _seg or not re.search(r'/etc/(?:shadow|passwd|sudoers)', _seg):
+                continue
+            if _leading_verb_is_readonly_or_meta(_seg, strict=True):
+                _auth_readonly = True
+            break
         features["reads_shadow_passwd"] = bool(re.search(
             r'/etc/(?:shadow|passwd|sudoers)', c
-        ))
+        )) and not _auth_readonly
 
         return features
 

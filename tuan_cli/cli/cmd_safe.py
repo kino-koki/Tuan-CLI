@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -388,12 +390,12 @@ def _cmd_bench(args) -> int:
 
     # 1) 对抗样本基准 (bash/通用命令)
     tmp10k = bench_dir / f".run_tmp_10k_{os.getpid()}.json"
-    console.print(f"[bold]1/3 对抗样本基准[/bold] ({count} 条, 随机种子 20260906, 可复现)...")
+    console.print(f"[bold]1/5 对抗样本基准[/bold] ({count} 条, 随机种子 20260906, 可复现)...")
     try:
         r1 = subprocess.run(
             [py, str(bench_dir / "safety_bench_10k.py"),
              "--count", str(count), "--seed", "20260906", "--out", str(tmp10k)],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True, text=True, errors="replace", timeout=600,
         )
         if tmp10k.exists():
             data = json.loads(tmp10k.read_text(encoding="utf-8"))
@@ -413,11 +415,11 @@ def _cmd_bench(args) -> int:
 
     # 2) PowerShell 基准 (脚本固定写 ps_safety_result.json)
     ps_json = bench_dir / "ps_safety_result.json"
-    console.print("[bold]2/3 PowerShell 基准[/bold] (5000 条: 危险 2300 / 安全 2700)...")
+    console.print("[bold]2/5 PowerShell 基准[/bold] (5000 条: 危险 2300 / 安全 2700)...")
     try:
         r2 = subprocess.run(
             [py, str(bench_dir / "bench_powershell_safety.py")],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True, text=True, errors="replace", timeout=600,
         )
         if ps_json.exists():
             data = json.loads(ps_json.read_text(encoding="utf-8"))
@@ -436,11 +438,11 @@ def _cmd_bench(args) -> int:
 
     # 3) 绕过矩阵 (手工对抗载荷 + 后果级断言)
     tmp_bypass = bench_dir / f".run_tmp_bypass_{os.getpid()}.json"
-    console.print("[bold]3/3 绕过矩阵[/bold] (手工对抗载荷 + 灾难后果级断言)...")
+    console.print("[bold]3/5 绕过矩阵[/bold] (手工对抗载荷 + 灾难后果级断言)...")
     try:
         r3 = subprocess.run(
             [py, str(bench_dir / "bypass_matrix.py"), "--json-out", str(tmp_bypass)],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True, text=True, errors="replace", timeout=600,
         )
         if tmp_bypass.exists():
             data = json.loads(tmp_bypass.read_text(encoding="utf-8"))
@@ -458,6 +460,88 @@ def _cmd_bench(args) -> int:
         if tmp_bypass.exists():
             tmp_bypass.unlink()
 
+    # 4) 真实使用场景基准 (随机种子, 良性主导, 报分布而非单点)
+    # 与前三套互补: 对抗矩阵问「攻击挡不挡得住」, 本套件问「开发者一个会话里
+    # 被拦几次」。用真随机种子 (不传 --seed0), 每次运行数字都会变, 所以不进门禁。
+    tmp_real = bench_dir / f".run_tmp_real_{os.getpid()}.json"
+    real_seeds = 2 if quick else 4
+    real_count = 600 if quick else 1500
+    console.print(f"[bold]4/5 真实使用基准[/bold] ({real_seeds} 个独立随机种子 × "
+                  f"{real_count} 条 = {real_seeds * real_count} 条, 良性主导)...")
+    try:
+        r4 = subprocess.run(
+            [py, str(bench_dir / "realistic_usage_bench.py"),
+             "--count", str(real_count), "--seeds", str(real_seeds),
+             "--out", str(tmp_real), "--quiet"],
+            capture_output=True, text=True, errors="replace", timeout=900,
+        )
+        if tmp_real.exists():
+            data = json.loads(tmp_real.read_text(encoding="utf-8"))
+            results["realistic"] = data
+            s = data.get("summary", {})
+            fp = s.get("fp_hard_pct_of_allow") or {}
+            rc = s.get("danger_block_recall_pct") or {}
+            lat = s.get("latency_ms_per_cmd") or {}
+            def _med(d):  # noqa: ANN001
+                return f"{d.get('median', 0):.2f}%" if d else "n/a"
+            silent = s.get("danger_miss_silent_total", 0)
+            silent_tag = "零静默放行" if silent == 0 else f"{silent} 条静默放行"
+            console.print(
+                f"  [green]✓ 硬拦误杀占良性 中位 {_med(fp)}  "
+                f"真危险召回 中位 {_med(rc)}  "
+                f"延迟 中位 {lat.get('median', 0):.1f} ms/条  "
+                f"{silent_tag}[/green]")
+        else:
+            console.print(f"[red]✗ 真实使用基准无输出: {(r4.stderr or '')[-500:]}[/red]")
+            results["realistic"] = {"error": (r4.stderr or "")[-500:]}
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]✗ 真实使用基准失败: {exc}[/red]")
+        results["realistic"] = {"error": str(exc)}
+    finally:
+        if tmp_real.exists():
+            tmp_real.unlink()
+
+    # 5/5 跨平台可移植性: 用 pytest 跑 POSIX / Linux / macOS 载荷在**本机**的判定。
+    # 这是「检测层是否混入平台相关逻辑」的结构性检查 —— 全部数字都在单平台上实测,
+    # 本套件给出在缺少其它平台 runner 时能拿到的最强证据。
+    console.print("[bold]5/5 跨平台可移植性[/bold] (POSIX/Linux/macOS 载荷在本机的判定)...")
+    try:
+        r5 = subprocess.run(
+            [py, "-m", "pytest", str(root / "tests" / "test_platform_portability.py"),
+             "-q", "--noconftest", "-p", "no:cacheprovider"],
+            capture_output=True, text=True, errors="replace", timeout=600,
+        )
+        # 从 pytest 末行解析 "N passed" / "N failed"
+        tail = (r5.stdout or "").strip().splitlines()[-3:]
+        passed = failed = 0
+        for ln in tail:
+            m = re.search(r"(\d+) passed", ln)
+            if m:
+                passed = int(m.group(1))
+            m2 = re.search(r"(\d+) failed", ln)
+            if m2:
+                failed = int(m2.group(1))
+        results["portability"] = {
+            "platform": platform.system(),
+            "passed": passed,
+            "failed": failed,
+            "rc": r5.returncode,
+            "note": (
+                "在本机跑 POSIX/Linux/macOS 载荷, 证明检测层未混入平台相关逻辑; "
+                "不代表已在 Linux/macOS 实机验证。"
+            ),
+        }
+        if failed == 0:
+            console.print(f"  [green]✓ {passed} 项载荷判定符合预期 "
+                          f"(本平台 {platform.system()})[/green]")
+        else:
+            console.print(f"  [red]✗ {failed} 项判定偏离预期[/red]")
+            for ln in tail:
+                console.print(f"    [dim]{ln}[/dim]")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]✗ 跨平台可移植性检查失败: {exc}[/red]")
+        results["portability"] = {"error": str(exc)}
+
     # 引擎版本
     try:
         from ..ext.safety_engine import SafetyEngine
@@ -469,10 +553,31 @@ def _cmd_bench(args) -> int:
     results["generated_at"] = datetime.now(timezone.utc).isoformat()
     results["seed"] = 20260906
     results["quick"] = quick
+    # 平台标记: 所有数字都只在**本机的这个操作系统**上实测过。存档里带上平台,
+    # 避免把 Windows 上的结果当成「全平台已验证」来引用。检测层本身是纯字符串
+    # 正则 (见 tests/test_platform_portability.py), 理论上跨平台一致; 归一化层
+    # 的 os.path.realpath 是唯一碰文件系统的分支, 已在 safety_normalize.py 里
+    # 跳过绝对路径以规避 Windows 盘符改写。
+    results["platform"] = {
+        "system": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "python": platform.python_version(),
+        "os_name": os.name,
+        "note": (
+            "基准仅在本平台实测。检测层为纯字符串正则, 跨平台行为由 "
+            "tests/test_platform_portability.py 锁定; 归一化层的 "
+            "os.path.realpath 是唯一平台相关分支。"
+        ),
+    }
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
 
     console.print(f"\n[green]✓ 汇总已写入: {out_path}[/green]")
+    console.print(
+        f"[dim]平台: {platform.system()} {platform.release()} / {platform.machine()} / "
+        f"Python {platform.python_version()} —— 数字仅代表本平台实测[/dim]"
+    )
     console.print("[dim]引用于 README 时注明: 复现命令 tuan safe bench (或第三方直接跑 bench/ 下脚本)[/dim]")
 
     rc = 0
@@ -593,7 +698,7 @@ def _git_head_short(root: Path) -> str | None:
     """取仓库当前提交短哈希 (用于报告与数字绑定)。"""
     try:
         r = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
-                           capture_output=True, text=True, timeout=10)
+                           capture_output=True, text=True, errors="replace", timeout=10)
         out = (r.stdout or "").strip()
         return out or None
     except Exception:  # noqa: BLE001

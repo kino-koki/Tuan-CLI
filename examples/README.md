@@ -36,7 +36,7 @@ tuan setup && tuan "你好，介绍一下自己"
 预期看到命中原因（pattern label）与影响面（blast radius）。想复现完整基准：
 
 ```bash
-tuan safe bench          # 约 3 分钟，全量 10k + 5k + 2310 载荷
+tuan safe bench          # 约 4 分钟，全量 10k + 5k + 2497 绕过矩阵 + 6k 真实使用
 tuan safe bench --quick  # 约 30 秒快速自检
 tuan safe report         # 生成可分享的 HTML 安全报告
 ```

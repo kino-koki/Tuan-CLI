@@ -327,7 +327,7 @@ impl MemoryStore {
         let mut words: Vec<String> = Vec::new();
         let mut current = String::new();
         for c in text.chars() {
-            if c.is_whitespace() || "，。！？、；：""''【】（）《》<>,.!?;:'\"()".contains(c) {
+            if c.is_whitespace() || "，。！？、；：\"\"''【】（）《》<>,.!?;:'\"()".contains(c) {
                 if !current.trim().is_empty() {
                     let w = current.trim().to_ascii_lowercase();
                     if w.len() >= 2 && !stopwords.contains(&w.as_str()) {
