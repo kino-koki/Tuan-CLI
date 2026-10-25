@@ -91,6 +91,8 @@ _CMD_SOURCES = {
     "_format_session_time": ".cmd_session",
     "_count_session_messages": ".cmd_session",
     "_resolve_session_target": ".cmd_session",
+    # ---- cmd_sessions (复数: 精简列表 / 删除, C-4.4/C-4.5) ----
+    "cmd_sessions": ".cmd_sessions",
     # ---- cmd_usercmd (拆分自 cmd_services) ----
     "cmd_usercmd": ".cmd_usercmd",
     # ---- cmd_web (本地 Web 工作台: tuan web) ----

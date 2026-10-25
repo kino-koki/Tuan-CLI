@@ -174,6 +174,26 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         # 可插拔 Loop: 从 kernel 读取 LoopProvider, 无则用默认 ReAct
         self._loop_provider: LoopProvider = kernel.get("loop_provider") or ReActLoop()
 
+    def load_history(self, messages: List[Dict[str, Any]],
+                     system_prompt: Optional[str] = None) -> int:
+        """C-4.6: 把历史消息完整装载进 agent 上下文 (恢复会话用)。
+
+        - 自动把系统提示词拼在最前 (若历史里没有 system 消息);
+        - 返回装载的消息条数 (供 CLI 打印「已恢复 N 条」)。
+
+        替代散落在 cmd_chat 里的 `agent.messages = [system] + messages` 赋值,
+        作为恢复上下文的唯一契约入口。
+        """
+        history = list(messages or [])
+        if not history:
+            return 0
+        sys_prompt = system_prompt if system_prompt is not None else getattr(
+            self, "_system_prompt", "")
+        if history[0].get("role") != "system" and sys_prompt:
+            history = [{"role": "system", "content": sys_prompt}] + history
+        self.messages = history
+        return len(history)
+
 
     def _resolve_prompt_tier(self):
         """解析提示词分层: 返回 (档位名, 推断窗口, 该档预算)。

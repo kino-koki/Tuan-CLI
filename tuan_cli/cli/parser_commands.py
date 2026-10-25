@@ -327,6 +327,10 @@ def register_subcommands(sub) -> None:
     p.add_argument(
         "--quick", action="store_true", help="跳过模式选择, 直接进入快速设置"
     )
+    p.add_argument(
+        "--skip", action="store_true",
+        help="跳过向导并写入完成标记 (脚本/CI 友好; 等价环境变量 TUAN_SKIP_SETUP=1)",
+    )
     p.set_defaults(func="cmd_setup")
     pd = sub.add_parser(
         "doctor", help="环境健康检查 (配置/技能/项目指令/环境/缓存/网络/压缩存活)"
@@ -752,6 +756,16 @@ def register_subcommands(sub) -> None:
         "--out", metavar="PATH", default=None, help="输出文件路径 (默认 stdout)"
     )
     p.set_defaults(func="cmd_session")
+
+    # ---- sessions (复数: 精简列表 / 删除, C-4.4/C-4.5) ----
+    p = sub.add_parser("sessions", help="会话列表与删除 (最近 20 条 / rm)")
+    sesub2 = p.add_subparsers(dest="sessions_cmd")
+    sesub2.add_parser("list", help="列出最近 20 条会话 (默认子命令)")
+    rm = sesub2.add_parser("rm", help="删除指定会话")
+    rm.add_argument("target", nargs="?", help="会话ID / 编号 / latest")
+    rm.add_argument("--all", action="store_true", help="清空全部会话")
+    rm.add_argument("--yes", "-y", action="store_true", help="跳过确认")
+    p.set_defaults(func="cmd_sessions", sessions_cmd="list")
 
     p = sub.add_parser("usercmd", help="用户自定义斜杠命令 (列出)")
     ussub = p.add_subparsers(dest="usercmd_cmd")
