@@ -693,6 +693,16 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
   现按 `subagent_tool` 同步路径重写: `create_agent(kernel, workspace, exclude_tools=, system_extra=)` + 技能预加载 + 命名 agent 未命中时报明确错误 + 独立线程硬超时 (兑现 Web 端 `timeout` 10~600s 契约) + 8000 字摘要截断。
 
 
+### 仓库卫生: `.toolchain/` (1.4GB Rust 工具链) 停止跟踪 + 历史清除
+- **问题**: 严格复查发现 `.toolchain/` 共 **372 个文件、1441.2MB** 被 git 跟踪, 而 `.gitignore` 第 170 行本就有 `/.toolchain/` 规则 (注释写明「本地 Rust 工具链 (Tuan-App Tauri 构建用), 1.4GB, 不入库」) —— 是早期基线 commit `01c4de0` 强制 add 绕过忽略规则所致, 与此前 `Tuan/dist/`、`Tuan-App/` 同类问题。
+- **处置**:
+  - `git rm --cached -r .toolchain/`: 停止跟踪, **磁盘文件全部保留** (桌面端 Tauri 构建仍可用);
+  - `git filter-repo --invert-paths --path .toolchain`: 把工具链 blob 从**全部历史**中清除 (`01c4de0` 已成悬空对象, 不在任何分支祖先链上);
+  - 校验: 重写前后非工具链文件树 `git diff` **完全为空**, commit 数 96 → 96, 作者/消息链一致, 1133 个文件的权限模式逐一比对无差异。
+- **效果**: 跟踪树体积 1441.2MB → **23.9MB**; `.git` 目录 477MB → gc 后约 30MB。
+- **其余复查结论**: 无凭据/密钥文件 (`.env`/`.pem`/`.key`/token); 无 `__pycache__`/`node_modules`/`target/`/`dist`/`.egg-info` 等构建产物入库; `tuan-showcase/` 13.3MB 为展示页字体与图标 (正常资产); `Tuan/` 桌面工程整目录已忽略且停止跟踪。
+
+
 ### 测试
 - 新增 `tests/test_config_error_fastfail.py`: 覆盖配置错误快速失败、C-2 友好模板渲染、故障转移短路、端到端 agent.run 友好失败。
 
