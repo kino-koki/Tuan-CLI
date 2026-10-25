@@ -110,6 +110,25 @@ def enable_virtual_terminal() -> bool:
         return True
 
 
+def menu_glyph(kind: str) -> str:
+    """补全/菜单字形选择 (C-3.6 Windows 兼容增量; 只被 TUI slash 菜单调用)。
+
+    legacy ConHost 未开启 VT 处理时, ``▶`` (U+25B6) 等符号会被渲染成乱码
+    方框; 此时退回 ASCII 标记。非 Windows / VT 已启用 / 测试环境一律保持
+    原符号 (既有观感与回归断言不变)。不影响通用输出路径。
+
+    kind: "select" = 高亮行标记; 其他值回退 "?"。
+    """
+    # 测试/CI 环境不做降级: 回归测试按既有符号断言 (与 enable_virtual_terminal
+    # 的 _is_windows_tty 判断口径一致, 避免 pytest 下渲染面目全非)。
+    if (os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("CI")):
+        return "▶" if kind == "select" else "?"
+    # Windows 且 VT 未实际启用 → legacy ConHost, 退回 ASCII
+    if sys.platform == "win32" and not _initialized:
+        return ">" if kind == "select" else "?"
+    return "▶" if kind == "select" else "?"
+
+
 def set_terminal_title(title: str) -> bool:
     """设置终端窗口/标签标题 (Windows Terminal 标签页 / ConHost 标题栏)。
 

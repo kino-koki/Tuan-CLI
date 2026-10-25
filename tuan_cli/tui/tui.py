@@ -144,6 +144,108 @@ _MAX_REASON_LEN = 30000  # 思考全文上限, 超出截断并标注
 # ---- "/" 命令面板 (Claude Code 同款 slash menu) ----
 _SLASH_MAX_VISIBLE = 9   # 面板最大可见行数 (超出滚动, 与 Claude Code 观感一致)
 
+
+# ---- C-3 补全元数据: 命令 -> 子命令 -> 标志 (多级补全数据源) ----
+# 来源: 只读审计 tuan_cli/cli/ 注册处 —— cmd_slash.py 的 _handle_slash 各分支
+# 与 _HELP 文案、cmd_safe.py 用法 (status/list/allow/deny/.../bench/report)、
+# modes/registry.py 的模式注册表。仅做补全提示, 不改动 cli/ 执行逻辑;
+# 模式名只用 感通/灵码/闲聊/无界/协同。
+_SLASH_SUBCMDS: Dict[str, List[Tuple[str, str]]] = {
+    "/safe": [
+        ("bench", "安全基准测试 (可追加 --quick 快速模式)"),
+        ("allow", "把命令加入本地白名单 (tuan safe allow <命令>)"),
+        ("report", "导出安全审计报告"),
+    ],
+    "/mcp": [
+        ("list", "列出已接入的 MCP 服务器"),
+        ("tools", "查看 MCP 工具清单"),
+        ("audit", "审计 MCP 配置"),
+        ("security", "MCP 安全检查"),
+    ],
+    "/checkpoint": [
+        ("save", "保存当前会话检查点"),
+        ("restore", "回滚到指定快照"),
+        ("list", "列出全部检查点"),
+    ],
+    "/rewind": [
+        ("list", "列出时间线快照"),
+        ("to <N>", "回退到第 N 步"),
+    ],
+    "/personality": [
+        ("list", "列出可用人设"),
+        ("show", "查看当前人设"),
+        ("set <人设名>", "切换人设"),
+        ("auto", "按上下文自动匹配人设"),
+    ],
+    "/effort": [
+        ("low", "低推理投入 (快, 省 token)"),
+        ("medium", "中推理投入"),
+        ("high", "高推理投入 (深思)"),
+    ],
+    "/plan": [
+        ("on", "开启只读规划模式"),
+        ("off", "关闭规划模式"),
+    ],
+    "/mode": [
+        ("list", "列出全部运行模式"),
+        ("show", "查看当前模式详情"),
+        ("gantong", "感通: L3 高成本/不可逆操作二次确认"),
+        ("lingma", "灵码: L3 代码开发, Shell + 审计 + 沙箱"),
+        ("chat", "闲聊: L0 受限陪伴, 仅对话与记忆"),
+        ("boundless", "无界: L4 全能力, 桌面白名单"),
+        ("collaboration", "协同: L2 工作区读写 + 审计, Shell 禁用"),
+    ],
+    "/provider": [
+        ("set <ENV>", "设置供应商 API Key (provider set <ENV> <KEY>)"),
+        ("clear [ENV]", "清除已保存的供应商 Key"),
+    ],
+    "/commands": [
+        ("list", "列出热插拔命令"),
+        ("reload", "热重载命令表"),
+        ("enable <名>", "启用指定命令"),
+        ("disable <名>", "停用指定命令"),
+    ],
+    "/worktree": [
+        ("create", "新建 git worktree"),
+        ("list", "列出 worktree"),
+        ("remove", "删除 worktree"),
+        ("switch", "切换到指定 worktree"),
+    ],
+    "/image": [
+        ("generate <描述>", "按描述 AI 生成图片"),
+        ("list", "列出当前待发送图片"),
+    ],
+    "/web": [
+        ("search <关键词>", "快捷联网搜索"),
+    ],
+}
+
+# 第三级: 子命令后的标志补全 (键 = "/命令 子命令", 值 = [(标志, 帮助)])
+_SLASH_FLAGS: Dict[str, List[Tuple[str, str]]] = {
+    "/safe bench": [
+        ("--quick", "快速基准: 跳过 10k 全量用例, 只跑快速集"),
+    ],
+}
+
+
+def _fuzzy_rank(name: str, query: str) -> int:
+    """命令补全匹配等级 (C-3.1 模糊匹配)。
+
+    返回: 0=前缀命中 (如 /mo→/model, /mode); 1=子串命中 (如 /od→/mode);
+    2=子序列命中 (可跳字符, 如 /md→/mode); -1=不命中。空 query 视为命中。
+    """
+    if not query:
+        return 0
+    if name.startswith(query):
+        return 0
+    if query in name:
+        return 1
+    # 子序列: query 的字符按顺序在 name 中出现 (允许中间跳字符)
+    it = iter(name)
+    if all(ch in it for ch in query):
+        return 2
+    return -1
+
 # 吉祥物字符标
 KIMI_LOGO = ['▐█▛█▛█▌', '▐█████▌']
 
@@ -324,6 +426,12 @@ class _SlashCompleter(Completer):
     传入 ``tiers`` (命令 -> "core"|"expert"|"hidden") 后: 空输入 `/` 时
     仅返回核心层命令 (≤ 20 项, 防止 55 项菜单压垮屏幕); 输入具体前缀时
     保留全量补全 (专家层命令按前缀可达)。
+
+    C-3 增强 (增量):
+    - 模糊匹配: 前缀/子串/子序列三级命中, /mo→/mode;
+    - 多级补全: 命令 → 子命令 (如 /safe bench) → 标志 (如 --quick);
+    - 参数预览: 每项 display_meta 带帮助文本;
+    - 历史优先: ``history`` 传入 MRU 命令表时, 命中项排在前面 (最多 10 条)。
     """
 
     def __init__(
@@ -331,10 +439,13 @@ class _SlashCompleter(Completer):
         words: List[str],
         metas: Optional[Dict[str, str]] = None,
         tiers: Optional[Dict[str, str]] = None,
+        history: Optional[List[str]] = None,
     ) -> None:
         self._words = list(words)
         self._metas = dict(metas or {})
         self._tiers: Dict[str, str] = dict(tiers or {})
+        # C-3.5 历史优先: MRU 命令名表 (含前导 "/"), 最近使用排前面
+        self._history: List[str] = list(history or [])
 
     def get_completions(self, document, complete_event):  # noqa: C901
         from ..cli.slash_tier import slash_command_tier
@@ -349,27 +460,66 @@ class _SlashCompleter(Completer):
             rest = text[1:]
         else:
             return
-        rest = rest.lower()
-        for w in self._words:
+
+        # ---- C-3.2 多级补全: 命令已定 + 空格 + 参数片段 ----
+        if " " in rest:
+            head, _, tail = rest.partition(" ")
+            cmd = "/" + head.lstrip("+/").lower()
+            tail_tokens = tail.split(" ", 1)
+            # 第三级: 子命令已选、正在输 --flag (如 /safe bench --q)
+            if len(tail_tokens) == 2 and tail_tokens[1].startswith("--"):
+                flag_partial = tail_tokens[1].lower()
+                for fl, helptext in _SLASH_FLAGS.get(f"{cmd} {tail_tokens[0]}", []):
+                    if not flag_partial or fl.startswith(flag_partial):
+                        yield Completion(
+                            fl,
+                            start_position=-len(flag_partial),
+                            display=fl,
+                            display_meta=helptext,
+                        )
+                return
+            # 第二级: 子命令候选 (如 /safe → bench/allow/report), 带参数帮助预览
+            sub_partial = tail_tokens[0].lower()
+            for sub, helptext in _SLASH_SUBCMDS.get(cmd, []):
+                sub_name = sub.split(" ")[0]
+                if sub_partial and _fuzzy_rank(sub_name, sub_partial) < 0:
+                    continue
+                yield Completion(
+                    " " + sub,
+                    start_position=-len(tail),
+                    display=sub,
+                    display_meta=helptext,
+                )
+            return  # 无已知子命令表: 不补参数级 (与既有行为一致)
+
+        # ---- 命令级: 模糊匹配 (C-3.1) + 历史优先 (C-3.5) ----
+        low = rest.lower().strip()
+        ranked: List[Tuple[int, int, int, str]] = []
+        for idx, w in enumerate(self._words):
             name = w[1:]  # 去掉前导 "/"
-            if rest and not name.startswith(rest):
+            rank = _fuzzy_rank(name.lower(), low)
+            if rank < 0:
                 continue
             # 有 tiers 配置时使用传入的 tiers; 无 tiers 时用模块级 slash_command_tier
             if self._tiers:
                 tier = self._tiers.get("/" + name, "core")
             else:
-                from ..cli.slash_tier import slash_command_tier
                 tier = slash_command_tier("/" + name)
             # 隐藏层命令永不进入补全菜单 (仅 /help 全量列出)
             if tier == "hidden":
                 continue
             # 空输入时仅补全核心层 (有 tiers 配置且未输入前缀才启用过滤)
-            if not rest and self._tiers and tier != "core":
+            if not low and self._tiers and tier != "core":
                 continue
-            full = plus + w
+            # 历史命中的排前: 越近越优先 (history 序即 MRU 序); 未命中排末尾
+            hist_pos = self._history.index(w) if w in self._history else 1 << 30
+            ranked.append((rank, hist_pos, idx, w))
+        ranked.sort(key=lambda item: (item[0], item[1], item[2]))
+        for _rank, _h, _i, w in ranked:
+            name = w[1:]
             yield Completion(
-                full,
-                start_position=-cut - len(rest),  # 替换光标前的命令前缀+已输入部分
+                plus + w,
+                start_position=-cut - len(low),  # 替换光标前的命令前缀+已输入部分
                 display=w,
                 display_meta=self._metas.get("/" + name, t("tui.cmd_meta")),
             )
@@ -419,6 +569,14 @@ class QxtTUI:
         self._slash_accepting = False       # 程序化写入文本时抑制联动 (防递归)
         self._slash_arg_mode = False        # 命令参数补全态 (/model <partial> 等)
         self._slash_arg_prefix = ""         # 参数补全时回填用的命令前缀 (如 "/model ")
+        # C-3.3: 面板条目与描述平行表 (_slash_items 第 i 项的帮助文本),
+        # 命令级缺省回退 command_meta, 子命令/参数级用 _SLASH_SUBCMDS 帮助。
+        self._slash_metas: List[str] = []
+        # C-3.5: slash 命令最近使用历史 (MRU, 最近 10 条; 仅会话内存态, 不落盘)
+        self._slash_history: List[str] = []
+        # C-5.2: 离线检测结果缓存 (footer 高频重绘, 30s 内不重复探测网络)
+        self._offline_cache: Optional[bool] = None
+        self._offline_ts: float = 0.0
 
         # 状态
         self._events: List[Any] = []
@@ -1399,9 +1557,49 @@ class QxtTUI:
                 self._close_slash_menu()
                 return
             self._slash_items = cands
+            self._slash_metas = [self._command_meta.get(c, "") or t("tui.cmd_meta")
+                                 for c in cands]
             self._slash_index = 0
             self._slash_scroll = 0
             self._slash_open = True
+            return
+        # C-3.2 多级补全: 命令已定 (空格后) 且命令在子命令表中 → 展开子命令
+        # (如 /safe → bench/allow/report; 已带子命令时再展开 --flag 第三级)。
+        # 不在子命令表中的命令输空格仍按既有行为关闭面板。
+        sm = re.match(r'^([+/]?[\w-]+)\s+(.*)$', text)
+        if sm:
+            cmd = "/" + sm.group(1).lstrip("+/").lower()
+            subs = _SLASH_SUBCMDS.get(cmd)
+            if subs:
+                tokens = sm.group(2).split(" ", 1)
+                # 第三级: 子命令已选、正在输 --flag (如 /safe bench --q)
+                if len(tokens) == 2 and tokens[1].startswith("--"):
+                    flags = [(f, h) for f, h in _SLASH_FLAGS.get(f"{cmd} {tokens[0]}", [])
+                             if not tokens[1] or f.startswith(tokens[1].lower())]
+                    if flags:
+                        self._slash_arg_mode = True
+                        # 回填前缀 = "命令 已选子命令 " (接受后拼成 "/safe bench --quick")
+                        self._slash_arg_prefix = sm.group(1) + " " + tokens[0] + " "
+                        self._slash_items = [f for f, _h in flags]
+                        self._slash_metas = [h for _f, h in flags]
+                        self._slash_index = 0
+                        self._slash_scroll = 0
+                        self._slash_open = True
+                        return
+                # 第二级: 子命令候选 (模糊过滤, 带帮助预览)
+                partial = tokens[0].lower()
+                cands = [(s, h) for s, h in subs
+                         if not partial or _fuzzy_rank(s.split(" ")[0], partial) >= 0]
+                if cands:
+                    self._slash_arg_mode = True
+                    self._slash_arg_prefix = sm.group(1) + " "
+                    self._slash_items = [s for s, _h in cands]
+                    self._slash_metas = [h for _s, h in cands]
+                    self._slash_index = 0
+                    self._slash_scroll = 0
+                    self._slash_open = True
+                    return
+            self._close_slash_menu()
             return
         self._slash_arg_mode = False
         if text.startswith("/"):
@@ -1420,13 +1618,39 @@ class QxtTUI:
         from ..cli.slash_tier import slash_command_tier as _tier_fn
         if not low:
             items = [c for c in self._commands if _tier_fn(c) == "core"]
+            # C-3.5 历史优先: 最近用过的命令提到最前 (MRU 去重, 最多 10 条),
+            # 其余保持原序; 未使用过时与既有行为完全一致。
+            if self._slash_history:
+                seen = set()
+                recent, rest_items = [], []
+                for c in items:
+                    if c in self._slash_history and c not in seen:
+                        recent.append(c)
+                        seen.add(c)
+                    else:
+                        rest_items.append(c)
+                items = recent + rest_items
         else:
-            items = [c for c in self._commands
-                     if c[1:].lower().startswith(low) and _tier_fn(c) != "hidden"]
+            # C-3.1 模糊匹配: 前缀 > 子串 > 子序列, 同档保持命令表原序。
+            # 有前缀命中时只保留前缀命中 (保持既有 "输入首字母精确过滤" 手感,
+            # 如 /mo 仍只出 /model /mode); 无前缀命中才退到子串/子序列 (如 /od→/mode)。
+            matched = []
+            for idx, c in enumerate(self._commands):
+                if _tier_fn(c) == "hidden":
+                    continue
+                r = _fuzzy_rank(c[1:].lower(), low)
+                if r >= 0:
+                    matched.append((r, idx, c))
+            if any(r == 0 for r, _i, _c in matched):
+                matched = [m for m in matched if m[0] == 0]
+            matched.sort(key=lambda t: (t[0], t[1]))
+            items = [c for _r, _i, c in matched]
         if not items:
             self._close_slash_menu()
             return
         self._slash_items = items
+        self._slash_metas = [self._command_meta.get(c) or t("tui.cmd_meta")
+                             for c in items]
         self._slash_index = 0
         self._slash_scroll = 0
         self._slash_open = True
@@ -1435,6 +1659,7 @@ class QxtTUI:
         """关闭命令面板 (幂等)。"""
         self._slash_open = False
         self._slash_items = []
+        self._slash_metas = []
         self._slash_index = 0
         self._slash_scroll = 0
         self._slash_arg_mode = False
@@ -1443,6 +1668,23 @@ class QxtTUI:
                 self._app.invalidate()
             except Exception:  # noqa: BLE001
                 pass
+
+    def _record_slash_usage(self, text: str) -> None:
+        """记录最近使用的 slash 命令 (MRU, C-3.5 历史优先)。
+
+        只记命令名 (首个 token, 含前导 "/"), 去重置顶, 最多保留 10 条;
+        下次 "/" 空前缀展开时这些命令排在最前。异常静默, 绝不阻断发送。
+        """
+        try:
+            name = text.strip().split()[0] if text.strip() else ""
+            if not name.startswith("/"):
+                return
+            if name in self._slash_history:
+                self._slash_history.remove(name)
+            self._slash_history.insert(0, name)
+            del self._slash_history[10:]
+        except Exception:  # noqa: BLE001
+            pass
 
     def _arg_completions(self, cmd: str, partial: str) -> List[str]:
         """命令参数补全候选: /model 返回模型 ID 全集, /provider 返回供应商名。
@@ -1517,6 +1759,7 @@ class QxtTUI:
                 pass
         self._slash_open = False
         self._slash_items = []
+        self._slash_metas = []
         self._slash_index = 0
         self._slash_scroll = 0
         if self._app and self._app.is_running:
@@ -1527,8 +1770,16 @@ class QxtTUI:
         return True
 
     def _slash_menu_rows(self) -> int:
-        """面板高度 (布局期 callable 求值): 条目数封顶 _SLASH_MAX_VISIBLE, 至少 1 行。"""
-        return max(1, min(len(self._slash_items), _SLASH_MAX_VISIBLE))
+        """面板高度 (布局期 callable 求值): 条目数封顶 _SLASH_MAX_VISIBLE, 至少 1 行。
+
+        C-3.4: 无溢出 (条目 ≤ 上限) 时多留 1 行放底部 "? 帮助" 行;
+        溢出时帮助并入滚动提示行, 不加高 (保持既有 9 行封顶契约)。
+        """
+        n = len(self._slash_items)
+        rows = max(1, min(n, _SLASH_MAX_VISIBLE))
+        if 0 < n <= _SLASH_MAX_VISIBLE:
+            rows += 1
+        return rows
 
     def _render_slash_menu(self):
         """"/" 命令面板: 高亮行 + 命令名 + 描述 (+ 溢出时滚动提示行)。
@@ -1547,11 +1798,21 @@ class QxtTUI:
             start = self._slash_index
         window = range(start, min(start + visible, len(items)))
         rows: List[List[Tuple[str, str]]] = []
+        # C-3.6: 高亮标记按 Windows 终端能力降级 (legacy ConHost 退回 ASCII),
+        # 非 Windows / VT 已开 / 测试环境保持 ▶ (既有观感与回归断言不变)。
+        from .win_compat import menu_glyph
+        sel_mark = menu_glyph("select")
         for i in window:
             cmd = items[i]
             sel = (i == self._slash_index)
-            mark = "▶ " if sel else "  "
-            desc = self._command_meta.get(cmd) or t("tui.cmd_meta")
+            mark = f"{sel_mark} " if sel else "  "
+            # C-3.3: 描述优先取平行参数帮助表 (子命令/标志/模型候选的预览文本),
+            # 缺省回退命令元数据 (既有行为)。
+            desc = ""
+            if i < len(self._slash_metas):
+                desc = self._slash_metas[i]
+            if not desc:
+                desc = self._command_meta.get(cmd) or t("tui.cmd_meta")
             # 该面板 wrap_lines=False, 故**整行**必须 ≤ width: 命令名、分隔空格、
             # 描述三者按顺序瓜分预算。旧实现只裁描述、且分隔符恒为2 列,
             # 在12~16 列的极窄终端下 "  /provider  " 这类行仍会算出 13 列。
@@ -1569,7 +1830,12 @@ class QxtTUI:
         if len(items) > _SLASH_MAX_VISIBLE:
             hidden = len(items) - visible
             hint = t("tui.slash_more", n=hidden, pos=f"{self._slash_index + 1}/{len(items)}")
-            rows.append([("class:slashhint", self._clip_dw(hint, width))])
+            # C-3.4: 溢出时帮助并入滚动提示行 (不加高面板, 保持 9 行封顶契约)
+            rows.append([("class:slashhint", self._clip_dw(f"{hint}  · ? 帮助", width))])
+        else:
+            # C-3.4: 无溢出时面板底部固定帮助行 (_slash_menu_rows 已多留 1 行)
+            rows.append([("class:slashhint",
+                          self._clip_dw("? 帮助 — ↑↓ 选择 · Enter 填入 · Esc 关闭", width))])
         out: List[Tuple[str, str]] = []
         for r_i, row in enumerate(rows):
             for cls, seg in row:
@@ -1668,6 +1934,7 @@ class QxtTUI:
         elif text.startswith("+/"):
             cmd = "/" + text[2:]
         if cmd and self.on_command:
+            self._record_slash_usage(cmd)  # C-3.5: 记录最近使用, 下次 "/" 优先
             result = self.on_command(cmd)
             if result:
                 self.append_log(result)
@@ -2831,6 +3098,27 @@ class QxtTUI:
         else:
             mode_cls = "class:warning"
         parts.append((mode_cls, mode_label))
+
+        # C-5.2 离线横幅: 消费 CLI 核心分片新建的 core/network_check.is_offline()。
+        # 该模块由并行分片提供; 未落地时 try/import 静默降级, 横幅不激活也不报错,
+        # 待联调。探测结果缓存 30s (footer 随动画高频重绘, 不能每帧探网络)。
+        try:
+            from ..core.network_check import is_offline as _is_offline
+        except Exception:  # noqa: BLE001 - network_check 尚未就绪: 横幅暂不激活
+            _is_offline = None
+        if _is_offline is not None:
+            try:
+                now = time.monotonic()
+                if now - self._offline_ts > 30.0:
+                    self._offline_cache = bool(_is_offline())
+                    self._offline_ts = now
+                if self._offline_cache:
+                    # 离线模式: 已切到本地模型; 优先展示当前模型标签, 缺省给约定示例
+                    offline_label = self._model_label or "ollama/qwen2.5:7b"
+                    parts.append(("class:warning",
+                                  f"  ⚠ 离线模式 — 已切换至本地模型 {offline_label}"))
+            except Exception:  # noqa: BLE001 - 探测异常不阻断底栏渲染
+                pass
 
         # Kimi 同款命令行提示: 仅当启用了命令补全且空闲时展示, 保持简短
         if self._commands and not self._busy and not self._streaming:
