@@ -18,6 +18,10 @@ pub fn run() {
             engine_chat::engine_stop,
             engine_chat::engine_approve,
             engine_chat::check_engine,
+            engine_chat::check_agents,
+            // T-3.3：会话恢复后端（列出会话 / 按 id 加载完整历史消息）
+            engine_chat::engine_session_list,
+            engine_chat::engine_session_history,
             // Android 轻量 Agent：Rust 侧实现工具调用循环，不依赖本地 Python 引擎
             agent::agent_chat_stream,
             // Scope Recall 3.0：多层记忆系统
