@@ -852,44 +852,105 @@ option {
 }
 
 /* ============================================================
-   加载 / 安装引导层（boot-* / onboard-*）
+   加载 / 安装引导动效层（boot-* / onboard-*）
    ------------------------------------------------------------
-   设计语言：Claude 桌面端（claude.ai 桌面应用）——
-   暖米纸底、陶土橘主色、衬线只出现在问候位；动效全场只有
-   「淡入 + 6px 微下沉」一种进场（220ms），没有呼吸光晕、
-   没有浮动、没有弹跳——安静是这种风格的脸。
+   设计语言：豆包的温暖呼吸感（柔光 / 圆角 / 轻浮动）
+            + CodeX 安装引导的清单式打勾（逐项落入 / 弹跳勾选 / 细进度条）。
    只服务 Tuan-Chat 的「启动加载」与「引擎安装向导」两个时刻。
+   注：2026-10-25 应用户要求恢复完整动效层——此前「Claude 桌面端安静版」
+   只保留淡入微下沉一种进场，现恢复：呼吸光晕 / 标识浮动 / 逐行落入 /
+   弹跳打勾 / 细旋转环 / 卡片交错落入 / 成功柔光扩散。
    兼容性同 mobile.ts 约束：不用 inset / flex gap / color-mix()。
    ============================================================ */
 
-/* 唯一的标准进场：淡入 + 微下沉（stagger 由组件内联 animationDelay 指定） */
-.onboard-in { animation: onboard-in 0.22s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
-@keyframes onboard-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
+/* 呼吸柔光（品牌标识背后的暖色光晕，豆包式） */
+.boot-halo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 240px;
+  height: 240px;
+  margin-top: -120px;
+  margin-left: -120px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, var(--tuan-accent-soft) 0%, transparent 68%);
+  pointer-events: none;
+  animation: boot-breathe 3.2s ease-in-out infinite;
+}
+@keyframes boot-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.13; }
+  50% { transform: scale(1.12); opacity: 0.22; }
 }
 
-/* 勾选落入：克制的小缩放淡入（不是弹跳） */
-.onboard-check-in { animation: onboard-check-in 0.16s ease-out both; }
-@keyframes onboard-check-in {
-  from { opacity: 0; transform: scale(0.6); }
-  to   { opacity: 1; transform: scale(1); }
+/* 标识轻浮动 */
+.boot-float { animation: boot-float 3.2s ease-in-out infinite; }
+@keyframes boot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
 }
 
 /* 启动序列整屏淡出 */
-.boot-screen-out { animation: boot-fade-out 0.24s ease-in both; }
+.boot-screen-out { animation: boot-fade-out 0.35s ease-in both; }
 @keyframes boot-fade-out {
   to { opacity: 0; visibility: hidden; }
 }
 
+/* 清单行：逐行落入（delay 由组件内联指定） */
+.boot-item-in { animation: boot-item-in 0.35s ease-out both; }
+@keyframes boot-item-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 勾选弹跳：scale 0 → 1.25 → 1（CodeX 式"打上勾"手感） */
+.boot-check-pop { animation: boot-check-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes boot-check-pop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+/* 等待中的细旋转环（CodeX 式低调 spinner） */
+.boot-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--tuan-text-secondary);
+  border-top-color: transparent;
+  animation: boot-spin 0.9s linear infinite;
+}
+@keyframes boot-spin { to { transform: rotate(360deg); } }
+
+/* 安装向导卡片：交错落入 */
+.onboard-card-in { animation: onboard-card-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+@keyframes onboard-card-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 步骤完成时勾选的弹跳（复用 boot-check-pop 曲线，独立命名便于覆盖） */
+.onboard-check-pop { animation: boot-check-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* 成功状态的柔光扩散（引擎就绪那一刻） */
+.onboard-success-glow { animation: onboard-glow 1.2s ease-out both; }
+@keyframes onboard-glow {
+  0% { box-shadow: 0 0 0 0 var(--tuan-ok-bg); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+
 /* 动效总开关 */
 @media (prefers-reduced-motion: reduce) {
-  .onboard-in,
-  .onboard-check-in,
-  .boot-screen-out {
+  .boot-halo,
+  .boot-float,
+  .boot-item-in,
+  .boot-check-pop,
+  .boot-spinner,
+  .onboard-card-in,
+  .onboard-check-pop,
+  .onboard-success-glow {
     animation: none !important;
   }
-  .onboard-in { opacity: 1; transform: none; }
+  .boot-item-in { opacity: 1; transform: none; }
 }
 
 /* 引导层安全区：四边让出刘海 / Home Indicator（桌面端恒为 0，行为不变）。
@@ -904,6 +965,82 @@ option {
    其余文案一律无衬线——这是引导层与主界面排版统一的边界。 */
 .onboard-hero {
   font-family: 'Spectral', 'Source Serif 4', Georgia, serif;
+}
+
+/* ============================================================
+   Claude Code 化：终端等宽字体、❯ 提示前缀、底部状态栏
+   ------------------------------------------------------------
+   Claude Code 终端的辨识点收敛到三处：等宽数字/状态、输入框前的
+   「❯」提示符、窗口最底一条单行状态栏（模式 · 模型 · 引擎 · TTS）。
+   明暗两主题共用同一套 token；只做加法，不改既有组件行为。
+   ============================================================ */
+
+:root {
+  /* 终端等宽栈：状态数字 / 代码 / ❯ 提示符用 */
+  --tuan-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'SF Mono',
+    Consolas, 'Liberation Mono', monospace;
+}
+
+/* 输入框 ❯ 提示符（Claude Code 终端签名） */
+.cc-prompt {
+  font-family: var(--tuan-mono);
+  font-weight: 600;
+  color: var(--tuan-accent-soft);
+  user-select: none;
+  line-height: 1;
+}
+
+/* 底部状态栏：单行、等宽数字、分组小圆点；贴 Home Indicator 安全区 */
+.cc-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 26px;
+  padding: 0 14px;
+  font-size: 11.5px;
+  line-height: 1;
+  color: var(--text-tuan-secondary);
+  background: var(--bg-tuan-sidebar);
+  border-top: 1px solid var(--border-tuan);
+  flex: none;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.cc-statusbar .sb-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.cc-statusbar .sb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  flex: none;
+}
+.cc-statusbar .sb-label {
+  font-family: var(--tuan-mono);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+.cc-statusbar .sb-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--border-tuan);
+  flex: none;
+}
+@media (max-width: 640px) {
+  .cc-statusbar {
+    gap: 10px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+  .cc-statusbar .sb-hide-mobile { display: none; }
+}
+
+/* 工具调用卡：执行中左缘亮一条品牌橙（Claude Code 的嵌套工具指示） */
+.cc-tool-running {
+  box-shadow: inset 3px 0 0 var(--tuan-accent-soft);
 }
 
 
