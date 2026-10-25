@@ -41,17 +41,28 @@
   "auth_required": true,
   "pair_code": "AB12",           // 4 位大写字符, 服务端生成, 展示在桌面 UI
   "agents": [
-    {"id": "claude-code",       "name": "Claude Code",       "path": "C:\\Users\\...\\claude.exe", "healthy": true,  "version": "1.2.3"},
-    {"id": "codex",             "name": "Codex",             "path": null,                            "healthy": false, "version": null, "reason": "not found in PATH"},
-    {"id": "hermes",            "name": "Hermes",            "path": "/usr/local/bin/hermes",         "healthy": true,  "version": "unknown"},
-    {"id": "deepseek-harness",  "name": "DeepSeek Harness",  "path": "C:\\dsh\\dsh.exe",               "healthy": true,  "version": "0.6.x"},
-    {"id": "kimi-code",         "name": "Kimi Code",         "path": "/opt/kimi/bin/kimi-code",       "healthy": true,  "version": "unknown"}
+    {"id": "claude-code",       "name": "Claude Code",       "path": "C:\\Users\\...\\claude.exe", "healthy": true,  "version": "1.2.3", "score": 100},
+    {"id": "codex",             "name": "Codex",             "path": null,                            "healthy": false, "version": null, "reason": "not found in PATH", "score": 0},
+    {"id": "hermes",            "name": "Hermes",            "path": "/usr/local/bin/hermes",         "healthy": true,  "version": "unknown", "score": 70},
+    {"id": "deepseek-harness",  "name": "DeepSeek Harness",  "path": "C:\\dsh\\dsh.exe",               "healthy": true,  "version": "0.6.x", "score": 100},
+    {"id": "kimi-code",         "name": "Kimi Code",         "path": "/opt/kimi/bin/kimi-code",       "healthy": true,  "version": "unknown", "score": 70}
   ],
   "mode": "chat"                 // 桌面当前 Tuan-CLI 模式 (chat/collaboration/gantong/lingma/boundless)
 }
 ```
 
 `agents[]` 是**实时探测结果**（每次连接时重新扫 PATH），不是缓存。手机端据此渲染可选代理列表。
+
+`score`（v0.3.2 起，0–100）是探测判定的量化输出，供 UI 展示与 auto 路由次级排序：
+
+| score | 含义 | healthy |
+|-------|------|---------|
+| 100 | PATH 命中，且 `--version` 输出含适配器预期标识（确认是本工具） | true |
+| 70 | PATH 命中，但版本输出为空 / 探测命令无法执行（版本未知，按可用处理） | true |
+| 60 | PATH 命中，但版本输出不含预期标识（疑似同名工具；不阻断路由，仅降分提示） | true |
+| 0 | PATH 未命中 | false |
+
+`healthy` 只表达「能不能派活」：除 0 分（未安装）外一律为 `true`——PATH 命中是可用性主信号，版本校验只影响分数与提示，避免误杀版本输出格式特殊的真实安装。
 
 ### 3.2 Client → Server：`pair`
 
@@ -245,7 +256,23 @@
 5. **不暴露 shell**：手机端不能直接执行 shell，只能通过 `dispatch` 让桌面代理间接执行。
 6. **审计**：所有 `dispatch` 与 `approval` 事件写入桌面端 `~/.tuan/audit/dispatch.jsonl`。
 
-## 9. 参考实现
+## 9. CLI 入口：`tuan dispatch`
 
-- 桌面端：`tuan_cli/agents/`（路由器 + 5 适配器）+ `tuan_cli/web/dispatch_server.py`（WebSocket 服务）
+调度层不止服务于 WebSocket 客户端——`tuan dispatch` 是同一条路由器与探测器的终端入口，不启动服务器即可判定与派活：
+
+```bash
+tuan dispatch status [代理id]      # 探测本机 5 家代理：状态 / 健康分 / 版本 / auto 路由建议
+tuan dispatch route <提示词>       # dry-run：打分明细（模式权重 × 健康分），不执行
+tuan dispatch run <提示词>         # 实际派活：路由 → 流式执行 → 汇总
+tuan dispatch serve --port 8788    # 启动 WebSocket 服务端（等价 python -m tuan_cli.web.dispatch_server）
+```
+
+- 公共参数：`--mode {chat,collaboration,gantong,lingma,boundless}`（默认 chat）、`--agent <id>`（显式指定，同 §4.1 语义）、`--format json`（机器可读，供 Tuan-Chat 与脚本消费）。
+- `status` 的退出码：有在线代理 = 0，全部未安装 = 1（供脚本判断）。
+- `run` 的审批语义：CLI 非交互模式下审批请求按 `auto_approve_low_risk` 自动决断并明示；需要人工把关请用 WebSocket 通道（手机端弹审批卡）。
+- `run` 超时：`--timeout <秒>`（默认 600）为**总墙钟**超时，触发后终止子进程并以退出码 1 收尾。
+
+## 10. 参考实现
+
+- 桌面端：`tuan_cli/agents/`（路由器 + 5 适配器）+ `tuan_cli/cli/cmd_dispatch.py`（CLI 入口）+ `tuan_cli/web/dispatch_server.py`（WebSocket 服务）
 - 手机端：`Tuan-App/android/`（Kotlin + Compose + OkHttp WebSocket）
