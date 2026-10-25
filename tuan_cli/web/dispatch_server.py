@@ -31,9 +31,10 @@ from typing import Any, Dict, List, Optional
 from tuan_cli.agents.base import AgentEvent, TaskRequest
 from tuan_cli.agents.discovery import discover_agents
 from tuan_cli.agents.router import route
+from tuan_cli.version import __version__
 
 # 桌面版本 (与 pyproject.toml 保持一致)
-DESKTOP_VERSION = "0.3.2"
+DESKTOP_VERSION = __version__
 DESKTOP_BUILD = datetime.now().strftime("%Y%m%d")
 
 # 配对码: 6 位纯数字
