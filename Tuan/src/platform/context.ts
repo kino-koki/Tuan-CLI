@@ -18,9 +18,24 @@ export interface ContextGauge {
   ratio: number;
 }
 
+export interface ContextSessionRow {
+  id: string;
+  title: string;
+  messages: number;
+  chars: number;
+  estTokens: number;
+}
+
+export interface ContextDetail {
+  window: number;
+  totalEstTokens: number;
+  current: ContextSessionRow | null;
+  sessions: ContextSessionRow[];
+}
+
 const _ctxCache: { url: string; data: ContextGauge | null } = { url: '', data: null };
 
-async function _rawContext(): Promise<{ window: number; sessions: { id: string; est_tokens: number }[] } | null> {
+async function _rawContext(): Promise<{ window: number; sessions: { id: string; title?: string; messages?: number; chars?: number; est_tokens: number }[] } | null> {
   try {
     const res = await fetch(`${TTS_ENGINE_URL}/api/context`, { cache: 'no-store' });
     if (!res.ok) return null;
@@ -58,15 +73,37 @@ export async function fetchContextGauge(convId?: string): Promise<ContextGauge |
   return gauge;
 }
 
+/** 拉取上下文查看详情（当前会话 + 全部会话, 供查看面板渲染）。 */
+export async function fetchContextDetail(convId?: string): Promise<ContextDetail | null> {
+  const raw = await _rawContext();
+  if (!raw) return null;
+  const window = Math.max(raw.window, 1);
+  const sessions: ContextSessionRow[] = raw.sessions.map((s) => ({
+    id: s.id,
+    title: s.title || '未命名会话',
+    messages: s.messages ?? 0,
+    chars: s.chars ?? 0,
+    estTokens: s.est_tokens,
+  }));
+  const current = convId ? (sessions.find((s) => s.id === convId) ?? null) : null;
+  return {
+    window,
+    totalEstTokens: sessions.reduce((a, s) => a + s.estTokens, 0),
+    current,
+    sessions,
+  };
+}
+
 /** 引擎最近一次预算数据（供瞬时渲染, 不额外 fetch） */
 export function cachedContextGauge(): ContextGauge | null {
   return _ctxCache.data;
 }
 
 export function gaugeColor(ratio: number): string {
-  if (ratio >= 0.9) return 'var(--tuan-danger)';
-  if (ratio >= 0.7) return 'var(--tuan-accent-soft)';
-  return 'var(--tuan-ok)';
+  // 固定亮色（Claude Code 深炭状态栏与浅色浮层均可读）：绿/橙/珊瑚红
+  if (ratio >= 0.9) return '#f08a7d';
+  if (ratio >= 0.7) return '#e0896a';
+  return '#4c9a6e';
 }
 
 export function gaugeLabel(ratio: number): string {

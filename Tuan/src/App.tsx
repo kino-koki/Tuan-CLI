@@ -5,7 +5,6 @@ import ChatsPage from './components/ChatsPage';
 import ProjectsPage, { type Project } from './components/ProjectsPage';
 import ArtifactsPage from './components/ArtifactsPage';
 import SettingsPage from './components/SettingsPage';
-import BrowsePage from './components/BrowsePage';
 import SkillsPage from './components/SkillsPage';
 import McpPage from './components/McpPage';
 import PluginsPage from './components/PluginsPage';
@@ -940,7 +939,6 @@ export default function App() {
       {page === 'projects' && (
         <ProjectsPage projects={projects} onCreate={createProject} onUpdate={updateProject} onDelete={deleteProject} />
       )}
-      {page === 'browse' && <BrowsePage onSendToChat={undefined} />}
       {page === 'artifacts' && <ArtifactsPage />}
       {page === 'skills' && <SkillsPage />}
       {page === 'mcp' && <McpPage />}

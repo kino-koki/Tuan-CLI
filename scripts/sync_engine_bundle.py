@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""同步打包引擎副本：`tuan_cli/` → `Tuan-App/engine/tuan_cli/`。
+"""同步打包引擎副本：`tuan_cli/` → `Tuan/engine/tuan_cli/`。
 
 为什么要这个脚本
 ----------------
-`Tuan-App/src-tauri/tauri.conf.json` 把 `../engine/tuan_cli` 作为 resource 打进
-安装包；开发时 `engine_chat::engine_root()` 也按 `Tuan-App/engine` 解析。
-也就是说**应用运行的引擎代码来自 `Tuan-App/engine/tuan_cli/` 这份副本，
+`Tuan/src-tauri/tauri.conf.json` 把 `../engine/tuan_cli` 作为 resource 打进
+安装包；开发时 `engine_chat::engine_root()` 也按 `Tuan/engine` 解析。
+也就是说**应用运行的引擎代码来自 `Tuan/engine/tuan_cli/` 这份副本，
 而不是仓库根的 `tuan_cli/`**。
 
 这份副本过去靠手工拷贝，已经落后主分支：23 个文件内容不一致、2 个文件整个缺失
@@ -20,9 +20,9 @@
 1. **只同步源码**：排除 `__pycache__` / `*.pyc`（可再生、且来自别的解释器版本，
    留在包体里既占体积又有极小概率的字节码遮蔽风险）、测试缓存、venv。
 2. **会清理陈旧文件**：删除副本里有、源里没有的文件（限受管扩展名），并回收空目录。
-3. **留下指纹**：写 `Tuan-App/engine/.bundle_manifest.json`（逐文件 sha256），
+3. **留下指纹**：写 `Tuan/engine/.bundle_manifest.json`（逐文件 sha256），
    之后即使没人记得跑本脚本，也能一键发现漂移（见 `--check` 与
-   `Tuan-App/scripts/sync-engine.mjs`）。
+   `Tuan/scripts/sync-engine.mjs`）。
 
 用法
 ----
@@ -43,7 +43,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "tuan_cli"
-DEST_ROOT = ROOT / "Tuan-App" / "engine"
+# 目的地解析：桌面端工程原名 Tuan-App，已更名为 Tuan。优先 Tuan/engine；
+# 旧名目录仍存在时（并行任务/历史布局）自动回退，两条布局都能同步。
+DEST_ROOT = ROOT / "Tuan" / "engine"
+if not DEST_ROOT.is_dir() and (ROOT / "Tuan-App" / "engine").is_dir():
+    DEST_ROOT = ROOT / "Tuan-App" / "engine"
 DEST = DEST_ROOT / "tuan_cli"
 MANIFEST = DEST_ROOT / ".bundle_manifest.json"
 MANIFEST_SCHEMA = "tuan-engine-bundle-v1"
@@ -111,7 +115,10 @@ def read_engine_version(pkg: Path) -> str:
         text = (pkg / "version.py").read_text(encoding="utf-8")
     except OSError:
         return ""
-    m = re.search(r"__version__\s*=\s*[\"']([^\"']+)", text)
+    # 必须锚定行首 (re.M)：version.py 的 docstring 里写着历史版本号
+    # (如 "主包 tuan_cli.__version__ = \"0.3.1\"" 的演进说明), 不锚定会
+    # 把注释里的旧版本号当成真实版本 —— 那正是本脚本要暴露的漂移本身。
+    m = re.search(r"^__version__\s*=\s*[\"']([^\"']+)", text, re.M)
     return m.group(1) if m else ""
 
 
@@ -262,7 +269,7 @@ def sync(dry_run: bool = False) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="同步 Tuan-App 打包引擎副本")
+    ap = argparse.ArgumentParser(description="同步 Tuan 桌面端打包引擎副本")
     ap.add_argument("--check", action="store_true", help="只比对，不写盘；发现漂移退出码 1")
     ap.add_argument("--dry-run", action="store_true", help="预览改动，不写盘")
     args = ap.parse_args(argv)

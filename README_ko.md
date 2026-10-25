@@ -122,6 +122,7 @@ tuan --print run "안녕? 너를 한 줄로 소개해 봐."
 |---|---|
 | `tuan` | 대화형 TUI (Kimi Code 스킨) |
 | `tuan setup` / `tuan models` | 프로바이더 설정 / 58개 프로바이더 & 1400+ 모델 목록 |
+| `tuan sessions` / `--continue` / `--resume <id>` / `setup --skip` | 저장된 세션 나열·재개·삭제, CLI에서 바로 재개 가능. 최초 실행 시 설정 마법사 자동 실행(`setup --skip`으로 건너뛰기) |
 | `tuan agent` | 이름 붙은 에이전트 (`.claude/agents` 호환, 3계층 발견) |
 | `tuan acp` | ACP server 켜서 VSCode / Zed / JetBrains가 컨트롤하게 |
 | `tuan cron` | 정기 백그라운드 작업 |

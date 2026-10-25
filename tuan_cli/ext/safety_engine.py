@@ -116,6 +116,7 @@ from .safety_redline import (
     _try_decode_base64_segments,
     has_auth_overwrite,
     has_force_push,
+    has_unconditional_force_push,
     has_dangerous_recursive_rm,
     has_recursive_rm,
     has_system_shutdown,

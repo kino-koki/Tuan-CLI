@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import BrandMark from './BrandMark';
-import { MoreHorizontal, Settings, MessageSquare, FolderKanban, Package, Wrench, Blocks, Puzzle, Search, X, Pin, Plus, ChevronUp, ChevronDown, Globe, SlidersHorizontal, Sun, Moon, SquarePen, Trash2, RefreshCw, Download } from 'lucide-react';
+import { MoreHorizontal, Settings, MessageSquare, FolderKanban, Package, Wrench, Blocks, Puzzle, Search, X, Pin, Plus, ChevronUp, ChevronDown, SlidersHorizontal, Sun, Moon, SquarePen, Trash2, RefreshCw, Download } from 'lucide-react';
 import { store } from '../store/config';
 import { getConvModeLabel, refreshSessionsFromEngine } from '../platform/sessions';
 import { onInstallPromptAvailable, promptInstall } from '../platform/pwa';
 
 export type PageKey =
-  | 'chats' | 'projects' | 'artifacts' | 'skills' | 'mcp' | 'plugins' | 'settings' | 'browse';
+  | 'chats' | 'projects' | 'artifacts' | 'skills' | 'mcp' | 'plugins' | 'settings';
 
 /** 侧栏单条会话的元信息（mode 为可选模式标签，由数据侧落盘后展示） */
 export interface RecentConv {
@@ -93,7 +93,6 @@ interface MenuItem { key: PageKey; label: string; icon: typeof MessageSquare }
 /** 一级导航（平铺，无分组标题：更简洁现代化） */
 const PRIMARY_ITEMS: MenuItem[] = [
   { key: 'chats', label: '聊天记录', icon: MessageSquare },
-  { key: 'browse', label: '浏览器', icon: Globe },
   { key: 'projects', label: '项目', icon: FolderKanban },
   { key: 'artifacts', label: '成品', icon: Package },
 ];

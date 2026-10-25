@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 
 export interface SelectOption {
@@ -8,6 +8,8 @@ export interface SelectOption {
   sub?: string;
   /** 左侧风险点颜色（模式 L0–L4 分档着色） */
   dot?: string;
+  /** 前置图标（TRAE/Claude 菜单按钮式：触发钮与弹层选项都显示） */
+  icon?: ReactNode;
 }
 
 interface Props {
@@ -73,8 +75,9 @@ export default function ComposerSelect({
         data-open={open ? '1' : '0'}
         onClick={() => setOpen((o) => !o)}
         title={title}
-        className={`${className} flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed`}
+        className={`${className} flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed`}
       >
+        {current?.icon && <span className="flex-none">{current.icon}</span>}
         {current?.dot && (
           <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: current.dot }} />
         )}
@@ -107,6 +110,7 @@ export default function ComposerSelect({
                   selected ? 'bg-tuan-hover' : ''
                 }`}
               >
+                {o.icon && <span className="flex-none">{o.icon}</span>}
                 {o.dot && (
                   <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: o.dot }} />
                 )}

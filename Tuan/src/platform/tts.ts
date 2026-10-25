@@ -1,7 +1,9 @@
 /**
  * MOSS-TTS-Nano 本地语音合成前端模块。
  *
- * 引擎 web 服务（127.0.0.1:8137，与 src-tauri/engine_chat.rs 的 ENGINE_PORT 一致）
+ * 引擎 web 服务（默认 127.0.0.1:8137，与 src-tauri/engine_chat.rs 的端口一致；
+ * Rust 侧支持 TUAN_ENGINE_PORT 环境变量覆盖与端口被占用时自动避让，并通过
+ * "engine-port" 事件把实际端口推给前端，这里同步更新）
  * 已内置 /api/tts/* 路由（见 engine/tuan_cli/web/tts_service.py）。WebView 直接
  * fetch 该服务：
  * - 合成：POST /api/tts/synthesize（服务端已放开 CORS）；
@@ -12,7 +14,14 @@ import { store } from '../store/config';
 import { isAndroid } from './engine';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 
-export const TTS_ENGINE_URL = 'http://127.0.0.1:8137';
+export let TTS_ENGINE_URL = 'http://127.0.0.1:8137';
+
+/** 同步引擎实际端口（Rust 侧确定端口后调用，或收到 "engine-port" 事件时调用）。 */
+export function setEnginePort(port: number): void {
+  if (Number.isInteger(port) && port > 0 && port <= 65535) {
+    TTS_ENGINE_URL = `http://127.0.0.1:${port}`;
+  }
+}
 
 /** 引擎 i18n 的 10 种语言（与 engine/tuan_cli/i18n/locales 一致） */
 export const TTS_LANGUAGES: { code: string; label: string }[] = [
