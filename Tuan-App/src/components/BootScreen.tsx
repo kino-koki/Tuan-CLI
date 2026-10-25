@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
 import BrandMark from './BrandMark';
+import { CrawlerSpinner, OnboardCheck, OnboardProgress, OnboardShell } from './OnboardKit';
 
 export interface BootEngineStatus {
   ok: boolean;
@@ -27,10 +27,16 @@ function engineLine(s: BootEngineStatus | null): { text: string; tone: 'ok' | 'w
 }
 
 /**
- * 启动加载序列（豆包 × CodeX 风格）。
+ * 启动加载序列。
  *
- * - 视觉：品牌标识呼吸柔光 + 轻浮动（豆包的温暖感）；
- * - 节奏：CodeX 式清单逐项落入、打勾弹跳、细进度条；
+ * 设计语言与 EngineSetupPage 共用 OnboardKit（Claude 桌面端口径）：
+ * 同底、同卡、同打勾、同菊花、同进度条——是主界面"开机一刻"的延伸，
+ * 不是另一个产品。与上一版的区别：**不做任何表演**——
+ * 没有呼吸光晕、没有标识浮动、没有弹跳勾选，全场只有一次
+ * 「淡入 + 6px 微下沉」，然后如实逐项打勾。
+ *
+ * - 视觉：品牌标识安静出场（与 ChatView 空态同一枚 BrandMark）；
+ * - 节奏：清单逐项落入、打勾小缩放淡入、3px 细进度条；
  * - 诚实：第三行「本地引擎」反映真实 check_engine 结果——
  *   就绪 / 未启用（降级）/ 检测中，不表演假进度；
  * - 退出：全部就绪后 0.4s 自动淡出；任意点击或按键立即跳过；
@@ -45,7 +51,7 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
     if (doneRef.current) return;
     doneRef.current = true;
     setLeaving(true);
-    window.setTimeout(onDone, 320);
+    window.setTimeout(onDone, 240);
   };
 
   // 时间推进：清单按固定节奏逐项点亮
@@ -98,67 +104,61 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
       role="status"
       aria-label="正在启动"
     >
-      {/* 品牌标识 + 呼吸柔光 */}
-      <div className="relative w-[128px] h-[128px] mb-10 flex items-center justify-center">
-        <div className="boot-halo" />
-        <BrandMark size="xl" className="boot-float relative" />
-      </div>
+      <div className="onboard-shell flex flex-col items-center justify-center">
+        {/* 品牌标识：安静出场——无光晕、无浮动（与 ChatView 空态同一枚 BrandMark） */}
+        <div className="onboard-in mb-8">
+          <BrandMark size="lg" />
+        </div>
 
-      {/* 清单 */}
-      <div className="w-[260px] space-y-3">
-        {rows.map((r, i) => {
-          const st = stateOf(r);
-          return (
-            <div
-              key={r.key}
-              className="boot-item-in flex items-center gap-3"
-              style={{ animationDelay: `${i * 0.12}s` }}
-            >
-              <span className="w-4 h-4 flex items-center justify-center flex-none">
-                {st === 'done' ? (
-                  <span className="boot-check-pop w-4 h-4 rounded-full bg-tuan-ok flex items-center justify-center">
-                    <Check size={11} className="text-white" strokeWidth={3} />
+        {/* 启动清单：与安装向导同款卡片（.tuan-card：白底 + 发丝边 + 16px 圆角） */}
+        <div className="onboard-in tuan-card w-[320px] max-w-full px-5 py-4" style={{ animationDelay: '0.08s' }}>
+          <div className="space-y-2.5">
+            {rows.map((r) => {
+              const st = stateOf(r);
+              return (
+                <div key={r.key} className="flex h-7 items-center">
+                  <span className="flex h-4 w-4 flex-none items-center justify-center">
+                    {st === 'done' ? (
+                      <OnboardCheck />
+                    ) : (
+                      <CrawlerSpinner className="!h-[14px] !w-[14px]" />
+                    )}
                   </span>
-                ) : (
-                  <span className="boot-spinner" />
-                )}
-              </span>
-              <span className={`text-[13.5px] ${st === 'done' ? 'text-tuan-text' : 'text-tuan-textSecondary'}`}>
-                {r.label}
-              </span>
-              {r.key === 'engine' && (
-                <span
-                  className={`ml-auto text-[12px] ${
-                    eng.tone === 'ok' ? 'text-tuan-ok' : eng.tone === 'warn' ? 'text-tuan-textSecondary' : 'text-tuan-textSecondary'
-                  }`}
-                >
-                  {eng.text}
-                </span>
-              )}
+                  <span
+                    className={`ml-3 text-[13.5px] transition-colors ${
+                      st === 'done' ? 'text-tuan-text' : 'text-tuan-textSecondary'
+                    }`}
+                  >
+                    {r.label}
+                  </span>
+                  {r.key === 'engine' && (
+                    <span
+                      className={`ml-auto text-[12px] ${
+                        eng.tone === 'ok' ? 'text-tuan-accentSoft' : 'text-tuan-textSecondary'
+                      }`}
+                    >
+                      {eng.text}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-4 border-t border-tuan-border pt-3">
+            <OnboardProgress pct={pct} label={false} />
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[11.5px] text-tuan-textSecondary tabular-nums">{pct}%</span>
+              <span className="text-[11.5px] text-tuan-textSecondary">点击任意处跳过</span>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        </div>
 
-      {/* 细进度条 */}
-      <div className="w-[260px] mt-8">
-        <div className="h-[3px] rounded-full bg-tuan-border overflow-hidden">
-          <div
-            className="h-full rounded-full bg-tuan-accent transition-all duration-300 ease-out"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <div className="flex items-center justify-between mt-2">
-          <span className="text-[11.5px] text-tuan-textSecondary tabular-nums">{pct}%</span>
-          <span className="text-[11.5px] text-tuan-textSecondary">点击任意处跳过</span>
-        </div>
+        {engineStatus?.app_version && (
+          <div className="onboard-in mt-6 text-[11px] text-tuan-textSecondary" style={{ animationDelay: '0.16s' }}>
+            Tuan-Chat v{engineStatus.app_version}
+          </div>
+        )}
       </div>
-
-      {engineStatus?.app_version && (
-        <div className="absolute bottom-6 text-[11px] text-tuan-textSecondary">
-          Tuan-Chat v{engineStatus.app_version}
-        </div>
-      )}
     </div>
   );
 }

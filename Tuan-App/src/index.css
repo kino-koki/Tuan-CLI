@@ -17,6 +17,16 @@
   /* 品牌橙的"柔和版"：供思考光点、扩散环等发光元素使用。
      原先直接用实心 #d97757，在深色底上是刺眼的高亮亮点（过曝）。 */
   --tuan-accent-soft: #c2603f;
+  /* 品牌橙交互档：hover 加深一档（Claude 桌面端主按钮的 hover 行为） */
+  --tuan-accent-strong: #b0522f;
+  /* 品牌橙之上的前景色：浅色主题用暖奶白——Claude 桌面端品牌图标即
+     "陶土橘圆角底 + 奶白星芒"，全应用标识统一此口径 */
+  --tuan-on-accent: #faf6ec;
+  /* 终端 chip（安装向导内的可复制命令）：与聊天代码块同款深色底，
+     不随主题反转——"终端"语义在明暗两种主题下都成立 */
+  --tuan-terminal-bg: #26251f;
+  --tuan-terminal-text: #e9e5db;
+  --tuan-terminal-dim: #b9b2a4;
   /* 选中态描边：浅色下用近黑强调 */
   --tuan-selected-border: #1f1e1c;
   /* 中性贴片底色：供图标块 / 卡片图标位使用，比纯白柔和，避免过曝 */
@@ -50,6 +60,9 @@
   /* 深色下品牌橙提亮一档，保证在炭色背景上仍可辨认，
      但刻意不拉到高亮区，避免与正文争抢注意力。 */
   --tuan-accent-soft: #e0896a;
+  /* 深色下 hover 再提亮一档；前景改近黑，保证陶土橘上的对比度 */
+  --tuan-accent-strong: #e5987c;
+  --tuan-on-accent: #26251f;
   /* 深色下若仍用近黑描边，选中态会"消失"在背景里；改用浅色高对比描边 */
   --tuan-selected-border: #ece9e2;
   --tuan-art-bg: #211f1b;
@@ -107,6 +120,11 @@ body {
   .cc-btn-primary {
     @apply inline-flex items-center justify-center gap-1.5 rounded-full bg-[#1f1e1c] text-white transition-colors hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed dark:bg-[#34312E] dark:text-[#ece9e2] dark:hover:bg-[#3e3935];
   }
+  /* 主操作（陶土橘）：Claude 桌面端主按钮行为，仅用于加载/安装引导层；
+     主界面内部操作仍用 cc-btn-primary（近黑）——两层各守其职，互不串味。 */
+  .cc-btn-accent {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full bg-tuan-accentSoft text-white transition-colors hover:bg-tuan-accentStrong disabled:opacity-40 disabled:cursor-not-allowed dark:text-tuan-onAccent;
+  }
   /* 次操作：细边框幽灵、全圆角 */
   .cc-btn-ghost {
     @apply inline-flex items-center justify-center gap-1.5 rounded-full border border-tuan-border text-tuan-textSecondary transition-colors hover:bg-tuan-hover hover:text-tuan-text disabled:opacity-40 disabled:cursor-not-allowed;
@@ -146,22 +164,16 @@ body {
   }
 }
 
-/* Claude Code 风格菊花动画：SVG 圆环 + stroke-dasharray 缺口，匀速旋转。
-   - 旋转只用 transform: rotate()（GPU 合成，低端 WebView 不掉帧），
-     不再依赖 border: dashed + border-top-color: transparent 的浏览器差异。
-   - SVG circle 用 pathLength="100" 归一化，stroke-dasharray="75 25"
-     就是稳定的 3/4 弧 + 1/4 缺口，跟尺寸/线宽解耦。
+/* Claude Code 桌面端风格菊花「爬动」动画：12 片花瓣沿圆周顺序点亮。
+   - 只动画 opacity（GPU 合成友好，低端 WebView 不掉帧），
+     相位用负 animation-delay 错开，静态 SVG 即可，无需 JS。
    - 颜色走 currentColor，容器 .cc-spinner 上给 var(--tuan-accent-soft)，
-     浅/深色主题下都已经是品牌橙（浅 #c2603f / 深 #e0896a），对比足够。
-   - 保留极淡的同色描边轨道（stroke-opacity: .25），缺口经过时不消失、
-     让"环"始终可辨。原版没有中心呼吸点，.cc-spinner-core 已删除。 */
-@keyframes cc-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-.cc-spin {
-  animation: cc-spin 0.8s linear infinite;
-  flex: none;
+     浅/深色主题下都清晰可见。
+   - 头部花瓣最亮、尾随两片渐隐，形成"毛毛虫爬行"的连续感。 */
+@keyframes cc-crawl {
+  0%, 8%    { opacity: 1; }
+  20%       { opacity: 0.45; }
+  34%, 100% { opacity: 0.14; }
 }
 
 .cc-spinner {
@@ -185,24 +197,21 @@ body {
   width: 100%;
   height: 100%;
   overflow: visible;
-  transform-origin: 50% 50%;
-  animation: cc-spin 0.8s linear infinite;
-  will-change: transform;
 }
-/* 底色轨道：几乎透明的同色环，让缺口经过时"圆环"轮廓不散 */
-.cc-spinner .cc-spinner-track {
-  fill: none;
-  stroke: currentColor;
-  stroke-opacity: 0.25;
-  stroke-width: 2;
-}
-/* 主弧：3/4 圈，缺口在旋转中始终可见 */
-.cc-spinner .cc-spinner-ring {
-  fill: none;
+.cc-spinner .cc-crawler-petal {
   stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
-  stroke-dasharray: 75 25;
+  opacity: 0.14;
+  animation: cc-crawl 1.2s linear infinite;
+  will-change: opacity;
+}
+/* 低端机/系统减少动效偏好：整圈花瓣静态显示，不做爬动 */
+@media (prefers-reduced-motion: reduce) {
+  .cc-spinner .cc-crawler-petal {
+    animation: none;
+    opacity: 0.5;
+  }
 }
 
 /* 流式生成光标：柔和呼吸闪烁 */
@@ -570,8 +579,8 @@ option {
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid var(--border-tuan);
-  background: #26251f;
-  color: #e9e5db;
+  background: var(--tuan-terminal-bg);
+  color: var(--tuan-terminal-text);
 }
 .tuan-codeblock-head {
   display: flex;
@@ -583,7 +592,7 @@ option {
 }
 .tuan-codeblock-lang {
   font-size: 12px;
-  color: #b9b2a4;
+  color: var(--tuan-terminal-dim);
   font-family: ui-monospace, Menlo, Consolas, monospace;
   text-transform: lowercase;
 }
@@ -592,7 +601,7 @@ option {
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  color: #b9b2a4;
+  color: var(--tuan-terminal-dim);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -843,102 +852,58 @@ option {
 }
 
 /* ============================================================
-   加载 / 安装引导动效层（boot-* / onboard-*）
+   加载 / 安装引导层（boot-* / onboard-*）
    ------------------------------------------------------------
-   设计语言：豆包的温暖呼吸感（柔光 / 圆角 / 轻浮动）
-            + CodeX 安装引导的清单式打勾（逐项落入 / 弹跳勾选 / 细进度条）。
+   设计语言：Claude 桌面端（claude.ai 桌面应用）——
+   暖米纸底、陶土橘主色、衬线只出现在问候位；动效全场只有
+   「淡入 + 6px 微下沉」一种进场（220ms），没有呼吸光晕、
+   没有浮动、没有弹跳——安静是这种风格的脸。
    只服务 Tuan-Chat 的「启动加载」与「引擎安装向导」两个时刻。
    兼容性同 mobile.ts 约束：不用 inset / flex gap / color-mix()。
    ============================================================ */
 
-/* 呼吸柔光（品牌标识背后的暖色光晕，豆包式） */
-.boot-halo {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 240px;
-  height: 240px;
-  margin-top: -120px;
-  margin-left: -120px;
-  border-radius: 9999px;
-  background: radial-gradient(circle, var(--tuan-accent-soft) 0%, transparent 68%);
-  pointer-events: none;
-  animation: boot-breathe 3.2s ease-in-out infinite;
-}
-@keyframes boot-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.13; }
-  50% { transform: scale(1.12); opacity: 0.22; }
+/* 唯一的标准进场：淡入 + 微下沉（stagger 由组件内联 animationDelay 指定） */
+.onboard-in { animation: onboard-in 0.22s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+@keyframes onboard-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
 }
 
-/* 标识轻浮动 */
-.boot-float { animation: boot-float 3.2s ease-in-out infinite; }
-@keyframes boot-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+/* 勾选落入：克制的小缩放淡入（不是弹跳） */
+.onboard-check-in { animation: onboard-check-in 0.16s ease-out both; }
+@keyframes onboard-check-in {
+  from { opacity: 0; transform: scale(0.6); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 /* 启动序列整屏淡出 */
-.boot-screen-out { animation: boot-fade-out 0.35s ease-in both; }
+.boot-screen-out { animation: boot-fade-out 0.24s ease-in both; }
 @keyframes boot-fade-out {
   to { opacity: 0; visibility: hidden; }
 }
 
-/* 清单行：逐行落入（delay 由组件内联指定） */
-.boot-item-in { animation: boot-item-in 0.35s ease-out both; }
-@keyframes boot-item-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* 勾选弹跳：scale 0 → 1.25 → 1（CodeX 式"打上勾"手感） */
-.boot-check-pop { animation: boot-check-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-@keyframes boot-check-pop {
-  0% { transform: scale(0); }
-  70% { transform: scale(1.25); }
-  100% { transform: scale(1); }
-}
-
-/* 等待中的细旋转环（CodeX 式低调 spinner） */
-.boot-spinner {
-  width: 14px;
-  height: 14px;
-  border-radius: 9999px;
-  border: 1.5px solid var(--tuan-text-secondary);
-  border-top-color: transparent;
-  animation: boot-spin 0.9s linear infinite;
-}
-@keyframes boot-spin { to { transform: rotate(360deg); } }
-
-/* 安装向导卡片：交错落入 */
-.onboard-card-in { animation: onboard-card-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
-@keyframes onboard-card-in {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* 步骤完成时勾选的弹跳（复用 boot-check-pop 曲线，独立命名便于覆盖） */
-.onboard-check-pop { animation: boot-check-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-
-/* 成功状态的柔光扩散（引擎就绪那一刻） */
-.onboard-success-glow { animation: onboard-glow 1.2s ease-out both; }
-@keyframes onboard-glow {
-  0% { box-shadow: 0 0 0 0 var(--tuan-ok-bg); }
-  100% { box-shadow: 0 0 0 14px transparent; }
-}
-
 /* 动效总开关 */
 @media (prefers-reduced-motion: reduce) {
-  .boot-halo,
-  .boot-float,
-  .boot-item-in,
-  .boot-check-pop,
-  .boot-spinner,
-  .onboard-card-in,
-  .onboard-check-pop,
-  .onboard-success-glow {
+  .onboard-in,
+  .onboard-check-in,
+  .boot-screen-out {
     animation: none !important;
   }
-  .boot-item-in { opacity: 1; transform: none; }
+  .onboard-in { opacity: 1; transform: none; }
+}
+
+/* 引导层安全区：四边让出刘海 / Home Indicator（桌面端恒为 0，行为不变）。
+   加载序列与安装向导共用，保证窄屏/刘海屏下内容不被挖孔与指示条压住。 */
+.onboard-shell {
+  padding: calc(var(--sat) + 16px) calc(var(--sar) + 16px)
+    calc(var(--sab) + 16px) calc(var(--sal) + 16px);
+  box-sizing: border-box;
+}
+
+/* 引导层 hero 行：衬线只出现在"问候语"位置（与 ChatView 空态问候语同字体），
+   其余文案一律无衬线——这是引导层与主界面排版统一的边界。 */
+.onboard-hero {
+  font-family: 'Spectral', 'Source Serif 4', Georgia, serif;
 }
 
 

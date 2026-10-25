@@ -7,6 +7,7 @@ export default {
       colors: {
         tuan: {
           bg: 'var(--bg-tuan-main)',
+          main: 'var(--bg-tuan-main)',
           sidebar: 'var(--bg-tuan-sidebar)',
           border: 'var(--border-tuan)',
           text: 'var(--text-tuan-main)',
@@ -16,6 +17,24 @@ export default {
           btnHover: 'var(--bg-tuan-btn-hover)',
           input: 'var(--bg-tuan-input)',
           artBg: 'var(--tuan-art-bg)',
+          /* 语义色（index.css :root / .dark 已定义，此前只以 var() 内联使用，
+             导致 bg-tuan-ok / text-tuan-danger 等类静默失效——启动打勾、
+             品牌方块背景、危险文本全部丢失。这里补齐映射，让类与变量一一对应。 */
+          accentSoft: 'var(--tuan-accent-soft)',
+          selectedBorder: 'var(--tuan-selected-border)',
+          danger: 'var(--tuan-danger)',
+          dangerBg: 'var(--tuan-danger-bg)',
+          link: 'var(--tuan-link)',
+          ok: 'var(--tuan-ok)',
+          okBg: 'var(--tuan-ok-bg)',
+          heading: 'var(--tuan-heading)',
+          /* Claude 桌面端引导层专用令牌：陶土橘交互档 / 品牌橙上的前景色 /
+             终端 chip 三件套（与 .tuan-codeblock 同款深色，见 index.css） */
+          accentStrong: 'var(--tuan-accent-strong)',
+          onAccent: 'var(--tuan-on-accent)',
+          terminalBg: 'var(--tuan-terminal-bg)',
+          terminalText: 'var(--tuan-terminal-text)',
+          terminalDim: 'var(--tuan-terminal-dim)',
         },
         blue: {
           50: '#EAF4FF', 100: '#D6E9FF', 200: '#AED5FF', 300: '#7FBEFE',
