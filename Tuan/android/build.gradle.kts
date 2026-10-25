@@ -1,4 +1,4 @@
-// Tuan-Chat Native Android 工程根配置
+// Tuan Native Android 工程根配置
 // 依赖版本集中在 gradle/libs.versions.toml
 plugins {
     alias(libs.plugins.android.application) apply false

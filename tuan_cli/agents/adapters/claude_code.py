@@ -15,6 +15,7 @@ class ClaudeCodeAdapter(AgentAdapter):
     display_name = "Claude Code"
     description = "Anthropic 官方 CLI; 代码编辑与对话"
     command = ("claude", "claude-code")
+    verify = "claude"  # --version 输出如 "1.2.3 (Claude Code)" 含此标识
     # 打分权重: chat 模式最强, 其他模式也可用
     weights = {"chat": 5, "collaboration": 4, "lingma": 3, "gantong": 2, "boundless": 2}
 

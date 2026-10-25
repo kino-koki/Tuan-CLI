@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 # 基于脚本自身位置解析，避免写死盘符/绝对路径：
-#   scripts/ -> Tuan-App/ -> Tuan-CLI/（仓库根）
+#   scripts/ -> Tuan/ -> Tuan-CLI/（仓库根）
 ROOT = Path(__file__).resolve().parents[2] / "tuan_cli" / "resources" / "skills" / "builtin"
 out = []
 

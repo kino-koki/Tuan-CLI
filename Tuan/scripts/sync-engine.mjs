@@ -4,7 +4,7 @@
  *
  * 背景
  * ----
- * 应用真正运行的引擎代码来自 `Tuan-App/engine/tuan_cli/` 这份副本，而不是仓库根。
+ * 应用真正运行的引擎代码来自 `Tuan/engine/tuan_cli/` 这份副本，而不是仓库根。
  * 它靠 `scripts/sync_engine_bundle.py` 同步，但同步动作依赖 Python 解释器 ——
  * 而 Windows 上 PATH 里的 `python` 常常只是 Microsoft Store 的引导存根，
  * 于是"忘了同步"这件事会**静默发生**（此前就落后了 38 个文件，
@@ -22,7 +22,7 @@ import { promises as fs } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-/** 向上找 package.json，确定 Tuan-App 根目录（兼容从 src-tauri 发起构建）。 */
+/** 向上找 package.json，确定 Tuan 根目录（兼容从 src-tauri 发起构建）。 */
 async function findAppRoot(start) {
   let dir = path.resolve(start);
   for (let i = 0; i < 6; i += 1) {

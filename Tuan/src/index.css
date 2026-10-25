@@ -645,7 +645,7 @@ option {
   padding-top: var(--sat);
 }
 /* 左侧栏整列避开左安全区 */
-.tuan-app-shell,
+.tuan-shell,
 .app-shell {
   padding-left: var(--sal);
   padding-right: var(--sar);
@@ -856,7 +856,7 @@ option {
    ------------------------------------------------------------
    设计语言：豆包的温暖呼吸感（柔光 / 圆角 / 轻浮动）
             + CodeX 安装引导的清单式打勾（逐项落入 / 弹跳勾选 / 细进度条）。
-   只服务 Tuan-Chat 的「启动加载」与「引擎安装向导」两个时刻。
+   只服务 Tuan 的「启动加载」与「引擎安装向导」两个时刻。
    注：2026-10-25 应用户要求恢复完整动效层——此前「Claude 桌面端安静版」
    只保留淡入微下沉一种进场，现恢复：呼吸光晕 / 标识浮动 / 逐行落入 /
    弹跳打勾 / 细旋转环 / 卡片交错落入 / 成功柔光扩散。
@@ -1112,6 +1112,21 @@ option {
   height: 12px;
   background: var(--border-tuan);
   flex: none;
+}
+/* 上下文预算仪表: 细进度条 (模块 3) */
+.cc-statusbar .sb-gauge-track {
+  width: 42px;
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--border-tuan);
+  overflow: hidden;
+  flex: none;
+}
+.cc-statusbar .sb-gauge-fill {
+  display: block;
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.4s ease;
 }
 @media (max-width: 640px) {
   .cc-statusbar {

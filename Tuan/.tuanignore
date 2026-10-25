@@ -1,0 +1,41 @@
+# Tuan 隐私防护罩 (Privacy Shield) 运行时规则
+# 引擎在「读取文件内容」前按此清单拦截, 命中文件不进入模型上下文。
+# 语法 = gitignore 子集: # 注释 · ! 否定 · * / ** / ? · dir/ 目录规则 · /pat 根锚定
+# 与仓库 .gitignore 的隐私段保持一致 (防提交 + 防运行时读取, 双保险)。
+
+# 机密 / 密钥
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*password*
+*passwd*
+*secret*
+*.secret
+*credential*
+*api*key*
+
+# 开发中 / 个人隐私文件
+*待办*
+*代办*
+*todo*.md
+*.log
+*.tmp
+*.bak
+*.orig
+*.swp
+*~
+
+# 项目自身的大体积 / 敏感运行时产物 (引擎模型与输出)
+engine/models/
+engine/tts_output/
+engine/custom_voices/
+engine/logs/
+dist/
+src-tauri/target/

@@ -1,5 +1,5 @@
 // app 模块构建配置
-// Tuan-Chat Native: 手机远程调度桌面 Agent-of-Agents
+// Tuan Native: 手机远程调度桌面 Agent-of-Agents
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)

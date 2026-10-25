@@ -1,15 +1,15 @@
-# Tuan-Chat Android 8.0 特供版 · 方案落地（v0.3.2）
+# Tuan Android 8.0 特供版 · 方案落地（v0.3.2）
 
-> 本文档是 Tuan-Chat（Tuan-App 的移动端产品名）针对 **Android 8.0 特供版** 的方案落地文档，与 Tuan-CLI v0.3.2「五模式」改造同步发布。
+> 本文档是 Tuan（Tuan 的移动端产品名）针对 **Android 8.0 特供版** 的方案落地文档，与 Tuan-CLI v0.3.2「五模式」改造同步发布。
 >
 > **状态：方案已落地（v0.3.2 · 2026-10-23），远程控制复用路径已核实**
 >
-> **本目录约定**：所有 Android 8.0 特供版相关文档、资源、代码均落在 `Tuan-App/` 目录下，不修改 `tuan_cli/`（Tuan-CLI Python 核心）与仓库根目录的其他文档。
+> **本目录约定**：所有 Android 8.0 特供版相关文档、资源、代码均落在 `Tuan/` 目录下，不修改 `tuan_cli/`（Tuan-CLI Python 核心）与仓库根目录的其他文档。
 >
 > **相关文档**：
 > - `../legal/ANDROID8_DISCLAIMER.md` —— 免责声明单一真源文案
 > - `../../26.10.23全天代办.md` §9 Android 端 / §10 TTS —— 代办源文档
-> - `AGENT-ANDROID.md` —— Tuan-App 内置 Rust Agent 方案（与本文档正交）
+> - `AGENT-ANDROID.md` —— Tuan 内置 Rust Agent 方案（与本文档正交）
 
 ---
 
@@ -36,7 +36,7 @@ Tuan-CLI v0.3.2 引入五模式（闲聊 / 协同 / 感通 / 灵码 / 无界，I
 各模式在 Android 端的**配置层**（不是提示词层）开关，落到 `AndroidConfig.kt`：
 
 ```kotlin
-// Tuan-App/android/app/src/main/java/com/tuan/cli/config/AndroidModeSwitcher.kt
+// Tuan/android/app/src/main/java/com/tuan/cli/config/AndroidModeSwitcher.kt
 // 仅暴露桌面允许在 Android 生效的模式；被砍掉的模式在配置层根本不可见。
 
 enum class AndroidMode(val id: String, val displayName: String) {
@@ -85,7 +85,7 @@ enum class AndroidMode(val id: String, val displayName: String) {
 ### 2.3 Kotlin / Compose 代码骨架
 
 ```kotlin
-// Tuan-App/android/app/src/main/java/com/tuan/cli/ui/disclaimer/Android8DisclaimerDialog.kt
+// Tuan/android/app/src/main/java/com/tuan/cli/ui/disclaimer/Android8DisclaimerDialog.kt
 package com.tuan.cli.ui.disclaimer
 
 import android.app.Activity
@@ -116,7 +116,7 @@ import java.security.MessageDigest
  *   6. 「不同意」按钮直接 Activity.finish()。
  *
  * 文案来源：res/raw/android8_disclaimer.md（构建期由 Gradle 从
- *           Tuan-App/legal/ANDROID8_DISCLAIMER.md 复制而来）。
+ *           Tuan/legal/ANDROID8_DISCLAIMER.md 复制而来）。
  *           禁止在本文件里硬编码文案副本。
  */
 @Composable
@@ -167,7 +167,7 @@ fun Android8DisclaimerDialog(
         // 标题区
         title = {
             Text(
-                text = "Tuan-Chat Android 8.0 版 · 安装前声明",
+                text = "Tuan Android 8.0 版 · 安装前声明",
                 style = MaterialTheme.typography.titleLarge,
             )
         },
@@ -271,7 +271,7 @@ private fun sha256(text: String): String {
 }
 
 /**
- * 从 Tuan-App/legal/CHECKSUMS.sha256 派生出来的预期 hash 集合
+ * 从 Tuan/legal/CHECKSUMS.sha256 派生出来的预期 hash 集合
  * （构建期由 Gradle task 生成到 BuildConfig 或字符串资源里）。
  */
 private fun loadExpectedHashes(): Set<String> {
@@ -283,7 +283,7 @@ private fun loadExpectedHashes(): Set<String> {
 ### 2.4 MainActivity 集成点
 
 ```kotlin
-// Tuan-App/android/app/src/main/java/com/tuan/cli/MainActivity.kt
+// Tuan/android/app/src/main/java/com/tuan/cli/MainActivity.kt
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -320,8 +320,8 @@ class MainActivity : ComponentActivity() {
 ### 2.5 Gradle 资源同步任务
 
 ```groovy
-// Tuan-App/android/app/build.gradle
-// 每次打包前把 Tuan-App/legal/ANDROID8_DISCLAIMER.md 复制到 res/raw/，
+// Tuan/android/app/build.gradle
+// 每次打包前把 Tuan/legal/ANDROID8_DISCLAIMER.md 复制到 res/raw/，
 // 并计算 SHA256 注入 BuildConfig，供运行时校验。
 task syncAndroid8Disclaimer {
     doLast {
@@ -400,7 +400,7 @@ class RemoteSession:
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  桌面端 Tuan-CLI / Tuan-Chat 实例                Android 原生壳（Compose） │
+│  桌面端 Tuan-CLI / Tuan 实例                Android 原生壳（Compose） │
 │  ─────────────────────────────                ─────────────────────────── │
 │  rc.start_pairing(session_id="s1")          │                              │
 │     └─ token = secrets.token_urlsafe(32)    │                              │
@@ -474,7 +474,7 @@ class RemoteSession:
 5. 桌面 Agent 执行任何工具调用时，走的还是桌面的完整 `SecurityGate` 判定（因为 Agent 就在桌面端跑，用的是桌面的 session 上下文）；
 6. 手机端**无法**：直接调用工具、绕过 SecurityGate、修改本地文件系统、访问桌面私有目录。
 
-因此，Android 端的等效权限级别 = **plan 级**（可提议、需确认、无法绕过）。这与 Tuan-Chat 桌面端 `plan` 模式的语义完全对齐，无需在 Android 侧再实现一层权限模型。
+因此，Android 端的等效权限级别 = **plan 级**（可提议、需确认、无法绕过）。这与 Tuan 桌面端 `plan` 模式的语义完全对齐，无需在 Android 侧再实现一层权限模型。
 
 **副作用**：这条复用路径也顺带解决了「老机算力不足」问题——手机只做 HTTP 客户端 + 通知 + TTS，不跑 Agent 推理、不跑 SecurityGate、不跑工具执行，2GB RAM 的骁龙 660 都够跑。
 
@@ -581,7 +581,7 @@ AudioTrack.write(pcm, 0, len)
 
 ### 5.4 Android 8.0 免责声明
 
-- [ ] **文案就位**：`Tuan-App/legal/ANDROID8_DISCLAIMER.md` 存在，SHA256 与 `CHECKSUMS.sha256` 一致
+- [ ] **文案就位**：`Tuan/legal/ANDROID8_DISCLAIMER.md` 存在，SHA256 与 `CHECKSUMS.sha256` 一致
 - [ ] **打包复制**：APK 构建后 `unzip -l app.apk | grep android8_disclaimer.md` 能列出 `res/raw/android8_disclaimer.md`
 - [ ] **Compose AlertDialog**：`dismissOnBackPress={false}`、`dismissOnClickOutside=false` 已生效，Back 键与点外部**均不关闭**弹窗
 - [ ] **勾选门控**：未勾选 checkbox 时「继续」按钮 `enabled=false`（灰化）
@@ -614,6 +614,6 @@ AudioTrack.write(pcm, 0, len)
 
 ---
 
-*文档维护者：Tuan-App Android 8.0 特供版工作流组*
+*文档维护者：Tuan Android 8.0 特供版工作流组*
 *最后更新：2026-10-23（v0.3.2 · 五模式对齐 · 远程控制复用路径核实 · 8.0 免责声明文案就位）*
 *相关文档：[ANDROID8_DISCLAIMER.md](../legal/ANDROID8_DISCLAIMER.md) · [AGENT-ANDROID.md](AGENT-ANDROID.md) · [26.10.23全天代办.md](../../26.10.23全天代办.md)*

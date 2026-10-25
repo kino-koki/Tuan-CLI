@@ -27,6 +27,8 @@ import {
 } from './platform/mobile';
 import { getMode, MODES, needsConfirmSwitch, platformBlockReason, type ModeId } from './platform/modes';
 import { ttsStatus } from './platform/tts';
+import { fetchContextGauge, gaugeColor, gaugeLabel, type ContextGauge } from './platform/context';
+import { notifyVoiceCopilot } from './platform/voiceCopilot';
 import { store, applyTheme, uid } from './store/config';
 import type { Conversation, PendingApproval, Provider, ToolEvent } from './types';
 import { invoke, isTauri } from '@tauri-apps/api/core';
@@ -63,7 +65,8 @@ const MODE_ICONS: Record<ModeId, React.ReactNode> = {
 export default function App() {
   type View = 'chat' | PageKey;
   const [page, setPage] = useState<View>('chat');
-  const [collapsed, setCollapsed] = useState(false);
+  // 侧栏折叠偏好持久化（桌面人体工学：跨会话保持布局）
+  const [collapsed, setCollapsed] = useState<boolean>(() => store.sidebarCollapsed());
   // ⌘K 命令面板开关（Claude Code 桌面标志性交互）
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [narrow, setNarrow] = useState(
@@ -81,6 +84,12 @@ export default function App() {
   const [model, setModel] = useState<string>(() => store.model());
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState('');
+  // 语音协警: 流式从"进行中"变"结束"时播报"回复完成" (模块 4)
+  const streamingRef = useRef(false);
+  useEffect(() => {
+    if (!streaming && streamingRef.current) notifyVoiceCopilot('done');
+    streamingRef.current = streaming;
+  }, [streaming]);
   const [tools, setTools] = useState<ToolEvent[]>([]);
   const [approval, setApproval] = useState<PendingApproval | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -230,7 +239,11 @@ export default function App() {
       // ⌘B: 切换侧栏
       else if (k === 'b') {
         e.preventDefault();
-        setCollapsed((c) => !c);
+        setCollapsed((c) => {
+          const next = !c;
+          store.saveSidebarCollapsed(next);
+          return next;
+        });
       }
     };
     window.addEventListener('keydown', onKey);
@@ -268,7 +281,12 @@ export default function App() {
       }
       if (!s.collapsed && isNarrow()) setCollapsed(true);
     };
-    const toggleSidebar = () => setCollapsed((c) => !c);
+    const toggleSidebar = () =>
+      setCollapsed((c) => {
+        const next = !c;
+        store.saveSidebarCollapsed(next);
+        return next;
+      });
     const resetLayout = () => {
       // 横竖屏切换后收掉可能残留的侧栏抽屉，避免覆盖在错误位置上
       if (isNarrow()) setCollapsed(true);
@@ -518,12 +536,14 @@ export default function App() {
           );
         } else if (chunk.type === 'approval') {
           // 引擎安全闸门：阻塞等待我们答复。不落进任何消息文本，单独弹审批卡。
+          notifyVoiceCopilot('approval'); // 语音协警: 提醒用户处理授权
           setApproval({
             id: chunk.name ?? '',
             prompt: chunk.text ?? '',
             verdict: chunk.args,
           });
         } else if (chunk.type === 'error') {
+          notifyVoiceCopilot('error'); // 语音协警: 出错提醒
           setError(chunk.error ?? '请求失败');
           // 出错且没有任何正文时，去掉空的助手占位消息
           if (!acc) patch([...history]);
@@ -803,30 +823,34 @@ export default function App() {
         onClose={() => setPaletteOpen(false)}
         actions={paletteActions}
       />
-      {/* Claude Code 式底部状态栏：模式 · 模型 · 引擎 · TTS · 会话数 */}
+      {/* Claude Code 式底部状态栏：模式 · 模型 · 引擎 · TTS · 上下文预算 · 会话数 */}
       <StatusBar
         mode={mode}
         providerLabel={providerId ? `${providers.find((p) => p.id === providerId)?.name ?? ''}${model ? ' · ' + model : ''}` : ''}
         engineStatus={engineStatus}
         convCount={convs.length}
+        convId={activeId}
       />
     </div>
   );
 }
 
-/** Claude Code 终端式单行状态栏。TTS 状态每 15s 轮询一次引擎。 */
+/** Claude Code 终端式单行状态栏。TTS 状态 + 上下文预算每 15s 轮询一次引擎。 */
 function StatusBar({
   mode,
   providerLabel,
   engineStatus,
   convCount,
+  convId,
 }: {
   mode: ModeId;
   providerLabel: string;
   engineStatus?: { ok: boolean; reason: string; python: string };
   convCount: number;
+  convId?: string;
 }) {
   const [tts, setTts] = useState<{ reachable: boolean; loaded: boolean } | null>(null);
+  const [gauge, setGauge] = useState<ContextGauge | null>(null);
   useEffect(() => {
     let alive = true;
     const tick = () => {
@@ -841,6 +865,14 @@ function StatusBar({
         .catch(() => {
           if (alive) setTts(null);
         });
+      // 上下文预算仪表（模块 3）: 与 TTS 同轮询, 不额外发请求
+      fetchContextGauge(convId)
+        .then((g) => {
+          if (alive) setGauge(g);
+        })
+        .catch(() => {
+          if (alive) setGauge(null);
+        });
     };
     tick();
     const t = setInterval(tick, 15000);
@@ -848,7 +880,7 @@ function StatusBar({
       alive = false;
       clearInterval(t);
     };
-  }, []);
+  }, [convId]);
   const m = getMode(mode);
   return (
     <div className="cc-statusbar">
@@ -892,6 +924,31 @@ function StatusBar({
       </span>
       <span className="sb-sep sb-hide-mobile" />
       <span className="sb-group sb-label sb-hide-mobile">会话 {convCount}</span>
+      {gauge && (
+        <>
+          <span className="sb-sep sb-hide-mobile" />
+          <span
+            className="sb-group sb-hide-mobile"
+            title={`上下文预算: ${gauge.estTokens.toLocaleString()} / ${gauge.window.toLocaleString()} tokens (est., ~3 字符/token)。≥70% 变橙, ≥90% 变红, 超 100% 提示 /compact`}
+          >
+            <span
+              className="sb-gauge-track"
+              role="progressbar"
+              aria-valuenow={Math.round(gauge.ratio * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <span
+                className="sb-gauge-fill"
+                style={{ width: `${Math.min(gauge.ratio, 1) * 100}%`, background: gaugeColor(gauge.ratio) }}
+              />
+            </span>
+            <span className="sb-label" style={{ color: gaugeColor(gauge.ratio) }}>
+              {gaugeLabel(gauge.ratio)}
+            </span>
+          </span>
+        </>
+      )}
     </div>
   );
 }

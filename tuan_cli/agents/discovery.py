@@ -59,3 +59,27 @@ async def discover_agents() -> List[AgentInfo]:
                     reason=f"probe error: {info}",
                 ))
     return result
+
+
+async def probe_agent(adapter_id: str) -> AgentInfo:
+    """探测单个代理 (供 `tuan dispatch status <id>` 精确查询)。"""
+    adapter = ADAPTERS.get(adapter_id)
+    if adapter is None:
+        return AgentInfo(id=adapter_id, name=adapter_id, healthy=False, reason="AGENT_NOT_FOUND")
+    return await adapter.detect()
+
+
+def summarize(infos: List[AgentInfo]) -> dict:
+    """把探测结果收敛成一行摘要 (供 UI / 状态栏 / 启动清单复用)。
+
+    返回 {"online": n, "total": n, "verified": n, "line": "3/5 在线"}:
+    online = healthy 数; verified = score==100 (版本校验通过) 数。
+    """
+    online = sum(1 for i in infos if i.healthy)
+    verified = sum(1 for i in infos if i.healthy and i.score >= 100)
+    return {
+        "online": online,
+        "total": len(infos),
+        "verified": verified,
+        "line": f"{online}/{len(infos)} 在线",
+    }

@@ -39,6 +39,27 @@ def test_bang_result_injected(tmp_path, tuan_home):
 
 
 def test_bang_dangerous_blocked(tmp_path, tuan_home):
-    agent = _make_agent(tmp_path, tuan_home)
+    """无确认通道时, 危险命令必须 fail-closed 被拦截。
+
+    注意: 不能给 agent 传 confirm=lambda _p: True —— 那等于模拟用户显式同意,
+    而 run_shell 的硬红线设计是「不自动执行, 但有人确认时可人工放行」, 于是命令
+    会真的跑起来 (Windows 下 rm 不存在, 表现为 "'rm' is not recognized")。
+    本用例测的是安全保证本身: 没有人在场时绝不允许执行。
+    """
+    kernel = build_kernel()
+    config = kernel.require("config")
+    agent = Agent(kernel=kernel, config=config, workspace=str(tmp_path),
+                  confirm=None)
     out = run_bang_command(agent, "!rm -rf /", display=False)
     assert "已拦截" in out
+
+
+def test_bang_dangerous_confirmed_proceeds(tmp_path, tuan_home):
+    """有确认通道且用户显式放行时, 硬红线可人工放行 (设计如此, 非豁免通道)。"""
+    kernel = build_kernel()
+    config = kernel.require("config")
+    agent = Agent(kernel=kernel, config=config, workspace=str(tmp_path),
+                  confirm=lambda _p: True)
+    out = run_bang_command(agent, "!echo confirmed-ok", display=False)
+    assert "confirmed-ok" in out
+

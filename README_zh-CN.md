@@ -102,17 +102,21 @@ tuan ecosystem link                        # 反向挂载：让 Claude Code/Herm
 上文的生态桥在本体之间搬运**资产**。而 Agent-of-Agents 调度层（`tuan_cli/web/dispatch_server.py` + `tuan_cli/agents/`）搬运的是**任务**——它把你的手机或浏览器变成一块遥控器，统管本机装好的每一个编码 Agent。
 
 - **五家适配器，一套协议。** Claude Code、Codex、Hermes、DeepSeek Harness、Kimi Code 各有一个轻量 `AgentAdapter`——一次 PATH 探测、一个 `build_command`、一套流式 `AgentEvent` 协议。不 fork、不复刻任何一个 Agent，青小团只驱动它们原生的 CLI。
-- **按 mode + 健康度自动择优。** 任务带一个 `mode`（`chat` / `collaboration` / `lingma` / `gantong` / `boundless`），路由器给每个**已安装且健康**的 Agent 按 `weights[mode]` 打分取最高；不健康的直接跳过；若一个可用的都没有，返回干净的 `NO_AGENT_AVAILABLE`，而不是静默兜底。
+- **按 mode + 健康度自动择优。** 任务带一个 `mode`（`chat` / `collaboration` / `lingma` / `gantong` / `boundless`），路由器并行探测全部适配器后按 `weights[mode]` + 健康分排序取最高——健康分：100 = PATH 命中且 `--version` 校验通过，70 = 版本未知，60 = 疑似同名工具，0 = 未安装；不健康的直接跳过；若一个可用的都没有，返回干净的 `NO_AGENT_AVAILABLE`，而不是静默兜底。
 - **显式指定，fail-closed。** 传 `agent: "codex"` 可钉死引擎；未知 id 返回 `AGENT_NOT_FOUND`、没装返回 `AGENT_UNHEALTHY`——和青小团其余部分一样，越权即拒绝。
 - **委派不搬家·运行态版。** 这是生态桥的运行态孪生：不是把技能*搬进*青小团，而是把*整桩任务*交给对方的原生环境执行——它的配置、记忆、技能、MCP 都原样不动。桥搬运资产，调度层跑活。
 - **流式 + 审批。** 每家 Agent 经同一条 WebSocket 流式回传 `text` / `tool_call` / `stderr` / `approval` 事件；高风险步骤弹出 `[TUAN_APPROVAL]` 闸门，手机端可允许或拒绝，远程操控也不掉安全底线。
+- **有自己的独立命令。** 调度层不止能跑服务器——`tuan dispatch` 让任意终端直接判定与派活（见下）。
 
 ```bash
-python -m tuan_cli.web.dispatch_server --port 8788   # WebSocket 在 ws://HOST:8788/tuan/dispatch/v1
+tuan dispatch status                       # 探测本机 5 家代理（健康分 + 版本）
+tuan dispatch route "修一下这个 flaky 测试"  # dry-run：完整打分明细，不执行
+tuan dispatch run "修一下这个 flaky 测试"    # 路由 → 流式执行 → 汇总（--agent/--mode/--timeout）
+tuan dispatch serve --port 8788            # WebSocket 在 ws://HOST:8788/tuan/dispatch/v1
 # 手机 / WebUI → 选 mode → 青小团路由到本机最合适 Agent → 事件流回传
 ```
 
-- 协议文档：[`docs/TUAN-DISPATCH-PROTOCOL.md`](docs/TUAN-DISPATCH-PROTOCOL.md)（事件 schema、hello 握手、审批流）。
+- 协议文档：[`docs/TUAN-DISPATCH-PROTOCOL.md`](docs/TUAN-DISPATCH-PROTOCOL.md)（事件 schema、hello 握手、审批流、`tuan dispatch` 命令参考）。
 
 ---
 

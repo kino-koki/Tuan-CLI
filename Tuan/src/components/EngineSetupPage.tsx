@@ -153,7 +153,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
         <div className="flex-1 flex flex-col items-center justify-center px-6">
           <TermWindow
             className="boot-item-in w-[400px] max-w-full"
-            title="tuan-chat — engine setup"
+            title="tuan — engine setup"
             right={appVersion ? `v${appVersion}` : undefined}
           >
             <div className="flex flex-col items-center py-7 text-center">
@@ -181,13 +181,13 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
           <BrandHero size="lg" />
           <TermWindow
             className="onboard-card-in w-full"
-            title="tuan-chat — status"
+            title="tuan — status"
             right={appVersion ? `v${appVersion}` : undefined}
             footer={<span>{engineStatus.ok ? 'engine: ready' : 'engine: not ready'}</span>}
           >
             <div className="flex items-center gap-2">
               <span className="term-prompt">&gt;_</span>
-              <span className="tuan-mono text-[13px] font-medium text-tuan-text">青小团 Tuan-Chat</span>
+              <span className="tuan-mono text-[13px] font-medium text-tuan-text">青小团 Tuan</span>
             </div>
             <div className="mt-4 space-y-1.5">
               {engineStatus.app_version && (
@@ -238,7 +238,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
 
         <TermWindow
           className="onboard-card-in w-full"
-          title="tuan-chat — engine setup"
+          title="tuan — engine setup"
           right={appVersion ? `v${appVersion}` : undefined}
           footer={
             <>
@@ -250,7 +250,7 @@ export default function EngineSetupPage({ engineStatus, onRecheck, onEnterDegrad
           {/* `>_` 标识行 + meta 行（实时自检值） */}
           <div className="flex items-center gap-2">
             <span className="term-prompt">&gt;_</span>
-            <span className="tuan-mono text-[13px] font-medium text-tuan-text">青小团 Tuan-Chat</span>
+            <span className="tuan-mono text-[13px] font-medium text-tuan-text">青小团 Tuan</span>
           </div>
           <div className="tuan-mono term-meta">
             <span className="term-meta-key">engine:</span>{' '}

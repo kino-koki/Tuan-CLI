@@ -126,7 +126,7 @@ pub fn resolve_python(exe_dir: &Path) -> Result<PathBuf> {
               pip install -r \"<安装目录>\\engine\\requirements.txt\"\n\
          3. 设置环境变量 TUAN_PYTHON 指向该解释器（例如）：\n\
               setx TUAN_PYTHON \"C:\\Python312\\python.exe\"\n\
-         4. 重启 Tuan-Chat。\n\
+         4. 重启 Tuan。\n\
          \n\
          【方式二】便携运行时（离线可用，无需系统 Python）\n\
          从 https://github.com/indygreg/python-build-standalone 下载 python 3.12 压缩包，\n\
@@ -415,7 +415,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let d = std::env::temp_dir().join(format!("tuan-app-resolve-{}-{}", std::process::id(), n));
+        let d = std::env::temp_dir().join(format!("tuan-resolve-{}-{}", std::process::id(), n));
         let _ = fs::create_dir_all(&d);
         d
     }

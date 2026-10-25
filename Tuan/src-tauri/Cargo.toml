@@ -1,7 +1,7 @@
 [package]
-name = "tuan-app"
+name = "tuan"
 version = "0.1.0"
-description = "Tuan-Chat — Tauri shell for the Tuan-CLI engine"
+description = "Tuan — Tauri shell for the Tuan-CLI engine"
 edition = "2021"
 rust-version = "1.77"
 

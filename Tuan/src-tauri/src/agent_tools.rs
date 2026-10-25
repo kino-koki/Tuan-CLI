@@ -315,7 +315,7 @@ pub async fn run_tool(
             }
             let client = match reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
-                .user_agent("Mozilla/5.0 (Linux; Android) Tuan-Chat/0.1")
+                .user_agent("Mozilla/5.0 (Linux; Android) Tuan/0.1")
                 .build()
             {
                 Ok(c) => c,
@@ -367,7 +367,7 @@ pub async fn run_tool(
             // 只需替换此处实现，工具契约（入参/返回）对模型不变。
             let client = match reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
-                .user_agent("Mozilla/5.0 (Linux; Android) Tuan-Chat/0.1")
+                .user_agent("Mozilla/5.0 (Linux; Android) Tuan/0.1")
                 .build()
             {
                 Ok(c) => c,

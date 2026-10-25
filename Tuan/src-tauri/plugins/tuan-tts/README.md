@@ -49,7 +49,7 @@ npx tauri android dev
 ## 能力边界（如实说明）
 
 - 音色 = 系统 TTS 当前音色（Android 设置 → 文字转语音 中用户自己选的语音），
-  Tuan-Chat 里的音色下拉在安卓端不生效（仅语言生效）。
+  Tuan 里的音色下拉在安卓端不生效（仅语言生效）。
 - 10 语言映射：zh_CN/zh_TW/en/ja/ko/es/fr/de/pt_BR/ru →
   zh-CN/zh-TW/en-US/ja-JP/ko-KR/es-ES/fr-FR/de-DE/pt-BR/ru-RU。
 - 引擎状态栏在安卓端显示「系统 TTS」。

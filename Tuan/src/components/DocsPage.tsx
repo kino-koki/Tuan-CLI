@@ -17,7 +17,7 @@ interface Props {
 /**
  * 内置技术文档模块。
  *
- * 设计原则：与 Tuan-Chat 内部 UI 完全同源——
+ * 设计原则：与 Tuan 内部 UI 完全同源——
  * - 页面骨架用 page-shell（安全区）与 GuidePage 一致；
  * - 正文渲染复用 ReplyMarkdown（.tuan-md / .tuan-codeblock），
  *   与聊天里的 Markdown 排版、代码块、复制按钮一模一样；
@@ -65,7 +65,7 @@ export default function DocsPage({ activeId, onActiveChange }: Props) {
         </span>
       </div>
       <p className="text-[13.5px] text-tuan-textSecondary mb-5">
-        青小团的架构、安全模型、调度协议与桌面端实现，全部离线可读。内容随 Tuan-Chat 内置更新。
+        青小团的架构、安全模型、调度协议与桌面端实现，全部离线可读。内容随 Tuan 内置更新。
       </p>
 
       {/* 搜索框（与侧栏搜索同一视觉语言） */}
