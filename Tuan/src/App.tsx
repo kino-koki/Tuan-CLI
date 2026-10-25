@@ -235,6 +235,14 @@ export default function App() {
     });
   }, []);
 
+  // T-1.4 重开引导：「设置与外观」分片 requestOnboardingReopen() dispatch 的
+  // 'tuan:open-onboarding' CustomEvent → 即时弹出向导（无需重启应用）
+  useEffect(() => {
+    const onReopen = () => setOnboardingOpen(true);
+    window.addEventListener('tuan:open-onboarding', onReopen);
+    return () => window.removeEventListener('tuan:open-onboarding', onReopen);
+  }, []);
+
   useEffect(() => {
     const onResize = () => {
       const n = typeof window !== 'undefined' && window.innerWidth < 820;
