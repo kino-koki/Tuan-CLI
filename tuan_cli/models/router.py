@@ -519,6 +519,28 @@ class ModelRouter:
         available_providers: Optional[List[str]] = None,
         difficulty_override: int = 0,
     ) -> Dict[str, Any]:
+        """能力感知的自动路由决策 (外层包装: 叠加 C-5.4 离线自动降级)。
+
+        实际决策逻辑见 :meth:`_decide_raw`; 本层在其产出后调用
+        :func:`apply_offline_fallback` —— 离线且检测到本地模型时,
+        把云端决策改写为本地模型; 网络恢复时原样透传 (C-5.6)。
+        """
+        decision = self._decide_raw(
+            task, context, current_provider, current_model,
+            has_images, available_providers, difficulty_override,
+        )
+        return apply_offline_fallback(decision)
+
+    def _decide_raw(
+        self,
+        task: str,
+        context: str = "",
+        current_provider: Optional[str] = None,
+        current_model: Optional[str] = None,
+        has_images: bool = False,
+        available_providers: Optional[List[str]] = None,
+        difficulty_override: int = 0,
+    ) -> Dict[str, Any]:
         """能力感知的自动路由决策: 返回是否应切换模型及目标。
 
         决策规则 (省钱 + 不降质 + 失败保险):
@@ -585,6 +607,77 @@ class ModelRouter:
             "switch": switch,
             "reason": reason,
         }
+
+
+# ------------------------------------------------------------------ C-5.4 离线自动降级
+# 云端不通 -> 检测本地模型 -> 自动切本地; 网络恢复 -> 自动切回云端 (C-5.6)。
+
+#: 进程内标记: 当前是否已触发离线降级
+_offline_degrade_active: bool = False
+
+
+def _pick_local_model() -> str:
+    """探测本机已安装的本地模型名 (Ollama 优先, 其次 llama.cpp); 无则空串。"""
+    try:
+        from .offline import detect_local_models
+
+        status = detect_local_models()
+        if status.get("ollama", {}).get("models"):
+            return str(status["ollama"]["models"][0])
+        if status.get("llamacpp", {}).get("models"):
+            return str(status["llamacpp"]["models"][0])
+    except Exception:  # noqa: BLE001 - 探测失败按无本地模型处理
+        pass
+    return ""
+
+
+def apply_offline_fallback(decision: Dict[str, Any]) -> Dict[str, Any]:
+    """把云端路由决策按网络状态改写 (C-5.4 / C-5.6)。
+
+    - 在线: 原样返回; 若此前处于离线降级则清标记 (网络恢复自动切回云端);
+    - 离线 + 有本地模型: 改写为 ollama/<本地模型>;
+    - 离线 + 无本地模型: 不改写 (上层按 NetworkError 友好模板提示)。
+
+    网络探测走 ``core.network_check`` 的 10s 进程内缓存, 不会每次路由都真 ping。
+    """
+    global _offline_degrade_active
+    try:
+        from ..core.network_check import is_offline
+
+        offline = is_offline()
+    except Exception:  # noqa: BLE001 - 检测模块异常时按在线处理, 不干扰主流程
+        return decision
+
+    if not offline:
+        if _offline_degrade_active:
+            _offline_degrade_active = False
+        return decision
+
+    # 已经是本地模型决策则不重复改写
+    if decision.get("provider") in ("ollama", "llamacpp", "local"):
+        return decision
+
+    local_model = _pick_local_model()
+    if not local_model:
+        return decision  # 无本地模型 -> 交给上层友好报错
+
+    _offline_degrade_active = True
+    return {
+        **decision,
+        "provider": "ollama",
+        "model": local_model,
+        "base_url": "http://localhost:11434/v1",
+        "api_key_env": "",
+        "switch": True,
+        "reason": f"检测到离线, 自动切换到本地模型 ollama/{local_model} (联网后自动切回)",
+        "offline_fallback": True,
+    }
+
+
+def offline_degrade_active() -> bool:
+    """当前是否已触发离线降级 (状态栏/日志展示用)。"""
+    return _offline_degrade_active
+
 
 # ---- 工具函数 ----
 
