@@ -15,6 +15,7 @@ import atexit
 import json
 import logging
 import os
+import queue
 import threading
 import time
 from dataclasses import dataclass, field
@@ -103,7 +104,11 @@ class SecurityEventBus:
         ))
     """
 
-    def __init__(self, persist_path: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        persist_path: Optional[Path] = None,
+        async_alerter: bool = False,
+    ) -> None:
         self._handlers: Dict[str, List[Callable[[SecurityEvent], None]]] = {}
         self._wildcard_handlers: List[Callable[[SecurityEvent], None]] = []
         self._events: List[SecurityEvent] = []
@@ -112,6 +117,15 @@ class SecurityEventBus:
         # 实时告警回调: 对 critical/high 级安全事件实时通知 (桌面通知/蜂鸣等)。
         # 默认 None (不告警); 由交互式会话在启动时为总线注册一个 alerter。
         self._alerter: Optional[Callable[[SecurityEvent], None]] = None
+        # 异步告警派发: async_alerter=True 时告警回调走队列+守护线程,
+        # 不阻塞安全决策热路径 (桌面通知底层同步 spawn powershell 可能阻塞 ~10s)。
+        # 默认 False 保持同步, 向后兼容。
+        self._async_alerter = async_alerter
+        self._alert_queue: Optional["queue.Queue[SecurityEvent]"] = None
+        self._alert_worker: Optional[threading.Thread] = None
+        self._alert_worker_started = threading.Lock()
+        self._alert_pending = 0
+        self._alert_cv = threading.Condition()
         # 统计计数器
         self._counts: Dict[str, int] = {}
         self._severity_counts: Dict[str, int] = {}
@@ -155,6 +169,52 @@ class SecurityEventBus:
         线程安全且永不抛异常 (emit 会在锁外调用它并吞掉异常)。
         """
         self._alerter = alerter
+
+    # ---------------------------------------------------------- 异步告警派发
+
+    def _ensure_alert_worker(self) -> None:
+        """懒启动告警队列与守护线程 (首次真需要异步派发时才建线程)。"""
+        with self._alert_worker_started:
+            if self._alert_queue is not None:
+                return
+            self._alert_queue = queue.Queue(maxsize=64)
+            self._alert_worker = threading.Thread(
+                target=self._alert_worker_loop,
+                daemon=True,
+                name="SecurityEventBus-alert-worker",
+            )
+            self._alert_worker.start()
+
+    def _alert_worker_loop(self) -> None:
+        """守护线程主循环: FIFO 消费告警队列, 调用 alerter 并吞异常。"""
+        while True:
+            event = self._alert_queue.get()  # type: ignore[union-attr]
+            try:
+                alerter = self._alerter
+                if alerter is not None:
+                    alerter(event)
+            except Exception as exc:  # noqa: BLE001
+                log.debug("异步安全告警回调异常: %s", exc)
+            finally:
+                self._alert_queue.task_done()  # type: ignore[union-attr]
+                with self._alert_cv:
+                    self._alert_pending -= 1
+                    self._alert_cv.notify_all()
+
+    def flush_alerts(self, timeout: float = 5.0) -> None:
+        """阻塞等待告警队列清空 (供测试 / 收尾等待, 避免遗留未派发的告警)。
+
+        async_alerter 为 False 或 worker 从未启动时立即返回。
+        """
+        if not self._async_alerter or self._alert_queue is None:
+            return
+        with self._alert_cv:
+            deadline = time.monotonic() + timeout
+            while self._alert_pending > 0:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._alert_cv.wait(timeout=remaining)
 
     # 触发实时告警的事件类型 (只告警真正的安全决策, 避免噪音)
     _ALERT_EVENT_TYPES = frozenset({
@@ -207,10 +267,23 @@ class SecurityEventBus:
         if (self._alerter is not None
                 and event.event_type in self._ALERT_EVENT_TYPES
                 and event.severity in ("critical", "high")):
-            try:
-                self._alerter(event)
-            except Exception as exc:  # noqa: BLE001
-                log.debug("安全告警回调异常: %s", exc)
+            if self._async_alerter:
+                # 异步模式: 入队, 由守护线程派发, 不阻塞安全决策热路径
+                self._ensure_alert_worker()
+                with self._alert_cv:
+                    self._alert_pending += 1
+                try:
+                    self._alert_queue.put_nowait(event)
+                except queue.Full:
+                    with self._alert_cv:
+                        self._alert_pending -= 1
+                        self._alert_cv.notify_all()
+                    log.warning("安全告警队列已满 (maxsize=64), 丢弃告警: %s", event.event_type)
+            else:
+                try:
+                    self._alerter(event)
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("安全告警回调异常: %s", exc)
 
         # 落盘 (如果配置了持久化路径)
         # 安全审计是产品核心承诺, 落盘必须保证完整性和失败可见。
@@ -368,6 +441,9 @@ class SecurityEventBus:
         在进程退出前调用, 确保所有审计事件完整落盘。
         """
         self.flush()
+        # 异步告警队列也要排空, 否则进程退出时未派发的告警会静默丢弃。
+        # flush_alerts() 在同步模式下是立即返回的空操作。
+        self.flush_alerts()
 
     def _flush_to_disk(self) -> None:
         """内部方法: 把缓冲区写入磁盘。调用方需持有 _write_lock。
@@ -401,7 +477,10 @@ class SecurityEventBus:
 _global_bus: Optional[SecurityEventBus] = None
 
 
-def get_security_bus(persist_path: Optional[Path] = None) -> SecurityEventBus:
+def get_security_bus(
+    persist_path: Optional[Path] = None,
+    async_alerter: bool = False,
+) -> SecurityEventBus:
     """获取全局安全事件总线单例。
 
     默认开启落盘: 未显式传入 persist_path 时, 自动持久化到
@@ -410,6 +489,9 @@ def get_security_bus(persist_path: Optional[Path] = None) -> SecurityEventBus:
 
     若已存在单例但未设置持久化路径, 传入 persist_path 会补设 (方便调用方在创建后
     仍可开启审计落盘); 已有路径时不会被覆盖。
+
+    async_alerter=True 时启用异步告警派发 (队列 + 守护线程), 避免桌面通知
+    的同步阻塞拖慢安全决策热路径。
     """
     global _global_bus
     if _global_bus is None:
@@ -419,9 +501,16 @@ def get_security_bus(persist_path: Optional[Path] = None) -> SecurityEventBus:
                 persist_path = Path(home_dir()) / "security-audit.jsonl"
             except Exception:  # noqa: BLE001
                 persist_path = None
-        _global_bus = SecurityEventBus(persist_path=persist_path)
+        _global_bus = SecurityEventBus(persist_path=persist_path, async_alerter=async_alerter)
         # 进程退出时自动刷盘, 确保审计日志完整
         atexit.register(_global_bus.shutdown)
     elif persist_path is not None and _global_bus._persist_path is None:
         _global_bus._persist_path = persist_path
+    # 单例已存在时, async_alerter 同样要能后补: 告警 worker 是首次异步
+    # 派发才懒启动的, 所以这里翻转标志位是安全的。不补的话, 任何早于
+    # _setup_security_alerts() 的 get_security_bus() 调用 (默认分支就会
+    # 创建带落盘路径的单例) 都会把告警永久钉在同步路径, 桌面通知的
+    # 阻塞又会回到安全决策热路径上。
+    if async_alerter and not _global_bus._async_alerter:
+        _global_bus._async_alerter = True
     return _global_bus

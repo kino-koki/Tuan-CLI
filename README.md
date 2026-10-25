@@ -96,6 +96,8 @@ class MyTool(Plugin):
 
 **Git history note (open-source transparency):** This repository's Git commit history was **deliberately rebuilt on 2026-09-26 — the early commit history was intentionally overwritten by the author**; the per-commit evolution before that date is no longer preserved. The current code is fully reviewable from architecture to implementation; for feature evolution before 2026-09-26, please rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We choose to disclose this plainly — no polishing, no hiding.
 
+**Provenance & auditability:** the rebuild above has concrete audit consequences (five `init` commits interleaved with feature work, two author identities on non-contiguous ranges, two unsigned tags, an empty reflog, and two discarded `.git` backup stores still present in the working tree). See [PROVENANCE.md](PROVENANCE.md) for the verifiable evidence and the remediation items.
+
 ---
 
 ## Inspiration & attribution

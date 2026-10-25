@@ -1,12 +1,15 @@
 ---
 name: API 设计
 description: RESTful API 设计模式：资源命名/状态码/错误处理/版本控制/认证授权
+activation: auto
+triggers: API, api, 接口, REST, RESTful, GraphQL, endpoint, HTTP
+provides: api-design, rest-api
+suggests: tuan-api, code-architect
+priority: 85
 tags: [api-design, rest, http, endpoint, routing]
-priority: 7
 updated_at: 0
 use_count: 0
 ---
-
 # API 设计
 
 好的 API 像好的代码：自解释、一致、可预测。

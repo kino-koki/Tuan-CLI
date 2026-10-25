@@ -47,7 +47,7 @@ def is_first_run(home: Optional[Path] = None) -> bool:
     try:
         cfg = (Path(home) if home else home_dir()) / "config.yaml"
         if cfg.exists():
-            import yaml
+            from .. import _yaml as yaml
 
             data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
             ob = data.get("onboarding") or {}

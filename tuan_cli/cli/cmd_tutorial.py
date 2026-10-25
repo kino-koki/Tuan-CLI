@@ -18,11 +18,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-import yaml
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 
+from .. import _yaml as yaml  # 后端门面: 有 PyYAML 用 PyYAML, 否则用内置 stdlib 实现
 from ..ui.plain_console import console
 
 _TUTORIAL_DIR = Path(__file__).resolve().parent.parent / "resources" / "tutorials"

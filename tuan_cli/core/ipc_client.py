@@ -79,13 +79,23 @@ class IpcClient:
             cmd = [sys.executable, "-m", module]
 
         try:
+            # 强制管道两端都用 UTF-8: 引擎响应里含中文 (如「强制推送」「硬红线」),
+            # 若依赖 locale 默认编码, 子进程继承 PYTHONIOENCODING=utf-8 而父端按
+            # cp936 解码会抛 UnicodeDecodeError, 被 _read_loop 吞掉后误报
+            # 「engine closed」(实际引擎仍存活)。显式编码 + 同步子进程环境变量,
+            # 使任何 locale / 任何 PYTHONIOENCODING 设置下都稳定可读写。
+            env = dict(os.environ)
+            env["PYTHONIOENCODING"] = "utf-8"
             self.proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
+                env=env,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except OSError as exc:
@@ -143,14 +153,20 @@ class IpcClient:
                 elif msg_id in self._responses:
                     self._responses[msg_id].put(msg)
         except Exception as exc:  # noqa: BLE001
-            log.debug("引擎读取循环异常 (%s): %s", self.engine_name, exc)
+            # 读取循环异常 ≠ 引擎崩溃: 解码失败时引擎可能仍在运行。记录真实原因,
+            # 并把它带进错误信息, 否则调用方只会看到误导性的「engine closed」。
+            log.warning("引擎读取循环异常 (%s): %s", self.engine_name, exc)
+            read_error = f"{type(exc).__name__}: {exc}"
+        else:
+            read_error = None
         finally:
-            # 管道已断 (引擎退出/崩溃): 让所有挂起的请求/流立即失败,
-            # 避免 request() 永久阻塞在队列等待上。
+            # 管道已断 (引擎退出/崩溃, 或读取循环自身失败): 让所有挂起的请求/流
+            # 立即失败, 避免 request() 永久阻塞在队列等待上。
+            detail = f" ({read_error})" if read_error else ""
             for q in list(self._responses.values()):
-                q.put({"ok": False, "error": "engine closed"})
+                q.put({"ok": False, "error": "engine closed" + detail})
             for q in list(self._streams.values()):
-                q.put({"ok": False, "error": "engine closed"})
+                q.put({"ok": False, "error": "engine closed" + detail})
 
     def request(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 60.0,
                 on_stream: Any = None) -> Any:

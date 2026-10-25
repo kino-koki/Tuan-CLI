@@ -18,13 +18,9 @@ from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 
-# 优先尝试导入 PyYAML; 若不可用 (隔离环境/未安装), 降级为内置极简解析器
-_yaml: Any = None
-try:
-    import yaml as _yaml_mod
-    _yaml = _yaml_mod
-except ImportError:
-    _yaml = None
+# YAML 后端门面: 有 PyYAML 就用 PyYAML (完整规范), 否则用内置 stdlib 实现。
+# 两者对本仓库全部 YAML 文件解析结果一致, 因此 PyYAML 可真正作为可选依赖。
+from .. import _yaml  # noqa: E402
 
 from .defaults import (
     APP_DIR_NAME,
@@ -273,110 +269,13 @@ def _chmod_600(path: Path) -> None:
         log.debug("设置配置文件权限失败 (%s): %s", path, exc)
 
 
-# ---- 极简 YAML 子集解析器 (PyYAML 不可用时的降级) ----
-def _parse_yaml_value(val: str) -> Any:
-    """解析单个 YAML 值: 数字/布尔/null/列表/字符串。"""
-    val = val.strip()
-    if not val:
-        return ""
-    if val.startswith("[") and val.endswith("]"):
-        inner = val[1:-1].strip()
-        if not inner:
-            return []
-        return [_parse_yaml_value(x) for x in inner.split(",") if x.strip()]
-    if val.lower() in ("true", "false"):
-        return val.lower() == "true"
-    if val.lower() in ("null", "none", "~"):
-        return None
-    try:
-        return int(val)
-    except ValueError:
-        pass
-    try:
-        return float(val)
-    except ValueError:
-        pass
-    return val.strip('"').strip("'")
-
-
-def _mini_yaml_load(text: str) -> Dict[str, Any]:
-    """极简 YAML 解析: 支持缩进嵌套 + 键值列表 (PyYAML 不可用时的降级)。"""
-    lines = text.splitlines()
-    root: Dict[str, Any] = {}
-    # 用栈维护嵌套: [(indent_level, dict_or_list_ref, key_or_None)]
-    # key_or_None: 如果当前节点是 dict 中某个 key 的值, 记录 key 名
-    stack: list[tuple[int, Any, Optional[str]]] = [(-1, root, None)]
-
-    for line in lines:
-        stripped = line.lstrip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        indent = len(line) - len(stripped)
-        if " #" in stripped:
-            stripped = stripped[:stripped.index(" #")].rstrip()
-
-        # ---- YAML 列表项: "- value" 或 "- " ----
-        if stripped.startswith("- ") or stripped == "-":
-            item_val = stripped[2:].strip() if stripped.startswith("- ") else ""
-            # 检查当前栈顶是否已经是 list (同级列表项直接追加)
-            if stack and isinstance(stack[-1][1], list):
-                stack[-1][1].append(_parse_yaml_value(item_val) if item_val else {})
-                continue
-            # 新列表的开始: 父节点应该是空 dict, 转换为 list
-            current_key = stack[-1][2] if stack else None
-            # 弹出到合适的父层级
-            while len(stack) > 1 and stack[-1][0] >= indent:
-                stack.pop()
-            parent_node = stack[-1][1]
-            if isinstance(parent_node, dict) and not parent_node and current_key:
-                # 转换空 dict 为 list
-                new_list: list = [_parse_yaml_value(item_val)] if item_val else []
-                if len(stack) > 1:
-                    grandparent = stack[-2][1]
-                    if isinstance(grandparent, dict):
-                        grandparent[current_key] = new_list
-                stack[-1] = (indent, new_list, current_key)
-            continue
-
-        # ---- 普通键值对 ----
-        if ":" not in stripped:
-            continue
-        key, _, val = stripped.partition(":")
-        key = key.strip()
-        val = val.strip()
-
-        # 弹出不再属于当前层级的栈帧
-        while len(stack) > 1 and stack[-1][0] >= indent:
-            stack.pop()
-
-        parent_node = stack[-1][1]
-
-        if not val:
-            # 子节点: 新建 dict 压栈
-            child_d: Dict[str, Any] = {}
-            if isinstance(parent_node, dict):
-                parent_node[key] = child_d
-            stack.append((indent, child_d, key))
-        elif val.startswith("["):
-            if isinstance(parent_node, dict):
-                parent_node[key] = _parse_yaml_value(val)
-        else:
-            if isinstance(parent_node, dict):
-                parent_node[key] = _parse_yaml_value(val)
-
-    return root
-
-
 def _load_yaml(path: Path) -> Dict[str, Any]:
     if not path.exists():
         return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
-        if _yaml is not None:
-            data = _yaml.safe_load(text)
-        else:
-            data = _mini_yaml_load(text)
+        data = _yaml.safe_load(text)
         return data or {}
     except Exception as exc:  # noqa: BLE001
         log.debug("YAML 配置加载失败 (%s): %s", path, exc)
@@ -390,10 +289,7 @@ def dump_yaml(data: Dict[str, Any], path: Path) -> None:
         fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                if _yaml is not None:
-                    _yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
-                else:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                _yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temp_name, path)
@@ -409,9 +305,7 @@ def dump_yaml(data: Dict[str, Any], path: Path) -> None:
 def to_yaml_str(data: Dict[str, Any]) -> str:
     """把配置序列化为 YAML 字符串 (用于 tuan config dump 打印)。"""
     try:
-        if _yaml is not None:
-            return str(_yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
-        return json.dumps(data, ensure_ascii=False, indent=2)
+        return str(_yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
     except Exception:
         return json.dumps(data, ensure_ascii=False, indent=2)
 

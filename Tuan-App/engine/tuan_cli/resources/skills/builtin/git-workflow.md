@@ -1,12 +1,15 @@
 ---
 name: Git 工作流
 description: Git 版本控制最佳实践：提交规范/分支策略/合并冲突/rebase/cherry-pick
+activation: auto
+triggers: Git, git, 提交, commit, 分支, branch, merge, rebase
+provides: git-workflow
+suggests: tuan-ci-cd
+priority: 75
 tags: [git, version-control, commit, branch, merge, rebase]
-priority: 6
 updated_at: 0
 use_count: 0
 ---
-
 # Git 工作流
 
 Git 不只是版本控制，是团队协作的语言。
@@ -177,3 +180,16 @@ git commit --amend -m "new message"
 - **不要提交密钥** — 用 `.gitignore` 排除 `.env`
 - **已经提交了密钥** — 立即轮换密钥，用 `git filter-branch` 从历史中删除
 - **强制推送前** — 三思，再三思，确保不会丢失别人的工作
+
+## 安全提交与 PR 流程
+
+改完代码、准备交付时按此顺序:
+
+1. 自测: `run_tests` 跑通 (无测试则至少 `run_shell` 做语法/lint 检查)。
+2. 审查: `git_status` + `git diff` 看清改了什么, 确认没有调试残留、密钥泄露。
+3. 提交: 小步提交, 消息用祈使句、说明"为什么"而非"做了什么"。
+   - 例: `git commit -m "fix(auth): 修复 token 过期未刷新的竞态"`
+4. 推送与 PR: 推送分支, 用 `run_shell` 调 `gh pr create`(若仓库在 GitHub)。
+   PR 描述写清: 背景、改动点、测试结果、风险。
+
+**红线**: 绝不在提交里包含 `.env`、密钥、凭证; 删除类操作先确认可恢复。

@@ -397,11 +397,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "fetch_max_chars": 15000,          # web_fetch 抓取正文最大字符数 (token 节省)
         "fetch_timeout": 30,               # 网络请求超时 (秒)
     },
-    # 运行模式: standard (默认, 危险操作逐项确认) / yolo (全部自动批准, 风险自担)
+    # 运行模式（§3 五模式 + 历史三档别名兼容）:
+    #   current: 当前模式 ID（仅通过 switch_mode 写入，不在默认中预置）
+    #   default: 历史兼容字段，新默认 "chat"（最小权限）；旧值 standard/yolo/plan 全部保留为别名
+    #   locked: 锁定模式，除 boundless→降级 外一律拒绝切换
+    #   allow_switch: 允许的目标模式列表（空=不限制）
+    #   yolo_require_confirm: YOLO 模式下仍强制确认的工具列表
     "mode": {
-        "default": "standard",
-        # YOLO 模式下仍保留的"最后红线": 这些工具即便在 yolo 也强制确认
-        # (留空 = 全部自动批准; 一般只保留不可逆/对外暴露的操作)
+        "current": "chat",
+        "default": "chat",
+        "locked": False,
+        "allow_switch": [],
         "yolo_require_confirm": [],
     },
     "permissions": {

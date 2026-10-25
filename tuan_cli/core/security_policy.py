@@ -345,11 +345,7 @@ class SecurityPolicyEngine:
         Returns:
             加载的规则数
         """
-        try:
-            import yaml
-        except ImportError:
-            log.warning("PyYAML 未安装, 无法加载 YAML 策略")
-            return 0
+        from .. import _yaml as yaml
 
         try:
             data = yaml.safe_load(yaml_text)
@@ -422,12 +418,10 @@ class SecurityPolicyEngine:
     def export_rules(self, source: Optional[str] = None) -> str:
         """导出规则为 YAML。"""
         rules = self.list_rules(source)
-        try:
-            import yaml
-            data = {"rules": [r.to_dict() for r in rules]}
-            return str(yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False))
-        except ImportError:
-            return json.dumps({"rules": [r.to_dict() for r in rules]}, ensure_ascii=False, indent=2)
+        from .. import _yaml as yaml
+
+        data = {"rules": [r.to_dict() for r in rules]}
+        return str(yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False))
 
     def stats(self) -> Dict[str, Any]:
         """策略统计。"""

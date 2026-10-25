@@ -86,19 +86,44 @@ if hasattr(signal, "SIGALRM"):
         signal.alarm(0)
 
 # ------------------------------------------------------------------ 依赖健康检查
-# 缺少 httpx/rich/yaml 会导致 24+ 个测试模块 collection error,
-# 这里统一拦截并给出友好提示。
-_missing = []
-for _mod in ("httpx", "rich", "yaml"):
+# 注意区分两类依赖, 不要混为一谈:
+#
+# (1) rich —— **运行时核心依赖**, 唯一真·必需项 (ui/repl.py 模块级导入)。
+#     缺了 `tuan` 入口直接起不来, 因此缺失必须硬失败。
+#
+# (2) httpx / pyyaml / openai —— **仅测试代码需要**, 不是运行时的东西。
+#     运行期它们已被 tuan_cli 内部的零依赖实现替代:
+#         httpx  -> tuan_cli._http          (stdlib socket/ssl)
+#         pyyaml -> tuan_cli._yaml          (stdlib 子集解析器)
+#         openai -> tuan_cli._openai_sdk    (stdlib 传输 + SSE)
+#     测试里 import 它们是为了拿「真实第三方 SDK」当回归基准 (对照验证 shim),
+#     或为了走「装了增强项」的路径。所以它们属于 dev extra, 不属于安装包本身。
+#
+# 历史上这里曾把 httpx/yaml 和 rich 并列要求, 而它们又没写进 pyproject 的核心
+# 依赖 —— 等于文档说「可选」、测试又说「必需」, 是典型的双向误导。现在按真实
+# 归属拆开, 提示语也指向正确的安装方式。
+_missing_runtime, _missing_dev = [], []
+for _mod in ("rich",):
     try:
         __import__(_mod)
     except (ImportError, TypeError):
-        _missing.append(_mod)
-if _missing:
+        _missing_runtime.append(_mod)
+for _mod in ("yaml", "httpx", "openai"):
+    try:
+        __import__(_mod)
+    except (ImportError, TypeError):
+        _missing_dev.append(_mod)
+if _missing_runtime:
     pytest.exit(
-        f"缺少测试依赖: {', '.join(_missing)}\n"
-        "请先激活虚拟环境 (Windows: .venv/Scripts/activate) 再运行测试,\n"
-        "或执行: pip install httpx rich pyyaml",
+        f"缺少运行时核心依赖: {', '.join(_missing_runtime)}\n"
+        "请执行: pip install -e .\n",
+        returncode=1,
+    )
+if _missing_dev:
+    pytest.exit(
+        f"缺少测试对照依赖: {', '.join(_missing_dev)} (仅测试需要, 运行时不需要)\n"
+        "测试代码用真实第三方 SDK 作为自研 shim 的回归基准, 请执行:\n"
+        "    pip install -e \".[dev]\"\n",
         returncode=1,
     )
 

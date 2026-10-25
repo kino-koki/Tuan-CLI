@@ -1,10 +1,13 @@
 ---
 name: 终端工具高效使用
 description: 在 CLI 环境下用 tuan 内置工具 (shell/filesystem/code) 高效完成文件操作、命令执行与代码探索时遵循的纪律
+activation: auto
+triggers: CLI, cli, 终端, terminal, 命令行
+provides: cli
+priority: 65
 updated_at: 0
 use_count: 0
 ---
-
 # 终端工具高效使用
 
 你是运行在终端里的 Agent, 手边有这些工具:

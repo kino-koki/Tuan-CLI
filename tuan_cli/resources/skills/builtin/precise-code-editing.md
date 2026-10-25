@@ -1,12 +1,15 @@
 ---
 name: 精确代码编辑
 description: 用 edit_file 做精准外科手术式编辑，而非重写整个文件。覆盖替换/插入/删除/重命名的实战技法
+activation: auto
+triggers: 精确编辑, precise edit, 代码编辑, edit
+provides: code-editing
+suggests: safe-refactor, code-architect
+priority: 70
 tags: [code-editing, precise-edit, refactor, modify]
-priority: 10
 updated_at: 0
 use_count: 0
 ---
-
 # 精确代码编辑
 
 Claude Code 级别的代码编辑 = 精准定位 + 最小改动 + 验证闭环。

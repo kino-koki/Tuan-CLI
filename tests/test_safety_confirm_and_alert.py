@@ -19,6 +19,10 @@ from tuan_cli.core.security_bus import (
     SecurityEventBus,
     SecurityEventType,
 )
+import time
+
+from tuan_cli.core import security_bus as sb
+from tuan_cli.core.security_bus import get_security_bus
 
 
 # -------------------------------------------------- 令牌生成
@@ -149,3 +153,47 @@ def test_security_bus_alerter_exception_isolated():
         SecurityEventType.COMMAND_BLOCKED, 1.0, {"command": "x"}, severity="high",
     ))
     assert bus.get_stats()["total_events"] == 1
+
+
+
+def test_security_bus_singleton_upgrades_to_async_alerter():
+    """单例已存在时, async_alerter=True 必须能后补生效。
+
+    回归: get_security_bus() 原本只在单例分支补 persist_path, 静默丢弃
+    async_alerter。任何早于 _setup_security_alerts() 的调用都会把告警
+    永久钉在同步路径, 桌面通知的 ~5s 阻塞重新回到安全决策热路径,
+    test_shell_safety_guard.py::test_critical_shutdown_reboot_blocked 因此
+    在全量套件里超 25s (单独跑时它恰好是第一次调用, 掩盖了问题)。
+    """
+    saved = sb._global_bus
+    sb._global_bus = None
+    try:
+        # 早于 alerter 注册的调用, 按默认值创建单例 (同步告警)
+        early = get_security_bus()
+        assert not early._async_alerter
+
+        # 之后才请求异步派发 —— 必须落到同一个单例上生效
+        bus = get_security_bus(async_alerter=True)
+        assert bus is early
+        assert bus._async_alerter
+
+        fired = []
+
+        def slow_alerter(e):
+            """模拟桌面通知: 同步阻塞 ~2s (notify_engine 会 spawn powershell)。"""
+            time.sleep(2.0)
+            fired.append(e.event_type)
+
+        bus.set_alerter(slow_alerter)
+        t0 = time.monotonic()
+        bus.emit(SecurityEvent(
+            SecurityEventType.COMMAND_BLOCKED, time.time(),
+            {"command": "shutdown /s /t 0", "reason": "hard_redline"},
+            severity="critical",
+        ))
+        elapsed = time.monotonic() - t0
+        assert elapsed < 1.0, f"emit() 阻塞 {elapsed:.3f}s —— alerter 仍是同步"
+        bus.flush_alerts(timeout=5.0)
+        assert fired == [SecurityEventType.COMMAND_BLOCKED]
+    finally:
+        sb._global_bus = saved

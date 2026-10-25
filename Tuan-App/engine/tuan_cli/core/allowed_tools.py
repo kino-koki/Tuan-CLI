@@ -99,3 +99,18 @@ def _glob_to_regex(pattern: str) -> str:
         else:
             out.append(_re.escape(ch))
     return "".join(out)
+
+
+def mode_tool_filter(tool_name: str, mode_id: str) -> bool:
+    """按模式过滤工具调用。返回 True=允许, False=拒绝。
+
+    逻辑:
+    - 若模式白名单为空 (如 boundless on android), 拒绝所有工具 (fail-closed)。
+    - 否则检查 tool_name 是否在白名单中。
+    """
+    from ..modes.policy import get_mode_policy
+    policy = get_mode_policy(mode_id)
+    allowlist = policy.tool_allowlist()
+    if not allowlist:
+        return False  # 无白名单=默认拒绝（fail-closed，如 boundless on android）
+    return tool_name in allowlist

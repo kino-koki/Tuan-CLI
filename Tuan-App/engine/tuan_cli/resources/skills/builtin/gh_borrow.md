@@ -1,10 +1,13 @@
 ---
 name: 借鉴开源实现
 description: 需要实现某功能但不确定最佳写法时，自主到 GitHub 找相似开源项目借鉴思路（非全抄），并保留署名
+activation: auto
+triggers: GitHub, gh, borrow
+provides: github
+priority: 60
 updated_at: 0
 use_count: 0
 ---
-
 # 借鉴开源实现
 
 遇到「这个功能我大概知道要做什么，但拿不准社区里成熟的写法」时，不要凭空硬写，也不要整段照搬。去 GitHub 找相似项目，**借思路、抄结构、不抄代码**。

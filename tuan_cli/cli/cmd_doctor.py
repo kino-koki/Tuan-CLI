@@ -118,11 +118,8 @@ def _check_config(home: Path, fix: bool) -> List[Dict[str, Any]]:
         return findings
 
     raw = cfg_path.read_text(encoding="utf-8", errors="replace")
-    try:
-        import yaml
-    except ImportError:  # pragma: no cover - pyyaml 是核心依赖
-        findings.append(_f("config", "error", "pyyaml 未安装, 无法解析 config.yaml"))
-        return findings
+
+    from .. import _yaml as yaml
 
     try:
         data = yaml.safe_load(raw)
@@ -234,9 +231,9 @@ def _parse_frontmatter(path: Path) -> Tuple[Dict[str, Any], str, Optional[str]]:
         return {}, text, "缺少 YAML frontmatter (开头应为 --- )"
     fm_text = m.group(1)
     body = text[m.end() :]
-    try:
-        import yaml
+    from .. import _yaml as yaml
 
+    try:
         meta = yaml.safe_load(fm_text) or {}
     except yaml.YAMLError as exc:
         return {}, body, f"frontmatter YAML 语法错误: {str(exc).splitlines()[0]}"
@@ -557,9 +554,9 @@ def _check_network(home: Path) -> List[Dict[str, Any]]:
     cfg_path = home / "config.yaml"
     base_url = ""
     if cfg_path.exists():
-        try:
-            import yaml
+        from .. import _yaml as yaml
 
+        try:
             data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
             model = data.get("model") or {}
             base_url = model.get("base_url") or ""

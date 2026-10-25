@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 启动图标前景: Tuan 字母 T 简笔 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#1783FF"
+        android=pathData="M14,30 L94,30 L94,42 L62,42 L62,94 L46,94 L46,42 L14,42 Z" />
+</vector>

@@ -1,10 +1,14 @@
 ---
 name: 测试驱动与自测闭环
 description: 写功能时先想清楚如何验证，用 TDD/自测闭环把质量内建进代码而非事后补救
+activation: auto
+triggers: 测试, test, TDD, 单元测试, 集成测试, e2e, mock
+provides: testing, tdd
+suggests: code-architect, tuan-ci-cd
+priority: 82
 updated_at: 0
 use_count: 0
 ---
-
 # 测试驱动与自测闭环
 
 质量不是测出来的，是写的时候就想好怎么验证。

@@ -11,6 +11,10 @@ const KEY_PROVIDER_ID = 'tuan.providerId';
 const KEY_MODEL = 'tuan.model';
 /** 引擎安装向导是否已被用户明确跳过（持久化：跳过就不再每次启动弹） */
 const KEY_ENGINE_SETUP_DISMISSED = 'tuan.engineSetupDismissed';
+/** 本地 TTS 语音播报开关（MOSS-TTS-Nano，引擎内置 /api/tts） */
+const KEY_TTS_ENABLED = 'tuan.tts.enabled';
+const KEY_TTS_VOICE = 'tuan.tts.voice';
+const KEY_TTS_LANGUAGE = 'tuan.tts.language';
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -85,6 +89,27 @@ export const store = {
   },
   saveEngineSetupDismissed(v: boolean) {
     write(KEY_ENGINE_SETUP_DISMISSED, v);
+  },
+  /** 本地语音播报（默认开）：回复完成后自动朗读 */
+  ttsEnabled(): boolean {
+    return read<boolean>(KEY_TTS_ENABLED, true);
+  },
+  saveTtsEnabled(v: boolean) {
+    write(KEY_TTS_ENABLED, v);
+  },
+  /** 音色 key（tts_service.VOICES；默认 zh_3 京味活力女声） */
+  ttsVoice(): string {
+    return read<string>(KEY_TTS_VOICE, 'zh_3');
+  },
+  saveTtsVoice(v: string) {
+    write(KEY_TTS_VOICE, v);
+  },
+  /** 10 语言之一（默认 zh_CN），决定音色与文本语言 */
+  ttsLanguage(): string {
+    return read<string>(KEY_TTS_LANGUAGE, 'zh_CN');
+  },
+  saveTtsLanguage(v: string) {
+    write(KEY_TTS_LANGUAGE, v);
   },
 };
 

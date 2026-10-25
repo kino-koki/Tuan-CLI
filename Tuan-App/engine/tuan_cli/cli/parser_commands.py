@@ -65,7 +65,15 @@ def register_subcommands(sub) -> None:
     )
     p.add_argument("task", help="开发任务描述")
     p.add_argument("--model", help="临时覆盖模型名")
-    p.add_argument("--mode", choices=["standard", "yolo"], help="临时切换运行模式")
+    p.add_argument(
+        "--mode",
+        choices=[
+            "standard", "yolo", "plan",
+            "gantong", "lingma", "chat", "boundless", "collaboration",
+        ],
+        help="临时切换运行模式 (旧三档 standard/yolo/plan 或五模式 "
+             "gantong/lingma/chat/boundless/collaboration)",
+    )
     p.add_argument(
         "--permission-mode",
         choices=[
@@ -125,7 +133,15 @@ def register_subcommands(sub) -> None:
         "--bg", action="store_true", help="后台运行, 不阻塞终端 (用 tuan bg 查看进度)"
     )
     p.add_argument("--model", help="临时覆盖模型名")
-    p.add_argument("--mode", choices=["standard", "yolo"], help="临时切换运行模式")
+    p.add_argument(
+        "--mode",
+        choices=[
+            "standard", "yolo", "plan",
+            "gantong", "lingma", "chat", "boundless", "collaboration",
+        ],
+        help="临时切换运行模式 (旧三档 standard/yolo/plan 或五模式 "
+             "gantong/lingma/chat/boundless/collaboration)",
+    )
     p.add_argument(
         "--permission-mode",
         choices=[
@@ -232,7 +248,15 @@ def register_subcommands(sub) -> None:
         help="提交后阻塞等待任务结束 (等价于 run --bg + 等待)",
     )
     p.add_argument("--model", help="临时覆盖模型名")
-    p.add_argument("--mode", choices=["standard", "yolo"], help="临时切换运行模式")
+    p.add_argument(
+        "--mode",
+        choices=[
+            "standard", "yolo", "plan",
+            "gantong", "lingma", "chat", "boundless", "collaboration",
+        ],
+        help="临时切换运行模式 (旧三档 standard/yolo/plan 或五模式 "
+             "gantong/lingma/chat/boundless/collaboration)",
+    )
     p.set_defaults(func="cmd_agent")
 
     p = sub.add_parser("bg", help="后台任务管理 (list / logs / cancel / wait)")
@@ -317,6 +341,21 @@ def register_subcommands(sub) -> None:
     psub.add_parser("auto", help="恢复自动分配").set_defaults(
         personality_cmd="auto"
     )
+
+    mode_p = sub.add_parser(
+        "mode", help="五模式切换 (感通/灵码/闲聊/无界/协同; 旧名 standard/yolo/plan 可用)"
+    )
+    mode_sub = mode_p.add_subparsers(dest="mode_cmd", required=True)
+    mode_sub.add_parser("list", help="列出所有模式").set_defaults(func="cmd_mode")
+    mode_sub.add_parser("current", help="显示当前模式").set_defaults(func="cmd_mode")
+    mode_show = mode_sub.add_parser("show", help="显示模式详情与能力矩阵")
+    mode_show.add_argument("mode_id", nargs="?", default=None, help="模式 ID (默认当前)")
+    mode_show.set_defaults(func="cmd_mode")
+    mode_switch = mode_sub.add_parser("switch", help="切换模式")
+    mode_switch.add_argument("mode_id", help="目标模式 ID")
+    mode_switch.add_argument("--force", action="store_true", help="跳过二次确认")
+    mode_switch.set_defaults(func="cmd_mode")
+    mode_p.set_defaults(func="cmd_mode")
 
     p = sub.add_parser(
         "models", help="配置/热切换模型供应商 (开箱支持57家, 含 Ollama/llama.cpp 本地)"

@@ -1,10 +1,14 @@
 ---
 name: MCP 接入外部能力
 description: 需要通过 MCP (Model Context Protocol) 接入外部工具/数据源时, 如何配置与调用
+activation: auto
+triggers: MCP, mcp, 外部工具, 外部能力, Model Context Protocol
+provides: mcp
+suggests: tuan-api
+priority: 70
 updated_at: 0
 use_count: 0
 ---
-
 # MCP 接入外部能力
 
 tuan 原生支持 MCP (Model Context Protocol)。接入外部 MCP Server 只需在 `~/.tuan/config.yaml` 配置。

@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, parse_qs
 
 from .frontend import FRONTEND_HTML
+from . import tts_service
 
 _ASSET_DIR = Path(__file__).resolve().parent / "assets"
 _ASSET_CACHE: Dict[str, bytes] = {}  # 读一次缓存, 静态资源体积小但读盘更省
@@ -291,9 +292,18 @@ class _WebHandler(BaseHTTPRequestHandler):
     disable_nagle_algorithm = True
 
     # ---------------- helpers ----------------
+    # CORS: 桌面壳 (Tauri webview) 需要直接从 http://127.0.0.1:<port> 读取
+    # /api/tts/* 与 /tts_audio/* (音频播放 + 合成请求)。服务仅绑回环、无 Cookie/
+    # 凭据, 放开跨域读取对威胁模型无实质影响, 故统一加到所有响应上。
+    def _cors_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
     def _json(self, code: int, payload: Any) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
+        self._cors_headers()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -306,6 +316,7 @@ class _WebHandler(BaseHTTPRequestHandler):
     def _text(self, code: int, text: str, ctype: str = "text/plain; charset=utf-8") -> None:
         body = text.encode("utf-8")
         self.send_response(code)
+        self._cors_headers()
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -347,11 +358,42 @@ class _WebHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(cached)
 
+    def _serve_tts_audio(self, name: str) -> None:
+        """本地 TTS 合成的 wav 音频 (仅回环可写、可读, 无跨目录)。"""
+        if "/" in name or "\\" in name or ".." in name or not name:
+            self._text(404, "not found", "text/plain; charset=utf-8")
+            return
+        fp = tts_service._OUTPUT_DIR / name
+        if not fp.is_file():
+            self._text(404, "not found", "text/plain; charset=utf-8")
+            return
+        data = fp.read_bytes()
+        self.send_response(200)
+        self._cors_headers()
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_OPTIONS(self) -> None:
+        """CORS 预检: 桌面壳 webview 以 fetch POST /api/tts/synthesize。"""
+        self.send_response(204)
+        self._cors_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
         if path.startswith("/assets/"):
             self._serve_asset(path[len("/assets/"):])
+            return
+        if path.startswith("/tts_audio/"):
+            self._serve_tts_audio(path[len("/tts_audio/"):])
+            return
+        if path == "/api/tts/status":
+            self._json(200, tts_service.status())
             return
         if path == "/" or path == "/index.html":
             self._text(200, FRONTEND_HTML, "text/html; charset=utf-8")
@@ -564,6 +606,24 @@ class _WebHandler(BaseHTTPRequestHandler):
             res = self._owner.apply_apikey(str(body.get("env") or ""),
                                            str(body.get("key") or ""))
             self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/tts/register_voice":
+            body = self._read_body()
+            res = tts_service.register_custom_voice(
+                str(body.get("name") or ""), str(body.get("audio_b64") or "")
+            )
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/tts/synthesize":
+            body = self._read_body()
+            text = str(body.get("text") or "")
+            voice = str(body.get("voice") or "") or None
+            language = str(body.get("language") or "") or None
+            if not text.strip():
+                self._json(400, {"ok": False, "error": "empty text"})
+                return
+            res = tts_service.synthesize(text, voice, language)
+            self._json(200 if res.get("ok") else 503, res)
             return
         self._json(404, {"ok": False, "error": "not found"})
 
@@ -1191,23 +1251,31 @@ class WebServer:
     def apply_mode(self, mode: str) -> Dict[str, Any]:
         """设置运行模式并实时作用于当前所有会话 agent (以及后续新建的)。
 
-        - plan: 只读规划模式 (agent.plan_mode=True, yolo=False)
-        - yolo: 放权模式 (agent.yolo=True, plan_mode=False)
-        - standard: 默认 (两者皆 False)
-        同时把覆盖写回配置 (与 CLI _apply_mode_override 同口径, 不污染后续启动之外的状态)。
+        五模式体系 (感通/灵码/闲聊/无界/协同)，旧三档 standard/yolo/plan 作为别名保留。
+        使用 switch_mode 执行 R1–R7 切换规则校验，同时把覆盖写回配置。
         """
         mode = str(mode or "").strip().lower()
-        if mode not in ("standard", "yolo", "plan"):
+        # 五模式 ID + 旧三档别名
+        VALID_MODES = {"gantong", "lingma", "chat", "boundless", "collaboration",
+                        "standard", "yolo", "plan"}
+        if mode not in VALID_MODES:
             return {"ok": False, "error": f"未知模式: {mode}"}
-        self._mode = mode
+        # 使用 switch_mode 执行 R1-R7 校验 (force=True 表示 Web 端用户显式切换)
+        from ..modes.switcher import switch_mode, current_mode
+        ok, reason = switch_mode(mode, force=True)
+        if not ok:
+            return {"ok": False, "error": reason}
+        resolved = current_mode()
+        self._mode = resolved
         cfg = self._cfg()
         if cfg is not None:
             try:
-                cfg.data.setdefault("mode", {})["default"] = mode
+                cfg.data.setdefault("mode", {})["current"] = resolved
             except Exception:  # noqa: BLE001
                 pass
-        pm = mode == "plan"
-        yl = mode == "yolo"
+        # 向后兼容: boundless → yolo=True, chat → plan_mode=True
+        pm = resolved == "chat"
+        yl = resolved == "boundless"
         with _SESSIONS_LOCK:
             for s in _SESSIONS.values():
                 a = s.get("agent")
@@ -1223,7 +1291,8 @@ class WebServer:
                         a.effective_tool_set()
                 except Exception:  # noqa: BLE001
                     pass
-        return {"ok": True, "mode": mode, **self.mode_effort()}
+        return {"ok": True, "mode": resolved, "name": resolved, "reason": reason,
+                **self.mode_effort()}
 
     def apply_effort(self, effort: str) -> Dict[str, Any]:
         """设置推理投入档位 (low/medium/high), 实时作用于配置 (agent 运行期读取)。"""
