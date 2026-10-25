@@ -5,19 +5,26 @@ import ChatsPage from './components/ChatsPage';
 import ProjectsPage, { type Project } from './components/ProjectsPage';
 import ArtifactsPage from './components/ArtifactsPage';
 import SettingsPage from './components/SettingsPage';
+import BrowsePage from './components/BrowsePage';
 import SkillsPage from './components/SkillsPage';
 import McpPage from './components/McpPage';
 import PluginsPage from './components/PluginsPage';
-import GuidePage from './components/GuidePage';
-import DocsPage from './components/DocsPage';
 import ErrorBoundary from './components/ErrorBoundary';
+import OnboardingWizard from './components/OnboardingWizard';
 import type { PageKey } from './components/Sidebar';
 import TitleBar from './components/TitleBar';
 import CommandPalette, { type PaletteAction } from './components/CommandPalette';
-import BootScreen, { type BootEngineStatus } from './components/BootScreen';
-import EngineSetupPage from './components/EngineSetupPage';
+import EngineSetupPage, { type BootEngineStatus } from './components/EngineSetupPage';
+import BootSplash, { type BootStage } from './components/BootSplash';
 import { engineChat, setEngineAvailable, isAndroid } from './platform/engine';
-import { speakWithSettings, stopSpeech } from './platform/tts';
+import { speakWithSettings, stopSpeech, setEnginePort } from './platform/tts';
+// T-5.1 桌面通知助手（完成/失败/待确认三类，无权限静默降级）
+import {
+  notifyAgentApproval,
+  notifyAgentDone,
+  notifyAgentError,
+  registerNotifyOpener,
+} from './platform/notify';
 import {
   attachBackNav,
   attachKeyboardAvoidance,
@@ -26,18 +33,15 @@ import {
   installNav,
 } from './platform/mobile';
 import { getMode, MODES, needsConfirmSwitch, platformBlockReason, type ModeId } from './platform/modes';
-import { ttsStatus } from './platform/tts';
-import { fetchContextGauge, gaugeColor, gaugeLabel, type ContextGauge } from './platform/context';
 import { notifyVoiceCopilot } from './platform/voiceCopilot';
 import { store, applyTheme, uid } from './store/config';
 import type { Conversation, PendingApproval, Provider, ToolEvent } from './types';
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
   MessageSquarePlus,
   MessageCircle,
-  FileText,
-  Code2,
-  Palette,
+  Eye,
   Zap,
   Cpu,
   Server,
@@ -50,16 +54,15 @@ import {
   BookText,
   Settings,
   SunMoon,
+  Download,
+  Trash2,
 } from 'lucide-react';
-import { DOC_ARTICLES } from './docs/articles';
 
-/** 五模式在命令面板中的图标（modes.ts 只存语义，图标属表现层，在此映射） */
+/** 三档权限模式在命令面板中的图标（modes.ts 只存语义，图标属表现层，在此映射） */
 const MODE_ICONS: Record<ModeId, React.ReactNode> = {
-  chat: <MessageCircle size={16} />,
-  collaboration: <FileText size={16} />,
-  lingma: <Code2 size={16} />,
-  gantong: <Palette size={16} />,
-  boundless: <Zap size={16} />,
+  auto: <MessageCircle size={16} />,
+  plan: <Eye size={16} />,
+  yolo: <Zap size={16} />,
 };
 
 export default function App() {
@@ -94,20 +97,38 @@ export default function App() {
   const [approval, setApproval] = useState<PendingApproval | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const abortRef = useRef<AbortController | null>(null);
-  // 启动加载序列（豆包 × CodeX 风格）：引擎自检返回前不消失
-  const [booting, setBooting] = useState(true);
   // 引擎安装向导：桌面端引擎缺失时自动弹出，也可从标题栏状态灯手动打开
   const [setupOpen, setSetupOpen] = useState(false);
-  // 技术文档模块：当前文章 id（命令面板可深链到具体文章）
-  const [docId, setDocId] = useState<string>(() => DOC_ARTICLES[0]?.id ?? '');
+  // 动手式引导教程：首次运行自动弹出（可随时从空态首页「开始引导」重开）
+  const [onboardingOpen, setOnboardingOpen] = useState<boolean>(() => {
+    try {
+      // 演示 / 分享链接可用 ?skipOnboarding=1 跳过引导（与 skipBoot 一致）
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('skipOnboarding') === '1') return false;
+      return localStorage.getItem('tuan.onboardingDone') !== '1';
+    } catch {
+      return true;
+    }
+  });
   // 引擎状态：启动时检查，用于显示状态指示器 + 引擎不可用时降级直连
   const [engineStatus, setEngineStatus] = useState<BootEngineStatus>({
     ok: false,
     reason: '',
     python: '',
   });
-  /** 引擎自检是否已有过一次真实返回（决定 BootScreen 第三行何时落笔） */
   const [engineChecked, setEngineChecked] = useState(false);
+  // T-1.3 引擎分阶段进度（展示侧消费）：init → connect → ready
+  const [bootStage, setBootStage] = useState<BootStage>('init');
+  // T-1.1 闪屏计时起点：保证冷启动动效最短可见 1.5s
+  const bootStartRef = useRef(Date.now());
+  // T-1.1 冷启动闪屏门控：?skipBoot=1 直接跳过（演示/分享链接）
+  const [bootDismissed, setBootDismissed] = useState<boolean>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('skipBoot') === '1';
+    } catch {
+      return false;
+    }
+  });
 
   const applyEngineResult = (r: any) => {
     const next: BootEngineStatus = {
@@ -121,6 +142,11 @@ export default function App() {
     setEngineAvailable(next.ok);
     setEngineStatus(next);
     setEngineChecked(true);
+    setBootStage('ready');
+    // 同步引擎实际端口（TTS / 上下文仪表等直连引擎的模块共用）
+    if (Number.isInteger(r.engine_port) && r.engine_port > 0) {
+      setEnginePort(r.engine_port);
+    }
     return next;
   };
 
@@ -148,8 +174,65 @@ export default function App() {
         setEngineAvailable(false);
         setEngineStatus({ ok: false, reason: String(e), python: '' });
         setEngineChecked(true);
+        setBootStage('ready');
       });
-    return () => { cancelled = true; };
+    // 引擎端口由 Rust 侧在孵化引擎时确定（环境变量覆盖 / 自动避让），实时同步给直连模块
+    let unlisten: (() => void) | undefined;
+    listen<number>('engine-port', (e) => {
+      setEnginePort(e.payload);
+    })
+      .then((u) => {
+        if (cancelled) {
+          u();
+        } else {
+          unlisten = u;
+        }
+      })
+      .catch(() => {});
+    // T-1.3 分阶段进度事件（契约：'engine-stage' 携带 {stage:'init'|'connect'|'ready'}）；
+    // Rust 侧未发射该事件时不做任何事，由 check_engine 结果兜底推进到 ready
+    let unlistenStage: (() => void) | undefined;
+    listen<{ stage?: string }>('engine-stage', (e) => {
+      const s = e.payload?.stage;
+      if (s === 'init' || s === 'connect' || s === 'ready') setBootStage(s);
+    })
+      .then((u) => {
+        if (cancelled) {
+          u();
+        } else {
+          unlistenStage = u;
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      unlistenStage?.();
+    };
+  }, []);
+
+  // T-1.1 闪屏退场：需同时满足「已展示 ≥1.5s」与「引擎自检完成（非 Tauri 环境即视为完成）」；
+  // 另设 9s 总上限兜底，避免自检卡死时闪屏永远挂起
+  useEffect(() => {
+    if (bootDismissed) return;
+    const tryDismiss = () => {
+      const elapsed = Date.now() - bootStartRef.current;
+      if (elapsed >= 1500 && (engineChecked || !isTauri())) setBootDismissed(true);
+    };
+    const timer = window.setInterval(tryDismiss, 120);
+    const hard = window.setTimeout(() => setBootDismissed(true), 9000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(hard);
+    };
+  }, [bootDismissed, engineChecked, isTauri]);
+
+  // T-5.1 通知点击跳转：注册「打开指定会话」回调（setState 稳定，挂载一次即可）
+  useEffect(() => {
+    registerNotifyOpener((cid) => {
+      setActiveId(cid);
+      setPage('chat');
+    });
   }, []);
 
   useEffect(() => {
@@ -171,7 +254,7 @@ export default function App() {
   useEffect(() => store.saveConversations(convs), [convs]);
   useEffect(() => store.saveProjects(projects), [projects]);
 
-  // 五模式切换：被平台禁用的模式直接拒绝（无界在安卓端）；
+  // 三档权限模式切换：被平台禁用的模式直接拒绝（无界在安卓端）；
   // 切到无界（L4 高权限）时先做风险披露 + 二次确认，不允许静默升级。
   const changeMode = (next: ModeId) => {
     if (next === mode) return;
@@ -230,11 +313,6 @@ export default function App() {
       else if (e.key === ',') {
         e.preventDefault();
         setPage('settings');
-      }
-      // ⌘G: 打开指南
-      else if (k === 'g') {
-        e.preventDefault();
-        setPage('guide');
       }
       // ⌘B: 切换侧栏
       else if (k === 'b') {
@@ -343,6 +421,27 @@ export default function App() {
     setPage('chat');
   };
 
+  /** T-4.2 导出动作：当前会话落成 Markdown 下载（失败静默，不阻塞面板） */
+  const exportActiveConvMd = () => {
+    const conv = activeConv;
+    if (!conv) return;
+    try {
+      const lines: string[] = [`# ${conv.title}`, ''];
+      for (const m of conv.messages) {
+        lines.push(m.role === 'user' ? '## 我' : '## 助手', '', m.content, '');
+      }
+      const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${conv.title || 'conversation'}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      /* 导出失败不阻塞 */
+    }
+  };
+
   // ⌘K 命令面板动作表：随状态实时重建（约 20 项，构建成本可忽略）。
   // 模式项带风险提示，L4（无界）用危险色描边；模型/供应商反映当前可用集合。
   const paletteActiveProvider = providers.find((p) => p.id === providerId) ?? providers[0];
@@ -354,6 +453,8 @@ export default function App() {
       group: '对话',
       icon: <MessageSquarePlus size={16} />,
       shortcut: '⌘N',
+      keywords: 'new 新建 xjdh chat',
+      py: 'xjdh',
       run: newChat,
     },
     ...MODES.map((m): PaletteAction => ({
@@ -361,9 +462,10 @@ export default function App() {
       label: `切换到「${m.name}」模式`,
       group: '模式',
       icon: MODE_ICONS[m.id],
-      hint: m.tagline,
+      hint: '/mode',
       danger: m.level === 'L4',
-      keywords: `${m.name} ${m.tagline} mode ${m.level}`,
+      // 搜索 "mod" 同时命中斜杠命令 /mode 与三档模式项
+      keywords: `/mode mode ${m.id} ${m.name} ${m.tagline} ${m.level}`,
       run: () => changeMode(m.id),
     })),
     ...paletteModels.slice(0, 15).map((m): PaletteAction => ({
@@ -383,44 +485,69 @@ export default function App() {
       hint: p.id === providerId ? '当前' : undefined,
       run: () => setProviderId(p.id),
     })),
-    ...[
-      { key: 'chats' as PageKey, label: '聊天记录', icon: <MessageCircle size={16} /> },
-      { key: 'projects' as PageKey, label: '项目', icon: <FolderKanban size={16} /> },
-      { key: 'artifacts' as PageKey, label: '成品', icon: <Package size={16} /> },
-      { key: 'skills' as PageKey, label: '技能', icon: <Wrench size={16} /> },
-      { key: 'mcp' as PageKey, label: 'MCP 服务', icon: <Blocks size={16} /> },
-      { key: 'plugins' as PageKey, label: '插件', icon: <Puzzle size={16} /> },
-      { key: 'guide' as PageKey, label: '使用教程', icon: <BookOpen size={16} /> },
-      { key: 'docs' as PageKey, label: '技术文档', icon: <BookText size={16} /> },
-      { key: 'settings' as PageKey, label: '设置', icon: <Settings size={16} />, shortcut: '⌘,' },
-    ].map((n): PaletteAction => ({
+    ...([
+      { key: 'chats' as PageKey, label: '聊天记录', icon: <MessageCircle size={16} />, shortcut: undefined as string | undefined, py: 'lqjl' },
+      { key: 'projects' as PageKey, label: '项目', icon: <FolderKanban size={16} />, shortcut: undefined as string | undefined, py: 'xm' },
+      { key: 'artifacts' as PageKey, label: '成品', icon: <Package size={16} />, shortcut: undefined as string | undefined, py: 'cp' },
+      { key: 'skills' as PageKey, label: '技能', icon: <Wrench size={16} />, shortcut: undefined as string | undefined, py: 'jn' },
+      { key: 'mcp' as PageKey, label: 'MCP 服务', icon: <Blocks size={16} />, shortcut: undefined as string | undefined, py: 'mcqf' },
+      { key: 'plugins' as PageKey, label: '插件', icon: <Puzzle size={16} />, shortcut: undefined as string | undefined, py: 'cj' },
+      { key: 'settings' as PageKey, label: '设置', icon: <Settings size={16} />, shortcut: '⌘,' as string | undefined, py: 'sz' },
+    ]).map((n): PaletteAction => ({
       id: `nav-${n.key}`,
       label: n.label,
       group: '导航',
       icon: n.icon,
       hint: page === n.key ? '当前' : undefined,
       shortcut: n.shortcut,
+      py: n.py,
       run: () => setPage(n.key),
     })),
-    // 技术文档：全部文章进命令面板，可搜索 + 深链到具体一篇
-    ...DOC_ARTICLES.map((a): PaletteAction => ({
-      id: `doc-${a.id}`,
-      label: a.title,
-      group: '技术文档',
-      icon: <BookText size={16} />,
-      hint: a.summary,
-      keywords: `${a.keywords ?? ''} docs 文档`,
+    // ===== T-4.2 会话操作：导出 / 删除 =====
+    {
+      id: 'conv-export-md',
+      label: activeConv ? `导出会话「${activeConv.title.slice(0, 14)}」为 Markdown` : '导出当前会话为 Markdown',
+      group: '会话',
+      icon: <Download size={16} />,
+      hint: activeConv ? '下载 .md 文件' : '当前无会话',
+      keywords: 'export exp 导出 markdown md 下载 conversation daochu',
+      py: 'dqhd',
+      run: exportActiveConvMd,
+    },
+    {
+      id: 'conv-delete-current',
+      label: '删除当前会话',
+      group: '会话',
+      icon: <Trash2 size={16} />,
+      danger: true,
+      keywords: 'delete 删除 shanchu 会话',
+      py: 'dqxh',
       run: () => {
-        setPage('docs');
-        setDocId(a.id);
+        if (activeId && window.confirm('删除当前会话？此操作不可恢复。')) deleteConv(activeId);
       },
-    })),
+    },
+    {
+      id: 'conv-clear-all',
+      label: '清空全部对话',
+      group: '会话',
+      icon: <Trash2 size={16} />,
+      danger: true,
+      keywords: 'clear 清空 qingkong 删除 全部',
+      py: 'qkqbdh',
+      run: () => {
+        if (window.confirm('清空全部对话？此操作不可恢复。')) {
+          setConvs([]);
+          setActiveId(undefined);
+        }
+      },
+    },
     {
       id: 'sys-theme',
       label: theme === 'dark' ? '切换到浅色主题' : '切换到深色主题',
       group: '系统',
       icon: <SunMoon size={16} />,
-      keywords: 'theme dark light 主题',
+      keywords: 'theme dark light 主题 qzzt',
+      py: 'qzzt',
       run: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
     },
     {
@@ -429,7 +556,8 @@ export default function App() {
       group: '系统',
       icon: <Wrench size={16} />,
       hint: engineStatus.ok ? '引擎已就绪' : '本地引擎未就绪',
-      keywords: 'engine setup install 引擎 安装 向导',
+      keywords: 'engine setup install 引擎 安装 向导 yqaz',
+      py: 'yqaz',
       run: () => setSetupOpen(true),
     },
   ];
@@ -537,6 +665,7 @@ export default function App() {
         } else if (chunk.type === 'approval') {
           // 引擎安全闸门：阻塞等待我们答复。不落进任何消息文本，单独弹审批卡。
           notifyVoiceCopilot('approval'); // 语音协警: 提醒用户处理授权
+          notifyAgentApproval(conv.id, chunk.text ?? ''); // T-5.1 桌面通知
           setApproval({
             id: chunk.name ?? '',
             prompt: chunk.text ?? '',
@@ -544,6 +673,7 @@ export default function App() {
           });
         } else if (chunk.type === 'error') {
           notifyVoiceCopilot('error'); // 语音协警: 出错提醒
+          notifyAgentError(conv.id, chunk.error ?? ''); // T-5.1 桌面通知
           setError(chunk.error ?? '请求失败');
           // 出错且没有任何正文时，去掉空的助手占位消息
           if (!acc) patch([...history]);
@@ -566,6 +696,10 @@ export default function App() {
       // 完整回复到达后，按用户设置自动朗读（完全本地 MOSS-TTS-Nano）
       if (completed && acc.trim() && store.ttsEnabled()) {
         speakWithSettings(acc.trim()).catch(() => {});
+      }
+      // T-5.1 桌面通知：回复完成（含摘要）；前台可见时由 notify 内部静默
+      if (completed && acc.trim()) {
+        notifyAgentDone(conv.id, acc.trim());
       }
     }
   };
@@ -652,20 +786,21 @@ export default function App() {
     setProjects((prev) => prev.filter((p) => p.id !== id));
   };
 
+  // T-1.1 冷启动闪屏：门控一切后续流程（含引擎安装引导），最短 1.5s 动效
+  if (!bootDismissed) {
+    return (
+      <BootSplash
+        stage={bootStage}
+        appVersion={engineStatus.app_version}
+        engineVersion={engineStatus.engine_version}
+      />
+    );
+  }
+
   // 桌面端（Windows/macOS）引擎缺失 → 走安装引导；Android 本就没有本地引擎，不弹
   const engineMissing = isTauri() && !isAndroid() && engineChecked && !engineStatus.ok;
   const setupAuto = engineMissing && !store.engineSetupDismissed();
   const showSetup = setupAuto || setupOpen;
-
-  // 启动加载序列：引擎自检真实返回前不消失（BootScreen 内部等待）
-  if (booting) {
-    return (
-      <BootScreen
-        engineStatus={engineChecked ? engineStatus : null}
-        onDone={() => setBooting(false)}
-      />
-    );
-  }
 
   // 引擎安装引导（豆包 × CodeX 风格）：自动弹出或从标题栏/命令面板手动打开
   if (showSetup) {
@@ -730,6 +865,8 @@ export default function App() {
               onDelete={deleteConv}
                 collapsed={false}
                 isNarrow={narrow}
+                theme={theme}
+                onToggleTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
             />
           </div>
         </>
@@ -747,6 +884,8 @@ export default function App() {
           onDelete={deleteConv}
           collapsed={true}
           isNarrow={false}
+          theme={theme}
+          onToggleTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
         />
       )}
 
@@ -773,8 +912,8 @@ export default function App() {
           onDeleteMessage={deleteMessage}
           onEditMessage={editMessage}
           onRetry={retry}
-          onOpenGuide={() => setPage('guide')}
           onOpenSettings={() => setPage('settings')}
+          onStartOnboarding={() => setOnboardingOpen(true)}
           mode={mode}
           onModeChange={changeMode}
           onNewChat={newChat}
@@ -793,12 +932,11 @@ export default function App() {
       {page === 'projects' && (
         <ProjectsPage projects={projects} onCreate={createProject} onUpdate={updateProject} onDelete={deleteProject} />
       )}
+      {page === 'browse' && <BrowsePage onSendToChat={undefined} />}
       {page === 'artifacts' && <ArtifactsPage />}
       {page === 'skills' && <SkillsPage />}
       {page === 'mcp' && <McpPage />}
       {page === 'plugins' && <PluginsPage />}
-      {page === 'guide' && <GuidePage />}
-      {page === 'docs' && <DocsPage activeId={docId} onActiveChange={setDocId} />}
       {page === 'settings' && (
         <SettingsPage
           providers={providers}
@@ -823,132 +961,21 @@ export default function App() {
         onClose={() => setPaletteOpen(false)}
         actions={paletteActions}
       />
-      {/* Claude Code 式底部状态栏：模式 · 模型 · 引擎 · TTS · 上下文预算 · 会话数 */}
-      <StatusBar
-        mode={mode}
-        providerLabel={providerId ? `${providers.find((p) => p.id === providerId)?.name ?? ''}${model ? ' · ' + model : ''}` : ''}
-        engineStatus={engineStatus}
-        convCount={convs.length}
-        convId={activeId}
-      />
-    </div>
-  );
-}
-
-/** Claude Code 终端式单行状态栏。TTS 状态 + 上下文预算每 15s 轮询一次引擎。 */
-function StatusBar({
-  mode,
-  providerLabel,
-  engineStatus,
-  convCount,
-  convId,
-}: {
-  mode: ModeId;
-  providerLabel: string;
-  engineStatus?: { ok: boolean; reason: string; python: string };
-  convCount: number;
-  convId?: string;
-}) {
-  const [tts, setTts] = useState<{ reachable: boolean; loaded: boolean } | null>(null);
-  const [gauge, setGauge] = useState<ContextGauge | null>(null);
-  useEffect(() => {
-    let alive = true;
-    const tick = () => {
-      if (isAndroid()) {
-        setTts({ reachable: true, loaded: true }); // 安卓走系统原生 TTS
-        return;
-      }
-      ttsStatus()
-        .then((s) => {
-          if (alive) setTts(s ? { reachable: true, loaded: s.model_loaded } : null);
-        })
-        .catch(() => {
-          if (alive) setTts(null);
-        });
-      // 上下文预算仪表（模块 3）: 与 TTS 同轮询, 不额外发请求
-      fetchContextGauge(convId)
-        .then((g) => {
-          if (alive) setGauge(g);
-        })
-        .catch(() => {
-          if (alive) setGauge(null);
-        });
-    };
-    tick();
-    const t = setInterval(tick, 15000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [convId]);
-  const m = getMode(mode);
-  return (
-    <div className="cc-statusbar">
-      <span className="sb-group sb-label" style={{ color: 'var(--tuan-accent-soft)', fontWeight: 700 }}>
-        ❯ {m.name}
-      </span>
-      <span className="sb-sep" />
-      <span className="sb-group sb-hide-mobile" title={providerLabel || '未配置模型'}>
-        <span className="sb-label truncate max-w-[220px]">{providerLabel || '未配置模型'}</span>
-      </span>
-      <span className="sb-sep sb-hide-mobile" />
-      <span className="sb-group" title={engineStatus?.reason ?? ''}>
-        <span
-          className="sb-dot"
-          style={{
-            background:
-              engineStatus?.ok === true
-                ? 'var(--tuan-ok)'
-                : engineStatus == null
-                  ? 'var(--text-tuan-secondary)'
-                  : 'var(--tuan-danger)',
+      {onboardingOpen && (
+        <OnboardingWizard
+          providers={providers}
+          onProviderSave={(p) => {
+            setProviders((prev) =>
+              prev.some((x) => x.id === p.id) ? prev.map((x) => (x.id === p.id ? p : x)) : [p, ...prev],
+            );
+            setProviderId(p.id);
           }}
+          currentMode={mode}
+          onModeSelect={changeMode}
+          onClose={() => setOnboardingOpen(false)}
         />
-        <span className="sb-label">
-          {engineStatus?.ok === true
-            ? '引擎就绪'
-            : engineStatus == null
-              ? '引擎检测中'
-              : '引擎未就绪'}
-        </span>
-      </span>
-      <span className="sb-sep" />
-      <span className="sb-group" title="本地 TTS（MOSS-TTS-Nano，安卓为系统原生）">
-        <span
-          className="sb-dot"
-          style={{ background: tts ? (tts.loaded ? 'var(--tuan-ok)' : 'var(--tuan-accent-soft)') : 'var(--text-tuan-secondary)' }}
-        />
-        <span className="sb-label">
-          {isAndroid() ? '系统 TTS' : tts ? (tts.loaded ? 'TTS 就绪' : 'TTS 待加载') : 'TTS 离线'}
-        </span>
-      </span>
-      <span className="sb-sep sb-hide-mobile" />
-      <span className="sb-group sb-label sb-hide-mobile">会话 {convCount}</span>
-      {gauge && (
-        <>
-          <span className="sb-sep sb-hide-mobile" />
-          <span
-            className="sb-group sb-hide-mobile"
-            title={`上下文预算: ${gauge.estTokens.toLocaleString()} / ${gauge.window.toLocaleString()} tokens (est., ~3 字符/token)。≥70% 变橙, ≥90% 变红, 超 100% 提示 /compact`}
-          >
-            <span
-              className="sb-gauge-track"
-              role="progressbar"
-              aria-valuenow={Math.round(gauge.ratio * 100)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <span
-                className="sb-gauge-fill"
-                style={{ width: `${Math.min(gauge.ratio, 1) * 100}%`, background: gaugeColor(gauge.ratio) }}
-              />
-            </span>
-            <span className="sb-label" style={{ color: gaugeColor(gauge.ratio) }}>
-              {gaugeLabel(gauge.ratio)}
-            </span>
-          </span>
-        </>
       )}
+      {/* 底部状态栏已按用户要求移除（模式/模型/引擎/TTS/上下文预算/会话数） */}
     </div>
   );
 }
