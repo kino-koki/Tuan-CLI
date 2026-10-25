@@ -2,13 +2,13 @@
 /**
  * §11 五模式静态验收 · 零依赖校验脚本
  * ------------------------------------------------------------------
- * 选型说明：`Tuan-App/package.json` 里既没有 `test` script，也没有
+ * 选型说明：`Tuan/package.json` 里既没有 `test` script，也没有
  * 任何 vitest / jest 依赖。为了「不装新依赖 + 不改 package.json」，
  * 这里用 node 直接跑一段纯文本 + 正则的静态断言，覆盖 modes.ts 的
  * 结构约束（模式 ID / 中文名 / level / 旧名拒绝 / 回落 / 切换规则），
  * 并把 W-2~W-8 移动端接入 token 与「全仓零 emoji」硬规则一起扫掉。
  *
- * 运行：`node Tuan-App/scripts/verify_modes.mjs`
+ * 运行：`node Tuan/scripts/verify_modes.mjs`
  * 退出码：0 = 全绿；非 0 = 断言失败（stdout 打印失败明细）。
  */
 
@@ -17,7 +17,7 @@ import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(HERE, '..');                       // Tuan-App/
+const ROOT = join(HERE, '..');                       // Tuan/
 const REPO = join(ROOT, '..');                       // 仓库根
 const SRC = join(ROOT, 'src');
 const MODES_TS = join(SRC, 'platform', 'modes.ts');

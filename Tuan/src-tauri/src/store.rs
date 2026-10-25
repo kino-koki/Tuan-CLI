@@ -9,7 +9,7 @@ use crate::engine::Provider;
 fn config_dir() -> Result<PathBuf> {
     let dir = dirs::config_dir()
         .ok_or_else(|| anyhow::anyhow!("无法定位配置目录"))?
-        .join("tuan-chat");
+        .join("tuan");
     fs::create_dir_all(&dir)?;
     Ok(dir)
 }

@@ -1,5 +1,5 @@
 /**
- * 内置技术文档内容（随 Tuan-Chat 一起分发，离线可读）。
+ * 内置技术文档内容（随 Tuan 一起分发，离线可读）。
  *
  * 内容来源：README.md / ARCHITECTURE.md / CAPABILITY-MATRIX.md /
  * SUPPORTED_MODELS.md / docs/TUAN-DISPATCH-PROTOCOL.md 等仓库内真实文档，
@@ -315,7 +315,7 @@ tuan /model                  # 会话内热切换 + 连通性测试
         title: 'Tuan 调度协议 v1',
         summary: 'WebSocket /tuan/dispatch/v1，配对码握手，事件流回传',
         keywords: 'dispatch protocol websocket pair 8788',
-        body: `Tuan-Chat 手机端 ⇄ 桌面端（Tauri）之间的 WebSocket 调度协议。桌面端把「任务」路由给本机 5 家本地代理（Claude Code / Codex / hermes / DeepSeek Harness / Kimi Code），手机只做「发起 + 看流 + 审批 + 取消」。
+        body: `Tuan 手机端 ⇄ 桌面端（Tauri）之间的 WebSocket 调度协议。桌面端把「任务」路由给本机 5 家本地代理（Claude Code / Codex / hermes / DeepSeek Harness / Kimi Code），手机只做「发起 + 看流 + 审批 + 取消」。
 
 ## 传输层
 
@@ -461,10 +461,10 @@ python -m tuan_cli.web.dispatch_server --port 8788
     ],
   },
 
-  /* ================= Tuan-Chat 桌面端 ================= */
+  /* ================= Tuan 桌面端 ================= */
   {
     id: 'chat',
-    title: 'Tuan-Chat 桌面端',
+    title: 'Tuan 桌面端',
     desc: 'Tauri 外壳 + 内嵌引擎，桌面完整能力、移动端降级直连',
     articles: [
       {
@@ -472,7 +472,7 @@ python -m tuan_cli.web.dispatch_server --port 8788
         title: '双端架构',
         summary: '桌面端引擎承载完整 Agent 能力，Android 走 Rust 通道直连',
         keywords: 'tauri engine bundle android webview rust',
-        body: `Tuan-Chat = **Tauri 外壳**（React + TypeScript + Vite + Tailwind）+ **内嵌引擎**（\`Tuan-App/engine/tuan_cli/\`，由根目录 \`tuan_cli/\` 同步构建）。
+        body: `Tuan = **Tauri 外壳**（React + TypeScript + Vite + Tailwind）+ **内嵌引擎**（\`Tuan/engine/tuan_cli/\`，由根目录 \`tuan_cli/\` 同步构建）。
 
 ## 桌面端（Windows / macOS）
 
@@ -547,7 +547,7 @@ Rust \`check_engine\` 返回：\`ok\` / \`reason\` / \`python\` / \`app_version\
 /personality /offline /cost /budget /diff /export    个性化与观测
 \`\`\`
 
-## Tuan-Chat 快捷键
+## Tuan 快捷键
 
 | 快捷键 | 作用 |
 | --- | --- |

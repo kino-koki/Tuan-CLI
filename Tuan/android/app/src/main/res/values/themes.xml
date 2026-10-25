@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Compose Material 3 主题: 由 Kotlin Theme.kt 驱动, 这里仅占位 -->
-    <style name="Theme.TuanChat" parent="android:Theme.Material.Light.NoActionBar">
+    <style name="Theme.Tuan" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>

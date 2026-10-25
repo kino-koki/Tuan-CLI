@@ -181,17 +181,21 @@ tuan ecosystem link                        # reverse-mount: Claude Code/Hermes c
 The ecosystem bridge above moves *assets* between agent communities. The Agent-of-Agents dispatch layer (`tuan_cli/web/dispatch_server.py` + `tuan_cli/agents/`) moves *tasks* — it turns your phone or browser into a single remote control for every coding agent installed on your machine.
 
 - **Five adapters, one protocol.** Claude Code, Codex, Hermes, DeepSeek Harness and Kimi Code each get a thin `AgentAdapter` — a PATH probe, a `build_command`, and a streaming `AgentEvent` protocol. No agent is forked or re-implemented; tuan just drives their native CLI.
-- **Auto-routing by mode + health.** A task carries a `mode` (`chat` / `collaboration` / `lingma` / `gantong` / `boundless`). The router scores every installed, *healthy* agent by `weights[mode]` and picks the best; unhealthy agents are skipped, and if none are available you get a clean `NO_AGENT_AVAILABLE` instead of a silent fallback.
+- **Auto-routing by mode + health.** A task carries a `mode` (`chat` / `collaboration` / `lingma` / `gantong` / `boundless`). The router probes every adapter in parallel, scores each by `weights[mode]` plus a health score (100 = PATH hit *and* `--version` verified, 70 = version unknown, 60 = suspected same-name tool, 0 = not installed), and picks the best; unhealthy agents are skipped, and if none are available you get a clean `NO_AGENT_AVAILABLE` instead of a silent fallback.
 - **Explicit override, fail-closed.** Send `agent: "codex"` to pin an engine; unknown ids return `AGENT_NOT_FOUND`, missing installs return `AGENT_UNHEALTHY`. Same fail-closed posture as the rest of tuan.
 - **Delegate, don't migrate — live.** This is the runtime twin of the ecosystem bridge: instead of copying a skill *into* tuan, you hand the *whole task* to the other agent in its own native environment — its config, memory, skills and MCP stay put. The bridge imports assets; the dispatch layer runs work.
 - **Streaming + approval.** Every agent streams `text` / `tool_call` / `stderr` / `approval` events over one WebSocket. High-risk steps surface a `[TUAN_APPROVAL]` gate your phone can allow or deny, so remote control never drops the safety floor.
+- **A CLI of its own.** The dispatch layer is not server-only — `tuan dispatch` drives it from any terminal (below).
 
 ```bash
-python -m tuan_cli.web.dispatch_server --port 8788   # WebSocket at ws://HOST:8788/tuan/dispatch/v1
+tuan dispatch status                       # probe all 5 local agents (scores + versions)
+tuan dispatch route "fix the flaky test"   # dry-run: full scoring breakdown, executes nothing
+tuan dispatch run "fix the flaky test"     # route + stream + summary (--agent/--mode/--timeout)
+tuan dispatch serve --port 8788            # WebSocket at ws://HOST:8788/tuan/dispatch/v1
 # phone / WebUI → pick mode → tuan routes to the best local agent → stream events back
 ```
 
-- Protocol: [`docs/TUAN-DISPATCH-PROTOCOL.md`](docs/TUAN-DISPATCH-PROTOCOL.md) (event schema, hello handshake, approval flow).
+- Protocol: [`docs/TUAN-DISPATCH-PROTOCOL.md`](docs/TUAN-DISPATCH-PROTOCOL.md) (event schema, hello handshake, approval flow, `tuan dispatch` CLI reference).
 
 ---
 

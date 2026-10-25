@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import argparse
 
+# dispatch 子命令共用的五模式 (与 tuan_cli/agents/base.py TaskRequest.mode 对齐)
+_DISPATCH_MODES = ("chat", "collaboration", "gantong", "lingma", "boundless")
+
 
 def _add_network_parser(sub, name: str, help_text: str) -> "argparse.ArgumentParser":
     """注册 `tuan <name> <configuration|con|config> [action key? value?]`。
@@ -235,6 +238,42 @@ def register_subcommands(sub) -> None:
              " 命名会话, 便于后续 tuan session resume / replay 定位)",
     )
     p.set_defaults(func="cmd_run")
+
+    p = sub.add_parser(
+        "dispatch",
+        help="Agent-of-Agents 调度层: 探测本机代理 / dry-run 路由 / 派活 / 启动调度服务器",
+    )
+    dsub = p.add_subparsers(dest="dispatch_cmd")
+    dst = dsub.add_parser("status", help="探测本机 5 家本地代理 (默认子命令)")
+    dst.add_argument("agent_id", nargs="?", help="只探测指定代理 id (省略=全部 5 家)")
+    dst.add_argument("--format", choices=("text", "json"), default="text", help="输出格式: text|json (默认 text)")
+    dst.set_defaults(func="cmd_dispatch")
+    dls = dsub.add_parser("list", help="status 的别名")
+    dls.add_argument("agent_id", nargs="?", help="只探测指定代理 id (省略=全部 5 家)")
+    dls.add_argument("--format", choices=("text", "json"), default="text", help="输出格式: text|json (默认 text)")
+    dls.set_defaults(func="cmd_dispatch")
+    dr = dsub.add_parser("route", help="dry-run: 打分明细, 不执行")
+    dr.add_argument("prompt", help="任务提示词 (仅用于路由判定)")
+    dr.add_argument("--agent", help="显式指定代理 id (默认 auto)")
+    dr.add_argument("--mode", choices=_DISPATCH_MODES, help="运行模式 (默认 chat)")
+    dr.add_argument("--format", choices=("text", "json"), default="text", help="输出格式: text|json (默认 text)")
+    dr.set_defaults(func="cmd_dispatch")
+    dn = dsub.add_parser("run", help="实际派活: 路由 → 流式执行 → 汇总")
+    dn.add_argument("prompt", help="任务提示词")
+    dn.add_argument("--agent", help="显式指定代理 id (默认 auto)")
+    dn.add_argument("--mode", choices=_DISPATCH_MODES, help="运行模式 (默认 chat)")
+    dn.add_argument("--cwd", help="工作目录 (默认当前目录)")
+    dn.add_argument("--timeout", type=int, default=600, help="超时秒数 (默认 600)")
+    dn.add_argument("--format", choices=("text", "json"), default="text", help="输出格式: text|json (默认 text)")
+    dn.set_defaults(func="cmd_dispatch")
+    ds = dsub.add_parser("serve", help="启动 WebSocket 调度服务器 (手机/浏览器遥控)")
+    ds.add_argument("--host", default="127.0.0.1", help="监听地址 (默认 127.0.0.1)")
+    ds.add_argument("--port", type=int, default=8788, help="监听端口 (默认 8788)")
+    ds.add_argument("--format", choices=("text", "json"), default="text", help="输出格式: text|json (默认 text)")
+    ds.set_defaults(func="cmd_dispatch")
+    # 父级也挂一份: `tuan dispatch --format json status` 亦可 (子命令位优先)。
+    p.add_argument("--format", choices=("text", "json"), default="text", help="输出格式: text|json (默认 text)")
+    p.set_defaults(func="cmd_dispatch")
 
     p = sub.add_parser("agent", help="后台自主任务 (终端不阻塞, 青小团自己在后台干活)")
     p.add_argument("task", help="任务描述")

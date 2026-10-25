@@ -457,7 +457,7 @@ pub fn memory_auto_archive() {
 fn memory_path() -> Result<PathBuf, String> {
     let dir = dirs::config_dir()
         .ok_or_else(|| "无法定位配置目录".to_string())?
-        .join("tuan-chat");
+        .join("tuan");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join("memories.json"))
 }
@@ -466,7 +466,7 @@ fn memory_path() -> Result<PathBuf, String> {
 fn config_path() -> Result<PathBuf, String> {
     let dir = dirs::config_dir()
         .ok_or_else(|| "无法定位配置目录".to_string())?
-        .join("tuan-chat");
+        .join("tuan");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join("memory_config.json"))
 }

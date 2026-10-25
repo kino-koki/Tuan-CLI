@@ -136,6 +136,8 @@ _CMD_SOURCES = {
     "cmd_upgrade": ".cmd_upgrade",
     # ---- cmd_ecosystem (生态互操作: Claude Code / Hermes 资产双向搬运) ----
     "cmd_ecosystem": ".cmd_ecosystem",
+    # ---- cmd_dispatch (Agent-of-Agents 调度层独立命令) ----
+    "cmd_dispatch": ".cmd_dispatch",
 }
 
 __all__ = sorted(_CMD_SOURCES) + ["ui"]

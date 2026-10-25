@@ -204,9 +204,9 @@ export default function Sidebar({
     <aside className="sidebar-fixed h-full w-[260px] flex-shrink-0 flex flex-col bg-tuan-sidebar border-r border-tuan-border overflow-hidden">
       {/* 品牌区 */}
       <div className="flex items-center gap-2.5 px-[18px] pt-[16px] pb-[8px] flex-shrink-0">
-        <img src="/icons/star.png" alt="Tuan-Chat" className="h-[28px] w-[28px] object-contain" />
+        <img src="/icons/star.png" alt="Tuan" className="h-[28px] w-[28px] object-contain" />
         <span className="text-[15px] font-semibold tracking-wide text-[var(--tuan-heading)] select-none">
-          Tuan-Chat
+          Tuan
         </span>
       </div>
 
