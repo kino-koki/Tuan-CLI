@@ -24,10 +24,68 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-const ENGINE_PORT: u16 = 8137;
+/// 默认引擎端口：应用启动后经 `init_engine_port` 固化到 `ENGINE_PORT`；
+/// 可用环境变量 `TUAN_ENGINE_PORT` 显式覆盖（非法值忽略）。
+const DEFAULT_ENGINE_PORT: u16 = 8137;
 const SPAWN_TIMEOUT: Duration = Duration::from_secs(30);
 const READY_POLL: Duration = Duration::from_millis(250);
 const CUSTOM_KEY_ENV: &str = "TUAN_APP_API_KEY";
+
+/// 当前生效的引擎端口（首次确定后固化，供 base_url / spawn / check_engine 共用）。
+static ENGINE_PORT: OnceLock<u16> = OnceLock::new();
+
+/// 环境变量显式指定的端口（`TUAN_ENGINE_PORT`）；缺失或非法返回 None。
+fn env_port() -> Option<u16> {
+    std::env::var("TUAN_ENGINE_PORT")
+        .ok()
+        .and_then(|v| v.trim().parse::<u16>().ok())
+        .filter(|p| *p > 0)
+}
+
+/// 当前生效端口：已固化用固化的，否则按「env 覆盖 > 默认」计算（尚未确定时）。
+fn engine_port_value() -> u16 {
+    ENGINE_PORT
+        .get()
+        .copied()
+        .unwrap_or_else(|| env_port().unwrap_or(DEFAULT_ENGINE_PORT))
+}
+
+/// 127.0.0.1 上指定端口是否已被占用（同步 TCP 探测，300ms 超时）。
+fn port_in_use(port: u16) -> bool {
+    use std::net::TcpStream;
+    TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        Duration::from_millis(300),
+    )
+    .is_ok()
+}
+
+/// 首选端口被占用时挑选一个空闲端口：先遍历默认端口附近，最后 bind 0 兜底。
+fn find_free_port() -> u16 {
+    for p in (DEFAULT_ENGINE_PORT + 1)..(DEFAULT_ENGINE_PORT + 64) {
+        if !port_in_use(p) {
+            return p;
+        }
+    }
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .ok()
+        .and_then(|l| l.local_addr().ok().map(|a| a.port()))
+        .unwrap_or(DEFAULT_ENGINE_PORT)
+}
+
+/// 确定并固化引擎端口（幂等）：env 显式指定 > 默认端口空闲 > 自动挑选空闲端口。
+fn init_engine_port() -> u16 {
+    if let Some(p) = ENGINE_PORT.get() {
+        return *p;
+    }
+    let port = match env_port() {
+        Some(p) => p,
+        None if !port_in_use(DEFAULT_ENGINE_PORT) => DEFAULT_ENGINE_PORT,
+        None => find_free_port(),
+    };
+    let _ = ENGINE_PORT.set(port);
+    port
+}
 
 /// 回传给前端的统一事件块（与 net.rs 的 Chunk 互补：多出 reason/tool 两类）。
 #[derive(Debug, Serialize, Clone)]
@@ -91,7 +149,7 @@ fn engine_lock() -> &'static tokio::sync::Mutex<Option<EngineProc>> {
 }
 
 fn base_url() -> String {
-    format!("http://127.0.0.1:{ENGINE_PORT}")
+    format!("http://127.0.0.1:{}", engine_port_value())
 }
 
 /// 定位引擎根目录（含 tuan_cli/ 包）：打包布局 exe/engine > resource_dir > app_data_dir > 环境变量。
@@ -145,6 +203,34 @@ fn engine_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     ))
 }
 
+/// 发射引擎分阶段进度事件（T-1.3）：init → connect → ready。
+///
+/// 前端分片监听 `engine-stage` 展示加载进度；payload: {stage, detail?}。
+fn emit_stage(app: &tauri::AppHandle, stage: &str, detail: Option<&str>) {
+    use tauri::Emitter;
+    let _ = app.emit(
+        "engine-stage",
+        serde_json::json!({ "stage": stage, "detail": detail }),
+    );
+}
+
+/// 广播引擎错误事件（T-5.5）：崩溃/超时/拉起失败等异常路径主动上报，
+/// payload: {message}。前端监听后展示错误并触发桌面通知。
+fn emit_engine_error(app: &tauri::AppHandle, message: &str) {
+    use tauri::Emitter;
+    let _ = app.emit("engine-error", serde_json::json!({ "message": message }));
+}
+
+/// 广播轻量通知事件（T-5.1 桌面通知引擎侧）：引擎只负责发事件，
+/// 弹窗展示由前端用 Web Notification API 完成；payload: {kind, message?}。
+fn emit_notify(app: &tauri::AppHandle, kind: &str, message: Option<String>) {
+    use tauri::Emitter;
+    let _ = app.emit(
+        "engine-notify",
+        serde_json::json!({ "kind": kind, "message": message }),
+    );
+}
+
 /// 确保引擎 Web 服务在跑：已在跑则复用，否则孵化并等就绪。
 async fn ensure_server(app: &tauri::AppHandle) -> Result<(), String> {
     // 已在跑（旧进程残留或本进程已孵化）：直接复用
@@ -160,8 +246,23 @@ async fn ensure_server(app: &tauri::AppHandle) -> Result<(), String> {
             return Ok(());
         }
     }
-    let root = engine_root(app)?;
-    let python = resolve_python(root.parent().unwrap_or(&root)).map_err(|e| e.to_string())?;
+    // T-1.3：分阶段进度 —— 进入「初始化」阶段（定位引擎目录与 Python 解释器）
+    emit_stage(app, "init", Some("正在定位引擎与解释器"));
+    let root = engine_root(app).map_err(|e| {
+        // T-5.5：引擎目录缺失是异常路径，主动广播错误事件
+        emit_engine_error(app, &e);
+        e
+    })?;
+    let python = resolve_python(root.parent().unwrap_or(&root)).map_err(|e| {
+        let m = e.to_string();
+        emit_engine_error(app, &m);
+        m
+    })?;
+    // 确定并固化实际端口（env 覆盖 > 默认端口空闲 > 自动避让），
+    // 并通知前端直连引擎的模块（TTS / 上下文仪表）同步实际端口。
+    let port = init_engine_port();
+    use tauri::Emitter;
+    let _ = app.emit("engine-port", port);
     let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let home = data.join("tuan-home");
     let ws = data.join("tuan-workspace");
@@ -180,7 +281,7 @@ async fn ensure_server(app: &tauri::AppHandle) -> Result<(), String> {
         .arg("--host")
         .arg("127.0.0.1")
         .arg("--port")
-        .arg(ENGINE_PORT.to_string())
+        .arg(port.to_string())
         .arg("--workspace")
         .arg(&ws)
         .current_dir(&root)
@@ -191,6 +292,8 @@ async fn ensure_server(app: &tauri::AppHandle) -> Result<(), String> {
     cmd.creation_flags(CREATE_NO_WINDOW);
     let mut child = cmd.spawn().map_err(|e| format!("引擎进程启动失败: {e}"))?;
 
+    // T-1.3：分阶段进度 —— 进入「连接」阶段（等待服务端口就绪）
+    emit_stage(app, "connect", Some("正在等待引擎服务就绪"));
     let deadline = Instant::now() + SPAWN_TIMEOUT;
     loop {
         // 提前退出：立即把 stderr 读出来报错，而不是让调用方干等
@@ -211,11 +314,14 @@ async fn ensure_server(app: &tauri::AppHandle) -> Result<(), String> {
             } else {
                 String::new()
             };
-            return Err(format!(
+            let err_msg = format!(
                 "引擎提前退出（状态 {status}）：{}{}",
                 if err_trimmed.is_empty() { "无 stderr 输出" } else { err_trimmed },
                 hint
-            ));
+            );
+            // T-5.5：引擎崩溃路径主动广播错误事件，供前端展示与桌面通知
+            emit_engine_error(app, &err_msg);
+            return Err(err_msg);
         }
         if let Ok(resp) = reqwest::get(format!("{}/api/info", base_url())).await {
             if resp.status().is_success() {
@@ -236,18 +342,23 @@ async fn ensure_server(app: &tauri::AppHandle) -> Result<(), String> {
             } else {
                 format!("stderr 末尾：{err_trimmed}")
             };
-            return Err(format!(
+            let err_msg = format!(
                 "引擎就绪超时（30s），进程已终止。\n{detail}\n\n\
                  请检查：\n\
-                 1. 端口 {ENGINE_PORT} 是否被其他程序占用：\n\
-                 \  netstat -ano | findstr {ENGINE_PORT}\n\
+                 1. 端口 {port} 是否被其他程序占用：\n\
+                 \  netstat -ano | findstr {port}\n\
                  2. Python 依赖是否齐全：\n\
                  \  pip install -r \"<安装目录>\\engine\\requirements.txt\""
-            ));
+            );
+            // T-5.5：就绪超时也是引擎异常路径，主动广播错误事件
+            emit_engine_error(app, &err_msg);
+            return Err(err_msg);
         }
         tokio::time::sleep(READY_POLL).await;
     }
     *guard = Some(EngineProc { child });
+    // T-1.3：分阶段进度 —— 进入「就绪」阶段，前端可关闭加载提示
+    emit_stage(app, "ready", Some(&format!("引擎已就绪（端口 {port}）")));
     Ok(())
 }
 
@@ -480,30 +591,59 @@ async fn engine_chat_stream_desktop(
     session: String,
     channel: tauri::ipc::Channel<Chunk>,
 ) -> Result<(), String> {
-    ensure_server(&app).await?;
+    if let Err(e) = ensure_server(&app).await {
+        // T-5.5：引擎拉起失败时主动广播错误事件
+        emit_engine_error(&app, &e);
+        return Err(e);
+    }
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
         .build()
         .map_err(|e| format!("网络客户端初始化失败：{e}"))?;
-    push_model(&client, &provider, &model).await?;
+    if let Err(e) = push_model(&client, &provider, &model).await {
+        emit_engine_error(&app, &e);
+        return Err(e);
+    }
 
     let chat_body = serde_json::json!({ "message": message, "session": session });
-    let resp = client
+    let resp = match client
         .post(format!("{}/api/chat", base_url()))
         .json(&chat_body)
         .send()
         .await
-        .map_err(|e| format!("聊天请求失败：{e}"))?;
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let m = format!("聊天请求失败：{e}");
+            emit_engine_error(&app, &m);
+            return Err(m);
+        }
+    };
     if !resp.status().is_success() {
-        return Err(format!("聊天接口返回 {}", resp.status()));
+        let m = format!("聊天接口返回 {}", resp.status());
+        emit_engine_error(&app, &m);
+        return Err(m);
     }
     let mut stream = resp.bytes_stream();
     let mut buf: Vec<u8> = Vec::new();
     while let Some(part) = stream.next().await {
-        let part = part.map_err(|e| format!("读取事件流失败：{e}"))?;
+        let part = match part {
+            Ok(p) => p,
+            Err(e) => {
+                let m = format!("读取事件流失败：{e}");
+                emit_engine_error(&app, &m);
+                return Err(m);
+            }
+        };
         buf.extend_from_slice(&part);
         while let Some(block) = take_sse_block(&mut buf) {
             let Some(ck) = parse_sse_block(&block) else { continue };
+            // T-5.1/T-5.5：完成/失败时广播通知事件，前端监听后触发桌面通知
+            match ck.kind.as_str() {
+                "done" => emit_notify(&app, "done", Some("Agent 已完成本轮生成")),
+                "error" => emit_notify(&app, "error", ck.error.clone()),
+                _ => {}
+            }
             if channel.send(ck).is_err() {
                 // 前端已断开（停止生成/关页面）：取消本轮，别让 agent 白跑
                 let _ = client
@@ -652,7 +792,190 @@ pub async fn check_engine(app: tauri::AppHandle) -> Result<serde_json::Value, St
             "engine_version": read_engine_version(&root),
             "engine_root": root.to_string_lossy().to_string(),
             "python": python.to_string_lossy().to_string(),
+            "engine_port": engine_port_value(),
         }))
+    }
+}
+
+/// Agent-of-Agents 网络自检：经引擎 Python 并行探测本机 5 家本地代理。
+///
+/// 探测逻辑单一事实来源在引擎侧 (`tuan_cli/agents/discovery.py`)，Rust 只负责
+/// 定位引擎 + 解析 JSON，避免两套判定口径漂移。前端在启动序列里渲染
+/// 「Agent 网络 N/5 在线」一行；该状态不阻塞启动 (代理未装是可选项)。
+///
+/// 输出: {ok, online, total, verified, agents:[{id,name,healthy,score,version}]}
+/// 任何一步失败都返回 {ok:false, reason}，由前端降级为「未探测」信息态。
+#[tauri::command]
+pub async fn check_agents(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = app;
+        return Ok(serde_json::json!({
+            "ok": false,
+            "android": true,
+            "reason": "Android 端不探测本地代理 (调度层为桌面能力)",
+        }));
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let root = match engine_root(&app) {
+            Ok(r) => r,
+            Err(e) => {
+                return Ok(serde_json::json!({ "ok": false, "step": "engine_root", "reason": e }));
+            }
+        };
+        let python = match crate::engine::resolve_python(root.parent().unwrap_or(&root)) {
+            Ok(p) => p,
+            Err(e) => {
+                return Ok(serde_json::json!({ "ok": false, "step": "python", "reason": e.to_string() }));
+            }
+        };
+
+        // 探测脚本: 与 CLI `tuan dispatch status --format json` 同一条通路。
+        // 标记前缀用于把我们的 JSON 从引擎可能的 banner 噪声里择出来。
+        const PROBE: &str = "import json,asyncio;from tuan_cli.agents.discovery import discover_agents;print('__TUAN_AGENTS__'+json.dumps([i.to_dict() for i in asyncio.run(discover_agents())],ensure_ascii=False))";
+
+        let mut cmd = Command::new(&python);
+        cmd.arg("-c").arg(PROBE)
+            .env("PYTHONPATH", &root)
+            .current_dir(root.parent().unwrap_or(&root))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child: Child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                return Ok(serde_json::json!({ "ok": false, "step": "spawn", "reason": e.to_string() }));
+            }
+        };
+
+        // 总预算 20s: 5 家并行探测各 5s 超时 + 解释器启动
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut out = String::new();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Ok(serde_json::json!({ "ok": false, "step": "timeout", "reason": "代理探测超时 (20s)" }));
+                    }
+                    std::thread::sleep(Duration::from_millis(150));
+                }
+                Err(e) => {
+                    let _ = child.kill();
+                    return Ok(serde_json::json!({ "ok": false, "step": "wait", "reason": e.to_string() }));
+                }
+            }
+        }
+        if let Some(mut so) = child.stdout.take() {
+            let _ = so.read_to_string(&mut out);
+        }
+        let _ = child.stderr.take().map(|mut se| {
+            let mut buf = String::new();
+            let _ = se.read_to_string(&mut buf);
+            buf
+        });
+
+        // 择出标记行并解析
+        let payload = out
+            .lines()
+            .find(|l| l.trim_start().starts_with("__TUAN_AGENTS__"))
+            .map(|l| l.trim_start()["__TUAN_AGENTS__".len()..].trim().to_string());
+        let agents: Vec<serde_json::Value> = match payload {
+            Some(p) => match serde_json::from_str::<Vec<serde_json::Value>>(&p) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Ok(serde_json::json!({ "ok": false, "step": "parse", "reason": e.to_string() }));
+                }
+            },
+            None => {
+                return Ok(serde_json::json!({ "ok": false, "step": "output", "reason": "引擎未返回探测结果" }));
+            }
+        };
+
+        let online = agents.iter().filter(|a| a.get("healthy") == Some(&serde_json::Value::Bool(true))).count();
+        let verified = agents
+            .iter()
+            .filter(|a| a.get("score").and_then(|s| s.as_i64()).unwrap_or(0) >= 100)
+            .count();
+        Ok(serde_json::json!({
+            "ok": true,
+            "online": online,
+            "total": agents.len(),
+            "verified": verified,
+            "agents": agents,
+        }))
+    }
+}
+
+/// 列出引擎侧全部会话（T-3.3 会话恢复后端）。
+///
+/// 转发 Python 引擎的 GET /api/sessions：{ok, sessions:[{id,title,created,messages}]}。
+/// 供历史会话侧边栏渲染；引擎不在时先自动拉起（ensure_server）。
+#[tauri::command]
+pub async fn engine_session_list(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    // 安卓端无本地引擎：不存在服务端会话可列
+    #[cfg(target_os = "android")]
+    {
+        let _ = app;
+        return Ok(serde_json::json!({ "ok": false, "reason": "Android 端无本地引擎会话" }));
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        if let Err(e) = ensure_server(&app).await {
+            emit_engine_error(&app, &e);
+            return Err(e);
+        }
+        let resp = reqwest::get(format!("{}/api/sessions", base_url()))
+            .await
+            .map_err(|e| format!("会话列表请求失败：{e}"))?;
+        let j: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("会话列表解析失败：{e}"))?;
+        Ok(j)
+    }
+}
+
+/// 按会话 id 加载完整历史消息（T-3.3 会话恢复后端）。
+///
+/// 转发 Python 引擎的 GET /api/history?session=<id>：{ok, messages:[...]}；
+/// 会话不存在时引擎返回 404，原样透传由前端判断。
+#[tauri::command]
+pub async fn engine_session_history(
+    app: tauri::AppHandle,
+    session: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = (app, session);
+        return Ok(serde_json::json!({ "ok": false, "reason": "Android 端无本地引擎会话" }));
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        if let Err(e) = ensure_server(&app).await {
+            emit_engine_error(&app, &e);
+            return Err(e);
+        }
+        let resp = reqwest::get(format!(
+            "{}/api/history?session={}",
+            base_url(),
+            session
+        ))
+        .await
+        .map_err(|e| format!("会话历史请求失败：{e}"))?;
+        let j: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("会话历史解析失败：{e}"))?;
+        Ok(j)
     }
 }
 
