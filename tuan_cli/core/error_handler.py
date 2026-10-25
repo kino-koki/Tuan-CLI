@@ -83,7 +83,9 @@ def friendly_error(exc: Exception, context: Optional[Dict[str, Any]] = None) -> 
         return FriendlyError(
             title="API Key 无效或已过期",
             reason=f"服务端拒绝了认证 (provider: {provider})。",
-            suggestion="运行 `tuan config set provider.key <key>` 或 `tuan login <KEY>` 重新设置密钥。",
+            # 契约 C-2.3 固定文案 + 保留旧入口提示 (回归测试要求含 tuan config / tuan login)
+            suggestion="您的 API Key 可能已过期或无效。请运行 tuan setup 重新配置"
+                       "（或 `tuan config set provider.key <key>` 更新密钥）。",
             kind="auth", detail=msg,
         )
 
@@ -134,7 +136,9 @@ def friendly_error(exc: Exception, context: Optional[Dict[str, Any]] = None) -> 
         return FriendlyError(
             title="网络不可达",
             reason="无法连接到模型 API 或外网。",
-            suggestion="检查代理 / VPN; 或使用本地模型 (`tuan models` 切 Ollama) 与 --offline 模式。",
+            # 契约 C-2.4 固定文案
+            suggestion="无法连接到模型服务。请检查网络连接，"
+                       "或运行 tuan models local 查看本地模型。",
             kind="network", detail=msg,
         )
 
@@ -149,7 +153,8 @@ def friendly_error(exc: Exception, context: Optional[Dict[str, Any]] = None) -> 
         return FriendlyError(
             title="配置文件语法错误",
             reason=f"config.yaml 解析失败: {msg.splitlines()[0] if msg else ''}",
-            suggestion="用 `tuan doctor` 定位具体行; 对照 config.schema.json 修正缩进/字段。",
+            suggestion="请运行 tuan doctor 自动定位并修复配置问题; "
+                       "对照 config.schema.json 修正缩进/字段。",
             kind="config", detail=msg,
         )
 

@@ -93,9 +93,24 @@ def _ask_sandbox_setup(config) -> None:
 
 def cmd_setup(args) -> int:
     """初始化向导。"""
+    # C-1.6 跳过机制: `tuan setup --skip` 或 TUAN_SKIP_SETUP=1 直接写完成标记退出。
+    if getattr(args, "skip", False) or os.environ.get("TUAN_SKIP_SETUP") == "1":
+        try:
+            from .cmd_onboarding import mark_onboarding_done
+
+            mark_onboarding_done()
+        except Exception:  # noqa: BLE001 - 标记写失败不影响跳过语义
+            pass
+        console.print("  已跳过设置向导。可用 `tuan setup` 随时重跑。")
+        return 0
+
     kernel = build_kernel()
     config = kernel.require("config")
     ensure_language(config)
+
+    # C-1 首次向导 (onboarding 以 --quick 进入): 直接走精简三步 (Provider -> Key -> 模式)
+    if getattr(args, "quick", False):
+        return _wizard_first_run(config)
 
     console.print(f"{t('setup.title')}")
     console.print(f"  1. {t('setup.opt_quick')}")
@@ -131,10 +146,8 @@ def _setup_quick(config) -> int:
     else:
         console.print(f"  {t('setup.gateway', url=base_url)}")
     if api_key_env:
-        try:
-            key = input(t("setup.api_key_prompt", env=api_key_env)).strip()
-        except (EOFError, KeyboardInterrupt):
-            key = ""
+        # C-1.3: API Key 安全输入不回显 (getpass)
+        key = _ask_api_key(api_key_env)
         if key:
             _save_api_key(api_key_env, key)
 
@@ -145,6 +158,124 @@ def _setup_quick(config) -> int:
     if api_key_env:
         config.set_user("model.api_key_env", api_key_env)
     console.print(f"\n{t('setup.done', model=f'{provider}/{model_name}')}")
+    return 0
+
+
+def _ask_api_key(env_name: str) -> str:
+    """C-1.3: 安全输入 API Key (getpass 不回显)。
+
+    终端不支持 getpass 时回退普通 input (仍不回显由调用方约束; 测试环境兼容)。
+    """
+    import getpass
+
+    try:
+        key = getpass.getpass(f"  请输入 {env_name} (输入时不显示): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        key = ""
+    except Exception:  # noqa: BLE001 - 罕见无 tty 场景回退
+        try:
+            key = input(f"  请输入 {env_name}: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            key = ""
+    return key
+
+
+# C-1.2: 首次向导展示的 6 家常用供应商 (名称 -> 展示文案)
+_CURATED_PROVIDERS = [
+    ("deepseek", "DeepSeek    (国内直连, 性价比高)"),
+    ("groq", "Groq        (海外, 速度极快, 免费额度)"),
+    ("sensenova", "SenseNova   (商汤日日新, 国内直连)"),
+    ("ollama", "Ollama      (本地离线, 无需 Key)"),
+    ("openrouter", "OpenRouter  (海外聚合, 一家 Key 用百家模型)"),
+    ("zhipu", "Zhipu       (智谱 GLM, 国内直连, 有免费模型)"),
+]
+
+
+def _wizard_first_run(config) -> int:
+    """C-1 首次精简三步向导: Step1 选 Provider -> Step2 填 API Key -> Step3 选模式。
+
+    默认推荐模式「协同」(collaboration)。完成后写配置 + onboarding 完成标记。
+    """
+    import getpass  # noqa: F401  (保留显式导入便于检索)
+
+    console.print("\n  🎯 三步完成初始化 (随时 Ctrl+C 退出, 配置不会写坏)\n")
+
+    # ---- Step1: 选 Provider (6 家常用) ----
+    console.print("  第 1 步 / 3: 选择模型供应商")
+    for i, (_name, desc) in enumerate(_CURATED_PROVIDERS, 1):
+        console.print(f"    {i}. {desc}")
+    try:
+        raw = input("  选择编号 [1-6] (默认 1 DeepSeek): ").strip() or "1"
+        idx = max(1, min(int(raw), 6)) - 1
+    except (ValueError, EOFError, KeyboardInterrupt):
+        idx = 0
+    provider, _desc = _CURATED_PROVIDERS[idx]
+
+    preset = get_provider(provider)
+    base_url = preset.base_url if preset else ""
+    api_key_env = preset.api_key_env if preset else ""
+
+    # Ollama 本地不需要 Key
+    is_local = provider == "ollama"
+    model_name = ""
+    if not is_local:
+        if preset:
+            # 从该供应商目录里挑第一个模型作默认 (避免再让用户选一次模型)
+            model_name = (preset.default_model or "").strip() if hasattr(preset, "default_model") else ""
+        if not model_name:
+            model_name = {"deepseek": "deepseek-chat", "groq": "llama-3.3-70b-versatile",
+                          "sensenova": "SenseChat-5", "openrouter": "deepseek/deepseek-chat",
+                          "zhipu": "glm-4-flash"}.get(provider, "")
+    else:
+        model_name = "llama3.1"
+
+    # ---- Step2: 填 API Key (不回显) ----
+    if not is_local:
+        console.print(f"\n  第 2 步 / 3: 填入 {provider} 的 API Key")
+        console.print(f"     (将保存到 ~/.tuan/.env, 环境变量名: {api_key_env})")
+        key = _ask_api_key(api_key_env)
+        if key:
+            _save_api_key(api_key_env, key)
+        else:
+            console.print("     (未输入 Key: 稍后可用 `tuan models set` 再配)")
+    else:
+        console.print("\n  第 2 步 / 3: 本地模型无需 API Key, 跳过 ✅")
+
+    # ---- Step3: 选默认模式 (五模式, 默认推荐「协同」) ----
+    console.print("\n  第 3 步 / 3: 选择默认工作模式")
+    from ..modes.registry import MODE_REGISTRY
+
+    mode_ids = ["collaboration", "gantong", "lingma", "chat", "boundless"]
+    for i, mid in enumerate(mode_ids, 1):
+        meta = MODE_REGISTRY.get(mid, {})
+        tag = " (推荐)" if mid == "collaboration" else ""
+        console.print(f"    {i}. {meta.get('name', mid):<6} [{meta.get('level', '?')}] "
+                      f"{meta.get('description', '')[:34]}{tag}")
+    try:
+        raw = input("  选择编号 [1-5] (默认 1 协同): ").strip() or "1"
+        mode_picked = mode_ids[max(1, min(int(raw), 5)) - 1]
+    except (ValueError, EOFError, KeyboardInterrupt):
+        mode_picked = "collaboration"
+
+    # ---- 写配置 ----
+    config.set_user("model.provider", provider)
+    config.set_user("model.model", model_name)
+    if base_url:
+        config.set_user("model.base_url", base_url)
+    if api_key_env:
+        config.set_user("model.api_key_env", api_key_env)
+    config.set_user("mode.default", mode_picked)
+
+    # C-1.5: 写 onboarding 完成标记 (下次不再自动弹向导)
+    try:
+        from .cmd_onboarding import mark_onboarding_done
+
+        mark_onboarding_done()
+    except Exception:  # noqa: BLE001
+        pass
+
+    console.print(f"\n  ✅ 初始化完成! 供应商={provider}  模型={model_name}  模式={mode_picked}")
+    console.print("  输入 `tuan` 开始对话, 或 `tuan run \"任务\"` 跑一次性任务。")
     return 0
 
 
@@ -266,10 +397,8 @@ def _setup_full(config) -> int:
     else:
         console.print(f"  {t('setup.gateway', url=base_url)}")
     if api_key_env:
-        try:
-            key = input(t("setup.api_key_prompt", env=api_key_env)).strip()
-        except (EOFError, KeyboardInterrupt):
-            key = ""
+        # C-1.3: API Key 安全输入不回显 (getpass)
+        key = _ask_api_key(api_key_env)
         if key:
             _save_api_key(api_key_env, key)
 

@@ -11,7 +11,9 @@ from __future__ import annotations
 import argparse
 import importlib
 import logging
+import os
 import sys
+from pathlib import Path
 
 from .. import __version__
 from .parser_commands import register_subcommands
@@ -248,6 +250,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="单次会话最大花费上限 (USD), 超过自动停止; 0=不限制",
     )
+    # ---- C-4.2/C-4.3: 顶层会话续接旗标 ----
+    parser.add_argument(
+        "--resume",
+        dest="top_resume",
+        nargs="?",
+        const="latest",
+        default=None,
+        metavar="会话ID",
+        help="恢复指定会话后进入对话; 省略=最近一次 (tuan --resume <id> / tuan --resume)",
+    )
+    parser.add_argument(
+        "--continue",
+        dest="top_resume",
+        action="store_const",
+        const="latest",
+        help="恢复最近一次会话后进入对话 (等价 tuan --resume latest)",
+    )
+    # ---- C-2.6: 调试旗标 (默认隐藏 traceback, --debug 才显示完整堆栈) ----
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="显示完整 traceback (默认错误只显示友好中文提示 + 可执行建议)",
+    )
     sub = parser.add_subparsers(dest="cmd")
     register_subcommands(sub)
 
@@ -285,9 +310,36 @@ def main() -> int:
     from ..config import load_dotenv
 
     load_dotenv()
+    # C-2.6: 安装全局兜底钩子 (未捕获异常转友好提示; --debug 时由下方 try/except 透传 traceback)
+    try:
+        from ..core.error_handler import install_top_level_handler
+
+        install_top_level_handler()
+    except Exception:  # noqa: BLE001 - 钩子安装失败不阻断启动
+        pass
+    sys._tuan_friendly_errors = True  # type: ignore[attr-defined]
+
     parser = build_parser()
     sys.argv[1:] = _rewrite_dev_codedev(sys.argv[1:])
     args = parser.parse_args()
+    # C-2.6: --debug 时记录到 sys 全局, 供 excepthook / 兜底分支判断是否输出完整 traceback
+    sys._tuan_verbose = 1 if getattr(args, "debug", False) else 0  # type: ignore[attr-defined]
+
+    try:
+        return _dispatch(parser, args)
+    except KeyboardInterrupt:
+        sys.stderr.write("\n已取消\n")
+        return 130
+    except Exception as exc:  # noqa: BLE001 - 顶层兜底: 默认只显示友好提示
+        if getattr(args, "debug", False):
+            raise
+        from ..core.error_handler import handle_exception
+
+        return handle_exception(exc, verbose=False)
+
+
+def _dispatch(parser: "argparse.ArgumentParser", args) -> int:
+    """解析完成后的实际分发 (被 main() 的 try/except 包裹)。"""
     # 交互式/计划/免确认启动形态 (无子命令且非 --print) 直接走内置 Python TUI
     # (tuan_cli/tui/tui.py::QxtTUI, 仅依赖 rich + prompt_toolkit, 开箱即用,
     # 不依赖 Node / 任何 kimi 代码)。下方 fast_chat() 会接管终端。
@@ -326,7 +378,7 @@ def main() -> int:
         print("-v/--verbose 是详细日志开关, 需搭配子命令使用, 例如:")
         print('    tuan run -v "你的任务"   跑任务并显示详细日志')
         print("    tuan dev -v <任务>    开发循环并显示详细日志")
-        print("    tuan setup -v         配置向导并显示详细日志")
+        print("    tuan setup -v         配置向导并显示配置向导")
         print("查版本号请用: tuan --version")
         return 0
     _interactive_cmds = {None, "dev"}
@@ -353,6 +405,28 @@ def main() -> int:
         if callable(func):
             return int(func(args))
         return int(_resolve_func(func)(args))
+    # ---- C-1.1/C-1.6: 首次运行向导自动触发 (无子命令的交互启动) ----
+    # TUAN_SKIP_SETUP=1 或已写完成标记时不触发; 续会话/print 模式也不打扰。
+    if (
+        not getattr(args, "cmd", None)
+        and not is_print
+        and not getattr(args, "top_resume", None)
+        and os.environ.get("TUAN_SKIP_SETUP") != "1"
+    ):
+        try:
+            from .cmd_onboarding import is_first_run, run_onboarding
+
+            if is_first_run():
+                rc = run_onboarding(Path.cwd())
+                if rc != 0:
+                    return rc
+        except Exception:  # noqa: BLE001 - 引导失败绝不阻断启动
+            pass
+    # ---- C-4.2/C-4.3: 顶层 --continue / --resume <id> 续会话 ----
+    # 把续接目标交给 _prepare_agent 里既有的 args.resume 恢复逻辑 (零新增路径)。
+    top_resume = getattr(args, "top_resume", None)
+    if top_resume and not getattr(args, "cmd", None):
+        args.resume = top_resume
     # 无子命令: 默认进入交互式对话 (tuan 直接开界面)。
     # fast_chat 内部把加载屏内嵌进 QxtTUI (单 Application), 内核后台构建, 杜绝双屏切换崩溃。
     if not getattr(args, "cmd", None):
