@@ -85,7 +85,7 @@ class GitHubClient:
         if self._http_get:
             status, text = self._http_get(full, headers)
         else:
-            import httpx
+            from .. import _http as httpx
             r = httpx.get(full, headers=headers, timeout=25, follow_redirects=True)
             status, text = r.status_code, r.text
         if status != 200:
@@ -135,7 +135,7 @@ class GitHubClient:
         if self._http_get:
             status, text = self._http_get(raw, {"User-Agent": "tuan_cli-cli"})
         else:
-            import httpx
+            from .. import _http as httpx
             r = httpx.get(raw, headers={"User-Agent": "tuan_cli-cli"}, timeout=25,
                           follow_redirects=True)
             status, text = r.status_code, r.text

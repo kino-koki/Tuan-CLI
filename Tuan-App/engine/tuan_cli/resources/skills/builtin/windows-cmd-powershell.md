@@ -1,12 +1,14 @@
 ---
 name: Windows 命令参考 (CMD/PowerShell)
 description: Windows 环境下 CMD 和 PowerShell 的常用命令速查表。当模型在 Windows 上遇到命令报错、不确定命令语法或需要跨平台命令转换时，查阅本表。
+activation: auto
+triggers: PowerShell, pwsh, CMD, Windows, 命令行
+provides: powershell, windows
+suggests: cli-terminal-mastery
+priority: 65
 updated_at: 0
 use_count: 0
-activation: always
-platform: win32
 ---
-
 # Windows 命令参考 (CMD / PowerShell)
 
 > **使用场景**: 当你在 Windows 用户电脑上执行 shell 命令时，如果遇到报错、不确定命令语法、或需要将 Linux/macOS 命令转换为 Windows 等价命令，请查阅本表。大部分模型的训练数据以 Linux/macOS 为主，对 Windows 命令支持有限，本表作为"外骨骼"增强你的 Windows 能力。

@@ -72,12 +72,15 @@ fn err(msg: impl Into<String>) -> AgentChunk {
 const SYSTEM_PROMPT: &str = "\
 你是 Tuan-Chat 的助手，运行在 Android 设备上。
 
-你具备工具调用能力，可以联网查资料、抓取网页、算数、记录笔记。
+你具备工具调用能力，可以联网查资料、抓取网页、算数、记录笔记、保存和召回记忆。
 使用原则：
 - 需要最新信息、外部事实或你不确定的内容时，主动调用工具核实，不要凭记忆编造。
 - 工具是串行的：一次给出一个 tool_call，等结果返回后再决定下一步。
 - 工具失败时，如实说明失败原因，不要假装成功。
 - 回答用中文，简洁直接；不需要复述工具的原始输出，提取要点即可。
+- 当用户说"记住 XXX"或表达了重要偏好/指令时，使用 memory_save 保存。
+- 当需要回忆之前保存的信息时，使用 memory_recall 召回。
+- 当用户粘贴链接并要求总结时，使用 media_fetch 抓取内容。
 
 能力边界（必须如实告知用户）：
 - 你在手机上运行，无法执行 shell 命令、无法修改代码工程、无法访问设备上的任意文件。
@@ -140,7 +143,24 @@ pub async fn agent_chat_stream(
 
     // 构造消息序列：系统提示词 + 历史
     let mut messages: Vec<Value> = Vec::new();
-    messages.push(json!({ "role": "system", "content": SYSTEM_PROMPT }));
+    
+    // Scope Recall 3.0：召回与当前对话相关的记忆，注入系统提示词
+    let user_query = history.iter().rev().find(|m| m.role == "user").map(|m| m.content.clone()).unwrap_or_default();
+    if !user_query.is_empty() {
+        let memories = crate::memory::memory_recall(&user_query, None, 5);
+        if !memories.is_empty() {
+            let mut mem_text = String::from("\n【长期记忆】以下是与当前对话相关的历史记忆，请在回答时参考：\n");
+            for m in &memories {
+                mem_text.push_str(&format!("- [{}|{}] {}\n", m.scope, m.mem_type, m.content));
+            }
+            mem_text.push('\n');
+            messages.push(json!({ "role": "system", "content": format!("{}{}", SYSTEM_PROMPT, mem_text) }));
+        } else {
+            messages.push(json!({ "role": "system", "content": SYSTEM_PROMPT }));
+        }
+    } else {
+        messages.push(json!({ "role": "system", "content": SYSTEM_PROMPT }));
+    }
     for m in &history {
         // 只回传 user/assistant 文本；tool 结果由循环内部维护
         if m.role == "user" || m.role == "assistant" {
@@ -372,6 +392,22 @@ pub async fn agent_chat_stream(
     }
 
     let _ = channel.send(done());
+
+    // Scope Recall 3.0：自动从对话中提取记忆
+    let config = crate::memory::memory_config();
+    if config.auto_extract {
+        let resp_snippet = messages.iter().rev()
+            .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("assistant") && m.get("tool_calls").is_none())
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .to_string();
+        let memories = crate::memory::auto_extract_memories(&user_query, if resp_snippet.len() > 50 { Some(resp_snippet.as_str()) } else { None });
+        for (scope, mem_type, content, importance) in memories.into_iter().take(config.max_per_turn) {
+            crate::memory::memory_save(&scope, &mem_type, &content, importance);
+        }
+    }
+
     Ok(())
 }
 

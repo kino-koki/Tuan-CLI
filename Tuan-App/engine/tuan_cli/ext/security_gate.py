@@ -96,6 +96,7 @@ class SecurityGate:
         remote: bool = False,
         rules_engine: Any = None,
         auditor: Any = None,  # 可选: SecurityAuditor 实例, 记录每条决策的 provenance
+        mode: Optional[str] = None,  # 可选: 五模式 ID (chat/lingma/gantong/boundless/collaboration)
     ) -> None:
         # yolo 仅影响「可确认」层级的放行; 红线/信任级别始终 fail-closed。
         self.yolo = bool(yolo)
@@ -103,6 +104,7 @@ class SecurityGate:
         self.remote = bool(remote)
         self._rules = rules_engine  # 可选: 文件写规则校验 (RuleEngine 实例)
         self._auditor = auditor  # 可选: SecurityAuditor, 记录每条决策的 provenance
+        self.mode = mode  # 可选: 五模式 ID, 用于附加能力过滤
 
     # ---------------------------------------------------------- shell
     def decide_shell(
@@ -167,6 +169,16 @@ class SecurityGate:
                     ("命令来自远程控制会话, 非良性操作需用户确认",),
                 )
 
+            # 5. 模式附加过滤（不改变现有判定顺序，仅 ALLOW→DENY 升级）
+            if self.mode is not None:
+                from ..modes.policy import get_mode_policy
+                policy = get_mode_policy(self.mode)
+                if not policy.shell_allowed():
+                    return GateVerdict(
+                        _DENY, "medium",
+                        (f"模式 {self.mode} 禁用 Shell",),
+                    )
+
             return GateVerdict(_ALLOW, "none", ())
         except Exception:  # noqa: BLE001 - fail-closed
             return GateVerdict(_DENY, _DENY_CRITICAL, ("安全闸门异常, 保守拒绝执行",))
@@ -184,6 +196,17 @@ class SecurityGate:
                         _DENY, _DENY_CRITICAL,
                         (f"MCP 工具 {tool_name} 的参数包含危险操作, 已阻止",),
                     )
+
+            # 模式附加过滤（不改变现有判定顺序，仅 ALLOW→DENY 升级）
+            if self.mode is not None:
+                from ..modes.policy import get_mode_policy
+                policy = get_mode_policy(self.mode)
+                if not policy.mcp_allowed():
+                    return GateVerdict(
+                        _DENY, "medium",
+                        (f"模式 {self.mode} 禁用 MCP 工具调用",),
+                    )
+
             return GateVerdict(_ALLOW, "none", ())
         except Exception:  # noqa: BLE001 - fail-closed
             return GateVerdict(_DENY, _DENY_CRITICAL, ("MCP 安全闸门异常, 保守拒绝调用",))
@@ -264,6 +287,17 @@ class SecurityGate:
                 if blocking:
                     msgs = "; ".join(v.get("message", v.get("id", "")) for v in blocking)
                     return GateVerdict(_DENY, "high", (f"命中策略错误规则: {msgs}",))
+
+            # 5. 模式附加过滤（不改变现有判定顺序，仅 ALLOW→DENY 升级）
+            if self.mode is not None:
+                from ..modes.policy import get_mode_policy
+                policy = get_mode_policy(self.mode)
+                if not policy.file_write_allowed():
+                    return GateVerdict(
+                        _DENY, "medium",
+                        (f"模式 {self.mode} 禁用文件写入",),
+                    )
+
             return GateVerdict(_ALLOW, "none", ())
         except Exception:  # noqa: BLE001 - fail-closed
             return GateVerdict(_DENY, _DENY_CRITICAL, ("文件写安全闸门异常, 保守拒绝写入",))
@@ -303,6 +337,7 @@ class SecurityGate:
                         "yolo": self.yolo,
                         "trust_level": self.trust_level,
                         "remote": self.remote,
+                        "mode": self.mode,
                     },
                 )
             except Exception:  # noqa: BLE001

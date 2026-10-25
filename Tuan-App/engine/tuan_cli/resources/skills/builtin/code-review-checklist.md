@@ -1,10 +1,14 @@
 ---
 name: 代码审查清单
 description: 提交/合入前做 code review 的系统化清单，覆盖正确性、边界、安全、可维护性、测试
+activation: auto
+triggers: 代码审查, review, code review, 审查, PR, merge
+provides: code-review
+suggests: code-architect, tuan-security, tuan-a11y
+priority: 78
 updated_at: 0
 use_count: 0
 ---
-
 # 代码审查清单
 
 别逐行读，按风险维度扫。每一条都是「这里最容易出事」。

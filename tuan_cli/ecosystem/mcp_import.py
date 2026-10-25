@@ -16,10 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - pyyaml 为核心依赖, 缺失时优雅降级
-    yaml = None
+from .. import _yaml as yaml  # 后端门面: 有 PyYAML 用 PyYAML, 否则用内置 stdlib 实现
 
 
 @dataclass
@@ -62,7 +59,7 @@ def parse_hermes_config(path: Path) -> List[Dict[str, Any]]:
     Hermes 的 mcp.servers 形如 ``{name: {command, args, env, ...}}``;
     取不到时返回空列表, 不抛异常 (config 结构随版本演化, 尽力而为)。
     """
-    if not path.exists() or yaml is None:
+    if not path.exists():
         return []
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -183,12 +180,9 @@ def export_to_hermes_config(
 ) -> McpImportResult:
     """把 tuan 的 ``mcp.servers`` 合并进 Hermes ``config.yaml`` (保留其余配置)。
 
-    在现有 ``mcp.servers`` 上按名合并; 无 yaml 时只给出写入目标路径不落盘。
+    在现有 ``mcp.servers`` 上按名合并 (YAML 由内置 stdlib 实现解析, 不依赖 PyYAML)。
     """
     result = McpImportResult()
-    if yaml is None:
-        result.errors.append("pyyaml 不可用, 无法合并 Hermes config.yaml")
-        return result
     data: Dict[str, Any] = {}
     if hermes_config.exists():
         try:

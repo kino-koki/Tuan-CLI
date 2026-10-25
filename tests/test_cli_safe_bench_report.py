@@ -81,8 +81,15 @@ def test_cmd_report_writes_html(tmp_path, monkeypatch):
 def test_cmd_bench_quick_with_fake_runners(tmp_path, monkeypatch):
     """mock 子进程, 验证三套件调度 + 汇总 JSON 结构 + 临时文件清理。"""
     calls: list[list[str]] = []
-    root = cmd_safe._repo_root()
+    root = tmp_path
     ps_json = root / "bench" / "ps_safety_result.json"
+    # ps 基准产物是 gitignore 的本机产物 (HEAD/main 都未入库), 不能要求
+    # 被测环境里已经跑过一次 bench; 放一份 stub 即可, 与同文件里
+    # test_cmd_bench_check_does_not_clobber_archive 的做法一致。
+    (root / "bench").mkdir(parents=True, exist_ok=True)
+    ps_json.write_text(json.dumps({
+        "total": 5000, "accuracy": 1.0, "fn": 0, "fp": 0}), encoding="utf-8")
+    monkeypatch.setattr(cmd_safe, "_repo_root", lambda: root)
 
     def fake_run(cmd: list[str], **kw) -> types.SimpleNamespace:
         calls.append(cmd)
@@ -123,6 +130,8 @@ def test_cmd_bench_quick_with_fake_runners(tmp_path, monkeypatch):
     assert leftovers == []
     # ps 基准 JSON 未被覆盖为假数据 (不依赖 fake_run 写入)
     assert ps_json.exists()
+    # 只读不改: stub 原样保留, 证明 _cmd_bench 没有拿假数据覆盖它
+    assert json.loads(ps_json.read_text(encoding="utf-8"))["total"] == 5000
 
 
 # ---------------------------------------------------------------- 第三轮: 门禁 / RELEASE

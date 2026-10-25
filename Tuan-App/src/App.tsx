@@ -9,6 +9,7 @@ import SkillsPage from './components/SkillsPage';
 import McpPage from './components/McpPage';
 import PluginsPage from './components/PluginsPage';
 import GuidePage from './components/GuidePage';
+import DocsPage from './components/DocsPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import type { PageKey } from './components/Sidebar';
 import TitleBar from './components/TitleBar';
@@ -16,6 +17,7 @@ import CommandPalette, { type PaletteAction } from './components/CommandPalette'
 import BootScreen, { type BootEngineStatus } from './components/BootScreen';
 import EngineSetupPage from './components/EngineSetupPage';
 import { engineChat, setEngineAvailable, isAndroid } from './platform/engine';
+import { speakWithSettings, stopSpeech } from './platform/tts';
 import {
   attachBackNav,
   attachKeyboardAvoidance,
@@ -24,6 +26,7 @@ import {
   installNav,
 } from './platform/mobile';
 import { getMode, MODES, needsConfirmSwitch, platformBlockReason, type ModeId } from './platform/modes';
+import { ttsStatus } from './platform/tts';
 import { store, applyTheme, uid } from './store/config';
 import type { Conversation, PendingApproval, Provider, ToolEvent } from './types';
 import { invoke, isTauri } from '@tauri-apps/api/core';
@@ -42,9 +45,11 @@ import {
   Blocks,
   Puzzle,
   BookOpen,
+  BookText,
   Settings,
   SunMoon,
 } from 'lucide-react';
+import { DOC_ARTICLES } from './docs/articles';
 
 /** 五模式在命令面板中的图标（modes.ts 只存语义，图标属表现层，在此映射） */
 const MODE_ICONS: Record<ModeId, React.ReactNode> = {
@@ -84,6 +89,8 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   // 引擎安装向导：桌面端引擎缺失时自动弹出，也可从标题栏状态灯手动打开
   const [setupOpen, setSetupOpen] = useState(false);
+  // 技术文档模块：当前文章 id（命令面板可深链到具体文章）
+  const [docId, setDocId] = useState<string>(() => DOC_ARTICLES[0]?.id ?? '');
   // 引擎状态：启动时检查，用于显示状态指示器 + 引擎不可用时降级直连
   const [engineStatus, setEngineStatus] = useState<BootEngineStatus>({
     ok: false,
@@ -366,6 +373,7 @@ export default function App() {
       { key: 'mcp' as PageKey, label: 'MCP 服务', icon: <Blocks size={16} /> },
       { key: 'plugins' as PageKey, label: '插件', icon: <Puzzle size={16} /> },
       { key: 'guide' as PageKey, label: '使用教程', icon: <BookOpen size={16} /> },
+      { key: 'docs' as PageKey, label: '技术文档', icon: <BookText size={16} /> },
       { key: 'settings' as PageKey, label: '设置', icon: <Settings size={16} />, shortcut: '⌘,' },
     ].map((n): PaletteAction => ({
       id: `nav-${n.key}`,
@@ -375,6 +383,19 @@ export default function App() {
       hint: page === n.key ? '当前' : undefined,
       shortcut: n.shortcut,
       run: () => setPage(n.key),
+    })),
+    // 技术文档：全部文章进命令面板，可搜索 + 深链到具体一篇
+    ...DOC_ARTICLES.map((a): PaletteAction => ({
+      id: `doc-${a.id}`,
+      label: a.title,
+      group: '技术文档',
+      icon: <BookText size={16} />,
+      hint: a.summary,
+      keywords: `${a.keywords ?? ''} docs 文档`,
+      run: () => {
+        setPage('docs');
+        setDocId(a.id);
+      },
     })),
     {
       id: 'sys-theme',
@@ -409,6 +430,8 @@ export default function App() {
     setError('');
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    // 新消息发出时打断正在播放的语音（旧回复/新回复不同时出声）
+    stopSpeech();
 
     let conv = activeConv;
     if (!conv) {
@@ -445,6 +468,7 @@ export default function App() {
     setApproval(null);
     let acc = '';
     let reasonAcc = '';
+    let completed = false;
     try {
       // 引擎通道：桌面端由引擎承载完整提示词/工具/安全闸门，session 复用对话 id 续接上下文。
       // history 一并传入：安卓端无本地引擎，走 Rust agent 通道时需要它拼多轮上下文。
@@ -504,6 +528,7 @@ export default function App() {
           // 出错且没有任何正文时，去掉空的助手占位消息
           if (!acc) patch([...history]);
         } else if (chunk.type === 'done') {
+          completed = true;
           break;
         }
       }
@@ -518,6 +543,10 @@ export default function App() {
       abortRef.current = null;
       setTools([]);
       setApproval(null);
+      // 完整回复到达后，按用户设置自动朗读（完全本地 MOSS-TTS-Nano）
+      if (completed && acc.trim() && store.ttsEnabled()) {
+        speakWithSettings(acc.trim()).catch(() => {});
+      }
     }
   };
 
@@ -749,6 +778,7 @@ export default function App() {
       {page === 'mcp' && <McpPage />}
       {page === 'plugins' && <PluginsPage />}
       {page === 'guide' && <GuidePage />}
+      {page === 'docs' && <DocsPage activeId={docId} onActiveChange={setDocId} />}
       {page === 'settings' && (
         <SettingsPage
           providers={providers}
@@ -773,6 +803,95 @@ export default function App() {
         onClose={() => setPaletteOpen(false)}
         actions={paletteActions}
       />
+      {/* Claude Code 式底部状态栏：模式 · 模型 · 引擎 · TTS · 会话数 */}
+      <StatusBar
+        mode={mode}
+        providerLabel={providerId ? `${providers.find((p) => p.id === providerId)?.name ?? ''}${model ? ' · ' + model : ''}` : ''}
+        engineStatus={engineStatus}
+        convCount={convs.length}
+      />
+    </div>
+  );
+}
+
+/** Claude Code 终端式单行状态栏。TTS 状态每 15s 轮询一次引擎。 */
+function StatusBar({
+  mode,
+  providerLabel,
+  engineStatus,
+  convCount,
+}: {
+  mode: ModeId;
+  providerLabel: string;
+  engineStatus?: { ok: boolean; reason: string; python: string };
+  convCount: number;
+}) {
+  const [tts, setTts] = useState<{ reachable: boolean; loaded: boolean } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const tick = () => {
+      if (isAndroid()) {
+        setTts({ reachable: true, loaded: true }); // 安卓走系统原生 TTS
+        return;
+      }
+      ttsStatus()
+        .then((s) => {
+          if (alive) setTts(s ? { reachable: true, loaded: s.model_loaded } : null);
+        })
+        .catch(() => {
+          if (alive) setTts(null);
+        });
+    };
+    tick();
+    const t = setInterval(tick, 15000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  const m = getMode(mode);
+  return (
+    <div className="cc-statusbar">
+      <span className="sb-group sb-label" style={{ color: 'var(--tuan-accent-soft)', fontWeight: 700 }}>
+        ❯ {m.name}
+      </span>
+      <span className="sb-sep" />
+      <span className="sb-group sb-hide-mobile" title={providerLabel || '未配置模型'}>
+        <span className="sb-label truncate max-w-[220px]">{providerLabel || '未配置模型'}</span>
+      </span>
+      <span className="sb-sep sb-hide-mobile" />
+      <span className="sb-group" title={engineStatus?.reason ?? ''}>
+        <span
+          className="sb-dot"
+          style={{
+            background:
+              engineStatus?.ok === true
+                ? 'var(--tuan-ok)'
+                : engineStatus == null
+                  ? 'var(--text-tuan-secondary)'
+                  : 'var(--tuan-danger)',
+          }}
+        />
+        <span className="sb-label">
+          {engineStatus?.ok === true
+            ? '引擎就绪'
+            : engineStatus == null
+              ? '引擎检测中'
+              : '引擎未就绪'}
+        </span>
+      </span>
+      <span className="sb-sep" />
+      <span className="sb-group" title="本地 TTS（MOSS-TTS-Nano，安卓为系统原生）">
+        <span
+          className="sb-dot"
+          style={{ background: tts ? (tts.loaded ? 'var(--tuan-ok)' : 'var(--tuan-accent-soft)') : 'var(--text-tuan-secondary)' }}
+        />
+        <span className="sb-label">
+          {isAndroid() ? '系统 TTS' : tts ? (tts.loaded ? 'TTS 就绪' : 'TTS 待加载') : 'TTS 离线'}
+        </span>
+      </span>
+      <span className="sb-sep sb-hide-mobile" />
+      <span className="sb-group sb-label sb-hide-mobile">会话 {convCount}</span>
     </div>
   );
 }

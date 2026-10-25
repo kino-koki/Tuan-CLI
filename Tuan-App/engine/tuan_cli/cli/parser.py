@@ -163,8 +163,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        choices=["standard", "yolo", "plan"],
-        help="运行模式: standard(默认,需确认) / yolo(自动批准需确认操作,硬红线仍阻止) / plan(只读规划)",
+        choices=[
+            "standard", "yolo", "plan",
+            "gantong", "lingma", "chat", "boundless", "collaboration",
+        ],
+        help="运行模式: 旧三档 standard(默认,需确认) / yolo(自动批准,硬红线仍阻止) / plan(只读规划) "
+             "或五模式 gantong(感通) / lingma(灵码) / chat(闲聊) / boundless(无界) / collaboration(协同); "
+             "切换请用 tuan mode switch <id>",
     )
     parser.add_argument(
         "--permission-mode",

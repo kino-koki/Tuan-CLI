@@ -91,6 +91,53 @@ pub fn tool_schemas() -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "media_fetch",
+                "description": "抓取并解析任意主流平台的内容并返回结构化摘要。支持 B站、抖音、快手、知乎、百度贴吧、X(Twitter)、YouTube、微博、今日头条、微信公众号、小红书、网易、新浪、澎湃、虎嗅、36氪、少数派、掘金、SegmentFault、V2EX、Hacker News、Reddit、Medium、GitHub、Stack Overflow、Wikipedia、Facebook、Instagram、Telegram、Discord 等 30+ 平台。免登录、自动识别平台、防拦截。当用户要求总结/爬取/查看某个链接的内容时使用。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": { "type": "string", "description": "要抓取的链接，支持上述所有平台的 URL" }
+                    },
+                    "required": ["url"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "memory_save",
+                "description": "保存一条记忆到长期记忆系统。当用户要求记住某事、发现重要偏好、或对话中出现值得长期保留的信息时使用。支持三层作用域：session（当前会话）、user（跨会话用户级）、global（全局）。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "scope": { "type": "string", "enum": ["session", "user", "global"], "description": "记忆作用域：session=当前会话，user=跨会话用户级，global=全局" },
+                        "type": { "type": "string", "enum": ["fact", "preference", "context", "instruction"], "description": "记忆类型：fact=事实，preference=偏好，context=上下文，instruction=指令" },
+                        "content": { "type": "string", "description": "要记忆的内容（自然语言，简洁准确）" },
+                        "importance": { "type": "number", "description": "重要度 0.0-1.0，默认 0.5" }
+                    },
+                    "required": ["scope", "type", "content"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "memory_recall",
+                "description": "从长期记忆系统中召回相关记忆。基于 TF-IDF 语义匹配的模糊检索，配合重要度评分和新鲜度衰减。当需要回忆之前保存的信息、用户偏好、项目上下文时使用。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "搜索关键词或问题" },
+                        "scope": { "type": "string", "enum": ["session", "user", "global"], "description": "限定搜索范围，不指定则搜索所有" },
+                        "limit": { "type": "integer", "description": "最大返回条数，默认 10" }
+                    },
+                    "required": ["query"]
+                }
+            }
+        }),
     ]
 }
 
@@ -401,6 +448,44 @@ pub async fn run_tool(
             notes.push(content.to_string());
             ToolOutput::ok(format!("已记录（第 {} 条）：{}", notes.len(), content.trim()))
         }
+        "media_fetch" => {
+            let Some(url) = args.get("url").and_then(|v| v.as_str()) else {
+                return ToolOutput::err("缺少参数 url");
+            };
+            let result = crate::media::media_fetch(url).await;
+            ToolOutput::ok(truncate(&result, MAX_OUT))
+        }
+        "memory_save" => {
+            let Some(scope) = args.get("scope").and_then(|v| v.as_str()) else {
+                return ToolOutput::err("缺少参数 scope");
+            };
+            let Some(mem_type) = args.get("type").and_then(|v| v.as_str()) else {
+                return ToolOutput::err("缺少参数 type");
+            };
+            let Some(content) = args.get("content").and_then(|v| v.as_str()) else {
+                return ToolOutput::err("缺少参数 content");
+            };
+            let importance = args.get("importance").and_then(|v| v.as_f64()).unwrap_or(0.5);
+            let entry = crate::memory::memory_save(scope, mem_type, content, importance);
+            ToolOutput::ok(format!("已保存记忆 #{}：{}", entry.id, entry.content))
+        }
+        "memory_recall" => {
+            let Some(query) = args.get("query").and_then(|v| v.as_str()) else {
+                return ToolOutput::err("缺少参数 query");
+            };
+            let scope = args.get("scope").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+            let results = crate::memory::memory_recall(query, scope.as_deref(), limit);
+            if results.is_empty() {
+                ToolOutput::ok("未找到相关记忆")
+            } else {
+                let mut out = format!("召回 {} 条记忆：\n", results.len());
+                for (i, entry) in results.iter().enumerate() {
+                    out.push_str(&format!("{}. [{}|{}] {}\n", i + 1, entry.scope, entry.mem_type, entry.content));
+                }
+                ToolOutput::ok(truncate(&out, MAX_OUT))
+            }
+        }
         other => ToolOutput::err(format!("未知工具：{other}")),
     }
 }
@@ -560,7 +645,7 @@ mod tests {
         for s in tool_schemas() {
             assert!(s.get("function").and_then(|f| f.get("name")).is_some());
         }
-        assert_eq!(tool_schemas().len(), 4);
+        assert_eq!(tool_schemas().len(), 7);
     }
 
     #[test]

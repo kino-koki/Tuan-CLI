@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import BrandMark from './BrandMark';
-import { OnboardCheck, OnboardProgress, OnboardShell } from './OnboardKit';
+import { BrailleSpinner, OnboardCheck, OnboardProgress, OnboardShell, TermWindow } from './OnboardKit';
 
 export interface BootEngineStatus {
   ok: boolean;
@@ -26,16 +26,28 @@ function engineLine(s: BootEngineStatus | null): { text: string; tone: 'ok' | 'w
   return { text: '未启用 · 降级模式', tone: 'warn' };
 }
 
+/** 底部状态栏的引擎口径（CodeX status bar 的英文等宽风格）。 */
+function engineFoot(tone: 'ok' | 'warn' | 'wait'): string {
+  if (tone === 'ok') return 'engine: ready';
+  if (tone === 'warn') return 'engine: degraded';
+  return 'engine: checking';
+}
+
 /**
- * 启动加载序列（豆包 × CodeX 风格，2026-10-25 恢复完整动效层）。
+ * 启动加载序列（CodeX 式 TUI 启动终端）。
  *
- * - 视觉：品牌标识呼吸柔光（boot-halo）+ 轻浮动（boot-float，豆包的温暖感）；
- * - 节奏：CodeX 式清单逐项落入（boot-item-in）、打勾弹跳（boot-check-pop）、
- *   等待态细旋转环（boot-spinner）、3px 细进度条；
- * - 诚实：第三行「本地引擎」反映真实 check_engine 结果——
- *   就绪 / 未启用（降级）/ 检测中，不表演假进度；
- * - 退出：全部就绪后 0.4s 自动淡出；任意点击或按键立即跳过；
- *   prefers-reduced-motion 下直接放行，不做任何表演。
+ * 结构照抄 OpenAI Codex 的启动界面：一扇终端窗口（三点窗饰 + 等宽
+ * 标题栏），窗内是 `>_` 标识行 + meta 行（engine / mode）、逐项点亮
+ * 的启动清单（左 braille 旋转 → 陶土橘打勾，右为实时状态）、3px 细
+ * 进度条；窗口底部是 CodeX TUI 同位的单行状态栏。
+ *
+ * 动效（豆包 × CodeX，应用户要求完整保留）：品牌标识呼吸柔光
+ * （boot-halo）+ 轻浮动（boot-float）；清单逐行落入（boot-item-in）、
+ * 打勾弹跳（boot-check-pop）、等待态 braille 旋转符。
+ *
+ * 诚实：第三行「本地引擎」反映真实 check_engine 结果——就绪 / 未启用
+ * （降级）/ 检测中，不表演假进度；退出：全部就绪后 0.4s 自动淡出，
+ * 任意点击或按键立即跳过；prefers-reduced-motion 下直接放行。
  */
 export default function BootScreen({ engineStatus, onDone }: Props) {
   const [elapsed, setElapsed] = useState(0);
@@ -91,6 +103,8 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
   const doneCount = rows.filter((r) => stateOf(r) === 'done').length;
   const pct = Math.round((doneCount / rows.length) * 100);
   const eng = engineLine(engineStatus);
+  const appVersion = engineStatus?.app_version;
+  const engineVersion = engineStatus?.engine_version;
 
   return (
     <div
@@ -100,32 +114,55 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
       aria-label="正在启动"
     >
       <div className="onboard-shell flex flex-col items-center justify-center">
-        {/* 品牌标识 + 呼吸柔光（豆包式温暖感） */}
+        {/* 品牌标识 + 呼吸柔光 + 轻浮动（豆包式温暖感） */}
         <div className="boot-item-in relative mb-10 flex h-[128px] w-[128px] items-center justify-center">
           <div className="boot-halo" />
           <BrandMark size="xl" className="boot-float relative" />
         </div>
 
-        {/* 清单：与安装向导同款卡片（.tuan-card：白底 + 发丝边 + 16px 圆角） */}
-        <div className="boot-item-in tuan-card w-[320px] max-w-full px-5 py-4" style={{ animationDelay: '0.08s' }}>
-          <div className="space-y-2.5">
+        {/* 启动终端（CodeX 式 TUI 窗口） */}
+        <TermWindow
+          className="boot-item-in w-[440px] max-w-full"
+          title="tuan-chat — bootstrap"
+          right={appVersion ? `v${appVersion}` : undefined}
+          footer={
+            <>
+              <span>{engineFoot(eng.tone)}</span>
+              <span>{pct}% · click to skip</span>
+            </>
+          }
+        >
+          {/* `>_` 标识行 + meta 行（CodeX TUI header block） */}
+          <div className="boot-item-in flex items-center gap-2" style={{ animationDelay: '0.1s' }}>
+            <span className="term-prompt">&gt;_</span>
+            <span className="tuan-mono text-[13px] font-medium text-tuan-text">青小团 Tuan-Chat</span>
+          </div>
+          <div className="tuan-mono term-meta boot-item-in" style={{ animationDelay: '0.15s' }}>
+            <span className="term-meta-key">engine:</span> tuan-cli {engineVersion ? `v${engineVersion}` : 'v0.3.1'} · 58 providers
+          </div>
+          <div className="tuan-mono term-meta boot-item-in" style={{ animationDelay: '0.19s' }}>
+            <span className="term-meta-key">mode:</span> local-first · sandboxed
+          </div>
+
+          {/* 启动清单（CodeX transcript 行：状态符 · 标签 · 右状态） */}
+          <div className="mt-4 space-y-2">
             {rows.map((r, i) => {
               const st = stateOf(r);
               return (
                 <div
                   key={r.key}
-                  className="boot-item-in flex h-7 items-center"
-                  style={{ animationDelay: `${0.16 + i * 0.12}s` }}
+                  className="boot-item-in flex h-6 items-center"
+                  style={{ animationDelay: `${0.23 + i * 0.12}s` }}
                 >
                   <span className="flex h-4 w-4 flex-none items-center justify-center">
                     {st === 'done' ? (
                       <OnboardCheck />
                     ) : (
-                      <span className="boot-spinner" />
+                      <BrailleSpinner className="text-tuan-accentSoft" />
                     )}
                   </span>
                   <span
-                    className={`ml-3 text-[13.5px] transition-colors ${
+                    className={`ml-2.5 text-[13px] transition-colors ${
                       st === 'done' ? 'text-tuan-text' : 'text-tuan-textSecondary'
                     }`}
                   >
@@ -133,7 +170,7 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
                   </span>
                   {r.key === 'engine' && (
                     <span
-                      className={`ml-auto text-[12px] ${
+                      className={`tuan-mono ml-auto text-[11.5px] ${
                         eng.tone === 'ok' ? 'text-tuan-accentSoft' : 'text-tuan-textSecondary'
                       }`}
                     >
@@ -144,20 +181,16 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
               );
             })}
           </div>
-          <div className="mt-4 border-t border-tuan-border pt-3">
-            <OnboardProgress pct={pct} label={false} />
-            <div className="mt-2 flex items-center justify-between">
-              <span className="text-[11.5px] text-tuan-textSecondary tabular-nums">{pct}%</span>
-              <span className="text-[11.5px] text-tuan-textSecondary">点击任意处跳过</span>
-            </div>
-          </div>
-        </div>
 
-        {engineStatus?.app_version && (
-          <div className="boot-item-in mt-6 text-[11px] text-tuan-textSecondary" style={{ animationDelay: '0.6s' }}>
-            Tuan-Chat v{engineStatus.app_version}
+          {/* 细进度条 */}
+          <div className="mt-4">
+            <OnboardProgress pct={pct} label={false} />
           </div>
-        )}
+        </TermWindow>
+
+        <div className="boot-item-in tuan-mono mt-5 text-[11px] text-tuan-textSecondary" style={{ animationDelay: '0.7s' }}>
+          {appVersion ? `Tuan-Chat v${appVersion} · ` : ''}Model + Harness = Agent
+        </div>
       </div>
     </div>
   );

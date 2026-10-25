@@ -17,8 +17,7 @@ import asyncio
 import json
 from typing import Any, Callable, Dict, List, Optional
 
-import httpx
-
+from ... import _http as httpx  # 零依赖传输层 (stdlib 实现 httpx 表面)
 from .client_http import HttpMcpClient
 from .errors import McpError
 from .types import UnexpectedCloseReason

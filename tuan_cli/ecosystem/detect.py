@@ -241,7 +241,7 @@ class EcosystemProbe:
             cfg = self.hermes_home / HERMES_CONFIG
             if cfg.exists():
                 try:
-                    import yaml  # pyyaml 为可选依赖 (yaml extra), 缺失时跳过 Hermes 统计
+                    from .. import _yaml as yaml  # stdlib 实现兜底, 不依赖 PyYAML
                     data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
                     servers = (data.get("mcp") or {}).get("servers", {}) if isinstance(data, dict) else {}
                     n += len(servers) if isinstance(servers, dict) else 0

@@ -78,6 +78,29 @@ class RewindManager:
         self.max_snapshots = max(1, int(max_snapshots))
         self._lock = threading.Lock()
 
+
+    @staticmethod
+    def _snap_mtime_key(idx: int, path: Path) -> tuple:
+        """快照排序键: (文件内 ts, 文件系统枚举序号) -> Path。
+
+        必须先按 ts 排 —— 快照是背靠背写的, 文件名只到秒粒度
+        (%Y%m%d-%H%M%S + 随机 uuid 后缀), NTFS 的 st_mtime 也只精确到
+        100ns, 仅靠 mtime 排会把同一秒内的多个快照打乱, list_snapshots() 
+        承诺的「index 0 = 最早」就不成立, restore_previous() 会回退到错误快照。
+        ts 是写入时的 time.time() (微秒级), 可靠得多。
+
+        idx 作为兜底稳定序: 时间戳仍相同时保持目录枚举顺序, 让 _rotate() 
+        和 list_snapshots() 对「哪个快照最旧」永远给出一致答案 (两者共享
+        同一个 key, 轮转删掉的最旧的一定是列表里最旧的那个)。
+        """
+        ts = 0.0
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                ts = float(json.load(f).get("ts", 0.0))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            ts = float(path.stat().st_mtime) if path.exists() else 0.0
+        return (ts, idx), path
+
     # ------------------------------------------------------------ 快照写入
 
     def snapshot(
@@ -117,7 +140,10 @@ class RewindManager:
 
     def _rotate(self) -> None:
         """轮转: 只保留最近 max_snapshots 个快照, 多余的最旧快照删除。"""
-        files = sorted(self.snapshot_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
+        files = [p for _, p in sorted(
+            ((self._snap_mtime_key(i, p), p)
+             for i, p in enumerate(self.snapshot_dir.glob("*.json")))
+        )]
         while len(files) > self.max_snapshots:
             old = files.pop(0)
             try:
@@ -129,7 +155,11 @@ class RewindManager:
 
     def list_snapshots(self) -> List[SnapshotInfo]:
         """按时间从早到晚列出全部快照 (index 0 = 最早)。"""
-        files = sorted(self.snapshot_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
+        # 按文件内 ts 从早到晚排 (见 _snap_mtime_key)。
+        files = [p for _, p in sorted(
+            ((self._snap_mtime_key(i, p), p)
+             for i, p in enumerate(self.snapshot_dir.glob("*.json")))
+        )]
         out: List[SnapshotInfo] = []
         for i, p in enumerate(files):
             try:
@@ -139,7 +169,7 @@ class RewindManager:
                 continue
             out.append(SnapshotInfo(
                 index=i,
-                ts=float(data.get("ts", p.stat().st_mtime)),
+                ts=float(data.get("ts", 0.0)),
                 reason=str(data.get("reason", "user_input")),
                 session_id=str(data.get("session_id", "")),
                 message_count=int(data.get("message_count", 0)),

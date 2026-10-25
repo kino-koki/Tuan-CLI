@@ -1,10 +1,13 @@
 ---
 name: 拟人化注释风格
 description: 写代码注释时去除 AI 腔与废话，用有灵魂、像人说话的口吻解释“为什么”，而非复述“是什么”
+activation: lazy
+triggers: 注释, comments, 拟人化注释
+provides: comments
+priority: 40
 updated_at: 0
 use_count: 0
 ---
-
 # 拟人化注释风格
 
 好注释像一位靠谱的同事在耳边解释「这里为什么这么写」，而不是把代码翻译一遍。

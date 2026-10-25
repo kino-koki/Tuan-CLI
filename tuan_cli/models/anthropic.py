@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Dict, List, Optional
 
-import httpx
-
+from .. import _http as httpx  # 零依赖传输层 (stdlib 实现 httpx 表面)
 from .base import ModelAdapter, ModelCapabilities, ModelResponse, ToolCall
 
 

@@ -1,12 +1,15 @@
 ---
 name: 数据库模式
 description: 数据库操作最佳实践：查询优化/索引/迁移/事务/连接池/ORM 使用
+activation: auto
+triggers: 数据库, database, SQL, ORM, 查询, 索引, migration
+provides: database, sql
+suggests: code-architect, tuan-migration
+priority: 82
 tags: [database, sql, migration, orm, query-optimization]
-priority: 7
 updated_at: 0
 use_count: 0
 ---
-
 # 数据库模式
 
 数据库是应用的地基。地基歪了，上面的楼怎么盖都白搭。

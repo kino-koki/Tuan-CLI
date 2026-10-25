@@ -139,11 +139,12 @@ def friendly_error(exc: Exception, context: Optional[Dict[str, Any]] = None) -> 
         )
 
     # ---- 配置语法错误 ----
-    try:
-        import yaml  # 延迟导入
-        _is_yaml = isinstance(exc, yaml.YAMLError)
-    except Exception:  # noqa: BLE001
-        _is_yaml = ename in ("YAMLError", "MarkedYAMLError")
+    from .. import _yaml as yaml  # 延迟导入
+
+    # 名称兜底: 异常可能跨子进程/模块边界而来, 届时拿不到类对象
+    _is_yaml = isinstance(exc, yaml.YAMLError) or ename in (
+        "YAMLError", "MarkedYAMLError", "ScannerError", "ParserError", "ComposerError",
+    )
     if _is_yaml or "yaml" in ename.lower():
         return FriendlyError(
             title="配置文件语法错误",

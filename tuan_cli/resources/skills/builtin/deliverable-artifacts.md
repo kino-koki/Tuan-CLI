@@ -1,14 +1,15 @@
 ---
 name: 交付物制作与自检
 description: 制作 HTML 页面 / PPT 幻灯 / 海报 / Markdown 文档等交付物时的质量底线与交付前自检清单；尤其强调零 emoji、字体与排版、导出可用性。适用于"做个页面""写个 PPT""做张海报""出一份文档""生成报告"等产出型任务
+activation: auto
+triggers: 交付, deliverable, 产物, 交付物
+provides: deliverables
+suggests: tuan-design, tuan-docs, tuan-a11y, hyperframes
+priority: 65
+tags: deliverable, html, ppt, slides, poster, document, quality
 updated_at: 0
 use_count: 0
-tags: deliverable, html, ppt, slides, poster, document, quality
-activation: lazy
-priority: 7
-triggers: 页面, 网页, HTML, PPT, 幻灯, 演示, 海报, 文档, 报告, 交付物, 生成页面, 做一份, 导出
 ---
-
 # 交付物制作与自检
 
 产出型任务（做一个页面、写一份 PPT、出一张海报）与改代码不同：它的失败

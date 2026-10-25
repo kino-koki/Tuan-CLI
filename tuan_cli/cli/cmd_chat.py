@@ -503,7 +503,7 @@ def _setup_security_alerts() -> None:
     try:
         from ..config.loader import home_dir
         from ..core.security_bus import get_security_bus
-        get_security_bus(persist_path=home_dir() / "security-audit.jsonl").set_alerter(
+        get_security_bus(persist_path=home_dir() / "security-audit.jsonl", async_alerter=True).set_alerter(
             _security_alerter
         )
     except Exception:  # noqa: BLE001

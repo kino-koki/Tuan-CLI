@@ -37,14 +37,26 @@ _RULES: List[Tuple[str, Any, Any]] = [
     ("background.poll_interval", (int, float), (0.1, 60)),
 ]
 
-_ENUM_RULES: List[Tuple[str, tuple]] = [
-    ("mode.default", ("standard", "yolo")),
-    ("agent.effort", ("low", "medium", "high", "xhigh", "max")),
-    ("ui.theme", ("dark", "light")),
-    ("context.compact_strategy", ("smart", "none")),
-    ("prompt.tier", ("auto", "compact", "full")),
-    ("agent.subagent_isolation", ("process", "thread")),
-]
+def _build_enum_rules():
+    """构建枚举校验规则 (mode.current 使用权威 MODE_IDS 清单)。"""
+    try:
+        from ..modes.registry import MODE_IDS
+        mode_ids = MODE_IDS
+    except Exception:  # noqa: BLE001
+        mode_ids = ("gantong", "lingma", "chat", "boundless", "collaboration")
+    return [
+        # mode.default 允许旧三档别名 + 新五模式; mode.current 仅新五模式 (MODE_IDS)
+        ("mode.default", tuple(["standard", "yolo", "plan"]) + mode_ids),
+        ("mode.current", mode_ids),
+        ("agent.effort", ("low", "medium", "high", "xhigh", "max")),
+        ("ui.theme", ("dark", "light")),
+        ("context.compact_strategy", ("smart", "none")),
+        ("prompt.tier", ("auto", "compact", "full")),
+        ("agent.subagent_isolation", ("process", "thread")),
+    ]
+
+
+_ENUM_RULES: List[Tuple[str, tuple]] = _build_enum_rules()
 
 
 def validate(config) -> Tuple[List[str], List[str]]:
@@ -69,7 +81,14 @@ def validate(config) -> Tuple[List[str], List[str]]:
         if val is None:
             continue
         if val not in allowed:
-            errors.append(f"非法枚举: {dotted}={val!r} 不在 {allowed} 中")
+            if dotted == "mode.current":
+                errors.append(
+                    f"非法运行模式: mode.current={val!r} "
+                    f"(五模式: gantong/lingma/chat/boundless/collaboration; "
+                    f"旧三档别名 standard→collaboration / yolo→boundless / plan→chat 仅用于 mode.default)"
+                )
+            else:
+                errors.append(f"非法枚举: {dotted}={val!r} 不在 {allowed} 中")
 
     # api_key_env 指向的变量是否存在 (仅报缺失, 不读值)
     env_name = config.get("model.api_key_env")

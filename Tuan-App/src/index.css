@@ -961,10 +961,94 @@ option {
   box-sizing: border-box;
 }
 
-/* 引导层 hero 行：衬线只出现在"问候语"位置（与 ChatView 空态问候语同字体），
-   其余文案一律无衬线——这是引导层与主界面排版统一的边界。 */
-.onboard-hero {
-  font-family: 'Spectral', 'Source Serif 4', Georgia, serif;
+/* ============================================================
+   CodeX 式终端窗口（term-*）——加载 / 安装引导的 TUI 外壳
+   ------------------------------------------------------------
+   2026-10-25 应用户要求，引导层结构直接照抄 OpenAI Codex 的
+   安装 / 加载界面：终端窗口（三点窗饰 + 等宽标题栏）、`>_`
+   标识行 + meta 行（key: value）、清单行（左状态符 · 标签 ·
+   右状态）、底部单行状态栏（CodeX TUI status bar 的同位）、
+   `$` 前缀可复制命令 chip、`[ ]/[x]` 审批式完成标记。
+   只改颜色（Tuan 暖纸底 + 陶土橘）与图标（Lucide），结构照搬。
+   桌面端优先（Android 端不需要），可用 flex gap 等现代 CSS。
+   ============================================================ */
+.term-window {
+  background: var(--bg-tuan-input);
+  border: 1px solid var(--border-tuan);
+  border-radius: 14px;
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+}
+.term-window-bar {
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border-tuan);
+  background: var(--bg-tuan-sidebar);
+}
+.term-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  flex: none;
+}
+.term-dot-dim {
+  background: var(--text-tuan-secondary);
+  opacity: 0.35;
+}
+.term-window-body {
+  padding: 18px 20px;
+}
+.term-window-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border-tuan);
+  background: var(--bg-tuan-sidebar);
+  font-family: var(--tuan-mono);
+  font-size: 11.5px;
+  line-height: 1;
+  color: var(--text-tuan-secondary);
+}
+/* 终端等宽：窗口内一切数字 / 状态 / 命令统一此栈（JetBrains Mono 优先） */
+.tuan-mono {
+  font-family: var(--tuan-mono);
+}
+/* `>_` 标识（Codex TUI 的签名 prompt）：陶土橘、等宽、加粗 */
+.term-prompt {
+  font-family: var(--tuan-mono);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--tuan-accent-soft);
+  user-select: none;
+}
+/* meta 行：`engine: tuan-cli v0.3.1 · 58 providers`（key 稍弱） */
+.term-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-tuan-secondary);
+  word-break: break-all;
+}
+.term-meta-key {
+  color: var(--text-tuan-main);
+  opacity: 0.55;
+}
+/* 诊断行：自检失败原因（CodeX 的错误信息位：`!` + 等宽正文） */
+.term-note {
+  margin-top: 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-tuan-hover);
+  font-family: var(--tuan-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-tuan-secondary);
+  word-break: break-all;
 }
 
 /* ============================================================
