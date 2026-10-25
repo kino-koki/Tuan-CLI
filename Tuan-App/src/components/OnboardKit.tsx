@@ -171,14 +171,14 @@ export function OnboardCommand({
   return (
     <div className="mt-2.5 flex items-stretch space-x-2">
       <code
-        className="min-w-0 flex-1 truncate rounded-[10px] bg-tuan-terminalBg px-3 py-2 font-mono text-[12px] text-tuan-terminalText"
+        className="min-w-0 flex-1 truncate rounded-[10px] border border-tuan-border bg-tuan-terminalBg px-3 py-2 font-mono text-[12px] text-tuan-terminalText"
         title={text}
       >
         {text}
       </code>
       <button
         onClick={onCopy}
-        className="inline-flex w-[34px] flex-none items-center justify-center rounded-[10px] bg-tuan-terminalBg text-tuan-terminalDim transition-colors hover:text-white"
+        className="inline-flex w-[34px] flex-none items-center justify-center rounded-[10px] border border-tuan-border bg-tuan-terminalBg text-tuan-terminalDim transition-colors hover:text-white"
         title={copied ? '已复制' : `复制${note ? ` ${note}` : ''}`}
         aria-label={copied ? '已复制' : '复制'}
       >
