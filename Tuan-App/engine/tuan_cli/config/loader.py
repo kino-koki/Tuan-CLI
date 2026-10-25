@@ -559,17 +559,37 @@ class Config:
 
     @property
     def mode(self) -> str:
-        return str(self.get("mode.default", "standard"))
+        """当前运行模式 ID（五模式体系）。
+
+        优先读取 mode.current（新字段），回退到 mode.default（历史兼容）。
+        旧三档别名 standard/yolo/plan 自动映射为新模式 ID。
+        """
+        from .defaults import DEFAULT_CONFIG
+        from ..modes.registry import resolve_mode_id
+        mode_data = self.get("mode", {}) or {}
+        raw = mode_data.get("current") or mode_data.get("default") or "chat"
+        return resolve_mode_id(str(raw))
 
     @mode.setter
     def mode(self, value: str) -> None:
-        valid_modes = ("standard", "yolo", "plan")
-        if value not in valid_modes:
-            raise ValueError(f"未知运行模式: {value} (仅支持 {' / '.join(valid_modes)})")
-        self.set_user("mode.default", value)
+        """设置运行模式（写入 mode.current，旧三档别名自动解析）。"""
+        from ..modes.registry import resolve_mode_id
+        try:
+            resolved = resolve_mode_id(value)
+        except ValueError:
+            raise ValueError(
+                f"未知运行模式: {value!r} "
+                f"(五模式: gantong/lingma/chat/boundless/collaboration; "
+                f"别名: standard→collaboration / yolo→boundless / plan→chat)"
+            )
+        self.set_user("mode.current", resolved)
 
     def is_yolo(self) -> bool:
-        return self.mode == "yolo"
+        """是否为 YOLO 模式（历史兼容：mode.default == "yolo" 或 mode.current == "boundless"）。"""
+        mode_data = self.get("mode", {}) or {}
+        raw_default = mode_data.get("default", "")
+        current = mode_data.get("current", "")
+        return raw_default == "yolo" or current == "boundless"
 
     def tool_auto_approve(self, tool_name: str) -> bool:
         if not self.is_yolo():

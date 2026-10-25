@@ -34,18 +34,28 @@ import {
   MessageCircle,
   Users,
   CodeXml,
+  Volume2,
+  Play,
 } from 'lucide-react';
 import type { ApiFormat, CatalogProvider, Provider } from '../types';
+import { invoke } from '@tauri-apps/api/core';
 import { MODES, type ModeId } from '../platform/modes';
 import { probeModels } from '../platform/engine';
-import { sampleImage, DEFAULT_MASCOT } from '../platform/mascot';
-import { uid } from '../store/config';
+import BrandMark from './BrandMark';
+import { uid, store } from '../store/config';
+import {
+  TTS_LANGUAGES,
+  TTS_VOICE_FALLBACK,
+  speakWithSettings,
+  stopSpeech,
+  ttsRegisterVoice,
+  ttsStatus,
+  type TtsStatus,
+} from '../platform/tts';
 
 interface Props {
   providers: Provider[];
   onChange: (list: Provider[]) => void;
-  avatarMode: 'anime' | 'default';
-  onAvatarModeChange: (m: 'anime' | 'default') => void;
   agentMode: boolean;
   onAgentModeChange: (v: boolean) => void;
   theme: 'light' | 'dark';
@@ -76,14 +86,14 @@ const EMPTY: Provider = {
 
 const TIER_LABEL: Record<string, string> = { free: '免费', cheap: '低价', standard: '付费' };
 
-type SettingTab = 'general' | 'mode' | 'appearance' | 'style' | 'providers' | 'about';
+type SettingTab = 'general' | 'mode' | 'appearance' | 'providers' | 'memory' | 'about';
 
 const TABS: { key: SettingTab; label: string; icon: typeof Settings }[] = [
   { key: 'general', label: '通用', icon: SlidersHorizontal },
   { key: 'mode', label: '模式', icon: LayoutGrid },
   { key: 'appearance', label: '外观', icon: Palette },
-  { key: 'style', label: '样式', icon: Sparkles },
   { key: 'providers', label: '供应商', icon: Server },
+  { key: 'memory', label: '记忆', icon: HardDrive },
   { key: 'about', label: '关于', icon: Info },
 ];
 
@@ -122,8 +132,6 @@ function InfoRow({
 export default function SettingsPage({
   providers,
   onChange,
-  avatarMode,
-  onAvatarModeChange,
   agentMode,
   onAgentModeChange,
   theme,
@@ -134,9 +142,6 @@ export default function SettingsPage({
   engineStatus,
 }: Props) {
   const [tab, setTab] = useState<SettingTab>('general');
-  // 立绘预览随主题切换（浅色用原图、深色用透明底变体）。
-  // 本组件已持有 theme prop，直接派生即可，无需再订阅 DOM。
-  const dark = theme === 'dark';
   const [catalog, setCatalog] = useState<CatalogProvider[]>([]);
   const [draft, setDraft] = useState<Provider>({ ...EMPTY, id: uid() });
   const [showKey, setShowKey] = useState(false);
@@ -148,6 +153,78 @@ export default function SettingsPage({
   // 数据导入/导出
   const [exporting, setExporting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  // 本地语音播报（MOSS-TTS-Nano）
+  const [ttsEnabled, setTtsEnabled] = useState(store.ttsEnabled());
+  const [ttsLang, setTtsLang] = useState(store.ttsLanguage());
+  const [ttsVoice, setTtsVoice] = useState(store.ttsVoice());
+  const [ttsStatusData, setTtsStatusData] = useState<TtsStatus | null>(null);
+  const [ttsPreviewBusy, setTtsPreviewBusy] = useState(false);
+  // 专属音色注册（用户自有 / 有授权音频）
+  const [ttsCustomName, setTtsCustomName] = useState('');
+  const [ttsCustomFile, setTtsCustomFile] = useState<File | null>(null);
+  const [ttsCustomBusy, setTtsCustomBusy] = useState(false);
+  const [ttsCustomMsg, setTtsCustomMsg] = useState('');
+
+  const refreshTtsStatus = () => {
+    ttsStatus().then(setTtsStatusData).catch(() => setTtsStatusData(null));
+  };
+  useEffect(() => {
+    refreshTtsStatus();
+  }, []);
+
+  /** 音色下拉选项：优先服务端实时清单，失败时回退静态清单 */
+  const voiceOptions = useMemo(() => {
+    const labels = ttsStatusData?.voice_labels ?? {};
+    const keys = ttsStatusData?.voices ?? TTS_VOICE_FALLBACK.map((v) => v.key);
+    return keys.map((k) => ({
+      key: k,
+      label: labels[k] ?? TTS_VOICE_FALLBACK.find((v) => v.key === k)?.label ?? k,
+    }));
+  }, [ttsStatusData]);
+
+  const changeTtsEnabled = (v: boolean) => {
+    setTtsEnabled(v);
+    store.saveTtsEnabled(v);
+    if (!v) stopSpeech();
+  };
+  const changeTtsLang = (code: string) => {
+    setTtsLang(code);
+    store.saveTtsLanguage(code);
+  };
+  const changeTtsVoice = (key: string) => {
+    setTtsVoice(key);
+    store.saveTtsVoice(key);
+  };
+  const previewTts = async () => {
+    if (ttsPreviewBusy) return;
+    setTtsPreviewBusy(true);
+    await speakWithSettings('你好，我是青小团，这是一段完全本地的语音合成试听。');
+    setTtsPreviewBusy(false);
+  };
+
+  const registerCustomVoice = async () => {
+    if (ttsCustomBusy) return;
+    if (!ttsCustomName.trim()) {
+      setTtsCustomMsg('请先填写音色名称');
+      return;
+    }
+    if (!ttsCustomFile) {
+      setTtsCustomMsg('请先选择一段音频（自己录制或有使用授权的均可）');
+      return;
+    }
+    setTtsCustomBusy(true);
+    setTtsCustomMsg('上传并处理中…');
+    const res = await ttsRegisterVoice(ttsCustomName.trim(), ttsCustomFile);
+    if (res.ok) {
+      setTtsCustomMsg(`已注册 ${res.key}，可在上方音色下拉中选用`);
+      setTtsCustomFile(null);
+      setTtsCustomName('');
+      refreshTtsStatus();
+    } else {
+      setTtsCustomMsg(`注册失败：${res.error}`);
+    }
+    setTtsCustomBusy(false);
+  };
 
   const addCustomModel = () => {
     const id = customModel.trim();
@@ -215,7 +292,6 @@ export default function SettingsPage({
         conversations: JSON.parse(localStorage.getItem('tuan.conversations') || '[]'),
         settings: {
           theme,
-          avatarMode,
           agentMode,
         },
       };
@@ -250,7 +326,6 @@ export default function SettingsPage({
         }
         if (data.settings) {
           if (data.settings.theme) onThemeChange(data.settings.theme);
-          if (data.settings.avatarMode) onAvatarModeChange(data.settings.avatarMode);
           if (typeof data.settings.agentMode === 'boolean') onAgentModeChange(data.settings.agentMode);
         }
         setProbeMsg('导入完成，部分设置需重启生效');
@@ -404,6 +479,133 @@ export default function SettingsPage({
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-tuan-hover text-tuan-textSecondary flex-none">已启用</span>
                 </div>
               </div>
+
+              {/* 本地语音播报（MOSS-TTS-Nano，完全本地） */}
+              <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">语音播报</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">
+                  回复完成后自动朗读；合成完全在本机进行（MOSS-TTS-Nano 100M，不联网）。
+                  首次朗读会先加载模型，约需十余秒；引擎未就绪时自动静默跳过。
+                </p>
+
+                <div className="flex items-center gap-3 rounded-xl border border-tuan-border p-3">
+                  <span className="w-12 h-12 rounded-xl bg-tuan-hover flex-none flex items-center justify-center text-tuan-text">
+                    <Volume2 size={20} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] font-medium text-tuan-text">自动朗读回复</div>
+                    <div className="text-[12px] text-tuan-textSecondary">关闭后仍可在每条回复下方点「朗读」手动播放</div>
+                  </div>
+                  <button
+                    onClick={() => changeTtsEnabled(!ttsEnabled)}
+                    className={`${ttsEnabled ? 'cc-btn-primary' : 'cc-btn-ghost'} px-3 py-1.5 text-[13px] flex-shrink-0`}
+                  >
+                    {ttsEnabled ? '已开启' : '已关闭'}
+                  </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[12.5px] text-tuan-textSecondary mb-1.5">语音语言（10 语言）</label>
+                    <select
+                      value={ttsLang}
+                      onChange={(e) => changeTtsLang(e.target.value)}
+                      className="w-full bg-tuan-main border border-tuan-border rounded-lg px-3 py-2 text-[13.5px] text-tuan-text outline-none focus:border-[var(--tuan-link)]"
+                    >
+                      {TTS_LANGUAGES.map((l) => (
+                        <option key={l.code} value={l.code}>
+                          {l.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11.5px] text-tuan-textSecondary mt-1">
+                      默认音色：
+                      {voiceOptions.find((v) => v.key === (ttsStatusData?.lang_presets?.[ttsLang] ?? ''))?.label ??
+                        '见音色列表'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-[12.5px] text-tuan-textSecondary mb-1.5">音色</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={ttsVoice}
+                        onChange={(e) => changeTtsVoice(e.target.value)}
+                        className="flex-1 min-w-0 bg-tuan-main border border-tuan-border rounded-lg px-3 py-2 text-[13.5px] text-tuan-text outline-none focus:border-[var(--tuan-link)]"
+                      >
+                        {voiceOptions.map((v) => (
+                          <option key={v.key} value={v.key}>
+                            {v.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={previewTts}
+                        disabled={ttsPreviewBusy}
+                        className="cc-btn-ghost px-3 py-2 text-[13px] flex-shrink-0 inline-flex items-center gap-1.5"
+                        title="试听当前音色"
+                      >
+                        <Play size={14} />
+                        {ttsPreviewBusy ? '合成中' : '试听'}
+                      </button>
+                    </div>
+                    <p className="text-[11.5px] text-tuan-textSecondary mt-1">
+                      中文女声默认京味闲聊；中文男声选「中文·男声」；英语男声试 The Bitter Lesson。
+                    </p>
+                  </div>
+                </div>
+
+                {/* 引擎状态 + 合成缓存 */}
+                <div className="mt-3 rounded-xl border border-tuan-border/70 bg-tuan-main/50 px-3 py-2.5 text-[12px] text-tuan-textSecondary leading-relaxed">
+                  <span className="font-medium text-tuan-text">引擎状态：</span>
+                  {ttsStatusData === null
+                    ? '未连接（引擎 web 服务未就绪，朗读会自动跳过）'
+                    : ttsStatusData.busy
+                      ? '正在合成…'
+                      : ttsStatusData.model_loaded
+                        ? `模型已加载 · 累计合成 ${ttsStatusData.synth_count} 条 · 最近 ${ttsStatusData.last_duration_s ?? '-'}s · 缓存 ${ttsStatusData.cache_size ?? 0} 条`
+                        : '模型未加载（首次朗读时加载）'}
+                  {ttsStatusData?.load_error && (
+                    <span className="block text-[var(--tuan-danger)] mt-0.5">加载错误：{ttsStatusData.load_error}</span>
+                  )}
+                </div>
+
+                {/* 专属音色注册（用户自有 / 有授权音频） */}
+                <div className="mt-3 rounded-xl border border-tuan-border p-3">
+                  <div className="text-[13px] font-medium text-tuan-text">专属音色</div>
+                  <div className="text-[11.5px] text-tuan-textSecondary mt-0.5 mb-2">
+                    用自己录制或有使用授权的音频注册专属音色（真人明星音色不支持爬取克隆）。
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      value={ttsCustomName}
+                      onChange={(e) => setTtsCustomName(e.target.value)}
+                      placeholder="音色名称，如：我的声音"
+                      className="flex-1 min-w-0 bg-tuan-main border border-tuan-border rounded-lg px-3 py-2 text-[13px] text-tuan-text outline-none focus:border-[var(--tuan-link)]"
+                    />
+                    <label className="flex-shrink-0 inline-flex items-center gap-1.5 cc-btn-ghost px-3 py-2 text-[13px] cursor-pointer">
+                      <Upload size={14} />
+                      {ttsCustomFile ? ttsCustomFile.name.slice(0, 24) : '选择音频'}
+                      <input
+                        type="file"
+                        accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a"
+                        className="hidden"
+                        onChange={(e) => setTtsCustomFile(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                    <button
+                      onClick={registerCustomVoice}
+                      disabled={ttsCustomBusy}
+                      className="cc-btn-primary px-3 py-2 text-[13px] flex-shrink-0 inline-flex items-center gap-1.5"
+                    >
+                      <Zap size={14} />
+                      {ttsCustomBusy ? '处理中' : '注册'}
+                    </button>
+                  </div>
+                  {ttsCustomMsg && (
+                    <div className="text-[11.5px] text-tuan-textSecondary mt-1.5">{ttsCustomMsg}</div>
+                  )}
+                </div>
+              </div>
             </>
           )}
 
@@ -441,23 +643,6 @@ export default function SettingsPage({
               <p className="mt-3 text-[12px] leading-relaxed text-tuan-textSecondary">
                 权限基调：{MODES.map((m) => `${m.name} ${m.level} ${m.badge}`).join('；')}。无界为桌面端功能，Android 端不可用。
               </p>
-            </div>
-          )}
-
-          {tab === 'style' && (
-            <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
-              <h2 className="text-[15px] font-semibold text-tuan-text mb-1">对话样式</h2>
-              <p className="text-[12.5px] text-tuan-textSecondary mb-4">
-                助手形象统一使用二次元立绘（按供应商匹配，明暗主题各一套背景）。
-              </p>
-              <div className="flex items-start gap-4">
-                <div className="w-20 h-20 rounded-xl overflow-hidden flex-none bg-[var(--tuan-art-bg)] border border-tuan-border">
-                  <img src={sampleImage(dark)} alt="助手形象预览" className="tuan-art-img w-full h-full object-cover" />
-                </div>
-                <p className="flex-1 min-w-0 text-[12px] leading-relaxed text-tuan-textSecondary">
-                  已收录：DeepSeek、Claude、GPT、通义千问、Kimi、GLM、豆包 / Seed、Gemini、MiniMax、混元、文心、Mimo；未收录供应商与聚合 / 中转平台回落到代表立绘。
-                </p>
-              </div>
             </div>
           )}
 
@@ -759,11 +944,13 @@ export default function SettingsPage({
             </>
           )}
 
+          {tab === 'memory' && <MemoryTab />}
+
           {tab === 'about' && (
             <>
               {/* 应用信息 */}
               <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input flex items-start gap-4">
-                <img src={DEFAULT_MASCOT} alt="Tuan-Chat" className="w-14 h-14 object-contain rounded-xl bg-tuan-main border border-tuan-border p-1" />
+                <BrandMark size="md" />
                 <div>
                   <div className="text-[16px] font-semibold text-tuan-text">Tuan-Chat</div>
                   <div className="text-[12.5px] text-tuan-textSecondary mt-0.5">tuan_cli 引擎的桌面客户端 · 版本 0.1.0</div>
@@ -984,6 +1171,269 @@ export default function SettingsPage({
               </div>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================ 记忆管理 Tab
+
+interface MemoryEntry {
+  id: number;
+  scope: string;
+  mem_type: string;
+  content: string;
+  keywords: string[];
+  importance: number;
+  access_count: number;
+  last_accessed: number;
+  archived: boolean;
+}
+
+interface MemoryStats {
+  total: number;
+  active: number;
+  archived: number;
+  by_type: Record<string, number>;
+}
+
+interface MemoryConfig {
+  decay_days: number;
+  max_recall: number;
+  recall_budget: number;
+  auto_extract: boolean;
+  max_per_turn: number;
+}
+
+const SCOPE_LABELS: Record<string, string> = { global: '全局', user: '用户', session: '会话' };
+const TYPE_LABELS: Record<string, string> = { fact: '事实', preference: '偏好', context: '上下文', instruction: '指令' };
+const TYPE_COLORS: Record<string, string> = {
+  fact: 'bg-blue-100 text-blue-700',
+  preference: 'bg-green-100 text-green-700',
+  context: 'bg-purple-100 text-purple-700',
+  instruction: 'bg-orange-100 text-orange-700',
+};
+
+function MemoryTab() {
+  const [stats, setStats] = useState<MemoryStats | null>(null);
+  const [memories, setMemories] = useState<MemoryEntry[]>([]);
+  const [config, setConfig] = useState<MemoryConfig | null>(null);
+  const [search, setSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newScope, setNewScope] = useState('session');
+  const [newType, setNewType] = useState('fact');
+  const [newContent, setNewContent] = useState('');
+  const [newImportance, setNewImportance] = useState(0.5);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => { loadAll(); }, []);
+
+  async function loadAll() {
+    try {
+      const [s, m, c] = await Promise.all([
+        invoke<MemoryStats>('cmd_memory_stats'),
+        invoke<MemoryEntry[]>('cmd_memory_list', { includeArchived: false, limit: 200 }),
+        invoke<MemoryConfig>('cmd_memory_config'),
+      ]);
+      setStats(s); setMemories(m); setConfig(c);
+    } catch (e) { console.error('记忆加载失败', e); }
+  }
+
+  async function handleAdd() {
+    if (!newContent.trim()) return;
+    try {
+      await invoke('cmd_memory_save', { scope: newScope, mem_type: newType, content: newContent.trim(), importance: newImportance });
+      setToast('已保存记忆');
+      setShowAdd(false); setNewContent(''); setNewImportance(0.5);
+      loadAll();
+    } catch (e) { console.error(e); }
+  }
+
+  async function handleDelete(id: number) {
+    try { await invoke('cmd_memory_delete', { id }); loadAll(); } catch (e) { console.error(e); }
+  }
+
+  async function handleClear() {
+    if (!confirm('确定清空所有记忆？此操作不可撤销。')) return;
+    try { await invoke('cmd_memory_clear'); setToast('已清空所有记忆'); loadAll(); } catch (e) { console.error(e); }
+  }
+
+  async function handleArchive() {
+    try { await invoke('cmd_memory_auto_archive'); setToast('已归档过期记忆'); loadAll(); } catch (e) { console.error(e); }
+  }
+
+  async function handleConfigSave() {
+    if (!config) return;
+    try { await invoke('cmd_memory_update_config', { config }); setToast('配置已更新'); } catch (e) { console.error(e); }
+  }
+
+  const filtered = memories.filter(m => {
+    if (search && !m.content.toLowerCase().includes(search.toLowerCase())) return false;
+    if (!showArchived && m.archived) return false;
+    return true;
+  });
+
+  return (
+    <div className="space-y-4">
+      {toast && <div className="fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm">{toast}</div>}
+      
+      {/* 统计概览 */}
+      {stats && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="border border-tuan-border rounded-xl p-4 bg-tuan-input text-center">
+            <div className="text-2xl font-bold text-tuan-text">{stats.active}</div>
+            <div className="text-[11px] text-tuan-textSecondary mt-1">活跃记忆</div>
+          </div>
+          <div className="border border-tuan-border rounded-xl p-4 bg-tuan-input text-center">
+            <div className="text-2xl font-bold text-tuan-text">{stats.archived}</div>
+            <div className="text-[11px] text-tuan-textSecondary mt-1">已归档</div>
+          </div>
+          <div className="border border-tuan-border rounded-xl p-4 bg-tuan-input text-center">
+            <div className="text-2xl font-bold text-tuan-text">{stats.total}</div>
+            <div className="text-[11px] text-tuan-textSecondary mt-1">总计</div>
+          </div>
+        </div>
+      )}
+
+      {/* 类型分布 */}
+      {stats && Object.keys(stats.by_type).length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(stats.by_type).map(([type, count]) => (
+            <span key={type} className={`px-2 py-1 rounded-full text-[11px] font-medium ${TYPE_COLORS[type] || 'bg-gray-100 text-gray-700'}`}>
+              {TYPE_LABELS[type] || type} {count}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* 操作栏 */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex-1">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-tuan-textSecondary" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索记忆..." className="w-full pl-9 pr-3 py-2 text-[13px] border border-tuan-border rounded-lg bg-tuan-input text-tuan-text focus:outline-none focus:border-blue-400" />
+          </div>
+        </div>
+        <label className="flex items-center gap-1.5 text-[12px] text-tuan-textSecondary cursor-pointer select-none">
+          <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} className="accent-blue-500" />
+          显示归档
+        </label>
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={() => setShowAdd(!showAdd)} className="cc-btn-primary px-4 py-2 text-[13px] flex items-center gap-1.5">
+          <Plus size={15} /> 添加记忆
+        </button>
+        <button onClick={handleArchive} className="cc-btn-ghost px-3 py-2 text-[13px] flex items-center gap-1">
+          <RefreshCw size={14} /> 归档
+        </button>
+        <button onClick={handleClear} className="cc-btn-ghost px-3 py-2 text-[13px] text-red-500 flex items-center gap-1">
+          <Trash2 size={14} /> 清空
+        </button>
+      </div>
+
+      {/* 添加记忆表单 */}
+      {showAdd && (
+        <div className="border border-tuan-border rounded-xl p-4 bg-tuan-input space-y-3">
+          <h3 className="text-[14px] font-semibold text-tuan-text">添加新记忆</h3>
+          <div className="flex gap-2">
+            <select value={newScope} onChange={e => setNewScope(e.target.value)} className="flex-1 px-3 py-2 text-[13px] border border-tuan-border rounded-lg bg-tuan-main text-tuan-text">
+              <option value="session">会话 (session)</option>
+              <option value="user">用户 (user)</option>
+              <option value="global">全局 (global)</option>
+            </select>
+            <select value={newType} onChange={e => setNewType(e.target.value)} className="flex-1 px-3 py-2 text-[13px] border border-tuan-border rounded-lg bg-tuan-main text-tuan-text">
+              <option value="fact">事实 (fact)</option>
+              <option value="preference">偏好 (preference)</option>
+              <option value="context">上下文 (context)</option>
+              <option value="instruction">指令 (instruction)</option>
+            </select>
+          </div>
+          <textarea value={newContent} onChange={e => setNewContent(e.target.value)} placeholder="记忆内容..." rows={2} className="w-full px-3 py-2 text-[13px] border border-tuan-border rounded-lg bg-tuan-main text-tuan-text resize-none focus:outline-none focus:border-blue-400" />
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] text-tuan-textSecondary flex-none">重要度：</span>
+            <input type="range" min="0" max="1" step="0.1" value={newImportance} onChange={e => setNewImportance(parseFloat(e.target.value))} className="flex-1 accent-blue-500" />
+            <span className="text-[12px] text-tuan-text w-8 text-right">{newImportance.toFixed(1)}</span>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleAdd} disabled={!newContent.trim()} className="cc-btn-primary px-4 py-2 text-[13px]">保存</button>
+            <button onClick={() => setShowAdd(false)} className="cc-btn-ghost px-4 py-2 text-[13px]">取消</button>
+          </div>
+        </div>
+      )}
+
+      {/* 记忆列表 */}
+      <div className="space-y-2">
+        {filtered.length === 0 ? (
+          <div className="text-center py-8 text-[13px] text-tuan-textSecondary">
+            {search ? '无匹配记忆' : '暂无记忆，点击上方"添加记忆"按钮创建'}
+          </div>
+        ) : (
+          filtered.map(m => (
+            <div key={m.id} className="border border-tuan-border rounded-xl p-3 bg-tuan-input flex items-start gap-3">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium flex-none mt-0.5 ${TYPE_COLORS[m.mem_type] || 'bg-gray-100 text-gray-700'}`}>
+                {TYPE_LABELS[m.mem_type] || m.mem_type}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] text-tuan-text leading-relaxed break-all">{m.content}</div>
+                <div className="flex items-center gap-2 mt-1 text-[10px] text-tuan-textSecondary">
+                  <span>{SCOPE_LABELS[m.scope] || m.scope}</span>
+                  <span>·</span>
+                  <span>重要度 {m.importance.toFixed(1)}</span>
+                  <span>·</span>
+                  <span>访问 {m.access_count} 次</span>
+                  {m.archived && <span className="text-red-400">· 已归档</span>}
+                </div>
+              </div>
+              <button onClick={() => handleDelete(m.id)} className="flex-none text-tuan-textSecondary hover:text-red-500 transition-colors">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 记忆配置 */}
+      {config && (
+        <div className="border border-tuan-border rounded-xl p-4 bg-tuan-input">
+          <h3 className="text-[14px] font-semibold text-tuan-text mb-3">记忆配置</h3>
+          <div className="space-y-3">
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-[13px] text-tuan-textSecondary">自动提取记忆</span>
+              <input type="checkbox" checked={config.auto_extract} onChange={e => setConfig({ ...config, auto_extract: e.target.checked })} className="accent-blue-500 w-4 h-4" />
+            </label>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] text-tuan-textSecondary flex-none">归档天数</span>
+              <input type="number" min="1" max="365" value={config.decay_days} onChange={e => setConfig({ ...config, decay_days: parseInt(e.target.value) || 30 })} className="w-20 px-2 py-1 text-[13px] border border-tuan-border rounded text-center bg-tuan-main text-tuan-text" />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] text-tuan-textSecondary flex-none">每次召回条数</span>
+              <input type="number" min="1" max="50" value={config.max_recall} onChange={e => setConfig({ ...config, max_recall: parseInt(e.target.value) || 10 })} className="w-20 px-2 py-1 text-[13px] border border-tuan-border rounded text-center bg-tuan-main text-tuan-text" />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] text-tuan-textSecondary flex-none">召回字符预算</span>
+              <input type="number" min="500" max="10000" step="100" value={config.recall_budget} onChange={e => setConfig({ ...config, recall_budget: parseInt(e.target.value) || 3000 })} className="w-24 px-2 py-1 text-[13px] border border-tuan-border rounded text-center bg-tuan-main text-tuan-text" />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] text-tuan-textSecondary flex-none">每轮最大提取</span>
+              <input type="number" min="0" max="10" value={config.max_per_turn} onChange={e => setConfig({ ...config, max_per_turn: parseInt(e.target.value) || 3 })} className="w-20 px-2 py-1 text-[13px] border border-tuan-border rounded text-center bg-tuan-main text-tuan-text" />
+            </div>
+            <button onClick={handleConfigSave} className="cc-btn-primary w-full py-2 text-[13px]">保存配置</button>
+          </div>
+        </div>
+      )}
+
+      {/* 帮助信息 */}
+      <div className="border border-tuan-border rounded-xl p-4 bg-tuan-input">
+        <h3 className="text-[13px] font-semibold text-tuan-text mb-2">Scope Recall 3.0</h3>
+        <div className="text-[12px] text-tuan-textSecondary leading-relaxed space-y-1">
+          <p>• <b>三层作用域</b>：session（会话级）→ user（用户级）→ global（全局），越深层级越持久</p>
+          <p>• <b>TF-IDF 语义召回</b>：基于关键词权重 + 重要度 + 新鲜度的综合排序</p>
+          <p>• <b>自动衰减</b>：超过配置天数未访问的记忆自动归档，不删除但默认不召回</p>
+          <p>• <b>自动提取</b>：对话中检测到"记住"、偏好、指令等模式时自动保存</p>
+          <p>• <b>手动管理</b>：可在上方列表中添加、搜索、删除、归档记忆</p>
         </div>
       </div>
     </div>

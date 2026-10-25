@@ -59,6 +59,22 @@ from typing import Any, Dict, FrozenSet, List, Optional, Set
 
 _FRONT_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
+
+def _safe_int(val: Any, default: int = 1) -> int:
+    """安全地解析整数, 支持语义化版本 (如 '1.0.0' → 1) 和带引号的字符串。"""
+    if isinstance(val, int):
+        return val
+    s = str(val).strip().strip("'\"")
+    if not s:
+        return default
+    # 语义化版本: 取主版本号
+    if "." in s:
+        s = s.split(".")[0]
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return default
+
 # 语言标记 → 文件扩展名映射
 _LANG_EXTS = {
     "python": {".py"},
@@ -103,6 +119,7 @@ class SkillMeta:
     triggers: List[str] = field(default_factory=list)
     provides: List[str] = field(default_factory=list)
     requires: List[str] = field(default_factory=list)
+    suggests: List[str] = field(default_factory=list)  # 交叉引用: 相关技能 slug
     priority: int = 50  # 0-100
     scope: str = "session"  # session | project | global
     use_count: int = 0
@@ -170,6 +187,7 @@ class EnhancedSkillManager:
         triggers = kwargs.get("triggers", [])
         provides = kwargs.get("provides", [])
         requires = kwargs.get("requires", [])
+        suggests = kwargs.get("suggests", [])
         priority = kwargs.get("priority", 50)
         scope = kwargs.get("scope", "session")
         languages = kwargs.get("languages", [])
@@ -189,6 +207,7 @@ class EnhancedSkillManager:
             f"triggers: {triggers}\n"
             f"provides: {provides}\n"
             f"requires: {requires}\n"
+            f"suggests: {suggests}\n"
             f"priority: {priority}\n"
             f"scope: {scope}\n"
             f"use_count: {use_count}\n"
@@ -240,14 +259,15 @@ class EnhancedSkillManager:
             description=meta.get("description", ""),
             body=body.strip(),
             path=path,
-            version=int(meta.get("version", 1) or 1),
+            version=_safe_int(meta.get("version", "1")),
             activation=meta.get("activation", "lazy"),
             triggers=_parse_list(meta.get("triggers", "")),
             provides=_parse_list(meta.get("provides", "")),
             requires=_parse_list(meta.get("requires", "")),
-            priority=int(meta.get("priority", 50) or 50),
+            suggests=_parse_list(meta.get("suggests", "")),
+            priority=_safe_int(meta.get("priority", "50"), 50),
             scope=meta.get("scope", "session"),
-            use_count=int(meta.get("use_count", 0) or 0),
+            use_count=_safe_int(meta.get("use_count", "0"), 0),
             updated_at=float(meta.get("updated_at", 0) or 0),
             languages=_parse_list(meta.get("languages", "")),
             file_types=_parse_list(meta.get("file_types", "")),
@@ -288,9 +308,10 @@ class EnhancedSkillManager:
            - lazy: 仅当 explicit_mentions 包含 skill 名
            - auto: triggers 匹配 task_text
            - proactive: triggers 匹配 + 条件满足
-        2. 解析 requires 依赖 (递归注入被依赖 skill)
-        3. 拓扑排序 + priority 排序
-        4. 去重
+        2. 交叉引用: 已激活技能的 suggests 列表 (触发词匹配时注入)
+        3. 解析 requires 依赖 (递归注入被依赖 skill)
+        4. 计算相关性分数并排序
+        5. 去重
         """
         all_skills = {s.name: s for s in self.list_all()}
         mentions = set(explicit_mentions or ctx.mentioned_skills)
@@ -313,7 +334,7 @@ class EnhancedSkillManager:
                 if self._evaluate_conditions(skill, ctx):
                     activated[name] = skill
 
-        # Phase 2: 依赖解析 (递归)
+        # Phase 2: 依赖解析 (递归) + 交叉引用 (suggests)
         resolved = set()
         queue = list(activated.keys())
         while queue:
@@ -321,31 +342,159 @@ class EnhancedSkillManager:
             if name in resolved:
                 continue
             resolved.add(name)
-            skill = all_skills.get(name)  # type: ignore[assignment]  # 键必然存在且非 None
+            skill = all_skills.get(name)
             if not skill:
                 continue
+            # 硬依赖: requires (递归注入)
             for req in skill.requires:
                 if req not in resolved:
-                    # 查找提供该能力的 skill
                     provider = self._find_provider(req, all_skills)
                     if provider and provider.name not in activated:
                         activated[provider.name] = provider
                         queue.append(provider.name)
+            # 软引用: suggests (触发词匹配时注入, 不强制)
+            if skill.suggests and ctx.task_text:
+                for suggest_name in skill.suggests:
+                    if suggest_name in all_skills and suggest_name not in activated:
+                        sug_skill = all_skills[suggest_name]
+                        if self._triggers_match(sug_skill.triggers, ctx.task_text):
+                            if self._evaluate_conditions(sug_skill, ctx):
+                                activated[suggest_name] = sug_skill
+                                queue.append(suggest_name)
 
-        # Phase 3: 排序 (priority desc, 然后 name asc)
-        result = sorted(
-            activated.values(),
-            key=lambda s: (-s.priority, s.name),
-        )
+        # Phase 3: 相关性评分排序 (relevance score desc, 然后 priority desc, 然后 name asc)
+        def _sort_key(s: SkillMeta):
+            relevance = self.score_skill_relevance(s, ctx.task_text) if ctx.task_text else 0.0
+            return (-relevance, -s.priority, s.name)
 
+        result = sorted(activated.values(), key=_sort_key)
         return result
 
     def _triggers_match(self, triggers: List[str], task_text: str) -> bool:
-        """检查 triggers 是否匹配任务文本。"""
+        """检查 triggers 是否匹配任务文本。
+
+        支持:
+        - 子串匹配 (中文天然支持)
+        - 英文模糊匹配 (词干 + 部分词匹配, 如 "design" 匹配 "designing", "redesign")
+        - 否定模式: trigger 以 "!" 开头表示排除 (如 "!debug" 在 "debug" 出现时不激活)
+        - 复合触发: trigger 含 "+" 表示 AND 语义 (如 "设计+视频" 需两者同时出现)
+        """
         if not triggers:
             return False
         task_lower = task_text.lower()
-        return any(t.lower() in task_lower for t in triggers)
+
+        positive_hits = 0
+        negative_hits = 0
+        for t in triggers:
+            if t.startswith("!"):
+                # 否定模式: 如果匹配到则标记为负面
+                neg_term = t[1:].lower()
+                if neg_term in task_lower:
+                    negative_hits += 1
+            else:
+                term = t.lower()
+                # 复合触发: AND 语义
+                if "+" in term:
+                    parts = [p.strip() for p in term.split("+")]
+                    if all(p in task_lower for p in parts):
+                        positive_hits += 1
+                    continue
+                # 中文: 子串匹配
+                if term in task_lower:
+                    positive_hits += 1
+                    continue
+                # 英文: 模糊匹配 (词干、部分词、复数)
+                if self._fuzzy_en_match(term, task_lower):
+                    positive_hits += 1
+
+        # 如果有否定命中, 降低匹配权重
+        if negative_hits > 0:
+            return positive_hits > 0 and positive_hits > negative_hits
+        return positive_hits > 0
+
+    @staticmethod
+    def _fuzzy_en_match(term: str, text: str) -> bool:
+        """英文模糊匹配: 支持词干、复数、进行时等变体。
+
+        匹配策略 (按优先级):
+        1. 精确子串
+        2. 词干匹配 (design → designing, design)
+        3. 复数匹配 (skill → skills)
+        4. 部分词匹配 (设计 → design, 但仅对英文)
+        """
+        if not term or not text:
+            return False
+        # 精确子串 (已由调用方处理)
+        if term in text:
+            return True
+        # 去掉常见后缀进行词干匹配
+        stems = {
+            term.rstrip("s"),  # design → designs → design
+            term.rstrip("ing"),  # designing → design
+            term.rstrip("ed"),  # designed → design
+            term.rstrip("ment"),  # development → develop
+            term.rstrip("tion"),  # creation → create
+            term.rstrip("ness"),  # happiness → happy
+        }
+        for stem in stems:
+            if len(stem) >= 3 and stem in text:
+                return True
+        # 反向: text 中的词以 term 开头
+        for word in text.split():
+            if word.startswith(term) or term.startswith(word) and len(word) >= 4:
+                return True
+        return False
+
+    def score_skill_relevance(self, skill: SkillMeta, task_text: str) -> float:
+        """计算技能与任务文本的相关性分数 (0.0-1.0)。
+
+        评分因子:
+        - 精确触发词匹配: +0.5
+        - 模糊触发词匹配: +0.3
+        - 否定触发词命中: -0.8
+        - 复合触发全命中: +0.7
+        - 多个触发词命中: 递增加权
+        - proactive 技能: +0.1 基础分
+        """
+        if not skill.triggers:
+            return 0.0
+        task_lower = task_text.lower()
+        score = 0.0
+
+        for t in skill.triggers:
+            if t.startswith("!"):
+                neg_term = t[1:].lower()
+                if neg_term in task_lower:
+                    score -= 0.8
+                continue
+
+            term = t.lower()
+            if "+" in term:
+                parts = [p.strip() for p in term.split("+")]
+                matched = all(p in task_lower for p in parts)
+                if matched:
+                    score += 0.7
+                continue
+
+            # 精确匹配
+            if term in task_lower:
+                score += 0.5
+                continue
+
+            # 模糊匹配
+            if self._fuzzy_en_match(term, task_lower):
+                score += 0.3
+
+        # proactive 基础分
+        if skill.is_proactive:
+            score += 0.1
+
+        # 多个触发词递增加权 (最多 +0.3)
+        hit_count = sum(1 for t in skill.triggers
+                       if not t.startswith("!") and t.lower() in task_lower)
+        score += min(hit_count * 0.1, 0.3)
+
+        return max(0.0, min(score, 1.0))
 
     def _evaluate_conditions(self, skill: SkillMeta, ctx: ActivationContext) -> bool:
         """评估 skill 的附加条件。"""
@@ -445,24 +594,74 @@ class EnhancedSkillManager:
 
     # ============================================================ 渲染
 
-    def render_for_prompt(self, skills: List[SkillMeta]) -> str:
-        """把激活的 skill 渲染为系统提示注入文本。"""
+    def render_for_prompt(self, skills: List[SkillMeta], task_text: str = "") -> str:
+        """把激活的 skill 渲染为系统提示注入文本。
+
+        按相关性分组显示:
+        1. 核心技能 (高相关性, 优先执行)
+        2. 参考技能 (中低相关性, 按需查阅)
+        每个技能标注: 激活模式、相关性分数、提供能力、依赖关系。
+        """
         if not skills:
             return ""
-        parts = ["## 已激活技能 (来自过往经验, 优先复用并按需改进)\n"]
+        parts = ["## 已激活技能 (来自过往经验, 优先复用并按需改进)"]
+
+        # 按相关性分组
+        core_skills = []
+        reference_skills = []
         for s in skills:
-            tag = f"[{s.activation}]"
-            parts.append(f"### {s.name} {tag}\n{s.description}\n\n{s.body}")
-        return "\n\n".join(parts)
+            relevance = self.score_skill_relevance(s, task_text) if task_text else 0.0
+            if relevance >= 0.4 or s.is_always or s.is_proactive:
+                core_skills.append((s, relevance))
+            else:
+                reference_skills.append((s, relevance))
+
+        for label, group in [("核心技能", core_skills), ("参考技能", reference_skills)]:
+            if not group:
+                continue
+            parts.append(f"\n### {label}")
+            for s, rel in group:
+                tags = f"[{s.activation}]"
+                rel_str = f" 🔥{rel:.0%}" if rel > 0 else ""
+                parts.append(f"**{s.name}** {tags}{rel_str}")
+                if s.description:
+                    parts.append(f"  {s.description}")
+                if s.provides:
+                    parts.append(f"  提供: {', '.join(s.provides[:5])}")
+                if s.requires:
+                    parts.append(f"  需要: {', '.join(s.requires[:5])}")
+                if s.suggests:
+                    parts.append(f"  关联: {', '.join(s.suggests[:5])}")
+                parts.append("")
+                # 正文注入: always/proactive 注入正文, auto 只注入描述
+                if s.activation in ("always", "proactive") and s.body:
+                    parts.append(s.body[:2000])
+                    if len(s.body) > 2000:
+                        parts.append("…(内容已截断, 用 skill_read 读取完整步骤)")
+                    parts.append("")
+
+        # 决策规则
+        parts.append(
+            "决策规则: proactive/always 技能正文已注入, 直接执行无需再读; "
+            "auto 技能按需 skill_read 读取全文; 无关技能一律不读。"
+        )
+        return "\n".join(parts)
 
     def render_catalog(self) -> str:
-        """渲染所有 skill 的目录 (供 /skills 命令使用)。"""
+        """渲染所有 skill 的目录 (供 /skills 命令使用)。
+
+        显示: 技能名、激活模式、优先级、触发词、依赖关系、交叉引用、使用次数。
+        """
         skills = self.list_all()
         if not skills:
             return "暂无技能。使用 skill_save 工具保存可复用的方法。"
         lines = ["可用技能:\n"]
         for s in sorted(skills, key=lambda x: (-x.priority, x.name)):
-            act_tag = f" ({s.activation})" if s.activation != "lazy" else ""
-            deps = f" ← {', '.join(s.requires)}" if s.requires else ""
-            lines.append(f"  {s.name}{act_tag} — {s.description}{deps}")
+            act_tag = f" [{s.activation}]" if s.activation != "lazy" else ""
+            pri = f" P{s.priority}" if s.priority != 50 else ""
+            deps = f" ← 需要: {', '.join(s.requires)}" if s.requires else ""
+            provides = f" → 提供: {', '.join(s.provides)}" if s.provides else ""
+            suggests = f" ≈ 关联: {', '.join(s.suggests)}" if s.suggests else ""
+            uses = f" (已用 {s.use_count} 次)" if s.use_count > 0 else ""
+            lines.append(f"  {s.name}{act_tag}{pri}{uses} — {s.description}{deps}{provides}{suggests}")
         return "\n".join(lines)

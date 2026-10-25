@@ -1,10 +1,13 @@
 ---
 name: YOLO 模式风险自检
 description: 当以 YOLO 模式 (--mode yolo) 全速自动运行时, 执行危险操作前必须做的最后自检清单
+activation: always
+triggers: 
+provides: safety
+priority: 95
 updated_at: 0
 use_count: 0
 ---
-
 # YOLO 模式风险自检
 
 YOLO 模式下所有危险操作 (删文件、执行命令) 会被自动批准, 不再逐项询问。为防误伤, 在调用 `delete_file` / `run_shell` 前, 内心快速过一遍:

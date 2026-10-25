@@ -14,10 +14,7 @@ import sys
 from collections import Counter
 from typing import Any
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover
-    yaml = None
+from .. import _yaml as yaml  # 后端门面: 有 PyYAML 用 PyYAML, 否则用内置 stdlib 实现
 
 
 def _glob_to_regex(glob: str) -> "re.Pattern":
@@ -311,8 +308,6 @@ class RuleEngine:
 
     @staticmethod
     def _parse_rules(text: str) -> list:
-        if yaml is None:
-            return []
         try:
             data = yaml.safe_load(text) or []
         except Exception:

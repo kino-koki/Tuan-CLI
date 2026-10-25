@@ -34,6 +34,31 @@ class RiskLevel(IntEnum):
     CRITICAL = 4      # 极危险操作 (rm -rf, DROP TABLE, git push --force)
 
 
+# ================================================================ 模式→YOLO 等价映射
+
+# 与 YOLO 同级的高权限模式 (§6.3): 无界 (boundless) 与历史 YOLO 模式等价,
+# 自动批准大部分工具调用, 但硬红线 (rm -rf /、DROP TABLE 等) 仍由
+# command_guard / security_gate 拦截, 不会被本分类器放行。
+YOLO_EQUIVALENT_MODES: frozenset = frozenset({"boundless"})
+
+
+def is_mode_yolo_equivalent(mode_id: str) -> bool:
+    """判断给定模式是否与 YOLO 等价（无界 = 历史 yolo 别名）。
+
+    参数:
+        mode_id: 模式 ID 或别名 (如 "boundless" / "yolo" / "chat")。
+
+    返回:
+        True 表示该模式应享受 YOLO 同级的自动批准权限。
+    """
+    from ..modes.registry import resolve_mode_id
+    try:
+        resolved = resolve_mode_id(mode_id)
+    except ValueError:
+        return False
+    return resolved in YOLO_EQUIVALENT_MODES
+
+
 # ================================================================ 工具风险分类
 
 # 工具名 → 默认风险等级 (无用户规则覆盖时的基线)
@@ -150,12 +175,32 @@ class AutoModeClassifier:
         self._rules: List[AutoModeRule] = self._load_rules()
         self._session_history: Dict[str, int] = {}  # 工具名 → 本会话调用次数
         self._confirmed_tools: Set[str] = set()      # 用户本次会话已确认的工具 (同类不再重复确认)
+        # 当前运行模式 (惰性读取, 用于 boundless → yolo 等价判定)
+        self._current_mode_id: Optional[str] = None
 
     def _get(self, key: str, default: Any = Any) -> Any:
         if self.config is None:
             return default
         value = self.config.get(key, default)
         return default if value is None else value
+
+    @property
+    def current_mode(self) -> str:
+        """读取当前运行模式 ID (支持别名解析), 失败时返回 'chat'。"""
+        if self._current_mode_id is not None:
+            return self._current_mode_id
+        try:
+            if self.config is not None and hasattr(self.config, "mode"):
+                self._current_mode_id = str(self.config.mode)
+            else:
+                self._current_mode_id = "chat"
+        except Exception:  # noqa: BLE001
+            self._current_mode_id = "chat"
+        return self._current_mode_id
+
+    def _is_yolo_mode(self) -> bool:
+        """判断当前模式是否与 YOLO 等价 (boundless → yolo)。"""
+        return is_mode_yolo_equivalent(self.current_mode)
 
     def _load_rules(self) -> List[AutoModeRule]:
         """从配置加载自定义 auto mode 规则。"""
@@ -184,6 +229,9 @@ class AutoModeClassifier:
         2. Shell 命令危险模式匹配 (仅 run_shell/run_terminal_command)
         3. 工具基线风险分类
         4. 会话历史 (重复操作降低确认需求)
+        5. boundless → yolo 等价: 当前模式为 boundless 时, 自动批准大部分
+           工具调用 (对标历史 YOLO), 但硬红线仍由 command_guard / security_gate
+           拦截, 不会被本分类器放行。
         """
         # 1. 用户自定义规则
         rule_decision = self._match_rules(tool_name, args)
@@ -199,7 +247,18 @@ class AutoModeClassifier:
         # 3. 工具基线风险
         baseline = TOOL_BASELINE_RISK.get(tool_name, RiskLevel.MODERATE)
 
-        # 4. 会话历史: 同一工具已确认过的, 降级为自动批准
+        # 4. boundless → yolo 等价: 无界模式自动批准 (硬红线由下游拦截)
+        if self._is_yolo_mode() and baseline <= RiskLevel.MODERATE:
+            return RiskAssessment(
+                level=baseline,
+                reason=f"无界模式 (boundless→yolo 等价): 自动批准工具 {tool_name}",
+                tool_name=tool_name,
+                auto_approve=True,
+                needs_confirm=False,
+                rule_source="boundless_yolo_equiv",
+            )
+
+        # 5. 会话历史: 同一工具已确认过的, 降级为自动批准
         self._session_history[tool_name] = self._session_history.get(tool_name, 0) + 1
         if tool_name in self._confirmed_tools and self._session_history[tool_name] > 1:
             return RiskAssessment(
@@ -211,7 +270,7 @@ class AutoModeClassifier:
                 rule_source="session_history",
             )
 
-        # 5. 按风险等级决策
+        # 6. 按风险等级决策
         return self._decide_by_level(baseline, tool_name)
 
     def _match_rules(self, tool_name: str, args: Dict[str, Any]) -> Optional[RiskAssessment]:

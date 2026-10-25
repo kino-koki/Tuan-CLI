@@ -131,6 +131,8 @@ _CMD_SOURCES = {
     "cmd_tutorial": ".cmd_tutorial",
     # ---- cmd_permissions (权限规则查看 / 命中测试) ----
     "cmd_permissions": ".cmd_permissions",
+    # ---- cmd_mode (五模式切换: list/current/show/switch) ----
+    "cmd_mode": ".cmd_mode",
     "cmd_upgrade": ".cmd_upgrade",
     # ---- cmd_ecosystem (生态互操作: Claude Code / Hermes 资产双向搬运) ----
     "cmd_ecosystem": ".cmd_ecosystem",

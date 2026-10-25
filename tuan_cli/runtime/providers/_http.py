@@ -12,8 +12,7 @@ import json
 import re
 from typing import Any, AsyncIterator, Dict, Optional, Tuple
 
-import httpx
-
+from ... import _http as httpx  # 零依赖传输层 (stdlib 实现 httpx 表面)
 from ..contract import APIConnectionError, APIStatusError, APITimeoutError, classify_api_error
 
 # NVIDIA 兼容端点的主机后缀（用于按 baseUrl 判定 nvidia，兼顾“OpenAI 兼容方式指向 NVIDIA”的情况）

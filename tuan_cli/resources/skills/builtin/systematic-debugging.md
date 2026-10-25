@@ -1,10 +1,14 @@
 ---
 name: 系统化调试
 description: 遇到 bug 时不盲猜、不乱改，用可证伪的科学方法定位根因的实战流程
+activation: auto
+triggers: 调试, debug, bug, 根因, 排查, 定位
+provides: debugging
+suggests: code-architect, tuan-observability
+priority: 85
 updated_at: 0
 use_count: 0
 ---
-
 # 系统化调试
 
 90% 的「修不好」是因为在没定位根因前就动手改。先懂，再动。

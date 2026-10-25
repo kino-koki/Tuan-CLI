@@ -1,10 +1,14 @@
 ---
 name: 安全重构法则
 description: 在不改行为的前提下改善代码结构的原则与步骤，避免重构即重写即崩
+activation: auto
+triggers: 重构, refactor, 重构代码, 改善结构
+provides: refactoring
+suggests: code-architect, tuan-migration
+priority: 80
 updated_at: 0
 use_count: 0
 ---
-
 # 安全重构法则
 
 重构 = 改结构不改行为。一旦行为变了，那叫改功能，不是重构。

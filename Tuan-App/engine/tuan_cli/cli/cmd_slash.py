@@ -29,64 +29,68 @@ from .cmd_slash_session import _cmd_export, _cmd_import
 
 _HELP = """
 可用斜杠命令 (Slash Commands)
+
+── 核心层 (Core, / 弹出菜单默认展示) ──
   /help      显示帮助
+  /model     切换/查看模型
+  /mode      切换运行模式 (感通/灵码/闲聊/无界/协同; 旧名 standard/yolo/plan 可用)
+  /memory    查看记忆
+  /clear     清空对话上下文
+  /compact   手动压缩上下文 (折叠旧历史)
+  /context   上下文占用
+  /cost      成本估算 (token + 缓存命中率 + 费用)
+  /usage     本次会话 token 用量
+  /undo      精细回滚 (事务化账本: /undo /undo N /undo <file> /undo all /undo --safe)
+  /diff      工作区变更摘要 (支持 /diff <file> / /diff --full)
+  /export    导出会话为 Markdown 文件 ( /export [文件名] )
+  /exit      退出
+  /status    会话状态摘要 (模型/模式/上下文/用量/韧性)
   /tools     列出可用工具
   /skills    列出技能
-  /memory    查看记忆
-  /usage     本次会话 token 用量
-  /cost      成本估算 (token + 缓存命中率 + 费用)
-  /context   上下文占用
-  /compact   手动压缩上下文 (折叠旧历史)
-  /add-dir   把工作区外目录纳入本会话可读上下文 ( /add-dir <路径>; 无参列出 )
-  /diff      工作区变更摘要 (支持 /diff <file> / /diff --full)
-  /undo      精细回滚 (事务化账本: /undo /undo N /undo <file> /undo all /undo --safe)
-  /log       最近工具调用历史 ( /log [N] 默认 15 条 )
-  /impact    展示操作账本与影响半径 (哪些文件被改、改了几步)
   /mcp       MCP 管理 (list/tools/audit/security)
-  /mcp-tools MCP Tool Search 上下文占用 (report/on/off/search)
-  /image     图片管理 + AI 生成 ( /image <路径|URL> · /image generate <描述> · /image list )
-  /images    列出当前待发送的图片
-  /clear-images  清除待发送的图片
-  /hooks     用户级 Hooks ( /hooks 列出已配置脚本; /hooks test 触发一次)
-  /model     切换/查看模型
-  /provider  查看/设置/清除 API Key 与供应商 ( /provider set <ENV> <KEY> · /provider clear [ENV] )
-  /effort    切换推理投入 low/medium/high
-  /mode      切换运行模式 standard/yolo
-  /plan      切换 Plan 模式 (只读分析, 修改类工具被拦截)
-  /goal      Goal 模式 (/goal <目标描述>, 循环直到条件满足)
-  /blast     Blast Radius 交互式可视化 (影响半径/安全风险/工具统计)
-  /sandbox   沙箱执行 (在 Docker 容器中隔离执行危险命令)
-  /offline   离线模式 (Ollama 本地模型管理)
-  /audit     审计报告 (统计/查看/导出合规报告)
   /permissions  展示当前生效的权限策略 (只读)
-  /status    会话状态摘要 (模型/模式/上下文/用量/韧性)
-  /stats     Agent 可观测性面板 (trace/span/延迟/错误率, 需开启 telemetry)
-  /budget    查看/设置成本预算上限 ( /budget <USD> )
-/checkpoint  会话检查点 ( /checkpoint save 保存;  restore [id] 回滚; list 查看 )
-  /rewind    会话时间线回溯 ( /rewind 回退一步; /rewind list 列快照; /rewind to <N> )
-  /handoff   会话交接 ( /handoff 生成摘要 -> 开新会话继续 )
-  /worktree  git worktree 并行实验 ( create/list/remove/switch )
-  /init      扫描工作区生成 TUAN.md 项目规则
   /web       启动本地 Web 工作台 (无参数) 或快捷联网 ( /web <URL> 或  /web search <关键词> )
-  /code      代码感知问答: ContextForge 检索工作区后带上下文执行 ( /code <任务> )
-  /commands  热插拔命令管理: list / reload / enable <名> / disable <名>
-  /verify    编码验证闭环 (自动跑 test/typecheck/lint, 失败自修复)
-  /subagent  派发隔离子代理 (独立上下文) 执行任务并回收摘要
-  /workflow  动态并行工作流管理 ( list/status <wf>/result <wf>/cancel <wf>/retry <wf> )
-  /resume    恢复历史会话 (编号/会话id/latest)
-  /swarm     多 Agent 协作 (强模型规划 -> 弱模型并发执行 -> 强模型验收)
-  /route     智能模型路由建议 (咨询式, 输入 /route <任务>)
-  /export    导出会话为 Markdown 文件 ( /export [文件名] )
-  /import    导入 Markdown 对话 ( /import <文件路径> )
-  /clear     清空对话上下文
-  /more      展开上一条被折叠的长输出
-  /gh-borrow GitHub 参考借力 ( /gh-borrow <关键词> 检索公开代码作参考 )
-  /personality 人设管理 ( /personality [list|show|set <人设名>|auto] )
-  /exit      退出
-  /quit      退出
+  /plan      切换 Plan 模式 (只读分析, 修改类工具被拦截)
+
+── 专家层 (Expert, 折叠; 输入 /<首字母> 前缀或 /help 可查全部) ──
+  [...]/add-dir   把工作区外目录纳入本会话可读上下文 ( /add-dir <路径>; 无参列出 )
+  [...]/audit     审计报告 (统计/查看/导出合规报告)
+  [...]/blast     Blast Radius 交互式可视化 (影响半径/安全风险/工具统计)
+  [...]/budget    查看/设置成本预算上限 ( /budget <USD> )
+  [...]/checkpoint  会话检查点 ( /checkpoint save 保存;  restore [id] 回滚; list 查看 )
+  [...]/clear-images  清除待发送的图片
+  [...]/commands  热插拔命令管理: list / reload / enable <名> / disable <名>
+  [...]/code      代码感知问答: ContextForge 检索工作区后带上下文执行 ( /code <任务> )
+  [...]/effort    切换推理投入 low/medium/high
+  [...]/gh-borrow GitHub 参考借力 ( /gh-borrow <关键词> 检索公开代码作参考 )
+  [...]/goal      Goal 模式 (/goal <目标描述>, 循环直到条件满足)
+  [...]/handoff   会话交接 ( /handoff 生成摘要 -> 开新会话继续 )
+  [...]/hooks     用户级 Hooks ( /hooks 列出已配置脚本; /hooks test 触发一次)
+  [...]/image     图片管理 + AI 生成 ( /image <路径|URL> · /image generate <描述> · /image list )
+  [...]/images    列出当前待发送的图片
+  [...]/impact    展示操作账本与影响半径 (哪些文件被改、改了几步)
+  [...]/import    导入 Markdown 对话 ( /import <文件路径> )
+  [...]/init      扫描工作区生成 TUAN.md 项目规则
+  [...]/log       最近工具调用历史 ( /log [N] 默认 15 条 )
+  [...]/mcp-tools MCP Tool Search 上下文占用 (report/on/off/search)
+  [...]/more      展开上一条被折叠的长输出
+  [...]/offline   离线模式 (Ollama 本地模型管理)
+  [...]/personality 人设管理 ( /personality [list|show|set <人设名>|auto] )
+  [...]/provider  查看/设置/清除 API Key 与供应商 ( /provider set <ENV> <KEY> · /provider clear [ENV] )
+  [...]/quit      退出
+  [...]/resume    恢复历史会话 (编号/会话id/latest)
+  [...]/route     智能模型路由建议 (咨询式, 输入 /route <任务>)
+  [...]/rewind    会话时间线回溯 ( /rewind 回退一步; /rewind list 列快照; /rewind to <N> )
+  [...]/sandbox   沙箱执行 (在 Docker 容器中隔离执行危险命令)
+  [...]/stats     Agent 可观测性面板 (trace/span/延迟/错误率, 需开启 telemetry)
+  [...]/subagent  派发隔离子代理 (独立上下文) 执行任务并回收摘要
+  [...]/swarm     多 Agent 协作 (强模型规划 -> 弱模型并发执行 -> 强模型验收)
+  [...]/verify    编码验证闭环 (自动跑 test/typecheck/lint, 失败自修复)
+  [...]/worktree  git worktree 并行实验 ( create/list/remove/switch )
+  [...]/workflow  动态并行工作流管理 ( list/status <wf>/result <wf>/cancel <wf>/retry <wf> )
 
 提示: Enter 发送 · Esc+Enter 换行 · 多行可用三引号
-TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执行)"""
+TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执行; 仅列核心层, 输入首字母可展开专家层)"""
 
 
 # 权威命令清单: 与 _handle_slash 的 elif 分支一一对应。
@@ -103,6 +107,37 @@ SLASH_COMMAND_NAMES: tuple = (
 )
 
 
+# 核心层命令: TUI "/" 面板默认展示 ≤ 20 项; 其余归入专家层。
+# 分层只影响 TUI 补全菜单显示, 不改变 list_slash_commands() 的全集 (供 ACP/IDE 协商)。
+# 权威分层定义已移至 slash_tier.py (§2.3), 此处保留兼容副本供 _handle_slash 与
+# cmd_chat.py 的 slash_command_tiers() 使用; TUI 补全菜单应导入 slash_tier.slash_command_tier。
+CORE_SLASH_COMMANDS: frozenset = frozenset({
+    "/help", "/model", "/mode", "/memory", "/clear", "/compact",
+    "/context", "/cost", "/usage", "/undo", "/diff", "/export",
+    "/exit", "/status", "/tools", "/skills", "/mcp", "/permissions",
+    "/web", "/plan",
+})
+
+
+def slash_command_tier(name: str) -> str:
+    """返回命令层级: 'core' | 'expert' | 'hidden'。
+
+    - core: 核心层, TUI "/" 面板默认展开即可见 (≤ 20 项)
+    - expert: 专家层, 需输入首字母前缀才在补全菜单中出现
+    - hidden: 隐藏层, 不进补全, 仅 /help 全量列出 (当前未使用)
+
+    不认识的命令 (用户自定义热插拔命令) 归入 expert, 保证可见性。
+    """
+    if name in CORE_SLASH_COMMANDS:
+        return "core"
+    return "expert"
+
+
+def slash_command_tiers() -> Dict[str, str]:
+    """枚举内置命令 -> tier 的映射表 (供 TUI 补全过滤器使用)。"""
+    return {n: slash_command_tier(n) for n in SLASH_COMMAND_NAMES}
+
+
 # 命令一句话描述 (补全菜单 display_meta / /help 用); 未收录的命令回退通用提示。
 _CMD_META: Dict[str, str] = {
     "/add-dir": "把工作区外目录纳入本会话可读上下文 (/add-dir [路径])",
@@ -114,7 +149,7 @@ _CMD_META: Dict[str, str] = {
     "/provider": "查看/设置/清除 API Key",
     "/usage": "本次会话 token 用量",
     "/cost": "本次会话花费",
-    "/mode": "切换运行模式 (standard/yolo/plan)",
+    "/mode": "切换运行模式 (感通/灵码/闲聊/无界/协同; 旧名 standard/yolo/plan 可用)",
     "/effort": "切换推理档位",
     "/plan": "进入/退出只读规划模式",
     "/permissions": "权限模式设置",
@@ -885,11 +920,47 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
         else:
             ui.info(f"  当前: {config.get('agent.effort', 'high')}")
     elif head == "/mode":
-        if arg:
-            config.set_user("mode.default", arg.strip())
-            ui.success(f"模式: {arg.strip()}")
+        from ..modes.switcher import switch_mode, current_mode
+        from ..modes.registry import MODE_IDS, MODE_NAMES, MODE_LEVELS, MODE_RISK, get_mode_meta
+        from ..modes.policy import get_mode_policy
+
+        cur = current_mode()
+        if not arg:
+            meta = get_mode_meta(cur)
+            policy = get_mode_policy(cur)
+            ui.info(f"  当前: {meta['name']} ({cur}) · {meta['level']} · 风险: {meta['risk']}")
+            ui.info(f"  可用: /mode <id> 切换 | /mode list 列出全部 | /mode show 查看详情")
+            for mid in MODE_IDS:
+                m = get_mode_meta(mid)
+                marker = " ✓" if mid == cur else ""
+                ui.info(f"    {m['name']:　<4} ({mid:15}) {m['level']:2} 风险:{m['risk']}{marker}")
+        elif arg.lower() == "list":
+            for mid in MODE_IDS:
+                m = get_mode_meta(mid)
+                marker = " ✓" if mid == cur else ""
+                ui.info(f"  {m['name']:　<4} ({mid:15}) {m['level']:2} 风险:{m['risk']}{marker}")
+        elif arg.lower() == "show":
+            meta = get_mode_meta(cur)
+            policy = get_mode_policy(cur)
+            ui.info(f"  模式: {meta['name']} ({cur})")
+            ui.info(f"  权限: {meta['level']} · 风险: {meta['risk']}")
+            ui.info(f"  描述: {meta.get('description', '')}")
+            ui.info(f"  Shell:  {'允许' if policy.shell_allowed() else '禁用'}")
+            ui.info(f"  MCP:    {'允许' if policy.mcp_allowed() else '禁用'}")
+            ui.info(f"  网络:   {'允许' if policy.network_allowed() else '禁用'}")
+            ui.info(f"  文件:   {'允许' if policy.file_write_allowed() else '禁用'}")
+            ui.info(f"  记忆:   {'允许' if policy.memory_write_allowed() else '禁用'}")
+            ui.info(f"  TTS:    {'允许' if policy.tts_allowed() else '禁用'}")
+            ui.info(f"  工具白名单: {len(policy.tool_allowlist())} 个工具")
         else:
-            ui.info(f"  当前: {config.mode}")
+            ok, reason = switch_mode(arg, force=True)
+            if ok:
+                new_id = current_mode()
+                new_meta = get_mode_meta(new_id)
+                ui.success(f"已切换到: {new_meta['name']} ({new_id})")
+                ui.info(f"  {reason}")
+            else:
+                ui.warning(f"切换失败: {reason}")
     elif head == "/plan":
         arg_l = arg.strip().lower()
         if arg_l in ("on", "1", "true", "yes"):

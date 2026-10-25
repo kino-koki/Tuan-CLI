@@ -422,7 +422,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   （保留枚举值与参数语义以维持互操作）。
 
 - **安全引擎 docstring 措辞**: `permissions.py` 将「对标 Claude Code 2.1.214」
-  改为「覆盖同类终端 Agent 的已知加固项」；`CODE_REVIEW.md` 同步修正。
+  改为「覆盖同类终端 Agent 的已知加固项」。
 
 - **VS Code 扩展 keywords**: 移除 `ide/vscode/package.json` 中的 `"claude"` 关键词。
 
@@ -450,7 +450,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **rules_engine 表达式求值器验证**: 复核确认 `matches` / `regex_contains` 语义已正确
   （`subject, pattern` 顺序），算术运算符 `+ - * /` 已实现完整递归下降优先级
   （multiplicative 高于 additive 高于 compare），`len(x) > 5 + 3` 这类含算术的规则
-  不再静默丢 token。此前 CODE_REVIEW §11 记为「残留」的该项实际已修复，此处以回归
+  不再静默丢 token。此前代码评审记为「残留」的该项实际已修复，此处以回归
   用例固化。
 
 ### 待后续处理（行为层变更，需回归验证）

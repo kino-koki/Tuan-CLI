@@ -24,7 +24,9 @@ jobs:
       - name: Install package + dev deps
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,mcp,openai]"
+          # 注: openai 已上移为核心依赖 (2026-10), 不再作为 extra; mcp extra
+          # 真实存在 (见 pyproject.toml), 依赖集为 pydantic / httpx / typing_extensions。
+          pip install -e ".[dev,mcp]"
 
       - name: Syntax gate (py_compile)
         run: |
@@ -39,8 +41,23 @@ jobs:
       - name: Type check (mypy)
         run: python -m mypy tuan_cli
 
+      # shell=True 门禁: 未列入白名单的 subprocess shell=True 调用点直接 fail.
+      # 脚本纯 stdlib, 不 import 项目包; 详见 scripts/check_shell_true.py。
+      - name: Gate - shell=True whitelist
+        run: python scripts/check_shell_true.py
+
+      # engine 双源漂移防回归: Tuan-App/engine/tuan_cli 必须与根 tuan_cli 同步。
+      # 脚本纯 stdlib, 支持 --check (只比对) 与实际同步两种模式。
+      - name: Gate - engine bundle in sync
+        run: python scripts/sync_engine.py --check
+
       - name: Test suite
         run: python -m pytest tests/ -q --timeout=120 --basetemp="$RUNNER_TEMP/pytest"
+
+      # MCP 子系统定向子集: mcp extra 现在真实安装 (见 pyproject.toml),
+      # 这里显式跑一次让回归信号更聚焦 (mcp 客户端握手/审计/传输/工具搜索)。
+      - name: MCP subsystem subset
+        run: python -m pytest tests/test_mcp.py tests/test_mcp_multitransport.py tests/test_mcp_security.py tests/test_mcp_tool_search.py tests/test_mcp_e2e.py tests/test_mcp_checkpoint_convergence.py -q --timeout=120 --basetemp="$RUNNER_TEMP/pytest-mcp"
 
   # Windows 原生体验 (评审 Major #6): 单独矩阵跑跨平台纯 Python 测试子集
   # (TUI / 安全引擎 / 配置 / 内核 / 遥测 / 难度分类)。bash 与 POSIX 路径依赖的

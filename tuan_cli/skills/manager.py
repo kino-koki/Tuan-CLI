@@ -81,6 +81,9 @@ class Skill:
     version: int = 1
     activation: str = "lazy"                         # lazy | auto | always | proactive
     triggers: List[str] = field(default_factory=list)
+    provides: List[str] = field(default_factory=list)  # 本技能提供的能力
+    requires: List[str] = field(default_factory=list)  # 需要的能力 (依赖)
+    suggests: List[str] = field(default_factory=list)  # 交叉引用: 关联技能 slug
     source: str = "manual"                           # manual | self-improve | auto-distill
     # ---- frontmatter 超集 (Codex/Claude Code 开放标准) ----
     display_name: str = ""                            # UI 展示名
@@ -234,6 +237,9 @@ class SkillManager:
             version=(old.version + 1) if old else 1,
             activation=old.activation if old else "lazy",
             triggers=list(old.triggers) if old else [],
+            provides=list(getattr(old, "provides", [])) if old else [],
+            requires=list(getattr(old, "requires", [])) if old else [],
+            suggests=list(getattr(old, "suggests", [])) if old else [],
             source=old.source if old else "manual",
             display_name=old.display_name if old else "",
             short_description=old.short_description if old else "",
@@ -243,7 +249,7 @@ class SkillManager:
         )
         # kwargs 可覆盖超集字段 (蒸馏器/导入器使用)
         for k in ("display_name", "short_description", "default_prompt", "activation",
-                  "triggers", "tags", "priority", "source"):
+                  "triggers", "provides", "requires", "suggests", "tags", "priority", "source"):
             if k in kwargs:
                 setattr(skill, k, kwargs[k])
         self._write(skill)
@@ -283,6 +289,12 @@ class SkillManager:
         ]
         if skill.triggers:
             lines.append(f"triggers: {', '.join(skill.triggers)}")
+        if skill.provides:
+            lines.append(f"provides: {', '.join(skill.provides)}")
+        if skill.requires:
+            lines.append(f"requires: {', '.join(skill.requires)}")
+        if skill.suggests:
+            lines.append(f"suggests: {', '.join(skill.suggests)}")
         if skill.source and skill.source != "manual":
             lines.append(f"source: {skill.source}")
         # ---- frontmatter 超集 (有值才输出) ----
@@ -337,6 +349,15 @@ class SkillManager:
         triggers_raw = meta.get("triggers", "")
         triggers = [t.strip().strip('"').strip("'")
                     for t in re.split(r"[,\[\]\"']+", triggers_raw) if t.strip()]
+        provides_raw = meta.get("provides", "")
+        provides = [t.strip().strip('"').strip("'")
+                    for t in re.split(r"[,\[\]\"']+", provides_raw) if t.strip()]
+        requires_raw = meta.get("requires", "")
+        requires = [t.strip().strip('"').strip("'")
+                    for t in re.split(r"[,\[\]\"']+", requires_raw) if t.strip()]
+        suggests_raw = meta.get("suggests", "")
+        suggests = [t.strip().strip('"').strip("'")
+                    for t in re.split(r"[,\[\]\"']+", suggests_raw) if t.strip()]
         # policy.allow_implicit_invocation (Codex 风格点号键)
         implicit_raw = meta.get("policy.allow_implicit_invocation", "").lower()
         allow_implicit = implicit_raw in ("true", "1", "yes", "on")
@@ -352,6 +373,9 @@ class SkillManager:
             version=int(meta.get("version", 1) or 1),
             activation=meta.get("activation", "lazy"),
             triggers=triggers,
+            provides=provides,
+            requires=requires,
+            suggests=suggests,
             source=meta.get("source", "manual"),
             display_name=meta.get("display_name", ""),
             short_description=meta.get("short_description", ""),
@@ -597,23 +621,33 @@ class SkillManager:
 
         - activation=always 的技能: 渲染完整正文 (始终需要的操作守则),
           正文总量受 _ALWAYS_BODY_MAX_LINES 行数预算约束 (超限截断并提示);
-        - 其余 (auto/lazy/proactive): 默认只渲染注册表条目
-          (名称 + 激活档 + 描述 + 触发词), 正文按需 skill_read 加载;
+        - activation=proactive 的技能: 渲染完整正文 (关键词匹配时自动激活),
+          标注「自动激活」让 agent 知道直接执行;
+        - 其余 (auto/lazy): 默认只渲染注册表条目
+          (名称 + 激活档 + 描述 + 触发词 + 关系标注), 正文按需 skill_read 加载;
           full_body=True 时 (显式加载场景, 如子代理预加载指定技能) 渲染完整正文。
-        - 尾部固定一行决策规则: 明确「何时读全文 / always 无需再读」,
-          消除 agent 对注入深度判断的不确定性。
+        - 交叉引用: 显示 requires / provides / suggests 关系, 帮助 agent 理解技能图谱。
+        - proactive 技能: 标注「自动激活」, agent 知道关键词匹配时直接执行。
+        - 尾部固定一行决策规则: 明确「何时读全文 / always 无需再读 / proactive 直接执行」。
         """
         if not skills:
             return ""
         parts = ["## 可复用技能 (按需加载: 相关技能先用 skill_read 读取完整步骤再执行)"]
-        # always 正文的全局剩余预算(行)。full_body=True 是调用方显式要求全文
-        # (子代理预加载等), 此时不设总闸, 否则会静默丢正文。
         budget = 0 if full_body else _ALWAYS_BODY_TOTAL_MAX_LINES
         demoted: List[str] = []
         for s in skills:
             desc = s.short_description or s.description
+            # 构建关系标注
+            rel_parts = []
+            if getattr(s, "requires", None):
+                rel_parts.append(f"需要: {', '.join(s.requires[:3])}")
+            if getattr(s, "provides", None):
+                rel_parts.append(f"提供: {', '.join(s.provides[:3])}")
+            if getattr(s, "suggests", None):
+                rel_parts.append(f"关联: {', '.join(s.suggests[:3])}")
+            rel_hint = f" [{'; '.join(rel_parts)}]" if rel_parts else ""
+
             if s.activation == "always" and not full_body:
-                # 该给多少行: 单技能上限与全局剩余取小; 全局用尽则降级为注册表条目。
                 if budget <= 0:
                     demoted.append(s.ui_name)
                     parts.append(
@@ -637,13 +671,17 @@ class SkillManager:
                 )
                 parts.append(entry)
             else:
-                entry = f"- **{s.ui_name}** ({s.slug}, {s.activation}): {desc}"
+                entry = f"- **{s.ui_name}** ({s.slug}, {s.activation}): {desc}{rel_hint}"
                 if s.triggers:
                     entry += f" 触发: {', '.join(s.triggers[:6])}"
+                if s.activation == "proactive":
+                    entry += " [自动激活: 关键词匹配时优先调用]"
                 parts.append(entry)
         rule = (
             "决策规则: 任务相关时才 skill_read 读取全文并按其步骤执行; "
-            "always 技能正文已注入, 直接遵守无需再读; 无关技能一律不读。"
+            "always 技能正文已注入, 直接遵守无需再读; "
+            "proactive 技能自动激活, 相关时直接按步骤执行; "
+            "无关技能一律不读。"
         )
         if demoted:
             rule += (

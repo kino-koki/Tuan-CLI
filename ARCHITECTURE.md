@@ -329,6 +329,4 @@ ModelRouter.decide(task, difficulty, available_providers)
 - `HARDENING.md` — 加固模块启用与配置速查。
 - `SUPPORTED_MODELS.md` — 支持的模型与供应商清单。
 - `VERSION_POLICY.md` · `VERSION_FAQ.md` — 版本迭代纪律与常见问题。
-- `CODE_REVIEW.md` — 代码评审规范。
-- `DESIGN_TOKENS.md` — 设计令牌（色彩 / 间距 / 字体）。
 - `KERNEL_PATCH_LAYER.md` — 内核补丁层（声明式可回滚扩展）。

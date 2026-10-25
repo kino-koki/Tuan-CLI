@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 from .base import ModelAdapter, ModelCapabilities, ModelResponse, ToolCall
 
 if TYPE_CHECKING:
-    from openai import OpenAI
+    from .. import _openai_sdk
 
 
 class OpenAICompatAdapter(ModelAdapter):
@@ -37,19 +37,19 @@ class OpenAICompatAdapter(ModelAdapter):
         self.connect_timeout = connect_timeout
         self.read_timeout = read_timeout
         self.prompt_cache = prompt_cache
-        self._client: Optional[OpenAI] = None
+        self._client: Optional[Any] = None
         # 防御历史脏数据: 误粘 "Bearer " 前缀的 key 剥离, 避免双重 Bearer 头
         if api_key and str(api_key).strip().lower().startswith("bearer "):
             api_key = str(api_key).strip()[7:].strip()
         self._api_key = api_key
 
     @property
-    def client(self) -> OpenAI:
+    def client(self) -> Any:
         if self._client is None:
             if not self._api_key:
                 # 本地/自托管端点 (Ollama / llama.cpp / LM Studio / vLLM 等 OpenAI 兼容服务)
                 # 通常不需要真实密钥, 缺失时回落一个占位 key, 避免本地测试被卡在鉴权。
-                # 远程端点仍严格要求真实密钥 (下方 import openai 后由服务端返回 401)。
+                # 远程端点仍严格要求真实密钥 (下方发请求后由服务端返回 401)。
                 if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
                     self._api_key = "sk-local-llm"
                 else:
@@ -57,18 +57,13 @@ class OpenAICompatAdapter(ModelAdapter):
                         "未配置 API Key。请运行 `tuan setup`, 或设置环境变量 "
                         "DEEPSEEK_API_KEY / OPENCODE_ZEN_API_KEY / TUAN_API_KEY。"
                     )
-            # 延迟导入: openai SDK 很重 (pydantic 类型), 只在真正发请求时加载。
-            # 关键: 它绝不是核心依赖 —— 不使用 OpenAI 兼容传输层时 (本地/Ollama/Anthropic
-            # 等) 完全不需要安装 openai, 导入本模块也不会触碰它 (见文件顶部 TYPE_CHECKING)。
-            import httpx
-            try:
-                from openai import OpenAI
-            except ImportError as exc:  # 友好报错: 仅 OpenAI 传输层需要该 SDK
-                raise RuntimeError(
-                    "未安装 openai SDK, 但当前 Provider 需要 OpenAI 兼容传输层。\n"
-                    "该依赖仅作 HTTP 传输层使用, 核心逻辑不依赖它; 运行非 OpenAI 场景无需安装。\n"
-                    "安装方式: pip install tuan_cli[openai]  或  pip install openai>=1.40"
-                ) from exc
+            # 延迟导入: 只在真正发请求时加载传输层。
+            # 注意: 我们用的是 tuan_cli._openai_sdk 的极简替身而不是 PyPI 的 openai ——
+            # openai 包连带 distro / jiter(编译产物) / tqdm / colorama / sniffio 共 6 个包,
+            # 而这里只用到 client.chat.completions.create() 一个入口。见 _openai_sdk 模块头。
+            from .. import _http as httpx
+            from .. import _openai_sdk
+
             # 分离连接与读超时; 流式场景读超时作为分片间最大空闲
             timeout_cfg: Any
             if self.connect_timeout and self.read_timeout:
@@ -80,11 +75,11 @@ class OpenAICompatAdapter(ModelAdapter):
                 )
             else:
                 timeout_cfg = self.timeout
-            self._client = OpenAI(
+            self._client = _openai_sdk.OpenAI(
                 base_url=self.base_url,
                 api_key=self._api_key,
                 timeout=timeout_cfg,
-                max_retries=0,  # 重试用 agent 层统一控制, 避免 SDK 与业务逻辑双重重试
+                max_retries=0,  # 重试用 agent 层统一控制, 避免传输层与业务逻辑双重重试
             )
         return self._client
 
@@ -248,8 +243,8 @@ class OpenAICompatAdapter(ModelAdapter):
     @staticmethod
     def classify_error(exc: Exception) -> Tuple[str, Optional[int]]:
         """把异常归类为 ('rate_limit'|'timeout'|'server'|'auth'|'other', status_code)。"""
-        import httpx
-        # openai 库异常
+        from .. import _http as httpx
+        # 传输层异常 (可能包在业务异常里)
         status = getattr(exc, "status_code", None)
         if status is None:
             # httpx 异常可能包在 openai 异常里

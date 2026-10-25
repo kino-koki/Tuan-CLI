@@ -1,57 +1,49 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 
 /**
  * 加载 / 安装引导共享套件（BootScreen 与 EngineSetupPage 共用）。
  *
- * 设计语言：豆包的温暖呼吸感（柔光 / 圆角 / 轻浮动）
- *            + CodeX 安装引导的清单式打勾（逐项落入 / 弹跳勾选 / 细进度条）。
- * - 底色 `bg-tuan-main`（与主界面同底的暖米纸，不做额外氛围色）；
- * - 卡片 = 白底 + 发丝边 + 16px 圆角 + 极轻投影（.tuan-card，与内部页一致）；
- * - 主按钮 = 陶土橘胶囊（cc-btn-accent），次按钮 = 细边幽灵（cc-btn-ghost）；
- * - 打勾 = 陶土橘实心圆 + 奶白勾，落入时弹跳（boot-check-pop：scale 0→1.25→1）；
- * - 等待态 = 与聊天「思考中」同源的 12 瓣爬动菊花（cc-spinner，见 index.css）；
- * - 进度 = 3px 细轨 + 陶土橘填充 + 等宽数字；
- * - 命令 = 终端深色 chip（与聊天代码块同款 .tuan-codeblock 底色），可复制；
- * - hero 行才用衬线（Georgia，仅问候位，同 ChatView 空态），其余全部无衬线；
- * - 动效 vocab：呼吸光晕（boot-halo）/ 标识浮动（boot-float）/ 逐行落入
- *   （boot-item-in）/ 弹跳打勾（boot-check-pop）/ 细旋转环（boot-spinner）/
- *   卡片交错落入（onboard-card-in）/ 成功柔光（onboard-success-glow）；
+ * 设计语言：OpenAI Codex 的安装 / 加载界面（2026-10-25 起照抄，只改
+ * 颜色与图标）——
+ * - 终端窗口（term-window）：三点窗饰 + 等宽标题栏 + 底部单行状态栏；
+ * - `>_` 标识行 + meta 行（key: value，等宽）；
+ * - 清单行：左状态符（braille 旋转 / 打勾）· 标签 · 右状态；
+ * - 命令 = `$` 前缀终端 chip（与聊天代码块 .tuan-codeblock 同款底色），可复制；
+ * - 完成标记 = 审批式 `[ ]/[x]`（Codex approval prompt 的口径）；
+ * - 底色 `bg-tuan-main`（与主界面同底的暖米纸）；主按钮 = 陶土橘胶囊
+ *   （cc-btn-accent），次按钮 = 细边幽灵（cc-btn-ghost）；
+ * - 动效 vocab（豆包 × CodeX，应用户要求保留）：呼吸光晕（boot-halo）/
+ *   标识浮动（boot-float）/ 逐行落入（boot-item-in）/ 弹跳打勾
+ *   （boot-check-pop）/ 细旋转环（boot-spinner）/ 卡片交错落入
+ *   （onboard-card-in）/ 成功柔光（onboard-success-glow）；
  * - 安全区：.onboard-shell 四边让出刘海 / Home Indicator；
  * - prefers-reduced-motion 下所有动效降级为直接呈现。
  *
- * 注意：爬动菊花与 ChatView.tsx 内的 Spinner 同源同 CSS 类（cc-spinner /
- * cc-crawler-petal），此处复制一份小尺寸实现，避免引导层反向依赖聊天组件。
- *
- * 兼容性（Android WebView / Chrome 68）：不用 flex gap / inset /
- * color-mix()——间距一律 space-*（margin 实现）。
+ * 兼容性：桌面端优先（Android 端不需要），term-* 可用 flex gap 等现代 CSS；
+ * 间距在 TSX 内仍以 space-*（margin）书写，与全库一致。
  */
 
-/** 12 瓣爬动菊花（与聊天思考态同源；size 由外层 .cc-spinner 控制） */
-export function CrawlerSpinner({ className = '' }: { className?: string }) {
-  const petals = Array.from({ length: 12 }, (_, i) => i);
+/** CodeX TUI 的 braille 旋转符：10 帧 80ms 一轮；reduced-motion 下静止为省略号 */
+const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+export function BrailleSpinner({ className = '' }: { className?: string }) {
+  const reduced =
+    typeof window !== 'undefined' &&
+    !!window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    if (reduced) return;
+    const timer = window.setInterval(() => setFrame((v) => (v + 1) % BRAILLE_FRAMES.length), 80);
+    return () => window.clearInterval(timer);
+  }, [reduced]);
   return (
-    <span className={`cc-spinner ${className}`.trim()} aria-hidden="true">
-      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
-        {petals.map((i) => {
-          const rad = (i * 30 * Math.PI) / 180;
-          const x1 = 10 + Math.cos(rad) * 6.2;
-          const y1 = 10 + Math.sin(rad) * 6.2;
-          const x2 = 10 + Math.cos(rad) * 9.2;
-          const y2 = 10 + Math.sin(rad) * 9.2;
-          return (
-            <line
-              key={i}
-              x1={x1.toFixed(2)}
-              y1={y1.toFixed(2)}
-              x2={x2.toFixed(2)}
-              y2={y2.toFixed(2)}
-              className="cc-crawler-petal"
-              style={{ animationDelay: `${(-i * 1000) / 12}ms` }}
-            />
-          );
-        })}
-      </svg>
+    <span
+      className={`tuan-mono inline-block h-4 w-[14px] flex-none text-center leading-4 ${className}`.trim()}
+      aria-hidden="true"
+    >
+      {reduced ? '…' : BRAILLE_FRAMES[frame]}
     </span>
   );
 }
@@ -80,36 +72,6 @@ export function OnboardCheck({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
       aria-label="完成"
     >
       <Check size={11} className="text-tuan-onAccent" strokeWidth={3} />
-    </span>
-  );
-}
-
-/**
- * 步骤指示位（安装向导）：26px 细边圆。
- * - 待完成 = 圈内序号（陶土橘只留给"完成"这一刻）；
- * - 进行中 = 圈内爬动菊花（busy）；
- * - 已完成 = 直接换成 OnboardCheck。
- */
-export function OnboardStepDot({
-  n,
-  done,
-  busy = false,
-}: {
-  n: number;
-  done: boolean;
-  busy?: boolean;
-}) {
-  if (done) return <OnboardCheck />;
-  return (
-    <span
-      className="inline-flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full border border-tuan-border"
-      aria-hidden="true"
-    >
-      {busy ? (
-        <CrawlerSpinner className="!h-[14px] !w-[14px]" />
-      ) : (
-        <span className="text-[13px] font-medium text-tuan-textSecondary tabular-nums">{n}</span>
-      )}
     </span>
   );
 }
@@ -157,10 +119,49 @@ export function OnboardShell({
 }
 
 /**
- * 可复制命令行：终端深色 chip——与聊天代码块（.tuan-codeblock）同款底色，
- * 让安装向导里的命令和用户在对话里看到的代码是"同一种东西"。
+ * CodeX 式终端窗口：三点窗饰 + 等宽标题栏 + 可选底部状态栏。
+ * BootScreen 与 EngineSetupPage 的一切内容都装进这扇"终端"里——
+ * 这是引导层照抄 Codex 的结构主体，颜色 / 图标随 Tuan 品牌。
  */
-export function OnboardCommand({
+export function TermWindow({
+  title,
+  right,
+  footer,
+  children,
+  className = '',
+}: {
+  title: string;
+  /** 标题栏右侧的等宽小字（通常是真实版本号） */
+  right?: string;
+  /** 底部单行状态栏（CodeX TUI status bar 的同位） */
+  footer?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`term-window ${className}`.trim()}>
+      <div className="term-window-bar">
+        <span className="term-dot bg-tuan-accentSoft" />
+        <span className="term-dot term-dot-dim" />
+        <span className="term-dot term-dot-dim" />
+        <span className="tuan-mono ml-2.5 min-w-0 flex-1 truncate text-[12px] text-tuan-textSecondary">
+          {title}
+        </span>
+        {right && <span className="tuan-mono flex-none text-[11.5px] text-tuan-textSecondary">{right}</span>}
+      </div>
+      <div className="term-window-body">{children}</div>
+      {footer && <div className="term-window-foot">{footer}</div>}
+    </div>
+  );
+}
+
+/**
+ * 可复制命令行：`$` 前缀 + 终端深色 chip——与聊天代码块
+ * （.tuan-codeblock）同款底色，让安装向导里的命令和用户在对话里
+ * 看到的代码是"同一种东西"。`$` 用暗一级的前景色（Codex 文档
+ * 安装代码块的口径）。
+ */
+export function TermCommand({
   text,
   note,
   onCopy,
@@ -174,14 +175,15 @@ export function OnboardCommand({
   return (
     <div className="mt-2.5 flex items-stretch space-x-2">
       <code
-        className="min-w-0 flex-1 truncate rounded-[10px] border border-tuan-border bg-tuan-terminalBg px-3 py-2 font-mono text-[12px] text-tuan-terminalText"
+        className="tuan-mono min-w-0 flex-1 truncate rounded-[8px] border border-tuan-border bg-tuan-terminalBg px-2.5 py-1.5 text-[12px] text-tuan-terminalText"
         title={text}
       >
+        <span className="text-tuan-terminalDim">$ </span>
         {text}
       </code>
       <button
         onClick={onCopy}
-        className="inline-flex w-[34px] flex-none items-center justify-center rounded-[10px] border border-tuan-border bg-tuan-terminalBg text-tuan-terminalDim transition-colors hover:text-white"
+        className="inline-flex w-[34px] flex-none items-center justify-center rounded-[8px] border border-tuan-border bg-tuan-terminalBg text-tuan-terminalDim transition-colors hover:text-white"
         title={copied ? '已复制' : `复制${note ? ` ${note}` : ''}`}
         aria-label={copied ? '已复制' : '复制'}
       >

@@ -103,8 +103,10 @@ def test_dotenv_loading(tmp_path):
 # ---------------------------------------------------------------- 超时分离
 
 def test_adapter_timeout_separation():
-    import openai
-    with mock.patch.object(openai, "OpenAI") as MockOpenAI:
+    # 传输层是 tuan_cli._openai_sdk 的零依赖实现 (不再依赖第三方 openai 包),
+    # 所以 mock 目标也要指向它。
+    from tuan_cli import _openai_sdk
+    with mock.patch.object(_openai_sdk, "OpenAI") as MockOpenAI:
         adapter = OpenAICompatAdapter(
             base_url="https://opencode.ai/zen/v1",
             model="deepseek-v4-flash-free",
@@ -113,7 +115,7 @@ def test_adapter_timeout_separation():
             read_timeout=99.0,
         )
         _ = adapter.client
-        # 验证 OpenAI 收到的是 httpx.Timeout 对象, 且连接/读分离
+        # 验证 OpenAI 客户端收到的是 Timeout 对象, 且连接/读分离
         _, kwargs = MockOpenAI.call_args
         timeout = kwargs["timeout"]
         assert timeout.connect == 5.0
@@ -147,9 +149,19 @@ def test_classify_server():
 
 
 def test_classify_timeout():
-    import httpx
-    exc = httpx.ConnectTimeout("timed out")
+    # 异常来自 tuan_cli._http 的零依赖传输层 (不再依赖第三方 httpx 包)
+    from tuan_cli import _http
+    exc = _http.ConnectTimeout("timed out")
     kind, status = OpenAICompatAdapter.classify_error(exc)
+    assert kind == "timeout"
+
+
+def test_classify_timeout_read():
+    # 读超时同样应归类为 timeout, 且 ReadTimeout/ConnectTimeout 都归 TimeoutException
+    from tuan_cli import _http
+    assert issubclass(_http.ConnectTimeout, _http.TimeoutException)
+    assert issubclass(_http.ReadTimeout, _http.TimeoutException)
+    kind, _ = OpenAICompatAdapter.classify_error(_http.ReadTimeout("read timeout"))
     assert kind == "timeout"
 
 

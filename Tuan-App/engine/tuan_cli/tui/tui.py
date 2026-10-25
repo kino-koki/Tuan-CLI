@@ -112,6 +112,7 @@ _DIM = "#888888"
 _MUTED = "#6B6B6B"
 _BORDER = "#5A5A5A"
 _ACCENT = "#5BC0BE"
+_BG_PANEL = "#1E2836"     # 面板背景色 (补全菜单用，与 _BORDER 同色系)
 _SUCCESS = "#4EC87E"
 _WARNING = "#E8A838"
 _ERROR = "#E85454"
@@ -176,6 +177,14 @@ _STYLE_DICT = {
     # 与「涨跌红绿」的行情配色无关, 这里按开发者肌肉记忆走。
     "diffadd": "#7ED492",             # + 行: 绿
     "diffdel": "#F08A8A",             # - 行: 红
+    # ---- 补全菜单 ("/" 命令提示)：对齐主色板 ----
+    "completion-menu":                         f"bg:{_BG_PANEL} {_TEXT}",
+    "completion-menu.completion":              f"bg:{_BG_PANEL} {_TEXT}",
+    "completion-menu.completion.current":      f"bg:{_PRIMARY} {_TEXT}",
+    "completion-menu.meta.completion":         f"bg:{_BG_PANEL} {_DIM}",
+    "completion-menu.meta.completion.current": f"bg:{_PRIMARY} {_MUTED}",
+    "completion-menu.multi-column-meta":       f"bg:{_BG_PANEL} {_DIM}",
+    "completion-menu.border":                  _BORDER,
 }
 STYLE = Style.from_dict(_STYLE_DICT) if _HAS_PT else None
 
@@ -311,13 +320,25 @@ class _SlashCompleter(Completer):
 
     只对以 `/` 或 `+/` 开头的输入弹出命令提示; 选择补全项时会把 `+` 前缀
     一并写回, 使 `+/help` 这类命令能直接被回车执行。
+
+    传入 ``tiers`` (命令 -> "core"|"expert"|"hidden") 后: 空输入 `/` 时
+    仅返回核心层命令 (≤ 20 项, 防止 55 项菜单压垮屏幕); 输入具体前缀时
+    保留全量补全 (专家层命令按前缀可达)。
     """
 
-    def __init__(self, words: List[str], metas: Optional[Dict[str, str]] = None) -> None:
+    def __init__(
+        self,
+        words: List[str],
+        metas: Optional[Dict[str, str]] = None,
+        tiers: Optional[Dict[str, str]] = None,
+    ) -> None:
         self._words = list(words)
         self._metas = dict(metas or {})
+        self._tiers: Dict[str, str] = dict(tiers or {})
 
     def get_completions(self, document, complete_event):  # noqa: C901
+        from ..cli.slash_tier import slash_command_tier
+
         text = document.text_before_cursor
         # 仅在命令前缀下补全: `/xxx` 或 `+/xxx`
         if text.startswith("+/"):
@@ -332,6 +353,18 @@ class _SlashCompleter(Completer):
         for w in self._words:
             name = w[1:]  # 去掉前导 "/"
             if rest and not name.startswith(rest):
+                continue
+            # 有 tiers 配置时使用传入的 tiers; 无 tiers 时用模块级 slash_command_tier
+            if self._tiers:
+                tier = self._tiers.get("/" + name, "core")
+            else:
+                from ..cli.slash_tier import slash_command_tier
+                tier = slash_command_tier("/" + name)
+            # 隐藏层命令永不进入补全菜单 (仅 /help 全量列出)
+            if tier == "hidden":
+                continue
+            # 空输入时仅补全核心层 (有 tiers 配置且未输入前缀才启用过滤)
+            if not rest and self._tiers and tier != "core":
                 continue
             full = plus + w
             yield Completion(
@@ -362,6 +395,7 @@ class QxtTUI:
         on_command: Optional[Callable[[str], Optional[str]]] = None,
         commands: Optional[List[str]] = None,
         command_meta: Optional[Dict[str, str]] = None,
+        command_tiers: Optional[Dict[str, str]] = None,
     ) -> None:
         self.on_submit = on_submit
         self.on_cancel = on_cancel
@@ -371,6 +405,9 @@ class QxtTUI:
         # Kimi 同款 `+/命令` 补全词表: 传入则启用补全, 缺省 (兼容旧调用) 则不启用。
         self._commands: List[str] = list(commands or [])
         self._command_meta: Dict[str, str] = dict(command_meta or {})
+        # 命令层级表 (命令 -> "core"|"expert"|"hidden"): 空前缀时仅展开核心层,
+        # 前缀匹配时全量展开 (专家层命令按首字母可达)。缺省 None 保持旧行为。
+        self._command_tiers: Dict[str, str] = dict(command_tiers or {})
         # "/" 命令面板状态 (Claude Code 同款: 输入 / 自动高亮列出全部命令,
         # ↑↓ 选择, Enter/Tab 确认填入, Esc 关闭)。取代 prompt_toolkit 自带
         # 补全菜单 —— 后者在输入框位于屏幕底部时下拉菜单无处渲染 (被底栏/
@@ -1378,7 +1415,14 @@ class QxtTUI:
             self._close_slash_menu()
             return
         low = typed.lower()
-        items = [c for c in self._commands if c[1:].lower().startswith(low)]
+        # 有空输入 (仅 "/" 或 "+/") 且配置了层级: 仅展开核心层 (≤ 20 项)
+        # 输入具体前缀时保留全量匹配 (专家层命令按首字母可达)
+        from ..cli.slash_tier import slash_command_tier as _tier_fn
+        if not low:
+            items = [c for c in self._commands if _tier_fn(c) == "core"]
+        else:
+            items = [c for c in self._commands
+                     if c[1:].lower().startswith(low) and _tier_fn(c) != "hidden"]
         if not items:
             self._close_slash_menu()
             return

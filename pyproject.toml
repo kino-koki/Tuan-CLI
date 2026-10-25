@@ -27,42 +27,44 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    # 核心运行依赖 (最小集): rich=终端 UI 输出 (ui/repl.py 模块级),
-    # httpx=模型传输 (models/anthropic.py 模块级),
-    # prompt_toolkit=默认 TUI (QxtTUI) 强依赖。它是 `tuan` 默认入口的必需品,
-    # 缺失时进入交互界面会 NameError; 故提为核心依赖, 不再作为可选 extra,
-    # 确保 `pip install tuan-cli` / `pip install -e .` / install.ps1 都自动带上它。
+    # ── 核心运行依赖: 仅 2 个 ──
+    # rich: 终端富文本输出 (ui/repl.py 模块级导入)。
+    # prompt_toolkit: 默认 TUI 交互 (补全/历史/快捷键)。
+    #
+    # 其余历史依赖已全部由 tuan_cli 内部的零依赖实现替代, 且每一项都经过
+    # 「在进程内屏蔽该第三方包、功能完整跑通」的实测验证, 因此不再声明为核心:
+    #   httpx            → tuan_cli._http         (stdlib socket/ssl/http.client)
+    #   openai           → tuan_cli._openai_sdk   (stdlib 传输 + SSE 解析)
+    #   pydantic         → tuan_cli._config_model (判别联合校验 + 属性/dict 双形态)
+    #   typing_extensions→ 已无任何调用点
+    #   pyyaml           → tuan_cli._yaml         (stdlib 子集解析器, 与 PyYAML 差分一致)
+    #   cryptography     → ext/crypto_engine.py   (PBKDF2 + CTR + HMAC 纯 Python)
+    # 这样「核心依赖」重新回到它的诚实语义: 列在这里的, 缺了真的起不来。
     "rich>=13.0",
-    "httpx>=0.27",
     "prompt_toolkit>=3.0",
-    # Python < 3.11 无内置 tomllib, 旧版本回退用 tomli 解析 pyproject (迁移/探测场景)
+    # Python < 3.11 无内置 tomllib, 旧版本回退用 tomli 解析 TOML (迁移/探测场景)
     "tomli>=2.0; python_version < '3.11'",
-    # --- 以下原为可选 extra, 但实际属于「默认入口会用到」的必需依赖, 现提为核心 ---
-    # 提为核心理由: 目标机「装完即用」不该再手工补装。用户反馈的「必须依赖全部直接
-    # 放进包里面」即指这些 —— 它们不是锦上添花的可选能力, 而是缺了就会降级或报错。
-    # yaml: config/loader.py 的 YAML 解析与 ecosystem 生态探测都走它; 不装会退到
-    # 内置极简解析器, 用户的 config.yaml 语义被静默改写(注释/嵌套/多行失效)。
-    "pyyaml>=6.0",
-    # openai: OpenAI 兼容传输层; 绝大多数用户走的就是这条(且 model_lists 里
-    # zhipu/sensenova/硅基流动等均为 OpenAI 兼容), 缺了等于主力路径不可用。
-    "openai>=1.40",
-    # pydantic: MCP 子系统配置模型 (kernel/mcp/config.py 惰性导入)。用户只要配了
-    # 任一 MCP server 就会走到, 不装直接 MCP 不可用 —— 而 MCP 是默认能力之一。
-    "pydantic>=2.0",
-    "typing_extensions>=4.0",
-    # cryptography: crypto 引擎的 AES-GCM 实现。默认走 CTR+HMAC 纯 Python 回退,
-    # 但那是「功能可用、非工业级」; 加密存储属默认信任面, 按必需依赖随包分发。
-    "cryptography>=41.0",
 ]
 
 [project.optional-dependencies]
-# 注: pyyaml / openai / prompt_toolkit / pydantic / typing_extensions /
-# cryptography 已上移为**核心依赖**(见 [project.dependencies])—— 它们属于默认
-# 入口会用到的必需能力, 不再作为可选 extra。下面只保留真正的「按需才装」。
+# 下面的 extra 都是「装了能力上限更高, 不装也完全能用」的增强项。
+#
+# 与旧版本的区别: 之前 pyyaml / openai / httpx / pydantic / cryptography 被写成
+# 核心依赖, 但每一项内部都已经有 stdlib 兜底 —— 于是文档说「必须装」而实际上
+# 不装也能跑, 属于双向误导。现在核心依赖只剩真正起不来的 2 个, 增强项归位到
+# extra, 且每个都明确写清「不装时的行为」。
+#
+# yaml: PyYAML 完整 YAML 1.2 规范 (锚点/别名/标签/多文档)。不装时使用
+# tuan_cli._yaml 的 stdlib 实现 —— 已对本仓库全部 YAML 文件做过差分测试,
+# 解析结果与 PyYAML 完全一致; 遇到锚点等高级构造会抛出带行号的明确错误。
+yaml = ["PyYAML>=6.0"]
+# crypto: cryptography 的 AES-256-GCM (硬件加速、标准 AEAD)。不装时使用
+# ext/crypto_engine.py 的 PBKDF2 + CTR + HMAC 纯 Python 实现, 功能等价。
+crypto = ["cryptography>=41.0"]
 # repl: prompt_toolkit 增强交互 (补全/历史/快捷键)。已随核心依赖安装, 此 extra
-# 保留仅为兼容旧文档/脚本里的 `pip install ".[repl]"` 写法。
+# 仅为兼容旧文档/脚本里的 `pip install ".[repl]"` 写法。
 repl = ["prompt_toolkit>=3.0"]
-# backend_dev 工具启动 FastAPI/Flask 开发服务器时才需要, 默认不安装。
+# backend: backend_dev 工具启动 FastAPI/Flask 开发服务器时才需要, 默认不安装。
 backend = ["fastapi", "flask", "flask-cors", "uvicorn"]
 # otel: OpenTelemetry 观测 (导出 traces/metrics 到标准 OTLP 后端)。不安装时
 # ports/telemetry/otel.py 自动回退 stdlib urllib 直接 POST OTLP/HTTP JSON。
@@ -71,11 +73,22 @@ otel = [
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
 ]
+# mcp: 保留空 extra 仅为兼容 `pip install -e ".[mcp]"` 的旧 CI 脚本与文档。
+# tuan_cli 自研 MCP 客户端走 stdlib 的 asyncio + subprocess + json 实现
+# JSON-RPC 2.0 over stdio; HTTP/SSE 传输用 tuan_cli._http, 配置校验用
+# tuan_cli._config_model —— 整个 MCP 子系统零第三方依赖。
+mcp = []
+# dev: 测试与静态检查。openai / httpx / PyYAML 之所以在这里而不是核心依赖,
+# 是因为测试代码拿它们当「真实 SDK 行为」的回归基准 (对照验证自研 shim),
+# 运行期完全不需要。
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-timeout>=2.3",
     "mypy>=1.10",
+    "openai>=1.40",
+    "httpx>=0.27",
+    "PyYAML>=6.0",
 ]
 
 [project.urls]

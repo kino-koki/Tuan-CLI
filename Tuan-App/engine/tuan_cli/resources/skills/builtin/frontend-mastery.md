@@ -1,10 +1,14 @@
 ---
 name: 前端开发心法
 description: 写前端（Web/React/Vue/组件）时的工程心法与避坑清单，覆盖状态、性能、可访问性、心智模型
+activation: auto
+triggers: 前端精通, frontend mastery, React, Vue, Svelte
+provides: frontend
+suggests: frontend-design, tuan-design, tuan-a11y, tuan-api
+priority: 75
 updated_at: 0
 use_count: 0
 ---
-
 # 前端开发心法
 
 ## 心智模型

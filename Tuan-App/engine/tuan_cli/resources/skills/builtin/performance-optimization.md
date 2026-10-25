@@ -1,12 +1,15 @@
 ---
 name: 性能优化
 description: 性能分析与优化的系统化方法：度量→定位→优化→验证，避免过早优化
+activation: auto
+triggers: 性能, performance, 优化, profiling, 缓存, async
+provides: performance, optimization
+suggests: code-architect, tuan-observability
+priority: 80
 tags: [performance, optimization, profiling, memory, speed]
-priority: 8
 updated_at: 0
 use_count: 0
 ---
-
 # 性能优化
 
 > "过早优化是万恶之源" —— Knuth

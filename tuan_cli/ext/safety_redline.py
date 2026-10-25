@@ -933,6 +933,29 @@ _EXEC_SINK_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Mention-exemption-only sink test = _EXEC_SINK_RE minus the command-substitution
+# branch.  $() / ` ` do NOT turn a whole segment's data into code: they hand the
+# inner command's *output* to the outer command as a word.  Treating them as a
+# global sink made any `$(` in the segment void the whole mention exemption,
+# which is why `echo $(grep 'rm -rf /' file.txt)` was flagged as a redline even
+# though the quoted string is merely grep's search pattern (regression:
+# test_command_substitution_echo_output_is_analyzed).
+#
+# Dangerous content *inside* a substitution is still handled: _mask_mentioned_
+# literals leaves $() / ` ` interiors untouched, so `echo "$(rm -rf /)"` is
+# still caught.  _EXEC_SINK_RE is left as-is because has_dangerous_recursive_rm
+# / _sql_redline still rely on its original behaviour.
+_SINK_GLOBAL_RE = re.compile(
+    r'\|\s*(?:ba|z|k|fi|da|a|c|tc)?sh\b'
+    r'|\|\s*(?:python\d*|perl|ruby|node|php|lua)\b'
+    r'|\bbase64\b\s+(?:-[dDiI]|--decode)'
+    r'|\b(?:eval|xargs|exec)\b'
+    r'|\b(?:ba|z|k|fi|da|a|c|tc)?sh\b\s+-[A-Za-z]'
+    r'|\b(?:ba|z|k|fi|da|a|c|tc)?sh\b\s+\S'
+    r'|>>?\s*\S+\.(?:sh|bash|py|pl|rb)\b',
+    re.IGNORECASE,
+)
+
 
 def _mention_spans(text: str) -> list[tuple[int, int]]:
     """返回"仅提及、不执行"的引号区间 [(start, end), ...]。
@@ -941,7 +964,7 @@ def _mention_spans(text: str) -> list[tuple[int, int]]:
     整条命令不存在执行汇。返回空列表表示引号内容会被真正执行 (须照常检测)。
     """
     stripped = re.sub(r"'[^']*'|\"[^\"]*\"", " ", text)
-    if _EXEC_SINK_RE.search(stripped):
+    if _SINK_GLOBAL_RE.search(stripped):
         return []
     spans: list[tuple[int, int]] = []
     for m in re.finditer(r"('[^']*'|\"[^\"]*\")", text):
@@ -954,12 +977,62 @@ def _mention_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
+def _substitution_spans(text: str, lo: int, hi: int) -> list[tuple[int, int]]:
+    """返回 [lo, hi) 内所有 $() / ` ` 子表达式的绝对区间 (嵌套括号感知)。
+
+    引号区间里出现的命令替换会被真正执行 (echo "$(rm -rf /)", 那里的内容会被
+    当作代码执行), 所以 mask 时必须跳过这些区间, 否则「提及豁免」会把内层待执行
+    命令一并抹掉, 形成绕过。
+    """
+    spans: list[tuple[int, int]] = []
+    i = lo
+    while i < hi:
+        c = text[i]
+        if c == "`":
+            k = text.find("`", i + 1)
+            if k < 0:
+                break
+            k = min(k + 1, hi)
+            spans.append((i, k))
+            i = k
+        elif c == "$" and i + 1 < hi and text[i + 1] == "(":
+            depth = 0
+            k = i
+            while k < hi:
+                if text[k] == "(":
+                    depth += 1
+                elif text[k] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                k += 1
+            k = min(k + 1, hi)
+            spans.append((i, k))
+            i = k
+        else:
+            i += 1
+    return spans
+
+
 def _mask_mentioned_literals(text: str) -> str:
-    """Blank quoted literals that are only mentioned by a non-executing text command."""
-    chars = list(text)
-    for start, end in _mention_spans(text):
-        chars[start:end] = " " * (end - start)
-    return "".join(chars)
+    """Blank quoted literals only mentioned (never executed) by a text command.
+
+    区间内的 $() / ` ` 子表达式**不**被抹除 —— 那里的内容会被真正执行
+    (echo "$(rm -rf /)"), 抹掉即绕过。
+    """
+    parts: list[str] = []
+    cursor = 0
+    for start, end in sorted(_mention_spans(text)):
+        parts.append(" " * (start - cursor))
+        pos = start
+        for a, b in _substitution_spans(text, start, end):
+            parts.append(" " * (a - pos))
+            parts.append(text[a:b])
+            pos = b
+        parts.append(" " * (end - pos))
+        cursor = end
+    parts.append(text[cursor:])
+    return "".join(parts)
 
 
 def _iter_interpreter_payloads(text: str):
@@ -1052,25 +1125,24 @@ def is_benign_dev_command(text: str) -> bool:
         return False
     if _has_unresolved_dangerous_substitution(text):
         return False
-    normalized = _normalize(text)
+    pattern_text = _mask_mentioned_literals(text)
+    normalized = _normalize(pattern_text)
     # Token-based redlines (including dangerous commands behind substitutions) must
     # also bypass the benign-command fast path used by score() and warning levels.
     if _eval_is_unverifiable(text):
         return False
-    if (re.search(r"\brm\b", normalized, re.IGNORECASE) and has_recursive_rm(text)
-            or re.search(r"\bpush\b", normalized, re.IGNORECASE) and has_force_push(text)
+    if (re.search(r"\brm\b", normalized, re.IGNORECASE) and has_recursive_rm(pattern_text)
+            or re.search(r"\bpush\b", normalized, re.IGNORECASE) and has_force_push(pattern_text)
             or re.search(r"\b(?:del|rd|rmdir|erase)\b", normalized, re.IGNORECASE)
-            and has_win_recursive_delete(text)
+            and has_win_recursive_delete(pattern_text)
             or re.search(r"\b(?:shutdown|halt|poweroff|reboot|init|systemctl)\b",
                          normalized, re.IGNORECASE)
-            and has_system_shutdown(text)
-            or re.search(r"\bln\b", normalized, re.IGNORECASE) and has_auth_overwrite(text)):
+            and has_system_shutdown(pattern_text)
+            or re.search(r"\bln\b", normalized, re.IGNORECASE) and has_auth_overwrite(pattern_text)):
         return False
     # A benign command prefix must never suppress a match from the shared risk library.
     # Mask mentioned literals only for risk matching; preserve the original arguments for
     # benign classification (e.g. `cat 'a b.txt'` and `echo 'chmod 777 /'`).
-    pattern_text = _mask_mentioned_literals(text)
-    normalized = _normalize(pattern_text)
     if _match_any(normalized, _CRITICAL_PATTERNS + _HIGH_PATTERNS + _MEDIUM_PATTERNS):
         return False
     segs = _segments(text) or [text]
@@ -1104,11 +1176,14 @@ def is_hard_redline(command: str) -> bool:
         return True
     # 硬红线用「危险目标」版本: rm -rf / ~ /etc * 等灾难级目标才永不自动执行;
     # rm -rf ./build 这类清理构建产物的相对路径操作降为可确认 (见 has_dangerous_recursive_rm)。
-    if (has_dangerous_recursive_rm(command) or has_force_push(command)
-            or has_win_recursive_delete(command) or has_system_shutdown(command)
-            or has_auth_overwrite(command)):
-        return True
+    # 提及豁免必须先于 token 化判定: _normalize 会把 $(...) 展开成独立段并剥掉引号,
+    # echo $(grep 'rm -rf /' f) 归一化后变成裸的 grep rm -rf / f, has_* 会误命中。
+    # 抹除只针对「文本类动词直接参数且无全局执行汇」的引号区间, 见 _mention_spans。
     pattern_text = _mask_mentioned_literals(command)
+    if (has_dangerous_recursive_rm(pattern_text) or has_force_push(pattern_text)
+            or has_win_recursive_delete(pattern_text) or has_system_shutdown(pattern_text)
+            or has_auth_overwrite(pattern_text)):
+        return True
     if _match_any(pattern_text, _REDLINE_PATTERNS):
         return True
     # 归一化后 (PowerShell -EncodedCommand / 命令替换解码等) 的红线模式也要命中
@@ -1140,12 +1215,15 @@ def is_redline(command: str) -> bool:
         return True
     if _interpreter_payload_dangerous(command):
         return True
-    if (has_recursive_rm(command) or has_force_push(command)
-            or has_win_recursive_delete(command) or has_system_shutdown(command)
-            or has_auth_overwrite(command)):
-        return True
+    # 提及豁免必须先于 token 化判定: _normalize 会把 $(...) 展开成独立段并剥掉引号,
+    # echo $(grep 'rm -rf /' f) 归一化后变成裸的 grep rm -rf / f, has_* 会误命中。
+    # 抹除只针对「文本类动词直接参数且无全局执行汇」的引号区间, 见 _mention_spans。
     pattern_text = _mask_mentioned_literals(command)
-    if _match_any(pattern_text, _REDLINE_PATTERNS) or _sql_redline(command):
+    if (has_recursive_rm(pattern_text) or has_force_push(pattern_text)
+            or has_win_recursive_delete(pattern_text) or has_system_shutdown(pattern_text)
+            or has_auth_overwrite(pattern_text)):
+        return True
+    if _match_any(pattern_text, _REDLINE_PATTERNS) or _sql_redline(pattern_text):
         return True
     # 归一化后 (PowerShell -EncodedCommand / 命令替换解码等) 的红线模式也要命中
     if _match_any(_mask_mentioned_literals(_normalize(pattern_text)), _REDLINE_PATTERNS):

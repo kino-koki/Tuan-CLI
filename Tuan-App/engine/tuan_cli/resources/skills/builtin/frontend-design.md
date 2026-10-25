@@ -1,12 +1,13 @@
 ---
 name: 前端设计语言先行
 description: 构建新界面或重塑现有 UI 时, 先定设计语言 (调色板/字体/布局/原则) 再做独特且不"AI 模板味"的视觉决策; 适用前端/UI/页面/网站/组件/海报/落地页/仪表盘
+activation: proactive
+triggers: 前端, frontend, UI, 页面, 界面, CSS, 设计
+provides: frontend, ui-design
+suggests: tuan-design, tuan-a11y
+priority: 88
 tags: frontend, ui, design, frontend-design, aesthetics, css
-activation: lazy
-priority: 6
-triggers: 设计, 前端, 界面, 页面, 布局, 视觉, 组件, 网站, 网页, 海报, 落地页, 仪表盘, 调色, 配色, 字体, UI, CSS, landing, dashboard
 ---
-
 # 前端设计语言先行 (Frontend Design)
 
 把自己当作设计工作室的设计负责人: 客户要求每一个作品都有**不会被认错的独特视觉身份**, 已经拒绝了千篇一律的模板方案。你要针对这份需求做出有主张的、有观点的选择——调色板、字体、布局——并在有理由时承担审美风险。

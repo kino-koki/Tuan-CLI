@@ -27,6 +27,7 @@ def guard_command(
     confirm: Optional[Callable[[str], bool]] = None,
     home: Optional[str] = None,
     yolo: bool = False,
+    mode: Optional[str] = None,
 ) -> Optional[str]:
     """判定命令是否可执行。
 
@@ -36,6 +37,12 @@ def guard_command(
     cmd = str(command or "")
     if not cmd.strip():
         return None
+
+    # 0) 模式级 Shell 禁用（chat/collaboration 等模式直接禁用 shell）
+    if mode is not None:
+        from ..modes.policy import get_mode_policy
+        if not get_mode_policy(mode).shell_allowed():
+            return f"[已拦截] 模式 {mode} 禁用 Shell 命令"
 
     # 1) 硬红线：与 shell 护栏 step1 同源，永不自动执行
     try:

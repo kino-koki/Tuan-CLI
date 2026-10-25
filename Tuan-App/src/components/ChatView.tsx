@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
+  ChevronUp,
+  Settings,
+  BookOpen,
+  Slash,
   Plus,
   Square,
   Copy,
@@ -19,22 +23,61 @@ import {
   Hand,
   RotateCcw,
   Code2,
+  Server,
+  Bug,
+  Feather,
   Mail,
   Palette,
+  Volume2,
 } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { ChatMessage, PendingApproval, Provider, ToolEvent } from '../types';
 import { MODES, getMode, type ModeId } from '../platform/modes';
-import { resolveMascot, useDarkTheme } from '../platform/mascot';
 import { useMediaQuery } from '../platform/useMediaQuery';
+import BrandMark from './BrandMark';
 import ComposerSelect, { type SelectOption } from './ComposerSelect';
 import ReplyMarkdown from './ReplyMarkdown';
+import { speakWithSettings, stopSpeech, TTS_ENGINE_URL as ENGINE_WEB_URL } from '../platform/tts';
+
+/** 斜杠命令静态清单（引擎不可达时的兜底；与 engine/cli/cmd_slash.py 同源，核心层全量 + 常用专家层） */
+const SLASH_FALLBACK: { name: string; desc: string }[] = [
+  { name: '/help', desc: '显示帮助' },
+  { name: '/model', desc: '切换/查看模型' },
+  { name: '/mode', desc: '切换运行模式（感通/灵码/闲聊/无界/协同）' },
+  { name: '/memory', desc: '查看记忆' },
+  { name: '/clear', desc: '清空对话上下文' },
+  { name: '/compact', desc: '手动压缩上下文（折叠旧历史）' },
+  { name: '/context', desc: '上下文占用' },
+  { name: '/cost', desc: '成本估算（token + 缓存命中率 + 费用）' },
+  { name: '/usage', desc: '本次会话 token 用量' },
+  { name: '/undo', desc: '精细回滚（事务化账本）' },
+  { name: '/diff', desc: '工作区变更摘要' },
+  { name: '/export', desc: '导出会话为 Markdown 文件' },
+  { name: '/status', desc: '会话状态摘要（模型/模式/上下文/用量）' },
+  { name: '/tools', desc: '列出可用工具' },
+  { name: '/skills', desc: '列出技能' },
+  { name: '/mcp', desc: 'MCP 管理（list/tools/audit/security）' },
+  { name: '/permissions', desc: '展示当前生效的权限策略' },
+  { name: '/plan', desc: '切换 Plan 模式（只读分析）' },
+  { name: '/web', desc: '启动本地 Web 工作台 / 快捷联网' },
+  { name: '/code', desc: '代码感知问答（ContextForge 检索后执行）' },
+  { name: '/goal', desc: 'Goal 模式（循环直到条件满足）' },
+  { name: '/subagent', desc: '派发隔离子代理执行任务' },
+  { name: '/resume', desc: '恢复历史会话' },
+  { name: '/handoff', desc: '会话交接（生成摘要开新会话）' },
+  { name: '/verify', desc: '编码验证闭环（test/typecheck/lint）' },
+  { name: '/route', desc: '智能模型路由建议' },
+  { name: '/personality', desc: '人设管理' },
+  { name: '/provider', desc: '查看/设置/清除 API Key 与供应商' },
+  { name: '/image', desc: '图片管理 + AI 生成' },
+  { name: '/import', desc: '导入 Markdown 对话' },
+  { name: '/audit', desc: '审计报告' },
+  { name: '/init', desc: '扫描工作区生成 TUAN.md 项目规则' },
+];
 
 interface Props {
   convId?: string;
-  /** 每次点新建对话自增；发送前用它作为立绘随机种子，保证空首页不跳图、换对话才换图 */
-  newChatSeq?: number;
   providers: Provider[];
   providerId?: string;
   model?: string;
@@ -49,8 +92,6 @@ interface Props {
   /** 引擎安全闸门发起的危险操作审批；非空时渲染审批卡 */
   approval?: PendingApproval | null;
   onApprove?: (id: string, decision: 'allow' | 'deny') => void;
-  /** 助手形象档（历史兼容字段，已无 UI 入口；二次元立绘为唯一形象） */
-  avatarMode: 'anime' | 'default';
   onSend: (text: string) => void;
   onStop: () => void;
   onDeleteMessage?: (msgId: string) => void;
@@ -95,36 +136,89 @@ const MODE_SELECT_OPTIONS: SelectOption[] = MODES.map((m) => ({
  * 首页示例提示（Claude 桌面式 2×2 卡片网格；窄屏退化为 chips）。
  * 点击把一段更完整的起始提示填入输入框，兼顾五种模式特色。
  */
-interface SuggestionCard {
+/**
+ * 专家角色墙（空态首页的"角色选择层"）。
+ *
+ * 借鉴 agency-agents 的思路：每个专家 = 人格（persona）+ 工作流程 + 交付标准。
+ * 点击一张卡片会：① 切换到该专家推荐的模式；② 把带人格设定的开场提示词填入
+ * 输入框（末尾留空，等用户写自己的需求）；③ 聚焦输入框。
+ */
+interface ExpertCard {
   icon: typeof Code2;
-  title: string;
-  sub: string;
+  name: string;
+  field: string;
+  persona: string;
+  workflow: string;
+  deliver: string;
+  mode: ModeId;
   prompt: string;
 }
-const SUGGESTION_CARDS: SuggestionCard[] = [
+const EXPERT_CARDS: ExpertCard[] = [
   {
     icon: Code2,
-    title: '灵码重构',
-    sub: '把一段 Python 改写成异步',
-    prompt: '用灵码模式帮我把这段 Python 重构成异步：\n\n',
+    name: '前端专家',
+    field: 'React · TypeScript · 组件与样式',
+    persona: '资深前端工程师',
+    workflow: '先读现状 → 小步改动 → 每步构建验证',
+    deliver: '类型全绿、构建通过、不留死代码',
+    mode: 'lingma',
+    prompt:
+      '你是一名资深前端工程师。工作流程：先理解现有代码结构，小步修改，每步跑构建与类型检查验证。交付标准：TypeScript 全绿、构建通过、不引入多余依赖。现在请帮我：\n\n',
   },
   {
-    icon: FileText,
-    title: '长文摘要',
-    sub: '总结要点并列出关键信息',
-    prompt: '帮我把下面这段长文总结成 3 个要点：\n\n',
-  },
-  {
-    icon: Mail,
-    title: '写封邮件',
-    sub: '请假一天的中文邮件',
-    prompt: '帮我写一封请假一天的中文邮件，语气礼貌简洁：\n\n',
+    icon: Server,
+    name: '后端专家',
+    field: 'API · 数据 · 性能与架构',
+    persona: '严谨的后端工程师',
+    workflow: '理清接口与数据流 → 增量实现 → 边界验证',
+    deliver: '接口可测、异常有兜底、不破坏现有调用',
+    mode: 'lingma',
+    prompt:
+      '你是一名严谨的后端工程师。工作流程：先理清接口契约与数据流，增量实现，并验证边界与异常路径。交付标准：接口可测、错误有兜底、不破坏既有调用。现在请帮我：\n\n',
   },
   {
     icon: Palette,
-    title: '灵感文案',
-    sub: '感通模式生成海报文案',
-    prompt: '用感通模式为一张海边主题的海报生成文案：\n\n',
+    name: '设计专家',
+    field: '视觉 · 排版 · 品牌一致',
+    persona: '产品设计师',
+    workflow: '先定视觉方向 → 落到设计令牌 → 逐屏走查',
+    deliver: '与现有设计语言一致、无重叠裁切、响应式可用',
+    mode: 'gantong',
+    prompt:
+      '你是一名资深产品设计师。工作流程：先确定视觉方向，把配色与间距落到设计令牌，最后逐屏走查。交付标准：与产品现有设计语言一致、元素无重叠裁切、窄屏可用。现在请帮我：\n\n',
+  },
+  {
+    icon: Bug,
+    name: '测试专家',
+    field: '用例 · 回归 · 边界覆盖',
+    persona: '较真的 QA 工程师',
+    workflow: '列用例矩阵 → 补关键路径 → 跑回归',
+    deliver: '关键路径有用例、边界有覆盖、结论可复现',
+    mode: 'lingma',
+    prompt:
+      '你是一名较真的测试工程师。工作流程：先列出用例矩阵，补充关键路径与边界场景，再运行回归。交付标准：关键路径有测试、边界有覆盖、结论可复现。现在请帮我：\n\n',
+  },
+  {
+    icon: ShieldAlert,
+    name: '安全专家',
+    field: '依赖 · 权限 · 漏洞审查',
+    persona: '谨慎的安全审计员',
+    workflow: '先摸清风险面 → 逐项核对 → 给出缓解建议',
+    deliver: '问题可复现、风险分级、给出可落地修复',
+    mode: 'collaboration',
+    prompt:
+      '你是一名谨慎的安全审计员。工作流程：先摸清风险面，逐项核对依赖、权限与敏感操作，再给出缓解建议。交付标准：问题可复现、风险分级明确、修复建议可落地。现在请帮我：\n\n',
+  },
+  {
+    icon: Feather,
+    name: '内容专家',
+    field: '文案 · 标题 · 表达与结构',
+    persona: '敏锐的内容编辑',
+    workflow: '先定受众与目标 → 起草 → 按交付标准自检',
+    deliver: '标题抓人、结构清楚、字数与语气符合场景',
+    mode: 'chat',
+    prompt:
+      '你是一名敏锐的内容编辑。工作流程：先明确受众与目标，起草内容，再按交付标准自检。交付标准：标题抓人、结构清楚、语气与字数符合场景。现在请帮我：\n\n',
   },
 ];
 
@@ -150,19 +244,40 @@ function formatRelativeTime(ts: number): string {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
+/** 菊花花瓣数：12 片，正好铺满一圈，爬动步进 30° */
+const CRAWLER_PETALS = Array.from({ length: 12 }, (_, i) => i);
+
 /**
- * Claude Code 风格菊花：SVG 圆环 + stroke-dasharray 3/4 缺口，匀速旋转。
- * 只动画 transform: rotate()，走 GPU 合成，低端 WebView 不掉帧。
- * 颜色走 currentColor（继承容器 --tuan-accent-soft），
- * 浅/深色主题下都清晰可见。思考中 / 输出中 / 工具执行中统一用它，
- * 替代原先那颗原地明灭的 .think-glow 呼吸光点。
+ * Claude Code 桌面端风格菊花「爬动」动画：一圈 12 片花瓣，
+ * 高亮的花瓣头沿圆周顺时针逐片点亮、尾随渐隐，像一条毛毛虫在圆环上爬。
+ *
+ * - 只动画 opacity（GPU 合成友好，低端 WebView 不掉帧）；
+ * - 每片花瓣用负 animation-delay 错开相位，静态布局即可，无需 JS 定时器；
+ * - 颜色走 currentColor（继承容器 --tuan-accent-soft），浅/深主题都清晰。
+ * 思考中 / 输出中 / 工具执行中统一用它。
  */
 function Spinner({ className = '' }: { className?: string }) {
   return (
     <span className={`cc-spinner ${className}`.trim()} aria-hidden="true">
       <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
-        <circle className="cc-spinner-track" cx="10" cy="10" r="8" pathLength="100" />
-        <circle className="cc-spinner-ring" cx="10" cy="10" r="8" pathLength="100" />
+        {CRAWLER_PETALS.map((i) => {
+          const rad = (i * 30 * Math.PI) / 180;
+          const x1 = 10 + Math.cos(rad) * 6.2;
+          const y1 = 10 + Math.sin(rad) * 6.2;
+          const x2 = 10 + Math.cos(rad) * 9.2;
+          const y2 = 10 + Math.sin(rad) * 9.2;
+          return (
+            <line
+              key={i}
+              x1={x1.toFixed(2)}
+              y1={y1.toFixed(2)}
+              x2={x2.toFixed(2)}
+              y2={y2.toFixed(2)}
+              className="cc-crawler-petal"
+              style={{ animationDelay: `${(-i * 1000) / 12}ms` }}
+            />
+          );
+        })}
       </svg>
     </span>
   );
@@ -219,7 +334,11 @@ function ThoughtBlock({ text, streaming, startedAt }: { text: string; streaming:
 function ToolCard({ tool }: { tool: ToolEvent }) {
   const Icon = toolIcon(tool.name);
   return (
-    <div className="flex items-start gap-2.5 rounded-2xl border border-tuan-border bg-tuan-input px-3 py-2">
+    <div
+      className={`flex items-start gap-2.5 rounded-2xl border border-tuan-border bg-tuan-input px-3 py-2 ${
+        tool.status === 'running' ? 'cc-tool-running' : ''
+      }`}
+    >
       <div className={`w-6 h-6 rounded-lg flex-none flex items-center justify-center ${tool.status === 'error' ? 'text-[var(--tuan-danger)]' : 'bg-tuan-hover text-tuan-text'}`}>
         <Icon size={13} />
       </div>
@@ -235,7 +354,10 @@ function ToolCard({ tool }: { tool: ToolEvent }) {
           {tool.status === 'error' && <XCircle size={13} className="text-[var(--tuan-danger)]" />}
         </div>
         {tool.args && tool.args.length > 0 && (
-          <div className="mt-1 text-[12px] text-tuan-textSecondary font-mono truncate">{tool.args}</div>
+          <div className="mt-1 text-[12px] text-tuan-textSecondary font-mono truncate">
+            <span className="opacity-70">$ </span>
+            {tool.args}
+          </div>
         )}
       </div>
     </div>
@@ -371,7 +493,6 @@ function ApprovalCard({
 
 export default function ChatView({
   convId,
-  newChatSeq,
   providers,
   providerId,
   model,
@@ -382,7 +503,6 @@ export default function ChatView({
   streaming,
   error,
   tools,
-  avatarMode,
   onSend,
   onStop,
   approval,
@@ -401,6 +521,11 @@ export default function ChatView({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  /** 正在朗读的助手消息 id（本地 TTS） */
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  /** 斜杠命令补全：静态兜底 + 引擎 /api/slash 实时清单 */
+  const [slashCmds, setSlashCmds] = useState<{ name: string; desc: string }[]>(SLASH_FALLBACK);
+  const [slashIdx, setSlashIdx] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -425,6 +550,46 @@ export default function ChatView({
     if (streaming) streamStartRef.current = Date.now();
   }, [streaming]);
 
+  // 拉取引擎斜杠命令清单（引擎不可达时保留静态兜底）
+  useEffect(() => {
+    let alive = true;
+    fetch(`${ENGINE_WEB_URL}/api/slash`, { signal: AbortSignal.timeout(3000) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: unknown) => {
+        if (!alive) return;
+        const cmds = (d as { commands?: { name: string; desc: string }[] } | null)?.commands;
+        if (Array.isArray(cmds) && cmds.length > 0) {
+          setSlashCmds(
+            cmds.map((c) => ({
+              name: c.name.startsWith('/') ? c.name : `/${c.name}`,
+              desc: c.desc ?? '',
+            })),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /** 斜杠命令补全：输入以 / 开头时弹出（与引擎 TUI/Claude Code 行为一致） */
+  const slashQuery = draft.startsWith('/') ? draft.slice(1).toLowerCase() : null;
+  const slashItems =
+    slashQuery === null
+      ? []
+      : slashCmds.filter((c) => c.name.toLowerCase().includes(slashQuery)).slice(0, 9);
+  const slashOpen = slashQuery !== null && slashItems.length > 0;
+
+  const applySlash = (name: string) => {
+    setDraft(name + draft.slice(1 + slashQuery!.length));
+    setSlashIdx(0);
+    requestAnimationFrame(() => {
+      taRef.current?.focus();
+      autoGrow();
+    });
+  };
+
   const copyText = async (id: string, text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -433,6 +598,19 @@ export default function ChatView({
     } catch {
       /* 剪贴板不可用时忽略 */
     }
+  };
+
+  // 朗读/停止某条助手消息（完全本地 MOSS-TTS-Nano）
+  const toggleSpeak = async (id: string, content: string) => {
+    if (speakingMsgId === id) {
+      stopSpeech();
+      setSpeakingMsgId(null);
+      return;
+    }
+    const ok = await speakWithSettings(content, id, () => {
+      setSpeakingMsgId((cur) => (cur === id ? null : cur));
+    });
+    if (ok) setSpeakingMsgId(id);
   };
 
   // 组件挂载时自动聚焦输入框
@@ -475,13 +653,6 @@ export default function ChatView({
     label: m.name,
     sub: m.id,
   }));
-  // 立绘按主题分两套资源（白底 / 黑底），主题切换时要重新解析，否则深色下仍挂白底图
-  const dark = useDarkTheme();
-  const mascot = resolveMascot(
-    activeProvider,
-    model || enabledModels[0]?.id,
-    dark,
-  );
   const empty = messages.length === 0;
 
   // 切换/新建对话时清空输入草稿
@@ -580,23 +751,78 @@ export default function ChatView({
   const card = (
     <div className="tuan-input-card w-full flex flex-col">
       <input ref={fileRef} type="file" className="hidden" onChange={onPickFile} />
-      <textarea
-        ref={taRef}
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          autoGrow();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-        rows={1}
-        placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-        className="w-full px-4 pt-4 pb-0 bg-transparent outline-none resize-none text-[16px] leading-[24px] font-[350] text-tuan-text placeholder:text-tuan-textSecondary"
-      />
+      {/* 斜杠命令补全菜单（Claude Code / 引擎 TUI 同款行为） */}
+      {slashOpen && (
+        <div className="absolute bottom-[calc(100%+8px)] left-2 right-2 z-30 rounded-xl border border-tuan-border bg-tuan-input shadow-[var(--shadow-pop)] overflow-hidden">
+          <div className="px-3 pt-2 pb-1 text-[11px] text-tuan-textSecondary font-mono">
+            斜杠命令 · ↑↓ 选择 · Enter 插入 · Esc 关闭
+          </div>
+          <div className="max-h-60 overflow-y-auto custom-scrollbar pb-1">
+            {slashItems.map((c, i) => (
+              <button
+                key={c.name}
+                onClick={() => applySlash(c.name)}
+                onMouseEnter={() => setSlashIdx(i)}
+                className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-left transition-colors ${
+                  i === slashIdx % slashItems.length ? 'bg-tuan-hover' : ''
+                }`}
+                type="button"
+              >
+                <Slash size={14} className="text-[var(--tuan-accent-soft)] flex-none" />
+                <span className="text-[13px] font-mono text-tuan-text flex-none">{c.name}</span>
+                <span className="text-[12px] text-tuan-textSecondary truncate min-w-0">{c.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Claude Code 终端式输入：❯ 提示符 + 等宽无衬线正文 */}
+      <div className="flex items-start px-4 pt-3.5">
+        <span className="cc-prompt text-[17px] mt-[3px] mr-2 flex-none" aria-hidden="true">
+          ❯
+        </span>
+        <textarea
+          ref={taRef}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setSlashIdx(0);
+            autoGrow();
+          }}
+          onKeyDown={(e) => {
+            if (slashOpen) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSlashIdx((i) => (i + 1) % slashItems.length);
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSlashIdx((i) => (i - 1 + slashItems.length) % slashItems.length);
+                return;
+              }
+              if (e.key === 'Enter' && slashItems.length > 0) {
+                e.preventDefault();
+                applySlash(slashItems[slashIdx % slashItems.length].name);
+                return;
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setSlashIdx(0);
+                setDraft(''); // 关闭命令菜单（清掉斜杠输入）
+                return;
+              }
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          rows={1}
+          placeholder="输入消息，Enter 发送；输入 / 可唤起斜杠命令"
+          className="flex-1 min-w-0 bg-transparent outline-none resize-none text-[16px] leading-[24px] font-[350] text-tuan-text placeholder:text-tuan-textSecondary"
+        />
+      </div>
       {/* 底部一行：附件、供应商、模型、发送键横向排布 */}
       <div className="px-4 pb-3 pt-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
@@ -728,54 +954,71 @@ export default function ChatView({
     <div className="flex-1 bg-tuan-main h-full flex flex-col overflow-clip">
       {empty ? (
         <div className="flex-1 flex flex-col items-center justify-center px-4 w-full">
-          <div className="mascot-in flex flex-col items-center mb-5">
-            <div className="awa-breathe w-[112px] h-[112px] rounded-2xl overflow-hidden border border-tuan-border bg-tuan-artBg">
-              <img src={mascot.img} alt={mascot.name} className="tuan-art-img w-full h-full object-cover object-top" />
-            </div>
+          <div className="flex flex-col items-center mb-5">
+            <BrandMark size="xl" />
           </div>
 
           <h1
-            className="mascot-in greeting-title text-center whitespace-normal text-[var(--tuan-heading)] text-[32px] sm:text-[40px] leading-[1.3] font-normal mb-[28px] max-w-full px-2 flex items-center justify-center gap-3"
+            className="greeting-title text-center whitespace-normal text-[var(--tuan-heading)] text-[32px] sm:text-[40px] leading-[1.3] font-normal mb-[28px] max-w-full px-2 flex items-center justify-center gap-3"
             style={{ fontFamily: '"Spectral","Source Serif 4",Georgia,serif', animationDelay: '0.1s' }}
           >
             <span>{greeting()}</span>
           </h1>
-          {/* 示例提示：桌面端 Claude 桌面式 2×2 卡片网格，窄屏退化为 chips；
-              仅在已配置供应商时展示，点击填入输入框 */}
+          {/* 专家角色墙：桌面端 3×2 卡片网格，窄屏退化为 chips；
+              仅在已配置供应商时展示。点击 = 切推荐模式 + 填入专家开场提示词 + 聚焦输入框 */}
           {providers.length > 0 && (
             <>
-              <div className="hidden sm:grid w-full max-w-[672px] grid-cols-2 gap-2 px-2 mb-[22px]">
-                {SUGGESTION_CARDS.map(({ icon: Icon, title, sub, prompt }) => (
-                  <button
-                    key={title}
-                    onClick={() => {
-                      setDraft(prompt);
-                      requestAnimationFrame(() => taRef.current?.focus());
-                    }}
-                    className="group flex items-start gap-2.5 rounded-xl border border-tuan-border bg-tuan-input/60 px-3.5 py-3 text-left transition-colors hover:bg-tuan-hover"
-                  >
-                    <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-lg border border-tuan-border bg-tuan-artBg text-tuan-textSecondary transition-colors group-hover:text-tuan-text">
-                      <Icon size={15} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-[13px] font-medium text-tuan-text">{title}</span>
-                      <span className="block text-[11.5px] text-tuan-textSecondary truncate">{sub}</span>
-                    </span>
-                  </button>
-                ))}
+              <div className="hidden sm:block w-full max-w-[760px] px-2 mb-[22px]">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="text-[12px] font-medium tracking-wide text-tuan-textSecondary uppercase">
+                    专家
+                  </span>
+                  <span className="text-[12px] text-tuan-textSecondary">
+                    · 以角色与交付标准开场
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {EXPERT_CARDS.map(({ icon: Icon, name, field, workflow, deliver, mode: expertMode, prompt }) => (
+                    <button
+                      key={name}
+                      onClick={() => {
+                        if (expertMode !== mode) onModeChange(expertMode);
+                        setDraft(prompt);
+                        requestAnimationFrame(() => taRef.current?.focus());
+                      }}
+                      className="group flex flex-col gap-1.5 rounded-xl border border-tuan-border bg-tuan-input/60 px-3.5 py-3 text-left transition-colors hover:bg-tuan-hover"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-lg border border-tuan-border bg-tuan-artBg text-tuan-textSecondary transition-colors group-hover:text-tuan-text">
+                          <Icon size={15} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[13px] font-medium text-tuan-text leading-tight">{name}</span>
+                          <span className="block text-[10.5px] text-tuan-textSecondary truncate leading-tight">{field}</span>
+                        </span>
+                      </span>
+                      <span className="block text-[11px] text-tuan-textSecondary/90 leading-snug mt-1">
+                        {workflow}
+                        <span className="mx-1 text-tuan-border">→</span>
+                        {deliver}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="sm:hidden w-full max-w-[672px] flex flex-wrap justify-center gap-2 px-2 mb-[22px]">
-                {SUGGESTION_CARDS.map(({ title, sub, prompt }) => (
+                {EXPERT_CARDS.map(({ name, field, workflow, deliver, mode: expertMode, prompt }) => (
                   <button
-                    key={title}
+                    key={name}
                     onClick={() => {
+                      if (expertMode !== mode) onModeChange(expertMode);
                       setDraft(prompt);
                       requestAnimationFrame(() => taRef.current?.focus());
                     }}
                     className="cc-pill !rounded-full text-[13px] leading-snug text-tuan-textSecondary hover:text-tuan-text hover:bg-tuan-hover break-words max-w-full"
-                    title={sub}
+                    title={`${field}：${workflow} → ${deliver}`}
                   >
-                    {title}：{sub}
+                    {name} · {field}
                   </button>
                 ))}
               </div>
@@ -789,8 +1032,9 @@ export default function ChatView({
                 {onRetry && (
                   <button
                     onClick={onRetry}
-                    className="flex-shrink-0 px-2 py-0.5 rounded-lg bg-tuan-input border border-tuan-border text-[12px] text-tuan-text hover:bg-tuan-hover transition-colors"
+                    className="flex-shrink-0 px-2 py-0.5 rounded-lg bg-tuan-input border border-tuan-border text-[12px] text-tuan-text hover:bg-tuan-hover transition-colors inline-flex items-center gap-1"
                   >
+                    <RotateCcw size={12} />
                     重试
                   </button>
                 )}
@@ -805,12 +1049,20 @@ export default function ChatView({
               </div>
               <div className="mt-3 flex items-center justify-center gap-3">
                 {onOpenSettings && (
-                  <button onClick={onOpenSettings} className="cc-btn-primary h-9 px-4 text-[13.5px]">
+                  <button
+                    onClick={onOpenSettings}
+                    className="cc-btn-primary h-9 px-4 text-[13.5px] inline-flex items-center gap-1.5"
+                  >
+                    <Settings size={14} />
                     去配置供应商
                   </button>
                 )}
                 {onOpenGuide && (
-                  <button onClick={onOpenGuide} className="cc-btn-ghost h-9 px-4 text-[13.5px]">
+                  <button
+                    onClick={onOpenGuide}
+                    className="cc-btn-ghost h-9 px-4 text-[13.5px] inline-flex items-center gap-1.5"
+                  >
+                    <BookOpen size={14} />
                     使用教程
                   </button>
                 )}
@@ -858,8 +1110,9 @@ export default function ChatView({
                 <div className="flex justify-center py-3">
                   <button
                     onClick={loadOlder}
-                    className="text-[12.5px] text-tuan-textSecondary px-3 py-1.5 rounded-lg border border-tuan-border hover:bg-tuan-hover"
+                    className="text-[12.5px] text-tuan-textSecondary px-3 py-1.5 rounded-lg border border-tuan-border hover:bg-tuan-hover inline-flex items-center gap-1.5"
                   >
+                    <ChevronUp size={14} />
                     加载更早的消息（还有 {messages.length - visibleCount} 条）
                   </button>
                 </div>
@@ -887,10 +1140,12 @@ export default function ChatView({
                           className="w-full bg-tuan-input border border-tuan-border rounded-xl px-3 py-2 text-[15px] leading-relaxed text-tuan-text outline-none resize-none"
                         />
                         <div className="flex gap-2 mt-2">
-                          <button onClick={saveEdit} className="cc-btn-primary px-3 py-1.5 text-[12.5px]">
+                          <button onClick={saveEdit} className="cc-btn-primary px-3 py-1.5 text-[12.5px] inline-flex items-center gap-1.5">
+                            <Check size={14} />
                             保存
                           </button>
-                          <button onClick={cancelEdit} className="cc-btn-ghost px-3 py-1.5 text-[12.5px]">
+                          <button onClick={cancelEdit} className="cc-btn-ghost px-3 py-1.5 text-[12.5px] inline-flex items-center gap-1.5">
+                            <X size={14} />
                             取消
                           </button>
                         </div>
@@ -932,24 +1187,20 @@ export default function ChatView({
                   </div>
                 ) : (
                   <div key={m.id} className="flex gap-2.5 my-3">
-                    {/* 头像：常态缓慢自转/呼吸，思考时加速 + 外圈扩散环，
+                    {/* 头像：品牌星芒标识；思考时加速呼吸 + 外圈扩散环，
                         三重信号共同表达"正在生成"。
                         扩散环要溢出头像边界，故定位在外层，内层才裁剪。 */}
                     <div className="relative w-8 h-8 flex-none">
-                      <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-tuan-artBg border border-tuan-border">
-                        <img
-                          src={mascot.img}
-                          alt={mascot.name}
-                          title={mascot.name}
-                          className={`tuan-art-img w-full h-full object-cover ${isStreamingMsg ? 'awa-breathe-thinking' : 'awa-breathe'}`}
-                        />
-                      </div>
+                      <BrandMark
+                        size="sm"
+                        className={isStreamingMsg ? 'brand-breathe-thinking' : 'brand-breathe'}
+                      />
                       {isStreamingMsg && <span className="think-ring absolute inset-0 rounded-lg" />}
                     </div>
                     <div className="flex-1 min-w-0 text-tuan-text text-[16.5px] leading-normal group">
                       <div className="flex items-center gap-1.5 mb-1.5 -mt-0.5">
                         <span className="text-[12px] text-tuan-textSecondary leading-none">
-                          {mascot.name}
+                          青小团
                           {m.model ? ` · ${m.model}` : ''}
                         </span>
                       </div>
@@ -983,6 +1234,16 @@ export default function ChatView({
                         )
                       )}
                       <div className="mt-1.5 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {!isStreamingMsg && m.content && (
+                          <button
+                            onClick={() => toggleSpeak(m.id, m.content)}
+                            className="inline-flex items-center gap-1 text-[12px] text-tuan-textSecondary hover:text-tuan-text"
+                            title="本地语音朗读"
+                          >
+                            {speakingMsgId === m.id ? <Square size={13} /> : <Volume2 size={13} />}
+                            {speakingMsgId === m.id ? '停止' : '朗读'}
+                          </button>
+                        )}
                         {onRetry && isLast && !isStreamingMsg && (
                           <button
                             onClick={onRetry}
@@ -1023,8 +1284,9 @@ export default function ChatView({
                     {onRetry && (
                       <button
                         onClick={onRetry}
-                        className="flex-shrink-0 px-2 py-0.5 rounded-lg bg-tuan-input border border-tuan-border text-[12px] text-tuan-text hover:bg-tuan-hover transition-colors"
+                        className="flex-shrink-0 px-2 py-0.5 rounded-lg bg-tuan-input border border-tuan-border text-[12px] text-tuan-text hover:bg-tuan-hover transition-colors inline-flex items-center gap-1"
                       >
+                        <RotateCcw size={12} />
                         重试
                       </button>
                     )}
