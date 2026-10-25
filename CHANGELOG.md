@@ -679,6 +679,20 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
 - **索引去重**: 目录树复用已统计的逐文件行数, 避免对每文件二次打开 (旧实现 build + _render_tree 各走一遍全量扫描)。
 
 
+### 修复: 版本号单一真源 + Web 子代理调度契约
+- **版本号统一 (发布阻塞)**: `tuan_cli/version.py` 仍是 `0.3.2` (pyproject.toml 已升到 0.3.3), 导致 `python -m tuan_cli --version` 显示 0.3.2 —— 已升到 `0.3.3`, 并把其余硬编码版本常量改为从单一真源派生:
+  - `ecosystem/registry.py`: 2 处 `User-Agent: tuan-cli/0.3.2` → `f"tuan-cli/{__version__}"`;
+  - `web/dispatch_server.py`: `DESKTOP_VERSION` 由常量 `"0.3.2"` → `__version__`;
+  - `tui/tui.py`: import 失败时的兜底 `VERSION` → `v0.3.3`。
+  `scripts/check_version_policy.py` 校验通过 (当前 0.3.3 = 基线 0.3.3)。
+- **Web `/api/dispatch` 子代理调度修复 (此前必然报错)**: `web/server.py::dispatch_agent` 调用的是**旧签名**, 与现役 `tools/subagent_tool.py` 契约脱节 ——
+  - `_resolve_subagent_params(ctx, instructions, exclude_tools: str, name: str)` 返回 `(excluded, system_extra)` 二元组, 旧代码却按对象取 `agent_spec.system_extra` → `system_extra` 被静默丢弃 (恒为空串), 子代理丢失系统提示;
+  - `exclude_tools` 需逗号分隔 `str`, 旧代码直接传 `List[str]`; `agent` 参数应映射到 `name`;
+  - `Agent.__init__` 现要求 `kernel` / `config` / `workspace` 三者, 旧代码只传 `config` 且工作区错用 `config.home` (应为项目工作区);
+  - `Agent.run` 无 `timeout` 参数, 旧代码传 `timeout=` → `TypeError`。
+  现按 `subagent_tool` 同步路径重写: `create_agent(kernel, workspace, exclude_tools=, system_extra=)` + 技能预加载 + 命名 agent 未命中时报明确错误 + 独立线程硬超时 (兑现 Web 端 `timeout` 10~600s 契约) + 8000 字摘要截断。
+
+
 ### 测试
 - 新增 `tests/test_config_error_fastfail.py`: 覆盖配置错误快速失败、C-2 友好模板渲染、故障转移短路、端到端 agent.run 友好失败。
 

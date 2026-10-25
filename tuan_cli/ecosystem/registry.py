@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ..version import __version__
+
 
 # ---- 注册表地址 ----
 # 使用 raw.githubusercontent.com 直取 JSON, 避免 GitHub API 限频 & 无需鉴权。
@@ -84,7 +86,7 @@ def _fetch_json(url: str, *, ttl_seconds: int = 3600) -> Optional[Dict[str, Any]
                 pass
 
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "tuan-cli/0.3.2"})
+        req = urllib.request.Request(url, headers={"User-Agent": f"tuan-cli/{__version__}"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             raw = resp.read()
         cache_file.write_bytes(raw)
@@ -190,7 +192,7 @@ def install_via_zip(entry: RegistryEntry, dest: Path, *,
     archive_url = f"{repo_url}/archive/refs/heads/{branch}.zip"
     tmp_dir = Path(tempfile.mkdtemp(prefix="tuan-registry-"))
     try:
-        req = urllib.request.Request(archive_url, headers={"User-Agent": "tuan-cli/0.3.2"})
+        req = urllib.request.Request(archive_url, headers={"User-Agent": f"tuan-cli/{__version__}"})
         with urllib.request.urlopen(req, timeout=60) as resp:
             zip_bytes = resp.read()
         zip_path = tmp_dir / "repo.zip"
