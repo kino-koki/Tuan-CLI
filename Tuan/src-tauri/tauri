@@ -1,2 +1,0 @@
-// 供安卓 Gradle 插件以 `node tauri ...` 方式调用本地 @tauri-apps/cli 的启动垫片。
-require('../node_modules/@tauri-apps/cli/tauri.js');

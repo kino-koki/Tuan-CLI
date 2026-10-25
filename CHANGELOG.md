@@ -9,24 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
-## [0.3.3] - 2026-10-26 (体验增强 · feat/experience-20261026)
+## [0.3.3] - 2026-10-25 (小更新 · 体验增强)
+
 ### Tuan-Chat 桌面端 (Tuan/)
 - **启动流程重塑 (T-1)**: 冷启动 BootSplash（Logo 动效 + init→connect→ready 三阶段清单 + 进度条，`?skipBoot=1` 跳过）；Onboarding 向导改为 3 步（选 Provider → 填 API Key → 选模式），可跳过、可随时重开（设置 → 重新打开引导，即时弹出）。
 - **Ctrl+K 命令面板 (T-4)**: 拼音首字母模糊匹配、最近 5 条置顶、Tab 补全、导出会话 MD / 删除当前 / 清空全部动作；完成/失败/待确认桌面通知（仅后台弹）。
 - **设置与外观 (T-2/T-7)**: 设置页 5 分组（外观/模型/安全/通知/实验）；暗/亮/跟随系统三态即时切换；3 主题（暗/亮/护眼绿）+ 4 强调色 + 3 字体档 + 3 款 ASCII 吉祥物；严格模式在模式页禁用「无界」。
 - **会话管理 (T-3)**: 侧栏最近 20 条截断、标题+内容搜索、删除二次确认、触屏左滑删/右滑新建/下拉刷新；MD/JSON 单条与全部导出、清空全部二次确认；离线徽章。
 - **PWA 与移动端 (T-6)**: Service Worker 注册 + 「安装到桌面/主屏幕」入口。
-### Tuan-CLI (tuan_cli/)
-- **C-1 首次运行向导**: `tuan setup` 三步向导（6 家 provider → getpass 不回显 → 5 模式默认协同），`setup --skip` / `TUAN_SKIP_SETUP=1` 跳过，首次运行自动触发。
-- **C-2 错误体验**: 5 类 FriendlyError 分类 + 顶层兜底隐藏 traceback（`--debug` 才显示）。
-- **C-4 会话恢复**: 顶层 `--continue` / `--resume <id>` 旗标；`tuan sessions list/rm`；`Agent.load_history()` 收敛上下文恢复。
-- **C-5 离线优先**: `core/network_check.py::is_offline(3s)`；ModelRouter 离线自动降级本地模型、在线自动切回；响应 TTL 1h 缓存。
-- **TUI Tab 补全增强 (C-3)**: 模糊匹配（前缀>子串>子序列）、多级子命令补全、参数预览、帮助行、历史优先、Windows 字形降级；离线横幅提示。
+
+
 ### Web 后端与 Rust 引擎
 - `tuan_cli/web/server.py`: `/api/settings` GET/POST 落盘（web_settings.json）、`/api/sessions` DELETE 无参=删全部、预算告警（默认 80% 阈值）、remote_control 模块级 `notify()`、内嵌 UI 触控手势 + 离线横幅；新增回归测试 `tests/test_web_experience_slice.py`。
 - `Tuan/src-tauri`: engine-stage / engine-notify / engine-error 事件 + 会话恢复 Tauri commands。
 
-## [0.3.2] - 2026-10-25 (小更新)
+
 ### 新增: 4 个独有模块 (多数 Agent 尚无对应物)
 
 - **隐私文件防护罩 (Privacy Shield)** — `tuan_cli/ext/privacy_shield.py`:
@@ -48,11 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (「需要你的授权」「回复完成」「出错了」); 同类事件 1.5s 合并 + 全局 800ms
   节流防吵; 设置页「事件语音提醒」开关, 与 TTS 主开关双保险。
 
+
 ### TUI 完善: ↑/↓ 历史导航 (Claude Code 同款), 删除 Ctrl+↑/↓
 - `tui/tui.py` **删除 Ctrl+↑/↓ 键绑定** (原为逐行翻卷等价键, 用户认定反人类);
 - **↑/↓ 直接翻上下文历史**: 斜杠面板关闭时走 prompt_toolkit 默认历史导航
   (`b.auto_up/auto_down`), 面板打开时游走命令菜单 —— 与 Claude Code 终端行为一致;
 - 对话区回卷保留 Shift+PgUp/PgDn 逐行 + PgUp/PgDn 整屏 + 鼠标滚轮。
+
 
 ### 依赖精简: 外部核心依赖 9 项 → 2 项 (-78% ≈ 80%)
 - `engine/requirements.txt` 与根 `pyproject.toml` 对齐, 核心依赖仅剩
@@ -62,11 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pydantic` → 内置 `_config_model.py` (backend_dev 引用仅为模板字符串),
   `cryptography` → 内置 `crypto_engine.py` 纯 Python fallback (装则自动 AES-GCM)。
 
+
 ### 配置: 隐私 / 开发中文件防护
 - `.gitignore` 新增隐私段 (`.env`、密钥、`*待办*`/`*代办*`、`*.tmp/bak/orig/swp` 等),
   防止开发中/隐私文件 (例如代办 md) 被提交;
 - 新增 `.tuanignore` 运行时规则, 与引擎 Privacy Shield 联动;
 - 核查确认: 父仓库与 Tuan 仓库均无待办/隐私文件入库 (仅 `.env.example` 模板与代码)。
+
 
 ### 安全: 6 项引擎缺陷修复 + 基准复测 (对抗 10k 误杀 23 → 1)
 
@@ -101,6 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 绕过矩阵 2321 → 绕过 0 / 误杀 1 / 灾难类别 100% 拦截。
 剩余 2 条误杀全部是 flag (单次确认), **三套基准无一条硬拦误杀**, 均为有意保守升级
 (`tar | ssh` 类外泄形态、`export X; cmd` 环境变量链)。
+
 
 ### 安全: 真实使用场景基准 (随机种子) + 7 项修复
 
@@ -184,6 +186,7 @@ Python / Node / 容器 / 构建 / 环境变量 / 链式 / 管道 / 重定向 / s
 **绕过 0**, 全部灾难类别 100% 拦截。账户权限双向探针: 42/42 良性零误拦,
 25/25 高危零漏放; 密钥搬运 18 种前缀变体零漏放。
 
+
 ### 修复: `_yaml.py` 真实崩溃 + 差分测试假阴性
 
 - **修复: 保留词作 YAML 键时崩溃**。`yes:` / `no:` / `on:` / `off:` / `true:` / `false:`
@@ -202,6 +205,7 @@ Python / Node / 容器 / 构建 / 环境变量 / 链式 / 管道 / 重定向 / s
   `.scratch/test_yaml_shim.py` (gitignored, 不可复现)。新测试锁定 `_stdlib_safe_load`,
   并用 `test_shim_alias_is_not_pyyaml` 自证别名未被重绑定。
 
+
 ### 修复: 基准标签差点被「修好」
 
 排查误杀时发现 D.编码绕过里的
@@ -216,6 +220,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
 教训与复现脚本见 `bench/README.md`「一条容易被忽略的教训」一节。
 
 ## [Unreleased] - 2026-10-18
+
 ### 新增: 免费层扩充 (商汤日日新公测免费 + 4 家完全免费) + 供应商/模型清单校准
 
 - **免费层 (category=免费层) 从 2 家扩到 6 家** (`tuan_cli/models/provider_catalog.py`):
@@ -239,6 +244,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   - 修正 9 份 README (zh-CN/zh-GAT/ja/ko/de/es/fr/pt-BR/ru + en) 供应商 57→58、
     模型 1100+→1400+; `SUPPORTED_MODELS.md` / 包内 docstring 同步 58 家;
   - `scripts/verify_doc_numbers.py` 现全部一致 (58 家 / 1440 条目 / 38 子命令)。
+
 
 ### 修复: 目录强制跳转 + 大上下文模型提示词阉割 + 内置资源目录解析断裂
 
@@ -279,6 +285,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   回归用例; 新建 `tests/test_workspace_paths.py` (17 项场景: 默认不跳转 /
   显式优先 / opt-in 旧行为 / fail-open)。
 
+
 ### 新增: / 命令面板 + TUI 文字溢出修复 + 终端标题
 
 - **新增 Claude Code 同款 `/` 命令面板** (`tuan_cli/tui/tui.py`): 输入框输入
@@ -306,6 +313,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
 - **测试**: 新建 `tests/test_tui_slash_menu.py` (32 项: 开合/过滤/循环导航/
   Enter·Tab 填入/预敲/9 行封顶/滚动跟随/CJK 裁剪/窄终端盒宽/_clip_parts/
   终端标题双通道); 既有 5 个 TUI 测试文件 66 项全部通过, 无回归。
+
 
 ### 新增: WebUI 可见思考过程 + 修复流式慢/易中断
 
@@ -347,6 +355,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   10 语言键完整); 真实 Agent 端到端验证 600 delta → 5 行落盘、中断后
   零重试。
 
+
 ### 修复: TUI 输入框失去渲染 (备用屏被误退出 + 后台线程重绘)
 
 - **根因**: `tui/tui.py::_reset_renderer` 调用 `Renderer.reset()` 时**漏传
@@ -370,6 +379,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   备用屏、完整 set_ready 路径不退出备用屏、运行态重置投递到事件循环而非在
   调用线程直接操作 renderer)。
 
+
 ### 修复: 多数供应商模型清单缺失 (官方有模型但 Tuan-CLI 列不出来)
 
 - **根因**: `models/model_lists.py` 里有 **11 个供应商完全没有条目**, 而
@@ -390,10 +400,12 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
 - 每家清单第一项仍为推荐默认模型 (`provider_catalog` 同步 `_p.model`),
   `local_catalog` 导出随之包含全部 58 家。
 
+
 ### 修复: i18n `tui.slash_more` 缺 8 语言 (键位对齐测试红)
 
 - `de/es/fr/ja/ko/pt_BR/ru/zh_TW` 补齐 `tui.slash_more` (「/ 命令面板还有
   N 条」提示), 10 语言键集合重新对齐 —— `tests/test_i18n.py` 33 项全绿。
+
 
 ### 修复: `test_web_settings` 模型热切换用例桩对象缺 `unprovide`
 
@@ -403,6 +415,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   「适配器重建失败: '_FakeKernel' object has no attribute 'unprovide'」失败。
   现给桩补上 `provide`/`unprovide` (签名与 `core/kernel.py` 一致) 并让
   `require` 优先返回已注册服务 —— `tests/test_web_settings.py` 23 项全绿。
+
 
 ### 备注: 本机 pytest 需避开系统临时目录 `E:\Temp`
 
@@ -414,6 +427,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   export TMP="$PWD/.pytest_tmp/tmpbase" TEMP="$PWD/.pytest_tmp/tmpbase"
   .venv/Scripts/python.exe -m pytest tests/ --basetemp=.pytest_tmp/bt
   ```
+
 
 ### 新增: TUI 对话区虚拟视口回卷 (真正能翻看历史, Claude Code 同款)
 
@@ -451,6 +465,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   整屏位移无重叠无跳空 / 顶部可达 / 底部跟随 / 上翻后不被新内容拽走 / 半行裁剪 /
   长行折行后仍可逐屏翻 / 内容不足一屏 / 位置指示出现与消失)。
 
+
 ### 修复: 模型给选项时 TUI 溢出且无法选择 (ask_user 未接界面)
 
 - **根因** (`ask_user` 工具 → 全屏 TUI 断链, 三处):
@@ -485,6 +500,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   对话区不超宽 / 多选项不撑破视口 / 桥接转发 / 工具走钩子不 print / 安全阀拦截 /
   探测器判定 / headless 兜底)。实机端到端验证: 工具经 `ctx.ui` 拿到卡片,
   ↑↓+Enter 返回所选项, 全程不碰 stdout。
+
 
 ### 修复: TUI 残余溢出 (系统排查 11 条渲染路径 × 12 种终端宽度)
 
@@ -551,6 +567,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   `--basetemp` 指向 `C:\Users\28726\.workbuddy-pytest\`, 并设
   `CODEBUDDY_SAFE_DELETE_ENABLED=0`。设了之后同样的 broad 回归 933 → 0。
 
+
 ### 新增: 鼠标滚轮回看对话历史 (Claude Code 同款)
 
 用户要求「在命令行终端内, 使用鼠标向上/向下滑动, 可完整查看对话历史」。
@@ -594,6 +611,7 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
   到顶到最早 / 到底恢复跟随 / 内容不足一屏不动 / 三种卡片态让位且钳位 /
   非滚轮事件不翻页(含直接验绑定层只认 SCROLL_*)/ `TUAN_NO_MOUSE` /
   提示文案含滚轮。相关回归 **358 项全绿**。
+
 
 ### 新增: 跨平台可移植性套件 + 8 项跨平台缺陷修复
 
@@ -645,6 +663,25 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
 **仍存在的诚实边界**：本套件证明的是「检测判定跨平台一致」，**不**证明
 「Linux/macOS 端到端可用」。CLI 本身的平台适配（子进程创建、`/undo` 事务账本、
 `security-bench.json` 路径处理）在 Linux/macOS 上仍需实机跑一次才算数。
+
+
+### Tuan-CLI (tuan_cli/)
+- **C-1 首次运行向导**: `tuan setup` 三步向导（6 家 provider → getpass 不回显 → 5 模式默认协同），`setup --skip` / `TUAN_SKIP_SETUP=1` 跳过，首次运行自动触发。
+- **C-2 错误体验**: 5 类 FriendlyError 分类 + 顶层兜底隐藏 traceback（`--debug` 才显示）。
+- **C-4 会话恢复**: 顶层 `--continue` / `--resume <id>` 旗标；`tuan sessions list/rm`；`Agent.load_history()` 收敛上下文恢复。
+- **C-5 离线优先**: `core/network_check.py::is_offline(3s)`；ModelRouter 离线自动降级本地模型、在线自动切回；响应 TTL 1h 缓存。
+- **TUI Tab 补全增强 (C-3)**: 模糊匹配（前缀>子串>子序列）、多级子命令补全、参数预览、帮助行、历史优先、Windows 字形降级；离线横幅提示。
+
+
+- **P0 配置类错误快速失败**: 缺 API Key / 配置损坏 / 模型不存在等配置类错误, 不再被当作瞬时错误按指数退避重试 3 次 (~18s 才失败), 改为立即失败 (<1s); 同时渲染 C-2 固定友好模板 (❌ 标题 + 原因 + 建议), 不再把一坨原始异常抛给用户。
+- **故障转移误触发修复**: 配置 / 鉴权 / 模型类错误不再错误地触发备用供应商故障转移 (换谁都一样失败, 转移只会掩盖根因、白跑备用供应商)。
+- **启动提速**: 代码库索引 (os.walk + 逐文件 LOC 统计, 大型仓库可达 4~5s) 由同步改为后台线程构建, 不再阻塞 `Agent` 初始化与首条命令; 首轮开始前用 <0.3s 等待窗口把地图补进系统提示, 交互会话几乎无感。
+- **索引去重**: 目录树复用已统计的逐文件行数, 避免对每文件二次打开 (旧实现 build + _render_tree 各走一遍全量扫描)。
+
+
+### 测试
+- 新增 `tests/test_config_error_fastfail.py`: 覆盖配置错误快速失败、C-2 友好模板渲染、故障转移短路、端到端 agent.run 友好失败。
+
 
 ## [0.3.1] - 2026-10-12
 ### 仓库卫生 + 品牌归属整改 + 安全默认值加固

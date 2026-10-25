@@ -1,7 +1,7 @@
 # Tuan-CLI
 
 > **"Model + Harness = Agent."** — Split "how to think" from "how to run it safely," and hand you both keys.
-> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.3.1` · MIT · Python ≥ 3.10
+> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.3.3` · MIT · Python ≥ 3.10
 
 > ### Positioning: a safety-first agent — without sacrificing developer experience
 >
@@ -10,7 +10,7 @@
 > - **Safety first**: dangerous commands are blocked *before* they run (blast-radius preview → hard redline → multi-stage confirmation). Every write is journaled in a transactional ledger for exact `/undo`.
 > - **Safety semantics**: YOLO/`--yolo` automatically approves operations that would normally require confirmation, but does **not** bypass hard redlines. `--isolation` provides engine/process-level isolation to reduce blast radius and contain failures; it is *not* a full OS sandbox and does not replace command approval.
 > - **Developer experience preserved**: file reads/writes, routine `git` operations, package installs, test runs and linters are scored `none` — **zero confirmation, zero blocking** (`safety_engine.is_benign_dev_command`). Only genuinely dangerous actions escalate to advice or blocking.
-> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,310 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `tuan safe bench`, reproduces everything locally** (no network, no model); `tuan safe report` emits a self-contained HTML security report. Current code measured (2026-09): adversarial 10k → block recall 100% / flag recall 100% / false-positive 1.87% / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 2,310 payloads → bypass 0 / false positive 1 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
+> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,321 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `tuan safe bench`, reproduces everything locally** (no network, no model); `tuan safe report` emits a self-contained HTML security report. Current code measured (2026-10): adversarial 10k → block recall 100% / flag recall 100% / false-positive 0.09% (1) / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 2,321 payloads → bypass 0 / false positive 1 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
 > - **Ecosystem interop**: we don't rebuild ecosystems — we **reuse what Claude Code / Hermes Agent already accumulated** on this machine (skills, named agents, memory, SOUL persona, MCP configs). `tuan ecosystem` moves assets both ways in one command; `tuan ecosystem link` mounts tuan back into them over MCP. One harness, three ecosystems' worth of assets.
 
 **Language:** **English** · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
@@ -91,7 +91,7 @@ class MyTool(Plugin):
 
 | Version semantics | Meaning |
 |---|---|
-| `0.3.1` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
+| `0.3.3` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
 | `1.0` (reserved) | Enabled once the public API is frozen and backward compatibility is promised; only then do breaking changes bump MAJOR (`2.0`) |
 
 **Git history note (open-source transparency):** This repository's Git commit history was **deliberately rebuilt on 2026-09-26 — the early commit history was intentionally overwritten by the author**; the per-commit evolution before that date is no longer preserved. The current code is fully reviewable from architecture to implementation; for feature evolution before 2026-09-26, please rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We choose to disclose this plainly — no polishing, no hiding.
@@ -225,7 +225,7 @@ Rules always resolve `deny > ask > allow`. Whitelist with `tuan safe allow <cmd>
 
 - **Adversarial corpus** `bench/safety_bench_10k.py` — 10,000 bash/generic commands (seeded 20260906, reproducible); reports block recall / flag recall / false-positive rate / bypasses.
 - **PowerShell corpus** `bench/bench_powershell_safety.py` — 5,000 samples (2,300 dangerous / 2,700 benign); reports accuracy / misses / false positives.
-- **Bypass matrix** `bench/bypass_matrix.py` — 2,310 hand-crafted adversarial payloads; beyond pattern matching, it asserts **per disaster-consequence class** whether every class of catastrophic intent was actually blocked.
+- **Bypass matrix** `bench/bypass_matrix.py` — 2,321 hand-crafted adversarial payloads; beyond pattern matching, it asserts **per disaster-consequence class** whether every class of catastrophic intent was actually blocked.
 
 ```bash
 tuan safe bench                 # full run (~3 min)
@@ -235,15 +235,15 @@ tuan safe report                # self-contained HTML security report (shareable
 tuan safe report --release      # RELEASE: numbers + timestamp + git commit bound (no stale numbers)
 ```
 
-Measured on current code (2026-09-19, reproducible via `tuan safe bench`):
+Measured on current code (2026-10-25, reproducible via `tuan safe bench`):
 
 | Suite | Size | Core metric | Bypasses | False positives |
 |---|---|---|---|---|
-| Adversarial | 10,000 | block recall 100% · flag recall 100% · FP 1.87% | 0 | — |
+| Adversarial | 10,000 | block recall 100% · flag recall 100% · FP 0.09% (1) | 0 | — |
 | PowerShell | 5,000 | accuracy 100% · misses 0 | 0 | 0 |
-| Bypass matrix | 2,310 | disaster-intent classes 100% blocked | 0 | 1 |
+| Bypass matrix | 2,321 | disaster-intent classes 100% blocked | 0 | 1 |
 
-Caveat: the bypass matrix is deliberately fail-closed and keeps a few conservative escalations (`nc` Unicode-variant probes, `tar|ssh` exfil-shaped payloads), which produce "benign-but-flagged" false positives; the 1.87% FP in the adversarial suite comes from the same conservatism. Numbers are authoritative as re-run locally with `tuan safe bench`.
+Caveat: the bypass matrix is deliberately fail-closed and keeps a few conservative escalations (`nc` Unicode-variant probes, `tar|ssh` exfil-shaped payloads), which produce "benign-but-flagged" false positives; the 0.09% (1) FP in the adversarial suite comes from the same conservatism. Numbers are authoritative as re-run locally with `tuan safe bench`.
 
 **CI numbers gate**: the `safety-benchmarks` job in `.github/workflows/security-ci.yml` re-runs all three suites on every push and compares against the committed archive — any regression (bypasses, a disaster class no longer fully blocked, a clear FP rise) **fails CI**. The archive `bench/security-bench.json` corresponds 1:1 to the README table. 
 
@@ -286,7 +286,7 @@ tuan --print run "Hi, one line."   # smoke
 ```
 
 - **i18n discipline**: README_zh-CN is the authoritative master; every locale is a vivid, zero-drift localization — **no mechanical translation.**
-- **Version**: `v0.3.1` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
+- **Version**: `v0.3.3` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
 - **Deep dive**: engine signatures & a step-by-step tool walkthrough live in the appendix of `README_zh-CN.md`.
 
 ---

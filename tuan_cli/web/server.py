@@ -478,6 +478,19 @@ class _WebHandler(BaseHTTPRequestHandler):
             # T-2.6: 读取 Web UI 用户偏好 (任意键, 前端分片据此做引擎同步)
             self._json(200, {"ok": True, "settings": self._owner.settings_snapshot()})
             return
+        # ============== Desktop Agent 增强端点 ==============
+        if path == "/api/skills":
+            self._json(200, {"ok": True, "skills": self._owner.skills_list()})
+            return
+        if path == "/api/router/status":
+            self._json(200, {"ok": True, **self._owner.router_status()})
+            return
+        if path == "/api/agents/registry":
+            self._json(200, {"ok": True, "agents": self._owner.agents_registry_list()})
+            return
+        if path == "/api/screenshot":
+            self._json(200, self._owner.take_screenshot())
+            return
         self._json(404, {"ok": False, "error": "not found"})
 
     def do_POST(self) -> None:
@@ -580,6 +593,68 @@ class _WebHandler(BaseHTTPRequestHandler):
                 return
             self._owner.apply_settings(body)
             self._json(200, {"ok": True, "settings": self._owner.settings_snapshot()})
+            return
+        # ============== Desktop Agent 增强端点 (POST) ==============
+        if path == "/api/skills":
+            body = self._read_body()
+            action = (body.get("action") or "save").strip()
+            if action == "save":
+                res = self._owner.skill_save(
+                    str(body.get("name") or ""),
+                    str(body.get("description") or ""),
+                    str(body.get("body") or ""),
+                )
+                self._json(200 if res.get("ok") else 400, res)
+            elif action == "delete":
+                res = self._owner.skill_delete(str(body.get("name") or ""))
+                self._json(200 if res.get("ok") else 400, res)
+            elif action == "search":
+                res = self._owner.skill_search(
+                    str(body.get("query") or ""),
+                    int(body.get("limit") or 5),
+                )
+                self._json(200, {"ok": True, "skills": res})
+            elif action == "read":
+                res = self._owner.skill_read(str(body.get("name") or ""))
+                self._json(200 if res.get("ok") else 404, res)
+            else:
+                self._json(400, {"ok": False, "error": f"unknown action: {action}"})
+            return
+        if path == "/api/dispatch":
+            body = self._read_body()
+            res = self._owner.dispatch_agent(
+                instruction=str(body.get("instruction") or ""),
+                agent=str(body.get("agent") or ""),
+                skills=list(body.get("skills") or []),
+                timeout=int(body.get("timeout") or 180),
+                exclude_tools=list(body.get("exclude_tools") or []),
+            )
+            self._json(200 if res.get("ok") else 500, res)
+            return
+        if path == "/api/mcp":
+            body = self._read_body()
+            action = (body.get("action") or "status").strip()
+            if action == "toggle":
+                res = self._owner.mcp_toggle(
+                    str(body.get("name") or ""),
+                    bool(body.get("enabled")),
+                )
+                self._json(200 if res.get("ok") else 400, res)
+            elif action == "connect":
+                res = self._owner.mcp_connect(str(body.get("name") or ""))
+                self._json(200 if res.get("ok") else 400, res)
+            else:
+                self._json(400, {"ok": False, "error": f"unknown action: {action}"})
+            return
+        # Computer Use: OCR (接收 base64 图片)
+        if path == "/api/ocr":
+            body = self._read_body()
+            b64 = str(body.get("base64") or "")
+            if not b64:
+                self._json(400, {"ok": False, "error": "base64 必填"})
+                return
+            res = self._owner.run_ocr(b64)
+            self._json(200 if res.get("ok") else 400, res)
             return
         self._json(404, {"ok": False, "error": "not found"})
 
@@ -1125,6 +1200,284 @@ class WebServer:
         except Exception:  # noqa: BLE001
             pass
         return out
+
+    def mcp_toggle(self, name: str, enabled: bool) -> Dict[str, Any]:
+        """热插拔某个 MCP server —— 断开/重连。"""
+        try:
+            clients = self.kernel.get("mcp_clients") if self.kernel is not None else None
+            if clients is None or name not in clients:
+                return {"ok": False, "error": f"MCP server not found: {name}"}
+            c = clients[name]
+            if enabled:
+                connect = getattr(c, "connect", None)
+                if callable(connect):
+                    connect()
+            else:
+                disconnect = getattr(c, "disconnect", None)
+                if callable(disconnect):
+                    disconnect()
+            return {"ok": True, "name": name, "enabled": enabled}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def mcp_connect(self, name: str) -> Dict[str, Any]:
+        return self.mcp_toggle(name, True)
+
+    # ---------------- Skills 管理 ----------------
+    def skills_list(self) -> List[Dict[str, Any]]:
+        """列出所有已安装技能 (含用户级 + 内置仓库 + 工作区本地)。"""
+        try:
+            sm = self.kernel.require("skill_manager") if self.kernel is not None else None
+            if sm is None:
+                return []
+            skills = sm.list_all()
+            return [
+                {
+                    "name": s.name,
+                    "slug": getattr(s, "slug", s.name.lower().replace(" ", "-")),
+                    "description": s.description,
+                    "origin": getattr(s, "origin", "user"),
+                    "use_count": getattr(s, "use_count", 0),
+                    "updated_at": getattr(s, "updated_at", None),
+                    "body_preview": (s.body or "")[:300],
+                }
+                for s in skills
+            ]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def skill_save(self, name: str, description: str, body: str) -> Dict[str, Any]:
+        if not name or not body:
+            return {"ok": False, "error": "name 和 body 必填"}
+        try:
+            sm = self.kernel.require("skill_manager")
+            sk = sm.save(name, description, body)
+            return {"ok": True, "name": sk.name, "slug": getattr(sk, "slug", name)}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def skill_delete(self, name: str) -> Dict[str, Any]:
+        try:
+            sm = self.kernel.require("skill_manager")
+            slug = sm.slugify(name) if hasattr(sm, "slugify") else name.lower().replace(" ", "-")
+            f = Path(sm.dir) / f"{slug}.md" if hasattr(sm, "dir") else None
+            if f is None or not f.exists():
+                return {"ok": False, "error": f"skill 不存在: {name}"}
+            f.unlink()
+            return {"ok": True, "name": name}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def skill_search(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        try:
+            sm = self.kernel.require("skill_manager")
+            results = sm.search(query, limit=max(1, min(limit, 20))) if hasattr(sm, "search") else []
+            return [{"name": s.name, "description": s.description} for s in results]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def skill_read(self, name: str) -> Dict[str, Any]:
+        try:
+            sm = self.kernel.require("skill_manager")
+            sk = sm.load(name)
+            if sk is None:
+                return {"ok": False, "error": f"skill 不存在: {name}"}
+            return {"ok": True, "name": sk.name, "description": sk.description, "body": sk.body,
+                    "use_count": getattr(sk, "use_count", 0), "origin": getattr(sk, "origin", "user")}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    # ---------------- Agent Dispatch (Agent of Agents) ----------------
+    def dispatch_agent(
+        self, instruction: str, agent: str, skills: List[str],
+        timeout: int, exclude_tools: List[str],
+    ) -> Dict[str, Any]:
+        """委派子 Agent 执行任务 (隔离上下文, 不污染主会话)。"""
+        if not instruction.strip():
+            return {"ok": False, "error": "instruction 必填"}
+        timeout = max(10, min(timeout, 600))  # 10s ~ 10min
+        try:
+            # 构建一个独立的 kernel + agent，带上指定的 skills
+            from ..core.agent import Agent
+            from ..tools.subagent_tool import _resolve_subagent_params
+
+            ctx = type("FakeCtx", (), {"kernel": self.kernel})()
+            excluded, agent_spec = _resolve_subagent_params(
+                ctx, instruction, agent=agent, skills=tuple(skills),
+                exclude_tools=tuple(exclude_tools),
+            )
+
+            # 创建临时 Agent 运行子任务
+            cfg = self.kernel.require("config")
+            temp_agent = Agent(
+                config=cfg,
+                kernel=self.kernel,
+                system_extra=getattr(agent_spec, "system_extra", ""),
+                exclude_tools=excluded,
+            )
+            result = temp_agent.run(instruction, max_steps=30, timeout=timeout)
+            return {"ok": True, "result": str(result)[:8000]}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    # ---------------- Model Router 状态 ----------------
+    def router_status(self) -> Dict[str, Any]:
+        """当前模型路由配置 + 上一次路由决策。"""
+        try:
+            cfg = self.kernel.require("config")
+            router = self.kernel.get("model_router")
+            last = getattr(router, "last_route", None) if router else None
+            return {
+                "enabled": bool(cfg.get("router.enabled", False)),
+                "auto_switch": bool(cfg.get("router.auto_switch", True)),
+                "last_route": last,
+                "available": router is not None,
+            }
+        except Exception:  # noqa: BLE001
+            return {"enabled": False, "auto_switch": True, "available": False}
+
+    # ---------------- Agent Registry ----------------
+    def agents_registry_list(self) -> Dict[str, Any]:
+        """CLI 外部 Agent 适配器清单 (Agent of Agents 调度目标)。
+
+        注意: ThreadingHTTPServer 的工作线程里 asyncio.get_event_loop() 很可能
+        已被主线程关闭或被其他线程占用 → 用 new_event_loop() 创建独立事件循环，
+        用完立即 close()，不污染任何全局状态。
+        """
+        try:
+            from ..agents import ADAPTERS
+            import asyncio
+            items = []
+            loop: Optional[asyncio.AbstractEventLoop] = None
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                for name, adapter in ADAPTERS.items():
+                    info = None
+                    try:
+                        info = loop.run_until_complete(adapter.detect())
+                    except Exception:  # noqa: BLE001
+                        info = None
+                    items.append({
+                        "name": name,
+                        "description": getattr(adapter, "description", ""),
+                        "healthy": getattr(info, "healthy", False) if info else False,
+                        "score": getattr(info, "score", 0) if info else 0,
+                        "version": getattr(info, "version", "") if info else "",
+                    })
+            finally:
+                if loop is not None:
+                    loop.close()
+            return {"agents": items}
+        except Exception as exc:  # noqa: BLE001
+            return {"agents": [], "error": str(exc)}
+
+    # ---------------- Computer Use: 截屏 + OCR ----------------
+    def take_screenshot(self) -> Dict[str, Any]:
+        """全屏截屏 → PNG → base64。
+
+        可选依赖:
+        - Pillow (PIL)：Windows/Linux/Mac 通用
+        - mss：更轻量的跨平台截屏库
+        两者都没有时返回降级提示，让 Computer Use 走 Rust 端的 shell/browser 工具链。
+        """
+        try:
+            import base64
+            png_bytes: Optional[bytes] = None
+            via = ""
+
+            # 1. 优先 Pillow.ImageGrab（最成熟，Windows/Mac 原生可用）
+            try:
+                from PIL import ImageGrab  # noqa: F401
+                img = ImageGrab.grab(all_screens=True)
+                import io
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                png_bytes = buf.getvalue()
+                via = "pillow"
+            except Exception:
+                png_bytes = None
+
+            # 2. mss 备选（更快，跨平台）
+            if png_bytes is None:
+                try:
+                    import mss  # type: ignore
+                    import io
+                    with mss.mss() as sct:
+                        monitor = sct.monitors[0]  # 主屏
+                        shot = sct.grab(monitor)
+                        from PIL import Image  # noqa: F401
+                        img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+                        buf = io.BytesIO()
+                        img.save(buf, format="PNG")
+                        png_bytes = buf.getvalue()
+                        via = "mss+pillow"
+                except Exception:
+                    png_bytes = None
+
+            # 3. macOS 原生 screencapture 命令（如果 PIL/mss 都没）
+            if png_bytes is None:
+                import platform
+                if platform.system() == "Darwin":
+                    import tempfile
+                    import subprocess
+                    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                    tmp.close()
+                    subprocess.run(["screencapture", "-x", tmp.name], capture_output=True, timeout=10)
+                    p = Path(tmp.name)
+                    if p.exists():
+                        png_bytes = p.read_bytes()
+                        p.unlink(missing_ok=True)
+                        via = "screencapture"
+
+            if png_bytes is None:
+                return {
+                    "ok": False,
+                    "error": "截屏不可用。请 pip install Pillow 或 mss。"
+                            "当前可通过 shell 工具执行系统命令做间接 Computer Use。",
+                    "dependency_hint": "pip install Pillow  # 跨平台；或 pip install mss pillow  # 更快",
+                }
+
+            b64 = base64.b64encode(png_bytes).decode("ascii")
+            return {
+                "ok": True,
+                "base64": b64,
+                "mime": "image/png",
+                "via": via,
+                "bytes": len(png_bytes),
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"截屏失败: {exc}"}
+
+    def run_ocr(self, image_b64: str) -> Dict[str, Any]:
+        """OCR 文本化：把截屏 base64 转成文本描述。
+
+        可选依赖:
+        - pytesseract + Tesseract 可执行文件
+        - 如果没装，也返回降级提示（让视觉模型自己看 base64 图）
+        """
+        try:
+            import base64
+            import io
+            png_bytes = base64.b64decode(image_b64)
+            from PIL import Image
+            img = Image.open(io.BytesIO(png_bytes))
+
+            try:
+                import pytesseract  # type: ignore
+                text = pytesseract.image_to_string(img, lang="chi_sim+eng")
+                return {"ok": True, "text": text.strip(), "via": "pytesseract"}
+            except ImportError:
+                return {
+                    "ok": True,
+                    "text": "",
+                    "via": "ocr-not-installed",
+                    "hint": "pytesseract 未安装。视觉模型可直接看 base64 图；非视觉模型可先装 pip install pytesseract 并安装 Tesseract 可执行文件。",
+                }
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": f"OCR 失败: {exc}"}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"OCR 预处理失败: {exc}"}
 
     # ---------------- 插件 / 工具 热插拔 ----------------
     def plugins_snapshot(self) -> Dict[str, Any]:

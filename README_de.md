@@ -1,7 +1,7 @@
 # Tuan-CLI
 
 > **„Model + Harness = Agent."** — Trenne „wie denken" von „wie sicher ausführen" und bekomm beide Schlüssel.
-> Ein sicherheitsorientiertes, modellneutrales, rein-python Agent-Harness. `v0.3.1` · MIT · Python ≥ 3.10
+> Ein sicherheitsorientiertes, modellneutrales, rein-python Agent-Harness. `v0.3.3` · MIT · Python ≥ 3.10
 
 > ### Positionierung: ein Sicherheits-agent — ohne Entwickler-Erlebnis zu opfern
 >
@@ -10,7 +10,7 @@
 > - **Sicherheit zuerst**: Gefährliche Befehle werden *vor* ihrem Lauf blockiert (Wirkradius-Vorschau → harte Redline → mehrstufige Bestätigung). Jeder Write läuft durch ein transaktionales Hauptbuch, damit `/undo` exakt zurückrollen kann.
 > - **Sicherheitssemantik**: YOLO/`--yolo` genehmigt automatisch Aktionen, die normalerweise eine Bestätigung erfordern, umgeht aber **keine** harten Redlines. `--isolation` bietet Isolation auf Engine-/Prozessebene, um den Wirkungsradius und die Ausbreitung von Fehlern zu begrenzen; es ist **keine** vollständige Betriebssystem-Sandbox und ersetzt nicht die Befehlsfreigabe.
 > - **Entwickler-Erlebnis bleibt erhalten**: Datei-Lesen/Schreiben, routinemäßige `git`-Operationen, Paketinstallationen, Testläufe und Linter werden mit `none` bewertet — **keine Bestätigung, kein Blockieren** (`safety_engine.is_benign_dev_command`). Nur wirklich gefährliche Aktionen werden zu Rat oder Blockade.
-> - **Reproduzierbare Messwerte**: Unser Ziel ist„weniger gefährliche Befehle schlupfen durch, weniger harmlose Befehle nerven", und jede Zahl, die wir veröffentlichen, **muss von Dritten reproduzierbar sein** — keine unverifizierbaren Absolutversprechen. Benchmarks liegen in [`bench/`](bench/README.md): 10k adversariale bash/generic Samples + 5k PowerShell Samples + 2.310 handgemachte Bypass-Payloads (mit Consequence-Level-Disaster-Assertions). **Ein Befehl, `tuan safe bench`, reproduziert alles lokal** (kein Netz, kein Modell); `tuan safe report` erzeugt einen selbständigen HTML-Sicherheitsreport. Gemessen am aktuellen Code (2026-09): adversarial 10k → block recall 100 % / flag recall 100 % / false-positive 1,87 % / bypass 0; PowerShell 5k → accuracy 100 % / misses 0 / false positives 0; bypass matrix 2.310 payloads → bypass 0 / false positive 1 / disaster-intent classes 100 % blockiert. Einige bewusst fail-closed-konservative Eskalationen bleiben (z. B. `nc`-Port-Probes, `tar|ssh`-exfil-geformte Payloads) und erklären die False-Positive-Zahlen; bitte lokal nachlaufen.
+> - **Reproduzierbare Messwerte**: Unser Ziel ist„weniger gefährliche Befehle schlupfen durch, weniger harmlose Befehle nerven", und jede Zahl, die wir veröffentlichen, **muss von Dritten reproduzierbar sein** — keine unverifizierbaren Absolutversprechen. Benchmarks liegen in [`bench/`](bench/README.md): 10k adversariale bash/generic Samples + 5k PowerShell Samples + 2.321 handgemachte Bypass-Payloads (mit Consequence-Level-Disaster-Assertions). **Ein Befehl, `tuan safe bench`, reproduziert alles lokal** (kein Netz, kein Modell); `tuan safe report` erzeugt einen selbständigen HTML-Sicherheitsreport. Gemessen am aktuellen Code (2026-10): adversarial 10k → block recall 100 % / flag recall 100 % / false-positive 0,09 % (1) / bypass 0; PowerShell 5k → accuracy 100 % / misses 0 / false positives 0; bypass matrix 2.321 payloads → bypass 0 / false positive 1 / disaster-intent classes 100 % blockiert. Einige bewusst fail-closed-konservative Eskalationen bleiben (z. B. `nc`-Port-Probes, `tar|ssh`-exfil-geformte Payloads) und erklären die False-Positive-Zahlen; bitte lokal nachlaufen.
 > - **Ökosystem-Interop**: Wir bauen keine Ökosysteme neu — wir **wiederverwenden, was Claude Code / Hermes Agent auf dieser Maschine schon angesammelt haben** (Skills, benannte Agents, Memory, SOUL-Persona, MCP-Configs). `tuan ecosystem` bewegt Assets in beide Richtungen in einem Befehl; `tuan ecosystem link` mountet tuan über MCP zurück hinein. Ein Harness, drei Ökosysteme an Assets.
 
 **Sprache/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · **Deutsch** · [Русский](README_ru.md)
@@ -90,7 +90,7 @@ class MyTool(Plugin):
 
 | Versionssemantik | Bedeutung |
 |---|---|
-| `0.3.1` (aktuell) | **API noch nicht eingefroren**: `0.x` erlaubt Breaking-Anpassungen, angekündigt mit Migrationshinweisen; keine Rückwärtskompatibilität zugesagt |
+| `0.3.3` (aktuell) | **API noch nicht eingefroren**: `0.x` erlaubt Breaking-Anpassungen, angekündigt mit Migrationshinweisen; keine Rückwärtskompatibilität zugesagt |
 | `1.0` (reserviert) | Wird aktiviert, sobald die öffentliche API eingefroren ist und Rückwärtskompatibilität zugesagt wird; erst dann heben Breaking Changes MAJOR (`2.0`) |
 
 **Hinweis zur Git-Historie (Open-Source-Transparenz):** Die Commit-Historie dieses Repositories wurde **am 2026-09-26 bewusst neu aufgebaut — die frühere Commit-Historie wurde vom Autor absichtlich überschrieben**; die Entwicklung vor diesem Datum ist nicht mehr erhalten. Der aktuelle Code ist von der Architektur bis zur Implementierung vollständig prüfbar; für die Funktionsentwicklung vor 2026-09-26 stützen Sie sich bitte auf die Versionsaufzeichnungen in [CHANGELOG.md](CHANGELOG.md) (die Versionsdisziplin ist nicht betroffen). Wir entscheiden uns, dies offen darzulegen — ohne Beschönigung, ohne Verstecken.
@@ -199,7 +199,7 @@ Regeln lösen immer `deny > ask > allow`. Whitelist mit `tuan safe allow <cmd>`;
 
 - **Adversarial-Korpus** `bench/safety_bench_10k.py` — 10.000 bash/generic Befehle (seeded 20260906, reproduzierbar); meldet block recall / flag recall / False-Positive-Rate / Bypasses.
 - **PowerShell-Korpus** `bench/bench_powershell_safety.py` — 5.000 Samples (2.300 gefährlich / 2.700 harmlos); meldet accuracy / misses / False-Positives.
-- **Bypass-Matrix** `bench/bypass_matrix.py` — 2.310 handgemachte adversariale Payloads; über Pattern-Matching hinaus assertet **pro Disaster-Consequence-Klasse**, ob jede Klasse katastrophaler Absicht tatsächlich blockiert wurde.
+- **Bypass-Matrix** `bench/bypass_matrix.py` — 2.321 handgemachte adversariale Payloads; über Pattern-Matching hinaus assertet **pro Disaster-Consequence-Klasse**, ob jede Klasse katastrophaler Absicht tatsächlich blockiert wurde.
 
 ```bash
 tuan safe bench                 # voller Lauf (~3 Min)
@@ -209,15 +209,15 @@ tuan safe report                # selbständiger HTML-Sicherheitsreport (teilbar
 tuan safe report --release      # RELEASE: Zahlen + Zeitstempel + Git-Commit gebunden (keine alten Zahlen)
 ```
 
-Gemessen am aktuellen Code (2026-09-19, reproduzierbar via `tuan safe bench`):
+Gemessen am aktuellen Code (2026-10-25, reproduzierbar via `tuan safe bench`):
 
 | Suite | Größe | Kernmetrik | Bypasses | False-Positives |
 |---|---|---|---|---|
-| Adversarial | 10.000 | block recall 100 % · flag recall 100 % · FP 1,87 % | 0 | — |
+| Adversarial | 10.000 | block recall 100 % · flag recall 100 % · FP 0,09 % (1) | 0 | — |
 | PowerShell | 5.000 | accuracy 100 % · misses 0 | 0 | 0 |
-| Bypass-Matrix | 2.310 | disaster-intent classes 100 % blockiert | 0 | 1 |
+| Bypass-Matrix | 2.321 | disaster-intent classes 100 % blockiert | 0 | 1 |
 
-Caveat: die Bypass-Matrix ist bewusst fail-closed und behält ein paar konservative Eskalationen (`nc` Unicode-Variante-Probes, `tar|ssh`-exfil-geformte Payloads), die „harmlos-aber-flagged" False-Positives erzeugen; die 1,87 % FP in der Adversarial-Suite stammen vom selben Konservatismus. Zahlen gelten als autoritativ, wenn lokal mit `tuan safe bench` nachgelaufen.
+Caveat: die Bypass-Matrix ist bewusst fail-closed und behält ein paar konservative Eskalationen (`nc` Unicode-Variante-Probes, `tar|ssh`-exfil-geformte Payloads), die „harmlos-aber-flagged" False-Positives erzeugen; die 0,09 % (1) FP in der Adversarial-Suite stammen vom selben Konservatismus. Zahlen gelten als autoritativ, wenn lokal mit `tuan safe bench` nachgelaufen.
 
 **CI-Zahlen-Gate**: der `safety-benchmarks`-Job in `.github/workflows/security-ci.yml` läuft alle drei Suiten bei jedem Push durch und vergleicht gegen das eingecommittede Archiv — jede Regression (Bypasses, eine Disaster-Klasse wird nicht mehr komplett blockiert, ein deutlicher FP-Anstieg) **lässt CI failen**. Das Archiv `bench/security-bench.json` entspricht 1:1 der README-Tabelle.
 
@@ -260,7 +260,7 @@ tuan --print run "Hallo. Eine Zeile." # Smoke
 ```
 
 - **i18n-Disziplin**: README_zh-CN ist die maßgebliche Master-Version; jede Sprache ist eine lebendige, driftfreie Lokalisierung — **keine maschinelle Übersetzung.**
-- **Version**: `v0.3.1` (eine `0.x`-Linie — die API ist noch nicht eingefroren); Breaking-Anpassungen mit Vorankündigung + Migrationshinweisen, `1.0` ist für den API-Freeze reserviert.
+- **Version**: `v0.3.3` (eine `0.x`-Linie — die API ist noch nicht eingefroren); Breaking-Anpassungen mit Vorankündigung + Migrationshinweisen, `1.0` ist für den API-Freeze reserviert.
 - **Tiefgang**: Engine-Signaturen und ein Schritt-für-Schritt-Tool-Walkthrough stehen im Anhang von `README_zh-CN.md`.
 
 ---

@@ -303,7 +303,9 @@ def cmd_chat(args) -> int:
             def on_reason(delta: str) -> None:
                 tui.stream_reason(delta)
             def on_error(message: str) -> None:
-                tui.append_log(f"[错误] {message}")
+                # 已是 C-2 友好模板 (❌ 开头) 则原样展示, 避免 "[错误] ❌" 双重前缀
+                text = message if message.lstrip().startswith("❌") else f"[错误] {message}"
+                tui.append_log(text)
                 tui.audit("warning", f"[错误] {message}")
                 tui.end_any_tool()
             answer = agent.run(

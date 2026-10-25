@@ -400,7 +400,9 @@ def cmd_run(args) -> int:
     on_tool_result = emitter.on_tool_result if emitter else None
 
     def on_error(msg: str) -> None:
-        _err(f"[模型错误] {msg}")
+        # 已是 C-2 友好模板 (❌ 开头, 由 agent 层渲染) 则原样输出,
+        # 避免 "[模型错误] ❌ ..." 双重前缀; 其余维持旧前缀。
+        _err(msg if msg.lstrip().startswith("❌") else f"[模型错误] {msg}")
 
     json_schema_spec = getattr(args, "json_schema", None)
     if json_schema_spec:

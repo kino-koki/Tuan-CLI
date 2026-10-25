@@ -142,21 +142,24 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         # (大上下文读 SOUL_FULL.md, 小上下文读 SOUL_COMPACT.md)。
         self._soul_tier = self._resolve_soul_tier()
 
-        # 大上下文: 把代码库地图钉进系统提示 (延迟构建, 避免启动被 Ctrl+C 打断)。
-        # 是否钉地图由 ``context.pin_codebase`` 单独决定 —— 提示词分层只管「注入多少」,
-        # 不越权决定「注入什么」, 避免用户没意识到提示词里少了一整块。
-        codebase_map_text = ""
-        if indexer is not None and config.get("context.pin_codebase", True):
-            try:
-                codebase_map_text = indexer.build().map_text()
-            except KeyboardInterrupt:
-                # 用户想取消初始化, 优雅退出而非 Traceback
-                codebase_map_text = ""
-            except Exception as exc:  # noqa: BLE001
-                log.debug("codebase 地图构建失败, 系统提示不含地图: %s", exc)
-                codebase_map_text = ""
+        # 大上下文: 把代码库地图钉进系统提示。
+        # 索引构建 (os.walk + 逐文件 LOC 统计) 在大型仓库可达数秒, 同步做会卡死启动
+        # (曾导致 `tuan run` 全程多等 4~5s, 即便缺 API Key 立即失败也要先走完扫描)。
+        # 改为后台线程构建: 启动不阻塞; 交互会话中用户尚未发首条消息时构建完成,
+        # 自动用「含地图」版本补建一次系统提示 (首轮开始前); 一次性 headless 任务则
+        # 降级为不含地图, 功能无损 (地图仅为上下文增强, 且 find 工具仍可用)。
+        self._codebase_map = ""
+        self._turn_started = False
+        self._index_thread: Optional[threading.Thread] = None
+        self._indexer = (
+            indexer if (indexer is not None and config.get("context.pin_codebase", True)) else None
+        )
+        if self._indexer is not None:
+            self._index_thread = threading.Thread(
+                target=self._build_codebase_map_bg, daemon=True, name="codebase-index"
+            )
+            self._index_thread.start()
 
-        self._codebase_map = codebase_map_text
         self._system_prompt = self._build_system(task_hint="")
 
         # 上下文优先级管理器
@@ -296,6 +299,40 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         if self.system_extra:
             prompt += "\n\n" + self.system_extra
         return prompt
+
+    def _build_codebase_map_bg(self) -> None:
+        """后台线程: 构建代码库地图, 完成后用「含地图」版本补建系统提示。
+
+        仅在首轮尚未开始 (用户还在想/输入) 时补建 —— 交互会话中这段时间足够
+        线程跑完, 地图照样钉进系统提示; 若首轮已启动 (headless 一次性任务), 则
+        不补建, 避免并发改写正在使用的 _system_prompt。
+        """
+        try:
+            if self._indexer is not None:
+                self._codebase_map = self._indexer.build().map_text()
+        except Exception as exc:  # noqa: BLE001
+            log.debug("codebase 地图后台构建失败, 系统提示不含地图: %s", exc)
+            self._codebase_map = ""
+        if not self._turn_started:
+            try:
+                self._system_prompt = self._build_system(task_hint="")
+            except Exception as exc:  # noqa: BLE001
+                log.debug("含地图系统提示补建失败 (沿用基础版): %s", exc)
+
+    def await_codebase_index(self, timeout: float = 0.0) -> None:
+        """等待后台代码库索引完成 (最多 ``timeout`` 秒), 完成后用含地图版补建系统提示。
+
+        首轮开始前调用: 交互会话中 init 与首条消息之间有用户输入间隔, 索引通常
+        早已完成, 这里几乎不阻塞; 超大仓库首条消息极快时以 timeout 为上限,
+        避免启动被拖慢。若首轮已启动 (``_turn_started``), 不再补建, 防止并发改写。
+        """
+        if self._index_thread is not None and self._index_thread.is_alive():
+            self._index_thread.join(timeout=timeout)
+        if self._codebase_map and not self._turn_started:
+            try:
+                self._system_prompt = self._build_system(task_hint="")
+            except Exception as exc:  # noqa: BLE001
+                log.debug("含地图系统提示补建失败 (沿用基础版): %s", exc)
 
     # ------------------------------------------------------------ 会话事件流
 
@@ -834,6 +871,11 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         session_id: 若提供, 本轮写入独立的 SessionStore 文件 (便于 tuan replay 逐会话回放);
         否则复用进程级共享的 session_store。
         """
+        # 首轮开始前: 等后台代码库索引 (最多 0.3s) 把地图补进系统提示。
+        # 交互会话中用户思考/输入期间索引早已完成, 这里几乎不阻塞;
+        # 超大仓库首条消息极快时地图可能缺席本轮 (降级, 非正确性)。
+        self.await_codebase_index(timeout=0.3)
+        self._turn_started = True
         self.clear_cancel()
 
         # ---- 可插拔 Loop: 有 LoopProvider 时委托执行 ----
@@ -946,9 +988,16 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
                     stream=stream, on_token=on_token, on_reason=on_reason,
                 )
             except Exception as exc:  # noqa: BLE001
-                err_msg = f"[模型错误] {exc}"
+                # 业务错误 (C-2: 缺 Key/配置损坏/模型不存在) 渲染固定模板给用户;
+                # 其余异常保留原始信息。协议不变: answer 仍以 [模型错误] 开头
+                # (后台 worker / 会话记录依赖该前缀)。
+                from .errors import friendly_for
+                tmpl = friendly_for(exc)
                 if on_error:
-                    on_error(str(exc))
+                    on_error(tmpl.render() if tmpl else str(exc))
+                else:
+                    log.error("模型调用失败: %s", exc)
+                err_msg = f"[模型错误] {exc}"
                 answer = err_msg
                 break
 
