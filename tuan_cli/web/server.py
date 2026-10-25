@@ -1297,26 +1297,79 @@ class WebServer:
             return {"ok": False, "error": "instruction 必填"}
         timeout = max(10, min(timeout, 600))  # 10s ~ 10min
         try:
-            # 构建一个独立的 kernel + agent，带上指定的 skills
-            from ..core.agent import Agent
+            # 与 tools/subagent_tool.py 的同步子代理路径保持同一套契约:
+            #   _resolve_subagent_params -> (excluded, system_extra)
+            #   create_agent(kernel, workspace, exclude_tools=..., system_extra=...)
+            from ..app import create_agent
             from ..tools.subagent_tool import _resolve_subagent_params
 
-            ctx = type("FakeCtx", (), {"kernel": self.kernel})()
-            excluded, agent_spec = _resolve_subagent_params(
-                ctx, instruction, agent=agent, skills=tuple(skills),
-                exclude_tools=tuple(exclude_tools),
+            cfg = self.kernel.require("config")
+            workspace = self.workspace or "."
+            ctx = type("FakeCtx", (), {"kernel": self.kernel, "workspace": workspace})()
+            excluded, system_extra = _resolve_subagent_params(
+                ctx,
+                instruction,
+                exclude_tools=",".join(t.strip() for t in (exclude_tools or []) if t and t.strip()),
+                name=agent,  # Web 参数 agent -> 子代理参数 name
+            )
+            if agent and not system_extra:
+                return {"ok": False, "error": f"未找到命名 agent: {agent}"}
+
+            # 创建隔离的子代理 (独立上下文, 不污染主会话)
+            sub_agent = create_agent(
+                self.kernel,
+                workspace,
+                exclude_tools=tuple(excluded),
+                system_extra=system_extra,
             )
 
-            # 创建临时 Agent 运行子任务
-            cfg = self.kernel.require("config")
-            temp_agent = Agent(
-                config=cfg,
-                kernel=self.kernel,
-                system_extra=getattr(agent_spec, "system_extra", ""),
-                exclude_tools=excluded,
-            )
-            result = temp_agent.run(instruction, max_steps=30, timeout=timeout)
-            return {"ok": True, "result": str(result)[:8000]}
+            # 预加载技能 (与子代理工具的同步路径一致)
+            sm = self.kernel.get("skill_manager")
+            for sname in [s.strip() for s in (skills or []) if s.strip()]:
+                try:
+                    skill = sm.load(sname) if sm is not None else None
+                    if skill:
+                        content = sm.render_for_prompt([skill], full_body=True)
+                        if content:
+                            sub_agent.messages.append({
+                                "role": "user",
+                                "content": f"[已加载技能: {sname}]\n{content}",
+                            })
+                            sub_agent.messages.append({
+                                "role": "assistant",
+                                "content": f"已加载技能 {sname}, 继续任务。",
+                            })
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # Agent.run 没有独立 timeout 参数 → 独立线程 + 硬超时
+            box: Dict[str, Any] = {}
+
+            def _work() -> None:
+                try:
+                    box["answer"] = sub_agent.run(
+                        instruction,
+                        stream=False,
+                        max_iterations=cfg.get("agent.subagent_max_iterations", 15),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    box["error"] = f"{type(exc).__name__}: {exc}"
+
+            th = threading.Thread(target=_work, name="web-dispatch-agent", daemon=True)
+            th.start()
+            th.join(timeout)
+            if th.is_alive():
+                return {
+                    "ok": False,
+                    "error": f"子代理执行超时 ({timeout}s), 请缩小任务范围或调大 timeout",
+                }
+            if "error" in box:
+                return {"ok": False, "error": str(box["error"])}
+
+            answer = str(box.get("answer") or "(子代理未产生输出)")
+            if len(answer) > 8000:
+                answer = answer[:8000] + f"\n...[摘要截断, 完整输出 {len(answer)} 字符]"
+            return {"ok": True, "result": answer}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
 

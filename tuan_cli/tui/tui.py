@@ -123,7 +123,7 @@ try:
     from .. import __version__  # pyproject.toml 的真实版本
     VERSION = f"v{__version__}"
 except Exception:  # noqa: BLE001
-    VERSION = "v0.3.1"
+    VERSION = "v0.3.3"
 
 #: TUI 启动时写入的终端窗口/标签标题 (Windows Terminal 标签页 / ConHost 标题栏)。
 #: 环境变量 TUAN_TERMINAL_TITLE 可覆盖 (留空则不修改标题)。
