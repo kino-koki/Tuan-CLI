@@ -32,18 +32,38 @@ import {
   Zap,
   LayoutGrid,
   MessageCircle,
-  Users,
-  CodeXml,
   Volume2,
   Play,
+  Bell,
+  ShieldAlert,
+  FlaskConical,
+  Cpu,
+  MonitorSmartphone,
+  Leaf,
+  Type,
+  Code2,
+  RotateCcw,
 } from 'lucide-react';
 import type { ApiFormat, CatalogProvider, Provider } from '../types';
 import { invoke } from '@tauri-apps/api/core';
 import { MODES, type ModeId } from '../platform/modes';
 import { probeModels } from '../platform/engine';
 import BrandMark from './BrandMark';
-import { uid, store } from '../store/config';
 import {
+  uid,
+  store,
+  applyAppearance,
+  requestOnboardingReopen,
+  type ThemeMode,
+  type AccentId,
+  type PaletteId,
+  type FontSizeId,
+  type MascotId,
+  type SecurityLevel,
+} from '../store/config';
+import { MASCOTS } from '../platform/mascots';
+import {
+  TTS_ENGINE_URL,
   TTS_LANGUAGES,
   TTS_VOICE_FALLBACK,
   speakWithSettings,
@@ -61,7 +81,7 @@ interface Props {
   theme: 'light' | 'dark';
   onThemeChange: (t: 'light' | 'dark') => void;
   onClearConversations: () => void;
-  /** 五模式：闲聊 / 协同 / 灵码 / 感通 / 无界 */
+  /** 三档权限模式：标准 / 只读 / 无界 */
   mode: ModeId;
   onModeChange: (m: ModeId) => void;
   /** 引擎状态（启动时 check_engine 结果） */
@@ -86,24 +106,36 @@ const EMPTY: Provider = {
 
 const TIER_LABEL: Record<string, string> = { free: '免费', cheap: '低价', standard: '付费' };
 
-type SettingTab = 'general' | 'mode' | 'appearance' | 'providers' | 'memory' | 'about';
+type SettingTab =
+  | 'general'
+  | 'mode'
+  | 'appearance'
+  | 'model'
+  | 'security'
+  | 'notify'
+  | 'lab'
+  | 'providers'
+  | 'memory'
+  | 'about';
 
 const TABS: { key: SettingTab; label: string; icon: typeof Settings }[] = [
   { key: 'general', label: '通用', icon: SlidersHorizontal },
-  { key: 'mode', label: '模式', icon: LayoutGrid },
   { key: 'appearance', label: '外观', icon: Palette },
+  { key: 'model', label: '模型', icon: Cpu },
+  { key: 'security', label: '安全', icon: ShieldAlert },
+  { key: 'notify', label: '通知', icon: Bell },
+  { key: 'lab', label: '实验', icon: FlaskConical },
+  { key: 'mode', label: '模式', icon: LayoutGrid },
   { key: 'providers', label: '供应商', icon: Server },
   { key: 'memory', label: '记忆', icon: HardDrive },
   { key: 'about', label: '关于', icon: Info },
 ];
 
-/** 五模式 → 图标映射：与 modes.ts 的 ModeId 一一对应 */
+/** 三档权限模式 → 图标映射：与 modes.ts 的 ModeId 一一对应 */
 const MODE_ICONS: Record<ModeId, typeof Settings> = {
-  chat: MessageCircle,
-  collaboration: Users,
-  lingma: CodeXml,
-  gantong: Palette,
-  boundless: Globe,
+  auto: MessageCircle,
+  plan: Eye,
+  yolo: Globe,
 };
 
 /** 信息行：图标 + 标题 + 说明（引擎/隐私模块共用） */
@@ -165,6 +197,166 @@ export default function SettingsPage({
   const [ttsCustomFile, setTtsCustomFile] = useState<File | null>(null);
   const [ttsCustomBusy, setTtsCustomBusy] = useState(false);
   const [ttsCustomMsg, setTtsCustomMsg] = useState('');
+
+  // ===== T-7 外观系统本地状态（持久化见 store/config.ts） =====
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => store.themeMode());
+  const [palette, setPalette] = useState<PaletteId>(() => store.palette());
+  const [accent, setAccent] = useState<AccentId>(() => store.accent());
+  const [fontSize, setFontSize] = useState<FontSizeId>(() => store.fontSize());
+  const [codeMono, setCodeMono] = useState<boolean>(() => store.codeMono());
+  const [mascot, setMascot] = useState<MascotId>(() => store.mascot());
+  // ===== T-2.3 安全组 =====
+  const [securityLevel, setSecurityLevel] = useState<SecurityLevel>(() => store.securityLevel());
+  // ===== T-2.4 / T-5.4 通知组 =====
+  const [notifyEnabled, setNotifyEnabled] = useState<boolean>(() => store.notifyEnabled());
+  const [notifySound, setNotifySound] = useState<boolean>(() => store.notifySound());
+  const [dndEnabled, setDndEnabled] = useState<boolean>(() => store.dndEnabled());
+  const [dndStart, setDndStart] = useState<string>(() => store.dndStart());
+  const [dndEnd, setDndEnd] = useState<string>(() => store.dndEnd());
+  const [budgetThreshold, setBudgetThreshold] = useState<number>(() => store.budgetThreshold());
+  // ===== T-2.2 模型组 =====
+  const [providerId, setProviderId] = useState<string>(() => store.providerId());
+  const [model, setModel] = useState<string>(() => store.model());
+  const [temperature, setTemperature] = useState<number>(() => store.temperature());
+  // ===== T-2.5 实验组 =====
+  const [labTtsPreview, setLabTtsPreview] = useState<boolean>(() => store.labTtsPreview());
+  const [offlineMode, setOfflineMode] = useState<boolean>(() => store.offlineMode());
+  // 「重新打开引导」后的本地提示
+  const [reopenHint, setReopenHint] = useState('');
+
+  /** T-2.6 引擎侧 /api/settings 同步：防抖 POST；失败静默降级，本地 localStorage 不受影响 */
+  let syncTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleEngineSync = () => {
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => {
+      const payload = {
+        themeMode: store.themeMode(),
+        palette: store.palette(),
+        accent: store.accent(),
+        fontSize: store.fontSize(),
+        mascot: store.mascot(),
+        securityLevel: store.securityLevel(),
+        notify: {
+          enabled: store.notifyEnabled(),
+          sound: store.notifySound(),
+          dnd: { enabled: store.dndEnabled(), start: store.dndStart(), end: store.dndEnd() },
+        },
+        budgetThreshold: store.budgetThreshold(),
+        providerId: store.providerId(),
+        model: store.model(),
+        temperature: store.temperature(),
+        offlineMode: store.offlineMode(),
+      };
+      fetch(`${TTS_ENGINE_URL}/api/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {}); // 引擎未就绪 / 接口未上线时静默忽略
+    }, 400);
+  };
+
+  // ===== 外观变更：持久化 + 即时应用 + 引擎同步 =====
+  const changeThemeMode = (m: ThemeMode) => {
+    store.saveThemeMode(m);
+    setThemeMode(m);
+    applyAppearance();
+    scheduleEngineSync();
+  };
+  const changePalette = (p: PaletteId) => {
+    store.savePalette(p);
+    setPalette(p);
+    applyAppearance();
+    scheduleEngineSync();
+  };
+  const changeAccent = (a: AccentId) => {
+    store.saveAccent(a);
+    setAccent(a);
+    applyAppearance();
+    scheduleEngineSync();
+  };
+  const changeFontSize = (f: FontSizeId) => {
+    store.saveFontSize(f);
+    setFontSize(f);
+    applyAppearance();
+    scheduleEngineSync();
+  };
+  const changeCodeMono = (v: boolean) => {
+    store.saveCodeMono(v);
+    setCodeMono(v);
+    applyAppearance();
+  };
+  const changeMascot = (m: MascotId) => {
+    store.saveMascot(m);
+    setMascot(m);
+    scheduleEngineSync();
+  };
+  const changeSecurityLevel = (l: SecurityLevel) => {
+    store.saveSecurityLevel(l);
+    setSecurityLevel(l);
+    // 切到严格模式时明确告知「无界」将被禁用
+    if (l === 'strict') {
+      window.alert('已切换到严格安全模式：「无界」模式将被禁用，直到调回标准或宽松。');
+    }
+    scheduleEngineSync();
+  };
+  // ===== 通知组变更 =====
+  const changeNotifyEnabled = (v: boolean) => {
+    store.saveNotifyEnabled(v);
+    setNotifyEnabled(v);
+    scheduleEngineSync();
+  };
+  const changeNotifySound = (v: boolean) => {
+    store.saveNotifySound(v);
+    setNotifySound(v);
+    scheduleEngineSync();
+  };
+  const changeDndEnabled = (v: boolean) => {
+    store.saveDndEnabled(v);
+    setDndEnabled(v);
+    scheduleEngineSync();
+  };
+  const changeDndStart = (v: string) => {
+    store.saveDndStart(v);
+    setDndStart(v);
+    scheduleEngineSync();
+  };
+  const changeDndEnd = (v: string) => {
+    store.saveDndEnd(v);
+    setDndEnd(v);
+    scheduleEngineSync();
+  };
+  const changeBudgetThreshold = (n: number) => {
+    store.saveBudgetThreshold(n);
+    setBudgetThreshold(n);
+    scheduleEngineSync();
+  };
+  // ===== 模型组变更 =====
+  const changeProviderId = (v: string) => {
+    store.saveProviderId(v);
+    setProviderId(v);
+    scheduleEngineSync();
+  };
+  const changeModel = (v: string) => {
+    store.saveModel(v);
+    setModel(v);
+    scheduleEngineSync();
+  };
+  const changeTemperature = (n: number) => {
+    store.saveTemperature(n);
+    setTemperature(n);
+    scheduleEngineSync();
+  };
+  // ===== 实验组变更 =====
+  const changeLabTtsPreview = (v: boolean) => {
+    store.saveLabTtsPreview(v);
+    setLabTtsPreview(v);
+    scheduleEngineSync();
+  };
+  const changeOfflineMode = (v: boolean) => {
+    store.saveOfflineMode(v);
+    setOfflineMode(v);
+    scheduleEngineSync();
+  };
 
   const refreshTtsStatus = () => {
     ttsStatus().then(setTtsStatusData).catch(() => setTtsStatusData(null));
@@ -485,6 +677,26 @@ export default function SettingsPage({
                 </div>
               </div>
 
+              {/* T-1.4 引导教程：跳过后可在此重新打开 */}
+              <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">引导教程</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">
+                  首次运行时的动手式引导；跳过后可随时从这里重新打开，完成状态会持久保存。
+                </p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button
+                    onClick={() => {
+                      requestOnboardingReopen();
+                      setReopenHint('已请求重新打开引导；若向导未立即弹出，下次启动将自动出现。');
+                    }}
+                    className="cc-btn-ghost px-4 py-2 text-[13px] inline-flex items-center gap-1.5"
+                  >
+                    <RotateCcw size={15} /> 重新打开引导
+                  </button>
+                  {reopenHint && <span className="text-[12px] text-tuan-textSecondary">{reopenHint}</span>}
+                </div>
+              </div>
+
               {/* 本地语音播报（MOSS-TTS-Nano，完全本地） */}
               <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
                 <h2 className="text-[15px] font-semibold text-tuan-text mb-1">语音播报</h2>
@@ -596,10 +808,7 @@ export default function SettingsPage({
                 {/* 专属音色注册（用户自有 / 有授权音频） */}
                 <div className="mt-3 rounded-xl border border-tuan-border p-3">
                   <div className="text-[13px] font-medium text-tuan-text">专属音色</div>
-                  <div className="text-[11.5px] text-tuan-textSecondary mt-0.5 mb-2">
-                    用自己录制或有使用授权的音频注册专属音色（真人明星音色不支持爬取克隆）。
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2 mt-2">
                     <input
                       value={ttsCustomName}
                       onChange={(e) => setTtsCustomName(e.target.value)}
@@ -635,19 +844,22 @@ export default function SettingsPage({
 
           {tab === 'mode' && (
             <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
-              <h2 className="text-[15px] font-semibold text-tuan-text mb-1">模式</h2>
+              <h2 className="text-[15px] font-semibold text-tuan-text mb-1">权限模式</h2>
               <p className="text-[12.5px] text-tuan-textSecondary mb-4">
-                选择助手的运行模式；模式决定可用工具、权限边界与风险等级。切换即时生效并持久保存。
+                三档权限模式决定可用工具、权限边界与风险等级；切换即时生效并持久保存。
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 [grid-auto-rows:minmax(0,1fr)]">
                 {MODES.map((m) => {
                   const Icon = MODE_ICONS[m.id];
                   const active = mode === m.id;
+                  // T-2.3 确认策略：严格安全模式下「无界」整体禁用（不可点选）
+                  const locked = m.id === 'yolo' && securityLevel === 'strict';
                   return (
                     <button
                       key={m.id}
-                      onClick={() => onModeChange(m.id)}
-                      className={`flex items-start gap-3 rounded-xl border p-3 text-left transition-colors ${active ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                      onClick={() => !locked && onModeChange(m.id)}
+                      disabled={locked}
+                      className={`flex items-start gap-3 rounded-xl border p-3 text-left transition-colors min-w-0 ${locked ? 'opacity-50 cursor-not-allowed border-tuan-border' : active ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
                     >
                       <span className="w-12 h-12 rounded-xl flex-none flex items-center justify-center bg-tuan-main border border-tuan-border">
                         <Icon size={20} className="text-tuan-text" />
@@ -659,50 +871,427 @@ export default function SettingsPage({
                         </span>
                         <span className="block text-[12px] text-tuan-textSecondary mt-1 leading-relaxed">{m.desc}</span>
                       </span>
-                      {active && <Check size={16} className="flex-none text-tuan-text mt-1" />}
+                      {locked && <ShieldAlert size={16} className="flex-none text-[var(--tuan-danger)] mt-1" />}
+                      {!locked && active && <Check size={16} className="flex-none text-tuan-text mt-1" />}
                     </button>
                   );
                 })}
               </div>
               <p className="mt-3 text-[12px] leading-relaxed text-tuan-textSecondary">
-                权限基调：{MODES.map((m) => `${m.name} ${m.level} ${m.badge}`).join('；')}。无界为桌面端功能，Android 端不可用。
+                权限基调：{MODES.map((m) => `${m.name} ${m.level} ${m.badge}`).join('；')}。无界为桌面端功能，Android 端不可用；
+                {securityLevel === 'strict'
+                  ? '当前为严格安全模式，「无界」已被确认策略整体禁用（见安全页）。'
+                  : '安全等级为严格时，「无界」会在此处禁用。'}
               </p>
             </div>
           )}
 
-          {tab === 'appearance' && (
-            <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
-              <h2 className="text-[15px] font-semibold text-tuan-text mb-1">主题</h2>
-              <p className="text-[12.5px] text-tuan-textSecondary mb-4">选择应用的明暗外观，切换即时生效并持久保存。</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* T-2.2 模型组：Provider 下拉 + 模型列表 + 温度滑块 */}
+          {tab === 'model' && (
+            <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input space-y-5">
+              <div>
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">默认模型</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">
+                  选择默认供应商与对话模型；在供应商页可编辑模型清单，此处复用同一选择器。
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[12.5px] text-tuan-textSecondary mb-1.5">供应商</label>
+                  <select
+                    value={providerId}
+                    onChange={(e) => changeProviderId(e.target.value)}
+                    className="w-full bg-tuan-main border border-tuan-border rounded-lg px-3 py-2 text-[13.5px] text-tuan-text outline-none focus:border-[var(--tuan-link)]"
+                  >
+                    <option value="">未选择</option>
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[12.5px] text-tuan-textSecondary mb-1.5">模型</label>
+                  <select
+                    value={model}
+                    onChange={(e) => changeModel(e.target.value)}
+                    className="w-full bg-tuan-main border border-tuan-border rounded-lg px-3 py-2 text-[13.5px] text-tuan-text outline-none focus:border-[var(--tuan-link)]"
+                  >
+                    <option value="">未选择</option>
+                    {(providers.find((p) => p.id === providerId)?.models ?? [])
+                      .filter((m) => m.enabled)
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>{m.name || m.id}</option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[12.5px] text-tuan-textSecondary mb-1.5">
+                  采样温度（{temperature.toFixed(1)}）——越高越发散，越低越确定
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={temperature}
+                  onChange={(e) => changeTemperature(parseFloat(e.target.value))}
+                  className="w-full accent-tuan-accent"
+                />
+                <div className="flex justify-between text-[11px] text-tuan-textSecondary mt-0.5">
+                  <span>0 严谨</span>
+                  <span>1 均衡</span>
+                  <span>2 发散</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* T-2.3 安全组：安全等级 + 确认策略 */}
+          {tab === 'security' && (
+            <div className="space-y-4">
+              <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">安全等级</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">
+                  作用于引擎安全闸门的松紧度；选择即时保存并同步引擎侧。
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {([
+                    { id: 'strict', name: '严格', desc: '高危一律拦截，宁可误拦也不放过；适合陌生任务。' },
+                    { id: 'standard', name: '标准', desc: '默认档：常规放行、危险确认，兼顾效率与安全。' },
+                    { id: 'loose', name: '宽松', desc: '只拦明确不可逆操作，其余自动放行；适合熟手。' },
+                  ] as { id: SecurityLevel; name: string; desc: string }[]).map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => changeSecurityLevel(s.id)}
+                      className={`flex flex-col items-start gap-2 rounded-xl border p-3 text-left transition-colors ${securityLevel === s.id ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                    >
+                      <span className="flex items-center gap-2 text-[13.5px] font-medium text-tuan-text">
+                        <ShieldAlert size={15} /> {s.name}
+                        {securityLevel === s.id && <Check size={14} className="text-tuan-text" />}
+                      </span>
+                      <span className="text-[12px] text-tuan-textSecondary leading-relaxed">{s.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">确认策略</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary leading-relaxed">
+                  严格模式下，权限模式页的「无界」整体禁用（卡片置灰不可点），直至安全等级调回标准或宽松。
+                  当前状态：
+                  {securityLevel === 'strict'
+                    ? '「无界」已禁用。'
+                    : '「无界」可用（切换到严格将立即禁用）。'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* T-2.4 / T-5.4 通知组：桌面通知 + 声音 + 免打扰 + 预算告警 */}
+          {tab === 'notify' && (
+            <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input space-y-4">
+              <div>
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">桌面通知</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">
+                  回复完成、授权请求与出错时的系统通知（由通知模块读取本组配置）。
+                </p>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-tuan-border p-3">
+                <span className="w-10 h-10 rounded-lg bg-tuan-hover flex-none flex items-center justify-center text-tuan-text">
+                  <Bell size={17} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13.5px] font-medium text-tuan-text">桌面通知</div>
+                  <div className="text-[12px] text-tuan-textSecondary">关键事件弹出系统通知</div>
+                </div>
                 <button
-                  onClick={() => onThemeChange('light')}
-                  className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${theme === 'light' ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                  onClick={() => changeNotifyEnabled(!notifyEnabled)}
+                  className={`${notifyEnabled ? 'cc-btn-primary' : 'cc-btn-ghost'} px-3 py-1.5 text-[13px] flex-shrink-0`}
                 >
-                  <span className="w-12 h-12 rounded-xl overflow-hidden flex-none flex items-center justify-center bg-tuan-main border border-tuan-border text-tuan-text">
-                    <Sun size={20} />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[13.5px] font-medium text-tuan-text">浅色</span>
-                    <span className="block text-[12px] text-tuan-textSecondary">暖米色明亮外观</span>
-                  </span>
-                  {theme === 'light' && <Check size={16} className="flex-none text-tuan-text" />}
+                  {notifyEnabled ? '已开启' : '已关闭'}
                 </button>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-tuan-border p-3">
+                <span className="w-10 h-10 rounded-lg bg-tuan-hover flex-none flex items-center justify-center text-tuan-text">
+                  <Volume2 size={17} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13.5px] font-medium text-tuan-text">提示音</div>
+                  <div className="text-[12px] text-tuan-textSecondary">通知到达时伴随一声轻提示</div>
+                </div>
                 <button
-                  onClick={() => onThemeChange('dark')}
-                  className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${theme === 'dark' ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                  onClick={() => changeNotifySound(!notifySound)}
+                  className={`${notifySound ? 'cc-btn-primary' : 'cc-btn-ghost'} px-3 py-1.5 text-[13px] flex-shrink-0`}
                 >
-                  <span className="w-12 h-12 rounded-xl overflow-hidden flex-none flex items-center justify-center bg-[#26251f] border border-tuan-border text-[#ece9e2]">
-                    <Moon size={20} />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[13.5px] font-medium text-tuan-text">深色</span>
-                    <span className="block text-[12px] text-tuan-textSecondary">暖炭色夜间外观</span>
-                  </span>
-                  {theme === 'dark' && <Check size={16} className="flex-none text-tuan-text" />}
+                  {notifySound ? '已开启' : '已关闭'}
+                </button>
+              </div>
+              {/* 免打扰时段 */}
+              <div className="rounded-xl border border-tuan-border p-3 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] font-medium text-tuan-text">免打扰时段</div>
+                    <div className="text-[12px] text-tuan-textSecondary">时段内不弹通知、不响提示音</div>
+                  </div>
+                  <button
+                    onClick={() => changeDndEnabled(!dndEnabled)}
+                    className={`${dndEnabled ? 'cc-btn-primary' : 'cc-btn-ghost'} px-3 py-1.5 text-[13px] flex-shrink-0`}
+                  >
+                    {dndEnabled ? '已开启' : '已关闭'}
+                  </button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[12.5px] text-tuan-textSecondary">从</span>
+                  <input
+                    type="time"
+                    value={dndStart}
+                    onChange={(e) => changeDndStart(e.target.value)}
+                    className="bg-tuan-main border border-tuan-border rounded-lg px-2.5 py-1.5 text-[13px] text-tuan-text outline-none"
+                  />
+                  <span className="text-[12.5px] text-tuan-textSecondary">到</span>
+                  <input
+                    type="time"
+                    value={dndEnd}
+                    onChange={(e) => changeDndEnd(e.target.value)}
+                    className="bg-tuan-main border border-tuan-border rounded-lg px-2.5 py-1.5 text-[13px] text-tuan-text outline-none"
+                  />
+                </div>
+              </div>
+              {/* 预算告警阈值 */}
+              <div>
+                <label className="block text-[12.5px] text-tuan-textSecondary mb-1.5">
+                  上下文预算告警阈值（{budgetThreshold}%）——占用超过该比例时发出通知
+                </label>
+                <input
+                  type="range"
+                  min={50}
+                  max={100}
+                  step={5}
+                  value={budgetThreshold}
+                  onChange={(e) => changeBudgetThreshold(parseInt(e.target.value, 10))}
+                  className="w-full accent-tuan-accent"
+                />
+                <div className="flex justify-between text-[11px] text-tuan-textSecondary mt-0.5">
+                  <span>50% 敏感</span>
+                  <span>80% 推荐</span>
+                  <span>100% 仅临界</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* T-2.5 实验组：仅预研展示 */}
+          {tab === 'lab' && (
+            <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input space-y-4">
+              <div>
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">实验功能（预研）</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">
+                  以下功能处于预研阶段，行为可能随版本调整；开关仅本地记录偏好。
+                </p>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-tuan-border p-3">
+                <span className="w-10 h-10 rounded-lg bg-tuan-hover flex-none flex items-center justify-center text-tuan-text">
+                  <Volume2 size={17} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13.5px] font-medium text-tuan-text">TTS 试听</div>
+                  <div className="text-[12px] text-tuan-textSecondary">允许在语音播报设置中合成试听样本</div>
+                </div>
+                <button
+                  onClick={() => changeLabTtsPreview(!labTtsPreview)}
+                  className={`${labTtsPreview ? 'cc-btn-primary' : 'cc-btn-ghost'} px-3 py-1.5 text-[13px] flex-shrink-0`}
+                >
+                  {labTtsPreview ? '已开启' : '已关闭'}
+                </button>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-tuan-border p-3">
+                <span className="w-10 h-10 rounded-lg bg-tuan-hover flex-none flex items-center justify-center text-tuan-text">
+                  <MonitorSmartphone size={17} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13.5px] font-medium text-tuan-text">离线模式</div>
+                  <div className="text-[12px] text-tuan-textSecondary">预研：禁用一切联网能力，仅本地引擎对话</div>
+                </div>
+                <button
+                  onClick={() => changeOfflineMode(!offlineMode)}
+                  className={`${offlineMode ? 'cc-btn-primary' : 'cc-btn-ghost'} px-3 py-1.5 text-[13px] flex-shrink-0`}
+                >
+                  {offlineMode ? '已开启' : '已关闭'}
                 </button>
               </div>
             </div>
+          )}
+
+          {tab === 'appearance' && (
+            <>
+              {/* T-2.1 明暗外观三态：暗色（默认）/ 亮色 / 跟随系统 */}
+              <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">明暗外观</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">暗色（默认）/ 亮色 / 跟随系统；切换即时生效并持久保存。</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    onClick={() => changeThemeMode('dark')}
+                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${themeMode === 'dark' ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                  >
+                    <span className="w-12 h-12 rounded-xl overflow-hidden flex-none flex items-center justify-center bg-tuan-terminalBg border border-tuan-border text-tuan-terminalText">
+                      <Moon size={20} />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13.5px] font-medium text-tuan-text">暗色</span>
+                      <span className="block text-[12px] text-tuan-textSecondary">暖炭夜间（默认）</span>
+                    </span>
+                    {themeMode === 'dark' && <Check size={16} className="flex-none text-tuan-text" />}
+                  </button>
+                  <button
+                    onClick={() => changeThemeMode('light')}
+                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${themeMode === 'light' ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                  >
+                    <span className="w-12 h-12 rounded-xl overflow-hidden flex-none flex items-center justify-center bg-tuan-main border border-tuan-border text-tuan-text">
+                      <Sun size={20} />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13.5px] font-medium text-tuan-text">亮色</span>
+                      <span className="block text-[12px] text-tuan-textSecondary">暖奶油日间外观</span>
+                    </span>
+                    {themeMode === 'light' && <Check size={16} className="flex-none text-tuan-text" />}
+                  </button>
+                  <button
+                    onClick={() => changeThemeMode('system')}
+                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${themeMode === 'system' ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                  >
+                    <span className="w-12 h-12 rounded-xl overflow-hidden flex-none flex items-center justify-center bg-tuan-main border border-tuan-border text-tuan-text">
+                      <MonitorSmartphone size={20} />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13.5px] font-medium text-tuan-text">跟随系统</span>
+                      <span className="block text-[12px] text-tuan-textSecondary">随操作系统明暗偏好</span>
+                    </span>
+                    {themeMode === 'system' && <Check size={16} className="flex-none text-tuan-text" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* T-7.1 主题色板：标准 / 护眼绿 */}
+              <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">主题色板</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">护眼绿采用绿调柔面配色，长时间阅读更轻松；与明暗外观自由组合。</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    onClick={() => changePalette('default')}
+                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${palette === 'default' ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                  >
+                    <span className="w-12 h-12 rounded-xl overflow-hidden flex-none flex items-center justify-center bg-tuan-main border border-tuan-border text-tuan-text">
+                      <Palette size={20} />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13.5px] font-medium text-tuan-text">标准色板</span>
+                      <span className="block text-[12px] text-tuan-textSecondary">暖奶油 / 暖炭官方色板</span>
+                    </span>
+                    {palette === 'default' && <Check size={16} className="flex-none text-tuan-text" />}
+                  </button>
+                  <button
+                    onClick={() => changePalette('green')}
+                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${palette === 'green' ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                  >
+                    <span className="w-12 h-12 rounded-xl overflow-hidden flex-none flex items-center justify-center bg-[#e8efe4] border border-tuan-border text-[#3d9a62]">
+                      <Leaf size={20} />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13.5px] font-medium text-tuan-text">护眼绿</span>
+                      <span className="block text-[12px] text-tuan-textSecondary">绿调柔面，降低视觉疲劳</span>
+                    </span>
+                    {palette === 'green' && <Check size={16} className="flex-none text-tuan-text" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* T-7.2 强调色四选一（蓝默认） */}
+              <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">强调色</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">作用于链接、选中描边与主交互元素，即时切换。</p>
+                <div className="flex flex-wrap gap-3">
+                  {([
+                    { id: 'blue', name: '蓝', hex: '#4a7fb5' },
+                    { id: 'green', name: '绿', hex: '#3d9a62' },
+                    { id: 'orange', name: '橙', hex: '#d97757' },
+                    { id: 'purple', name: '紫', hex: '#7c5cbf' },
+                  ] as { id: AccentId; name: string; hex: string }[]).map((a) => (
+                    <button
+                      key={a.id}
+                      onClick={() => changeAccent(a.id)}
+                      className="flex items-center gap-2.5 rounded-full border px-3.5 py-2 transition-colors hover:bg-tuan-hover"
+                      style={{ borderColor: accent === a.id ? a.hex : undefined }}
+                    >
+                      <span className="w-5 h-5 rounded-full border border-black/10" style={{ backgroundColor: a.hex }} />
+                      <span className="text-[13px] text-tuan-text">{a.name}</span>
+                      {accent === a.id && <Check size={14} style={{ color: a.hex }} />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* T-7.3 / T-6.5 字体三档 + 代码块等宽 */}
+              <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">字体大小</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">小 / 中（默认）/ 大三档整窗缩放，即时生效并持久保存。</p>
+                <div className="flex items-center gap-2">
+                  <Type size={15} className="text-tuan-textSecondary flex-none" />
+                  <div className="flex rounded-full border border-tuan-border p-0.5">
+                    {([
+                      { id: 'sm', label: '小' },
+                      { id: 'md', label: '中' },
+                      { id: 'lg', label: '大' },
+                    ] as { id: FontSizeId; label: string }[]).map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => changeFontSize(f.id)}
+                        className={`px-4 py-1.5 rounded-full text-[13px] transition-colors ${fontSize === f.id ? 'bg-tuan-hover text-tuan-text font-medium' : 'text-tuan-textSecondary'}`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-3 rounded-xl border border-tuan-border p-3">
+                  <span className="w-10 h-10 rounded-lg bg-tuan-hover flex-none flex items-center justify-center text-tuan-text">
+                    <Code2 size={17} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] font-medium text-tuan-text">代码块等宽字体</div>
+                    <div className="text-[12px] text-tuan-textSecondary">关闭后代码块使用界面正文字体显示</div>
+                  </div>
+                  <button
+                    onClick={() => changeCodeMono(!codeMono)}
+                    className={`${codeMono ? 'cc-btn-primary' : 'cc-btn-ghost'} px-3 py-1.5 text-[13px] flex-shrink-0`}
+                  >
+                    {codeMono ? '等宽开' : '等宽关'}
+                  </button>
+                </div>
+              </div>
+
+              {/* T-7.4 吉祥物三款 ASCII 切换 */}
+              <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input">
+                <h2 className="text-[15px] font-semibold text-tuan-text mb-1">吉祥物</h2>
+                <p className="text-[12.5px] text-tuan-textSecondary mb-4">青小团 ASCII 形象三款，对齐终端 TUI 设计；选择后持久保存。</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {MASCOTS.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => changeMascot(m.id)}
+                      className={`rounded-xl border p-3 text-left transition-colors ${mascot === m.id ? 'border-[var(--tuan-selected-border)] bg-tuan-hover' : 'border-tuan-border hover:bg-tuan-hover'}`}
+                    >
+                      <pre className="text-[12px] leading-relaxed font-mono text-tuan-text whitespace-pre">{m.lines.join('\n')}</pre>
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-[13px] font-medium text-tuan-text">{m.name}</span>
+                        {mascot === m.id && <Check size={14} className="text-tuan-text" />}
+                      </div>
+                      <div className="text-[11.5px] text-tuan-textSecondary mt-0.5 leading-relaxed">{m.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
 
           {tab === 'providers' && (
@@ -862,7 +1451,7 @@ export default function SettingsPage({
                             type="checkbox"
                             checked={m.enabled}
                             onChange={(e) => toggleModel(m.id, e.target.checked)}
-                            className="accent-[#1f1e1c] h-3.5 w-3.5"
+                            className="accent-tuan-accent h-3.5 w-3.5"
                           />
                           <span className="flex-1 min-w-0 truncate" title={m.id}>{m.name || m.id}</span>
                           {testingModel === m.id ? (
@@ -977,7 +1566,7 @@ export default function SettingsPage({
                 <BrandMark size="md" />
                 <div>
                   <div className="text-[16px] font-semibold text-tuan-text">Tuan</div>
-                  <div className="text-[12.5px] text-tuan-textSecondary mt-0.5">tuan_cli 引擎的桌面客户端 · 版本 0.1.0</div>
+                  <div className="text-[12.5px] text-tuan-textSecondary mt-0.5">tuan_cli 引擎的桌面客户端 · 版本 0.3.4</div>
                 </div>
               </div>
 
@@ -1145,7 +1734,7 @@ export default function SettingsPage({
                 <InfoRow
                   icon={TerminalSquare}
                   title="引擎服务"
-                  desc="随应用自动启动的本地引擎进程（127.0.0.1:8137），仅监听本机回环地址，不对外网开放。"
+                  desc="随应用自动启动的本地引擎进程（默认 127.0.0.1:8137，可用 TUAN_ENGINE_PORT 环境变量指定，端口被占用时自动避让），仅监听本机回环地址，不对外网开放。"
                 />
                 <InfoRow
                   icon={HardDrive}
@@ -1448,18 +2037,6 @@ function MemoryTab() {
           </div>
         </div>
       )}
-
-      {/* 帮助信息 */}
-      <div className="border border-tuan-border rounded-xl p-4 bg-tuan-input">
-        <h3 className="text-[13px] font-semibold text-tuan-text mb-2">Scope Recall 3.0</h3>
-        <div className="text-[12px] text-tuan-textSecondary leading-relaxed space-y-1">
-          <p>• <b>三层作用域</b>：session（会话级）→ user（用户级）→ global（全局），越深层级越持久</p>
-          <p>• <b>TF-IDF 语义召回</b>：基于关键词权重 + 重要度 + 新鲜度的综合排序</p>
-          <p>• <b>自动衰减</b>：超过配置天数未访问的记忆自动归档，不删除但默认不召回</p>
-          <p>• <b>自动提取</b>：对话中检测到"记住"、偏好、指令等模式时自动保存</p>
-          <p>• <b>手动管理</b>：可在上方列表中添加、搜索、删除、归档记忆</p>
-        </div>
-      </div>
     </div>
   );
 }
