@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, MoreHorizontal, Settings, Menu, MessageSquare, FolderKanban, Package, Wrench, Blocks, Puzzle, BookOpen, Search, X, Pin } from 'lucide-react';
+import { MoreHorizontal, Settings, MessageSquare, FolderKanban, Package, Wrench, Blocks, Puzzle, BookOpen, Search, X, Pin, Plus, ChevronUp } from 'lucide-react';
 
 export type PageKey =
   | 'chats' | 'projects' | 'artifacts' | 'skills' | 'mcp' | 'plugins' | 'guide' | 'settings';
@@ -13,6 +13,10 @@ interface Props {
   onOpenConv: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
+  /** 折叠态（桌面端折叠为图标轨；窄屏折叠为抽屉关闭） */
+  collapsed?: boolean;
+  /** 是否窄屏（手机 / 窄窗口） */
+  isNarrow?: boolean;
 }
 
 /** 相对时间显示：今天/昨天/星期X/几月几号 */
@@ -35,10 +39,9 @@ function groupConversations(recent: { id: string; title: string; ts?: number }[]
   const groups: { label: string; items: typeof recent }[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   for (const conv of recent) {
     if (!conv.ts) {
-      // 没有时间戳的对话放到"更早"组
       let group = groups.find(g => g.label === '更早');
       if (!group) {
         group = { label: '更早', items: [] };
@@ -47,16 +50,16 @@ function groupConversations(recent: { id: string; title: string; ts?: number }[]
       group.items.push(conv);
       continue;
     }
-    
+
     const d = new Date(conv.ts);
     const diff = Math.floor((today.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000);
-    
+
     let label = '更早';
     if (diff === 0) label = '今天';
     else if (diff === 1) label = '昨天';
     else if (diff < 7) label = '最近 7 天';
     else label = '更早';
-    
+
     let group = groups.find(g => g.label === label);
     if (!group) {
       group = { label, items: [] };
@@ -97,6 +100,9 @@ const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
   },
 ];
 
+/** 全部导航项（图标轨与内联导航共用） */
+const NAV_ITEMS: MenuItem[] = MENU_GROUPS.flatMap((g) => g.items);
+
 export default function Sidebar({
   page,
   onNavigate,
@@ -106,8 +112,12 @@ export default function Sidebar({
   onOpenConv,
   onRename,
   onDelete,
+  collapsed,
+  isNarrow,
 }: Props) {
-  const [menuOpen, setMenuOpen] = useState(false);
+  // 桌面端折叠 = 图标轨；窄屏折叠 = 抽屉关闭（不渲染）。
+  const rail = !!collapsed && !isNarrow;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
     try {
@@ -116,10 +126,8 @@ export default function Sidebar({
       return [];
     }
   });
-  const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // 持久化置顶状态
   useEffect(() => {
     localStorage.setItem('tuan.pinnedConvs', JSON.stringify(pinnedIds));
   }, [pinnedIds]);
@@ -130,14 +138,12 @@ export default function Sidebar({
     );
   };
 
-  // 置顶对话排序：置顶在前，其余按时间
   const sortedRecent = useMemo(() => {
     const pinned = recent.filter((c) => pinnedIds.includes(c.id));
     const unpinned = recent.filter((c) => !pinnedIds.includes(c.id));
     return [...pinned, ...unpinned];
   }, [recent, pinnedIds]);
 
-  // 搜索过滤对话
   const filteredRecent = useMemo(() => {
     if (!searchQuery.trim()) return sortedRecent;
     const q = searchQuery.trim().toLowerCase();
@@ -156,84 +162,68 @@ export default function Sidebar({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // 点击菜单外区域自动收起（二级菜单完善：不残留打开态）
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [menuOpen]);
+  // ===== 图标轨（桌面端折叠态）=====
+  if (rail) {
+    return (
+      <aside className="sidebar-rail h-full w-[68px] flex-shrink-0 flex flex-col items-center bg-tuan-sidebar border-r border-tuan-border overflow-hidden py-3">
+        <button
+          onClick={onNewChat}
+          className="w-10 h-10 mb-3 flex items-center justify-center rounded-xl bg-tuan-accent text-white hover:opacity-90 transition-opacity"
+          title="新建对话"
+        >
+          <Plus size={20} />
+        </button>
+        <nav className="flex-1 flex flex-col items-center gap-1 w-full overflow-y-auto custom-scrollbar px-1">
+          {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => onNavigate(key)}
+              title={label}
+              className={`w-11 h-11 flex items-center justify-center rounded-xl transition-colors ${
+                page === key ? 'bg-tuan-hover text-tuan-text' : 'text-tuan-textSecondary hover:bg-tuan-hover hover:text-tuan-text'
+              }`}
+            >
+              <Icon size={20} className="dark:invert" />
+            </button>
+          ))}
+        </nav>
+        <button
+          onClick={() => onNavigate('settings')}
+          title="本地用户 · 设置"
+          className="w-10 h-10 mt-2 flex items-center justify-center rounded-full bg-tuan-accent text-white text-[15px] font-medium"
+        >
+          U
+        </button>
+      </aside>
+    );
+  }
 
-  const go = (p: PageKey) => {
-    onNavigate(p);
-    setMenuOpen(false);
-  };
-
+  // ===== 完整侧栏（含内联导航，替代原"菜单"弹层）=====
   return (
     <aside className="sidebar-fixed h-full w-[260px] flex-shrink-0 flex flex-col bg-tuan-sidebar border-r border-tuan-border overflow-hidden">
       {/* 品牌区 */}
-      <div className="flex items-center gap-2.5 px-[18px] pt-[16px] pb-[8px]">
+      <div className="flex items-center gap-2.5 px-[18px] pt-[16px] pb-[8px] flex-shrink-0">
         <img src="/icons/star.png" alt="Tuan-Chat" className="h-[28px] w-[28px] object-contain" />
         <span className="text-[15px] font-semibold tracking-wide text-[var(--tuan-heading)] select-none">
           Tuan-Chat
         </span>
       </div>
 
-      {/* 固定操作：新建对话 + 菜单 */}
-      <div className="flex-shrink-0 px-[9px] space-y-px">
+      {/* 固定操作：新建对话 */}
+      <div className="flex-shrink-0 px-[9px]">
         <button
           onClick={onNewChat}
-          className="w-full flex items-center gap-2 rounded-xl px-0 py-[6px] text-[14px] text-tuan-text hover:bg-tuan-hover transition-colors"
-          style={{ columnGap: '8px', fontWeight: 400 }}
+          className="w-full flex items-center gap-2 rounded-xl px-3 py-[6px] text-[14px] text-tuan-text hover:bg-tuan-hover transition-colors"
+          style={{ fontWeight: 400 }}
         >
           <span className="flex items-center justify-center" style={{ width: '20px', height: '20px' }}>
             <img src="/icons/new_chat.png" alt="" className="h-[20px] w-[20px] object-contain dark:invert" />
           </span>
           新建对话
         </button>
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setMenuOpen((v) => !v)}
-            className="w-full flex items-center gap-2 rounded-xl px-0 py-[6px] text-[14px] text-tuan-text hover:bg-tuan-hover transition-colors"
-            style={{ columnGap: '8px', fontWeight: 400 }}
-          >
-            <span className="flex items-center justify-center" style={{ width: '20px', height: '20px' }}>
-              <Menu size={18} className="dark:invert" />
-            </span>
-            菜单
-            <ChevronDown
-              size={14}
-              className={`ml-auto text-tuan-textSecondary transition-transform ${menuOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
-          {menuOpen && (
-            <div className="menu-pop absolute left-0 top-full mt-1.5 w-[210px] bg-tuan-input border border-tuan-border rounded-2xl shadow-[var(--shadow-pop)] py-1.5 z-50 max-h-[70vh] overflow-y-auto custom-scrollbar">
-              {MENU_GROUPS.map((g, gi) => (
-                <div key={g.title}>
-                  {gi > 0 && <div className="mx-3 my-1 border-t border-tuan-border/60" />}
-                  <div className="px-3 pt-1.5 pb-0.5 text-[11.5px] font-medium text-tuan-textSecondary">{g.title}</div>
-                  {g.items.map(({ key, label, icon: Icon }) => (
-                    <button
-                      key={key}
-                      onClick={() => go(key)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 text-[14px] transition-colors rounded-xl mx-0 ${
-                        page === key ? 'bg-tuan-hover text-tuan-text' : 'text-tuan-text hover:bg-tuan-hover'
-                      }`}
-                    >
-                      <Icon size={17} className="flex-shrink-0 dark:invert" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* 最近对话 */}
+      {/* 滚动区：搜索 + 最近对话 + 内联导航 */}
       <div className="flex-1 overflow-y-auto sidebar-scroll min-h-0 px-[9px] pt-3 pb-6">
         {/* 搜索框 */}
         <div className="relative mb-2 px-2">
@@ -272,116 +262,57 @@ export default function Sidebar({
                   {group.label}
                 </div>
                 {group.items.map((c) => (
-                  <div
+                  <ConvRow
                     key={c.id}
-                    onClick={() => onOpenConv(c.id)}
-                    className={`group relative flex items-center min-h-[32px] rounded-xl px-3 py-1.5 cursor-pointer transition-colors ${
-                      activeId === c.id ? 'bg-tuan-hover' : 'hover:bg-tuan-hover'
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0 pr-6">
-                      <div className="text-[13px] text-tuan-text truncate leading-snug">{c.title}</div>
-                      {c.ts && (
-                        <div className="text-[11px] text-tuan-textSecondary mt-0.5 leading-none">
-                          {formatTime(c.ts)}
-                        </div>
-                      )}
-                    </div>
-                    <div className="conv-actions absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          togglePin(c.id);
-                        }}
-                        className={`p-1 rounded-lg hover:bg-tuan-hover ${
-                          pinnedIds.includes(c.id)
-                            ? 'text-tuan-accent'
-                            : 'text-tuan-textSecondary hover:text-tuan-text'
-                        }`}
-                        title={pinnedIds.includes(c.id) ? '取消置顶' : '置顶对话'}
-                      >
-                        <Pin size={14} className={pinnedIds.includes(c.id) ? 'fill-current' : ''} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const t = window.prompt('重命名对话', c.title);
-                          if (t?.trim()) onRename(c.id, t.trim());
-                        }}
-                        className="p-1 rounded-lg text-tuan-textSecondary hover:text-tuan-text hover:bg-tuan-hover"
-                        title="重命名"
-                      >
-                        <MoreHorizontal size={15} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDelete(c.id);
-                        }}
-                        className="p-1 rounded-lg text-[var(--tuan-danger)] hover:bg-[var(--tuan-danger-bg)]"
-                        title="删除"
-                      >
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </div>
+                    conv={c}
+                    active={activeId === c.id}
+                    pinned={pinnedIds.includes(c.id)}
+                    onOpen={() => onOpenConv(c.id)}
+                    onTogglePin={() => togglePin(c.id)}
+                    onRename={() => {
+                      const t = window.prompt('重命名对话', c.title);
+                      if (t?.trim()) onRename(c.id, t.trim());
+                    }}
+                    onDelete={() => onDelete(c.id)}
+                  />
                 ))}
               </div>
             ))
           )}
           {searchQuery && filteredRecent.map((c) => (
-            <div
+            <ConvRow
               key={c.id}
-              onClick={() => onOpenConv(c.id)}
-              className={`group relative flex items-center min-h-[32px] rounded-xl px-3 py-1.5 cursor-pointer transition-colors ${
-                activeId === c.id ? 'bg-tuan-hover' : 'hover:bg-tuan-hover'
-              }`}
-            >
-              <div className="flex-1 min-w-0 pr-6">
-                <div className="text-[13px] text-tuan-text truncate leading-snug">{c.title}</div>
-                {c.ts && (
-                  <div className="text-[11px] text-tuan-textSecondary mt-0.5 leading-none">
-                    {formatTime(c.ts)}
-                  </div>
-                )}
-              </div>
-              <div className="conv-actions absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100">
+              conv={c}
+              active={activeId === c.id}
+              pinned={pinnedIds.includes(c.id)}
+              onOpen={() => onOpenConv(c.id)}
+              onTogglePin={() => togglePin(c.id)}
+              onRename={() => {
+                const t = window.prompt('重命名对话', c.title);
+                if (t?.trim()) onRename(c.id, t.trim());
+              }}
+              onDelete={() => onDelete(c.id)}
+            />
+          ))}
+        </div>
+
+        {/* 内联导航分组（替代原"菜单"弹层，更可发现） */}
+        <div className="mt-4 pt-3 border-t border-tuan-border/60">
+          {MENU_GROUPS.map((g) => (
+            <div key={g.title}>
+              <div className="px-3 pb-1 text-[11.5px] font-medium text-tuan-textSecondary">{g.title}</div>
+              {g.items.map(({ key, label, icon: Icon }) => (
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    togglePin(c.id);
-                  }}
-                  className={`p-1 rounded-lg hover:bg-tuan-hover ${
-                    pinnedIds.includes(c.id)
-                      ? 'text-tuan-accent'
-                      : 'text-tuan-textSecondary hover:text-tuan-text'
+                  key={key}
+                  onClick={() => onNavigate(key)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-[14px] transition-colors rounded-xl ${
+                    page === key ? 'bg-tuan-hover text-tuan-text' : 'text-tuan-text hover:bg-tuan-hover'
                   }`}
-                  title={pinnedIds.includes(c.id) ? '取消置顶' : '置顶对话'}
                 >
-                  <Pin size={14} className={pinnedIds.includes(c.id) ? 'fill-current' : ''} />
+                  <Icon size={17} className="flex-shrink-0 dark:invert" />
+                  {label}
                 </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const t = window.prompt('重命名对话', c.title);
-                    if (t?.trim()) onRename(c.id, t.trim());
-                  }}
-                  className="p-1 rounded-lg text-tuan-textSecondary hover:text-tuan-text hover:bg-tuan-hover"
-                  title="重命名"
-                >
-                  <MoreHorizontal size={15} />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(c.id);
-                  }}
-                  className="p-1 rounded-lg text-[var(--tuan-danger)] hover:bg-[var(--tuan-danger-bg)]"
-                  title="删除"
-                >
-                  <TrashIcon />
-                </button>
-              </div>
+              ))}
             </div>
           ))}
         </div>
@@ -390,7 +321,7 @@ export default function Sidebar({
       {/* 底部用户行 */}
       <div className="border-t border-tuan-border px-3 py-3 flex-shrink-0">
         <button
-          onClick={() => go('settings')}
+          onClick={() => onNavigate('settings')}
           className="w-full flex items-center gap-2 rounded-xl p-2 hover:bg-tuan-hover transition-colors cursor-pointer"
         >
           <div className="h-8 w-8 rounded-full bg-tuan-accent text-white flex items-center justify-center text-[15px] font-medium flex-shrink-0">
@@ -404,6 +335,77 @@ export default function Sidebar({
         </button>
       </div>
     </aside>
+  );
+}
+
+/** 单条对话行（含 hover 操作：置顶 / 重命名 / 删除） */
+function ConvRow({
+  conv,
+  active,
+  pinned,
+  onOpen,
+  onTogglePin,
+  onRename,
+  onDelete,
+}: {
+  conv: { id: string; title: string; ts?: number };
+  active: boolean;
+  pinned: boolean;
+  onOpen: () => void;
+  onTogglePin: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      onClick={onOpen}
+      className={`group relative flex items-center min-h-[32px] rounded-xl px-3 py-1.5 cursor-pointer transition-colors ${
+        active ? 'bg-tuan-hover' : 'hover:bg-tuan-hover'
+      }`}
+    >
+      <div className="flex-1 min-w-0 pr-6">
+        <div className="text-[13px] text-tuan-text truncate leading-snug">{conv.title}</div>
+        {conv.ts && (
+          <div className="text-[11px] text-tuan-textSecondary mt-0.5 leading-none">
+            {formatTime(conv.ts)}
+          </div>
+        )}
+      </div>
+      <div className="conv-actions absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePin();
+          }}
+          className={`p-1 rounded-lg hover:bg-tuan-hover ${
+            pinned ? 'text-tuan-accent' : 'text-tuan-textSecondary hover:text-tuan-text'
+          }`}
+          title={pinned ? '取消置顶' : '置顶对话'}
+        >
+          <Pin size={14} className={pinned ? 'fill-current' : ''} />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRename();
+          }}
+          className="p-1 rounded-lg text-tuan-textSecondary hover:text-tuan-text hover:bg-tuan-hover"
+          title="重命名"
+        >
+          <MoreHorizontal size={15} />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="p-1 rounded-lg text-[var(--tuan-danger)] hover:bg-[var(--tuan-danger-bg)]"
+          title="删除"
+        >
+          <TrashIcon />
+        </button>
+      </div>
+    </div>
   );
 }
 

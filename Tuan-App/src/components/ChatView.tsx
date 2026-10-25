@@ -17,12 +17,18 @@ import {
   ShieldAlert,
   CheckCheck,
   Hand,
+  RotateCcw,
+  Code2,
+  Mail,
+  Palette,
 } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { ChatMessage, PendingApproval, Provider, ToolEvent } from '../types';
 import { MODES, getMode, type ModeId } from '../platform/modes';
 import { resolveMascot, useDarkTheme } from '../platform/mascot';
+import { useMediaQuery } from '../platform/useMediaQuery';
+import ComposerSelect, { type SelectOption } from './ComposerSelect';
 import ReplyMarkdown from './ReplyMarkdown';
 
 interface Props {
@@ -35,6 +41,8 @@ interface Props {
   onProviderChange: (id: string) => void;
   onModelChange: (m: string) => void;
   messages: ChatMessage[];
+  /** 当前对话标题（用于聊天页头部显示；无则回落首条消息） */
+  title?: string;
   streaming: boolean;
   error?: string;
   tools: ToolEvent[];
@@ -50,6 +58,10 @@ interface Props {
   onRetry?: () => void;
   onOpenGuide?: () => void;
   onOpenSettings?: () => void;
+  /** 新建对话（聊天页头部「新建」按钮） */
+  onNewChat?: () => void;
+  /** 打开 ⌘K 命令面板（状态栏入口） */
+  onOpenPalette?: () => void;
   /** 五模式：闲聊 / 协同 / 灵码 / 感通 / 无界。当前模式；切换走 onModeChange。 */
   mode: ModeId;
   onModeChange: (m: ModeId) => void;
@@ -62,6 +74,59 @@ function greeting(): string {
   if (h < 18) return '下午好，有什么想一起完成的？';
   return '晚上好，接下来想做什么？';
 }
+
+/** 模式 L0–L4 风险点颜色（与 index.css 的 mode-pill 分档保持一致） */
+const LEVEL_COLORS: Record<string, string> = {
+  L0: 'var(--text-tuan-secondary)',
+  L2: 'var(--tuan-link)',
+  L3: 'var(--tuan-accent-soft)',
+  L4: 'var(--tuan-danger)',
+};
+
+/** composer 模式弹层选项（桌面端）：名称 + tagline + 风险点 */
+const MODE_SELECT_OPTIONS: SelectOption[] = MODES.map((m) => ({
+  value: m.id,
+  label: m.name,
+  sub: m.tagline,
+  dot: LEVEL_COLORS[m.level],
+}));
+
+/**
+ * 首页示例提示（Claude 桌面式 2×2 卡片网格；窄屏退化为 chips）。
+ * 点击把一段更完整的起始提示填入输入框，兼顾五种模式特色。
+ */
+interface SuggestionCard {
+  icon: typeof Code2;
+  title: string;
+  sub: string;
+  prompt: string;
+}
+const SUGGESTION_CARDS: SuggestionCard[] = [
+  {
+    icon: Code2,
+    title: '灵码重构',
+    sub: '把一段 Python 改写成异步',
+    prompt: '用灵码模式帮我把这段 Python 重构成异步：\n\n',
+  },
+  {
+    icon: FileText,
+    title: '长文摘要',
+    sub: '总结要点并列出关键信息',
+    prompt: '帮我把下面这段长文总结成 3 个要点：\n\n',
+  },
+  {
+    icon: Mail,
+    title: '写封邮件',
+    sub: '请假一天的中文邮件',
+    prompt: '帮我写一封请假一天的中文邮件，语气礼貌简洁：\n\n',
+  },
+  {
+    icon: Palette,
+    title: '灵感文案',
+    sub: '感通模式生成海报文案',
+    prompt: '用感通模式为一张海边主题的海报生成文案：\n\n',
+  },
+];
 
 /** 相对时间显示：刚刚/几分钟前/几小时前/昨天/具体日期 */
 function formatRelativeTime(ts: number): string {
@@ -313,6 +378,7 @@ export default function ChatView({
   onProviderChange,
   onModelChange,
   messages,
+  title,
   streaming,
   error,
   tools,
@@ -326,6 +392,8 @@ export default function ChatView({
   onRetry,
   onOpenGuide,
   onOpenSettings,
+  onNewChat,
+  onOpenPalette,
   mode,
   onModeChange,
 }: Props) {
@@ -395,6 +463,18 @@ export default function ChatView({
   };
   const activeProvider = providers.find((p) => p.id === providerId) ?? providers[0];
   const enabledModels = activeProvider?.models.filter((m) => m.enabled) ?? [];
+  // 桌面端（宽窗口）用 Claude 桌面式弹层选择器；窄屏回落原生 <select>（低端 WebView 更稳）
+  const desktop = useMediaQuery('(min-width: 820px)');
+  const providerSelectOptions: SelectOption[] = providers.map((p) => ({
+    value: p.id,
+    label: p.name,
+    sub: `${p.models.filter((m) => m.enabled).length} 个可用模型`,
+  }));
+  const modelSelectOptions: SelectOption[] = enabledModels.map((m) => ({
+    value: m.id,
+    label: m.name,
+    sub: m.id,
+  }));
   // 立绘按主题分两套资源（白底 / 黑底），主题切换时要重新解析，否则深色下仍挂白底图
   const dark = useDarkTheme();
   const mascot = resolveMascot(
@@ -547,48 +627,79 @@ export default function ChatView({
             </span>
           )}
           {/* 运行模式：闲聊 / 协同 / 灵码 / 感通 / 无界，切换即时生效并持久化。
-              data-level 驱动 CSS 里的风险分档着色（L0 中性 → L4 危险色）。 */}
-          <select
-            value={mode}
-            onChange={(e) => onModeChange(e.target.value as ModeId)}
-            style={{ borderRadius: 9999 }}
-            title={getMode(mode).tagline}
-            data-level={getMode(mode).level}
-            className="cc-pill mode-pill flex-none min-w-[72px] max-w-[110px] text-left truncate"
-          >
-            {MODES.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={activeProvider?.id ?? ''}
-            onChange={(e) => onProviderChange(e.target.value)}
-            style={{ borderRadius: 9999 }}
-            className="cc-pill min-w-0 flex-1 sm:flex-none sm:min-w-[72px] sm:max-w-[120px] text-left truncate"
-          >
-            {providers.length === 0 && <option>请先在设置添加供应商</option>}
-            {providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={model || enabledModels[0]?.id || ''}
-            onChange={(e) => onModelChange(e.target.value)}
-            disabled={enabledModels.length === 0}
-            style={{ borderRadius: 9999 }}
-            className="cc-pill min-w-0 flex-1 sm:flex-none sm:min-w-[72px] sm:max-w-[130px] text-left truncate"
-          >
-            {enabledModels.length === 0 && <option>暂无模型</option>}
-            {enabledModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+              data-level 驱动 CSS 里的风险分档着色（L0 中性 → L4 危险色）。
+              桌面端为 Claude 桌面式弹层（带 tagline + 风险点），窄屏回落原生 select。 */}
+          {desktop ? (
+            <ComposerSelect
+              value={mode}
+              options={MODE_SELECT_OPTIONS}
+              onChange={(v) => onModeChange(v as ModeId)}
+              title={getMode(mode).tagline}
+              dataLevel={getMode(mode).level}
+              className="cc-pill mode-pill min-w-[72px] max-w-[110px] justify-center"
+            />
+          ) : (
+            <select
+              value={mode}
+              onChange={(e) => onModeChange(e.target.value as ModeId)}
+              style={{ borderRadius: 9999 }}
+              title={getMode(mode).tagline}
+              data-level={getMode(mode).level}
+              className="cc-pill mode-pill flex-none min-w-[72px] max-w-[110px] text-left truncate"
+            >
+              {MODES.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {desktop ? (
+            <ComposerSelect
+              value={activeProvider?.id ?? ''}
+              options={providerSelectOptions}
+              onChange={onProviderChange}
+              className="cc-pill min-w-0 sm:min-w-[72px] sm:max-w-[120px] justify-center"
+            />
+          ) : (
+            <select
+              value={activeProvider?.id ?? ''}
+              onChange={(e) => onProviderChange(e.target.value)}
+              style={{ borderRadius: 9999 }}
+              className="cc-pill min-w-0 flex-1 sm:flex-none sm:min-w-[72px] sm:max-w-[120px] text-left truncate"
+            >
+              {providers.length === 0 && <option>请先在设置添加供应商</option>}
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {desktop ? (
+            <ComposerSelect
+              value={model || enabledModels[0]?.id || ''}
+              options={modelSelectOptions}
+              onChange={onModelChange}
+              disabled={enabledModels.length === 0}
+              className="cc-pill min-w-0 sm:min-w-[72px] sm:max-w-[130px] justify-center"
+            />
+          ) : (
+            <select
+              value={model || enabledModels[0]?.id || ''}
+              onChange={(e) => onModelChange(e.target.value)}
+              disabled={enabledModels.length === 0}
+              style={{ borderRadius: 9999 }}
+              className="cc-pill min-w-0 flex-1 sm:flex-none sm:min-w-[72px] sm:max-w-[130px] text-left truncate"
+            >
+              {enabledModels.length === 0 && <option>暂无模型</option>}
+              {enabledModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
           {streaming ? (
             <button
               onClick={onStop}
@@ -629,6 +740,47 @@ export default function ChatView({
           >
             <span>{greeting()}</span>
           </h1>
+          {/* 示例提示：桌面端 Claude 桌面式 2×2 卡片网格，窄屏退化为 chips；
+              仅在已配置供应商时展示，点击填入输入框 */}
+          {providers.length > 0 && (
+            <>
+              <div className="hidden sm:grid w-full max-w-[672px] grid-cols-2 gap-2 px-2 mb-[22px]">
+                {SUGGESTION_CARDS.map(({ icon: Icon, title, sub, prompt }) => (
+                  <button
+                    key={title}
+                    onClick={() => {
+                      setDraft(prompt);
+                      requestAnimationFrame(() => taRef.current?.focus());
+                    }}
+                    className="group flex items-start gap-2.5 rounded-xl border border-tuan-border bg-tuan-input/60 px-3.5 py-3 text-left transition-colors hover:bg-tuan-hover"
+                  >
+                    <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-lg border border-tuan-border bg-tuan-artBg text-tuan-textSecondary transition-colors group-hover:text-tuan-text">
+                      <Icon size={15} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-tuan-text">{title}</span>
+                      <span className="block text-[11.5px] text-tuan-textSecondary truncate">{sub}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="sm:hidden w-full max-w-[672px] flex flex-wrap justify-center gap-2 px-2 mb-[22px]">
+                {SUGGESTION_CARDS.map(({ title, sub, prompt }) => (
+                  <button
+                    key={title}
+                    onClick={() => {
+                      setDraft(prompt);
+                      requestAnimationFrame(() => taRef.current?.focus());
+                    }}
+                    className="cc-pill !rounded-full text-[13px] leading-snug text-tuan-textSecondary hover:text-tuan-text hover:bg-tuan-hover break-words max-w-full"
+                    title={sub}
+                  >
+                    {title}：{sub}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <div className="w-full max-w-[672px]">{card}</div>
           {error && (
             <div className="mt-4 w-full max-w-[672px] text-[13px] text-[var(--tuan-danger)] bg-[var(--tuan-danger-bg)] rounded-xl px-3.5 py-2.5 leading-relaxed">
@@ -668,6 +820,37 @@ export default function ChatView({
         </div>
       ) : (
         <>
+          {/* 聊天页常驻头部（Claude Code 桌面 session header）：
+              左=对话标题，右=模式风险徽标 + 供应商·模型上下文条 + 新建。
+              把模式/模型从"埋在输入行"提升为全局可见。 */}
+          <div className="flex items-center gap-2 h-12 px-4 flex-none border-b border-tuan-border bg-tuan-bg">
+            <div className="flex-1 min-w-0">
+              <div className="text-[14px] font-medium text-tuan-text truncate">
+                {title || messages[0]?.content.slice(0, 24) || '新对话'}
+              </div>
+            </div>
+            <span
+              className="cc-pill mode-pill flex-none hidden sm:inline-flex"
+              data-level={getMode(mode).level}
+            >
+              {getMode(mode).name}
+            </span>
+            {activeProvider && (
+              <span className="text-[12.5px] text-tuan-textSecondary truncate max-w-[160px] hidden lg:block">
+                {activeProvider.name}
+                {model ? ` · ${model}` : ''}
+              </span>
+            )}
+            {onNewChat && (
+              <button
+                onClick={onNewChat}
+                className="cc-btn-ghost w-9 h-9 !p-0 flex-none"
+                title="新建对话"
+              >
+                <Plus size={18} />
+              </button>
+            )}
+          </div>
           <div className="relative flex-1 min-h-0">
             <div ref={scrollRef} className="absolute inset-0 overflow-y-auto chat-scroll">
               <div className="w-full mx-auto px-4 py-8" style={{ maxWidth: 768 }}>
@@ -764,6 +947,12 @@ export default function ChatView({
                       {isStreamingMsg && <span className="think-ring absolute inset-0 rounded-lg" />}
                     </div>
                     <div className="flex-1 min-w-0 text-tuan-text text-[16.5px] leading-normal group">
+                      <div className="flex items-center gap-1.5 mb-1.5 -mt-0.5">
+                        <span className="text-[12px] text-tuan-textSecondary leading-none">
+                          {mascot.name}
+                          {m.model ? ` · ${m.model}` : ''}
+                        </span>
+                      </div>
                       {m.reasoning ? (
                         <ThoughtBlock
                           text={m.reasoning}
@@ -794,6 +983,16 @@ export default function ChatView({
                         )
                       )}
                       <div className="mt-1.5 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {onRetry && isLast && !isStreamingMsg && (
+                          <button
+                            onClick={onRetry}
+                            className="inline-flex items-center gap-1 text-[12px] text-tuan-textSecondary hover:text-tuan-text"
+                            title="重新生成回复"
+                          >
+                            <RotateCcw size={13} />
+                            重试
+                          </button>
+                        )}
                         <button
                           onClick={() => copyText(m.id, m.content)}
                           className="inline-flex items-center gap-1 text-[12px] text-tuan-textSecondary hover:text-tuan-text"
@@ -854,8 +1053,32 @@ export default function ChatView({
           <div id="inputbar" className="input-dock relative px-3 pb-3 pt-2 w-full">
             <div className="mx-auto w-full max-w-[768px]">{card}</div>
           </div>
-          <div className="footer-note h-7 flex items-center justify-center text-[12px] text-tuan-textSecondary pointer-events-none">
-            Tuan-Chat 由 AI 生成，可能出错，请仔细核对回复内容。
+          {/* 底部状态栏（CodeX 风格 status line）：
+              左=模式徽标 + 模型 · 供应商 + 消息数；右=免责声明 + ⌘K 入口 */}
+          <div className="footer-note h-7 flex items-center gap-2 border-t border-tuan-border/60 px-4 text-[11px] text-tuan-textSecondary flex-none">
+            <span
+              className="cc-pill mode-pill flex-none !h-[18px] !px-1.5 !py-0 !text-[10.5px] leading-none"
+              data-level={getMode(mode).level}
+            >
+              {getMode(mode).name}
+            </span>
+            {activeProvider && (
+              <span className="truncate max-w-[42%]">
+                {model || enabledModels[0]?.id || '未选模型'} · {activeProvider.name}
+              </span>
+            )}
+            <span className="hidden sm:inline">· {messages.length} 条消息</span>
+            <div className="flex-1" />
+            <span className="hidden sm:inline truncate">由 AI 生成，可能出错，请仔细核对</span>
+            {onOpenPalette && (
+              <button
+                onClick={onOpenPalette}
+                className="cc-kbd flex-none hover:text-tuan-text transition-colors"
+                title="命令面板（⌘K）"
+              >
+                ⌘K
+              </button>
+            )}
           </div>
         </>
       )}
