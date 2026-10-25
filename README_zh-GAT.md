@@ -69,7 +69,7 @@ class MyTool(Plugin):
 
 ## 版本號與倉庫歷史（透明披露）
 
-**為什麼現在是 `0.3.1`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的誠實口徑：**`0.x` 階段意味著公共 API（CLI 介面、配置 schema、工具協定、外掛契約）尚未凍結**，仍可能隨迭代調整。Tuan-CLI 功能面已相當完整（安全攔截/交易回滾、模型無關熱切換（58 家供應商 + 本地 Ollama）、三種主迴圈、微核心外掛架構、三層記憶、生態互操作（MCP/ACP/Claude Code/Hermes 三方橋）、子代理與 Swarm、cron 與背景任務、Goal 模式與精確權限等，均配有測試），但**版本號反映的是介面穩定度，不是功能完成度**——功能齊全 ≠ API 該凍結。`1.0` 預留給公共 API 真正穩定、敢於承諾向後相容之時。此前：破壞性變更在 `0.x` 內升 MINOR（並附遷移提示）、相容功能升 MINOR、修復升 PATCH（見 [VERSION_POLICY.md](VERSION_POLICY.md)）。
+**為什麼現在是 `0.3.3`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的誠實口徑：**`0.x` 階段意味著公共 API（CLI 介面、配置 schema、工具協定、外掛契約）尚未凍結**，仍可能隨迭代調整。Tuan-CLI 功能面已相當完整（安全攔截/交易回滾、模型無關熱切換（58 家供應商 + 本地 Ollama）、三種主迴圈、微核心外掛架構、三層記憶、生態互操作（MCP/ACP/Claude Code/Hermes 三方橋）、子代理與 Swarm、cron 與背景任務、Goal 模式與精確權限等，均配有測試），但**版本號反映的是介面穩定度，不是功能完成度**——功能齊全 ≠ API 該凍結。`1.0` 預留給公共 API 真正穩定、敢於承諾向後相容之時。此前：破壞性變更在 `0.x` 內升 MINOR（並附遷移提示）、相容功能升 MINOR、修復升 PATCH（見 [VERSION_POLICY.md](VERSION_POLICY.md)）。
 
 | 版本號語義 | 說明 |
 |---|---|
