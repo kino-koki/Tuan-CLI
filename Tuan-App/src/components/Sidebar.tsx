@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MoreHorizontal, Settings, MessageSquare, FolderKanban, Package, Wrench, Blocks, Puzzle, BookOpen, Search, X, Pin, Plus, ChevronUp } from 'lucide-react';
+import { MoreHorizontal, Settings, MessageSquare, FolderKanban, Package, Wrench, Blocks, Puzzle, BookOpen, BookText, Search, X, Pin, Plus, ChevronUp } from 'lucide-react';
 
 export type PageKey =
-  | 'chats' | 'projects' | 'artifacts' | 'skills' | 'mcp' | 'plugins' | 'guide' | 'settings';
+  | 'chats' | 'projects' | 'artifacts' | 'skills' | 'mcp' | 'plugins' | 'guide' | 'docs' | 'settings';
 
 interface Props {
   page: PageKey;
@@ -95,6 +95,7 @@ const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
     title: '帮助与系统',
     items: [
       { key: 'guide', label: '使用教程', icon: BookOpen },
+      { key: 'docs', label: '技术文档', icon: BookText },
       { key: 'settings', label: '设置', icon: Settings },
     ],
   },
