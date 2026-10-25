@@ -5,4 +5,6 @@ include pyproject.toml
 recursive-include tuan_cli/resources *.md
 recursive-include tuan_cli/resources *.yaml *.yml *.json
 # §11 打包红线: Android 端免责书随 sdist 分发 (APK 侧再走 SHA256 校验)。
-include Tuan-App/legal/ANDROID8_DISCLAIMER.md
+# 注: 桌面工程目录已整体移出版本控制 (见 .gitignore 的 Tuan/ 规则),
+# 故此处为「存在才分发」—— 上游 clone 缺该目录时打包仍可正常完成。
+include Tuan/legal/ANDROID8_DISCLAIMER.md
