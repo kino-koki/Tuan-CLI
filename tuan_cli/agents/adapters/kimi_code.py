@@ -13,6 +13,7 @@ class KimiCodeAdapter(AgentAdapter):
     display_name = "Kimi Code"
     description = "Moonshot AI 官方 CLI; 代码生成与对话"
     command = ("kimi-code", "kimi")
+    verify = "kimi"
     # 打分权重: lingma (灵码) 模式次优先 (codex 第一)
     weights = {"chat": 3, "collaboration": 3, "lingma": 4, "gantong": 2, "boundless": 2}
 

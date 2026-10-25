@@ -33,7 +33,7 @@ export default function TitleBar({ onToggleSidebar, onOpenPalette, engineMissing
         </button>
       </div>
       <div className="flex-1 text-center md:hidden text-[15px] font-medium text-tuan-textSecondary pr-10">
-        Tuan-Chat
+        Tuan
       </div>
       {/* 引擎状态灯：本地引擎缺失时可点击，打开安装向导 */}
       {engineMissing && onOpenSetup && (

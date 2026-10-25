@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.Color
 /**
  * Material 3 主题.
  *
- * 品牌色 #1783FF 与桌面 Tuan-Chat 保持一致 (参见 Tuan-App/src/index.css).
+ * 品牌色 #1783FF 与桌面 Tuan 保持一致 (参见 Tuan/src/index.css).
  * 浅/深色按系统偏好自动切换.
  */
 private val LightColors = lightColorScheme(
@@ -40,7 +40,7 @@ private val DarkColors = darkColorScheme(
 )
 
 @Composable
-fun TuanChatTheme(
+fun TuanTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {

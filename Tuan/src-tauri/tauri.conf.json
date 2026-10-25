@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tuan-Chat",
+  "productName": "Tuan",
   "version": "0.1.0",
   "identifier": "com.tuan.chat",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Tuan-Chat",
+        "title": "Tuan",
         "width": 1180,
         "height": 780,
         "minWidth": 880,

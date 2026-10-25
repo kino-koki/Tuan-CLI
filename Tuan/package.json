@@ -1,8 +1,8 @@
 {
-  "name": "tuan-app",
+  "name": "tuan",
   "private": true,
   "version": "0.1.0",
-  "description": "Tuan-Chat — Tauri shell for the Tuan-CLI engine",
+  "description": "Tuan — Tauri shell for the Tuan-CLI engine",
   "type": "module",
   "scripts": {
     "dev": "vite",

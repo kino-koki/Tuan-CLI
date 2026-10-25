@@ -155,6 +155,7 @@ export default function SettingsPage({
   const [importFile, setImportFile] = useState<File | null>(null);
   // 本地语音播报（MOSS-TTS-Nano）
   const [ttsEnabled, setTtsEnabled] = useState(store.ttsEnabled());
+  const [voiceCopilot, setVoiceCopilot] = useState(store.voiceCopilotEnabled());
   const [ttsLang, setTtsLang] = useState(store.ttsLanguage());
   const [ttsVoice, setTtsVoice] = useState(store.ttsVoice());
   const [ttsStatusData, setTtsStatusData] = useState<TtsStatus | null>(null);
@@ -186,6 +187,10 @@ export default function SettingsPage({
     setTtsEnabled(v);
     store.saveTtsEnabled(v);
     if (!v) stopSpeech();
+  };
+  const changeVoiceCopilot = (v: boolean) => {
+    setVoiceCopilot(v);
+    store.saveVoiceCopilot(v);
   };
   const changeTtsLang = (code: string) => {
     setTtsLang(code);
@@ -501,6 +506,25 @@ export default function SettingsPage({
                     className={`${ttsEnabled ? 'cc-btn-primary' : 'cc-btn-ghost'} px-3 py-1.5 text-[13px] flex-shrink-0`}
                   >
                     {ttsEnabled ? '已开启' : '已关闭'}
+                  </button>
+                </div>
+
+                {/* 语音协警: 关键事件本地语音提醒 (模块 4) */}
+                <div className="mt-3 flex items-center gap-3 rounded-xl border border-tuan-border p-3">
+                  <span className="w-12 h-12 rounded-xl bg-tuan-hover flex-none flex items-center justify-center text-tuan-text">
+                    <Volume2 size={20} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] font-medium text-tuan-text">事件语音提醒（语音协警）</div>
+                    <div className="text-[12px] text-tuan-textSecondary">
+                      授权请求、回复完成、出错时本地播报一句提示；同类事件 1.5s 内自动合并防吵
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => changeVoiceCopilot(!voiceCopilot)}
+                    className={`${voiceCopilot ? 'cc-btn-primary' : 'cc-btn-ghost'} px-3 py-1.5 text-[13px] flex-shrink-0`}
+                  >
+                    {voiceCopilot ? '已开启' : '已关闭'}
                   </button>
                 </div>
 
@@ -952,7 +976,7 @@ export default function SettingsPage({
               <div className="border border-tuan-border rounded-xl p-5 bg-tuan-input flex items-start gap-4">
                 <BrandMark size="md" />
                 <div>
-                  <div className="text-[16px] font-semibold text-tuan-text">Tuan-Chat</div>
+                  <div className="text-[16px] font-semibold text-tuan-text">Tuan</div>
                   <div className="text-[12.5px] text-tuan-textSecondary mt-0.5">tuan_cli 引擎的桌面客户端 · 版本 0.1.0</div>
                 </div>
               </div>

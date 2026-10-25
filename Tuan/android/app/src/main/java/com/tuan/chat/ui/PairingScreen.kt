@@ -69,7 +69,7 @@ fun PairingScreen(viewModel: DispatchRepository) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Tuan-Chat") },
+                title = { Text("Tuan") },
             )
         },
         containerColor = ClaudeDark,
@@ -85,7 +85,7 @@ fun PairingScreen(viewModel: DispatchRepository) {
         ) {
             // Logo
             Text(
-                "Tuan-Chat",
+                "Tuan",
                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                 color = ClaudeCoral,
             )

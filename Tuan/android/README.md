@@ -1,4 +1,4 @@
-# Tuan-Chat Native Android
+# Tuan Native Android
 
 手机远程调度桌面 Agent-of-Agents 的 Android 原生客户端。
 
@@ -16,7 +16,7 @@
 ### 步骤
 ```bash
 # 首次生成 Gradle wrapper (Android Studio 会自动生成, 也可手动):
-cd E:\Tuan-CLI\Tuan-App\android
+cd E:\Tuan-CLI\Tuan\android
 gradle wrapper --gradle-version 8.7
 
 # 构建 Debug APK
@@ -38,7 +38,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
    cd E:\Tuan-CLI
    python -m tuan_cli.web.dispatch_server --port 8788
    ```
-2. 手机启动 Tuan-Chat, 输入桌面 IP + 端口 + 配对码
+2. 手机启动 Tuan, 输入桌面 IP + 端口 + 配对码
 3. 配对成功后选择代理 + 模式, 输入任务, 发送
 4. 事件流实时显示, 需要审批时弹出审批按钮
 

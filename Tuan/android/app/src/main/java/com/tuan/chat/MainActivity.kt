@@ -7,7 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.tuan.chat.theme.TuanChatTheme
+import com.tuan.chat.theme.TuanTheme
 import com.tuan.chat.ws.DispatchClient.ConnectionState
 import com.tuan.chat.ws.DispatchRepository
 
@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            TuanChatTheme {
+            TuanTheme {
                 ChatRoot(viewModel = viewModel())
             }
         }

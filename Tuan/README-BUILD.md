@@ -1,4 +1,4 @@
-# Tuan-Chat 构建与运行说明
+# Tuan 构建与运行说明
 
 技术栈：Tauri 2 + React + TypeScript（前端），底层对接 tuan_cli 0.3.1；界面以中文为主，仅保留
 OpenAI / Anthropic、Base URL、sk-、Enter / Shift+Enter、模型 ID 等必要英文。
@@ -40,7 +40,7 @@ Tauri 2 的 `bundle.resources` 不支持按平台排除，若要瘦身可创建 
 
 | 变量 | 含义 | 示例 |
 |---|---|---|
-| `TuanRoot` | 仓库根（含 `Tuan-App/` 与 `tuan_cli/` 的目录） | `F:\Tuan-CLI` |
+| `TuanRoot` | 仓库根（含 `Tuan/` 与 `tuan_cli/` 的目录） | `F:\Tuan-CLI` |
 | `MinGWBin` | MinGW-w64 的 `bin` 目录 | `D:\ucrt64\bin` |
 
 PowerShell：
@@ -70,18 +70,18 @@ export MinGWBin='/d/ucrt64/bin'
 
 产物目录：`release/`
 
-- `Tuan-Chat.exe`：主程序（便携，免安装）
+- `Tuan.exe`：主程序（便携，免安装）
 - `WebView2Loader.dll`：随程序同目录放置（依赖系统已安装的 WebView2 Runtime；Win10/11 多数自带，
   缺失时从微软官网安装 Evergreen WebView2 Runtime 即可）
 
-运行：保持 `Tuan-Chat.exe` 与 `WebView2Loader.dll` 在同一目录，双击 `Tuan-Chat.exe`。
+运行：保持 `Tuan.exe` 与 `WebView2Loader.dll` 在同一目录，双击 `Tuan.exe`。
 兼容 Windows 10（64 位，1903+）与 Windows 11。
 
 ### 本机重新构建
 
 ```powershell
 # 前端（TuanRoot 见「〇·五、环境变量约定」）
-cd "$env:TuanRoot\Tuan-App"
+cd "$env:TuanRoot\Tuan"
 npm install
 npm run build
 
@@ -90,7 +90,7 @@ cd src-tauri
 $env:Path = "$env:MinGWBin;" + $env:Path
 $env:RUSTUP_TOOLCHAIN = 'stable-x86_64-pc-windows-gnu'
 cargo build --release
-# 产物：src-tauri\target\release\tuan-app.exe，连同 WebView2Loader.dll 复制为 release\Tuan-Chat.exe
+# 产物：src-tauri\target\release\tuan.exe，连同 WebView2Loader.dll 复制为 release\Tuan.exe
 ```
 
 ## 二、供应商 / 模型目录
@@ -100,7 +100,7 @@ cargo build --release
 每个模型带 `free/paid` 标记。脚本内部已改为相对自身位置解析路径，无需依赖 `.venv`：
 
 ```powershell
-cd "$env:TuanRoot\Tuan-App"
+cd "$env:TuanRoot\Tuan"
 python scripts\export_catalog.py
 python scripts\export_skills.py
 ```
@@ -113,7 +113,7 @@ python scripts\export_skills.py
 构建命令（Git Bash）：
 
 ```bash
-cd "$TuanRoot/Tuan-App"
+cd "$TuanRoot/Tuan"
 # 以下三个按本机实际路径填（用户目录用 $HOME，不要写 C:\Users\<名字>）
 export JAVA_HOME='<JDK_HOME>'                        # 例：/c/Program Files/Microsoft/jdk-17.0.20.101-hotspot
 export ANDROID_HOME="$HOME/AppData/Local/Android/Sdk"
@@ -175,7 +175,7 @@ R8 规则见 `src-tauri/gen/android/app/proguard-rules.pro`，已保留 Tauri �
    表现为**窗口能开但白屏无渲染**。本项目的 `.gitignore` 用 `!dist/**` 例外规则
    保留可见性。若再遇白屏，先确认：
    ```bash
-   git ls-files --others --exclude-standard Tuan-App/dist | wc -l   # 应 > 0
+   git ls-files --others --exclude-standard Tuan/dist | wc -l   # 应 > 0
    ```
 3. **`JAVA_HOME` 指向 JDK 的 Windows 路径且不含多余空格**，例如
    `C:/Program Files/Microsoft/jdk-17.0.20.101-hotspot`（路径版本按本机 JDK 实际填）。
@@ -195,7 +195,7 @@ R8 规则见 `src-tauri/gen/android/app/proguard-rules.pro`，已保留 Tauri �
 ### 桌面端出包（Windows）
 
 ```bash
-cd "$TuanRoot/Tuan-App"
+cd "$TuanRoot/Tuan"
 export TMP='F:\Tuan-CLI\.build_tmp'; export TEMP='F:\Tuan-CLI\.build_tmp'   # 按实际盘符改
 export RUSTUP_TOOLCHAIN='stable-x86_64-pc-windows-gnu'
 export PATH="$HOME/.cargo/bin:$HOME/.workbuddy/binaries/node/versions/22.22.2-6:$MinGWBin:$PATH"
@@ -204,7 +204,7 @@ export PATH="$HOME/.cargo/bin:$HOME/.workbuddy/binaries/node/versions/22.22.2-6:
 ./node_modules/.bin/tauri.cmd build --no-bundle
 ```
 
-产物：`src-tauri/target/release/tuan-app.exe`（约 17 MB）。
+产物：`src-tauri/target/release/tuan.exe`（约 17 MB）。
 便携版目录 `release/` 需要 exe + `WebView2Loader.dll` + `engine/tuan_cli`（桌面端 agent 依赖本地引擎）。
 
 > **若构建报 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`**：Vite 清空 `dist/assets` 时的批量

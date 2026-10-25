@@ -1,0 +1,134 @@
+"""模型适配层 —— Harness 理念: 模型是可插拔的, Harness 不绑定任何一家。
+
+青小团的核心卖点之一: 用户想用哪个"脑子"就用哪个。DeepSeek 不强时,
+直接切到 Claude / Gemini / 本地网关 (Ollama / vLLM / LM Studio 等) 即可 ——
+只要端点是 OpenAI 兼容协议 (chat/completions + tools), 一套适配器通吃。
+
+58 家开箱即用供应商, 按分类覆盖:
+  A. 中国主流 (13 家): DeepSeek, 通义千问, Kimi, GLM, 豆包, 百度文心, 讯飞星火 等
+  B. 国际主流 (19 家): OpenAI, Anthropic, Gemini, Mistral, xAI, Cohere, DeepInfra 等
+  C. 聚合网关 (7 家): OpenRouter, SiliconFlow, Novita, Lepton, GitHub Models, 七牛 等
+  D. 云平台 (8 家): 火山引擎, 百度千帆, 腾讯混元, 华为盘古, AWS Bedrock, Azure, Nebius 等
+  E. 免费层 (6 家): NVIDIA NIM, Agnes AI, Groq, Cloudflare, OpenCode Zen, 商汤日日新
+  F. 本地部署 (5 家): Ollama, LM Studio, vLLM, llama.cpp, 通用本地网关
+"""
+
+from typing import Dict, Type
+
+from .base import ModelAdapter, ModelCapabilities, ModelResponse, ToolCall
+from .openai_compat import OpenAICompatAdapter
+from .provider_catalog import (
+    ALL_PROVIDERS, ALL_PROVIDER_NAMES, PROVIDER_CATEGORIES,
+    ProviderPreset, get_provider, get_provider_models,
+    get_free_providers, get_cn_providers, get_global_providers,
+)
+from .timeout_policy import resolve_read_timeout
+
+__all__ = [
+    "ModelAdapter", "ModelCapabilities", "ModelResponse", "ToolCall",
+    "OpenAICompatAdapter", "AnthropicAdapter", "KernelModelAdapter",
+    "create_adapter", "create_kernel_adapter", "KNOWN_PROVIDERS", "is_known_provider", "PROVIDER_PRESETS",
+    "ALL_PROVIDERS", "ALL_PROVIDER_NAMES", "PROVIDER_CATEGORIES",
+    "ProviderPreset", "get_provider", "get_provider_models",
+    "get_free_providers", "get_cn_providers", "get_global_providers",
+]
+
+# 所有"已知" provider (仅用于友好提示与文档; 实际一律走 OpenAI 兼容适配器)。
+# 未知 provider 不再报错, 而是按 openai-compatible 网关处理 —— 极大放开扩展性。
+# 58 家开箱即用供应商 (详见 provider_catalog.py); 外加通用网关 openai-compatible。
+KNOWN_PROVIDERS = tuple(list(ALL_PROVIDER_NAMES) + ["openai-compatible", "anthropic-gw"])
+
+# 58 家开箱即用的供应商预设: 选了就自动带好 base_url / 推荐模型 / 密钥变量。
+# 用户 `tuan models` 直接挑一家即可, 不用手填任何地址。
+# 保持向后兼容: 旧代码中 `PROVIDER_PRESETS["deepseek"]` 仍可工作。
+PROVIDER_PRESETS: Dict[str, Dict[str, str]] = {
+    p.name: p.to_dict() for p in ALL_PROVIDERS
+}
+# 补充 anthropic-gw (向后兼容, 与 anthropic 共享 base_url/api_key)
+PROVIDER_PRESETS["anthropic-gw"] = {
+    "base_url": "https://api.anthropic.com/v1",
+    "model": "claude-3-5-sonnet-latest",
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "desc": "Claude (走 OpenAI 兼容网关, 需中转; 原生请用 anthropic provider)",
+}
+
+
+def is_known_provider(provider: str) -> bool:
+    """判断 provider 是否在已知清单内 (仅用于提示, 不影响可用性)。"""
+    return provider in KNOWN_PROVIDERS
+
+
+def get_provider_info(provider: str):
+    """获取供应商详细信息 (结构化数据), 未知供应商返回 None。"""
+    return get_provider(provider)
+
+
+def create_adapter(config) -> ModelAdapter:
+    """根据配置创建模型适配器。
+
+    设计原则: 不绑架任何一家模型。
+    - 已知 provider (deepseek / openai / moonshot ...) 与未知 provider 都走
+      OpenAICompatAdapter (chat/completions + tools 协议统一)。
+    - 未知 provider 不再抛 ValueError, 而是按 openai-compatible 网关处理;
+      缺失 base_url 时给清晰报错, 引导用户填网关地址。
+    - 若 model.backend 设为 "kernel"，改用自研 kernel ChatProvider 后端
+      (统一 ChatProvider 接口 + 顶层 generate 聚合器 + ProviderService)，默认仍为 legacy 不破坏现状。
+    """
+    # ---- 可插拔后端开关：kernel 走自研 provider 架构；默认 legacy 保持现状 ----
+    if config.get("model.backend", "legacy") == "kernel":
+        from .kernel_adapter import create_kernel_adapter
+
+        return create_kernel_adapter(config)
+
+    provider = config.get("model.provider", "deepseek")
+    base_url = config.get("model.base_url")
+    # ---- 思考型模型智能放宽读超时 ----
+    # 这类模型思考期可能长时间不吐 token, 分片空闲一旦超过 read_timeout 就被
+    # httpx 判超时 → 反复重试 → "卡死"。口径统一见 timeout_policy: 陈旧的
+    # 低值 (如早期固化下来的 120) 会被抬回下限, 不再让默认值形同虚设。
+    _model_name = (config.get("model.model", "") or "")
+    read_timeout = resolve_read_timeout(
+        config.get("model.read_timeout", 300.0), _model_name
+    )
+    if not is_known_provider(provider):
+        # 未知 provider = 用户自定义的 OpenAI 兼容网关 (Claude/Gemini/本地等)。
+        # 必须给出 base_url, 否则无从连接。
+        if not base_url:
+            raise ValueError(
+                f"未知模型 provider: {provider!r} (不在内置清单 {', '.join(KNOWN_PROVIDERS)})。\n"
+                f"若它是 OpenAI 兼容网关, 请在 model.base_url 填网关地址, 例如:\n"
+                f"  tuan models set {provider} <model> https://your-gateway/v1\n"
+                f"或先用已知 provider: tuan models set openai-compatible <model> <base_url>"
+            )
+    # 显式标注共同基类: 否则 mypy 会按 anthropic 分支把变量收窄成
+    # type[AnthropicAdapter], else 分支赋 OpenAICompatAdapter 即报不兼容。
+    adapter_cls: Type[ModelAdapter]
+    if provider == "anthropic":
+        from .anthropic import AnthropicAdapter  # 延迟导入: 避免启动时加载 httpx
+        adapter_cls = AnthropicAdapter
+    else:
+        adapter_cls = OpenAICompatAdapter
+    return adapter_cls(
+        base_url=base_url,
+        model=config.get("model.model"),
+        api_key=config.api_key(),  # 延迟校验: 真正发请求时 client 属性才检查
+        temperature=config.get("model.temperature", 0.7),
+        max_tokens=config.get("model.max_tokens", 8192),
+        timeout=config.get("model.timeout", 120),
+        connect_timeout=config.get("model.connect_timeout", 10.0),
+        read_timeout=read_timeout,
+        prompt_cache=config.get("model.prompt_cache", True),
+    )
+
+
+# 自研 kernel 后端（供 model.backend=kernel 使用）——惰性导出:
+# kernel 包会加载整套供应商目录 (~200ms), 只在真正用到时才 import,
+# 避免拖慢 config/light 命令的启动。
+_KERNEL_EXPORTS = ("KernelModelAdapter", "create_kernel_adapter")
+
+
+def __getattr__(name: str):
+    if name in _KERNEL_EXPORTS:
+        from .kernel_adapter import KernelModelAdapter, create_kernel_adapter
+        return KernelModelAdapter if name == "KernelModelAdapter" else create_kernel_adapter
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 # 基于脚本自身位置解析，避免写死盘符/绝对路径：
-#   scripts/ -> Tuan-App/ -> Tuan-CLI/（仓库根）
+#   scripts/ -> Tuan/ -> Tuan-CLI/（仓库根）
 # sys.path 需指向仓库根，这样 `import tuan_cli` 才能解析到 <ROOT>/tuan_cli/。
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))

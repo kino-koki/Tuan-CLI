@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 版本策略 (Version Policy)
+- **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
+- **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
+
+## [0.3.2] - 2026-10-25 (小更新)
+### 新增: 4 个独有模块 (多数 Agent 尚无对应物)
+
+- **隐私文件防护罩 (Privacy Shield)** — `tuan_cli/ext/privacy_shield.py`:
+  引擎在「读取文件内容」前按 `.tuanignore` + 内置默认规则拦截隐私/开发中文件
+  (`.env`、密钥、`*待办*`/`*代办*`、token、日志等), 命中返回 `[隐私屏蔽]` 提示,
+  内容绝不进入模型上下文; 语法为 gitignore 子集 (支持 `!` 否定 / `dir/` / 根锚定),
+  与仓库 `.gitignore` 防提交形成双保险。接入 `tools/filesystem.py` 的
+  read_file / read_files 全部读路径。
+- **Slash 宏 (Slash Macros)** — `tuan_cli/cli/cmd_slash_mac.py`:
+  `/mac list|add <名> <命令1>;<命令2>|run <名>|show <名>|rm <名>` 把高频命令序列
+  存成宏一键执行; 用户级 (`~/.tuan/macros.json`) + 项目级 (`<ws>/.tuan/macros.json`)
+  双存储; 执行走与手工输入同路径的 `_handle_slash` 递归分发。
+- **上下文预算仪表 (Context Budget Gauge)** — 桌面端 `src/platform/context.ts`:
+  状态栏常驻「ctx N%」细进度条, 对照 `model.context_window` 实时显示当前会话
+  token 占用 (est., ~3 字符/token); ≥70% 变橙、≥90% 变红、100% 标「溢出」,
+  与 TTS 状态同 15s 轮询, 提醒及时 `/compact`。
+- **语音协警 (Voice Copilot)** — 桌面端 `src/platform/voiceCopilot.ts`:
+  授权请求 / 回复完成 / 出错时用本地 MOSS-TTS-Nano 播报一句短提示
+  (「需要你的授权」「回复完成」「出错了」); 同类事件 1.5s 合并 + 全局 800ms
+  节流防吵; 设置页「事件语音提醒」开关, 与 TTS 主开关双保险。
+
+### TUI 完善: ↑/↓ 历史导航 (Claude Code 同款), 删除 Ctrl+↑/↓
+- `tui/tui.py` **删除 Ctrl+↑/↓ 键绑定** (原为逐行翻卷等价键, 用户认定反人类);
+- **↑/↓ 直接翻上下文历史**: 斜杠面板关闭时走 prompt_toolkit 默认历史导航
+  (`b.auto_up/auto_down`), 面板打开时游走命令菜单 —— 与 Claude Code 终端行为一致;
+- 对话区回卷保留 Shift+PgUp/PgDn 逐行 + PgUp/PgDn 整屏 + 鼠标滚轮。
+
+### 依赖精简: 外部核心依赖 9 项 → 2 项 (-78% ≈ 80%)
+- `engine/requirements.txt` 与根 `pyproject.toml` 对齐, 核心依赖仅剩
+  `rich` + `prompt_toolkit` (+ `tomli` 仅 Python<3.11 条件);
+- 移除 `httpx` / `openai` / `typing_extensions` (引擎 0 引用),
+  `pyyaml` → 内置 `_yaml.py` (stdlib 子集, 差分一致),
+  `pydantic` → 内置 `_config_model.py` (backend_dev 引用仅为模板字符串),
+  `cryptography` → 内置 `crypto_engine.py` 纯 Python fallback (装则自动 AES-GCM)。
+
+### 配置: 隐私 / 开发中文件防护
+- `.gitignore` 新增隐私段 (`.env`、密钥、`*待办*`/`*代办*`、`*.tmp/bak/orig/swp` 等),
+  防止开发中/隐私文件 (例如代办 md) 被提交;
+- 新增 `.tuanignore` 运行时规则, 与引擎 Privacy Shield 联动;
+- 核查确认: 父仓库与 Tuan 仓库均无待办/隐私文件入库 (仅 `.env.example` 模板与代码)。
+
 ## [Unreleased] - 2026-10-18
 ### 新增: 免费层扩充 (商汤日日新公测免费 + 4 家完全免费) + 供应商/模型清单校准
 

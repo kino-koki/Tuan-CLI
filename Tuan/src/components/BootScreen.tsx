@@ -123,7 +123,7 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
         {/* 启动终端（CodeX 式 TUI 窗口） */}
         <TermWindow
           className="boot-item-in w-[440px] max-w-full"
-          title="tuan-chat — bootstrap"
+          title="tuan — bootstrap"
           right={appVersion ? `v${appVersion}` : undefined}
           footer={
             <>
@@ -135,7 +135,7 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
           {/* `>_` 标识行 + meta 行（CodeX TUI header block） */}
           <div className="boot-item-in flex items-center gap-2" style={{ animationDelay: '0.1s' }}>
             <span className="term-prompt">&gt;_</span>
-            <span className="tuan-mono text-[13px] font-medium text-tuan-text">青小团 Tuan-Chat</span>
+            <span className="tuan-mono text-[13px] font-medium text-tuan-text">青小团 Tuan</span>
           </div>
           <div className="tuan-mono term-meta boot-item-in" style={{ animationDelay: '0.15s' }}>
             <span className="term-meta-key">engine:</span> tuan-cli {engineVersion ? `v${engineVersion}` : 'v0.3.1'} · 58 providers
@@ -189,7 +189,7 @@ export default function BootScreen({ engineStatus, onDone }: Props) {
         </TermWindow>
 
         <div className="boot-item-in tuan-mono mt-5 text-[11px] text-tuan-textSecondary" style={{ animationDelay: '0.7s' }}>
-          {appVersion ? `Tuan-Chat v${appVersion} · ` : ''}Model + Harness = Agent
+          {appVersion ? `Tuan v${appVersion} · ` : ''}Model + Harness = Agent
         </div>
       </div>
     </div>

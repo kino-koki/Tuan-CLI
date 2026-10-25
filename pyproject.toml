@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tuan-cli"
-version = "0.3.1"
+version = "0.3.2"
 description = "青小团 Tuan-CLI — safety-first, model-agnostic, pure-Python AI Agent CLI (blast-radius preview → hard redline → exact /undo)."
 readme = "README.md"
 requires-python = ">=3.10"

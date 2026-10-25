@@ -1,4 +1,4 @@
-# Tuan-Chat（Tauri 重建版）
+# Tuan（Tauri 重建版）
 
 保留原界面视觉设计，实现从零重写的 Tauri + React + TypeScript 客户端；底层对接 Tuan-CLI（`tuan_cli`）引擎。旧套壳实现不复制、不残留。
 
@@ -27,7 +27,7 @@ cd src-tauri; cargo build --release
 ```
 
 ## 产物
-- 便携版：`release/Tuan-Chat.exe`（同目录需保留 `WebView2Loader.dll`；目标机需有 WebView2 运行时，Win10/11 通常自带）
+- 便携版：`release/Tuan.exe`（同目录需保留 `WebView2Loader.dll`；目标机需有 WebView2 运行时，Win10/11 通常自带）
 - NSIS 安装包：本机无法从 GitHub 下载 nsis-3.13.zip（连接被拒），在可访问 GitHub 的环境执行
   `npx tauri build --bundles nsis` 即可产出安装器。
 

@@ -39,7 +39,7 @@ fun DispatchScreen(viewModel: DispatchRepository) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Tuan-Chat · 分发") },
+                title = { Text("Tuan · 分发") },
                 actions = {
                     IconButton(onClick = { viewModel.refreshAgents() }) {
                         Text("刷新")

@@ -15,6 +15,10 @@ const KEY_ENGINE_SETUP_DISMISSED = 'tuan.engineSetupDismissed';
 const KEY_TTS_ENABLED = 'tuan.tts.enabled';
 const KEY_TTS_VOICE = 'tuan.tts.voice';
 const KEY_TTS_LANGUAGE = 'tuan.tts.language';
+/** 语音协警: 关键事件 (授权/完成/出错) 本地语音提醒 (默认关) */
+const KEY_VOICE_COPILOT = 'tuan.voiceCopilot.enabled';
+/** 侧栏折叠偏好（桌面人体工学：跨会话保持用户布局选择） */
+const KEY_SIDEBAR_COLLAPSED = 'tuan.sidebarCollapsed';
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -110,6 +114,20 @@ export const store = {
   },
   saveTtsLanguage(v: string) {
     write(KEY_TTS_LANGUAGE, v);
+  },
+  /** 侧栏折叠偏好 */
+  sidebarCollapsed(): boolean {
+    return read<boolean>(KEY_SIDEBAR_COLLAPSED, false);
+  },
+  saveSidebarCollapsed(v: boolean) {
+    write(KEY_SIDEBAR_COLLAPSED, v);
+  },
+  /** 语音协警开关 */
+  voiceCopilotEnabled(): boolean {
+    return read<boolean>(KEY_VOICE_COPILOT, false);
+  },
+  saveVoiceCopilot(v: boolean) {
+    write(KEY_VOICE_COPILOT, v);
   },
 };
 

@@ -5,7 +5,9 @@
   hermes / DeepSeek Harness / Kimi Code)。
 - run() 是 async generator, 流式产出 AgentEvent; 路由器只关心事件流, 不关心
   底层 agent 是子进程、RPC 还是 mock。
-- detect() 只做 PATH 探测 + 一次 --version, 结果由 discovery 缓存。
+- detect() 只做 PATH 探测 + 一次异步 --version (3s 超时), 输出含适配器
+  verify 标识才计满分; 结果由调用方按需获取 (discovery 每次连接重探,
+  保证状态实时; router 并行 gather, 不再串行等待)。
 - 审批通过 approve_callback(approval_id) -> decision 异步回传; 适配器在需要审批时
   yield 一个 APPROVAL 事件后 await 回调 (allow 继续 / deny 中止)。
 
@@ -28,6 +30,16 @@ class EventType(str, Enum):
     ERROR = "error"
     DONE = "done"
     META = "meta"
+
+
+def _kill(proc) -> None:
+    """终止子进程; 进程已退出时静默 (取消/审批拒绝/收尾竞态都可能触发)。"""
+    try:
+        proc.kill()
+    except (ProcessLookupError, ValueError):
+        pass
+    except Exception:
+        pass
 
 
 @dataclass
@@ -66,13 +78,26 @@ class TaskRequest:
 
 @dataclass
 class AgentInfo:
-    """代理健康状态, 对应协议 hello.agents[] 元素。"""
+    """代理健康状态, 对应协议 hello.agents[] 元素。
+
+    score (0-100) 是「判定」的量化输出, 供状态展示与 auto 模式次级排序:
+    - 100: PATH 命中且 --version 输出含预期标识 (verify), 确认是本工具
+    - 70:  PATH 命中但版本输出为空 / 探测命令无法执行 (按可用处理, 版本未知)
+    - 60:  PATH 命中但版本输出不含预期标识 (疑似同名工具, 仍按可用处理)
+    - 0:   PATH 未命中 (healthy=False)
+
+    healthy 只表达「能不能派活」: 除 0 分外一律为 True——PATH 命中是
+    可用性的主信号, 版本校验只影响分数与提示, 不阻断路由 (避免误杀
+    版本输出格式不同的真实安装)。
+    """
+
     id: str
     name: str
     path: Optional[str] = None
     healthy: bool = False
     version: Optional[str] = None
     reason: Optional[str] = None
+    score: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -81,6 +106,7 @@ class AgentInfo:
             "path": self.path,
             "healthy": self.healthy,
             "version": self.version,
+            "score": self.score,
             **({"reason": self.reason} if self.reason else {}),
         }
 
@@ -100,46 +126,72 @@ class AgentAdapter(ABC):
     display_name: str = "Unknown"
     description: str = ""
     command: tuple = ()  # 候选命令, 按优先级排列
+    # 版本校验标识: --version 输出 (大小写不敏感) 含此串才给满分 100。
+    # 留空表示跳过校验 (命中 PATH 即 70 分: 版本未知但按可用处理)。
+    verify: str = ""
 
     # 打分权重, 用于 router 在 auto 模式下排序 (值越大越优先)
     weights: dict = {}  # mode -> score
 
     async def detect(self) -> AgentInfo:
-        """探测代理是否安装。默认实现: shutil.which 找 PATH + --version。
+        """探测代理是否安装 (真正异步, 可被 asyncio.gather 并行)。
 
-        子类一般无需覆盖, 除非探测逻辑特殊 (如需要 --help 校验)。
+        判定口径 (score):
+        - PATH 未命中            → healthy=False, score=0,  reason=not found in PATH
+        - 命中 + 版本含 verify   → healthy=True,  score=100, 确认是本工具
+        - 命中 + 版本输出为空    → healthy=True,  score=70,  版本未知
+        - 命中 + 版本不含 verify → healthy=True,  score=60,  疑似同名工具
+        - 命中 + --version 超时/异常 → healthy=True, score=70, 版本未知
+
+        healthy 不因版本校验失败而变 False: PATH 命中是可用性主信号,
+        校验只影响分数与提示, 避免误杀版本输出格式特殊的真实安装。
         """
+        import asyncio
         import shutil
-        import subprocess
 
         for cmd in self.command:
             path = shutil.which(cmd)
             if not path:
                 continue
-            version = None
-            try:
-                # --version 探测, 3s 超时; 失败不影响 healthy
-                r = subprocess.run(
-                    [path, "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                    encoding="utf-8",
-                    errors="replace",
+            version, probe_err = await self._probe_version(path)
+            if probe_err is not None:
+                # --version 跑不动 (超时/权限/不是可执行格式): 命令在 PATH 上,
+                # 按可用处理但版本未知
+                return AgentInfo(
+                    id=self.id,
+                    name=self.display_name,
+                    path=path,
+                    healthy=True,
+                    version=None,
+                    score=70,
                 )
-                # 有些 CLI 的 --version 输出在 stderr (如 codex)
-                out = (r.stdout or "") + (r.stderr or "")
-                if out.strip():
-                    # 取第一行作为版本标识
-                    version = out.strip().splitlines()[0][:80]
-            except Exception:
-                version = None
+            if not version:
+                # 有命令无版本输出: 可用, 版本未知
+                return AgentInfo(
+                    id=self.id,
+                    name=self.display_name,
+                    path=path,
+                    healthy=True,
+                    version=None,
+                    score=70,
+                )
+            if self.verify and self.verify.lower() not in version.lower():
+                return AgentInfo(
+                    id=self.id,
+                    name=self.display_name,
+                    path=path,
+                    healthy=True,
+                    version=version,
+                    score=60,
+                    reason=f"版本输出未匹配预期标识 '{self.verify}', 可能是同名工具",
+                )
             return AgentInfo(
                 id=self.id,
                 name=self.display_name,
                 path=path,
                 healthy=True,
                 version=version,
+                score=100,
             )
         return AgentInfo(
             id=self.id,
@@ -147,6 +199,45 @@ class AgentAdapter(ABC):
             healthy=False,
             reason="not found in PATH",
         )
+
+    async def _probe_version(self, path: str) -> tuple[Optional[str], Optional[str]]:
+        """跑一次 `<path> --version`, 3s 超时。
+
+        返回 (version, error): version 为首行 (≤80 字符) 或 None;
+        error 非 None 表示探测命令本身失败 (超时/无法启动)。
+        """
+        import asyncio
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                path,
+                "--version",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except Exception as e:
+            return None, f"{type(e).__name__}: {e}"
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=5)
+        except asyncio.TimeoutError:
+            proc.kill()
+            try:
+                await proc.wait()
+            except Exception:
+                pass
+            return None, "version probe timeout (5s)"
+        except Exception as e:
+            proc.kill()
+            try:
+                await proc.wait()
+            except Exception:
+                pass
+            return None, f"{type(e).__name__}: {e}"
+        # 有些 CLI 的 --version 输出在 stderr (如 codex)
+        text = ((out or b"") + (err or b"")).decode("utf-8", errors="replace").strip()
+        if not text:
+            return None, None
+        return text.splitlines()[0][:80], None
 
     async def build_command(self, task: TaskRequest) -> list:
         """构建最终命令行。默认实现: [第一个候选命令] + prompt。子类覆盖。"""
@@ -253,7 +344,7 @@ class AgentAdapter(ABC):
                             if decision != "allow":
                                 seq = _next(seq)
                                 yield AgentEvent(kind=EventType.DONE, data={"status": "denied"}, seq=seq, task_id=task.id)
-                                proc.kill()
+                                _kill(proc)
                                 return
                     else:
                         seq = _next(seq)
@@ -282,7 +373,7 @@ class AgentAdapter(ABC):
                 task_id=task.id,
             )
         except asyncio.CancelledError:
-            proc.kill()
+            _kill(proc)
             seq = _next(seq)
             yield AgentEvent(kind=EventType.DONE, data={"status": "cancelled"}, seq=seq, task_id=task.id)
             raise

@@ -188,7 +188,7 @@ export default function CommandPalette({ open, onClose, actions }: Props) {
             </kbd>
             执行
           </span>
-          <span className="ml-auto hidden sm:inline">Tuan-Chat 命令面板</span>
+          <span className="ml-auto hidden sm:inline">Tuan 命令面板</span>
         </div>
       </div>
     </div>
