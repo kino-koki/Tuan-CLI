@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from .base import ModelAdapter, ModelCapabilities, ModelResponse, ToolCall
+from ..core.errors import ConfigError
 
 if TYPE_CHECKING:
     from .. import _openai_sdk
@@ -53,7 +54,9 @@ class OpenAICompatAdapter(ModelAdapter):
                 if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
                     self._api_key = "sk-local-llm"
                 else:
-                    raise RuntimeError(
+                    # ConfigError (业务错误 kind="config"): 重试策略据此快速失败,
+                    # 不再按瞬时网络错误白等十几秒; 文案供 C-2 模板渲染。
+                    raise ConfigError(
                         "未配置 API Key。请运行 `tuan setup`, 或设置环境变量 "
                         "DEEPSEEK_API_KEY / OPENCODE_ZEN_API_KEY / TUAN_API_KEY。"
                     )

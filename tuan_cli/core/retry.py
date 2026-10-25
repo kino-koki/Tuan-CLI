@@ -48,6 +48,40 @@ def classify_error(exc: Exception) -> tuple:
     return "other", None
 
 
+# 配置类错误的特征文案 (缺 API Key / 未配置供应商等): 重试不可能成功,
+# 必须立即失败。这些文案在 openai_compat / config.loader 抛出, 兜底匹配
+# 保证即便某处还没迁到 ConfigError 也不会再白等十几秒。
+_CONFIG_ERROR_MARKERS = (
+    "未配置 api key",
+    "未配置api key",
+    "api key 未配置",
+    "请运行 `tuan setup`",
+    "请运行 tuan setup",
+)
+
+# 业务错误体系 (core/errors.py) 中「重试无意义」的 kind:
+# config (缺 Key/配置损坏) / model (模型不存在) / auth (Key 无效)。
+# network / provider (5xx) 不在此列 —— 它们是瞬时错误, 应当重试。
+_FATAL_ERROR_KINDS = frozenset({"config", "model", "auth"})
+
+
+def is_fatal_error(exc: Exception) -> bool:
+    """配置/参数类错误: 重试不可能成功, 必须立即失败。
+
+    典型场景: 全新环境首次 `tuan run`, 没配 API Key —— 旧行为会按瞬时错误
+    重试 3 次 (指数退避约 18s) 才把「请运行 tuan setup」摆到用户面前,
+    观感是「卡住十几秒然后失败」。配置类错误应当 <1s 失败。
+    """
+    try:
+        from .errors import TuanCliError
+    except Exception:  # pragma: no cover - errors 模块零依赖, 不会失败
+        TuanCliError = None  # type: ignore
+    if TuanCliError is not None and isinstance(exc, TuanCliError):
+        return exc.kind in _FATAL_ERROR_KINDS
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _CONFIG_ERROR_MARKERS)
+
+
 def retry_after_seconds(exc: Exception) -> Optional[float]:
     """从异常的响应头里解析 Retry-After (秒); 无或非法返回 None。"""
     resp = getattr(exc, "response", None)
@@ -138,6 +172,10 @@ class RetryPolicy:
                 raise
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
+                # 配置类错误 (缺 API Key / 配置损坏 / 模型不存在): 重试无意义,
+                # 原样上抛 (保留异常类型, 供上层 C-2 友好错误模板渲染)。
+                if is_fatal_error(exc):
+                    raise
                 kind, status = classify_error(exc)
                 if kind == "auth":
                     raise RuntimeError(

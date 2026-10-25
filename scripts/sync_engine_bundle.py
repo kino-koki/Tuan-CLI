@@ -59,6 +59,18 @@ SKIP_DIRS = {
     ".tox", ".nox", "dist", "build",
     # 运行时状态（应用自建虚拟环境与运行数据），不属于源码，不参与同步与校验
     ".runtime-home", ".runtime-ws",
+    # ---- Tuan 桌面壳枝剪：引擎不需要的 CLI/TUI/开发工具模块 ----
+    # 判定标准（三重验证）：
+    #   1. 绝对导入 grep: 无 `from tuan_cli.<mod>` 其他子目录
+    #   2. 相对导入 grep: 无 `from ..<mod>` / `from .<mod>` 硬依赖
+    #   3. runtime 隔离: 仅被 cli/* 命令惰性引用（python -m tuan_cli web 路径不触发）
+    # 注意: 曾误将 vision/ports/harden 纳入，实测 core/agent.py 硬依赖 vision，
+    #       core/telemetry.py 惰性引用 ports，core/security_auditor.py 惰性引用 harden
+    #       —— 这些一旦剥离，-S 模式 (无 site-packages) 下引擎启动直接崩溃。
+    "tui",       # 终端 TUI 界面。引用链: cli/user_commands.py → ui/fullscreen.py → tui.win_compat（CLI 专用）
+    "gh",        # GitHub CLI 集成。唯一引用: cli/cmd_gh.py（纯 CLI）
+    "code_edit", # 代码编辑子代理。零外部 import（仅 self-reference）
+    "acp",       # 顶层 ACP 协议入口。唯一引用: cli/cmd_acp.py（runtime/acp 独立保留）
 }
 # 按 glob 匹配的目录后缀（如 *.egg-info）
 SKIP_DIR_GLOBS = ("*.egg-info",)
@@ -94,7 +106,9 @@ def walk(root: Path) -> dict[str, Path]:
         if not p.is_file():
             continue
         rel = p.relative_to(root)
-        if any(_skip_dir(part) for part in rel.parents):
+        # 注意: rel.parents 返回 Path 对象，而 _skip_dir 按字符串匹配 SKIP_DIRS。
+        # Python 的 Path('foo') != 'foo' 且 hash 不同，必须显式 str() 转换。
+        if any(_skip_dir(str(part)) for part in rel.parents):
             continue
         if _skip_file(p):
             continue

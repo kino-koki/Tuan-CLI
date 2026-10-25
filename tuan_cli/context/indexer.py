@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # 这些目录默认不进入索引 (脚手架/产物/依赖)
 _SKIP_DIRS = {
@@ -137,7 +137,7 @@ class CodebaseIndexer:
                     if rel not in key_files:
                         key_files.append(rel)
 
-        tree = self._render_tree(root)
+        tree = self._render_tree(root, loc_by_rel={e.path: e.loc for e in entries})
         self._cache = IndexResult(
             workspace=self.workspace,
             total_files=scanned,
@@ -149,10 +149,16 @@ class CodebaseIndexer:
         )
         return self._cache
 
-    def _render_tree(self, root: Path, max_lines: int = 400) -> str:
-        """生成带行数标注的目录树 (目录在前, 文件按行数排序)。"""
+    def _render_tree(self, root: Path, max_lines: int = 400,
+                     loc_by_rel: Optional[Dict[str, int]] = None) -> str:
+        """生成带行数标注的目录树 (目录在前, 文件按行数排序)。
+
+        ``loc_by_rel`` 复用 build() 已统计的逐文件行数, 避免对每文件二次打开
+        (旧实现 _render_tree 会再 walk + 重开每个文件计数, 大型仓库 I/O 翻倍)。
+        """
         lines: List[str] = []
         skip = _SKIP_DIRS
+        loc_by_rel = loc_by_rel or {}
 
         def walk(p: Path, prefix: str) -> None:
             if len(lines) >= max_lines:
@@ -170,11 +176,14 @@ class CodebaseIndexer:
                 lang = _LANG_MAP.get(ext, None)
                 if lang is None:
                     continue
-                try:
-                    with open(p / f, "r", encoding="utf-8", errors="replace") as fh:
-                        loc = min(sum(1 for _ in fh), _LOC_SAMPLE_CAP)
-                except OSError:
-                    loc = 0
+                rel = (p / f).relative_to(root).as_posix()
+                loc = loc_by_rel.get(rel)
+                if loc is None:
+                    try:
+                        with open(p / f, "r", encoding="utf-8", errors="replace") as fh:
+                            loc = min(sum(1 for _ in fh), _LOC_SAMPLE_CAP)
+                    except OSError:
+                        loc = 0
                 fstats.append((f, loc))
             fstats.sort(key=lambda x: -x[1])
             children = dirs + [f for f, _ in fstats]

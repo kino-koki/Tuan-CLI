@@ -24,6 +24,23 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _render_model_error(exc: Exception) -> str:
+    """模型调用异常的对外文案: 业务错误走 C-2 固定友好模板 (❌ 开头), 其余保留原文。
+
+    on_error 收到 ❌ 模板会原样输出给用户, 收到其它文案则补 ``[模型错误]`` 前缀;
+    业务错误 (缺 Key / 配置损坏 / 模型不存在 / Key 无效) 因此呈现为可读性更强的
+    固定提示, 而非一坨原始异常信息。
+    """
+    try:
+        from .errors import friendly_for
+        tmpl = friendly_for(exc)
+        if tmpl is not None:
+            return tmpl.render()
+    except Exception:  # noqa: BLE001
+        pass
+    return str(exc)
+
+
 # ================================================================ LoopProvider 基类
 
 class LoopProvider(ABC):
@@ -168,7 +185,7 @@ class ReActLoop(LoopProvider):
             except Exception as exc:
                 err_msg = f"[模型错误] {exc}"
                 if on_error:
-                    on_error(str(exc))
+                    on_error(_render_model_error(exc))
                 answer = err_msg
                 break
 
@@ -305,7 +322,7 @@ class PlannerExecuteLoop(LoopProvider):
                 )
             except Exception as exc:
                 if on_error:
-                    on_error(str(exc))
+                    on_error(_render_model_error(exc))
                 answer = f"[步骤 {i+1} 失败] {exc}"
                 break
 

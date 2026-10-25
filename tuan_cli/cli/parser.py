@@ -113,6 +113,7 @@ def _auto_register() -> None:
     importlib.import_module(".cmd_worktree", __package__)
     importlib.import_module(".cmd_handoff", __package__)
     importlib.import_module(".cmd_help", __package__)
+    importlib.import_module(".cmd_skills", __package__)
     # 导入 commands.py，它会通过 PEP 562 惰性路由注册所有命令
     importlib.import_module(".commands", __package__)
     # 注意: commands.py 内的 _CMD_SOURCES 已经覆盖所有已注册 func

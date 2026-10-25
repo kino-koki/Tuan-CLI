@@ -498,6 +498,8 @@ class TestAgentTierIntegration:
         agent = self._agent(tmp_path, tuan_home, indexer=self._fake_indexer(),
                             provider="deepseek", model="deepseek-chat",
                             context_window=32768)
+        # 代码库地图改为后台构建 (不阻塞启动), 这里先等其完成再断言
+        agent.await_codebase_index(timeout=2.0)
         assert agent.prompt_tier == COMPACT
         assert agent._codebase_map == "# 代码地图\nsrc/a.py"
         assert "代码地图" in agent._system_prompt

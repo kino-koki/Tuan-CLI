@@ -192,15 +192,26 @@ class AgentResilience:
     def _should_failover(self, exc: Exception) -> bool:
         """是否值得切备用: 可用性故障 (超时/网络/5xx/429/熔断) 才转移。
 
-        鉴权失败 (4xx) 是配置问题而非供应商宕机, 转移会掩盖误配置且换谁都是
-        401/403, 默认不转移 (model.failover.skip_auth 可关)。
+        配置/参数/鉴权类错误 (缺 API Key / 配置损坏 / 模型不存在 / Key 无效) 是
+        本地误配置, 换哪家供应商都是同样的失败 —— 转移只会掩盖根因、浪费时间,
+        必须直接上抛贴近根因的错误。这类错误统一以 TuanCliError(kind∈
+        {config, model, auth}) 表达; 同时兜底匹配文案, 应对尚未迁移的旧抛出点。
         """
         if not self.failover_enabled:
             return False
-        if self.config.get("model.failover.skip_auth", True):
-            msg = str(exc)
-            if "鉴权失败" in msg or "401" in msg or "403" in msg or "Authentication" in msg:
+        # 业务错误体系: 重试/转移都无意义, 直接上抛
+        from .errors import TuanCliError
+        if isinstance(exc, TuanCliError):
+            if exc.kind in ("config", "model", "auth"):
                 return False
+        # 兜底: 未迁移到 TuanCliError 的同类文案
+        msg = str(exc).lower()
+        if any(m in msg for m in (
+            "未配置 api key", "未配置api key", "api key 未配置",
+            "请运行 `tuan setup`", "请运行 tuan setup",
+            "鉴权失败", "401", "403", "authentication",
+        )):
+            return False
         return True
 
     def _failover(
