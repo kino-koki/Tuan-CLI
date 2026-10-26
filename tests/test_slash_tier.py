@@ -317,7 +317,9 @@ class TestSlashCompleterTiers:
         }
         comp = _SlashCompleter(words, tiers=tiers)
         items = list(comp.get_completions(FakeDoc(), None))
-        displays = [it.display for it in items]
+        # prompt_toolkit 的 Completion.display 是 FormattedText 对象, 取纯文本要用
+        # display_text —— 拿 display 直接和字符串比会永远 False。
+        displays = [it.display_text for it in items]
         assert "/help" in displays
         assert "/audit" not in displays
         assert "/blast" not in displays
@@ -327,7 +329,10 @@ class TestSlashCompleterTiers:
         from tuan_cli.tui.tui import _SlashCompleter
 
         class FakeDoc:
-            text_before_cursor = "/au"
+            # 前缀必须是 "/a": "/add-dir" 里没有字母 u, 用 "/au" 的话它按前缀/
+            # 子串/子序列任何一种模糊规则都匹配不上, 用例本身就不自洽。
+            # "/a" 同时覆盖 "/audit" 与 "/add-dir" 两条专家层命令, 原意不变。
+            text_before_cursor = "/a"
 
         words = ["/help", "/audit", "/add-dir", "/model"]
         tiers = {
@@ -336,7 +341,9 @@ class TestSlashCompleterTiers:
         }
         comp = _SlashCompleter(words, tiers=tiers)
         items = list(comp.get_completions(FakeDoc(), None))
-        displays = [it.display for it in items]
+        # prompt_toolkit 的 Completion.display 是 FormattedText 对象, 取纯文本要用
+        # display_text —— 拿 display 直接和字符串比会永远 False。
+        displays = [it.display_text for it in items]
         assert "/audit" in displays
         assert "/add-dir" in displays
         assert "/help" not in displays  # 不匹配前缀

@@ -157,6 +157,22 @@ def test_command_substitution_echo_output_is_analyzed():
 
 
 def test_warning_level_reuses_shared_high_risk_severity():
+    """warning_level 必须与共享打分库的 high 严重度一致 (high -> 3 次确认)。
+
+    口径依据 (CHANGELOG 0.3.3「修复: `kill -9 <pid>` 与广播式 `pkill -9` 未分级」):
+    - 定向 `kill -9 <pid>` (只杀一个已知进程) 降为 medium —— 信号操作不销毁数据;
+    - 广播式强制信号 (`pkill -9` / `killall -9` 按名称杀全部同名进程) 与
+      `kill -9 0|1` (整个进程组 / init) 保留 high —— 扩散面与不可恢复性高一个量级。
+
+    本用例此前断言三条命令 (含定向 `kill -9 1234` 与不带 -9 的 `pkill -f worker`)
+    全为 high, 属 10-24 批量导入时从未绿过的陈旧期望, 与上述刻意决策相反。
+    """
+    # 真正判 high 的广播式强制信号 -> warning_level 3
+    for command in ("pkill -9 nginx", "killall -9 node", "kill -9 0"):
+        assert _ENGINE.score({"command": command})["risk"] == "high", command
+        assert get_warning_level(command) == 3, command
+
+    # 定向终止 / 非强制信号 -> medium, 不走 3 次确认阶梯
     for command in ("kill -9 1234", "pkill -f worker", "killall worker"):
-        assert _ENGINE.score({"command": command})["risk"] == "high"
-        assert get_warning_level(command) == 3
+        assert _ENGINE.score({"command": command})["risk"] == "medium", command
+        assert get_warning_level(command) == 0, command

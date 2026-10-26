@@ -120,7 +120,9 @@ def test_systemctl_mutating_never_benign():
 
 def test_systemctl_scores():
     assert _score("systemctl stop nginx") == "medium"
-    assert _score("systemctl disable sshd") == "medium"
+    # 停用 sshd = 远程访问锁死, 有控制台可恢复故列 high 而非 critical
+    # (CHANGELOG 0.3.3「修复: 11 条 Linux 账户/权限提升命令」小节明确记载)。
+    assert _score("systemctl disable sshd") == "high"
     assert _score("systemctl mask docker") == "high"
     assert _score("systemctl restart nginx") == "none"  # 无模式命中, 靠严格模式确认兜底
 

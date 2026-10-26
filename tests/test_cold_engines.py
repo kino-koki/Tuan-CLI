@@ -448,8 +448,34 @@ def test_safety_score_critical_chmod_chown_recursive():
         assert res["risk"] == "critical", f"chmod/chown 漏判: {cmd}"
 
 
+def test_safety_score_critical_firewall_lockout():
+    """CRITICAL: 防火墙锁死类操作应返回 critical。
+
+    口径依据 (CHANGELOG 0.3.3「修复: 11 条 Linux 账户/权限提升命令全部 risk=none 放行」):
+    `ufw disable` / `ufw delete rule` / `ufw default deny incoming` 属「关闭或收紧防火墙」,
+    与 `iptables -P INPUT DROP` 同列 critical —— 随机种子真实场景基准里反复漏放。
+
+    本用例此前把 `ufw disable` 断言为 high, 属 10-24 批量导入时从未绿过的陈旧期望
+    (与 bench/bypass_matrix.py「AO.防火墙与远程锁死」组要求 block 冲突,
+     降档实测导致绕过矩阵从 0 例破到 21 例)。此处按最新决策对齐。
+    """
+    from tuan_cli.ext.safety_engine import SafetyEngine
+
+    eng = SafetyEngine()
+    for cmd in ["ufw disable", "ufw delete rule 22/tcp", "ufw default deny incoming"]:
+        res = eng.score({"command": cmd})
+        assert res["risk"] == "critical", f"防火墙锁死漏判: {cmd}"
+        assert res["block"] is True, f"防火墙锁死未拦截: {cmd}"
+        assert res["score"] == 100
+
+
 def test_safety_score_high_docker_kubectl_git_clean():
-    """HIGH: docker rm/rmi -f, kubectl delete, git clean -f, git checkout -- . 应返回 high。"""
+    """HIGH: docker rm/rmi -f, kubectl delete, git clean -f, git checkout -- . 应返回 high。
+
+    注: `ufw disable` 已移出本组 —— 它属防火墙锁死类, 判 critical (见
+    test_safety_score_critical_firewall_lockout)。`systemctl disable sshd`
+    则从 medium 升为 high (CHANGELOG 0.3.3: 远程访问锁死, 有控制台可恢复故列 high)。
+    """
     from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
@@ -460,7 +486,8 @@ def test_safety_score_high_docker_kubectl_git_clean():
         "git clean -fd",
         "git checkout -- .",
         "iptables -F",
-        "ufw disable",
+        "systemctl disable sshd",
+        "service sshd stop",
     ]
     for cmd in high_cmds:
         res = eng.score({"command": cmd})
@@ -470,13 +497,16 @@ def test_safety_score_high_docker_kubectl_git_clean():
 
 
 def test_safety_score_medium_systemctl_stop_pkill():
-    """MEDIUM: systemctl stop, pkill, killall, chmod 000, chown root 应返回 medium。"""
+    """MEDIUM: systemctl stop, pkill, killall, chmod 000, chown root 应返回 medium。
+
+    注: `systemctl disable sshd` 已移出本组 —— 远程访问锁死类升为 high
+    (CHANGELOG 0.3.3: 有控制台可恢复故列 high 而非 critical, 见上方 high 组用例)。
+    """
     from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
     medium_cmds = [
         "systemctl stop nginx",
-        "systemctl disable sshd",
         "service nginx stop",
         "pkill -f python",
         "killall node",
