@@ -9,6 +9,8 @@ dist/
 wheels/
 *.whl
 *.egg
+# Web 构建产物（桌面端/web 打包输出 zip，本地产物不入库）
+tuan-cli-web-final.zip
 
 # ===== 虚拟环境 =====
 .venv/
