@@ -10,7 +10,7 @@
 > - **Safety first**: dangerous commands are blocked *before* they run (blast-radius preview → hard redline → multi-stage confirmation). Every write is journaled in a transactional ledger for exact `/undo`.
 > - **Safety semantics**: YOLO/`--yolo` automatically approves operations that would normally require confirmation, but does **not** bypass hard redlines. `--isolation` provides engine/process-level isolation to reduce blast radius and contain failures; it is *not* a full OS sandbox and does not replace command approval.
 > - **Developer experience preserved**: file reads/writes, routine `git` operations, package installs, test runs and linters are scored `none` — **zero confirmation, zero blocking** (`safety_engine.is_benign_dev_command`). Only genuinely dangerous actions escalate to advice or blocking.
-> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,321 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `tuan safe bench`, reproduces everything locally** (no network, no model); `tuan safe report` emits a self-contained HTML security report. Current code measured (2026-10): adversarial 10k → block recall 100% / flag recall 100% / false-positive 0.09% (1) / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 2,321 payloads → bypass 0 / false positive 1 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
+> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,497 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `tuan safe bench`, reproduces everything locally** (no network, no model); `tuan safe report` emits a self-contained HTML security report. Current code measured (2026-10): adversarial 10k → block recall 100% / flag recall 100% / false-positive 0.45% (5) / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 2,497 payloads → bypass 0 / false positive 1 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
 > - **Ecosystem interop**: we don't rebuild ecosystems — we **reuse what Claude Code / Hermes Agent already accumulated** on this machine (skills, named agents, memory, SOUL persona, MCP configs). `tuan ecosystem` moves assets both ways in one command; `tuan ecosystem link` mounts tuan back into them over MCP. One harness, three ecosystems' worth of assets.
 
 **Language:** **English** · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
@@ -141,7 +141,7 @@ tuan --print run "Hi, describe yourself in one sentence."
 
 ---
 
-## The command surface: 38 core subcommands + slash commands
+## The command surface: 43 core subcommands + slash commands
 
 | Command | What it's for |
 |---|---|
@@ -225,7 +225,7 @@ Rules always resolve `deny > ask > allow`. Whitelist with `tuan safe allow <cmd>
 
 - **Adversarial corpus** `bench/safety_bench_10k.py` — 10,000 bash/generic commands (seeded 20260906, reproducible); reports block recall / flag recall / false-positive rate / bypasses.
 - **PowerShell corpus** `bench/bench_powershell_safety.py` — 5,000 samples (2,300 dangerous / 2,700 benign); reports accuracy / misses / false positives.
-- **Bypass matrix** `bench/bypass_matrix.py` — 2,321 hand-crafted adversarial payloads; beyond pattern matching, it asserts **per disaster-consequence class** whether every class of catastrophic intent was actually blocked.
+- **Bypass matrix** `bench/bypass_matrix.py` — 2,497 hand-crafted adversarial payloads; beyond pattern matching, it asserts **per disaster-consequence class** whether every class of catastrophic intent was actually blocked.
 
 ```bash
 tuan safe bench                 # full run (~3 min)
@@ -239,11 +239,11 @@ Measured on current code (2026-10-25, reproducible via `tuan safe bench`):
 
 | Suite | Size | Core metric | Bypasses | False positives |
 |---|---|---|---|---|
-| Adversarial | 10,000 | block recall 100% · flag recall 100% · FP 0.09% (1) | 0 | — |
+| Adversarial | 10,000 | block recall 100% · flag recall 100% · FP 0.45% (5) | 0 | — |
 | PowerShell | 5,000 | accuracy 100% · misses 0 | 0 | 0 |
-| Bypass matrix | 2,321 | disaster-intent classes 100% blocked | 0 | 1 |
+| Bypass matrix | 2,497 | disaster-intent classes 100% blocked | 0 | 1 |
 
-Caveat: the bypass matrix is deliberately fail-closed and keeps a few conservative escalations (`nc` Unicode-variant probes, `tar|ssh` exfil-shaped payloads), which produce "benign-but-flagged" false positives; the 0.09% (1) FP in the adversarial suite comes from the same conservatism. Numbers are authoritative as re-run locally with `tuan safe bench`.
+Caveat: the bypass matrix is deliberately fail-closed and keeps a few conservative escalations (`nc` Unicode-variant probes, `tar|ssh` exfil-shaped payloads), which produce "benign-but-flagged" false positives; the 0.45% (5) FP in the adversarial suite comes from the same conservatism — all 5 are flagged (never hard-blocked) variants of one `tar|ssh` benign case. Numbers are authoritative as re-run locally with `tuan safe bench`.
 
 **CI numbers gate**: the `safety-benchmarks` job in `.github/workflows/security-ci.yml` re-runs all three suites on every push and compares against the committed archive — any regression (bypasses, a disaster class no longer fully blocked, a clear FP rise) **fails CI**. The archive `bench/security-bench.json` corresponds 1:1 to the README table. 
 

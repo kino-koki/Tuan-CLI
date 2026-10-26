@@ -10,7 +10,7 @@
 > - **Segurança em primeiro lugar**: comandos perigosos são bloqueados *antes* de rodarem (pré-visualização do raio de impacto → linha vermelha dura → confirmação multinível). Cada escrita passa por um livro transacional para um `/undo` exato.
 > - **Semântica de segurança**: YOLO/`--yolo` aprova automaticamente operações que normalmente exigiriam confirmação, mas **não** contorna linhas vermelhas duras. `--isolation` oferece isolamento no nível do mecanismo/processo para reduzir o raio de impacto e conter falhas; **não** é um sandbox completo do sistema operacional nem substitui a aprovação de comandos.
 > - **Experiência do desenvolvedor preservada**: leituras/escrituras de arquivo, operações `git` rotineiras, instalação de pacotes, rodadas de testes e linters recebem nota `none` — **zero confirmações, zero bloqueios** (`safety_engine.is_benign_dev_command`). Só ações genuinamente perigosas escalam para conselho ou bloqueio.
-> - **Medições reproduzíveis**: nosso objetivo é «menos comandos perigosos escapam, menos comandos inofensivos incomodam», e qualquer número que publicarmos **precisa ser reproduzível por um terceiro** — sem promessas absolutas inverificáveis. Os benchmarks vivem em [`bench/`](bench/README.md): 10k amostras adversariais bash/generic + 5k amostras de PowerShell + 2.321 payloads de bypass feitos à mão (com asserções de nível de consequência catastrófica). **Um único comando, `tuan safe bench`, reproduz tudo localmente** (sem rede, sem modelo); `tuan safe report` emite um relatório de segurança HTML autocontido. Código atual medido (2026-10): adversarial 10k → recall de bloqueio 100 % / recall de flag 100 % / falso positivo 0,09 % (1) / bypass 0; PowerShell 5k → precisão 100 % / falhas 0 / falsos positivos 0; matriz de bypass 2.321 payloads → bypass 0 / falso positivo 1 / classes de intenção catastrófica 100 % bloqueadas. Algumas escaladas deliberadamente conservadoras de fail-closed permanecem (ex.: sondagens de porta `nc`, payloads com forma de exfiltração `tar|ssh`) e explicam as cifras de falsos positivos; por favor rode localmente.
+> - **Medições reproduzíveis**: nosso objetivo é «menos comandos perigosos escapam, menos comandos inofensivos incomodam», e qualquer número que publicarmos **precisa ser reproduzível por um terceiro** — sem promessas absolutas inverificáveis. Os benchmarks vivem em [`bench/`](bench/README.md): 10k amostras adversariais bash/generic + 5k amostras de PowerShell + 2.497 payloads de bypass feitos à mão (com asserções de nível de consequência catastrófica). **Um único comando, `tuan safe bench`, reproduz tudo localmente** (sem rede, sem modelo); `tuan safe report` emite um relatório de segurança HTML autocontido. Código atual medido (2026-10): adversarial 10k → recall de bloqueio 100 % / recall de flag 100 % / falso positivo 0,45 % (5) / bypass 0; PowerShell 5k → precisão 100 % / falhas 0 / falsos positivos 0; matriz de bypass 2.497 payloads → bypass 0 / falso positivo 1 / classes de intenção catastrófica 100 % bloqueadas. Algumas escaladas deliberadamente conservadoras de fail-closed permanecem (ex.: sondagens de porta `nc`, payloads com forma de exfiltração `tar|ssh`) e explicam as cifras de falsos positivos; por favor rode localmente.
 > - **Interoperabilidade de ecossistemas**: a gente não reconstrói ecossistemas — **reutilizamos o que o Claude Code / Hermes Agent já acumularam** nesta máquina (skills, agentes nomeados, memória, SOUL persona, configs MCP). `tuan ecosystem` move ativos nos dois sentidos num único comando; `tuan ecosystem link` remonta o tuan neles sobre MCP. Um harness, o equivalente a três ecossistemas em ativos.
 
 **Idioma/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · **Português (Brasil)** · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
@@ -138,7 +138,7 @@ tuan --print run "Oi, descreva-se em uma frase."
 
 ---
 
-## Superfície de comandos: 38 subcomandos principais + comandos slash
+## Superfície de comandos: 43 subcomandos principais + comandos slash
 
 | Comando | Pra quê |
 |---|---|
@@ -199,7 +199,7 @@ As regras sempre resolvem `deny > ask > allow`. Use `tuan safe allow <cmd>` pra 
 
 - **Corpus adversarial** `bench/safety_bench_10k.py` — 10.000 comandos bash/generic (semeados 20260906, reproduzíveis); reporta recall de bloqueio / recall de flag / taxa de falsos positivos / bypasses.
 - **Corpus de PowerShell** `bench/bench_powershell_safety.py` — 5.000 amostras (2.300 perigosas / 2.700 inofensivas); reporta precisão / falhas / falsos positivos.
-- **Matriz de bypass** `bench/bypass_matrix.py` — 2.321 payloads adversariais feitos à mão; além de pattern matching, asserciona **por classe de consequência catastrófica** se cada classe de intenção catastrófica foi realmente bloqueada.
+- **Matriz de bypass** `bench/bypass_matrix.py` — 2.497 payloads adversariais feitos à mão; além de pattern matching, asserciona **por classe de consequência catastrófica** se cada classe de intenção catastrófica foi realmente bloqueada.
 
 ```bash
 tuan safe bench                 # rodada completa (~3 min)
@@ -213,11 +213,11 @@ Medido no código atual (2026-10-25, reproduzível via `tuan safe bench`):
 
 | Suite | Tamanho | Métrica principal | Bypasses | Falsos positivos |
 |---|---|---|---|---|
-| Adversarial | 10.000 | recall de bloqueio 100 % · recall de flag 100 % · FP 0,09 % (1) | 0 | — |
+| Adversarial | 10.000 | recall de bloqueio 100 % · recall de flag 100 % · FP 0,45 % (5) | 0 | — |
 | PowerShell | 5.000 | precisão 100 % · falhas 0 | 0 | 0 |
-| Matriz de bypass | 2.321 | classes de intenção catastrófica 100 % bloqueadas | 0 | 1 |
+| Matriz de bypass | 2.497 | classes de intenção catastrófica 100 % bloqueadas | 0 | 1 |
 
-Caveat: a matriz de bypass é deliberadamente fail-closed e mantém algumas escaladas conservadoras (sondagens Unicode-variante de `nc`, payloads com forma de exfiltração `tar|ssh`), que produzem falsos positivos «inofensivo mas marcado»; o 0,09 % (1) de FP na suíte adversarial vem do mesmo conservadorismo. Os números são autoritativos como rodados localmente com `tuan safe bench`.
+Caveat: a matriz de bypass é deliberadamente fail-closed e mantém algumas escaladas conservadoras (sondagens Unicode-variante de `nc`, payloads com forma de exfiltração `tar|ssh`), que produzem falsos positivos «inofensivo mas marcado»; o 0,45 % (5) de FP na suíte adversarial vem do mesmo conservadorismo (5 variantes do mesmo caso benigno `tar|ssh`, todas apenas marcadas, nenhuma bloqueada). Os números são autoritativos como rodados localmente com `tuan safe bench`.
 
 **Gate de números no CI**: o job `safety-benchmarks` no `.github/workflows/security-ci.yml` roda as três suítes a cada push e compara contra o arquivo commitado — qualquer regressão (bypasses, uma classe de desastre não bloqueando completamente mais, uma subida clara de FP) **faz o CI falhar**. O arquivo `bench/security-bench.json` corresponde 1:1 à tabela do README.
 

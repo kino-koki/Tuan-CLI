@@ -61,7 +61,7 @@ _MODEL_CLAIM = re.compile(
 
 _SUBCOMMAND_CLAIM = re.compile(
     r"(\d+)\s*" + _MEASURE + _CONNECTOR + _QUALIFIER + r"[-]?\s*"
-    r"(?:sub[- ]?command\w*|子命令|子指令|サブコマンド|Unterbefehl\w*|"
+    r"(?:sub[- ]?command\w*|子命令|子指令|サブコマンド|서브커맨드|Unterbefehl\w*|"
     r"pod[- ]?komand\w*|subcomand\w*|sous[- ]?command\w*|под[- ]?команд\w*)",
     re.IGNORECASE,
 )
@@ -71,6 +71,92 @@ _CLAIMS = (
     ("models", _MODEL_CLAIM),
     ("subcommands", _SUBCOMMAND_CLAIM),
 )
+
+# ---- 基准数字断言的正则 (绕过矩阵条数 / 对抗样本误杀率) ----------------------------
+# 真值来源: bench/security-bench.json (与 CI 门禁 security-ci.yml 同源的提交存档)。
+# 本轮修复前, 10 语种 README 的「绕过矩阵 2,321 / 2,310」与实测 2,497、「误杀率 0.09% (1)」
+# 与实测 0.45% (5) 长期不一致, 且旧校验器只管供应商/模型/子命令数, 留有盲区。
+# 这里把基准数字也纳入机器可核对范围, 防止再次漂移。
+_BYPASS_KW_RE = re.compile(r"bypass|绕过|ペイロード|payload", re.IGNORECASE)
+# 千分位可写成逗号 (2,497) 或点 (2.497) 或不写 (2497); 统一去分隔符转 int。
+_NUMBER_RE = re.compile(r"\d{1,3}(?:[,\.]\d{3})+|\d{4,}")
+# 正确误杀率 (本轮实测): 0.45% (5) / 0,45 % (5)
+_FP_CORRECT_RE = re.compile(r"0[.,]45\s*%\s*\(\s*5\s*\)")
+# 旧错误误杀率 (漂移值): 0.09% (1) / 0,09 % (1)
+_FP_WRONG_RE = re.compile(r"0[.,]09\s*%\s*\(\s*1\s*\)")
+# 旧错误绕过矩阵条数 (漂移值)
+_OLD_BYPASS_TOTALS = frozenset({2321, 2310})
+
+
+def bench_truth() -> Dict[str, int]:
+    """从提交存档读取基准真值: 绕过矩阵条数 / 对抗误杀数 / 误杀率。"""
+    p = REPO_ROOT / "bench" / "security-bench.json"
+    if not p.exists():
+        return {}
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    bm = d.get("bypass_matrix") or {}
+    adv = d.get("adversarial") or {}
+    try:
+        return {
+            "bypass_total": int(bm.get("total", 0)),
+            "adv_false_pos": int(adv.get("false_pos", 0)),
+            "adv_false_rate": float(adv.get("false_positive_rate", 0.0)),
+        }
+    except (TypeError, ValueError):
+        return {}
+
+
+def check_benchmark_consistency(truth: Dict[str, int]) -> List[str]:
+    """核对各 README 的基准数字与存档一致。
+
+    规则:
+      - 含「绕过矩阵」语境的 README, 必须出现真值条数, 且不得出现旧漂移值 (2321/2310)。
+      - 出现「误杀率 0.45% (5)」或旧「0.09% (1)」语境的 README, 必须出现正确值,
+        且不得出现旧漂移值。
+    无绕过矩阵段落的语种 README (ja/ko/zh-GAT) 不触发, 自然免检。
+    """
+    problems: List[str] = []
+    if not truth:
+        return problems
+    bt = int(truth["bypass_total"])
+    fp = int(truth["adv_false_pos"])
+    for path in _readmes():
+        text = path.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        has_bypass_ctx = any(_BYPASS_KW_RE.search(ln) for ln in lines)
+        has_fp_ctx = any(_FP_CORRECT_RE.search(ln) or _FP_WRONG_RE.search(ln) for ln in lines)
+        seen_bypass_correct = seen_bypass_wrong = False
+        seen_fp_correct = seen_fp_wrong = False
+        for ln in lines:
+            if _BYPASS_KW_RE.search(ln):
+                for m in _NUMBER_RE.finditer(ln):
+                    num = int(m.group(0).replace(",", "").replace(".", ""))
+                    if num == bt:
+                        seen_bypass_correct = True
+                    if num in _OLD_BYPASS_TOTALS:
+                        seen_bypass_wrong = True
+            if _FP_CORRECT_RE.search(ln):
+                seen_fp_correct = True
+            if _FP_WRONG_RE.search(ln):
+                seen_fp_wrong = True
+        if has_bypass_ctx:
+            if not seen_bypass_correct:
+                problems.append(
+                    f"{path.name}: 绕过矩阵条数未出现真值 {bt} (或仍含旧值)"
+                )
+            if seen_bypass_wrong:
+                problems.append(f"{path.name}: 仍含旧绕过矩阵条数 (2321/2310)")
+        if has_fp_ctx:
+            if not seen_fp_correct:
+                problems.append(
+                    f"{path.name}: 对抗误杀率未出现真值 {fp} 条 (0.45%)"
+                )
+            if seen_fp_wrong:
+                problems.append(f"{path.name}: 仍含旧误杀率 0.09% (1)")
+    return problems
 
 
 def ground_truth() -> Dict[str, int]:
@@ -184,18 +270,26 @@ def main(argv: List[str] | None = None) -> int:
     try:
         truth = collect_numbers()
         claims = scan_claims()
+        bench = bench_truth()
     except Exception as exc:  # 环境问题: 无法读取真值
         print(f"[verify_doc_numbers] 无法读取代码真值: {exc}", file=sys.stderr)
         return 2
 
     problems = check_consistency()
+    if bench:
+        problems.extend(check_benchmark_consistency(bench))
 
     if args.json:
         # JSON 面向机器消费, 用 ensure_ascii=True 保证纯 ASCII ——
         # 否则日语片假名/韩语在 GBK(CP936)/CP932 控制台下, 父进程按 locale
         # 解码会直接 UnicodeDecodeError (见 tests/test_doc_numbers.py 的回归)。
         print(json.dumps(
-            {"truth": truth, "claims": claims, "problems": problems},
+            {
+                "truth": truth,
+                "bench_truth": bench,
+                "claims": claims,
+                "problems": problems,
+            },
             ensure_ascii=True, indent=2,
         ))
     else:
@@ -204,6 +298,11 @@ def main(argv: List[str] | None = None) -> int:
             f"子命令 {truth['subcommands']} 个 (含嵌套共 {truth['subcommands_total']}), "
             f"扫描到 {len(claims)} 条断言"
         )
+        if bench:
+            print(
+                f"基准真值 (bench/security-bench.json): 绕过矩阵 {bench['bypass_total']} 条, "
+                f"对抗误杀 {bench['adv_false_pos']} 条 ({bench['adv_false_rate']}%)"
+            )
         if problems:
             print(f"发现 {len(problems)} 处不一致:")
             for p in problems:

@@ -10,7 +10,7 @@
 > - **Sicherheit zuerst**: Gefährliche Befehle werden *vor* ihrem Lauf blockiert (Wirkradius-Vorschau → harte Redline → mehrstufige Bestätigung). Jeder Write läuft durch ein transaktionales Hauptbuch, damit `/undo` exakt zurückrollen kann.
 > - **Sicherheitssemantik**: YOLO/`--yolo` genehmigt automatisch Aktionen, die normalerweise eine Bestätigung erfordern, umgeht aber **keine** harten Redlines. `--isolation` bietet Isolation auf Engine-/Prozessebene, um den Wirkungsradius und die Ausbreitung von Fehlern zu begrenzen; es ist **keine** vollständige Betriebssystem-Sandbox und ersetzt nicht die Befehlsfreigabe.
 > - **Entwickler-Erlebnis bleibt erhalten**: Datei-Lesen/Schreiben, routinemäßige `git`-Operationen, Paketinstallationen, Testläufe und Linter werden mit `none` bewertet — **keine Bestätigung, kein Blockieren** (`safety_engine.is_benign_dev_command`). Nur wirklich gefährliche Aktionen werden zu Rat oder Blockade.
-> - **Reproduzierbare Messwerte**: Unser Ziel ist„weniger gefährliche Befehle schlupfen durch, weniger harmlose Befehle nerven", und jede Zahl, die wir veröffentlichen, **muss von Dritten reproduzierbar sein** — keine unverifizierbaren Absolutversprechen. Benchmarks liegen in [`bench/`](bench/README.md): 10k adversariale bash/generic Samples + 5k PowerShell Samples + 2.321 handgemachte Bypass-Payloads (mit Consequence-Level-Disaster-Assertions). **Ein Befehl, `tuan safe bench`, reproduziert alles lokal** (kein Netz, kein Modell); `tuan safe report` erzeugt einen selbständigen HTML-Sicherheitsreport. Gemessen am aktuellen Code (2026-10): adversarial 10k → block recall 100 % / flag recall 100 % / false-positive 0,09 % (1) / bypass 0; PowerShell 5k → accuracy 100 % / misses 0 / false positives 0; bypass matrix 2.321 payloads → bypass 0 / false positive 1 / disaster-intent classes 100 % blockiert. Einige bewusst fail-closed-konservative Eskalationen bleiben (z. B. `nc`-Port-Probes, `tar|ssh`-exfil-geformte Payloads) und erklären die False-Positive-Zahlen; bitte lokal nachlaufen.
+> - **Reproduzierbare Messwerte**: Unser Ziel ist„weniger gefährliche Befehle schlupfen durch, weniger harmlose Befehle nerven", und jede Zahl, die wir veröffentlichen, **muss von Dritten reproduzierbar sein** — keine unverifizierbaren Absolutversprechen. Benchmarks liegen in [`bench/`](bench/README.md): 10k adversariale bash/generic Samples + 5k PowerShell Samples + 2.497 handgemachte Bypass-Payloads (mit Consequence-Level-Disaster-Assertions). **Ein Befehl, `tuan safe bench`, reproduziert alles lokal** (kein Netz, kein Modell); `tuan safe report` erzeugt einen selbständigen HTML-Sicherheitsreport. Gemessen am aktuellen Code (2026-10): adversarial 10k → block recall 100 % / flag recall 100 % / false-positive 0,45 % (5) / bypass 0; PowerShell 5k → accuracy 100 % / misses 0 / false positives 0; bypass matrix 2.497 payloads → bypass 0 / false positive 1 / disaster-intent classes 100 % blockiert. Einige bewusst fail-closed-konservative Eskalationen bleiben (z. B. `nc`-Port-Probes, `tar|ssh`-exfil-geformte Payloads) und erklären die False-Positive-Zahlen; bitte lokal nachlaufen.
 > - **Ökosystem-Interop**: Wir bauen keine Ökosysteme neu — wir **wiederverwenden, was Claude Code / Hermes Agent auf dieser Maschine schon angesammelt haben** (Skills, benannte Agents, Memory, SOUL-Persona, MCP-Configs). `tuan ecosystem` bewegt Assets in beide Richtungen in einem Befehl; `tuan ecosystem link` mountet tuan über MCP zurück hinein. Ein Harness, drei Ökosysteme an Assets.
 
 **Sprache/Language:** [English](README.md) · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · **Deutsch** · [Русский](README_ru.md)
@@ -138,7 +138,7 @@ tuan --print run "Hallo, stell dich in einem Satz vor."
 
 ---
 
-## Kommandofläche: 38 Kern-Subcommands + Slash-Befehle
+## Kommandofläche: 43 Kern-Subcommands + Slash-Befehle
 
 | Befehl | Wofür |
 |---|---|
@@ -199,7 +199,7 @@ Regeln lösen immer `deny > ask > allow`. Whitelist mit `tuan safe allow <cmd>`;
 
 - **Adversarial-Korpus** `bench/safety_bench_10k.py` — 10.000 bash/generic Befehle (seeded 20260906, reproduzierbar); meldet block recall / flag recall / False-Positive-Rate / Bypasses.
 - **PowerShell-Korpus** `bench/bench_powershell_safety.py` — 5.000 Samples (2.300 gefährlich / 2.700 harmlos); meldet accuracy / misses / False-Positives.
-- **Bypass-Matrix** `bench/bypass_matrix.py` — 2.321 handgemachte adversariale Payloads; über Pattern-Matching hinaus assertet **pro Disaster-Consequence-Klasse**, ob jede Klasse katastrophaler Absicht tatsächlich blockiert wurde.
+- **Bypass-Matrix** `bench/bypass_matrix.py` — 2.497 handgemachte adversariale Payloads; über Pattern-Matching hinaus assertet **pro Disaster-Consequence-Klasse**, ob jede Klasse katastrophaler Absicht tatsächlich blockiert wurde.
 
 ```bash
 tuan safe bench                 # voller Lauf (~3 Min)
@@ -213,11 +213,11 @@ Gemessen am aktuellen Code (2026-10-25, reproduzierbar via `tuan safe bench`):
 
 | Suite | Größe | Kernmetrik | Bypasses | False-Positives |
 |---|---|---|---|---|
-| Adversarial | 10.000 | block recall 100 % · flag recall 100 % · FP 0,09 % (1) | 0 | — |
+| Adversarial | 10.000 | block recall 100 % · flag recall 100 % · FP 0,45 % (5) | 0 | — |
 | PowerShell | 5.000 | accuracy 100 % · misses 0 | 0 | 0 |
-| Bypass-Matrix | 2.321 | disaster-intent classes 100 % blockiert | 0 | 1 |
+| Bypass-Matrix | 2.497 | disaster-intent classes 100 % blockiert | 0 | 1 |
 
-Caveat: die Bypass-Matrix ist bewusst fail-closed und behält ein paar konservative Eskalationen (`nc` Unicode-Variante-Probes, `tar|ssh`-exfil-geformte Payloads), die „harmlos-aber-flagged" False-Positives erzeugen; die 0,09 % (1) FP in der Adversarial-Suite stammen vom selben Konservatismus. Zahlen gelten als autoritativ, wenn lokal mit `tuan safe bench` nachgelaufen.
+Caveat: die Bypass-Matrix ist bewusst fail-closed und behält ein paar konservative Eskalationen (`nc` Unicode-Variante-Probes, `tar|ssh`-exfil-geformte Payloads), die „harmlos-aber-flagged" False-Positives erzeugen; die 0,45 % (5) FP in der Adversarial-Suite (5 Varianten desselben `tar|ssh`-Gutfalls, alle nur markiert, keine hart blockiert) stammen vom selben Konservatismus. Zahlen gelten als autoritativ, wenn lokal mit `tuan safe bench` nachgelaufen.
 
 **CI-Zahlen-Gate**: der `safety-benchmarks`-Job in `.github/workflows/security-ci.yml` läuft alle drei Suiten bei jedem Push durch und vergleicht gegen das eingecommittede Archiv — jede Regression (Bypasses, eine Disaster-Klasse wird nicht mehr komplett blockiert, ein deutlicher FP-Anstieg) **lässt CI failen**. Das Archiv `bench/security-bench.json` entspricht 1:1 der README-Tabelle.
 
