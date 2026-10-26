@@ -199,3 +199,12 @@ Tuan-App/
 # Tuan/ 是独立的桌面/移动应用工程（Tauri + Android + 前端），与主仓 tuan_cli（MIT）不同源，
 # 由并发 Agent 后台独立维护，整体不入库，避免污染主仓（与已忽略的 Tuan-Chat/、Tuan-App/ 同理）。
 Tuan/
+# Tuan 桌面端一次性工具链/素材/构建脚本（与 Tuan/ 同源，不入库）：
+#   .tools/    —— 本机下载的工具链 (mingw/node/rustup/vs_BuildTools, ~100M)，脚本注释明言"卸载只需删 .tools"
+#   cc-haha-src/ —— Tuan 桌面端源码抓取/中间产物
+#   tuan-brand.html —— 品牌展示页素材
+#   scripts/install_and_build.ps1 —— 一键安装工具链 + 双版构建（输出到 Tuan/dist/）
+.tools/
+cc-haha-src/
+tuan-brand.html
+scripts/install_and_build.ps1

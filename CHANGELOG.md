@@ -219,6 +219,41 @@ $(echo cm0gLXJmIC8= | base64 -d)      `echo cm0gLXJmIC8= | base64 -d`
 才是纯文本。已还原标签并留档 —— 这类载荷是真实攻击, 引擎判 block 正确。
 教训与复现脚本见 `bench/README.md`「一条容易被忽略的教训」一节。
 
+### 文档与基准数字统一 (10 语种 README + 校验器)
+
+- **绕过矩阵条数**: README 长期写 `2,321` / `2,310` (中文甚至两值混用), 实测为 **2,497**
+  (`bench/bypass_matrix.py` 确定性语料, 无随机; `bench/README.md` 早已是 2497)。全 10 语种统一为 2,497。
+- **对抗误杀率**: README 写 `0.09% (1)`, 实测为 **0.45% (5)** —— 5 条全是同一个 `tar|ssh`
+  良性用例的程序化前缀变体, 全部仅 `flag` (无一条硬拦)。全 10 语种统一为 0.45% (5)。
+- **子命令数**: README 写 `38` (ko 甚至写 `105`), 代码 `build_parser()` 现报 **43 个核心子命令
+  (含嵌套共 186)**; zh-CN 的「含嵌套共 157」同步为 186。全 10 语种对齐 43 / 186。
+- **根因**: 上一轮文档核对把数字往旧值对齐, 而 `.scratch/doccheck.py` 一度把旧值当期望值;
+  入库的 `scripts/verify_doc_numbers.py` 又不覆盖基准数字 + 漏掉韩语 `서브커맨드`, 形成盲区。
+- **修复**: `scripts/verify_doc_numbers.py` 新增「基准数字」核对维度 (真值取自提交存档
+  `bench/security-bench.json`, 与 CI 门禁同源), 并补韩语正则覆盖; 以后文档漂移会被
+  `tests/test_doc_numbers.py` 自动抓出。
+
+### 测试: 3 个陈旧安全测试对齐刻意决策
+
+- `test_cold_engines.py` / `test_safety_conditional_benign.py` / `test_safety_redteam_round4.py`
+  中 10-24 批量导入、从未绿过的断言, 与 CHANGELOG 0.3.3 记载的刻意决策相反, 已对齐:
+  - 定向 `kill -9 <pid>` → **medium** (广播式 `pkill -9` / `killall -9` / `kill -9 0|1` 仍 high);
+  - `systemctl disable sshd` → **high** (远程访问锁死, 有控制台可恢复, 非 critical);
+  - `ufw disable` / `ufw delete rule` / `ufw default deny incoming` → **critical** (防火墙锁死类;
+    降档实测会让绕过矩阵从 0 例破到 21 例, 故维持 critical)。
+
+### 修复: `/mode` 别名提示 + slash 补全测试口径
+
+- `tuan_cli/cli/cmd_slash.py`: 输入旧档别名 (如 `au`) 时提示其对应的新档 (如 `add-dir`)。
+- `tests/test_slash_tier.py`: 补全项比较改用 `display_text` (prompt_toolkit 的 `display`
+  恒为 FormattedText, 字符串比较永远 False); 前缀用例 `/au` → `/a` (旧值不匹配任何规则)。
+
+### 仓库卫生: 忽略 Tuan 桌面端根产物
+
+- `.gitignore` 追加 `.tools/` (本机工具链 ~100M, 脚本注释明言「卸载只需删 .tools」) /
+  `cc-haha-src/` / `tuan-brand.html` / `scripts/install_and_build.ps1` (输出到 `Tuan/dist/`),
+  与 `Tuan/` 同源, 整体不入库, 避免污染主仓。
+
 ## [Unreleased] - 2026-10-18
 
 ### 新增: 免费层扩充 (商汤日日新公测免费 + 4 家完全免费) + 供应商/模型清单校准

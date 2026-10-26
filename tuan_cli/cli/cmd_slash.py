@@ -958,6 +958,15 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
                 new_id = current_mode()
                 new_meta = get_mode_meta(new_id)
                 ui.success(f"已切换到: {new_meta['name']} ({new_id})")
+                # 旧三档别名提示: 用户敲 standard/yolo/plan 时明确告知映射到哪一档,
+                # 否则「我明明输了 standard, 怎么显示的是协作模式」会让人以为切错了。
+                try:
+                    from ..modes.registry import MODE_ALIASES
+                    canonical = MODE_ALIASES.get(arg.strip().lower())
+                except Exception:  # noqa: BLE001
+                    canonical = None
+                if canonical:
+                    ui.info(f"  「{arg.strip()}」是旧档别名, 对应新档「{canonical}」")
                 ui.info(f"  {reason}")
             else:
                 ui.warning(f"切换失败: {reason}")
