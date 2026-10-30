@@ -273,7 +273,12 @@ class SecurityEventBus:
                 with self._alert_cv:
                     self._alert_pending += 1
                 try:
-                    self._alert_queue.put_nowait(event)
+                    if self._alert_queue is not None:
+                        self._alert_queue.put_nowait(event)
+                    else:
+                        with self._alert_cv:
+                            self._alert_pending -= 1
+                            self._alert_cv.notify_all()
                 except queue.Full:
                     with self._alert_cv:
                         self._alert_pending -= 1

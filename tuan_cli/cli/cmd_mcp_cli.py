@@ -4,19 +4,20 @@ from __future__ import annotations
 
 import datetime
 import json
+from typing import Any
 
 from ..config import Config
 from ._ui_singleton import console
 from ..ui.format import Table
 
 
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     """惰性构建内核: 仅实际执行 mcp 命令时才加载 app 链。"""
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def _mcp_build_kernel():
+def _mcp_build_kernel() -> Any:
     """构建内核并取出已连接的 MCP 客户端列表。"""
     try:
         kernel = build_kernel()
@@ -30,7 +31,7 @@ def _mcp_build_kernel():
     return kernel, clients
 
 
-def _mcp_list(args) -> int:
+def _mcp_list(args: Any) -> int:
     # 轻量路径: 未配置任何 server 时无需构建内核 (常见情况)
     cfg = Config(profile=getattr(args, "profile", "default"),
                  patch_file=getattr(args, "patch", None))
@@ -92,7 +93,7 @@ def _mcp_list(args) -> int:
     return 0
 
 
-def _mcp_tools(args) -> int:
+def _mcp_tools(args: Any) -> int:
     kernel, clients = _mcp_build_kernel()
     if kernel is None:
         return 1
@@ -120,7 +121,7 @@ def _mcp_tools(args) -> int:
     return 0
 
 
-def _mcp_call(args) -> int:
+def _mcp_call(args: Any) -> int:
     kernel, clients = _mcp_build_kernel()
     if kernel is None:
         return 1
@@ -145,7 +146,7 @@ def _mcp_call(args) -> int:
     return 0
 
 
-def _mcp_add(args) -> int:
+def _mcp_add(args: Any) -> int:
     name = getattr(args, "name")
     command = getattr(args, "command")
     extra_args = list(getattr(args, "args", None) or [])
@@ -177,7 +178,7 @@ def _mcp_add(args) -> int:
     return 0
 
 
-def _mcp_remove(args) -> int:
+def _mcp_remove(args: Any) -> int:
     """删除一个已配置的 MCP server (从用户配置 mcp.servers 中移除)。"""
     name = getattr(args, "name")
     try:
@@ -195,7 +196,7 @@ def _mcp_remove(args) -> int:
     return 0
 
 
-def _mcp_test(args) -> int:
+def _mcp_test(args: Any) -> int:
     kernel, clients = _mcp_build_kernel()
     if kernel is None:
         return 1
@@ -215,7 +216,7 @@ def _mcp_test(args) -> int:
     return 0
 
 
-def _mcp_audit(args) -> int:
+def _mcp_audit(args: Any) -> int:
     """查看 MCP 调用审计日志 (持久化 JSONL)。"""
     from ..tools.mcp.audit import MCPAuditStore
     from ..tools.mcp.client import _get_global_audit_store
@@ -261,7 +262,7 @@ def _mcp_audit(args) -> int:
     return 0
 
 
-def _mcp_security(args) -> int:
+def _mcp_security(args: Any) -> int:
     """显示各 MCP server 的安全策略。"""
     from ..tools.mcp.plugin import _build_security_policy
 
@@ -304,7 +305,7 @@ def _mcp_security(args) -> int:
     return 0
 
 
-def cmd_mcp(args) -> int:
+def cmd_mcp(args: Any) -> int:
     """MCP 协议管理。"""
     sub = getattr(args, "mcp_cmd", None)
     if sub == "list":

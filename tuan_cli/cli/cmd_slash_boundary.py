@@ -21,7 +21,7 @@ from ._ui_singleton import ui
 
 # ------------------------------------------------------------ /rewind
 
-def _cmd_rewind(agent, arg: str, workspace: str) -> None:
+def _cmd_rewind(agent: Any, arg: str, workspace: str) -> None:
     """/rewind [list] [to <N>] —— 回退会话到之前的快照。"""
     mgr = RewindManager(workspace)
     parts = arg.strip().split()
@@ -63,7 +63,7 @@ def _cmd_rewind(agent, arg: str, workspace: str) -> None:
 
 # ------------------------------------------------------------ /handoff
 
-def _cmd_handoff(agent, config, workspace: str) -> None:
+def _cmd_handoff(agent: Any, config: Any, workspace: str) -> None:
     """/handoff —— 手动触发会话交接。"""
     sid = getattr(getattr(agent, "session", None), "session_id", "") or ""
     handoff = ChatHandoff(workspace, config)
@@ -82,7 +82,7 @@ def _cmd_handoff(agent, config, workspace: str) -> None:
 
 # ------------------------------------------------------------ /worktree
 
-def _cmd_worktree(agent, arg: str, workspace: str) -> None:
+def _cmd_worktree(agent: Any, arg: str, workspace: str) -> None:
     """/worktree create|list|remove|switch —— git worktree 并行实验。"""
     layer = WorktreeLayer(workspace)
     parts = arg.strip().split()
@@ -118,7 +118,7 @@ def _cmd_worktree(agent, arg: str, workspace: str) -> None:
 
 # ------------------------------------------------------------ /subagent run|status
 
-def _cmd_subagent_enhanced(agent, arg: str) -> None:
+def _cmd_subagent_enhanced(agent: Any, arg: str) -> None:
     """/subagent run <任务> | status —— Subagent 层: 派发 / 查看。"""
     from ..tools.subagent_tool import _run_subagent
     parts = arg.strip().split(None, 1)

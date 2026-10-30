@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import functools
 import os
 import subprocess
 import sys
@@ -26,18 +27,34 @@ def _write_config(home: Path, port: int) -> None:
     )
 
 
+@functools.lru_cache(maxsize=1)
 def _tuan_bin() -> list:
     """返回启动 tuan CLI 的命令片段 (list, 可直接 `+ ["run", ...]`)。
 
     - 优先用 venv 里安装的 tuan 控制台脚本 (真实入口接线, 跨平台);
-    - 若脚本不存在 (例如未 `pip install` 出控制台脚本的裸 venv), 回退到
-      `python -m tuan_cli.cli.parser`, 行为等价且无需安装, 保证测试可跑通。
+    - 若脚本不存在 (例如未 `pip install` 出控制台脚本的裸 venv), 或脚本存在但
+      被本机安全策略/杀软拦截而无法执行 (Windows 上 `Access is denied`, 非偶发),
+      回退到 `python -m tuan_cli.cli.parser`, 行为等价且无需安装, 保证测试可跑通。
     """
     bin_dir = Path(sys.executable).resolve().parent
     tuan = bin_dir / ("tuan.exe" if os.name == "nt" else "tuan")
-    if tuan.exists():
+    if tuan.exists() and _probe_executable(tuan):
         return [str(tuan)]
     return [sys.executable, "-m", "tuan_cli.cli.parser"]
+
+
+def _probe_executable(path: Path) -> bool:
+    """探测可执行文件能否真正启动 (有些环境下 exe 被策略/杀软拦截, 存在但不许执行)。"""
+    try:
+        proc = subprocess.run(
+            [str(path), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        return proc.returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        return False
 
 
 def test_cli_run_headless_with_mock_server(tmp_path, tuan_home, mock_server):

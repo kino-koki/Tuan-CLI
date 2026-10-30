@@ -348,7 +348,7 @@ class ToolPipeline:
       audit  发射内核事件 tool.executed + 语义 OBSERVE
     """
 
-    def __init__(self, hooks=None, bus: Optional[SemanticBus] = None,
+    def __init__(self, hooks: Any = None, bus: Optional[SemanticBus] = None,
                  agent_id: str = "main") -> None:
         self.pre_stages: List[Callable[[ToolCall, LoopContext], ToolCall]] = []
         self.post_stages: List[Callable[[ToolCall, ToolOutcome, LoopContext], ToolOutcome]] = []
@@ -497,9 +497,9 @@ class LoopProviderBridge:
     def error_count(self) -> int:
         return self._error_count
 
-    def run_loop(self, agent, user_input, *, stream=True, on_token=None,
-                 on_tool=None, on_reason=None, on_tool_result=None,
-                 on_error=None, max_iterations=None, session_id=None) -> str:
+    def run_loop(self, agent: Any, user_input: Any, *, stream: bool = True, on_token: Any = None,
+                 on_tool: Any = None, on_reason: Any = None, on_tool_result: Any = None,
+                 on_error: Any = None, max_iterations: Any = None, session_id: Any = None) -> str:
         max_steps = max_iterations or int(agent.config.get("agent.max_iterations", 20))
         self._error_count = 0
         self._last_errors = []
@@ -568,7 +568,7 @@ class LoopProviderBridge:
             }
 
         # ---- execute_fn: 通过 agent._execute_tools 执行 (保留安全护栏/账本/HookManager) ----
-        def _execute(name: str, args) -> str:
+        def _execute(name: str, args: Any) -> str:
             """执行工具调用, 委托给 agent._execute_tools 以保留完整安全管线。
 
             关键: 不再直接调用 registry.dispatch(), 而是构造 tool_call dict
@@ -640,7 +640,7 @@ class LoopProviderBridge:
         self.on_task_end(agent, result.final_answer, result.steps)
         return result.final_answer
 
-    def on_task_start(self, agent, user_input) -> None:
+    def on_task_start(self, agent: Any, user_input: Any) -> None:
         """任务开始: 记录到 session + 重置统计。"""
         self._error_count = 0
         self._last_errors = []
@@ -649,7 +649,7 @@ class LoopProviderBridge:
         except Exception:  # noqa: BLE001
             pass
 
-    def on_task_end(self, agent, answer, iteration) -> None:
+    def on_task_end(self, agent: Any, answer: Any, iteration: Any) -> None:
         """任务结束: 记录结果与统计到 session。"""
         try:
             agent._session_append(

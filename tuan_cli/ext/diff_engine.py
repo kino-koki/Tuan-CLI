@@ -5,12 +5,13 @@ import json
 import sys
 import difflib
 import os
+from typing import Any
 
 
 class DiffEngine:
     """统一 JSONL IPC 协议的 diff 引擎"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.methods = {
             "diff": self.diff,
             "patch": self.patch,
@@ -18,7 +19,7 @@ class DiffEngine:
             "_meta/list": self.list_methods,
         }
 
-    def list_methods(self, params=None):
+    def list_methods(self, params: Any = None) -> Any:
         return {
             "engine": "diff",
             "version": "1.0.0-python",
@@ -26,7 +27,7 @@ class DiffEngine:
             "capabilities": ["line_diff", "word_diff", "patch", "merge3"],
         }
 
-    def diff(self, params):
+    def diff(self, params: Any) -> Any:
         """行级 Myers diff"""
         old = params.get("old", "")
         new = params.get("new", "")
@@ -56,7 +57,7 @@ class DiffEngine:
             "changed": added > 0 or removed > 0,
         }
 
-    def patch(self, params):
+    def patch(self, params: Any) -> Any:
         """应用 unified diff patch (逐 hunk 模拟, context/remove/add 按序消费源行)"""
         source = params.get("source", "") or params.get("content", "")
         patch_text = params.get("patch", "")
@@ -135,7 +136,7 @@ class DiffEngine:
         except Exception as e:
             return {"result": source, "applied": False, "error": str(e)}
 
-    def merge3(self, params):
+    def merge3(self, params: Any) -> Any:
         """3-way merge: base + ours + theirs -> result
 
         算法: 对 base->ours 和 base->theirs 分别做 diff,
@@ -202,7 +203,7 @@ class DiffEngine:
 
         return {"result": "".join(result_lines), "conflicts": conflicts}
 
-    def handle(self, line):
+    def handle(self, line: Any) -> str:
         """处理一行 JSON 请求"""
         req_id = None
         try:
@@ -222,7 +223,7 @@ class DiffEngine:
             resp = {"id": req_id, "ok": False, "error": str(e)}
             return json.dumps(resp, ensure_ascii=False)
 
-    def run(self):
+    def run(self) -> None:
         """主循环: 读取 stdin 逐行处理"""
         sys.stdout.write(json.dumps({"ready": True}) + "\n")
         sys.stdout.flush()

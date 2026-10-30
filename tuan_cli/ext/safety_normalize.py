@@ -9,18 +9,18 @@ import os
 import re
 import shlex
 import unicodedata
-from typing import List
+from typing import Any, Iterator, List
 
 # ------------------------------------------------------------ 致命红线判定 (token 化)
 # 正则容易被旗标顺序/写法变体绕过 (rm -r -f / git push -f / del /s /q),
 # 这里用分词 + 旗标归一的方式判定, 供引擎与各工具共用。
 
-def _segments(text: str):
+def _segments(text: str) -> list[str]:
     """按命令分隔符切段 (; && || | 及换行), 每段独立分析。"""
     return [s for s in re.split(r"&&|\|\||[;|&\n]", text) if s.strip()]
 
 
-def _strip_sudo(parts):
+def _strip_sudo(parts: list[str]) -> list[str]:
     while parts and _cmd_name(parts[0]) in ("sudo", "doas", "pkexec", "su"):
         # su 带 -c/-l/- 等旗标时, 后面的用户/旗标一并吞掉
         if _cmd_name(parts[0]) == "su" and len(parts) > 1 and not parts[1].startswith("-"):
@@ -85,7 +85,7 @@ def _detect_passthrough_danger(args: list[str]) -> bool:
     return False
 
 
-def _scan_variants(text: str):
+def _scan_variants(text: str) -> Iterator[str]:
     """产出待扫描的命令段: **原始文本 + 归一化文本** 的并集。
 
     fail-closed 原则: 归一化链路 (符号链接解析 / glob 展开 / 变量内联 /
@@ -301,13 +301,13 @@ def _inline_command_subs(text: str, max_iter: int = 8) -> str:
     """
     _CMD_SUB_RE = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 
-    def _sub(m):
+    def _sub(m: Any) -> str:
         body = m.group(1) if m.group(1) is not None else m.group(2)
 
-        def _unresolved():
+        def _unresolved() -> str:
             # Preserve the executed substitution body as a separate scan segment. Its
             # output is unknown, but dropping the body can hide nested destructive calls.
-            return "__tuan_unresolved_command_substitution__ ; " + body
+            return "__tuan_unresolved_command_substitution__ ; " + str(body)
 
         try:
             parts = shlex.split(body, posix=True)
@@ -315,7 +315,7 @@ def _inline_command_subs(text: str, max_iter: int = 8) -> str:
             return _unresolved()
         if parts and _cmd_name(parts[0]) == "echo":
             values = parts[1:]
-            echo_flags = set()
+            echo_flags: set[str] = set()
             while values and values[0] in ("-n", "-e", "-E", "-ne", "-en", "-nE", "-En"):
                 echo_flags.update(values.pop(0)[1:])
             if "e" in echo_flags and "E" not in echo_flags:
@@ -526,7 +526,7 @@ def _bounded_glob(pattern: str) -> List[str]:
     out: List[str] = []
     budget = {"left": _GLOB_MAX_ITERATIONS}
 
-    def walk(base, parts, depth):  # noqa: ANN001
+    def walk(base: Any, parts: Any, depth: Any) -> None:  # noqa: ANN001
         if not parts or budget["left"] <= 0:
             if not parts:
                 out.append(str(base))
@@ -674,6 +674,28 @@ def _normalize(text: str) -> str:
     # rm-rf / rm-fr 直接粘连 (无空格) 时拆开, 让 _check_rm_flags 命中
     text = re.sub(r'\brm-(rf|fr)\b', r'rm -\1', text)
 
+    # 安全修复 (V-07): 在 ANSI-C 解码前预捕获 `VAR=$'...'` / `VAR=$"..."` 定义 ——
+    # 解码后的值可能含空格 (`X=$'rm\\x20-rf'` → `X=rm -rf`), 而 `_VAR_DEF_RE` 的
+    # 值捕获 `[^\s;&|]+` 遇空格即截断, 只抓到 `X=rm` 导致 `-rf` 残留, 后续 `$X /`
+    # 替换成 `rm /` 而漏判递归删除。这里先把含 ANSI-C 值的赋值完整收集进 env,
+    # 从文本中移除定义后再让后续 ANSI-C 解码与普通变量赋值继续处理剩余部分。
+    env: dict[str, str] = {}
+    _ANSI_C_ASSIGN_RE = re.compile(
+        r"(?:^|[;|&\n])\s*([A-Za-z_]\w*)=\$'([^']*)'"
+        r"|(?:^|[;|&\n])\s*([A-Za-z_]\w*)=\$\"([^\"]*)\""
+    )
+
+    def _capture_ansi_assign(m: Any) -> str:
+        name1, val1, name2, val2 = m.group(1), m.group(2), m.group(3), m.group(4)
+        name = name1 if name1 else name2
+        raw_val = val1 if name1 else val2
+        env[name] = _decode_ansi_c_escapes(raw_val)
+        # 保留前导分隔符 (如果有), 把整个赋值替换为空格
+        leading = m.group(0)[0] if m.group(0)[0] in ";|&\n" else " "
+        return leading + " "
+
+    text = _ANSI_C_ASSIGN_RE.sub(_capture_ansi_assign, text)
+
     # 安全修复: ANSI-C / locale 引号 ($'...' / $"...") 剥壳并解码转义 ——
     # 对抗 `bash -c $'rm -rf /'` / `eval $"rm -rf /"` 类混淆;
     # 解码 \\xHH / \\0OOO 等转义后, `rm\\x20-rf\\x20/` 还原为 `rm -rf /` 供后续分词。
@@ -690,7 +712,7 @@ def _normalize(text: str) -> str:
     # 这类不经 $'...' 包裹、直接用转义序列拼出命令名的混淆。
     # 仅解码定长转义 (hex 恰好 2 位 / 八进制恰好 3 位), 避免误伤 \t \n 等常见转义。
     if "\\" in text:
-        def _unescape_seq(m):
+        def _unescape_seq(m: Any) -> Any:
             seq = m.group(0)
             try:
                 if seq[:2].lower() == "\\x":
@@ -714,7 +736,7 @@ def _normalize(text: str) -> str:
     # 安全修复: Bash brace expansion 模拟 — {a,b,c} 展开为各分量的并集。
     # 对抗 `{rm,-rf,/}` / `{rm,-r,f,/,}` 等用逗号分隔绕过 token 化判定的写法。
     # 非贪婪匹配: 优先展开最内层花括号。仅当内容含逗号且外层无引号时展开。
-    def _expand_brace(m):
+    def _expand_brace(m: Any) -> Any:
         inner = m.group(1)
         # 简单情况: 逗号分隔的平面列表 {a,b,c} → a b c
         if ',' in inner and '{' not in inner:
@@ -739,9 +761,12 @@ def _normalize(text: str) -> str:
     # `rm $(echo -rf) /` 中旗标浮回命令行, 且 eval 包裹的动态内容由 _eval_is_unverifiable 兜底。
     text = _inline_command_subs(text)
 
-    env = {}
+    # env 已在上方预创建 (含 ANSI-C 变量定义预填充), 此处不重建。
+    # 但普通 NAME=value 赋值 (非 ANSI-C 值) 仍由 _VAR_DEF_RE 收集, 会覆写同名 key
+    # (如果预填充的同名变量又被普通 NAME=value 定义覆盖, 以普通赋值为准 ——
+    # 真实 shell 里后定义的会覆盖先定义的)。
 
-    def _collect(m):
+    def _collect(m: Any) -> str:
         name, raw = m.group(1), m.group(2)
         if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
             raw = raw[1:-1]
@@ -752,7 +777,7 @@ def _normalize(text: str) -> str:
         text = _VAR_DEF_RE.sub(_collect, text)
 
     if env:
-        def _expand(m):
+        def _expand(m: Any) -> Any:
             return env.get(m.group(1) or m.group(2), m.group(0))
         text = re.sub(r"\$\{(\w+)\}|\$(\w+)", _expand, text)
 

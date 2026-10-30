@@ -21,7 +21,7 @@ def paginate_turns(items: list, query: dict) -> dict:
     return _page(segments, page_size, "older")
 
 
-def _split_segments(items: list):
+def _split_segments(items: list) -> list:
     segments = []
     current: list = []
     current_turn: Optional[str] = None

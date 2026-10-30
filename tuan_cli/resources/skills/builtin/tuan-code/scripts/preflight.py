@@ -22,9 +22,10 @@ import json
 import os
 import re
 import sys
+from typing import Any
 
 ROOT = "."
-RESULTS = []
+RESULTS: list[dict[str, str]] = []
 SIMPLE = False
 
 CODE_EXTS = {
@@ -38,7 +39,7 @@ NOISE_DIRS = {
 }
 
 
-def report(name, level, detail):
+def report(name: str, level: str, detail: Any) -> None:
     RESULTS.append({"name": name, "level": level, "detail": detail})
     if SIMPLE:
         print(f"[{level:4s}] {name}")
@@ -46,11 +47,11 @@ def report(name, level, detail):
         print(f"[{level:4s}] {name}: {detail}")
 
 
-def exists(*rel):
+def exists(*rel: Any) -> Any:
     return os.path.exists(os.path.join(ROOT, *rel))
 
 
-def scan_files():
+def scan_files() -> Any:
     found = []
     for dirpath, dirnames, filenames in os.walk(ROOT):
         dirnames[:] = [d for d in dirnames if d not in NOISE_DIRS]
@@ -60,7 +61,7 @@ def scan_files():
     return found
 
 
-def main():
+def main() -> Any:
     global ROOT, SIMPLE
     args = sys.argv[1:]
     if "--simple" in args:

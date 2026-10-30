@@ -297,7 +297,7 @@ def _read_package_json(ws: Path) -> Optional[Dict[str, Any]]:
 
 
 def run_check(name: str, cmd: str, workspace: str, timeout: float = 120.0,
-              kernel=None, confirm=None) -> CheckResult:
+              kernel: Any = None, confirm: Any = None) -> CheckResult:
     """执行单个检查命令, 返回 CheckResult。
 
     统一安全层接入: 执行前经 command_guard 裁决 (硬红线 / 网络出口 / 审计),
@@ -341,7 +341,7 @@ def run_check(name: str, cmd: str, workspace: str, timeout: float = 120.0,
         )
 
 
-def verify_once(workspace: str, cfg: VerifyConfig, kernel=None, confirm=None) -> VerifyRound:
+def verify_once(workspace: str, cfg: VerifyConfig, kernel: Any = None, confirm: Any = None) -> VerifyRound:
     """执行一轮验证 (test + typecheck + lint), 返回 VerifyRound。"""
     commands = infer_check_commands(workspace, cfg)
     rnd = VerifyRound(round_num=1)
@@ -357,8 +357,8 @@ def verify_with_heal(
     cfg: VerifyConfig,
     heal_fn: Optional[Callable[[str], str]] = None,
     max_rounds: Optional[int] = None,
-    kernel=None,
-    confirm=None,
+    kernel: Any = None,
+    confirm: Any = None,
 ) -> VerifyReport:
     """带自修复的验证闭环。
 

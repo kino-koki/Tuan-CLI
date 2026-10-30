@@ -211,7 +211,7 @@ def export_to_hermes_config(
     try:
         hermes_config.parent.mkdir(parents=True, exist_ok=True)
         from ..core import atomicio
-        atomicio.atomic_write_text(hermes_config, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
+        atomicio.atomic_write_text(hermes_config, yaml.safe_dump(data, allow_unicode=True, sort_keys=False) or "")
         result.exported_path = str(hermes_config)
         result.imported = list(servers)
     except OSError as exc:

@@ -189,14 +189,14 @@ def diff_catalog(home: Optional[Path] = None) -> Dict[str, Any]:
 
 # ---------------------------------------------------------------- 后台
 
-def refresh_in_background(home: Optional[Path] = None, on_done=None) -> threading.Thread:
+def refresh_in_background(home: Optional[Path] = None, on_done: Any = None) -> threading.Thread:
     """后台线程执行 refresh, 不阻塞调用方。返回线程句柄。"""
     t = threading.Thread(target=_run_refresh, args=(home, on_done), daemon=True)
     t.start()
     return t
 
 
-def _run_refresh(home, on_done) -> None:
+def _run_refresh(home: Any, on_done: Any) -> None:
     try:
         n_p, n_m = refresh_catalog(home)
         if on_done is not None:

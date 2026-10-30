@@ -15,7 +15,7 @@ import stat
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..core.kernel import Kernel, Plugin
 from .base import Tool, ToolContext, string_prop
@@ -419,7 +419,7 @@ def _apply_replacements(text: str, replacements: list) -> tuple:
     return working, errors
 
 
-def _normalize_replacements(old_string, new_string, replacements) -> Optional[list]:
+def _normalize_replacements(old_string: Any, new_string: Any, replacements: Any) -> Optional[list]:
     """统一为 replacements 列表; 两种调用方式缺一不可时返回 None (由调用方报错)。"""
     if replacements is not None:
         return list(replacements)
@@ -439,7 +439,7 @@ def write_file(ctx: ToolContext, path: str, content: str) -> str:
     # 写入前扫描: 检测是否包含危险命令
     is_dangerous, matches = scan_content_for_danger(content)
     if is_dangerous:
-        warning = format_matches_for_user(matches)
+        warning = format_matches_for_user(matches or [])
         return f"[已拒绝] 文件 {p} 包含危险内容:\n{warning}"
 
     _atomic_write_text(p, content)
@@ -472,7 +472,7 @@ def edit_file(ctx: ToolContext, path: str, old_string: Optional[str] = None,
     # 写入前扫描: 检测新内容是否包含危险命令
     is_dangerous, matches = scan_content_for_danger(new_text)
     if is_dangerous:
-        warning = format_matches_for_user(matches)
+        warning = format_matches_for_user(matches or [])
         return f"[已拒绝] 文件 {p} 包含危险内容:\n{warning}"
 
     _atomic_write_text(p, new_text)
@@ -504,7 +504,7 @@ def diff_preview(ctx: ToolContext, path: str, old_string: Optional[str] = None,
 # 对标 Freebuff / Codebuff 的"批量事务写": 先把 N 个文件的全部改动在内存里校验完,
 # 任何一处不匹配就一个字节都不落盘; 全部通过才逐文件原子写。省多次往返, 且不留半改状态。
 
-def _normalize_edit_item_reps(item) -> tuple:
+def _normalize_edit_item_reps(item: Any) -> tuple:
     """解析 edit_files 的单个编辑项。
 
     返回 (path, reps, error):
@@ -594,7 +594,7 @@ def edit_files(ctx: ToolContext, items: list) -> str:
         # 写入前扫描: 检测是否包含危险命令
         is_dangerous, matches = scan_content_for_danger(new_text)
         if is_dangerous:
-            warning = format_matches_for_user(matches)
+            warning = format_matches_for_user(matches or [])
             return (f"[已拒绝] 文件 {_rel(ctx, p)} 包含危险内容:\n{warning}\n\n"
                     f"edit_files 事务已整体拒绝 (未写入任何文件)。")
 

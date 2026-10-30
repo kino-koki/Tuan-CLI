@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Any, Callable
 
 from .parser import _register_command  # noqa: E402
 from ..ui.plain_console import console  # noqa: E402
@@ -34,7 +35,7 @@ def _user_craft_dir() -> Path:
     return Path.home() / ".tuan" / "craft"
 
 
-def _find_skill_manager():
+def _find_skill_manager() -> Any:
     """惰性 import, 避免 CLI 启动时加载重模块。"""
     try:
         from ..skills.manager import SkillManager
@@ -55,7 +56,7 @@ def _builtin_dir() -> Path:
 
 # --- 子命令处理器 ---
 
-def _list_remote(args) -> int:
+def _list_remote(args: Any) -> int:
     entries = registry.list_skills()
     if not entries:
         console.print("[yellow]远程 registry 暂时不可用 (网络或仓库未初始化)[/]")
@@ -69,7 +70,7 @@ def _list_remote(args) -> int:
     return 0
 
 
-def _install_one(args) -> int:
+def _install_one(args: Any) -> int:
     name = getattr(args, "name", "")
     if not name:
         console.print("[red]缺少 skill 名称: tuan skills install <name>[/]")
@@ -91,7 +92,7 @@ def _install_one(args) -> int:
     return 1
 
 
-def _update_one(args) -> int:
+def _update_one(args: Any) -> int:
     name = getattr(args, "name", "")
     if not name:
         console.print("[red]缺少 skill 名称[/]")
@@ -102,7 +103,7 @@ def _update_one(args) -> int:
     return _install_one(args)
 
 
-def _remove_one(args) -> int:
+def _remove_one(args: Any) -> int:
     name = getattr(args, "name", "")
     if not name:
         console.print("[red]缺少 skill 名称[/]")
@@ -116,7 +117,7 @@ def _remove_one(args) -> int:
     return 0
 
 
-def _pull_all(args) -> int:
+def _pull_all(args: Any) -> int:
     entries = registry.list_skills()
     if not entries:
         console.print("[yellow]远程 registry 暂时不可用[/]")
@@ -140,7 +141,7 @@ def _pull_all(args) -> int:
     return 0 if fail_n == 0 else 1
 
 
-def _list_installed(args) -> int:
+def _list_installed(args: Any) -> int:
     mgr = _find_skill_manager()
     if not mgr:
         console.print("[red]SkillManager 初始化失败[/]")
@@ -161,13 +162,13 @@ def _list_installed(args) -> int:
     return 0
 
 
-def _clear_cache(_args) -> int:
+def _clear_cache(_args: Any) -> int:
     registry.clear_cache()
     console.print("[green]✓[/] 已清除 registry 缓存, 下次 list 会重新拉取")
     return 0
 
 
-def _seed_builtin(_args) -> int:
+def _seed_builtin(_args: Any) -> int:
     """把 builtin/ 里的内置 skill 播种到用户级 ~/.tuan/skills/。
 
     这是「去预制化」的第一步: 首次启动后, 用户运行一次 seed,
@@ -198,7 +199,7 @@ def _seed_builtin(_args) -> int:
     return 0
 
 
-def _craft_list(_args) -> int:
+def _craft_list(_args: Any) -> int:
     entries = registry.list_craft()
     if not entries:
         console.print("[yellow]Tuan-Craft 暂时不可用 (仓库未初始化 registry)[/]")
@@ -210,7 +211,7 @@ def _craft_list(_args) -> int:
     return 0
 
 
-def _craft_install(args) -> int:
+def _craft_install(args: Any) -> int:
     name = getattr(args, "name", "")
     if not name:
         console.print("[red]缺少组件名[/]")
@@ -246,12 +247,13 @@ _ACTIONS = {
 }
 
 
-def cmd_skills(args) -> int:
+def cmd_skills(args: Any) -> int:
     act = getattr(args, "skills_action", None) or "list"
     craft_mode = act in ("craft-list", "craft-install")
     if act in ("list", "installed", "install") and bool(getattr(args, "craft_mode", False)):
         craft_mode = True
 
+    handler: Callable[[Any], int]
     if craft_mode:
         if act in ("craft-list", "list"):
             handler = _craft_list
@@ -261,11 +263,12 @@ def cmd_skills(args) -> int:
             _print_help()
             return 2
     else:
-        handler = _ACTIONS.get(act)
-        if handler is None:
+        candidate = _ACTIONS.get(act)
+        if candidate is None:
             console.print(f"[red]未知子命令: skills {act}[/]")
             _print_help()
             return 2
+        handler = candidate
     return int(handler(args) or 0)
 
 

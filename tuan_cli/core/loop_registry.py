@@ -40,7 +40,7 @@ class EventPipeline:
     安全策略注册为不可变 guard, 无法被重排。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # waterfall 管线 (pre→exec→post)
         self._pre_execute: List[PipelineStage] = []
         self._execute: Optional[PipelineStage] = None
@@ -55,31 +55,31 @@ class EventPipeline:
         # parallel 事件处理器
         self._parallel_handlers: List[Callable[..., Any]] = []
 
-    def register_pre_execute(self, name: str, handler: Callable, order: int = 0):
+    def register_pre_execute(self, name: str, handler: Callable, order: int = 0) -> None:
         """注册 pre-execute 阶段 (安全策略在此注册, 不可重排)。"""
         stage = PipelineStage(name=name, handler=handler, order=order)
         self._pre_execute.append(stage)
         self._pre_execute.sort(key=lambda s: s.order)
 
-    def register_execute(self, handler: Callable):
+    def register_execute(self, handler: Callable) -> None:
         """注册 execute 阶段 (实际执行)。"""
         self._execute = PipelineStage(name="execute", handler=handler, order=100)
 
-    def register_post_execute(self, name: str, handler: Callable, order: int = 200):
+    def register_post_execute(self, name: str, handler: Callable, order: int = 200) -> None:
         """注册 post-execute 阶段 (审计/日志/清理)。"""
         stage = PipelineStage(name=name, handler=handler, order=order)
         self._post_execute.append(stage)
         self._post_execute.sort(key=lambda s: s.order)
 
-    def register_bail_guard(self, guard: Callable[[Dict[str, Any]], bool]):
+    def register_bail_guard(self, guard: Callable[[Dict[str, Any]], bool]) -> None:
         """注册 bail guard (返回 True 则中止当前工具执行)。"""
         self._bail_guards.append(guard)
 
-    def register_serial_handler(self, handler: Callable[..., Any]):
+    def register_serial_handler(self, handler: Callable[..., Any]) -> None:
         """注册串行事件处理器。"""
         self._serial_handlers.append(handler)
 
-    def register_parallel_handler(self, handler: Callable[..., Any]):
+    def register_parallel_handler(self, handler: Callable[..., Any]) -> None:
         """注册并行事件处理器。"""
         self._parallel_handlers.append(handler)
 
@@ -200,7 +200,7 @@ class LoopRegistry:
         EventPipeline 功能已合并到 arch/execution.py 的 SemanticBus + ToolPipeline。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         import warnings
         warnings.warn(
             "core.loop_registry.LoopRegistry 已弃用, 请使用 core.loop_provider.LoopRegistry",
@@ -210,7 +210,7 @@ class LoopRegistry:
         self._pipeline = EventPipeline()
         self._current_name: str = ""
 
-    def register(self, name: str, loop: "LoopProvider"):
+    def register(self, name: str, loop: "LoopProvider") -> None:
         """注册一个 LoopProvider。"""
         self._loops[name] = loop
         log.debug("Loop registered: %s (%s)", name, loop.description)
@@ -228,7 +228,7 @@ class LoopRegistry:
         """按名称获取 LoopProvider。"""
         return self._loops.get(name)
 
-    def select(self, config=None) -> "LoopProvider":
+    def select(self, config: Any = None) -> "LoopProvider":
         """根据配置选择 LoopProvider。
 
         优先级: config.loop.provider > config.router.plan_execute > 默认 react
@@ -272,7 +272,7 @@ class LoopRegistry:
     @property
     def pipeline(self) -> EventPipeline:
         """获取事件管线。"""
-        return self._pipeline  # type: ignore[no-any-return]  # 外部注入的管线对象
+        return self._pipeline
 
     def list_available(self) -> List[Dict[str, str]]:
         """列出所有可用 loop。"""

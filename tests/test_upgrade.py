@@ -63,7 +63,7 @@ def test_yes_upgrade_invokes_pip():
     cmd = run.call_args[0][0]
     assert "pip" in cmd
     assert "--upgrade" in cmd
-    assert "tuan_cli==9.9.9" in cmd
+    assert "tuan-cli==9.9.9" in cmd
 
 
 def test_version_skips_pypi_and_installs():
@@ -75,7 +75,7 @@ def test_version_skips_pypi_and_installs():
     assert rc == 0
     fetch.assert_not_called()  # 指定版本不查 PyPI
     cmd = run.call_args[0][0]
-    assert "tuan_cli==1.0" in cmd
+    assert "tuan-cli==1.0" in cmd
 
 
 # ----------------------------------------------------------------- 网络失败

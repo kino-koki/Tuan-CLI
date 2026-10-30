@@ -9,11 +9,12 @@
 from __future__ import annotations
 
 import importlib
+from typing import Any
 
 __all__ = ["QxtTUI"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name == "QxtTUI":
         mod = importlib.import_module(".tui", __name__)
         return getattr(mod, "QxtTUI")

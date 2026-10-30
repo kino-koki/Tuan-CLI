@@ -108,7 +108,7 @@ class TrajectorySnapshot:
     created_at: float = 0.0
     label: str = ""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.created_at == 0.0:
             self.created_at = time.time()
 

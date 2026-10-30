@@ -5,6 +5,7 @@ import json
 import sys
 import re
 import unicodedata
+from typing import Any
 
 
 # 终端调色板: 颜色名 -> SGR 前景码 (30-37 标准, 90-97 高亮)
@@ -36,7 +37,7 @@ class AnsiEngine:
 
     ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b\[[0-9;?]*\x1b")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.methods = {
             "strip": self.strip,
             "render": self.render,
@@ -46,7 +47,7 @@ class AnsiEngine:
             "_meta/list": self.list_methods,
         }
 
-    def list_methods(self, params=None):
+    def list_methods(self, params: Any = None) -> Any:
         return {
             "engine": "ansi",
             "version": "1.1.0-python",
@@ -58,13 +59,13 @@ class AnsiEngine:
             ],
         }
 
-    def strip(self, params):
+    def strip(self, params: Any) -> Any:
         """剥离 ANSI 转义序列"""
         text = params.get("text", "")
         cleaned = self.ANSI_RE.sub("", text)
         return {"text": cleaned, "stripped_chars": len(text) - len(cleaned)}
 
-    def render(self, params):
+    def render(self, params: Any) -> Any:
         """渲染 SGR 样式文本。
 
         fg 支持 black/red/green/yellow/blue/magenta/cyan/white 及 bright_* 高亮
@@ -85,12 +86,12 @@ class AnsiEngine:
 
     # ------------------------------------------------------------- 显示宽度
 
-    def width(self, params):
+    def width(self, params: Any) -> Any:
         """计算文本的终端显示宽度 (剥离转义序列, CJK 记 2 列)。"""
         text = params.get("text", "")
         return {"text": text, "width": _display_width(text, self.ANSI_RE)}
 
-    def truncate(self, params):
+    def truncate(self, params: Any) -> Any:
         """按显示宽度截断文本 (先剥离转义序列)。
 
         截断发生时末尾追加 marker 并为 marker 预留宽度; max_width 连 marker
@@ -117,7 +118,7 @@ class AnsiEngine:
         result = "" if budget < 0 else "".join(out) + marker
         return {"text": result, "truncated": True, "width": _display_width(result, self.ANSI_RE)}
 
-    def pad(self, params):
+    def pad(self, params: Any) -> Any:
         """把文本用空格补齐到指定显示宽度 (超宽则原样返回)。
 
         align: left (默认, 右补空格) / right (左补) / center (两侧均分)。
@@ -141,7 +142,7 @@ class AnsiEngine:
             out = text + " " * fill
         return {"text": out, "padded": True, "content_width": w}
 
-    def handle(self, line):
+    def handle(self, line: Any) -> str:
         req_id = None
         try:
             req = json.loads(line)
@@ -158,7 +159,7 @@ class AnsiEngine:
             resp = {"id": req_id, "ok": False, "error": str(e)}
             return json.dumps(resp, ensure_ascii=False)
 
-    def run(self):
+    def run(self) -> None:
         sys.stdout.write(json.dumps({"ready": True}) + "\n")
         sys.stdout.flush()
         for line in sys.stdin:

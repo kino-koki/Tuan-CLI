@@ -63,7 +63,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         workspace: str,
         confirm: Optional[Callable[[str], bool]] = None,
         exclude_tools: tuple = (),
-        indexer=None,
+        indexer: Any = None,
         context_manager: Optional[ContextManager] = None,
         system_extra: str = "",
         user_mode: bool = False,
@@ -198,7 +198,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         return len(history)
 
 
-    def _resolve_prompt_tier(self):
+    def _resolve_prompt_tier(self) -> Any:
         """解析提示词分层: 返回 (档位名, 推断窗口, 该档预算)。
 
         任何异常都回退 full 档 —— 分层是优化而非正确性前提, 打坏它不能影响会话。
@@ -234,13 +234,13 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
                 return explicit
             # auto: 按上下文窗口联动 —— 大上下文读 SOUL_FULL.md, 小上下文读 SOUL_COMPACT.md
             if self.prompt_tier in (COMPACT, FULL):
-                return self.prompt_tier
+                return str(self.prompt_tier)
             return ""
         except Exception as exc:  # noqa: BLE001
             log.debug("SOUL 档位解析失败, 回退默认拼装: %s", exc)
             return ""
 
-    def _effective_prompt_limits(self):
+    def _effective_prompt_limits(self) -> Any:
         """把用户配置值与当前分层预算取 min, 返回四元组注入预算。
 
         (skill_limit, memory_notes_max_lines, project_doc_max_bytes,
@@ -396,7 +396,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
     def _should_nudge(self) -> bool:
         return should_nudge(self.turn_count, self._nudge_interval)
 
-    def _nudge_round(self, on_token=None, on_reason=None, on_error=None) -> None:
+    def _nudge_round(self, on_token: Any = None, on_reason: Any = None, on_error: Any = None) -> None:
         """任务推进数轮后自我提醒: 本次方法是否值得蒸馏成技能。
 
         模型若决定蒸馏, 会返回 skill_save 工具调用, 这里执行之; 若回复空内容
@@ -442,7 +442,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
 
     # ------------------------------------------------------------ Goal 模式
 
-    def _chat_with_retry(self, messages, tools, stream, on_token, on_reason, label="模型"):
+    def _chat_with_retry(self, messages: Any, tools: Any, stream: Any, on_token: Any, on_reason: Any, label: Any = "模型") -> Any:
         """带超时/重试/熔断的模型调用 —— 委托给 AgentResilience + AgentObservability。
 
         测试可能用 Agent.__new__ 绕过 __init__, 此时 _resilience 不存在,
@@ -464,7 +464,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
                 # Agent.__new__ 回退: 使用直接设置的 retry_policy / _rate_limiter
                 retry_policy = getattr(self, 'retry_policy', None)
                 rate_limiter = getattr(self, '_rate_limiter', None)
-                def _direct_call():
+                def _direct_call() -> Any:
                     if rate_limiter is not None:
                         rate_limiter.acquire()
                     try:
@@ -649,7 +649,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         except Exception:  # noqa: BLE001
             return DEFAULT_EXPOSURE
 
-    def _schemas(self):
+    def _schemas(self) -> Any:
         """取传给模型的工具清单 (按 effective_tool_set + exposure 过滤)。
 
         对 registry.schemas 做接口兼容: 若它接受 tool_set / exclude_tools / exposure
@@ -713,7 +713,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         return any(c in t for c in cls._CONTINUE_CUES)
 
     @staticmethod
-    def _parse_assistant_message(result) -> Dict[str, Any]:
+    def _parse_assistant_message(result: Any) -> Dict[str, Any]:
         """把模型响应 (ModelResponse / dict / str) 转成标准 assistant 消息字典。
 
         统一入口: _nudge_round、_run_react_inline、LoopProvider 都需要此逻辑,
@@ -820,7 +820,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
     def _teardown_run(
         self,
         answer: str,
-        run_trace,
+        run_trace: Any,
         raw_on_token: Optional[Callable[[str], None]],
         on_error: Optional[Callable[[str], None]],
         nudge: bool = True,
@@ -935,7 +935,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
         self._handle_goal(answer, 0, max_iterations or 0, raw_on_token)
         return self._teardown_run(answer, run_trace, raw_on_token, on_error, nudge=False)
 
-    def _run_react_inline(self, user_input: str, **kwargs) -> str:
+    def _run_react_inline(self, user_input: str, **kwargs: Any) -> str:
         """内联 ReAct 循环 (无 LoopProvider 时的向后兼容路径)。"""
         stream = kwargs.get("stream", True)
         on_token = kwargs.get("on_token")
@@ -1046,7 +1046,7 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
                 break
 
             n_tool_msgs_before = len(self.messages)
-            def _do_execute_tools(tc=tool_calls) -> None:
+            def _do_execute_tools(tc: Any = tool_calls) -> None:
                 self._execute_tools(tc, on_tool=on_tool, on_tool_result=on_tool_result)
             retry_step(
                 _do_execute_tools,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 from pathlib import Path
+from typing import Any
 
 from ..config import Config
 from ..memory import MemoryStore
@@ -16,7 +17,7 @@ from ..skills import SkillManager
 from ._ui_singleton import console
 
 
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     """惰性构建内核: 仅 plugin 命令等真正需要完整内核时才加载 app 链。"""
     from ..app import build_kernel as _f
 
@@ -52,7 +53,7 @@ _SUBMODULES = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     mapping = _SUBMODULES.get(name)
     if mapping is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -63,7 +64,7 @@ def __getattr__(name: str):
 # ===================================================================== cmd_plugin
 
 
-def cmd_plugin(args) -> int:
+def cmd_plugin(args: Any) -> int:
     """插件管理。"""
     try:
         kernel = build_kernel()
@@ -83,7 +84,7 @@ def cmd_plugin(args) -> int:
 # ===================================================================== cmd_skill
 
 
-def cmd_skill(args) -> int:
+def cmd_skill(args: Any) -> int:
     """技能管理: list/show/import/audit/consolidate/lint。"""
     skill_cmd = getattr(args, "skill_cmd", None)
     config = Config(
@@ -196,7 +197,7 @@ def cmd_skill(args) -> int:
 # ===================================================================== cmd_memory
 
 
-def cmd_memory(args) -> int:
+def cmd_memory(args: Any) -> int:
     """记忆管理。"""
     memory_cmd = getattr(args, "memory_cmd", None)
     config = Config(

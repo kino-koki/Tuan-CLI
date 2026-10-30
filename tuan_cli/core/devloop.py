@@ -27,8 +27,8 @@ VerifyHook = Callable[[str, bool], None]                   # (tool_name, passed)
 class DevLoop:
     def __init__(
         self,
-        agent,
-        config,
+        agent: Any,
+        config: Any,
         on_iteration: Optional[IterationHook] = None,
         on_checkpoint: Optional[CheckpointHook] = None,
         on_verify: Optional[VerifyHook] = None,

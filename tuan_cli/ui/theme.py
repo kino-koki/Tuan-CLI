@@ -183,3 +183,71 @@ DIFF_META = "#888888"           # @@ hunk 元信息 (diffMeta)
 DIFF_CONTEXT = "#888888"        # 上下文行 (textDim)
 DIFF_HEADER = "#4FA8FF"         # diff 头 (取 primary, fullscreen 兼容)
 DIFF_HUNK = "#BD93F9"           # @@ hunk 标记 (取 shellMode, fullscreen 兼容)
+
+
+# ================================================================ 主题 / 配色切换 (Claude Code 对齐)
+# Tuan-CLI 提供 dark / light 主题与 brand / blue / green 配色方案，供 /theme、/color 切换。
+# 默认与 Kimi Code 原版 dark + brand 一致，保持零回归。
+
+CURRENT_THEME = "dark"
+CURRENT_COLOR = "brand"
+
+# 主题变体：dark 使用默认 C；light 提供浅色替代值。
+_THEMES = {
+    "dark": {},
+    "light": {
+        "primary": "#0066CC",
+        "accent": "#00897B",
+        "text": "#1F1F1F",
+        "textstrong": "#000000",
+        "textdim": "#555555",
+        "textmuted": "#777777",
+        "dim": "#555555",
+        "muted": "#777777",
+        "border": "#AAAAAA",
+        "borderfocus": "#B8860B",
+        "box": "#AAAAAA",
+        "ok": "#2E7D32",
+        "warn": "#B8860B",
+        "err": "#C62828",
+        "roleuser": "#795548",
+        "shellmode": "#7B1FA2",
+    },
+}
+
+# 配色方案：覆盖 primary/accent 主色。
+_COLORS = {
+    "brand": {},
+    "blue": {"primary": "#4FA8FF", "accent": "#5BC0BE"},
+    "green": {"primary": "#4EC87E", "accent": "#5BC0BE"},
+}
+
+
+def _current_c() -> dict:
+    """合成当前生效的颜色表（主题叠加配色）。"""
+    merged = dict(C)
+    merged.update(_THEMES.get(CURRENT_THEME, {}))
+    merged.update(_COLORS.get(CURRENT_COLOR, {}))
+    return merged
+
+
+def set_theme(name: str) -> None:
+    """切换主题，就地更新模块级 C 颜色表（repl/fullscreen 下次渲染生效）。"""
+    global CURRENT_THEME
+    if name not in _THEMES:
+        raise ValueError(f"未知主题: {name}")
+    CURRENT_THEME = name
+    merged = _current_c()
+    C.clear()
+    C.update(merged)
+
+
+def set_color(name: str) -> None:
+    """切换配色方案，就地更新模块级 C 颜色表。"""
+    global CURRENT_COLOR
+    if name not in _COLORS:
+        raise ValueError(f"未知配色: {name}")
+    CURRENT_COLOR = name
+    merged = _current_c()
+    C.clear()
+    C.update(merged)

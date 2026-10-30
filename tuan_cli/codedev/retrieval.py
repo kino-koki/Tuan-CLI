@@ -180,7 +180,7 @@ class CodeIndex:
             self._index_file(root, path)
         return self
 
-    def _iter_files(self, root: Path, skip: Set[str]):
+    def _iter_files(self, root: Path, skip: Set[str]) -> Any:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in skip]
             for fn in filenames:
@@ -250,7 +250,7 @@ class CodeIndex:
                     if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         self._emit_py(rel, sub, lines, module_imports, prefix=f"{node.name}.")
 
-    def _emit_py(self, rel, node, lines, imports: Set[str], prefix: str) -> None:
+    def _emit_py(self, rel: Any, node: Any, lines: Any, imports: Set[str], prefix: str) -> None:
         name = prefix + node.name
         start, end = getattr(node, "lineno", 1), getattr(node, "end_lineno", 1)
         doc = ast.get_docstring(node) or ""

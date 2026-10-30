@@ -19,7 +19,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..app import build_kernel
 from .runner import run_due_jobs
@@ -29,7 +29,7 @@ log = logging.getLogger("tuan_cli.cron.daemon")
 _stop = threading.Event()
 
 
-def _handle_signal(signum, frame) -> None:  # noqa: ARG001
+def _handle_signal(signum: Any, frame: Any) -> None:  # noqa: ARG001
     log.info("收到信号 %s, 正在优雅退出", signum)
     _stop.set()
 

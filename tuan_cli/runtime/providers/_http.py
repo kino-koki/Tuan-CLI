@@ -154,10 +154,10 @@ def raise_for_status(response: httpx.Response) -> None:
     raise err
 
 
-def _wrap_http_errors(fn):
+def _wrap_http_errors(fn: Any) -> Any:
     """把 httpx 连接/超时异常归一为 ChatProviderError（供 provider 复用）。"""
 
-    async def _wrapped(*args, **kwargs):
+    async def _wrapped(*args: Any, **kwargs: Any) -> Any:
         try:
             return await fn(*args, **kwargs)
         except APIStatusError:

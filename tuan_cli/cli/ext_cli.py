@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..ui.format import Table
 
@@ -41,7 +41,7 @@ def _build_manager(config: Optional[dict] = None) -> ExternalEngineManager:
     return ExternalEngineManager(config=config or {})
 
 
-def cmd_ext(args) -> int:
+def cmd_ext(args: Any) -> int:
     sub = getattr(args, "ext_cmd", None)
     if sub == "engines":
         return _ext_engines(args)
@@ -55,7 +55,7 @@ def cmd_ext(args) -> int:
     return 2
 
 
-def _ext_engines(args) -> int:
+def _ext_engines(args: Any) -> int:
     mgr = _build_manager()
     avail = mgr.list_engines()
     if not avail:
@@ -79,7 +79,7 @@ def _ext_engines(args) -> int:
     return 0
 
 
-def _ext_call(args) -> int:
+def _ext_call(args: Any) -> int:
     engine = args.engine
     method = args.method
     raw = args.params or "{}"
@@ -110,7 +110,7 @@ def _ext_call(args) -> int:
     return 0
 
 
-def _fetch_methods(mgr: ExternalEngineManager, engine: str, timeout: float):
+def _fetch_methods(mgr: ExternalEngineManager, engine: str, timeout: float) -> tuple[Any, Any]:
     try:
         res = mgr.call(engine, "_meta/list", timeout=timeout)
     except IpcError as exc:
@@ -122,7 +122,7 @@ def _fetch_methods(mgr: ExternalEngineManager, engine: str, timeout: float):
     return (None, "无 _meta/list 方法")
 
 
-def _ext_selftest(args) -> int:
+def _ext_selftest(args: Any) -> int:
     mgr = _build_manager()
     targets = list(args.engines) if getattr(args, "engines", None) else mgr.list_engines()
     if not targets:
@@ -153,7 +153,7 @@ def _ext_selftest(args) -> int:
     return 0
 
 
-def _ext_info(args) -> int:
+def _ext_info(args: Any) -> int:
     engine = args.engine
     mgr = _build_manager()
     if engine not in mgr.list_engines():
@@ -172,3 +172,8 @@ def _ext_info(args) -> int:
             console.print(f"方法: {', '.join(methods)}")
     mgr.close_all()
     return 0
+
+
+from .parser import _register_command  # noqa: E402
+_register_command("cmd_ext", ".ext_cli")
+# 注意: parser.py 的 _auto_register() 已导入本模块，无需手动调用 _register_command

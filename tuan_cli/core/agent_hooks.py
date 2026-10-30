@@ -27,7 +27,7 @@ class HooksMixin:
     # 由 Agent.__init__ 注入; 类型标注仅为 IDE/类型检查提示
     kernel: Any
 
-    def _hooks(self):
+    def _hooks(self) -> Any:
         """取用户级 HookManager (create_agent 时注入到 agent.ctx.hooks), 无则 None。"""
         ctx = getattr(self, "ctx", None)
         return getattr(ctx, "hooks", None) if ctx is not None else None

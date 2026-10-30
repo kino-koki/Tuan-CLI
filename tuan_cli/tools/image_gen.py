@@ -287,7 +287,7 @@ class ImageGenPlugin(Plugin):
     name = "tools.image_gen"
     provides = ["image_generate"]
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def activate(self, kernel: Any) -> None:

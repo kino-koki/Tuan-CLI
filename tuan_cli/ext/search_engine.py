@@ -7,6 +7,7 @@ import sys
 import os
 import re
 from fnmatch import fnmatch
+from typing import Any
 
 # 上下文行上限: 防止单条结果撑爆 IPC 响应
 _MAX_CONTEXT = 10
@@ -17,14 +18,14 @@ class SearchEngine:
 
     IGNORED_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build", ".pytest_cache"}
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.methods = {
             "search": self.search,
             "count": self.count,
             "_meta/list": self.list_methods,
         }
 
-    def list_methods(self, params=None):
+    def list_methods(self, params: Any = None) -> Any:
         return {
             "engine": "search",
             "version": "1.1.0-python",
@@ -37,7 +38,7 @@ class SearchEngine:
         }
 
     @staticmethod
-    def _glob_filtered(rel_path: str, include_globs, exclude_globs) -> bool:
+    def _glob_filtered(rel_path: str, include_globs: Any, exclude_globs: Any) -> bool:
         """相对路径是否被 glob 过滤规则放行 (True=放行)。"""
         if exclude_globs and any(fnmatch(rel_path, g) for g in exclude_globs):
             return False
@@ -54,7 +55,7 @@ class SearchEngine:
         except Exception:
             return True
 
-    def _compile(self, pattern: str, ignore_case: bool):
+    def _compile(self, pattern: str, ignore_case: bool) -> Any:
         """编译正则; 返回 (regex, error)。"""
         if not pattern:
             return None, "No pattern provided"
@@ -64,7 +65,7 @@ class SearchEngine:
         except re.error as e:
             return None, f"Invalid regex: {e}"
 
-    def search(self, params):
+    def search(self, params: Any) -> Any:
         """递归正则检索
         可选参数:
           include_globs / exclude_globs  相对路径 glob 过滤 (如 "*.py")
@@ -134,7 +135,7 @@ class SearchEngine:
             resp["truncated"] = True
         return resp
 
-    def count(self, params):
+    def count(self, params: Any) -> Any:
         """按文件统计匹配行数 (不返回内容行, 用于快速概览代码分布)"""
         root = params.get("root", ".")
         max_files = int(params.get("max_files", 200))
@@ -171,7 +172,7 @@ class SearchEngine:
 
         return {"files": files_out, "total_matches": total, "file_count": len(files_out)}
 
-    def handle(self, line):
+    def handle(self, line: Any) -> str:
         req_id = None
         try:
             req = json.loads(line)
@@ -188,7 +189,7 @@ class SearchEngine:
             resp = {"id": req_id, "ok": False, "error": str(e)}
             return json.dumps(resp, ensure_ascii=False)
 
-    def run(self):
+    def run(self) -> None:
         sys.stdout.write(json.dumps({"ready": True}) + "\n")
         sys.stdout.flush()
         for line in sys.stdin:

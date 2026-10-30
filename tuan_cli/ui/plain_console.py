@@ -49,7 +49,7 @@ _LAZY_RICH = ("_render_console", "render_plain", "PlainConsole", "console")
 _rich_loaded = False
 
 
-def _ensure_rich():
+def _ensure_rich() -> None:
     """首次访问 rich 依赖符号时才导入 rich 并构建 console 单例。"""
     global _rich_loaded, _render_console, render_plain, PlainConsole, console
     if _rich_loaded:
@@ -59,7 +59,7 @@ def _ensure_rich():
     # 无颜色渲染器: 把 Markdown/Table 等 renderable 转成纯文本字符串。
     _render_console = Console(no_color=True, force_terminal=False, highlight=False)
 
-    def render_plain(obj) -> str:
+    def render_plain(obj: Any) -> str:
         """把任意 Rich renderable 渲染为纯文本 (无颜色/无加粗/无 ANSI)。"""
         with _render_console.capture() as cap:
             _render_console.print(obj)
@@ -68,11 +68,11 @@ def _ensure_rich():
     class PlainConsole(Console):
         """打印时自动剥离 Rich 标记并禁用语法高亮的 Console, 输出纯文本。"""
 
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             kwargs.setdefault("highlight", False)
             super().__init__(*args, **kwargs)
 
-        def print(self, *objects, **kwargs):
+        def print(self, *objects: Any, **kwargs: Any) -> Any:
             plain = tuple(
                 strip_markup(o) if isinstance(o, str) else render_plain(o) for o in objects
             )
@@ -84,7 +84,7 @@ def _ensure_rich():
     _rich_loaded = True
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in _LAZY_RICH:
         _ensure_rich()
         return globals()[name]

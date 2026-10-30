@@ -138,7 +138,7 @@ tuan --print run "Hola, descríbete en una frase."
 
 ---
 
-## Superficie de comandos: 43 subcomandos principales + comandos slash
+## Superficie de comandos: 49 subcomandos principales + comandos slash
 
 | Comando | Para qué |
 |---|---|

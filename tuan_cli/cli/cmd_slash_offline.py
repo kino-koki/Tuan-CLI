@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ._ui_singleton import ui
 
 
-def _cmd_offline(agent, arg: str) -> None:
+def _cmd_offline(agent: Any, arg: str) -> None:
     """/offline [status|pull|list] — 离线模式管理。
 
     用法:
@@ -42,7 +44,7 @@ def _cmd_offline(agent, arg: str) -> None:
             from ..models.offline import get_ollama_manager
             manager = get_ollama_manager()
 
-            def on_progress(msg):
+            def on_progress(msg: Any) -> None:
                 ui.info(f"    {msg}")
 
             success = manager.pull_model(rest, callback=on_progress)

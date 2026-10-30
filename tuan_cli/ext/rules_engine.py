@@ -12,7 +12,7 @@ import math
 import re
 import sys
 from collections import Counter
-from typing import Any
+from typing import Any, List
 
 from .. import _yaml as yaml  # 后端门面: 有 PyYAML 用 PyYAML, 否则用内置 stdlib 实现
 
@@ -91,38 +91,38 @@ class _Parser:
         self.toks = toks
         self.pos = 0
 
-    def parse(self):
+    def parse(self) -> Any:
         return self._parse_or()
 
-    def _peek(self):
+    def _peek(self) -> Any:
         return self.toks[self.pos] if self.pos < len(self.toks) else None
 
-    def _next(self):
+    def _next(self) -> Any:
         t = self._peek()
         self.pos += 1
         return t
 
-    def _parse_or(self):
+    def _parse_or(self) -> Any:
         left = self._parse_and()
         while self._peek() == "||":
             self._next()
             left = {"op": "or", "left": left, "right": self._parse_and()}
         return left
 
-    def _parse_and(self):
+    def _parse_and(self) -> Any:
         left = self._parse_not()
         while self._peek() == "&&":
             self._next()
             left = {"op": "and", "left": left, "right": self._parse_not()}
         return left
 
-    def _parse_not(self):
+    def _parse_not(self) -> Any:
         if self._peek() in ("!", "not"):
             self._next()
             return {"op": "not", "operand": self._parse_not()}
         return self._parse_compare()
 
-    def _parse_compare(self):
+    def _parse_compare(self) -> Any:
         left = self._parse_additive()
         op = self._peek()
         if op in (">", "<", ">=", "<=", "==", "!=", "="):
@@ -131,7 +131,7 @@ class _Parser:
                     "right": self._parse_additive()}
         return left
 
-    def _parse_additive(self):
+    def _parse_additive(self) -> Any:
         """Additive: + - (lower precedence than multiplicative, higher than compare)."""
         left = self._parse_multiplicative()
         while self._peek() in ("+", "-"):
@@ -140,7 +140,7 @@ class _Parser:
                     "right": self._parse_multiplicative()}
         return left
 
-    def _parse_multiplicative(self):
+    def _parse_multiplicative(self) -> Any:
         """Multiplicative: * / (highest precedence arithmetic operators)."""
         left = self._parse_primary()
         while self._peek() in ("*", "/"):
@@ -149,7 +149,7 @@ class _Parser:
                     "right": self._parse_primary()}
         return left
 
-    def _parse_primary(self):
+    def _parse_primary(self) -> Any:
         t = self._next()
         if t is None:
             return {"lit": False}
@@ -188,7 +188,7 @@ class _Parser:
         return {"var": t}
 
 
-def _eval(node, scope: dict):
+def _eval(node: Any, scope: dict) -> Any:
     if node is None:
         return False
     if "lit" in node:
@@ -295,8 +295,8 @@ def _eval(node, scope: dict):
 # ---------------------------------------------------------------- 规则引擎
 
 class RuleEngine:
-    def __init__(self):
-        self.rules = []
+    def __init__(self) -> None:
+        self.rules: List[Any] = []
 
     def load_yaml_text(self, text: str) -> int:
         self.rules = self._parse_rules(text)

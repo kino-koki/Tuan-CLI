@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 from ..config import DEFAULT_CONFIG, Config, to_yaml_str
 from ..ui.plain_console import console
@@ -50,7 +51,7 @@ _ORDER = [
 _KNOWN_ENGINES = {"duckduckgo", "bing"}
 
 
-def _coerce(key: str, kind: str, lo, hi, raw) -> tuple[object, str]:
+def _coerce(key: str, kind: str, lo: Any, hi: Any, raw: Any) -> tuple[object, str]:
     """按类型/范围把原始输入规整为合法值; 非法则返回 (None, 错误信息)。"""
     if kind == "bool":
         if isinstance(raw, bool):
@@ -86,7 +87,7 @@ def _defaults() -> dict:
     return DEFAULT_CONFIG.get("network", {})  # type: ignore[no-any-return]  # 配置容器为 Any
 
 
-def cmd_network(args) -> int:
+def cmd_network(args: Any) -> int:
     """查看/设定/复位联网(搜索)配置。"""
     config = Config(profile=getattr(args, "profile", "default"),
                     patch_file=getattr(args, "patch", None))

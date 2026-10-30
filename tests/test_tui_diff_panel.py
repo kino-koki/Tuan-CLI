@@ -131,6 +131,28 @@ class TestFetch:
         # git 缺失/非仓库都要给出可读提示, 不能抛异常影响主界面
         assert tui._diff_error or tui._diff_cache == []
 
+    def test_subdir_inside_repo_does_not_leak_parent_diff(
+        self, git_repo, monkeypatch,
+    ):
+        """工作区是仓库内子目录时, 不得误读父仓库 diff。
+
+        回归: git 会沿父目录向上找 .git, 旧探测 `--is-inside-work-tree` 对
+        仓库内子目录也返回 true, `git diff` 误读父仓库真实 diff (全量运行时
+        tmp_path 落在仓库内 .pytest-tmp 即触发)。修复用 `--show-toplevel` +
+        绝对路径对比, 只有工作区本身就是仓库根才视为仓库。
+        """
+        sub = git_repo / "inner"
+        sub.mkdir()
+        (sub / "b.txt").write_text("x\n", encoding="utf-8")
+        tui = _make_tui()
+        tui._workspace = str(sub)
+        monkeypatch.chdir(sub)
+        tui._fetch_diff()
+        # 工作区不是仓库根 → 不应读取父仓库 diff (含 a.txt 改动)
+        assert tui._diff_error, "仓库内子目录应给出可读提示"
+        assert tui._diff_cache == [], "不得误读父仓库 diff"
+        assert "a.txt" not in "".join(txt for _, txt in tui._diff_cache)
+
 
 class TestRender:
     def test_render_empty_when_hidden(self):

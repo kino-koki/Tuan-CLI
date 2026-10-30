@@ -36,7 +36,7 @@ class ContextEntry:
     tokens: int = 0
     seq: int = 0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.tokens == 0:
             self.tokens = _estimate_tokens(self.content)
 
@@ -222,7 +222,7 @@ class ContextEventLog:
     def record(self, kind: str, payload: Dict[str, Any], tags: Optional[List[str]] = None) -> SourcedEvent:
         return self.sourcer.emit(kind, payload, session_id=self.session_id, tags=tags)
 
-    def query(self, **kwargs) -> List[SourcedEvent]:
+    def query(self, **kwargs: Any) -> List[SourcedEvent]:
         return self.sourcer.query(**kwargs)
 
     def events(self) -> List[SourcedEvent]:

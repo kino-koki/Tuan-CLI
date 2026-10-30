@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from .operation import AgentTranscriptSnapshot, TranscriptOperation
 
@@ -73,13 +73,13 @@ def redact_snapshot_for_grade(grade: TranscriptGrade, snapshot: AgentTranscriptS
     )
 
 
-def _strip_steps(item):
+def _strip_steps(item: Any) -> Any:
     from .model import TranscriptTurn
 
     return TranscriptTurn(**{**_turn_to_kwargs(item), "steps": []})
 
 
-def _turn_to_kwargs(turn):
+def _turn_to_kwargs(turn: Any) -> Any:
     return {
         "kind": "turn",
         "turn_id": turn.turn_id,

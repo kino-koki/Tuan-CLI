@@ -16,7 +16,10 @@ from __future__ import annotations
 import logging
 import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeout
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set
+
+if TYPE_CHECKING:
+    from ..tools.base import ToolContext
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +68,7 @@ def _parse_args(fn_args: Any) -> Dict[str, Any]:
     return {}
 
 
-def _iter_text_values(obj: Any):
+def _iter_text_values(obj: Any) -> Any:
     """递归收集对象中的字符串值 (命令/脚本/代码等可执行文本字段)。"""
     if isinstance(obj, str):
         yield obj
@@ -318,7 +321,7 @@ class ToolExecutor:
 
     # -------------------------------------------------------- 统一安全闸门
 
-    def _security_gate_check(self, fn_name: str, fn_args: Any, ctx: Any):
+    def _security_gate_check(self, fn_name: str, fn_args: Any, ctx: Any) -> Any:
         """统一安全闸门 (fail-closed) + 审计溯源。
 
         返回 ``(denied, message)``:
@@ -517,7 +520,7 @@ class ToolExecutor:
                 self._sandbox = False
         return self._sandbox or None
 
-    def _sandbox_gate_check(self, fn_name: str, fn_args: Any, args: Dict[str, Any], ctx: Any):
+    def _sandbox_gate_check(self, fn_name: str, fn_args: Any, args: Dict[str, Any], ctx: Any) -> Any:
         """用 4 层沙箱滤网做统一纵深判定, 返回 ``(denied, message)``。
 
         只短路 DENY; CONFIRM 交由既有确认通道 (run_shell 由 shell.py 确认,

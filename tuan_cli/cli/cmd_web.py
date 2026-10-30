@@ -18,13 +18,13 @@ from .. import __version__
 log = logging.getLogger(__name__)
 
 
-def build_kernel(*a: Any, **k: Any):
+def build_kernel(*a: Any, **k: Any) -> Any:
     from ..app import build_kernel as _f
 
     return _f(*a, **k)
 
 
-def cmd_web(args) -> int:
+def cmd_web(args: Any) -> int:
     """启动本地 Web 工作台。"""
     try:
         kernel = build_kernel(getattr(args, "profile", "default"))

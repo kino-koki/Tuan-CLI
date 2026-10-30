@@ -28,7 +28,7 @@ class IpcClient:
         self.engine_path = engine_path
         self.proc: Optional[subprocess.Popen] = None
         self._write_lock = threading.Lock()
-        self._read_thread = None
+        self._read_thread: Optional[threading.Thread] = None
         self._responses: Dict[int, queue.Queue] = {}
         self._streams: Dict[int, queue.Queue] = {}
         self._request_stream: Dict[int, Any] = {}
@@ -41,7 +41,7 @@ class IpcClient:
         self._seq += 1
         return self._seq
 
-    def start(self, retries: int = 3):
+    def start(self, retries: int = 3) -> "IpcClient":
         """启动引擎进程 (带重试)。
 
         全量套件长跑 (数千用例、频繁 spawn 子进程) 在 Windows 上可能偶发:
@@ -65,7 +65,7 @@ class IpcClient:
             f"Engine {self.engine_name} 启动失败 (重试 {retries} 次): {last_exc}"
         )
 
-    def _spawn_once(self):
+    def _spawn_once(self) -> None:
         """单次 spawn + 就绪等待; 任何失败抛 IpcError。"""
         if self.engine_path:
             cmd = [sys.executable, self.engine_path]
@@ -109,7 +109,7 @@ class IpcClient:
         if not self._ready.wait(timeout=60.0):
             raise IpcError(f"Engine {self.engine_name} did not become ready")
 
-    def _cleanup_partial(self):
+    def _cleanup_partial(self) -> None:
         """回收 _spawn_once 可能残留的子进程/读线程, 避免跨重试泄漏。"""
         proc, self.proc = self.proc, None
         if proc is not None:
@@ -127,10 +127,14 @@ class IpcClient:
         # 为下一次尝试重置就绪事件
         self._ready = threading.Event()
 
-    def _read_loop(self):
+    def _read_loop(self) -> None:
         """后台读取循环"""
+        read_error: Optional[str] = None
         try:
-            for line in self.proc.stdout:
+            proc = self.proc
+            if proc is None or proc.stdout is None:
+                raise IpcError("引擎子进程不存在或输出管道未就绪")
+            for line in proc.stdout:
                 line = line.strip()
                 if not line:
                     continue
@@ -223,7 +227,7 @@ class IpcClient:
 
         return stream_queue
 
-    def close(self):
+    def close(self) -> None:
         """关闭引擎进程并回收读线程, 避免残留 _read_loop 线程与子进程。"""
         if self._closed:
             return
@@ -275,10 +279,10 @@ class IpcClient:
         if thread is not None and thread.is_alive():
             thread.join(timeout=3)
 
-    def __enter__(self):
+    def __enter__(self) -> "IpcClient":
         return self.start()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.close()
 
 
@@ -312,7 +316,7 @@ class ExternalEngineManager:
         from tuan_cli.ext.registry import engine_healthcheck
         return engine_healthcheck()
 
-    def close_all(self):
+    def close_all(self) -> None:
         """关闭所有客户端"""
         for client in self.clients.values():
             client.close()

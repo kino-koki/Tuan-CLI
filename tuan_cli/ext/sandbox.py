@@ -67,7 +67,7 @@ class SandboxProfile:
 
     @classmethod
     def from_config(cls, cfg: Any) -> "SandboxProfile":
-        def g(key, default):
+        def g(key: Any, default: Any) -> Any:
             try:
                 v = cfg.get(f"security.sandbox.{key}", default)
                 return default if v is None else v

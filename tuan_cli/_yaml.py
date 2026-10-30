@@ -823,20 +823,20 @@ _stdlib_YAMLError = YAMLError
 _stdlib_ScannerError = ScannerError
 
 try:
-    import yaml as _pyyaml  # type: ignore[import-not-found]
+    import yaml as _pyyaml
 
     _BACKEND = "pyyaml"
-    safe_load = _pyyaml.safe_load  # type: ignore[assignment]
-    load = _pyyaml.load  # type: ignore[assignment]
-    safe_load_all = _pyyaml.safe_load_all  # type: ignore[assignment]
-    safe_dump = _pyyaml.safe_dump  # type: ignore[assignment]
-    dump = _pyyaml.dump  # type: ignore[assignment]
-    YAMLError = _pyyaml.YAMLError  # type: ignore[misc,assignment]
+    safe_load = _pyyaml.safe_load
+    load = _pyyaml.load
+    safe_load_all = _pyyaml.safe_load_all
+    safe_dump = _pyyaml.safe_dump
+    dump = _pyyaml.dump
+    YAMLError = _pyyaml.YAMLError  # type: ignore[misc]
     try:
         from yaml.scanner import ScannerError as _PYScannerError
 
-        ScannerError = _PYScannerError  # type: ignore[misc,assignment]
+        ScannerError = _PYScannerError  # type: ignore[misc]
     except ImportError:  # pragma: no cover - PyYAML 版本差异
-        ScannerError = YAMLError  # type: ignore[misc,assignment]
+        ScannerError = YAMLError  # type: ignore[misc, assignment]
 except ImportError:  # pragma: no cover - 取决于运行环境
     _BACKEND = "stdlib"

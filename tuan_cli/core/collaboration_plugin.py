@@ -61,7 +61,7 @@ class CollaborationPlugin(Plugin):
                 config.get("collaboration.conflict_threshold", 0.3)
             )
 
-            def _make_aggregator():
+            def _make_aggregator() -> Any:
                 return ResultAggregator(
                     dedup_threshold=dedup_threshold,
                     conflict_threshold=conflict_threshold,

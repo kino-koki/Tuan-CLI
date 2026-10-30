@@ -84,7 +84,7 @@ def _device_fingerprint(token: str, device_name: str, device_type: str) -> str:
     ).hexdigest()[:32]
 
 
-def _classify_remote(prompt: str):
+def _classify_remote(prompt: str) -> Any:
     """对远程 prompt 做安全分类 (fail-closed)。
 
     命中硬红线 -> deny; 其余异常一律保守要求确认, 不直接放行。

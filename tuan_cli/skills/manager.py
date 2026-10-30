@@ -114,7 +114,7 @@ class Skill:
 class SkillManager:
     """基础技能管理器: 磁盘读写 + 语义检索 + 多仓库发现。"""
 
-    def __init__(self, home: Path, memory_store=None,
+    def __init__(self, home: Path, memory_store: Any = None,
                  workspace: Optional[Path] = None,
                  config: Any = None) -> None:
         self.home = Path(home)
@@ -220,7 +220,7 @@ class SkillManager:
 
     # ------------------------------------------------------------- 读写
 
-    def save(self, name: str, description: str, body: str, **kwargs) -> Skill:
+    def save(self, name: str, description: str, body: str, **kwargs: Any) -> Skill:
         """保存 (或改进) 一个技能。同名覆盖 = refine 语义, use_count 递增。
 
         始终写入用户级 <home>/skills/<slug>.md。
@@ -578,7 +578,7 @@ class SkillManager:
         for skill in self.list_all():
             score = 0.0
 
-            # 标签匹配 (最高权重: 5 分/命中)
+            # 标签匹配 (最高权重: 5 分/命中) —— 语义相关是检索的主导信号
             if task_tags and skill.tags:
                 tag_hits = task_tags.intersection(set(skill.tags))
                 score += len(tag_hits) * 5.0
@@ -591,8 +591,9 @@ class SkillManager:
             body = skill.body.lower()
             score += sum(1.0 for t in terms if t in body)
 
-            # 优先级加分
-            score += skill.priority * 0.5
+            # 优先级作为平局打破的次要信号 (0.05/点): 纯优先级最高 95*0.05≈4.75,
+            # 低于一次标签命中 (5 分), 避免无关内置高优先级技能单纯靠优先级霸榜。
+            score += skill.priority * 0.05
 
             # 使用频率加分 (对数缩放, 避免高频技能永远霸榜)
             score += math.log1p(skill.use_count) * 0.3

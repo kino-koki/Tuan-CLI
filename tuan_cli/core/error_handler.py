@@ -188,7 +188,7 @@ def install_top_level_handler() -> None:
     """在 CLI 主入口安装 sys.excepthook, 把未捕获异常转成友好提示。"""
     prev = sys.excepthook
 
-    def _hook(exc_type, exc, tb):
+    def _hook(exc_type: Any, exc: Any, tb: Any) -> None:
         if issubclass(exc_type, (KeyboardInterrupt, SystemExit)):
             prev(exc_type, exc, tb)
             return

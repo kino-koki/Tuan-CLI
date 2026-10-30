@@ -181,7 +181,7 @@ class AcpServer:
 
         self.serve(sys.stdin, sys.stdout)
 
-    def serve(self, reader, writer) -> None:
+    def serve(self, reader: Any, writer: Any) -> None:
         self._writer = writer
         # 融合层: enhanced 模式用错误容忍的增量帧解析（LineBuffer），对畸形帧更健壮。
         messages = read_messages_robust(reader) if self._enhanced else read_messages(reader)
@@ -208,7 +208,7 @@ class AcpServer:
             self._shutdown.set()
 
     @property
-    def _dispatch(self):
+    def _dispatch(self) -> Any:
         return {
             ACP_INITIALIZE: self._handle_initialize,
             ACP_PROMPT: self._handle_prompt,

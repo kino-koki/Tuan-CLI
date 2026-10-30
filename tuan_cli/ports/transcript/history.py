@@ -68,7 +68,7 @@ def group_messages_into_snapshot(messages: list, options: Optional[dict] = None)
     next_ordinal = 0
     marker_count = 0
 
-    def fold_turn_opening_input(message: dict):
+    def fold_turn_opening_input(message: dict) -> Any:
         parts = message.get("content") or []
         ids: list = []
         texts: list = []
@@ -123,7 +123,7 @@ def group_messages_into_snapshot(messages: list, options: Optional[dict] = None)
             ids.append(entity.attachment_id)
         return {"text": "".join(texts), "attachmentIds": ids if ids else None}
 
-    def ensure_turn(origin=None):
+    def ensure_turn(origin: Any = None) -> Any:
         nonlocal turn
         if turn is None:
             ordinal = next_ordinal
@@ -132,11 +132,11 @@ def group_messages_into_snapshot(messages: list, options: Optional[dict] = None)
             items.append(_draft_to_turn_item(turn))
         return turn
 
-    def _advance():
+    def _advance() -> None:
         nonlocal next_ordinal
         next_ordinal += 1
 
-    def flush_steered_leftovers():
+    def flush_steered_leftovers() -> None:
         nonlocal pending, turn
         leftovers = [p for p in pending if p.steered]
         if not leftovers:
@@ -150,7 +150,7 @@ def group_messages_into_snapshot(messages: list, options: Optional[dict] = None)
             last_step.frames.append(_text_frame(f"{last_step.step_id}.f{len(last_step.frames) + 1}", "user", p.text, p.attachment_ids, p.prompt_ids))
             _sync_turn_item(items, turn)
 
-    def _start_turn(origin, prompt=None, attachment_ids=None):
+    def _start_turn(origin: Any, prompt: Any = None, attachment_ids: Any = None) -> Any:
         nonlocal turn, pending
         flush_steered_leftovers()
         ordinal = next_ordinal
@@ -160,7 +160,7 @@ def group_messages_into_snapshot(messages: list, options: Optional[dict] = None)
         items.append(_draft_to_turn_item(turn))
         return turn
 
-    def push_marker(marker: str, payload: Any = None):
+    def push_marker(marker: str, payload: Any = None) -> None:
         nonlocal marker_count
         marker_count += 1
         item = TranscriptMarker(marker_id=f"m{marker_count}", marker=marker, payload=payload)
@@ -245,7 +245,7 @@ def group_messages_into_snapshot(messages: list, options: Optional[dict] = None)
             current.steps.append(step)
             frame_count = 0
 
-            def next_frame_id(_sid=step.step_id):
+            def next_frame_id(_sid: Any = step.step_id) -> Any:
                 nonlocal frame_count
                 frame_count += 1
                 return f"{_sid}.f{frame_count}"
@@ -282,19 +282,19 @@ def group_messages_into_snapshot(messages: list, options: Optional[dict] = None)
     return AgentTranscriptSnapshot(items=items, tasks=[], interactions=[], attachments=attachments, todos=[], prompts=[], meta=TranscriptMeta(), has_more_older=False)
 
 
-def _text_frame(frame_id, role, text, task_id=None, attachment_ids=None, prompt_ids=None):
+def _text_frame(frame_id: Any, role: Any, text: Any, task_id: Any = None, attachment_ids: Any = None, prompt_ids: Any = None) -> Any:
     from .model import TextFrame
 
     return TextFrame(frame_id=frame_id, role=role, text=text, task_id=task_id, attachment_ids=attachment_ids, prompt_ids=prompt_ids)
 
 
-def _ThinkingFrame(frame_id, text):  # noqa: N802
+def _ThinkingFrame(frame_id: Any, text: Any) -> Any:  # noqa: N802
     from .model import ThinkingFrame
 
     return ThinkingFrame(frame_id=frame_id, text=text)
 
 
-def _ToolCallFrame(frame_id, tool_call_id, name, state, input=None, output=None, display=None, error=None, input_text=None, progress=None, task_id=None, approval_id=None, todo_id=None, agent_refs=None):  # noqa: N802
+def _ToolCallFrame(frame_id: Any, tool_call_id: Any, name: Any, state: Any, input: Any = None, output: Any = None, display: Any = None, error: Any = None, input_text: Any = None, progress: Any = None, task_id: Any = None, approval_id: Any = None, todo_id: Any = None, agent_refs: Any = None) -> Any:  # noqa: N802
     from .model import ToolCallFrame
 
     return ToolCallFrame(frame_id=frame_id, tool_call_id=tool_call_id, name=name, state=state, input=input, output=output, display=display, error=error, input_text=input_text, progress=progress, task_id=task_id, approval_id=approval_id, todo_id=todo_id, agent_refs=agent_refs)
@@ -315,7 +315,7 @@ def _draft_to_turn_item(draft: _TurnDraft) -> TranscriptTurn:
     )
 
 
-def _StepDraft_to_step(step: _StepDraft, turn_id: str):
+def _StepDraft_to_step(step: _StepDraft, turn_id: str) -> Any:
     from .model import TranscriptStep
 
     return TranscriptStep(kind="step", step_id=step.step_id, turn_id=turn_id, ordinal=step.ordinal, state="completed", frames=list(step.frames))
@@ -328,7 +328,7 @@ def _sync_turn_item(items: list, draft: _TurnDraft) -> None:
             return
 
 
-def _current_turn_tool_frame(turn: Optional[_TurnDraft], tool_call_id):
+def _current_turn_tool_frame(turn: Optional[_TurnDraft], tool_call_id: Any) -> Any:
     if turn is None or tool_call_id is None:
         return None
     for s in reversed(turn.steps):
@@ -338,7 +338,7 @@ def _current_turn_tool_frame(turn: Optional[_TurnDraft], tool_call_id):
     return None
 
 
-def _replace_tool_frame(turn: _TurnDraft, tool_call_id, nxt) -> None:
+def _replace_tool_frame(turn: _TurnDraft, tool_call_id: Any, nxt: Any) -> None:
     for s in reversed(turn.steps):
         for i, f in enumerate(s.frames):
             if f.kind == "tool" and f.tool_call_id == tool_call_id:
@@ -433,7 +433,7 @@ def _text_of(message: dict) -> str:
     return "".join(p["text"] for p in (message.get("content") or []) if p.get("type") == "text" and isinstance(p.get("text"), str))
 
 
-def _parse_arguments(raw):
+def _parse_arguments(raw: Any) -> Any:
     if not raw:
         return None
     try:
@@ -442,7 +442,7 @@ def _parse_arguments(raw):
         return raw
 
 
-def json_dumps(obj) -> str:
+def json_dumps(obj: Any) -> str:
     import json as _json
 
     return _json.dumps(obj, sort_keys=True, ensure_ascii=False)
@@ -462,7 +462,7 @@ def fold_wire_record_facts(records: Any, base: AgentTranscriptSnapshot) -> Agent
     hidden_turn_ids = set()
     active_cancel_turn_ids: set = set()
 
-    def skip_cancelled_turn_ids():
+    def skip_cancelled_turn_ids() -> None:
         nonlocal next_turn_id
         while next_turn_id in cancelled_turn_ids:
             hidden_turn_ids.add(next_turn_id)
@@ -489,12 +489,12 @@ def fold_wire_record_facts(records: Any, base: AgentTranscriptSnapshot) -> Agent
         elif item.kind == "taskref":
             used_ref_ids.add(item.ref_id)
 
-    def push_marker(marker: str, record: dict):
+    def push_marker(marker: str, record: dict) -> None:
         nonlocal marker_seq
         marker_seq += 1
         appended.append(TranscriptMarker(marker_id=f"m{marker_seq}", marker=marker, payload=_payload_of(record), at=_record_time_iso(record)))
 
-    def upsert_task(record: dict):
+    def upsert_task(record: dict) -> None:
         info = record.get("info") or {}
         if not isinstance(info.get("taskId"), str):
             return
@@ -686,7 +686,7 @@ _TASK_STATES = {"running", "completed", "failed", "timed_out", "killed", "lost"}
 _GOAL_STATUSES = {"active", "paused", "blocked", "complete"}
 
 
-def _is_visible_turn_origin(origin) -> bool:
+def _is_visible_turn_origin(origin: Any) -> bool:
     kind = (origin or {}).get("kind")
     if kind == "system_trigger":
         return (origin or {}).get("name") in ("goal_continuation", "subagent")
@@ -697,7 +697,7 @@ def _is_visible_turn_origin(origin) -> bool:
     return True
 
 
-def _map_task_kind(kind) -> str:
+def _map_task_kind(kind: Any) -> str:
     if kind == "process":
         return "shell"
     if kind == "agent":
@@ -705,7 +705,7 @@ def _map_task_kind(kind) -> str:
     return "other"
 
 
-def _map_interaction_end_state(kind, response) -> str:
+def _map_interaction_end_state(kind: Any, response: Any) -> str:
     if kind == "question":
         return "dismissed" if response is None else "answered"
     decision = (response or {}).get("decision")
@@ -714,7 +714,7 @@ def _map_interaction_end_state(kind, response) -> str:
     return "cancelled"
 
 
-def _map_turn_end_reason(reason):
+def _map_turn_end_reason(reason: Any) -> Any:
     if reason == "completed":
         return "completed"
     if reason == "cancelled":
@@ -724,14 +724,14 @@ def _map_turn_end_reason(reason):
     return None
 
 
-def _read_turn_error_message(error):
+def _read_turn_error_message(error: Any) -> Any:
     if error is None or not isinstance(error, dict):
         return None
     message = error.get("message")
     return message if isinstance(message, str) else None
 
 
-def _record_time_iso(record) -> Optional[str]:
+def _record_time_iso(record: Any) -> Optional[str]:
     time = record.get("time")
     if isinstance(time, (int, float)) and math.isfinite(time):
         from datetime import datetime, timezone
@@ -742,7 +742,7 @@ def _record_time_iso(record) -> Optional[str]:
     return None
 
 
-def _epoch_ms_to_iso(value):
+def _epoch_ms_to_iso(value: Any) -> Any:
     if isinstance(value, (int, float)) and math.isfinite(value):
         from datetime import datetime, timezone
 
@@ -754,7 +754,7 @@ def _payload_of(record: dict) -> dict:
     return {k: v for k, v in record.items() if k not in ("type", "time")}
 
 
-def _read_todo_items(raw) -> list:
+def _read_todo_items(raw: Any) -> list:
     if not isinstance(raw, list):
         return []
     items = []
@@ -771,7 +771,7 @@ def _read_todo_items(raw) -> list:
     return items
 
 
-def _turn_to_kwargs(turn):
+def _turn_to_kwargs(turn: Any) -> Any:
     return {
         "kind": "turn",
         "turn_id": turn.turn_id,
@@ -789,7 +789,7 @@ def _turn_to_kwargs(turn):
     }
 
 
-def _meta_kwargs(meta):
+def _meta_kwargs(meta: Any) -> Any:
     return {
         "goal": meta.goal,
         "modes": meta.modes,
@@ -798,13 +798,13 @@ def _meta_kwargs(meta):
     }
 
 
-def _ModesMeta(plan=None, swarm=None, tower=None):  # noqa: N802
+def _ModesMeta(plan: Any = None, swarm: Any = None, tower: Any = None) -> Any:  # noqa: N802
     from .model import ModesMeta
 
     return ModesMeta(plan=plan, swarm=swarm, tower=tower)
 
 
-def _Todo_from_dict(todo):
+def _Todo_from_dict(todo: Any) -> Any:
     from .model import TodoItem, TranscriptTodo
 
     return TranscriptTodo(

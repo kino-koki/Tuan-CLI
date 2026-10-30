@@ -165,7 +165,7 @@ def _insert_turn(items: list, turn: TranscriptTurn) -> list:
     return nxt
 
 
-def _replace_turn(items: list, turn_id: str, fn) -> list:
+def _replace_turn(items: list, turn_id: str, fn: Any) -> list:
     return [fn(entry) if (entry.kind == "turn" and entry.turn_id == turn_id) else entry for entry in items]
 
 

@@ -270,7 +270,7 @@ def mcp_sandbox_execute(
     tool_name: str,
     arguments: Dict[str, Any],
     command: str,
-    **kwargs,
+    **kwargs: Any,
 ) -> str:
     """在沙箱中执行 MCP 工具调用。"""
     workspace = getattr(ctx, 'workspace', '') or default_workspace()

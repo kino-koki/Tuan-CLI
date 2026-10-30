@@ -74,14 +74,14 @@ def build_initialize_result(
     return result
 
 
-def emit(writer, msg: Dict[str, Any]) -> None:
+def emit(writer: Any, msg: Dict[str, Any]) -> None:
     """线程安全地写出一条 NDJSON 消息 (writer: 带 .write/.flush 的对象)。"""
     line = json.dumps(msg, ensure_ascii=False)
     writer.write(line + "\n")
     writer.flush()
 
 
-def read_messages(reader) -> Iterator[Dict[str, Any]]:
+def read_messages(reader: Any) -> Iterator[Dict[str, Any]]:
     """从 reader (支持 .readline()) 逐行解析 NDJSON-RPC 消息。"""
     for raw in reader:
         if isinstance(raw, bytes):
@@ -167,7 +167,7 @@ def parse_frame(line: str) -> Dict[str, Any]:
     }
 
 
-def read_messages_robust(reader) -> Iterator[Dict[str, Any]]:
+def read_messages_robust(reader: Any) -> Iterator[Dict[str, Any]]:
     """错误容忍的 NDJSON-RPC 消息迭代器（融合层）。
 
     与 ``read_messages`` 行为兼容：逐行解析、跳过空行与非法帧。区别是用

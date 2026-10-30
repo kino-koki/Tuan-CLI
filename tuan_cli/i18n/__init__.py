@@ -106,7 +106,7 @@ def available_languages() -> Dict[str, Dict[str, str]]:
 
 # ------------------------------------------------------------------ 取词
 
-def _locale_module(code: str):
+def _locale_module(code: str) -> Any:
     """懒加载语言模块, 失败缓存 None (下次不再尝试)。"""
     if code not in _modules:
         try:
@@ -117,7 +117,7 @@ def _locale_module(code: str):
     return _modules[code]
 
 
-def t(key: str, **kwargs) -> str:
+def t(key: str, **kwargs: Any) -> str:
     """按当前语言取词; kwargs 用于模板插值 (如 t("fs.context_pct", pct=62))。
 
     回退链: 当前语言 -> zh-CN -> en -> key 本身; 插值失败时返回原模板。
@@ -164,7 +164,7 @@ def choose_language_interactive() -> str:
     return normalize_language(raw) or DEFAULT_LANGUAGE
 
 
-def ensure_language(config=None) -> str:
+def ensure_language(config: Any = None) -> str:
     """确保界面语言就绪, 返回生效的语言代码。
 
     - 已配置 (config.get("language")) -> 直接应用, 不弹菜单;

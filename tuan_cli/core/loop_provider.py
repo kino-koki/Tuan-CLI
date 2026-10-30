@@ -352,7 +352,7 @@ class PlannerExecuteLoop(LoopProvider):
         self.on_task_end(agent, answer, len(steps))
         return answer
 
-    def _plan(self, agent: "Agent", task: str, on_token=None) -> str:
+    def _plan(self, agent: "Agent", task: str, on_token: Any = None) -> str:
         """用强模型规划任务步骤。"""
         plan_prompt = (
             f"请把下面的任务拆解成清晰的执行步骤 (3-8 步), 每步一行, 以数字编号。\n"

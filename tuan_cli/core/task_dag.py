@@ -270,7 +270,9 @@ class TaskDAG:
         """
         with self._lock:
             # 拓扑排序
-            in_degree: Dict[str, int] = defaultdict(int)
+            # 注意: in_degree 必须为**所有**节点初始化 0, 否则零入度的源节点
+            # 不会出现在 items() 里, BFS 队列为空, 关键路径退化为单节点。
+            in_degree: Dict[str, int] = {nid: 0 for nid in self._nodes}
             children: Dict[str, List[str]] = defaultdict(list)
             for node in self._nodes.values():
                 for dep in node.dependencies:

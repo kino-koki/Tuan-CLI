@@ -9,7 +9,7 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from .core.kernel import Kernel
 from .config import Config
@@ -30,6 +30,7 @@ from .tools import (
     CodeReviewPlugin,
     CheckpointPlugin,
     TaskToolPlugin,
+    MonitorToolPlugin,
     SessionToolsPlugin,
     TodoToolPlugin,
     CodeGraphPlugin,
@@ -59,16 +60,23 @@ logger = logging.getLogger(__name__)
 
 
 def build_kernel(
-    profile: str = "default", patch_file: Optional[str] = None, bare: bool = False
+    profile: str = "default",
+    patch_file: Optional[str] = None,
+    bare: bool = False,
+    safe_mode: bool = False,
 ) -> Kernel:
     """构建微内核, 注册所有插件。
 
     bare=True (CI/纯净模式): 仅用内置默认配置 + 内置工具, 跳过
     用户级 config.yaml / skills 自动播种 / MCP server / hooks / 记忆自动注入,
     保证 CI/评测环境可复现, 不受本机用户配置污染。
+
+    safe_mode=True (安全模式, 对标 Claude Code --safe-mode): 禁用用户级 hooks /
+    skills 自动注入 / personality, 只保留核心工具与内置默认配置; 与 bare 不同,
+    不跳过用户配置叠加与 MCP (用户仍可配模型, 但定制人格/技能/钩子不生效)。
     """
 
-    def _kernel_patch_plugin():
+    def _kernel_patch_plugin() -> Any:
         # 惰性: 仅在内核构建层面需要时才 import 补丁层, 避免拖累纯 CLI 冷启动
         from .kernel_patch.plugin import KernelPatchPlugin
 
@@ -76,6 +84,7 @@ def build_kernel(
 
     kernel = Kernel()
     setattr(kernel, "_bare", bare)
+    setattr(kernel, "_safe_mode", safe_mode)
 
     # 核心插件: 配置 -> 工具 -> 模型 -> 记忆 -> 技能 -> 上下文 -> 定时 -> 审计 -> 自我改进
     # bare 模式下使用不带用户配置叠加的 Config (仅内置默认)。
@@ -94,6 +103,7 @@ def build_kernel(
     kernel.register(CodeReviewPlugin())
     kernel.register(CheckpointPlugin())
     kernel.register(TaskToolPlugin())
+    kernel.register(MonitorToolPlugin())
     kernel.register(SessionToolsPlugin())
     kernel.register(TodoToolPlugin())
     kernel.register(MemoryPlugin())
@@ -160,6 +170,12 @@ def build_kernel(
         # 关闭技能/记忆的自动注入 (内置工具仍在, 只是不把用户技能/记忆灌进提示词)。
         config.data.setdefault("skills", {})["auto_inject"] = False
         config.data.setdefault("memory", {})["auto_inject"] = False
+    elif safe_mode:
+        # 安全模式 (对标 Claude Code --safe-mode): 禁用技能/记忆自动注入 + personality,
+        # 让 Agent 行为可预测、不受用户自定义人格/技能污染。用户配置/MCP 仍生效。
+        config.data.setdefault("skills", {})["auto_inject"] = False
+        config.data.setdefault("memory", {})["auto_inject"] = False
+        config.data.setdefault("agent", {})["personality"] = ""
     else:
         # 首次启动播种内置技能 (幂等, 同名不覆盖)
         seed_builtin_skills(config)
@@ -170,9 +186,9 @@ def build_kernel(
 def create_agent(
     kernel: Kernel,
     workspace: str,
-    confirm=None,
-    exclude_tools=None,
-    indexer=None,
+    confirm: Any = None,
+    exclude_tools: Any = None,
+    indexer: Any = None,
     system_extra: str = "",
     user_mode: bool = False,
 ) -> Agent:
@@ -222,9 +238,10 @@ def create_agent(
         agent.ctx.checkpoint_store = None
     # 用户级 Hooks: 让用户在工具执行前/后挂载脚本, 把 Agent 变成可编排的。
     # 安全: 命令强制 list(argv), 超时强杀, 阻断/改参权需显式声明 (fail-safe, 不阻断)。
-    # bare (CI/纯净模式) 下不挂用户级 hooks, 保证执行路径可复现。
+    # bare (CI/纯净模式) 与 safe_mode (安全模式) 下都不挂用户级 hooks, 保证行为可预测。
     bare = getattr(kernel, "_bare", False)
-    if bare:
+    safe_mode = getattr(kernel, "_safe_mode", False)
+    if bare or safe_mode:
         agent.ctx.hooks = None
     else:
         try:
@@ -235,8 +252,8 @@ def create_agent(
             agent.ctx.hooks = None
     # 自定义斜杠命令: 把 <home>/commands 与 <workspace>/.tuan/commands 挂进分发链
     # (运行期包装 _handle_slash, 幂等; 失败不影响主流程)。延迟导入避免 cli <-> app 环。
-    # bare 模式下不安装用户自定义命令。
-    if not bare:
+    # bare / safe_mode 模式下不安装用户自定义命令。
+    if not (bare or safe_mode):
         try:
             from .cli.user_commands import install_user_commands
 
@@ -276,7 +293,7 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def seed_builtin_skills(config_or_kernel, force: bool = False) -> int:
+def seed_builtin_skills(config_or_kernel: Any, force: bool = False) -> int:
     """把内置技能 seed 到用户技能目录。
 
     历史行为是「同名不覆盖, 尊重用户后续改进」—— 但这带来一个严重副作用:
@@ -332,7 +349,7 @@ def seed_builtin_skills(config_or_kernel, force: bool = False) -> int:
             if force:
                 # 先备份既有文件再覆盖, 误操作可手工还原
                 try:
-                    shutil.copy2(dest, backup_dir / path.name)
+                    shutil.copy2(dest, backup_dir / path.name)  # type: ignore[operator]  # 仅 force 分支进入, 此时 backup_dir 已赋值
                 except OSError as exc:  # noqa: BLE001
                     logger.debug("备份内置技能副本失败 %s: %s", path.name, exc)
                 shutil.copy(path, dest)

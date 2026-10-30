@@ -32,11 +32,12 @@ def test_openai_sdk_is_lazy_at_module_load():
 def test_openai_adapter_importable_without_sdk():
     """OpenAICompatAdapter 类本身可导入 (类定义不依赖 openai 运行时)。"""
     from tuan_cli.models.openai_compat import OpenAICompatAdapter
+    from tuan_cli.core.errors import ConfigError
     assert OpenAICompatAdapter is not None
     # 未配置 key 时, client 属性应给出友好报错而非静默 None
     inst = OpenAICompatAdapter(base_url="http://x/v1", model="m", api_key=None)
     try:
         inst.client
-        raise AssertionError("无 key 应抛 RuntimeError")
-    except RuntimeError as exc:
+        raise AssertionError("无 key 应抛 ConfigError")
+    except ConfigError as exc:
         assert "API Key" in str(exc)

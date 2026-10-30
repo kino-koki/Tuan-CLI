@@ -208,7 +208,7 @@ class HttpMcpClient:
     @staticmethod
     def _parse_response(resp: httpx.Response) -> Any:
         resp.raise_for_status()
-        ct = resp.headers.get("content-type", "")
+        ct = resp.headers.get("content-type") or ""
         text = resp.text
         if "text/event-stream" in ct or text.lstrip().startswith("event:") or "data:" in text:
             data_parts: List[str] = []

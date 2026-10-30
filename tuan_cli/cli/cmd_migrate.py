@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from ..config import home_dir
 from ..ports.migration_legacy import (
@@ -39,7 +40,7 @@ def _default_source() -> str:
     return DEFAULT_LEGACY_SOURCE
 
 
-def _plan_description(plan) -> str:
+def _plan_description(plan: Any) -> str:
     parts = []
     if plan.has_config:
         parts.append("config.toml")
@@ -68,7 +69,7 @@ def _status_line(source: str) -> list[str]:
     return lines
 
 
-def cmd_migrate(args) -> int:
+def cmd_migrate(args: Any) -> int:
     """迁移编排器 CLI 入口。"""
     sub = getattr(args, "migrate_cmd", None)
 

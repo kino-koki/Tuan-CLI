@@ -148,7 +148,7 @@ def _run_workflow(
 
 
 def _execute_subtask(
-    kernel, workspace, config, task, instructions=""
+    kernel: Any, workspace: Any, config: Any, task: Any, instructions: Any = ""
 ) -> str:
     """在隔离上下文中执行单个子任务。"""
     from ..app import create_agent

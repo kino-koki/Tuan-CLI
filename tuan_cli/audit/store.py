@@ -381,7 +381,7 @@ class AuditStore:
             "newest_iso": fmt_iso(tss[-1]) if tss else None,
         }
 
-    def export(self, path, fmt: str = "jsonl",
+    def export(self, path: Any, fmt: str = "jsonl",
                query: Optional[AuditQuery] = None) -> Dict[str, Any]:
         """导出审计记录到文件 (仅脱敏后 payload, 绝不含 raw 原文)。
 

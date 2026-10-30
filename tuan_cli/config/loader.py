@@ -485,7 +485,7 @@ class Config:
         mode_data = self.get("mode", {}) or {}
         raw_default = mode_data.get("default", "")
         current = mode_data.get("current", "")
-        return raw_default == "yolo" or current == "boundless"
+        return bool(raw_default == "yolo" or current == "boundless")
 
     def tool_auto_approve(self, tool_name: str) -> bool:
         if not self.is_yolo():

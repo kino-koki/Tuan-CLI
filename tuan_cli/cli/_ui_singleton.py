@@ -9,12 +9,14 @@ console, 启动不会加载 prompt_toolkit。
 
 from __future__ import annotations
 
+from typing import Any
+
 from ..ui.plain_console import console
 
 _ui = None
 
 
-def _get_ui():
+def _get_ui() -> Any:
     global _ui
     if _ui is None:
         from ..ui import UI
@@ -28,7 +30,7 @@ class _UiProxy:
 
     __slots__ = ()
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: Any) -> Any:
         return getattr(_get_ui(), name)
 
 

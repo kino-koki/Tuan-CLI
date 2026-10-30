@@ -683,7 +683,7 @@ def _render_json(findings: List[Dict[str, Any]]) -> int:
 # ------------------------------------------------------------------ CLI 入口
 
 
-def cmd_doctor(args) -> int:
+def cmd_doctor(args: Any) -> int:
     """`tuan doctor` 入口: 运行诊断, 按 --json/--fix/--network/--compact 分发。"""
     fix = bool(getattr(args, "fix", False))
     as_json = bool(getattr(args, "json", False))

@@ -255,7 +255,7 @@ class BackgroundShellManager:
         with self._lock:
             self._jobs[job.job_id] = job
 
-        def _read_stream(stream, is_err: bool) -> None:
+        def _read_stream(stream: Any, is_err: bool) -> None:
             for line in iter(stream.readline, ""):
                 if not line:
                     break

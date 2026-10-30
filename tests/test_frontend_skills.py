@@ -21,7 +21,7 @@ def test_frontend_design_builtin_skill_exists():
     skill = mgr._parse(path)
     assert skill.name == "前端设计语言先行"
     assert "frontend-design" in skill.tags
-    assert skill.activation == "lazy"
+    assert skill.activation == "proactive"
     assert skill.priority >= 6
     assert "设计语言" in skill.body
     # 提到才读: 触发词表非空

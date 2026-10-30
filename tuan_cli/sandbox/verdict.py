@@ -166,7 +166,7 @@ def confirm(layer: str, reason: str, severity: str = SEV["medium"],
 
 
 def isolate(layer: str, reason: str, severity: str = SEV["high"],
-            suggestions: Optional[List[str]] = None, **meta) -> Verdict:
+            suggestions: Optional[List[str]] = None, **meta: Any) -> Verdict:
     return Verdict(Action.ISOLATE, layer=layer, reason=reason,
                    severity=severity, suggestions=suggestions or [],
                    isolate=True, **meta)

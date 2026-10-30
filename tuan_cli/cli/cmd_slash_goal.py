@@ -13,11 +13,12 @@ from __future__ import annotations
 from ..paths import default_workspace
 
 import os
+from typing import Any
 
 from ._ui_singleton import ui
 
 
-def _build_engine(agent):
+def _build_engine(agent: Any) -> Any:
     """从 agent.workspace 构造 GoalEngine (注入可选配置)。"""
     from ..core.goal_mode import GoalEngine
 
@@ -38,7 +39,7 @@ def _build_engine(agent):
                       auto_continue=auto_continue, enabled=enabled)
 
 
-def _show_status(agent) -> None:
+def _show_status(agent: Any) -> None:
     eng = _build_engine(agent)
     st = eng.status()
     if st:
@@ -52,7 +53,7 @@ def _show_status(agent) -> None:
         ui.info("  示例: /goal all tests pass and lint is clean")
 
 
-def _cmd_goal(agent, arg: str) -> None:
+def _cmd_goal(agent: Any, arg: str) -> None:
     """/goal [目标描述|status|clear] — Goal 模式: 拆解执行直到目标满足。
 
     用法:

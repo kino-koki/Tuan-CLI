@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import importlib
+from typing import Any
 
 _CMD_SOURCES = {
     # ---- cmd_chat (交互 / 模型 / 模式) ----
@@ -140,12 +141,19 @@ _CMD_SOURCES = {
     "cmd_ecosystem": ".cmd_ecosystem",
     # ---- cmd_dispatch (Agent-of-Agents 调度层独立命令) ----
     "cmd_dispatch": ".cmd_dispatch",
+    # ---- cmd_review_cli (Claude Code 对齐 CLI 命令面: review/security-review/simplify/debug/batch) ----
+    "cmd_review": ".cmd_review_cli",
+    "cmd_security_review": ".cmd_review_cli",
+    "cmd_simplify": ".cmd_review_cli",
+    "cmd_debug": ".cmd_review_cli",
+    "cmd_batch": ".cmd_review_cli",
+    "cmd_auto_mode": ".cmd_review_cli",
 }
 
 __all__ = sorted(_CMD_SOURCES) + ["ui"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name == "ui":
         from ._ui_singleton import ui as _ui
         return _ui

@@ -379,7 +379,7 @@ class DynamicWorkflowEngine:
             # 先取出错误文本, 闭包只引用普通字符串。
             err_msg = str(exc)
 
-            def _fail_pool(r):
+            def _fail_pool(r: Any) -> None:
                 set_step_status(r["steps"][step_idx], "failed")
                 set_task_results(r["steps"][step_idx], [], force_error=err_msg)
                 r["status"] = "failed"
@@ -526,7 +526,7 @@ class DynamicWorkflowEngine:
 
     # ------------------------------------------------------------ 池构造 (测试可注入)
 
-    def _make_pool(self):
+    def _make_pool(self) -> Any:
         if self.pool_factory is not None:
             return self.pool_factory(self)
         # 生产路径: 用 configure 注入的运行时资源构造真实 SubAgentPool

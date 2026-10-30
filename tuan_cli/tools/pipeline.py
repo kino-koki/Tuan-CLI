@@ -280,7 +280,7 @@ class PipelinePlugin(_Plugin):
     name = "tools.pipeline"
     requires = ["tool_registry"]
 
-    def activate(self, kernel) -> None:
+    def activate(self, kernel: Any) -> None:
         registry = kernel.require("tool_registry")
         registry.register(Tool(
             name="pipeline_run",

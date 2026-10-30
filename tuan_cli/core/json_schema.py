@@ -428,7 +428,7 @@ def _typename(value: Any) -> str:
 
 def produce_structured(schema: Dict[str, Any], model_hint: str = "请按 schema 输出",
                        *, max_attempts: int = 3, strict: bool = True,
-                       repair_fn=None) -> SchemaResult:
+                       repair_fn: Any = None) -> SchemaResult:
     """简化的独立校验入口 (无 Agent 编排时用)。
 
     ``model_hint`` 为一次"原始回答"。返回 SchemaResult。
@@ -460,8 +460,8 @@ def match_oneof_branch(value: Any, schema: Any) -> Optional[str]:
     return None
 
 
-def dispatch_builtin(schema: Dict[str, Any], value: Any, handlers,
-                     *, key: str = "name", on_unknown=None):
+def dispatch_builtin(schema: Dict[str, Any], value: Any, handlers: Any,
+                     *, key: str = "name", on_unknown: Any = None) -> Any:
     """多态分发: 依据 ``value`` 中的 ``key`` 字段从 ``handlers`` 选执行器。
 
     ``handlers`` 为 ``{判别名: callable(value)->Any}``。命中则执行并返回其结果;
@@ -482,9 +482,9 @@ def dispatch_builtin(schema: Dict[str, Any], value: Any, handlers,
 
 # ================================================================ 顶层编排
 
-def run_structured(executor, schema: Dict[str, Any], *,
+def run_structured(executor: Any, schema: Dict[str, Any], *,
                    max_attempts: int = 3, strict: bool = True,
-                   initial_task: str = "", on_attempt=None) -> SchemaResult:
+                   initial_task: str = "", on_attempt: Any = None) -> SchemaResult:
     """带修复重试的完整结构化输出流程。
 
     ``executor(task_text: str) -> str`` 视作执行器 (内部把回填的 task 追加进会话再跑)。

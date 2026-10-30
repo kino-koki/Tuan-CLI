@@ -93,7 +93,7 @@ class ModePolicy:
 
     def tts_allowed(self) -> bool:
         """TTS 输出是否允许（闲聊允许，不受其他禁用牵连）。"""
-        return self._capabilities.get("tts", False)
+        return bool(self._capabilities.get("tts", False))
 
     # ------------------------------------------------------------------
     # 辅助

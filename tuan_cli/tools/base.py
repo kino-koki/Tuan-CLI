@@ -69,6 +69,7 @@ class ToolContext:
     workspace: str
     confirm: Optional[Callable[[str], bool]] = None  # 危险操作确认回调
     yolo: bool = False                                # YOLO 模式: 危险工具默认自动批准
+    auto_mode: bool = False                           # Auto 模式 (对标 Claude Code): 分类器按风险分级决定批准/确认
     on_auto_approve: Optional[Callable[[str], None]] = None  # YOLO 下危险工具自动批准时的通知钩子
     on_progress: Optional[Callable[[str, str], None]] = None  # 进度心跳回调 (tool_name, message)
     permissions: Optional[PermissionPolicy] = None
@@ -83,6 +84,8 @@ class ToolContext:
     checkpoints: Optional[List[Dict[str, Any]]] = None       # 会话内检查点栈 (checkpoint 工具维护)
     # 后台任务 Runner (task 工具懒缓存): submit 与 background_status 必须共用同一实例才能查到 job
     background_runner: Optional[Any] = None
+    # background_monitor 的增量游标 (job_id -> JSONL 行数), 每会话一份, 懒初始化
+    _monitor_cursors: Optional[Dict[str, int]] = None
     # 会话任务清单 (todo_write/todo_read 维护): [{content, status}], 会话内共享
     todos: Optional[List[Dict[str, Any]]] = None
     # 宿主 Agent 的反向引用 (Agent.__init__ 注入): plan-mode 等工具需要同步 agent.plan_mode
@@ -94,6 +97,10 @@ class ToolContext:
     # 本会话已通过 read_file 读取过的文件绝对路径集合 (Read-before-Edit 守卫用)。
     # read_file 成功后写入; edit_file/write_file(覆盖已存在文件) 前据此拦截未读先改。
     read_files: Optional[set] = None
+    # subagent 链深 (递归 spawn): 主会话=0, 子代理=1, 孙代理=2 ……
+    # 供 subagent 工具检查是否超过递归上限 (对标 Claude Code: subagents can spawn subagents,
+    # 但有链深上限防止无限递归)。子代理创建时由 subagent 工具注入 +1。
+    chain_depth: int = 0
 
     def config(self, dotted: str, default: Any = None) -> Any:
         cfg = self.kernel.get("config")
@@ -380,7 +387,24 @@ class ToolRegistry:
             ),)
         cfg = ctx.kernel.get("config") if ctx.kernel is not None else None
         policy = ctx.permissions or build_permission_policy(cfg)
-        decision = policy.decide(tool, args, yolo=getattr(ctx, "yolo", False))
+        # Auto 模式 (对标 Claude Code): 懒构造分类器挂到 ctx, 避免每次调用重建。
+        auto_classifier = None
+        if getattr(ctx, "auto_mode", False):
+            auto_classifier = getattr(ctx, "_auto_classifier", None)
+            if auto_classifier is None:
+                try:
+                    from ..core.auto_mode import AutoModeClassifier
+                    auto_classifier = AutoModeClassifier(cfg)
+                except Exception:  # noqa: BLE001 - 分类器不可用时回退常规决策
+                    auto_classifier = False  # 标记为不可用, 避免反复尝试
+                setattr(ctx, "_auto_classifier", auto_classifier)
+            if auto_classifier is False:
+                auto_classifier = None
+        decision = policy.decide(
+            tool, args,
+            yolo=getattr(ctx, "yolo", False),
+            auto_classifier=auto_classifier,
+        )
         if decision.action == "deny":
             return (ToolResult(status="denied", content=f"[已拒绝] {decision.reason}", tool_name=name),)
         # self-improve 实时闭环: learned 护栏命中则升级为"必须人工确认"
@@ -468,7 +492,8 @@ class ToolRegistry:
             and "learned" in str(getattr(ctx, "safety_advice", ""))
         )
         if (decision.action == "allow"
-                and (getattr(ctx, "yolo", False) or decision.explicit)
+                and (getattr(ctx, "yolo", False) or decision.explicit
+                     or getattr(ctx, "auto_mode", False))
                 and not has_learned):
             if ctx.on_auto_approve:
                 ctx.on_auto_approve(name)

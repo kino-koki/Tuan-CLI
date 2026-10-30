@@ -37,8 +37,13 @@ _NETWORK_FETCH_RE = re.compile(
 )
 
 # 网络上传/发送命令 (可能外泄数据)
+# 注: `\b` 在 `-` 前永远不成立 (`-` 是非 word 字符, 前面若为空格也是非 word),
+# 原实现导致 `-d`/`--data`/`-X POST`/`-T`/`--upload-file` 永不匹配, 上传确认策略失效。
+# 改用 `(?<!\w)` 前缀: 旗标必须独立于前导 word 字符, `-d`/`-X POST`/`--upload-file` 均命中,
+# 而纯 GET (`curl url` / `-X GET` / `wget -O`) 不误伤。
 _NETWORK_UPLOAD_RE = re.compile(
-    r'\b(?:curl|wget)\b.*\b(?:-d|--data|-X\s*POST|-T|--upload-file)\b', re.IGNORECASE
+    r'\b(?:curl|wget)\b.*(?<!\w)(?:-d\b|--data\b|-X\s*POST\b|-T\b|--upload-file\b)',
+    re.IGNORECASE,
 )
 
 # SCP/RSYNC (远程文件传输)
@@ -94,9 +99,10 @@ _PORT_SCAN_RE = re.compile(
 
 # ============================================================ 出口加固 (egress / one-way)
 
-# 显式 IP 字面量 (用于 CIDR 出口白名单校验; IPv6 做粗略匹配)
+# 显式 IP 字面量 (用于 CIDR 出口白名单校验)
+# IPv6 从 URL 括号 `[...]` 提取 (见 _apply_egress), 不用正则 finditer:
+# 压缩形式 (`2001:db8::1`) 会被部分匹配成碎片, 其中合法片段 (如 `::1`) 会误杀。
 _EGRESS_IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-_EGRESS_IPV6_RE = re.compile(r"\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b")
 
 # 入站监听类命令 (单向模式拦截; 适配气隙/光闸: 只出不进)
 _ONE_WAY_PATTERNS = [
@@ -263,7 +269,20 @@ class NetworkGuard:
         # 基类已 deny (如敏感域名) 则不再叠加
         if decision.action == "deny":
             return decision
-        ips = set(_EGRESS_IPV4_RE.findall(command)) | set(_EGRESS_IPV6_RE.findall(command))
+        ips: Set[str] = set()
+        # IPv4 字面量
+        for m in _EGRESS_IPV4_RE.finditer(command):
+            ips.add(m.group(0))
+        # IPv6: 仅从 URL 括号 `[...]` 提取 (完整地址)。不用 _EGRESS_IPV6_RE.finditer 兜底:
+        # 压缩形式 (`2001:db8::1`) 会被部分匹配成 `2001:db8:1` / `::1` 等碎片,
+        # 其中合法片段 (如 `::1`) 会误触发白名单外 deny, 造成误杀。
+        for m in re.finditer(r"\[([0-9a-fA-F:]+)\]", command):
+            cand = m.group(1)
+            try:
+                ipaddress.ip_address(cand)
+            except ValueError:
+                continue
+            ips.add(cand)
         if ips:
             bad = [ip for ip in ips if not self._ip_allowed(ip)]
             if bad:

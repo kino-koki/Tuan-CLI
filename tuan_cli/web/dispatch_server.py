@@ -76,15 +76,15 @@ def _audit(event: dict) -> None:
 class DispatchSession:
     """一次 WebSocket 会话的状态。"""
 
-    def __init__(self, ws, pair_code: str, hostname: str):
+    def __init__(self, ws: Any, pair_code: str, hostname: str) -> None:
         self.ws = ws
         self.pair_code = pair_code
         self.hostname = hostname
         self.session_id: Optional[str] = None
         self.paired_at: Optional[float] = None
-        self.agents_info = []
+        self.agents_info: List[Any] = []
         self.current_task_id: Optional[str] = None
-        self.current_task_cancel = None  # asyncio.Event for cancel
+        self.current_task_cancel: Optional[asyncio.Event] = None  # asyncio.Event for cancel
         self.approval_events: Dict[str, asyncio.Event] = {}
         self.approval_decisions: Dict[str, str] = {}
         self.connected_at = time.time()
@@ -100,7 +100,7 @@ class DispatchSession:
             pass
 
 
-async def handle_connection(ws) -> None:
+async def handle_connection(ws: Any) -> None:
     """处理手机 WebSocket 连接 (/tuan/dispatch/v1)。"""
     # 生成配对码
     pair_code = _gen_pair_code()
@@ -133,7 +133,7 @@ async def handle_connection(ws) -> None:
     })
 
     # TTL 倒计时
-    async def _countdown():
+    async def _countdown() -> None:
         await asyncio.sleep(PAIR_TTL_SEC)
         info = _pairing_sessions.get(pair_code)
         if info and info["status"] == "active":
@@ -248,6 +248,7 @@ async def _run_task(session: DispatchSession, task: TaskRequest) -> None:
             await session.send({"type": "event", "task_id": task.id, "seq": 2, "kind": "done", "data": {"status": "error"}})
             session.current_task_id = None
             return
+        assert adapter is not None  # error 为空时 route 必返回有效 adapter
 
         await session.send({
             "type": "accepted",
@@ -263,7 +264,7 @@ async def _run_task(session: DispatchSession, task: TaskRequest) -> None:
             return session.approval_decisions.pop(approval_id, "deny")
 
         try:
-            async def _run_with_timeout():
+            async def _run_with_timeout() -> None:
                 seq = 0
                 async for event in adapter.run(task, approve_callback=approve_callback):
                     seq += 1
@@ -295,7 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-async def main_async(args) -> None:
+async def main_async(args: Any) -> None:
     """异步主入口。"""
     import websockets
 

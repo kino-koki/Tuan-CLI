@@ -116,7 +116,12 @@ def _to_str_list(v: Any, field: str) -> Optional[List[str]]:
     if isinstance(v, str):
         return [v]
     if isinstance(v, (list, tuple)):
-        return [_to_str(x, f"{field}[{i}]") for i, x in enumerate(v)]
+        out: List[str] = []
+        for i, x in enumerate(v):
+            s = _to_str(x, f"{field}[{i}]")
+            if s is not None:
+                out.append(s)
+        return out
     raise ValidationError(f"{field}: 期望 array, 收到 {type(v).__name__}")
 
 
@@ -124,7 +129,12 @@ def _to_str_dict(v: Any, field: str) -> Optional[Dict[str, str]]:
     if v is None:
         return None
     if isinstance(v, dict):
-        return {str(k): _to_str(val, f"{field}[{k!r}]") for k, val in v.items()}
+        out: Dict[str, str] = {}
+        for k, val in v.items():
+            s = _to_str(val, f"{field}[{k!r}]")
+            if s is not None:
+                out[str(k)] = s
+        return out
     raise ValidationError(f"{field}: 期望 object, 收到 {type(v).__name__}")
 
 
@@ -187,16 +197,16 @@ class ConfigModel:
     def __contains__(self, key: object) -> bool:
         return key in self._data
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
         return iter(self._data)
 
-    def keys(self):
+    def keys(self) -> Any:
         return self._data.keys()
 
-    def values(self):
+    def values(self) -> Any:
         return self._data.values()
 
-    def items(self):
+    def items(self) -> Any:
         return self._data.items()
 
     def __len__(self) -> int:
@@ -210,9 +220,9 @@ class ConfigModel:
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, ConfigModel):
-            return self._data == other._data
+            return bool(self._data == other._data)
         if isinstance(other, dict):
-            return self._data == other
+            return bool(self._data == other)
         return NotImplemented
 
     def __hash__(self) -> int:  # 与可变 dict 语义一致: 不可哈希
@@ -248,9 +258,11 @@ def validate_server_config(
 
     transport = data.get("transport")
     if transport is None or (isinstance(transport, str) and not transport.strip()):
-        if infer_transport and isinstance(data.get("command"), str) and data.get("command").strip():
+        command = data.get("command")
+        url = data.get("url")
+        if infer_transport and isinstance(command, str) and command.strip():
             transport = "stdio"
-        elif infer_transport and isinstance(data.get("url"), str) and data.get("url").strip():
+        elif infer_transport and isinstance(url, str) and url.strip():
             transport = "http"
         else:
             raise ValidationError(

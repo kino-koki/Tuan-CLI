@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ._ui_singleton import ui
 
 
-def _cmd_sandbox(agent, arg: str) -> None:
+def _cmd_sandbox(agent: Any, arg: str) -> None:
     """/sandbox [run|snapshot|diff|cleanup] [args] — 沙箱执行。
 
     用法:

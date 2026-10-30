@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 # 瞬时错误判定用的关键字 (对齐 kernel step_retry 的 transient 分类思路)。
@@ -60,24 +61,80 @@ def retry_step(
     raise last
 
 
+def _is_user_set(config: Any, dotted: str) -> bool:
+    """判断配置键是否由用户显式设置 (user/profile/patch/运行时叠加层), 而非内置默认。
+
+    Config.data 是四层叠加视图, 无法直接区分来源; 通过读取原始配置层判断:
+    - 若 config 有 .user_config_path / .home, 先查用户 YAML 层;
+    - 运行时代码直接改 ``config.data[...]`` (测试/插件/CLI 注入) 时, 用户 YAML
+      不含该键, 回退比较 data 视图值与内置默认 —— 不同则视为显式设置。
+    """
+    try:
+        # 1. 用户层配置存在且含该键 → 用户显式设置
+        ucp = getattr(config, "user_config_path", None)
+        if ucp is not None:
+            from ..config.loader import _load_yaml
+            user_cfg = _load_yaml(Path(ucp)) if Path(ucp).exists() else {}
+            node = user_cfg
+            for key in dotted.split("."):
+                if not isinstance(node, dict) or key not in node:
+                    break
+                node = node[key]
+            else:
+                return True
+    except Exception:  # noqa: BLE001
+        pass
+    # 2. 回退: data 视图值 != 内置默认 → 运行时已覆盖 (代码/测试/CLI 注入)
+    try:
+        from ..config.defaults import DEFAULT_CONFIG
+        def _deep_get(data: Any, path: str) -> Any:
+            node = data
+            for key in path.split("."):
+                if not isinstance(node, dict):
+                    return None
+                node = node.get(key)
+            return node
+        cur = _deep_get(config.data, dotted) if hasattr(config, "data") else None
+        default = _deep_get(DEFAULT_CONFIG, dotted)
+        return bool(cur != default)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def resolve_max_iterations(config: Any, explicit: Optional[int] = None) -> int:
     """解析主循环每轮迭代上限。
 
     优先级 (高 → 低):
 
     1. ``explicit`` —— 调用方 (如 ``Agent.run(max_iterations=...)``) 显式指定, 最高优先。
-    2. ``agent.max_iterations`` —— **用户可见的正式配置键**。``config/loader.py`` 默认 50,
+    2. ``agent.max_iterations`` —— **用户可见的正式配置键**。``config/loader.py`` 默认 30,
        ``config/validate.py`` 校验取值 1..200, ``tuan chat --max-turns`` 写入的就是它,
        ``/config`` 展示的也是它。它必须在这里生效, 否则用户设置会被静默忽略。
-    3. ``fusion.agent_loop_max_iterations`` —— 内部续跑旋钮 (默认 40), 仅在前两项都
+       **仅当用户显式设置时优先于 effort 档位** (否则 effort 档位无法体现)。
+    3. ``agent.effort`` → ``effort_profiles.<level>.loop_max_iter`` —— 推理投入档位
+       对应的迭代上限 (对标 Claude Code /effort 影响 continuation)。仅当用户未显式
+       设置 ``agent.max_iterations`` 时生效, 让档位真正影响循环深度。
+    4. ``fusion.agent_loop_max_iterations`` —— 内部续跑旋钮 (默认 40), 仅在前几项都
        没配置时兜底, 让复杂任务在缺省状态下仍能自动续跑更多步。
-
-    历史缺陷: 本函数早期只读 ``fusion.agent_loop_max_iterations``, 完全不查
-    ``agent.max_iterations`` —— 结果是 ``tuan chat --max-turns 100`` 写了配置却不生效,
-    主循环一律按 40 步掐断。
     """
     if explicit is not None:
         return int(explicit)
+    # 2. 用户显式设置的 agent.max_iterations 最高优先 (默认值不盖过 effort 档位)
+    if _is_user_set(config, "agent.max_iterations"):
+        raw = config.get("agent.max_iterations", None)
+        if isinstance(raw, (int, float)) and float(raw) > 0:
+            return int(raw)
+    # 3. effort 档位联动 (仅当未显式设置 max_iterations)
+    effort = str(config.get("agent.effort", "high")).strip().lower()
+    try:
+        profile = config.get(f"agent.effort_profiles.{effort}", None) or {}
+        if isinstance(profile, dict) and profile.get("loop_max_iter"):
+            v = int(profile["loop_max_iter"])
+            if v > 0:
+                return v
+    except Exception:  # noqa: BLE001
+        pass
+    # 4. 兜底
     for key in ("agent.max_iterations", "fusion.agent_loop_max_iterations"):
         raw = config.get(key, None)
         if isinstance(raw, bool):
@@ -86,11 +143,11 @@ def resolve_max_iterations(config: Any, explicit: Optional[int] = None) -> int:
             return int(raw)
         if isinstance(raw, str):
             try:
-                v = float(raw.strip())
+                fv = float(raw.strip())
             except ValueError:
                 continue
-            if v > 0:
-                return int(v)
+            if fv > 0:
+                return int(fv)
     return 40
 
 

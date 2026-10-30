@@ -16,7 +16,7 @@ import logging
 import random
 import threading
 import time
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 log = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ class RetryPolicy:
         max_retries: int = 3,
         backoff: float = 2.0,
         jitter: float = 0.3,
-        retry_on=DEFAULT_RETRY_ON,
+        retry_on: Any = DEFAULT_RETRY_ON,
         sleep: Optional[Callable[[float], None]] = None,
         rng: Optional[Callable[[float, float], float]] = None,
         max_timeout_retries: int = 2,
@@ -131,7 +131,7 @@ class RetryPolicy:
         self.max_timeout_retries = max(1, int(max_timeout_retries))
 
     @classmethod
-    def from_config(cls, config) -> "RetryPolicy":
+    def from_config(cls, config: Any) -> "RetryPolicy":
         return cls(
             max_retries=config.get("agent.max_retries", 3),
             backoff=config.get("agent.retry_backoff", 2.0),
@@ -161,7 +161,7 @@ class RetryPolicy:
         label: str = "模型",
         emit: Optional[Callable[[str, dict], None]] = None,
         on_rate_limit_notice: Optional[Callable[[str], None]] = None,
-    ):
+    ) -> Any:
         """执行 fn() 并按策略重试。鉴权失败立即抛 RuntimeError。"""
         last_err: Optional[Exception] = None
         for attempt in range(1, self.max_retries + 1):
@@ -241,7 +241,7 @@ class RateLimiter:
         self._lock = threading.Lock()
 
     @classmethod
-    def from_config(cls, config) -> "RateLimiter":
+    def from_config(cls, config: Any) -> "RateLimiter":
         """按 model.rate_limit 配置构造; 未启用或全 0 时返回不限流实例。"""
         if not config.get("model.rate_limit.enabled", False):
             return cls(0, 0)
@@ -326,7 +326,7 @@ class CircuitBreaker:
         self._opened_at = 0.0
 
     @classmethod
-    def from_config(cls, config) -> "CircuitBreaker":
+    def from_config(cls, config: Any) -> "CircuitBreaker":
         """按 agent.circuit_breaker.* 配置构造; 未启用时返回透传实例 (不触发任何熔断)。"""
         if not config.get("agent.circuit_breaker.enabled", False):
             return cls(enabled=False)
@@ -369,7 +369,7 @@ class CircuitBreaker:
 
     # ------------------------------------------------------------ 带熔断执行
 
-    def call(self, fn: Callable, *, label: str = "调用"):
+    def call(self, fn: Callable, *, label: str = "调用") -> Any:
         """执行 fn(); 熔断器开启且冷却未到则快速失败 (CircuitOpen)。"""
         if not self.enabled:
             return fn()

@@ -7,12 +7,13 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from ..i18n import t
 from ._ui_singleton import ui
 
 
-def _cmd_provider(agent, config, head: str, arg: str) -> None:
+def _cmd_provider(agent: Any, config: Any, head: str, arg: str) -> None:
     """`/provider`: 查看/设置/清除当前 API Key 与供应商。
 
     用法:

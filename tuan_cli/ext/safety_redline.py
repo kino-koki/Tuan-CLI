@@ -10,6 +10,7 @@ is_redline / is_hard_redline / is_extreme 三档判定入口。
 import base64
 import re
 import unicodedata
+from typing import Any
 
 from .safety_normalize import (
     _CMD_SUB_ANY_RE,
@@ -401,7 +402,7 @@ _suppressed_fn: object = None
 _suppressed_fn_tried: bool = False
 
 
-def _get_suppressed_fn():
+def _get_suppressed_fn() -> Any:
     """懒加载并缓存 blacklist_override.is_suppressed。
 
     性能修复: 原实现在函数体内写 ``from ..core.blacklist_override import is_suppressed``,
@@ -435,7 +436,7 @@ def _label_suppressed(label: str) -> bool:
         return False
 
 
-def _match_any(text: str, patterns) -> bool:
+def _match_any(text: str, patterns: Any) -> bool:
     """任一正则命中即返回 True (忽略大小写)。
 
     命中前先检查该模式 label 是否被用户本地抑制 (黑名单减负): 被抑制的模式跳过,
@@ -1116,11 +1117,27 @@ def _mask_mentioned_literals(text: str) -> str:
 
     区间内的 $() / ` ` 子表达式**不**被抹除 —— 那里的内容会被真正执行
     (echo "$(rm -rf /)"), 抹掉即绕过。
+
+    V-10 修复: 尊重命令段边界 (; / && / || / | / 换行)。每个 mention span 只 mask
+    其所在段内的内容, 不跨段把前置独立命令 (如 `rm -rf / && echo ...` 里的
+    `rm -rf / && `) 一起抹掉 —— 前置命令会被段分隔符与 mention 段隔离, 必须保留
+    给 has_dangerous_recursive_rm 等 token 化函数检测。
     """
     parts: list[str] = []
     cursor = 0
+    seg_sep_re = re.compile(r"[;&|\n]")
     for start, end in sorted(_mention_spans(text)):
-        parts.append(" " * (start - cursor))
+        # 找到当前 mention span 所在段的开头 (上一个段分隔符之后)
+        head = text[:start]
+        cut = -1
+        for m in seg_sep_re.finditer(head):
+            cut = m.end()
+        seg_start = max(cut, cursor)  # 不跨越已处理位置
+        # 段内从 seg_start 到 start 是文本动词 (echo/grep ...) 及其参数前导, mask 掉
+        # 但 cursor 到 seg_start 是前置独立命令段, 必须保留
+        if cursor < seg_start:
+            parts.append(text[cursor:seg_start])
+        parts.append(" " * (start - seg_start))
         pos = start
         for a, b in _substitution_spans(text, start, end):
             parts.append(" " * (a - pos))
@@ -1132,7 +1149,7 @@ def _mask_mentioned_literals(text: str) -> str:
     return "".join(parts)
 
 
-def _iter_interpreter_payloads(text: str):
+def _iter_interpreter_payloads(text: str) -> Any:
     """迭代命令中所有解释器内联载荷 (已去包裹引号)。
 
     覆盖 sh/bash/zsh/ksh/python/perl/ruby/node/php/lua/tclsh 的 -c/-e/-r 调用,
@@ -1250,6 +1267,19 @@ def is_benign_dev_command(text: str) -> bool:
 # SQL 破坏性操作 (DROP/DELETE/TRUNCATE) 不在此列 —— 它们属于『可确认关键级』,
 # 由 shell 护栏的 step3/step4 经极端 5 次确认放行 (见 tools/shell._pre_exec_guard)。
 # 注意 is_redline() 仍是综合危险检测器 (含 SQL), 供 MCP 守卫 / 脚本内容检查等场景使用。
+
+# V-10: 读取 SSH 私钥 / 系统凭证路径 —— 不放入 _REDLINE_PATTERNS / is_hard_redline
+# 本体 (因为 SafetyEngine.score() 会把它升为 critical, 拉 RiskVector engine_floor=10
+# 破坏 risk_sandbox 的 composite < 8 预期), 而是导出给 IntentFilter 独立做 DENY 硬拒。
+# 语义: 凭证外泄 = 攻击者拿到 id_rsa 可完全接管服务器, 危害等同文件系统毁灭。
+_CRED_READ_RE_HARD = re.compile(
+    r"\b(?:cat|tac|less|more|head|tail|nl|bat|type|awk|sed|grep|egrep|fgrep|zgrep"
+    r"|tee|sort|uniq|cut|tr|paste|join|xargs|wc|xsl|csvlook)\b"
+    r"[^\n]*(?:~?/\.ssh/(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/\s]+_key)(?!\.pub\b)"
+    r"|/root/\.ssh/|/etc/shadow\b|~?/\.aws/credentials\b)",
+    re.IGNORECASE,
+)
+
 _REDLINE_PATTERNS = [
     p for p in _CRITICAL_PATTERNS
     if not p[0].lstrip().upper().startswith(("DROP", "DELETE", "TRUNCATE"))
@@ -1287,6 +1317,13 @@ def is_hard_redline(command: str) -> bool:
         return True
     # 归一化后 (PowerShell -EncodedCommand / 命令替换解码等) 的红线模式也要命中
     if _match_any(_mask_mentioned_literals(_normalize(pattern_text)), _REDLINE_PATTERNS):
+        return True
+    # V-10 补充: 读取 SSH 私钥 / 系统凭证 —— 不是毁灭操作但凭证外泄危害等同,
+    # 也构成硬红线。不放入 SafetyEngine.score() 的硬红线子集 (见 safety_score.py 注释),
+    # 因为 score() 把它升为 critical 会让 RiskVector engine_floor=10 破坏 risk_sandbox
+    # 预期 (SafetyEngine 判 high 即可, is_hard_redline 独立返回 True 供 redteam_round4 /
+    # shell 安全闸门 / IntentFilter 使用)。
+    if _CRED_READ_RE_HARD.search(pattern_text):
         return True
     return False
 

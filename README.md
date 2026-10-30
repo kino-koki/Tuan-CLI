@@ -121,7 +121,8 @@ Tuan-CLI isn't born from nothing — its design explicitly builds on the followi
 ## Quick start
 
 ```bash
-# 1) Install (—[dev] is the full stack; drop to [openai]/[mcp] if you only need APIs)
+# 1) Install (—[dev] is the full stack: pytest/mypy/openai/PyYAML for tests;
+#    drop to no extra if you only need the runtime — core deps are just rich + prompt_toolkit)
 git clone <this repo> && cd tuan-cli
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
@@ -141,7 +142,7 @@ tuan --print run "Hi, describe yourself in one sentence."
 
 ---
 
-## The command surface: 43 core subcommands + slash commands
+## The command surface: 49 core subcommands + slash commands
 
 | Command | What it's for |
 |---|---|

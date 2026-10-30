@@ -265,6 +265,7 @@ def _load_builtin_soul(tier: str = "") -> str:
 
     资源文件缺失时返回空串, 调用方回退到 _FALLBACK_SOUL。
     """
+    resource_dir: Optional[Path] = None
     try:
         from ..config.defaults import _RESOURCES_DIR
         resource_dir = _RESOURCES_DIR
@@ -542,8 +543,8 @@ def _build_memory_notes_block(
 def build_system_prompt_dynamic(
     home: Path,
     workspace: str,
-    memory_store=None,
-    skill_manager=None,
+    memory_store: Any = None,
+    skill_manager: Any = None,
     skill_limit: int = 3,
     codebase_map: str = "",
     output_style: str = "default",
@@ -670,8 +671,8 @@ def build_system_prompt_dynamic(
 def build_system_prompt(
     home: Path,
     workspace: str,
-    memory_store=None,
-    skill_manager=None,
+    memory_store: Any = None,
+    skill_manager: Any = None,
     skill_limit: int = 3,
     codebase_map: str = "",
     reply_language: str = "zh-CN",
@@ -865,8 +866,8 @@ def _execution_protocol_block() -> str:
 
 def build_task_context(
     task_hint: str,
-    memory_store=None,
-    skill_manager=None,
+    memory_store: Any = None,
+    skill_manager: Any = None,
     skill_limit: int = 3,
 ) -> str:
     """生成「随任务变化的上下文」, 贴在首条 user 消息前 (不进 system, 不破坏缓存)。

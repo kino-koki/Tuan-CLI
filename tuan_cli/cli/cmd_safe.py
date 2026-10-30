@@ -45,7 +45,7 @@ def _repo_root() -> Path:
 
 # ---------------------------------------------------------------- 分发入口
 
-def cmd_safe(args) -> int:
+def cmd_safe(args: Any) -> int:
     """安全总入口命令。"""
     safe_cmd = getattr(args, "safe_cmd", None) or "status"
 
@@ -160,7 +160,7 @@ def _cmd_whitelist_list() -> int:
     return 0
 
 
-def _cmd_whitelist_add(args) -> int:
+def _cmd_whitelist_add(args: Any) -> int:
     command = getattr(args, "command", None)
     if not command:
         console.print("[red]用法: tuan safe allow <命令>[/red]")
@@ -184,7 +184,7 @@ def _cmd_whitelist_add(args) -> int:
         return 1
 
 
-def _cmd_whitelist_remove(args) -> int:
+def _cmd_whitelist_remove(args: Any) -> int:
     command = getattr(args, "command", None)
     if not command:
         console.print("[red]用法: tuan safe deny <命令>[/red]")
@@ -241,7 +241,7 @@ def _cmd_blacklist() -> int:
     return 0
 
 
-def _cmd_reduce(args) -> int:
+def _cmd_reduce(args: Any) -> int:
     keyword = getattr(args, "keyword", None)
     if not keyword:
         console.print("[red]用法: tuan safe reduce <关键字>[/red]")
@@ -261,7 +261,7 @@ def _cmd_reduce(args) -> int:
         return 1
 
 
-def _cmd_restore(args) -> int:
+def _cmd_restore(args: Any) -> int:
     keyword = getattr(args, "keyword", None)
     if not keyword:
         console.print("[red]用法: tuan safe restore <关键字>[/red]")
@@ -305,7 +305,7 @@ def _cmd_update() -> int:
 
 # ---------------------------------------------------------------- 安全替代建议
 
-def _cmd_suggest(args) -> int:
+def _cmd_suggest(args: Any) -> int:
     """对一条命令给出命令感知的安全替代建议 (交互式查询)。"""
     command = args.command
     from ..ext.safety_engine import SafetyEngine
@@ -342,7 +342,7 @@ def _bench_dir() -> Path:
     return bench_dir
 
 
-def _cmd_bench(args) -> int:
+def _cmd_bench(args: Any) -> int:
     """一键复现安全基准: 对抗样本 + PowerShell + 绕过矩阵, 汇总为可引用报告。
 
     第三方可用同一条命令在本仓库复现安全数字 (不依赖网络, 不调用模型)。
@@ -482,7 +482,7 @@ def _cmd_bench(args) -> int:
             fp = s.get("fp_hard_pct_of_allow") or {}
             rc = s.get("danger_block_recall_pct") or {}
             lat = s.get("latency_ms_per_cmd") or {}
-            def _med(d):  # noqa: ANN001
+            def _med(d: Any) -> str:  # noqa: ANN001
                 return f"{d.get('median', 0):.2f}%" if d else "n/a"
             silent = s.get("danger_miss_silent_total", 0)
             silent_tag = "零静默放行" if silent == 0 else f"{silent} 条静默放行"
@@ -707,7 +707,7 @@ def _git_head_short(root: Path) -> str | None:
 
 # ---------------------------------------------------------------- 安全报告 (HTML)
 
-def _cmd_report(args) -> int:
+def _cmd_report(args: Any) -> int:
     """生成自包含 HTML 安全报告 (宣传 / 审计 / 交接用)。"""
     root = _repo_root()
     out_arg = getattr(args, "out", None)

@@ -25,17 +25,17 @@ from ..logging_conf import log
 
 
 # ---- app 链惰性加载: 仅真正启动 ACP 会话时才构建内核 ----
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def create_agent(*a, **k):
+def create_agent(*a: Any, **k: Any) -> Any:
     from ..app import create_agent as _f
     return _f(*a, **k)
 
 
-def seed_builtin_skills(*a, **k):
+def seed_builtin_skills(*a: Any, **k: Any) -> Any:
     from ..app import seed_builtin_skills as _f
     return _f(*a, **k)
 
@@ -61,7 +61,7 @@ def _get_slash_commands() -> list:
         return []
 
 
-def cmd_acp(args) -> int:
+def cmd_acp(args: Any) -> int:
     """ACP server 入口。"""
     # ACP 客户端常以 `<binary> --login` 触发终端鉴权 (kimi 的 AuthMethodTerminal)。
     if getattr(args, "login", False):
@@ -118,7 +118,7 @@ def cmd_acp(args) -> int:
         model_info = {"id": model, "provider": provider}
         model_label = f"{provider}/{model}"
 
-        def make_agent(confirm):
+        def make_agent(confirm: Any) -> Any:
             return create_agent(kernel, workspace, confirm=confirm)
 
         server = AcpServer(

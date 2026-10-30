@@ -71,12 +71,12 @@ class SplashTUI:
             kb = KeyBindings()
 
             @kb.add("c-c")
-            def _(event):
+            def _(event: Any) -> None:
                 self._closed = True
                 event.app.exit()
 
             @kb.add("c-q")
-            def _(event):
+            def _(event: Any) -> None:
                 self._closed = True
                 event.app.exit()
 

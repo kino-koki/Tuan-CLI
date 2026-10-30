@@ -140,7 +140,7 @@ class AnthropicAdapter(ModelAdapter):
                              usage={k: int(v) for k, v in usage.items()
                                     if isinstance(v, (int, float))})
 
-    def _stream(self, client, url: str, headers: Dict[str, str], payload: Dict[str, Any],
+    def _stream(self, client: Any, url: str, headers: Dict[str, str], payload: Dict[str, Any],
                 on_token: Optional[Callable[[str], None]]) -> ModelResponse:
         payload["stream"] = True
         parts: List[str] = []

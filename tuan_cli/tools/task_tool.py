@@ -67,7 +67,7 @@ def _get_runner(ctx: ToolContext) -> "BackgroundRunner":
 
 def _task_handler(ctx: ToolContext, description: Any = "", prompt: Any = "",
                   subagent_type: Any = "general-purpose",
-                  run_in_background: Any = False, **_kwargs) -> str:
+                  run_in_background: Any = False, **_kwargs: Any) -> str:
     prompt = str(prompt or "")
     if not prompt.strip():
         return "[错误] task 需要非空的 prompt 参数"
@@ -147,7 +147,7 @@ def build_task_tool() -> Tool:
 
 # ------------------------------------------------------------------ background_status 工具
 
-def _status_handler(ctx: ToolContext, job_id: Any = "", tail: Any = 10, **_kwargs) -> str:
+def _status_handler(ctx: ToolContext, job_id: Any = "", tail: Any = 10, **_kwargs: Any) -> str:
     runner: Optional[Any] = getattr(ctx, "background_runner", None)
     if runner is None:
         return "当前会话还没有启动过任何后台子代理任务。"

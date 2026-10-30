@@ -25,7 +25,7 @@ class CronRunner:
     - tick 与常驻守护共用同一个 run_job, 行为一致。
     """
 
-    def __init__(self, kernel, config, workspace: str, home: Path) -> None:
+    def __init__(self, kernel: Any, config: Any, workspace: str, home: Path) -> None:
         self.kernel = kernel
         self.config = config
         self.workspace = workspace
@@ -93,7 +93,7 @@ class CronRunner:
                 "session_file": str(session.file)}
 
 
-def _os_lock_nb(handle) -> bool:
+def _os_lock_nb(handle: Any) -> bool:
     """跨平台非阻塞独占加锁 (Windows: msvcrt; POSIX: fcntl)。成功返回 True。"""
     try:
         if os.name == "nt":
@@ -109,7 +109,7 @@ def _os_lock_nb(handle) -> bool:
         return False
 
 
-def _os_unlock(handle) -> None:
+def _os_unlock(handle: Any) -> None:
     """释放 _os_lock_nb 加的锁 (失败静默: 进程退出也会释放)。"""
     try:
         if os.name == "nt":
@@ -124,7 +124,7 @@ def _os_unlock(handle) -> None:
 
 
 @contextlib.contextmanager
-def _sweep_lock(home: Path):
+def _sweep_lock(home: Path) -> Any:
     """调度互斥锁: 防止守护与手动 tick (或多个 tick) 并发重复执行同一批任务。
 
     - Windows 用 msvcrt.locking, POSIX 用 fcntl.flock, 均为非阻塞独占;
@@ -142,8 +142,8 @@ def _sweep_lock(home: Path):
 
 
 def run_due_jobs(
-    kernel,
-    config,
+    kernel: Any,
+    config: Any,
     workspace: str,
     home: Path,
     *,

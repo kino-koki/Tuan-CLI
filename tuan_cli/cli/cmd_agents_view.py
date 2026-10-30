@@ -258,7 +258,7 @@ def kill_session(sessions_dir: Path, sid_prefix: str) -> Dict[str, Any]:
 
 # ------------------------------------------------------------ 命令入口
 
-def cmd_agents_view(args) -> int:
+def cmd_agents_view(args: Any) -> int:
     """Agent View 面板: rich 表格一屏展示所有会话状态。"""
     sessions_dir = home_dir() / "sessions"
     watch = bool(getattr(args, "watch", False))
@@ -279,7 +279,7 @@ def cmd_agents_view(args) -> int:
     return 0
 
 
-def cmd_agents_kill(args) -> int:
+def cmd_agents_kill(args: Any) -> int:
     """tuan agents kill <id> —— 终止后台会话。"""
     sessions_dir = home_dir() / "sessions"
     result = kill_session(sessions_dir, getattr(args, "session_id", ""))
@@ -291,7 +291,7 @@ def cmd_agents_kill(args) -> int:
     return 0
 
 
-def cmd_agents(args) -> int:
+def cmd_agents(args: Any) -> int:
     """Agent 命令入口: view / list / kill / attach。"""
     sub = getattr(args, "agents_cmd", None)
 

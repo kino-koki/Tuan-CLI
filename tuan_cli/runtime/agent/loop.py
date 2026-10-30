@@ -56,7 +56,7 @@ class ToolCallEvent(LoopStreamEvent):
     arguments_delta: str = ""
 
 
-def create_stream_part_handler(on_event: Callable[[LoopStreamEvent], None]):
+def create_stream_part_handler(on_event: Callable[[LoopStreamEvent], None]) -> Callable[[Any], None]:
     """把 StreamedMessagePart 转换为本地 LoopStreamEvent。
 
     流式消息的 type 决定如何映射成事件：
@@ -64,7 +64,7 @@ def create_stream_part_handler(on_event: Callable[[LoopStreamEvent], None]):
     - thinking_delta -> ThinkingEvent
     - tool_call_part  -> ToolCallEvent
     """
-    def handle(part) -> None:  # part: StreamedMessagePart
+    def handle(part: Any) -> None:  # part: StreamedMessagePart
         if part.type == "text_delta" and part.text:
             on_event(TextEvent(delta=part.text))
         elif part.type == "thinking_delta" and part.text:
@@ -182,7 +182,7 @@ class _Hook:
     def __init__(self) -> None:
         self._handlers: List[tuple[str, Callable[[Any], Awaitable[None]]]] = []
 
-    def register(self, id: str, fn: Callable[[Any], Awaitable[None]]):
+    def register(self, id: str, fn: Callable[[Any], Awaitable[None]]) -> _Disposable:
         self._handlers.append((id, fn))
         return _Disposable(lambda: self._unregister(id))
 
@@ -260,7 +260,7 @@ class AgentLoopService:
 
     def __init__(
         self,
-        provider,
+        provider: Any,
         system_prompt: str,
         tools: List,
         history: List[Message],
@@ -381,7 +381,7 @@ class AgentLoopService:
 
     # ----------------------------------------------------------------- step 生命周期
 
-    async def _begin_step(self, runtime: _LoopRuntime, opts: LoopRunOptions):
+    async def _begin_step(self, runtime: _LoopRuntime, opts: LoopRunOptions) -> Any:
         if runtime.signal.is_set():
             raise asyncio.CancelledError("loop cancelled")
         if not self._queue.has_pending_requests():
@@ -565,7 +565,7 @@ class _Part:
     """轻量 StreamedMessagePart 替身，仅用于把 generate 回调转成事件。"""
     __slots__ = ("type", "text", "thinking", "id", "name", "arguments_delta")
 
-    def __init__(self, text=None, thinking=None, tool_call_id=None, tool_name=None):
+    def __init__(self, text: Any = None, thinking: Any = None, tool_call_id: Any = None, tool_name: Any = None):
         self.type = "text_delta" if text is not None else (
             "thinking_delta" if thinking is not None else "tool_call_part"
         )

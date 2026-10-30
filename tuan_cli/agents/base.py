@@ -32,7 +32,7 @@ class EventType(str, Enum):
     META = "meta"
 
 
-def _kill(proc) -> None:
+def _kill(proc: Any) -> None:
     """终止子进程; 进程已退出时静默 (取消/审批拒绝/收尾竞态都可能触发)。"""
     try:
         proc.kill()

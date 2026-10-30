@@ -177,7 +177,7 @@ class CrossSessionResolver:
 
     # ------------------------------------------------------------ 消息提取 (按文件)
 
-    def _find_message(self, path: Path, idx: int):
+    def _find_message(self, path: Path, idx: int) -> Any:
         """扫描会话文件里第 idx 条 user/assistant 消息。返回 (message_dict 或 None, 总数)。"""
         count = 0
         found: Optional[Dict[str, Any]] = None
@@ -427,7 +427,7 @@ class CrossSessionResolver:
 
 
 # 便捷入口
-def _block_label(m: Mention):
+def _block_label(m: Mention) -> Any:
     """返回 (标签, 引用标识) 供注入块头显示。"""
     if m.kind == "session":
         return "会话", m.target

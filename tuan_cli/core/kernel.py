@@ -348,7 +348,7 @@ class AggregateProxy:
     def __len__(self) -> int:
         return len(self._order)
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
         for _o, _p, inst in self._order:
             yield inst
 

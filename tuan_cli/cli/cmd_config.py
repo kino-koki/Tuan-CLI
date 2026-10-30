@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import json
 
+from typing import Any
+
 from ..config import DEFAULT_CONFIG, Config, to_yaml_str
 from ..core.security_utils import is_sensitive_key, mask_sensitive_dict
 from ..ui.plain_console import console
 
 
-def _mask_value(value):
+def _mask_value(value: Any) -> Any:
     """敏感字段取值遮蔽: 字符串给出长度提示, 非字符串给 [REDACTED]。"""
     from ..core.security_utils import REDACT_TAG
     if isinstance(value, str):
@@ -26,7 +28,7 @@ def _mask_value(value):
     return value
 
 
-def _validate_config(config) -> list[tuple]:
+def _validate_config(config: Any) -> list[tuple]:
     """校验配置, 返回 [(level, section, msg)]; level ∈ ok/warn/err。"""
     from ..models import is_known_provider  # 惰性: 仅 validate 需要, 别拖慢 get/dump/set
     issues: list[tuple] = []
@@ -114,7 +116,7 @@ def _validate_config(config) -> list[tuple]:
     return issues
 
 
-def cmd_config(args) -> int:
+def cmd_config(args: Any) -> int:
     """配置管理。"""
     config_cmd = getattr(args, "config_cmd", None)
     config = Config(profile=getattr(args, "profile", "default"),

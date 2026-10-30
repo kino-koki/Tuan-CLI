@@ -165,7 +165,7 @@ class EnhancedSkillManager:
       - evaluate_conditions(): 条件评估
     """
 
-    def __init__(self, home: Path, memory_store=None) -> None:
+    def __init__(self, home: Path, memory_store: Any = None) -> None:
         self.dir = home / "skills"
         self.dir.mkdir(parents=True, exist_ok=True)
         self.memory = memory_store
@@ -174,7 +174,7 @@ class EnhancedSkillManager:
 
     # ============================================================ 读写 (兼容旧版)
 
-    def save(self, name: str, description: str, body: str, **kwargs) -> SkillMeta:
+    def save(self, name: str, description: str, body: str, **kwargs: Any) -> SkillMeta:
         """保存技能。同名覆盖 + use_count 递增。"""
         from .manager import SkillManager
         slug = re.sub(r"[^a-z0-9\-]+", "-", name.lower()).strip("-") or "skill"
@@ -342,19 +342,19 @@ class EnhancedSkillManager:
             if name in resolved:
                 continue
             resolved.add(name)
-            skill = all_skills.get(name)
-            if not skill:
+            dep_skill = all_skills.get(name)
+            if dep_skill is None:
                 continue
             # 硬依赖: requires (递归注入)
-            for req in skill.requires:
+            for req in dep_skill.requires:
                 if req not in resolved:
                     provider = self._find_provider(req, all_skills)
                     if provider and provider.name not in activated:
                         activated[provider.name] = provider
                         queue.append(provider.name)
             # 软引用: suggests (触发词匹配时注入, 不强制)
-            if skill.suggests and ctx.task_text:
-                for suggest_name in skill.suggests:
+            if dep_skill.suggests and ctx.task_text:
+                for suggest_name in dep_skill.suggests:
                     if suggest_name in all_skills and suggest_name not in activated:
                         sug_skill = all_skills[suggest_name]
                         if self._triggers_match(sug_skill.triggers, ctx.task_text):
@@ -363,7 +363,7 @@ class EnhancedSkillManager:
                                 queue.append(suggest_name)
 
         # Phase 3: 相关性评分排序 (relevance score desc, 然后 priority desc, 然后 name asc)
-        def _sort_key(s: SkillMeta):
+        def _sort_key(s: SkillMeta) -> tuple:
             relevance = self.score_skill_relevance(s, ctx.task_text) if ctx.task_text else 0.0
             return (-relevance, -s.priority, s.name)
 

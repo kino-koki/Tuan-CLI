@@ -71,7 +71,7 @@ def _probe(url: str, timeout: float) -> bool:
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             # 只要拿到响应头就算通; 状态码不挑 (401/404 都证明网络可达)
-            return resp.status < 500
+            return bool(resp.status < 500)
     except urllib.error.HTTPError as exc:
         # HTTPError 也说明 TCP/TLS 已经打通 (只是业务状态码非 2xx)
         return exc.code < 500
@@ -98,7 +98,7 @@ def probe_once(timeout: float = DEFAULT_TIMEOUT) -> Dict[str, object]:
             reach_via = url
             break
 
-    result = {
+    result: Dict[str, object] = {
         "offline": reach_via is None,
         "checked_at": time.time(),
         "via": reach_via,

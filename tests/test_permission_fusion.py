@@ -32,7 +32,7 @@ class _FixedPolicy:
     def __init__(self, decision: PermissionDecision):
         self._decision = decision
 
-    def decide(self, tool, args, *, yolo=False):
+    def decide(self, tool, args, *, yolo=False, auto_classifier=None):
         return self._decision
 
 

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 _PROJECT_RULE_FILES = [
     ".tuan/rules.md",
@@ -52,7 +52,7 @@ class UserPrefsMemory:
     def get_pref(self, key: str, default: Optional[str] = None) -> Optional[str]:
         return self._prefs.get(key, default)
 
-    def items(self):
+    def items(self) -> Any:
         return list(self._prefs.items())
 
     def store(self, category: str, key: str, value: str) -> None:

@@ -78,7 +78,7 @@ DEFAULT_WEIGHTS: Dict[str, float] = {
 }
 
 
-def _signal_score(text: str, signals) -> float:
+def _signal_score(text: str, signals: Any) -> float:
     """一组信号的最高命中分 (取 max 而非累加 —— 同类多信号不重复放大)。"""
     best = 0.0
     for pat, weight in signals:

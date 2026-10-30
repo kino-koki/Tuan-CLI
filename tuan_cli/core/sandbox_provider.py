@@ -140,7 +140,8 @@ class LocalSandbox(SandboxProvider):
     name = "local"
     description = "本地直接执行 (无 OS 级沙箱隔离)"
 
-    def run(self, command, workspace, *, profile=None, env=None, timeout=120.0):
+    def run(self, command: Any, workspace: Any, *, profile: Any = None,
+            env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         sandbox_env = self._sanitize_env(env)
         sandbox_env["TUAN_WORKSPACE"] = workspace
         try:
@@ -166,7 +167,7 @@ class LocalSandbox(SandboxProvider):
                 sandbox_backend=self.name, enforced=False,
             )
 
-    def healthcheck(self):
+    def healthcheck(self) -> Dict[str, Any]:
         return {"available": True, "detail": "本地执行 (无 OS 级隔离)"}
 
 
@@ -187,7 +188,8 @@ class LandlockSandbox(SandboxProvider):
     name = "landlock"
     description = "Linux Bubblewrap + Landlock 沙箱 (需安装 bwrap)"
 
-    def run(self, command, workspace, *, profile=None, env=None, timeout=120.0):
+    def run(self, command: Any, workspace: Any, *, profile: Any = None,
+            env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         profile = profile or SandboxProfile()
         sandbox_env = self._sanitize_env(env)
 
@@ -226,7 +228,7 @@ class LandlockSandbox(SandboxProvider):
                 sandbox_backend=self.name, enforced=True,
             )
 
-    def _build_bwrap_command(self, command, workspace, profile):
+    def _build_bwrap_command(self, command: Any, workspace: Any, profile: Any) -> Any:
         """构建 bwrap 命令行。"""
         bwrap = shutil.which("bwrap")
         if not bwrap:
@@ -266,7 +268,7 @@ class LandlockSandbox(SandboxProvider):
         cmd.extend(command)
         return cmd
 
-    def healthcheck(self):
+    def healthcheck(self) -> Dict[str, Any]:
         bwrap = shutil.which("bwrap")
         if not bwrap:
             return {"available": False, "detail": "bwrap 未安装"}
@@ -299,7 +301,8 @@ class SeatbeltSandbox(SandboxProvider):
     name = "seatbelt"
     description = "macOS Seatbelt 沙箱 (sandbox-exec, macOS 内置)"
 
-    def run(self, command, workspace, *, profile=None, env=None, timeout=120.0):
+    def run(self, command: Any, workspace: Any, *, profile: Any = None,
+            env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         profile = profile or SandboxProfile()
         sandbox_env = self._sanitize_env(env)
 
@@ -346,7 +349,7 @@ class SeatbeltSandbox(SandboxProvider):
                 sandbox_backend=self.name, enforced=True,
             )
 
-    def _generate_seatbelt_profile(self, workspace, profile):
+    def _generate_seatbelt_profile(self, workspace: Any, profile: Any) -> str:
         """生成 Seatbelt profile (Scheme-like DSL)。"""
         ws = workspace.rstrip("/")
         lines = [
@@ -385,7 +388,7 @@ class SeatbeltSandbox(SandboxProvider):
 
         return "\n".join(lines)
 
-    def healthcheck(self):
+    def healthcheck(self) -> Dict[str, Any]:
         if sys.platform != "darwin":
             return {"available": False, "detail": "非 macOS 平台"}
         sandbox_exec = shutil.which("sandbox-exec")
@@ -410,7 +413,8 @@ class WindowsTokenAclSandbox(SandboxProvider):
     name = "token-acl"
     description = "Windows 受限令牌 + ACL 沙箱 (需 Windows)"
 
-    def run(self, command, workspace, *, profile=None, env=None, timeout=120.0):
+    def run(self, command: Any, workspace: Any, *, profile: Any = None,
+            env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         profile = profile or SandboxProfile()
         sandbox_env = self._sanitize_env(env)
 
@@ -465,7 +469,7 @@ class WindowsTokenAclSandbox(SandboxProvider):
                 sandbox_backend=self.name, enforced=True,
             )
 
-    def _apply_network_block(self, workspace, block=True):
+    def _apply_network_block(self, workspace: Any, block: Any = True) -> None:
         """通过 Windows 防火墙临时阻止工作区的网络访问。"""
         try:
             rule_name = f"Tuan-Sandbox-{os.getpid()}"
@@ -485,7 +489,7 @@ class WindowsTokenAclSandbox(SandboxProvider):
         except Exception:
             pass  # 防火墙操作失败不应阻塞主流程
 
-    def healthcheck(self):
+    def healthcheck(self) -> Dict[str, Any]:
         if sys.platform != "win32":
             return {"available": False, "detail": "非 Windows 平台"}
         # 检查是否有管理员权限 (创建受限令牌需要)

@@ -5,17 +5,19 @@ from ..paths import default_workspace
 
 import os
 
+from typing import Any
+
 from ._ui_singleton import console
 from ..ui.format import Table
 
 
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     """惰性构建内核: 仅实际执行 usercmd 命令时才加载 app 链。"""
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def cmd_usercmd(args) -> int:
+def cmd_usercmd(args: Any) -> int:
     """CLI: tuan usercmd [list] — 列出用户自定义斜杠命令。"""
     from ..cli.user_commands import load_user_commands
     workspace = getattr(args, "workspace", None) or default_workspace()

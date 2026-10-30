@@ -15,13 +15,13 @@ from ..self_improve.plugin import SelfImprovePlugin
 from ..ui.plain_console import console
 
 
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     """惰性构建内核: 仅实际执行 improve 命令时才加载 app 链。"""
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def _load_service(args) -> Tuple[Any, Any]:
+def _load_service(args: Any) -> Tuple[Any, Any]:
     kernel = build_kernel(profile=getattr(args, "profile", "default"),
                             patch_file=getattr(args, "patch", None))
     # build_kernel 已 activate_all, self_improve 服务已就绪
@@ -29,7 +29,7 @@ def _load_service(args) -> Tuple[Any, Any]:
     return svc, kernel
 
 
-def cmd_improve(args) -> int:
+def cmd_improve(args: Any) -> int:
     svc, kernel = _load_service(args)
     if svc is None:
         console.print("self_improve 服务不可用。")
@@ -40,7 +40,7 @@ def cmd_improve(args) -> int:
     return _do_summarize(svc)
 
 
-def _do_summarize(svc) -> int:
+def _do_summarize(svc: Any) -> int:
     data = svc.summarize()
     n = data.get("total_experiences", 0)
     console.print(f"自我改进复盘 — 共抽取 {n} 条经验\n")
@@ -64,7 +64,7 @@ def _do_summarize(svc) -> int:
     return 0
 
 
-def _do_apply(svc) -> int:
+def _do_apply(svc: Any) -> int:
     data = svc.apply()
     console.print("已应用自我改进\n")
     if data.get("rules_written"):

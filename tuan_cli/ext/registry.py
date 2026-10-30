@@ -16,7 +16,7 @@ import json
 import os
 import sys
 import subprocess
-from typing import Optional
+from typing import Any, Optional
 
 
 # 引擎映射: name -> (module_path, class_name)
@@ -36,7 +36,7 @@ ENGINE_MAP = {
 ENGINE_NAMES = list(ENGINE_MAP.keys())
 
 
-def get_engine(name: str):
+def get_engine(name: str) -> Any:
     """获取引擎实例"""
     if name not in ENGINE_MAP:
         raise KeyError(f"Unknown engine: {name}")
@@ -66,7 +66,7 @@ def engine_healthcheck(name: Optional[str] = None) -> dict:
     return results
 
 
-def run_engine_subprocess(name: str):
+def run_engine_subprocess(name: str) -> Any:
     """以子进程方式运行引擎 (保持 JSONL IPC 协议兼容)"""
     module_path = ENGINE_MAP[name][0]
     cmd = [sys.executable, "-m", module_path]

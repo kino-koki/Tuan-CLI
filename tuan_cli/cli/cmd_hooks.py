@@ -1,6 +1,8 @@
 """`tuan hooks` 与 `/hooks` —— 用户级 Hooks 管理 (拆分自 cmd_services.py)。"""
 
 from __future__ import annotations
+from typing import Any
+
 from ..paths import default_workspace
 
 import json
@@ -10,13 +12,13 @@ from ..hooks import HookManager, HOOK_EVENTS
 from ._ui_singleton import console, ui
 
 
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     """惰性构建内核: 仅实际执行 hooks 命令时才加载 app 链。"""
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def cmd_hooks(args) -> int:
+def cmd_hooks(args: Any) -> int:
     """用户级 Hooks 管理: 列出 / 测试 / 启用 / 禁用。"""
     sub = getattr(args, "hook_cmd", None)
     workspace = getattr(args, "workspace", None) or default_workspace()
@@ -78,7 +80,7 @@ def _hooks_list(workspace: str) -> int:
     return 0
 
 
-def _hooks_test(workspace: str, args) -> int:
+def _hooks_test(workspace: str, args: Any) -> int:
     event = getattr(args, "event", None) or "PreToolUse"
     tool = getattr(args, "tool", None) or "echo_text"
     raw = getattr(args, "tool_input", None) or "{}"
@@ -110,7 +112,7 @@ def _hooks_test(workspace: str, args) -> int:
     return 0
 
 
-def _cmd_hooks(agent, arg: str) -> None:
+def _cmd_hooks(agent: Any, arg: str) -> None:
     """/hooks: 列出当前会话生效的 Hooks。"""
     hooks = getattr(getattr(agent, "ctx", None), "hooks", None)
     if hooks is None or not hooks.enabled:
