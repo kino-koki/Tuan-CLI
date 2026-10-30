@@ -104,7 +104,7 @@ def _from_config() -> Optional[str]:
     try:
         from .config.loader import Config, home_dir
 
-        val = Config(home_dir()).get("agent.workspace", "")
+        val = Config(str(home_dir())).get("agent.workspace", "")
         val = str(val or "").strip()
         return val or None
     except Exception as exc:  # noqa: BLE001 - 位置解析不可阻塞启动

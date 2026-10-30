@@ -16,7 +16,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .manager import ZOMBIE_DAYS, Skill, SkillManager
 
@@ -123,7 +123,7 @@ def consolidate(
             sc = similarity(a, b)
             if sc < threshold:
                 continue
-            def _keep_key(s):
+            def _keep_key(s: Any) -> tuple:
                 return (_ORIGIN_RANK.get(s.origin, 0), s.use_count,
                         len(s.description), len(s.tags))
             if _keep_key(a) >= _keep_key(b):

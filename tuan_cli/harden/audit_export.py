@@ -20,7 +20,7 @@ import os
 import socket
 import time
 import urllib.request
-from typing import Dict, Iterable, List, Optional, Sequence, TextIO
+from typing import Any, Dict, Iterable, List, Optional, Sequence, TextIO
 
 from ..core.security_bus import SecurityEvent
 from ..core.security_utils import redact_nested, redact_sensitive
@@ -126,7 +126,7 @@ class AuditExporter:
             os.makedirs(out_dir, exist_ok=True)
 
     # ---------------------------------------------------------- 落盘
-    def _open_file(self, fmt: str):
+    def _open_file(self, fmt: str) -> Any:
         if self.out_dir is None:
             return None
         path = os.path.join(self.out_dir, f"audit_export.{fmt}")
@@ -182,7 +182,7 @@ class AuditExporter:
                 self._push(line)
 
     # ---------------------------------------------------------- 订阅总线
-    def attach(self, bus) -> None:
+    def attach(self, bus: Any) -> None:
         """订阅 SecurityEventBus 的 ``*`` 通配事件。"""
         bus.on("*", self.emit)
         self._bus = bus

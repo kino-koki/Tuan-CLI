@@ -15,7 +15,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, cast
+from typing import Any, List, Optional, cast
 
 from ..context.indexer import CodebaseIndexer
 from ..core.kernel import Kernel, Plugin
@@ -24,7 +24,7 @@ from ..ext.safety_engine import (has_force_push, has_recursive_rm,
 from .base import Tool, ToolContext, string_prop
 
 
-def _indexer(ctx: ToolContext):
+def _indexer(ctx: ToolContext) -> Any:
     """返回已构建的 IndexResult (含 map_text)。已构建结果会缓存在内核, 避免重复扫描。"""
     cached = ctx.kernel.get("codebase_indexer")
     if cached is not None:

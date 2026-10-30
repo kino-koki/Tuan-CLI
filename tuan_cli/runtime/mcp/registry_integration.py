@@ -151,7 +151,7 @@ async def register_mcp_server(
     return [t for t in (reg.get(n) for n in result.registered) if t is not None]
 
 
-def _bridge_executable_to_base_tool(exe: ExecutableTool):  # 延迟导入，避免加载 tools.base
+def _bridge_executable_to_base_tool(exe: ExecutableTool) -> Any:  # 延迟导入，避免加载 tools.base
     from .bridge import bridge_executable_to_base_tool
 
     return bridge_executable_to_base_tool(exe)

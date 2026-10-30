@@ -13,7 +13,7 @@
   F. 本地部署 (5 家): Ollama, LM Studio, vLLM, llama.cpp, 通用本地网关
 """
 
-from typing import Dict, Type
+from typing import Any, Dict, Type
 
 from .base import ModelAdapter, ModelCapabilities, ModelResponse, ToolCall
 from .openai_compat import OpenAICompatAdapter
@@ -58,12 +58,12 @@ def is_known_provider(provider: str) -> bool:
     return provider in KNOWN_PROVIDERS
 
 
-def get_provider_info(provider: str):
+def get_provider_info(provider: str) -> Any:
     """获取供应商详细信息 (结构化数据), 未知供应商返回 None。"""
     return get_provider(provider)
 
 
-def create_adapter(config) -> ModelAdapter:
+def create_adapter(config: Any) -> ModelAdapter:
     """根据配置创建模型适配器。
 
     设计原则: 不绑架任何一家模型。
@@ -127,7 +127,7 @@ def create_adapter(config) -> ModelAdapter:
 _KERNEL_EXPORTS = ("KernelModelAdapter", "create_kernel_adapter")
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in _KERNEL_EXPORTS:
         from .kernel_adapter import KernelModelAdapter, create_kernel_adapter
         return KernelModelAdapter if name == "KernelModelAdapter" else create_kernel_adapter

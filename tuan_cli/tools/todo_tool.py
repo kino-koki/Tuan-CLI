@@ -85,7 +85,7 @@ def _validate_todos(todos: Any) -> Tuple[Optional[List[Dict[str, Any]]], Optiona
 # ------------------------------------------------------------------ handlers
 
 
-def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs) -> str:
+def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs: Any) -> str:
     cleaned, err = _validate_todos(todos)
     if err is not None:
         return err
@@ -104,7 +104,7 @@ def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs) -> str:
     return f"任务清单已更新 ({done}/{len(cleaned)} 完成)。"
 
 
-def _todo_list_handler(ctx: ToolContext, **_kwargs) -> str:
+def _todo_list_handler(ctx: ToolContext, **_kwargs: Any) -> str:
     todos: List[Dict[str, Any]] = list(getattr(ctx, "todos", None) or [])
     if not todos:
         # 内存态为空时从工作区恢复 (跨会话/新 Agent 场景)
@@ -183,7 +183,7 @@ class TodoToolPlugin(Plugin):
 
     name = "tools.todo"
 
-    def activate(self, kernel) -> None:
+    def activate(self, kernel: Any) -> None:
         registry = kernel.require("tool_registry")
         registry.register(build_todo_write_tool())
         registry.register(build_todo_list_tool())

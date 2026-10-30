@@ -70,7 +70,7 @@ def _set_plan_mode(ctx: ToolContext, on: bool) -> None:
 
 # ------------------------------------------------------------------ todo_write / todo_read
 
-def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs) -> str:
+def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs: Any) -> str:
     if not isinstance(todos, list) or not todos:
         return "[错误] todo_write 需要非空的 todos 数组 (全量覆盖语义)"
     cleaned: List[Dict[str, Any]] = []
@@ -96,7 +96,7 @@ def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs) -> str:
     return f"任务清单已更新 ({done}/{len(cleaned)} 完成)。"
 
 
-def _todo_read_handler(ctx: ToolContext, **_kwargs) -> str:
+def _todo_read_handler(ctx: ToolContext, **_kwargs: Any) -> str:
     todos: List[Dict[str, Any]] = getattr(ctx, "todos", None) or []
     if not todos:
         return "(任务清单为空)"
@@ -177,7 +177,7 @@ def _fullscreen_tui_active() -> bool:
 
 
 def _ask_user_handler(ctx: ToolContext, question: Any = "", options: Any = None,
-                      **_kwargs) -> str:
+                      **_kwargs: Any) -> str:
     q = str(question or "").strip()
     if not q:
         return "[错误] ask_user 需要 question 参数"
@@ -262,7 +262,7 @@ def build_ask_user_tool() -> Tool:
 
 # ------------------------------------------------------------------ enter/exit_plan_mode
 
-def _enter_plan_handler(ctx: ToolContext, **_kwargs) -> str:
+def _enter_plan_handler(ctx: ToolContext, **_kwargs: Any) -> str:
     if ctx.plan_mode:
         return "已处于 Plan 模式 (只读分析, 修改类工具被拦截)。"
     _set_plan_mode(ctx, True)
@@ -270,7 +270,7 @@ def _enter_plan_handler(ctx: ToolContext, **_kwargs) -> str:
             "请充分调研后调用 exit_plan_mode 并附上完整实施计划。")
 
 
-def _exit_plan_handler(ctx: ToolContext, plan: Any = "", **_kwargs) -> str:
+def _exit_plan_handler(ctx: ToolContext, plan: Any = "", **_kwargs: Any) -> str:
     p = str(plan or "").strip()
     if not p:
         return "[错误] exit_plan_mode 必须在 plan 参数里给出完整的实施计划文本 (涉及哪些文件/函数、每步怎么改)"

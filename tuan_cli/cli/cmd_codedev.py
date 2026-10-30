@@ -14,6 +14,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from typing import Any
+
 from ..codedev import CodeDevEngine
 
 
@@ -102,21 +104,21 @@ def _cmd_doctor() -> int:
     return 0
 
 
-def _cmd_retrieve(args) -> int:
+def _cmd_retrieve(args: Any) -> int:
     engine = CodeDevEngine(workspace=args.root)
     res = engine.forge_context(args.task, top_k=getattr(args, "top_k", 8))
     print(res.pack())
     return 0
 
 
-def _cmd_verify(args) -> int:
+def _cmd_verify(args: Any) -> int:
     engine = CodeDevEngine(workspace=args.cwd)
     report = engine.verify(args.cwd)
     print(report.summary())
     return 0
 
 
-def cmd_codedev(args) -> int:
+def cmd_codedev(args: Any) -> int:
     sub = getattr(args, "codedev_cmd", None)
     if sub == "demo":
         return _cmd_demo()

@@ -30,17 +30,17 @@ from ._ui_singleton import ui, console
 
 
 # ---- app 链惰性加载: 仅真正执行 dev/run/agent/bg/undo/impact 时才构建内核 ----
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def create_agent(*a, **k):
+def create_agent(*a: Any, **k: Any) -> Any:
     from ..app import create_agent as _f
     return _f(*a, **k)
 
 
-def seed_builtin_skills(*a, **k):
+def seed_builtin_skills(*a: Any, **k: Any) -> Any:
     from ..app import seed_builtin_skills as _f
     return _f(*a, **k)
 
@@ -49,7 +49,7 @@ def seed_builtin_skills(*a, **k):
 
 # ===================================================================== cmd_dev
 
-def cmd_dev(args) -> int:
+def cmd_dev(args: Any) -> int:
     """自主开发循环 (分析→实现→自测→核实→汇报)。"""
     task = getattr(args, "task", "")
     if not task:
@@ -70,7 +70,7 @@ def cmd_dev(args) -> int:
     agent = create_agent(kernel, workspace)
     seed_builtin_skills(kernel)
 
-    def on_checkpoint(result):
+    def on_checkpoint(result: Any) -> Any:
         console.print(f"\n检查点: {result[:200]}")
         try:
             reply = input("  继续 / 调整方向 / done: ").strip()
@@ -108,7 +108,7 @@ class _NDJsonEmitter:
     sink 可替换为测试 buffer (默认 sys.stdout)。
     """
 
-    def __init__(self, sink=None):
+    def __init__(self, sink: Any = None) -> None:
         self.lines: list[str] = []
         self._sink = sink
         self._n = 0
@@ -132,7 +132,7 @@ class _NDJsonEmitter:
         if delta:
             self._emit({"type": "thinking", "delta": delta})
 
-    def on_tool(self, name: str, args) -> None:
+    def on_tool(self, name: str, args: Any) -> None:
         self._n += 1
         self._last_tid = f"call_{self._n}"
         if isinstance(args, str):
@@ -147,7 +147,7 @@ class _NDJsonEmitter:
         self._emit({"type": "tool_call", "id": self._last_tid,
                     "name": name, "arguments": parsed})
 
-    def on_tool_result(self, name: str, result) -> None:
+    def on_tool_result(self, name: str, result: Any) -> None:
         self._emit({"type": "tool_result", "id": self._last_tid or f"call_{self._n}",
                     "output": str(result)})
 
@@ -169,8 +169,8 @@ class _StreamJsonEmitter:
     sink 可替换为测试 buffer (默认 sys.stdout)。
     """
 
-    def __init__(self, sink=None, *, session_id: str = "", cwd: str = "",
-                 model: str = ""):
+    def __init__(self, sink: Any = None, *, session_id: str = "", cwd: str = "",
+                 model: str = "") -> None:
         self.lines: list[str] = []
         self._sink = sink
         self._n = 0
@@ -231,7 +231,7 @@ class _StreamJsonEmitter:
         if delta:
             self._reason_buf += delta
 
-    def on_tool(self, name: str, args) -> None:
+    def on_tool(self, name: str, args: Any) -> None:
         # 工具调用来临: 先把本轮文本/思考落成 blocks, 再追加 tool_use 块
         self._drain_reason()
         self._drain_text()
@@ -250,7 +250,7 @@ class _StreamJsonEmitter:
             "type": "tool_use", "id": self._last_tid, "name": name, "input": parsed,
         })
 
-    def on_tool_result(self, name: str, result) -> None:
+    def on_tool_result(self, name: str, result: Any) -> None:
         # 先发含 tool_use 的 assistant 消息, 再发 user/tool_result 消息
         self._emit_assistant_message()
         self._assistant_blocks = []
@@ -271,7 +271,7 @@ class _StreamJsonEmitter:
         })
 
 
-def cmd_run(args) -> int:
+def cmd_run(args: Any) -> int:
     """headless 一次性任务 (支持 -p/--print 简洁输出、--output-format json、--bare 纯净模式)。"""
     bare = bool(getattr(args, "bare", False))
     print_mode = bool(getattr(args, "print_mode", False))
@@ -295,7 +295,10 @@ def cmd_run(args) -> int:
         sys.stderr.write(msg.rstrip() + "\n")
 
     try:
-        kernel = build_kernel(bare=bare)
+        kernel = build_kernel(
+            bare=bare,
+            safe_mode=bool(getattr(args, "safe_mode", False)),
+        )
     except Exception as exc:  # noqa: BLE001
         _err(f"启动失败: {exc}")
         return 1
@@ -308,7 +311,13 @@ def cmd_run(args) -> int:
     eff_mode = getattr(args, "mode", None) or resolve_mode_from_permission(args)
     mode = _apply_mode_override(kernel, eff_mode, yes=getattr(args, "yes", False))
     if getattr(args, "effort", None):
-        config.set_user("agent.effort", args.effort)
+        from .cmd_chat import clamp_effort
+        clamped = clamp_effort(config, args.effort)
+        if clamped:
+            config.set_user("agent.effort", clamped)
+    # --fallback-model: 接线到 model.fallbacks (对标 Claude Code fallbackModel)
+    from .cmd_chat import _apply_fallback_model
+    _apply_fallback_model(config, getattr(args, "fallback_model", None))
     if getattr(args, "model", None):
         config.set_user("model.model", args.model)
     workspace = getattr(args, "workspace", None) or default_workspace()
@@ -320,6 +329,9 @@ def cmd_run(args) -> int:
     except Exception:  # noqa: BLE001
         pass
     agent = create_agent(kernel, workspace)
+    # Auto 模式 (对标 Claude Code): 内部标记, 由 ToolExecutor 经分类器按风险分级决策。
+    if mode == "auto":
+        agent.ctx.auto_mode = True
     # ---- headless 续会话: --resume/--continue <id|编号|latest> 恢复历史上下文后再跑一轮 ----
     # CI/CD 多步流水线场景: --resume/--continue <id|编号|latest>
     resume_arg = getattr(args, "resume", None)
@@ -450,7 +462,7 @@ def cmd_run(args) -> int:
 
 # ===================================================================== cmd_agent
 
-def cmd_agent(args) -> int:
+def cmd_agent(args: Any) -> int:
     """后台自主任务。"""
     task = getattr(args, "task", "")
     if not task:
@@ -483,7 +495,7 @@ def cmd_agent(args) -> int:
 
 # ===================================================================== cmd_bg
 
-def cmd_bg(args) -> int:
+def cmd_bg(args: Any) -> int:
     """后台任务管理。"""
     bg_cmd = getattr(args, "bg_cmd", None)
     if not bg_cmd:
@@ -522,7 +534,7 @@ def cmd_bg(args) -> int:
     return 0
 
 
-def _cli_bg_shell(args) -> None:
+def _cli_bg_shell(args: Any) -> None:
     """tuan bg shell <action> [job_id] — 管理用 `!` 启动的后台 shell 任务。"""
     from ..core.background_shell import BackgroundShellManager
     manager = BackgroundShellManager()
@@ -583,7 +595,7 @@ def _cli_bg_shell(args) -> None:
 
 # ===================================================================== cmd_undo / cmd_impact
 
-def cmd_undo(args) -> int:
+def cmd_undo(args: Any) -> int:
     """CLI: tuan undo [target] [--impact] — 跨进程精确回滚 / 展示账本影响半径。"""
     # `--impact` (原顶级 tuan impact): 只展示操作账本与影响半径, 不执行回滚。
     if getattr(args, "impact", False):
@@ -624,7 +636,7 @@ def cmd_undo(args) -> int:
     return 0
 
 
-def cmd_impact(args) -> int:
+def cmd_impact(args: Any) -> int:
     """CLI: tuan impact — 展示操作账本与影响半径。"""
     from datetime import datetime
     from ..core.ledger import MutationLedger
@@ -714,13 +726,13 @@ def cmd_impact(args) -> int:
 
 # ===================================================================== /diff & /undo 内部实现
 
-def _get_ledger(agent):
+def _get_ledger(agent: Any) -> Any:
     """从 agent 取出事务化操作账本。"""
     ctx = getattr(agent, "ctx", None)
     return getattr(ctx, "ledger", None) if ctx is not None else None
 
 
-def _git_run(args, workspace, timeout: int = 10):
+def _git_run(args: Any, workspace: Any, timeout: int = 10) -> Any:
     """在工作区执行 git 子命令。"""
     return subprocess.run(
         ["git"] + list(args), cwd=workspace, capture_output=True, text=True, timeout=timeout,
@@ -796,7 +808,7 @@ def _cmd_diff(workspace: str, arg: str) -> None:
         ui.error(f"git 状态查询失败: {exc}")
 
 
-def _cmd_undo(workspace: str, arg: str, agent) -> None:
+def _cmd_undo(workspace: str, arg: str, agent: Any) -> None:
     """精细回滚工作区变更 (事务化账本优先, git 兜底)。"""
     import subprocess
     target = arg.strip()
@@ -876,7 +888,7 @@ def _cmd_undo(workspace: str, arg: str, agent) -> None:
         ui.error(f"回滚失败: {r.stderr.strip() or '未知错误'}")
 
 
-def _cmd_impact(workspace: str, arg: str, agent) -> None:
+def _cmd_impact(workspace: str, arg: str, agent: Any) -> None:
     """展示事务化操作账本与当前影响半径。"""
     from datetime import datetime
     ledger = _get_ledger(agent)

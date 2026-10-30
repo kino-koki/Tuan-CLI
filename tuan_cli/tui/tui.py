@@ -88,12 +88,12 @@ class _MissingKeys:
 
 
 if not _HAS_PT:  # pragma: no cover - 仅在无 prompt_toolkit 环境
-    Keys = _MissingKeys()      # type: ignore[assignment]
+    Keys = _MissingKeys()      # type: ignore[misc, assignment]
 
     class Completer:  # type: ignore[no-redef]
         """占位基类: prompt_toolkit 缺失时仅为让下面的类定义通过。"""
 
-    def Completion(*args, **kwargs):  # type: ignore[no-redef]
+    def Completion(*args: Any, **kwargs: Any) -> None:  # type: ignore[no-redef]
         """占位构造器: prompt_toolkit 缺失时给出可读错误, 而不是 NameError。"""
         raise RuntimeError(
             "prompt_toolkit 未安装, 无法使用 TUI 输入补全; 安装 prompt_toolkit 或改用 CLI 模式"
@@ -447,7 +447,7 @@ class _SlashCompleter(Completer):
         # C-3.5 历史优先: MRU 命令名表 (含前导 "/"), 最近使用排前面
         self._history: List[str] = list(history or [])
 
-    def get_completions(self, document, complete_event):  # noqa: C901
+    def get_completions(self, document: Any, complete_event: Any) -> Any:  # noqa: C901
         from ..cli.slash_tier import slash_command_tier
 
         text = document.text_before_cursor
@@ -849,7 +849,7 @@ class QxtTUI:
 
     # ============================================================ 键位
 
-    def _request_exit(self, event) -> None:
+    def _request_exit(self, event: Any) -> None:
         """Ctrl-C / Ctrl-Q 退出: 先解冻挂起的确认 (按"拒绝"处理) 再退出应用。
 
         否则工具线程会一直阻塞在确认 Event 上 —— 线程的等待循环虽有应用退出
@@ -864,62 +864,62 @@ class QxtTUI:
         kb = KeyBindings()
 
         @kb.add("c-c")
-        def _(event):
+        def _(event: Any) -> None:
             self._request_exit(event)
 
         @kb.add("c-q")
-        def _(event):
+        def _(event: Any) -> None:
             self._request_exit(event)
 
         @kb.add("enter")
-        def _(event):
+        def _(event: Any) -> None:
             self._handle_enter(event)
 
         @kb.add("c-o")
-        def _(event):
+        def _(event: Any) -> None:
             self.toggle_audit()
 
         # ---- 对话区回卷 (Claude Code 同款): 整屏翻页 / 逐行 / 到顶到底 ----
         # (不用 Ctrl+U/Ctrl+D: 会被输入框的编辑键抢占, 见 TextArea buffer 绑定)
         @kb.add("pageup")
-        def _(event):
+        def _(event: Any) -> None:
             self._scroll_log(-self._viewport_rows())
             event.app.invalidate()
 
         @kb.add("pagedown")
-        def _(event):
+        def _(event: Any) -> None:
             self._scroll_log(self._viewport_rows())
             event.app.invalidate()
 
         # Shift+PgUp/PgDn: 逐行微调 (整屏翻页有时太粗, 尤其快到顶/底时)
         @kb.add("s-pageup")
-        def _(event):
+        def _(event: Any) -> None:
             self._scroll_log(-1)
             event.app.invalidate()
 
         @kb.add("s-pagedown")
-        def _(event):
+        def _(event: Any) -> None:
             self._scroll_log(1)
             event.app.invalidate()
 
         # Ctrl+↑/↓: 同样逐行翻 (终端不总把 Shift+PgUp 传对时的等价键)
         @kb.add("c-up")
-        def _(event):
+        def _(event: Any) -> None:
             self._scroll_log(-1)
             event.app.invalidate()
 
         @kb.add("c-down")
-        def _(event):
+        def _(event: Any) -> None:
             self._scroll_log(1)
             event.app.invalidate()
 
         @kb.add("home")
-        def _(event):
+        def _(event: Any) -> None:
             self._scroll_to_top()
             event.app.invalidate()
 
         @kb.add("end")
-        def _(event):
+        def _(event: Any) -> None:
             self._scroll_to_bottom()
             event.app.invalidate()
 
@@ -934,7 +934,7 @@ class QxtTUI:
         # Shift+方向键也一并接: 部分终端把滚轮降级报成它。
         @kb.add(Keys.Vt100MouseEvent)
         @kb.add(Keys.WindowsMouseEvent)
-        def _(event):
+        def _(event: Any) -> None:
             data = getattr(event, "data", None)
             etype = getattr(data, "event_type", None)
             name = getattr(etype, "name", "") or str(etype)
@@ -947,16 +947,16 @@ class QxtTUI:
             # 点击/移动: 不消费, 交回默认 (终端自己做选中复制)
 
         @kb.add("s-up")
-        def _(event):
+        def _(event: Any) -> None:
             self._mouse_wheel(event, up=True)
 
         @kb.add("s-down")
-        def _(event):
+        def _(event: Any) -> None:
             self._mouse_wheel(event, up=False)
 
         # ---- "/" 命令面板: Tab 确认填入, ↑↓ 游走菜单 (关闭时回退默认行为), Esc 关闭 ----
         @kb.add("c-i")  # Tab
-        def _(event):
+        def _(event: Any) -> None:
             if self._slash_open and self._slash_items:
                 self._accept_slash(event)
                 return
@@ -967,7 +967,7 @@ class QxtTUI:
                 b.start_completion(select_first=True)
 
         @kb.add("down")
-        def _(event):
+        def _(event: Any) -> None:
             if self._ask_pending:
                 self._ask_move(1)
                 event.app.invalidate()
@@ -989,7 +989,7 @@ class QxtTUI:
                 b.auto_down(count=event.arg or 1)
 
         @kb.add("up")
-        def _(event):
+        def _(event: Any) -> None:
             if self._ask_pending:
                 self._ask_move(-1)
                 event.app.invalidate()
@@ -1010,13 +1010,13 @@ class QxtTUI:
                 b.auto_up(count=event.arg or 1)
 
         @kb.add("c-d")
-        def _(event):
+        def _(event: Any) -> None:
             """Ctrl+D 开合右侧 diff 实时面板 (Claude Code 同款)。"""
             self.toggle_diff()
             event.app.invalidate()
 
         @kb.add("escape")
-        def _(event):
+        def _(event: Any) -> None:
             # Esc: 关闭 "/" 命令面板 (未展开时不消费按键, 不影响信任/确认等其它流程)
             if self._slash_open:
                 self._close_slash_menu()
@@ -1082,6 +1082,23 @@ class QxtTUI:
         self._diff_fetched_at = time.monotonic()
         try:
             ws = getattr(self, "_workspace", None) or os.getcwd()
+            # 显式检测是否在 git 仓库根: git 会沿父目录向上找 .git, 若工作区是
+            # 某仓库内的子目录 (如 E:\Tuan-CLI\.pytest-tmp\...), `git diff` 会误判
+            # 为仓库并返回父仓库的真实 diff。用 --show-toplevel 拿到仓库根绝对路径,
+            # 只有工作区本身就是仓库根 (resolve 后相等) 才视为仓库; 否则直接报错,
+            # 保证「非仓库应给出可读提示」而非误读上层仓库。
+            ws_resolved = os.path.abspath(ws)
+            probe = subprocess.run(  # noqa: S603 - 固定参数, 无用户输入拼接
+                ["git", "rev-parse", "--show-toplevel"], cwd=ws,
+                capture_output=True, text=True, timeout=10, errors="replace",
+            )
+            top = (probe.stdout or "").strip()
+            if probe.returncode != 0 or not top or \
+                    os.path.abspath(top) != ws_resolved:
+                self._diff_error = (probe.stderr or "").strip()[:200] or t("tui.diff_not_repo")
+                self._diff_cache = []
+                self._diff_summary = ""
+                return
             proc = subprocess.run(  # noqa: S603 - 固定参数, 无用户输入拼接
                 ["git", "diff", "--no-color"], cwd=ws,
                 capture_output=True, text=True, timeout=10, errors="replace",
@@ -1153,7 +1170,7 @@ class QxtTUI:
         )
         self._diff_cache = rows
 
-    def _render_diff_panel(self):
+    def _render_diff_panel(self) -> Any:
         """右侧 diff 面板内容 (对标 Claude Code /diff 的并排实时面板)。
 
         该面板的 Window 是 `wrap_lines=False` (diff 需要保持原始行、不折行),
@@ -1414,7 +1431,7 @@ class QxtTUI:
         except Exception:
             return 0
 
-    def _render_audit(self):
+    def _render_audit(self) -> Any:
         """审计面板内容: 顶部标题 + 思考全文 + 审计日志 (kimi 折叠思考)。
 
         面板是 `wrap_lines=True`, 正文长文本会软换行 (正常)。但标题与
@@ -1482,7 +1499,7 @@ class QxtTUI:
                     or self._confirm_pending
                     or (self._slash_open and self._slash_items))
 
-    def _mouse_wheel(self, event, up: bool) -> None:
+    def _mouse_wheel(self, event: Any, up: bool) -> None:
         """滚轮事件入口: 按终端行上下平移对话区视口。
 
         `up=True` 向历史方向 (内容下移), `up=False` 回到最新。
@@ -1526,7 +1543,7 @@ class QxtTUI:
         except Exception:
             return 80
 
-    def _on_input_changed(self, buffer=None) -> None:
+    def _on_input_changed(self, buffer: Any = None) -> None:
         """输入文本变化 → 命令面板开合/过滤 (Claude Code 同款体验)。
 
         规则:
@@ -1588,13 +1605,13 @@ class QxtTUI:
                         return
                 # 第二级: 子命令候选 (模糊过滤, 带帮助预览)
                 partial = tokens[0].lower()
-                cands = [(s, h) for s, h in subs
-                         if not partial or _fuzzy_rank(s.split(" ")[0], partial) >= 0]
-                if cands:
+                sub_cands = [(s, h) for s, h in subs
+                             if not partial or _fuzzy_rank(s.split(" ")[0], partial) >= 0]
+                if sub_cands:
                     self._slash_arg_mode = True
                     self._slash_arg_prefix = sm.group(1) + " "
-                    self._slash_items = [s for s, _h in cands]
-                    self._slash_metas = [h for _s, h in cands]
+                    self._slash_items = [s for s, _h in sub_cands]
+                    self._slash_metas = [h for _s, h in sub_cands]
                     self._slash_index = 0
                     self._slash_scroll = 0
                     self._slash_open = True
@@ -1614,10 +1631,16 @@ class QxtTUI:
             return
         low = typed.lower()
         # 有空输入 (仅 "/" 或 "+/") 且配置了层级: 仅展开核心层 (≤ 20 项)
-        # 输入具体前缀时保留全量匹配 (专家层命令按首字母可达)
-        from ..cli.slash_tier import slash_command_tier as _tier_fn
+        # 输入具体前缀时保留全量匹配 (专家层命令按首字母可达)。
+        # 仅当调用方显式配置了 command_tiers 才分层过滤; 未配置 (测试/旧调用)
+        # 时保持旧行为: 显示全部传入 commands。
+        has_tiers = bool(self._command_tiers)
         if not low:
-            items = [c for c in self._commands if _tier_fn(c) == "core"]
+            if has_tiers:
+                items = [c for c in self._commands
+                         if self._command_tiers.get(c, "hidden") == "core"]
+            else:
+                items = list(self._commands)
             # C-3.5 历史优先: 最近用过的命令提到最前 (MRU 去重, 最多 10 条),
             # 其余保持原序; 未使用过时与既有行为完全一致。
             if self._slash_history:
@@ -1636,7 +1659,7 @@ class QxtTUI:
             # 如 /mo 仍只出 /model /mode); 无前缀命中才退到子串/子序列 (如 /od→/mode)。
             matched = []
             for idx, c in enumerate(self._commands):
-                if _tier_fn(c) == "hidden":
+                if has_tiers and self._command_tiers.get(c, "hidden") == "hidden":
                     continue
                 r = _fuzzy_rank(c[1:].lower(), low)
                 if r >= 0:
@@ -1730,7 +1753,7 @@ class QxtTUI:
         elif self._slash_index >= self._slash_scroll + visible:
             self._slash_scroll = self._slash_index - visible + 1
 
-    def _accept_slash(self, event=None) -> bool:
+    def _accept_slash(self, event: Any = None) -> bool:
         """Enter/Tab 确认: 把高亮命令填入输入框并关闭面板 (不直接执行)。
 
         与 Claude Code 一致: 选中只是补全, 用户可继续输入参数, 再按回车执行。
@@ -1781,7 +1804,7 @@ class QxtTUI:
             rows += 1
         return rows
 
-    def _render_slash_menu(self):
+    def _render_slash_menu(self) -> Any:
         """"/" 命令面板: 高亮行 + 命令名 + 描述 (+ 溢出时滚动提示行)。
 
         每行按终端显示宽度裁剪 (CJK 宽字符感知), 防止超宽描述顶破布局。
@@ -1868,7 +1891,7 @@ class QxtTUI:
             break
         return out
 
-    def _handle_enter(self, event) -> None:
+    def _handle_enter(self, event: Any) -> None:
         # 模型提问态优先级最高: 模型在等用户拍板, 输入框此刻就是选项答复通道
         # (↑↓ 已由键位路由到 _ask_move; Enter 取高亮项 / 编号 / 自由文本)。
         # 必须排在 slash 面板与 trust 之前, 否则提问会被当成普通输入吞掉。
@@ -1996,8 +2019,8 @@ class QxtTUI:
                     root.removeHandler(h)
                 elif isinstance(h, _logging.StreamHandler):
                     stream = getattr(h, "stream", None)
-                    if stream is getattr(_logging.sys, "__stdout__", None) or \
-                            stream is getattr(_logging.sys, "__stderr__", None):
+                    if stream is getattr(sys, "__stdout__", None) or \
+                            stream is getattr(sys, "__stderr__", None):
                         root.removeHandler(h)
             fwd = _TuiLogHandler(self)
             fwd.setLevel(_logging.WARNING)
@@ -2141,7 +2164,7 @@ class QxtTUI:
             if self._app is not None:
                 w = self._app.output.get_size().columns
                 if w and w > 0:
-                    return int(w)  # type: ignore[no-any-return]  # columns 为 Any
+                    return int(w)
         except Exception:
             pass
         try:
@@ -2221,7 +2244,7 @@ class QxtTUI:
             value = str(value)
             v_room = max(0, info_w - _disp_width(label))
             value = clip_dw(value, v_room) if v_room > 0 else ""
-            seg: List[Tuple[str, str]] = [("class:primary", "│")]
+            seg = [("class:primary", "│")]
             seg.append(("", pad))
             seg.append(("class:boxsub", label))
             seg.append(("class:text", value))
@@ -2442,8 +2465,9 @@ class QxtTUI:
         from ..core.prompt_tier import infer_context_window
 
         try:
-            configured = self._app.state.config.get("model.context_window") \
-                if getattr(self, "_app", None) is not None else None
+            _app = self._app
+            configured = _app.state.config.get("model.context_window") \
+                if _app is not None else None
         except Exception:  # noqa: BLE001
             configured = None
         return infer_context_window(model=model, provider=provider, configured=configured)
@@ -2502,6 +2526,7 @@ class QxtTUI:
         if not running:
             # headless / 应用未启动: 没有 UI 可挂卡片, 退回终端 input (保持旧行为)
             return interactive_confirm(prompt, expected=expected, position=position)
+        assert app is not None  # running 为真即 app 非空
 
         done = threading.Event()
         pending: Dict[str, Any] = {
@@ -2601,6 +2626,7 @@ class QxtTUI:
         if not running:
             # headless / 应用未启动: 没有界面可挂卡片, 退回纯文本询问
             return _ask_user_plain(q, opts)
+        assert app is not None  # running 为真即 app 非空
 
         done = threading.Event()
         pending: Dict[str, Any] = {
@@ -2796,7 +2822,7 @@ class QxtTUI:
     }
     _CODE_DEFAULT = "#C9D1D9"
 
-    def _color_for_token(self, ttype) -> str:
+    def _color_for_token(self, ttype: Any) -> str:
         """pygments token 类型 -> 十六进制前景色 (从具体到通用逐级回退)。"""
         for t in ttype.split():
             parts = str(t).split(".")
@@ -3023,7 +3049,7 @@ class QxtTUI:
             used += r1 - r0
         return out or screen[-1:]
 
-    def _render_conversation(self):
+    def _render_conversation(self) -> Any:
         """扁平化**当前视口**的对话内容供 FormattedTextControl 渲染 (行间加 \\n)。
 
         这里返回的不是整段历史, 而是按 `_view_top` 切好的一屏 —— 这正是"能真正
@@ -3040,7 +3066,7 @@ class QxtTUI:
                 flat.append(("", "\n"))
         return flat
 
-    def _render_header(self):
+    def _render_header(self) -> Any:
         """顶部状态 HUD: 实时状态(启动转圈/思考月亮/就绪勾) + 模式 + 模型。"""
         parts: List[Tuple[str, str]] = []
         if self._trust_pending:
@@ -3068,7 +3094,7 @@ class QxtTUI:
         # 顶部一行, 必须按显示宽度硬裁。
         return self._clip_parts(parts)
 
-    def _render_footer(self):
+    def _render_footer(self) -> Any:
         """单行底部状态栏: 模式 + 命令提示 + 模型 + 状态 + 目录 + git + context。
 
         格式: standard  +/命令  deepseek-v4-free 就绪  Qingxiaotuan Agent CLI  main[±]  ctx 0% (0/131.1k)
@@ -3102,10 +3128,12 @@ class QxtTUI:
         # C-5.2 离线横幅: 消费 CLI 核心分片新建的 core/network_check.is_offline()。
         # 该模块由并行分片提供; 未落地时 try/import 静默降级, 横幅不激活也不报错,
         # 待联调。探测结果缓存 30s (footer 随动画高频重绘, 不能每帧探网络)。
+        _is_offline: Optional[Callable[..., bool]] = None
         try:
-            from ..core.network_check import is_offline as _is_offline
+            from ..core.network_check import is_offline as _is_offline_impl
+            _is_offline = _is_offline_impl
         except Exception:  # noqa: BLE001 - network_check 尚未就绪: 横幅暂不激活
-            _is_offline = None
+            pass
         if _is_offline is not None:
             try:
                 now = time.monotonic()
@@ -3217,12 +3245,6 @@ class QxtTUI:
     # 等待用户输入 y/n, 结果经 on_confirm 回调写回 workspace_trust.json 后才 set_ready。
     # 此方法曾在一次 TUI 重写中被误删, 导致 cmd_chat 的 hasattr(tui, "prompt_trust")
     # 恒为 False、确认对话框"又没了" —— 现恢复并加回归测试 (tests/test_tui_fixes.py)。
-    def _resolve_trust(self, text: str) -> None:
-        """解析信任确认输入: y/Y/yes → 信任 (trusted); n/N/no → 只读 (untrusted)。
-
-        结果通过 on_confirm 回调写回 workspace_trust.json, 随后由 cmd_chat._boot
-        的回调里调用 set_ready 完成就绪切换 (确认期间对话输入被挂起)。
-        """
     def _resolve_trust(self, text: str) -> bool:
         """解析信任确认输入: y/Y/yes → 信任 (trusted); n/N/no → 只读 (untrusted)。
 

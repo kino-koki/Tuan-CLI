@@ -136,7 +136,7 @@ def resolve_script_path(path: str, workspace: str = "") -> Optional[str]:
     return None
 
 
-def scan_script_for_isolation(script_path: str) -> Tuple[bool, ScanResult, str]:
+def scan_script_for_isolation(script_path: str) -> Tuple[bool, Optional[ScanResult], str]:
     """扫描脚本文件，判断是否需要隔离执行。
 
     Args:
@@ -334,6 +334,7 @@ def check_script_isolation(command: str, ctx: Any) -> Optional[Dict[str, Any]]:
     if not should_isolate:
         return None
 
+    assert scan_result is not None  # should_isolate=True 时必有扫描结果
     # 生成摘要
     summary = format_isolation_summary(resolved, scan_result, True)
     timeout = get_isolation_timeout(ctx)

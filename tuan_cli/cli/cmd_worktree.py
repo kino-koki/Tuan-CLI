@@ -15,10 +15,12 @@ from ..paths import default_workspace
 
 import os
 
+from typing import Any
+
 from ..ui.plain_console import console
 
 
-def cmd_worktree(args) -> int:
+def cmd_worktree(args: Any) -> int:
     """Worktree 层: git worktree 并行实验。"""
     from ..core.worktree_layer import WorktreeError, WorktreeLayer
 

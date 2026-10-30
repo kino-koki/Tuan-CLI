@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from typing import Dict
+from typing import Any, Dict
 
 from ..i18n import t
 from ._ui_singleton import ui
@@ -25,6 +25,27 @@ from .cmd_slash_image import _cmd_image
 from .cmd_slash_memory import _cmd_memory
 from .cmd_slash_provider import _cmd_provider
 from .cmd_slash_session import _cmd_export, _cmd_import
+from .cmd_slash_claude import (
+    cmd_fork,
+    cmd_branch,
+    cmd_cd,
+    cmd_btw,
+    cmd_copy,
+    cmd_tasks,
+    cmd_background,
+    cmd_theme,
+    cmd_color,
+    cmd_loop,
+    cmd_review,
+    cmd_simplify,
+    cmd_debug,
+    cmd_config_slash,
+    cmd_batch,
+    cmd_dataviz,
+    cmd_design,
+    cmd_artifacts,
+    cmd_auto_mode_setup,
+)
 
 
 _HELP = """
@@ -88,6 +109,27 @@ _HELP = """
   [...]/verify    编码验证闭环 (自动跑 test/typecheck/lint, 失败自修复)
   [...]/worktree  git worktree 并行实验 ( create/list/remove/switch )
   [...]/workflow  动态并行工作流管理 ( list/status <wf>/result <wf>/cancel <wf>/retry <wf> )
+  [...]/background  后台任务管理 ( create <任务>/list/status <id>/result <id>/cancel <id> )
+  [...]/branch    git 分支管理 ( create <名>/switch <名>/list/delete <名> )
+  [...]/btw       发送前提醒 ( 在下次回复前附加一条提示 )
+  [...]/cd        切换工作目录 ( /cd <路径>; 无参查看当前 )
+  [...]/color     切换 UI 配色主题 ( /color [名]; 无参列出 )
+  [...]/config    查看/编辑配置 ( /config get <key> / set <key> <val> / list )
+  [...]/copy      复制最后输出到剪贴板 ( /copy [all] )
+  [...]/debug     调试开关 ( /debug on|off; 查看日志/跟踪 )
+  [...]/doctor    环境健康诊断 ( 检查 Python/Node/git/网络, 可 --fix 修复 )
+  [...]/fork      分叉当前会话 ( /fork; 生成新会话副本继续 )
+  [...]/loop      循环执行直到条件满足 ( /loop <目标> <条件> )
+  [...]/review    代码审查 ( AI 审查工作区未提交变更 )
+  [...]/security-review  安全审查 ( 扫描依赖/路径/注入风险 )
+  [...]/simplify  简化重构 ( 对指定文件做去重/去死代码 )
+  [...]/tasks     任务管理 ( 后台任务列表/状态/取消 )
+  [...]/theme     切换主题 ( /theme [名]; 无参列出可用主题 )
+  [...]/batch     批量后台任务 ( /batch <任务1> | <任务2> | ... )
+  [...]/dataviz   数据可视化生成 ( /dataviz <数据描述> )
+  [...]/design    前端设计生成 ( /design <界面描述> )
+  [...]/artifacts Artifact 生成 ( /artifacts <工件描述> )
+  [...]/auto-mode-setup  Auto 模式分类器展示与测试 ( /auto-mode-setup [test <tool> '<json>'] )
 
 提示: Enter 发送 · Esc+Enter 换行 · 多行可用三引号
 TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执行; 仅列核心层, 输入首字母可展开专家层)"""
@@ -96,14 +138,17 @@ TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执�
 # 权威命令清单: 与 _handle_slash 的 elif 分支一一对应。
 # 供 TUI / REPL 的补全词表、命令发现、ACP/IDE 能力清单共用, 避免多处维护漂移。
 SLASH_COMMAND_NAMES: tuple = (
-    "/add-dir", "/audit", "/blast", "/budget", "/checkpoint", "/clear", "/clear-images", "/compact",
-    "/context", "/cost", "/diff", "/effort", "/exit", "/export", "/gh-borrow", "/goal",
+    "/add-dir", "/audit", "/background", "/blast", "/branch", "/btw", "/budget", "/cd", "/checkpoint",
+    "/clear", "/clear-images", "/color", "/commands", "/compact", "/config",
+    "/context", "/copy", "/cost", "/debug", "/diff", "/doctor",
+    "/effort", "/exit", "/export", "/fork", "/gh-borrow", "/goal",
     "/help", "/hooks", "/image", "/init", "/images", "/impact", "/import", "/log",
-    "/mcp", "/mcp-tools", "/memory", "/mode", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/route", "/sandbox", "/skills", "/stats",
-    "/status", "/subagent", "/swarm", "/tools", "/undo", "/usage", "/verify",
+    "/loop", "/mcp", "/mcp-tools", "/memory", "/mode", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/review", "/route", "/sandbox", "/security-review", "/simplify", "/skills", "/stats",
+    "/status", "/subagent", "/swarm", "/tasks", "/theme", "/tools", "/undo", "/usage", "/verify",
     "/rewind", "/handoff", "/worktree",
     "/web", "/workflow", "/code", "/commands",
     "/personality",
+    "/batch", "/dataviz", "/design", "/artifacts",
 )
 
 
@@ -193,6 +238,27 @@ _CMD_META: Dict[str, str] = {
     "/exit": "退出",
     "/quit": "退出",
     "/more": "展开上一条被折叠的长输出",
+    # ---- Claude Code 对齐 (v2.1.289) ----
+    "/fork": "复制当前对话到新后台会话 (/fork [at_message N] [note 备注])",
+    "/branch": "会话分叉树查看/切换",
+    "/cd": "会话内切换工作目录",
+    "/btw": "旁问: 主任务不中断的 side question",
+    "/copy": "复制最近响应到剪贴板",
+    "/tasks": "后台任务列表 (list/logs/cancel/wait)",
+    "/background": "分离为后台 agent (/bg 别名)",
+    "/theme": "切换 UI 主题 (dark/light)",
+    "/color": "配色方案 (brand/blue/green)",
+    "/loop": "进入/切换自主开发循环",
+    "/review": "自动代码评审 (/code-review 别名)",
+    "/security-review": "安全审查",
+    "/simplify": "简化冗余代码",
+    "/debug": "调试诊断 (配置/日志/内核)",
+    "/config": "会话内配置 (key=value / get / dump)",
+    "/doctor": "修复型 setup checkup (诊断 + 可修复)",
+    "/batch": "批量后台任务 (用 | 分隔多任务, 并行执行)",
+    "/dataviz": "数据可视化任务 (图表生成)",
+    "/design": "设计工作流 (前端设计产出)",
+    "/artifacts": "生成 artifact (自包含 HTML 产物)",
 }
 
 
@@ -221,14 +287,14 @@ def list_slash_commands() -> list:
 class _CfgStub:
     """最小配置桩: 仅供 /permissions test 把 rules 喂给 PermissionPolicy。"""
 
-    def __init__(self, rules):
+    def __init__(self, rules: Any) -> None:
         self._rules = rules
 
-    def get(self, key, default=None):
+    def get(self, key: Any, default: Any = None) -> Any:
         return self._rules if key == "permissions.rules" else default
 
 
-def _cmd_permissions(config, arg: str = "") -> None:
+def _cmd_permissions(config: Any, arg: str = "") -> None:
     """/permissions — 展示当前生效的权限策略; /permissions test <tool> <json> 测试命中。"""
     rules = config.get("permissions.rules", [])
     # /permissions test <tool> <json参数> — 只读测试某次调用会命中哪条规则
@@ -277,7 +343,7 @@ def _cmd_permissions(config, arg: str = "") -> None:
             "'[{\"tool\":\"run_shell\",\"param\":\"command\",\"value\":\"rm -rf*\",\"action\":\"deny\"}]'")
 
 
-def _cmd_status(agent, config) -> None:
+def _cmd_status(agent: Any, config: Any) -> None:
     """/status — 会话状态摘要。"""
     ui.info(f"  模型: {config.get('model.provider')}/{config.get('model.model')}")
     mode = str(config.mode)
@@ -324,7 +390,7 @@ def _cmd_status(agent, config) -> None:
     ui.info(f"    重试: <={rt['max_retries']} 次 · 退避 {rt['backoff']}s · 重试图谱 {rt['retry_on']}")
 
 
-def _cmd_stats(agent, config) -> None:
+def _cmd_stats(agent: Any, config: Any) -> None:
     """/stats — Agent 可观测性面板。"""
     tc = getattr(agent, "_telemetry", None)
     if tc is None:
@@ -343,7 +409,7 @@ def _cmd_stats(agent, config) -> None:
                 f"{'成功' if last['success'] else '失败'}")
 
 
-def _cmd_budget(agent, config, arg: str) -> None:
+def _cmd_budget(agent: Any, config: Any, arg: str) -> None:
     """/budget [USD] — 查看或设置成本预算上限。"""
     if arg:
         try:
@@ -363,7 +429,7 @@ def _cmd_budget(agent, config, arg: str) -> None:
         pass
 
 
-def _cmd_checkpoint(agent, arg: str) -> None:
+def _cmd_checkpoint(agent: Any, arg: str) -> None:
     """/checkpoint [save|list|restore [id]] — 会话检查点。"""
     from ..tools.checkpoint import checkpoint_save, checkpoint_list, checkpoint_restore
     sp = arg.split()
@@ -381,7 +447,7 @@ def _cmd_checkpoint(agent, arg: str) -> None:
         ui.info(checkpoint_list(agent.ctx) or "没有已保存的检查点。")
 
 
-def _cmd_add_dir(agent, arg: str) -> None:
+def _cmd_add_dir(agent: Any, arg: str) -> None:
     """/add-dir [路径] — 把工作区外目录纳入本会话可读上下文。
 
     无参: 列出当前已授权目录。带路径: 显式授权该目录 (仅读; 写仍走既有守卫)。
@@ -400,7 +466,7 @@ def _cmd_add_dir(agent, arg: str) -> None:
     ui.success(authorize_extra_dir(agent.ctx, arg))
 
 
-def _cmd_web(agent, arg: str) -> None:
+def _cmd_web(agent: Any, arg: str) -> None:
     """/web 启动本地 Web 工作台; /web <URL> 或 /web search <关键词> 快捷联网。"""
     if not arg:
         _launch_web_workbench(agent)
@@ -413,7 +479,7 @@ def _cmd_web(agent, arg: str) -> None:
         ui.answer_md(web_fetch(agent.ctx, arg.strip()))
 
 
-def _launch_web_workbench(agent) -> None:
+def _launch_web_workbench(agent: Any) -> None:
     """在后台线程启动本地 Web 工作台 (不阻塞 TUI), 打印访问地址。"""
     import socket
     import threading
@@ -461,7 +527,7 @@ def _launch_web_workbench(agent) -> None:
         ui.error(f"Web 工作台启动失败: {exc}")
 
 
-def _cmd_code(agent, arg: str, config, workspace: str) -> None:
+def _cmd_code(agent: Any, arg: str, config: Any, workspace: str) -> None:
     """/code <任务> — 代码感知问答: ContextForge 检索工作区后带上下文执行。"""
     from ..codedev import CodeDevEngine
 
@@ -492,7 +558,7 @@ def _cmd_code(agent, arg: str, config, workspace: str) -> None:
     _cmds._run_turn(agent, prompt, config)
 
 
-def _cmd_commands(agent, arg: str, config, workspace: str) -> None:
+def _cmd_commands(agent: Any, arg: str, config: Any, workspace: str) -> None:
     """/commands — 热插拔命令管理: list / reload / enable <名> / disable <名>。"""
     from . import user_commands as uc
 
@@ -534,7 +600,7 @@ def _cmd_commands(agent, arg: str, config, workspace: str) -> None:
     ui.info("用法: /commands list | reload | enable <名> | disable <名>")
 
 
-def _cmd_subagent(agent, arg: str) -> None:
+def _cmd_subagent(agent: Any, arg: str) -> None:
     """/subagent <目标> — 派发隔离子代理执行任务。"""
     from ..tools.subagent_tool import _run_subagent
     if not arg:
@@ -544,7 +610,7 @@ def _cmd_subagent(agent, arg: str) -> None:
     ui.answer_md(_run_subagent(agent.ctx, arg.strip()))
 
 
-def _cmd_workflow(agent, arg: str) -> None:
+def _cmd_workflow(agent: Any, arg: str) -> None:
     """/workflow — 动态并行工作流管理 (list/status <wf> /result <wf> /cancel <wf> /retry <wf>)。"""
     from ..core.dynamic_workflow import get_engine, close_engines
     from ..config import home_dir
@@ -559,6 +625,21 @@ def _cmd_workflow(agent, arg: str) -> None:
     parts = arg.strip().split(None, 1)
     sub = parts[0].lower() if parts else "list"
     rest = parts[1] if len(parts) > 1 else ""
+
+    # 编排模式: authoring (文档/PRD 编写) 与 deep-research (深度研究)。
+    # 对齐 Claude Code /workflow-authoring 与 /deep-research 的编排语义。
+    if sub in ("authoring", "write", "doc"):
+        if not rest:
+            ui.info("用法: /workflow authoring <主题>  — 编排文档/PRD 编写工作流")
+            return
+        _workflow_authoring(agent, eng, rest)
+        return
+    if sub in ("deep-research", "research", "dr"):
+        if not rest:
+            ui.info("用法: /workflow deep-research <主题>  — 编排深度研究工作流")
+            return
+        _workflow_deep_research(agent, eng, rest)
+        return
 
     if sub == "list":
         items = eng.list()
@@ -601,19 +682,62 @@ def _cmd_workflow(agent, arg: str) -> None:
             ui.info(f"找不到工作流 {wf_id}")
         return
 
-    ui.info("用法: /workflow [list|status <wf>|result <wf>|cancel <wf>|retry <wf>]")
+    ui.info("用法: /workflow [list|status <wf>|result <wf>|cancel <wf>|retry <wf>"
+            "|authoring <主题>|deep-research <主题>]")
 
 
-def _cmd_verify(workspace: str, arg: str, agent, config) -> None:
+def _workflow_authoring(agent: Any, eng: Any, topic: str) -> None:
+    """/workflow authoring <主题> —— 编排"文档/PRD 编写"工作流 (多步草稿→评审→定稿)。"""
+    steps = [
+        [{"title": "大纲", "role": "general-purpose",
+          "prompt": f"为「{topic}」撰写结构化大纲。列出章节、每章要点与目标读者。输出纯大纲。"}],
+        [{"title": "草稿", "role": "general-purpose",
+          "prompt": f"基于大纲, 为「{topic}」撰写完整初稿。内容详实、结构清晰, 用 Markdown。"}],
+        [{"title": "评审", "role": "general-purpose",
+          "prompt": f"评审「{topic}」初稿: 找逻辑漏洞、信息缺口、表述问题, 给出改进建议清单。"}],
+        [{"title": "定稿", "role": "general-purpose",
+          "prompt": f"依据评审建议修订「{topic}」, 产出最终版本。保留 Markdown 结构。"}],
+    ]
+    wf_id = eng.create(f"authoring:{topic[:30]}", steps, parallel=False,
+                       note="workflow-authoring: 草稿→评审→定稿")
+    ui.success(f"编排写作工作流已启动: {wf_id}")
+    ui.info(f"  主题: {topic[:60]}")
+    ui.info("  步骤: 大纲 → 草稿 → 评审 → 定稿 (串行)")
+    ui.info(f"  用 /workflow status {wf_id} 查看进度; /workflow result {wf_id} 取结果。")
+
+
+def _workflow_deep_research(agent: Any, eng: Any, topic: str) -> None:
+    """/workflow deep-research <主题> —— 编排"深度研究"工作流 (检索→分析→综合报告)。"""
+    steps = [
+        [{"title": f"检索源A", "role": "general-purpose",
+          "prompt": f"针对「{topic}」做第一轮资料检索: 找权威来源、关键数据、核心论点。列出来源链接与摘要。"},
+         {"title": f"检索源B", "role": "general-purpose",
+          "prompt": f"针对「{topic}」做第二轮补充检索: 覆盖竞品、对比、反方观点、最新进展。"}],
+        [{"title": "分析", "role": "general-purpose",
+          "prompt": f"整合「{topic}」的检索材料: 交叉验证、去重、提炼关键发现与数据。输出结构化分析。"}],
+        [{"title": "综合报告", "role": "general-purpose",
+          "prompt": f"基于分析, 为「{topic}」产出完整研究报告: 摘要、背景、核心发现、数据图表、结论与建议。"}],
+    ]
+    wf_id = eng.create(f"deep-research:{topic[:30]}", steps, parallel=True,
+                       note="deep-research: 双源检索→分析→综合报告")
+    ui.success(f"深度研究工作流已启动: {wf_id}")
+    ui.info(f"  主题: {topic[:60]}")
+    ui.info("  步骤: [检索A∥检索B] → 分析 → 综合报告 (检索并行)")
+    ui.info(f"  用 /workflow status {wf_id} 查看进度; /workflow result {wf_id} 取结果。")
+
+
+def _cmd_verify(workspace: str, arg: str, agent: Any, config: Any) -> None:
     """/verify — 编码验证闭环。"""
     from ..core.verify_loop import (
         VerifyConfig, VerifyReport, verify_once, verify_with_heal,
     )
     cfg = VerifyConfig.from_dict({"verify": config.get("verify", {})})
     mode = "heal"
-    if arg.strip().lower() in ("check", "once", "run"):
+    argl = arg.strip().lower()
+    # 支持 --fix/-f 标志 (自修复增强) 与 check/heal 子命令。
+    if argl in ("check", "once", "run"):
         mode = "check"
-    elif arg.strip().lower() in ("heal", "fix"):
+    elif argl in ("heal", "fix", "--fix", "-f"):
         mode = "heal"
     ui.info(f"  模式: {mode} | 项目类型: {_detect_project_type(workspace)}")
     ui.info("")
@@ -642,7 +766,7 @@ def _cmd_verify(workspace: str, arg: str, agent, config) -> None:
         ui.info(report.summary())
 
 
-def _cmd_personality(agent, config, arg: str) -> None:
+def _cmd_personality(agent: Any, config: Any, arg: str) -> None:
     """/personality — 人设管理 (list/show/set/auto)。"""
     from ..core.personality import (
         PERSONALITY_NAMES, list_personalities, get_personality_info,
@@ -706,7 +830,7 @@ def _detect_project_type(workspace: str) -> str:
     return detect_project_type(workspace)
 
 
-def _cmd_log(agent, arg: str) -> None:
+def _cmd_log(agent: Any, arg: str) -> None:
     """/log [N] — 展示最近 N 条工具调用历史。"""
     from datetime import datetime
     n = 15
@@ -753,7 +877,7 @@ def _cmd_log(agent, arg: str) -> None:
             ui.info(f"           {args_str}")
 
 
-def _cmd_mcp_tools(agent, arg: str) -> None:
+def _cmd_mcp_tools(agent: Any, arg: str) -> None:
     """/mcp-tools — MCP Tool Search 上下文降耗 (报告 / on / off / search)。
 
     支持:
@@ -799,7 +923,7 @@ def _cmd_mcp_tools(agent, arg: str) -> None:
     ui.info("  切换: /mcp-tools on|off · 检索: /mcp-tools search <关键词>")
 
 
-def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
+def _handle_slash(cmd: str, agent: Any, config: Any, workspace: str) -> bool:
     """处理斜杠命令。返回 True 表示已处理。"""
     parts = cmd.strip().split(None, 1)
     head = parts[0].lower() if parts else ""
@@ -915,10 +1039,20 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
             ui.info(f"  自动路由: {'开启' if config.get('router.auto_switch', True) else '关闭'}")
     elif head == "/effort":
         if arg:
-            config.set_user("agent.effort", arg.strip())
-            ui.success(f"推理投入: {arg.strip()}")
+            from .cmd_chat import clamp_effort
+            clamped = clamp_effort(config, arg.strip())
+            if clamped is None:
+                ui.error(f"非法档位: {arg.strip()} (可选 low/medium/high/xhigh/max)")
+            elif clamped != arg.strip().lower():
+                ui.warn(f"档位 {arg.strip()} 超过上限 {clamped}, 已截断")
+                config.set_user("agent.effort", clamped)
+                ui.success(f"推理投入: {clamped} (受 maxEffortLevel 上限)")
+            else:
+                config.set_user("agent.effort", arg.strip())
+                ui.success(f"推理投入: {arg.strip()}")
         else:
-            ui.info(f"  当前: {config.get('agent.effort', 'high')}")
+            ui.info(f"  当前: {config.get('agent.effort', 'high')}"
+                    f" (上限: {config.get('agent.max_effort_level', 'max')})")
     elif head == "/mode":
         from ..modes.switcher import switch_mode, current_mode
         from ..modes.registry import MODE_IDS, MODE_NAMES, MODE_LEVELS, MODE_RISK, get_mode_meta
@@ -1095,7 +1229,12 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
         _boundary_worktree(agent, arg, workspace)
     elif head == "/subagent":
         _cmd_subagent_enhanced(agent, arg)
-    elif head == "/workflow":
+    elif head in ("/workflow", "/workflow-authoring", "/deep-research"):
+        # /workflow-authoring <主题> 与 /deep-research <主题> 是 /workflow 编排模式的别名。
+        if head == "/workflow-authoring":
+            arg = f"authoring {arg}".strip()
+        elif head == "/deep-research":
+            arg = f"deep-research {arg}".strip()
         _cmd_workflow(agent, arg)
     elif head == "/verify":
         _cmd_verify(workspace, arg, agent, config)
@@ -1112,6 +1251,60 @@ def _handle_slash(cmd: str, agent, config, workspace: str) -> bool:
         _cmd_init(agent, arg, config, workspace)
     elif head == "/personality":
         _cmd_personality(agent, config, arg)
+    elif head == "/fork":
+        cmd_fork(agent, arg)
+    elif head == "/branch":
+        cmd_branch(agent, arg)
+    elif head == "/cd":
+        cmd_cd(agent, arg)
+    elif head == "/btw":
+        cmd_btw(agent, arg)
+    elif head == "/copy":
+        cmd_copy(agent, arg)
+    elif head == "/tasks":
+        cmd_tasks(agent, arg)
+    elif head in ("/background", "/bg"):
+        cmd_background(agent, arg)
+    elif head == "/theme":
+        cmd_theme(agent, arg)
+    elif head == "/color":
+        cmd_color(agent, arg)
+    elif head == "/loop":
+        cmd_loop(agent, arg)
+    elif head == "/review":
+        cmd_review(agent, arg)
+    elif head == "/code-review":
+        cmd_review(agent, arg)
+    elif head == "/security-review":
+        cmd_review(agent, arg, security=True)
+    elif head == "/simplify":
+        cmd_simplify(agent, arg)
+    elif head == "/debug":
+        cmd_debug(agent, arg)
+    elif head == "/doctor":
+        # /doctor [--fix] — 修复型 setup checkup (对齐 Claude Code doctor)
+        from .cmd_doctor import run_checks, _render_rich
+        from pathlib import Path as _Path
+        fix = "--fix" in arg.split() or "-f" in arg.split()
+        network = "--network" in arg.split() or "-n" in arg.split()
+        ws = getattr(getattr(agent, "ctx", None), "workspace", "") or workspace or ""
+        ui.info(f"[doctor] 诊断中 (fix={fix})…")
+        findings = run_checks(_Path(ws) if ws else None, fix=fix, network=network)
+        _render_rich(findings)
+        if fix:
+            ui.info("  (--fix: 已尝试自动修复可修复项, 请用 /undo 回滚或手动复核。)")
+    elif head == "/batch":
+        cmd_batch(agent, arg)
+    elif head == "/dataviz":
+        cmd_dataviz(agent, arg)
+    elif head == "/design":
+        cmd_design(agent, arg)
+    elif head == "/artifacts":
+        cmd_artifacts(agent, arg)
+    elif head == "/auto-mode-setup":
+        cmd_auto_mode_setup(agent, arg)
+    elif head == "/config":
+        cmd_config_slash(agent, arg)
     elif head in ("/exit", "/quit"):
         return False
     else:

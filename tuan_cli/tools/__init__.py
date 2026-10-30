@@ -1,6 +1,7 @@
 """工具系统入口: 注册表服务插件 + 全部内置工具插件。"""
 
 from ..core.kernel import Kernel, Plugin
+from typing import Any
 from .base import Tool, ToolContext, ToolRegistry
 from .cache import ToolResultCache
 from .checkpoint import CheckpointPlugin
@@ -12,6 +13,7 @@ from .web import WebPlugin
 from .code import CodeToolPlugin
 from .dispatch import DispatchPlugin
 from .task_tool import TaskToolPlugin
+from .monitor_tool import MonitorToolPlugin
 from .session_tools import SessionToolsPlugin
 from .todo_tool import TodoToolPlugin
 from .mcp.plugin import MCPPlugin
@@ -29,6 +31,7 @@ from .image_gen import ImageGenPlugin
 from .picker import PickerPlugin
 from .tool_search import ToolSearchPlugin
 from .consolidate import ConsolidatePlugin
+from .browser import BrowserPlugin
 
 __all__ = [
     "Tool", "ToolContext", "ToolRegistry",
@@ -52,7 +55,7 @@ class ToolRegistryPlugin(Plugin):
         kernel.provide("tool_registry", ToolRegistry(cache=cache), owner=self.name)
 
 
-def builtin_tool_plugins():
+def builtin_tool_plugins() -> list[Any]:
     return [
         FilesystemPlugin(), ShellPlugin(), WebPlugin(),
         MemoryToolPlugin(), SkillToolPlugin(), CodeToolPlugin(),
@@ -62,6 +65,8 @@ def builtin_tool_plugins():
         ImageGenPlugin(),
         PickerPlugin(),
         ToolSearchPlugin(),
+        BrowserPlugin(),
+        MonitorToolPlugin(),
         # 必须最后: 在全部工具注册完之后做合并 (成员降级为隐藏别名)
         ConsolidatePlugin(),
     ]

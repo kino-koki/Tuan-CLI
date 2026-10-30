@@ -50,15 +50,15 @@ class AgentObservability:
                 log.debug("Telemetry 初始化失败, 已禁用可观测性: %s", exc)
 
     @property
-    def telemetry(self):
+    def telemetry(self) -> Any:
         return self._telemetry
 
     @property
-    def trace_id(self):
+    def trace_id(self) -> Any:
         return self._trace_id
 
     @trace_id.setter
-    def trace_id(self, value: str):
+    def trace_id(self, value: str) -> None:
         self._trace_id = value
 
     # ---- 用量累计 ----
@@ -114,7 +114,7 @@ class AgentObservability:
 
     # ---- Span 管理 ----
 
-    def start_span(self, name: str, trace_id: str = "", attributes: Optional[Dict] = None):
+    def start_span(self, name: str, trace_id: str = "", attributes: Optional[Dict] = None) -> Any:
         """创建可观测性 span。默认关闭 → 返回 None。"""
         if self._telemetry is not None:
             return self._telemetry.start_span(name, trace_id=trace_id or self._trace_id, attributes=attributes)
@@ -125,7 +125,7 @@ class AgentObservability:
         if self._telemetry is not None:
             self._telemetry.finish_span(span_id, status=status)
 
-    def add_span_event(self, span, event_name: str, attributes: Optional[Dict] = None) -> None:
+    def add_span_event(self, span: Any, event_name: str, attributes: Optional[Dict] = None) -> None:
         """给 span 添加事件。"""
         if span is not None and self._telemetry is not None:
             span.add_event(event_name, attributes or {})

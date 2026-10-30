@@ -8,9 +8,10 @@ import sys
 import tempfile
 import platform
 import subprocess
+from typing import Any, Tuple
 
 
-def _run_cmd(cmd, timeout=5):
+def _run_cmd(cmd: Any, timeout: Any = 5) -> Tuple[int, str]:
     """执行命令, 返回 (returncode, stderr 片段)。
 
     Windows 注意: 不能用 ``subprocess.run(capture_output=True, timeout=)``。
@@ -24,15 +25,16 @@ def _run_cmd(cmd, timeout=5):
     try:
         fd, tmp = tempfile.mkstemp(prefix="tuan_notify_", suffix=".log")
         os.close(fd)
-        kwargs = {"stdout": open(tmp, "wb"), "stderr": subprocess.STDOUT}
+        kwargs: dict = {}
         if sys.platform == "win32":
             # 隐藏黑色 console 闪烁 (与 core/security_alert.DesktopNotifier 一致)
             kwargs["creationflags"] = getattr(
                 subprocess, "CREATE_NO_WINDOW", 0x08000000
             )
         try:
-            with kwargs["stdout"] as out:
-                proc = subprocess.Popen(cmd, **kwargs)
+            out = open(tmp, "wb")
+            with out:
+                proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, **kwargs)
                 try:
                     rc = proc.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
@@ -65,14 +67,14 @@ def _run_cmd(cmd, timeout=5):
 class NotifyEngine:
     """统一 JSONL IPC 协议的 notify 引擎"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.methods = {
             "notify": self.notify,
             "beep": self.beep,
             "_meta/list": self.list_methods,
         }
 
-    def list_methods(self, params=None):
+    def list_methods(self, params: Any = None) -> Any:
         return {
             "engine": "notify",
             "version": "1.1.0-python",
@@ -81,7 +83,7 @@ class NotifyEngine:
                              "windows_fallback", "beep", "dry_run"],
         }
 
-    def _backend(self, system):
+    def _backend(self, system: Any) -> str:
         """报告平台将使用的通知后端名 (供 dry_run 与结果标注)。"""
         if system == "Windows":
             return "toast"
@@ -90,7 +92,7 @@ class NotifyEngine:
         return "notify-send"
 
     @staticmethod
-    def _toast_script():
+    def _toast_script() -> str:
         return (
             "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null;"
             "$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02;"
@@ -100,7 +102,7 @@ class NotifyEngine:
             "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('tuan').Show($toast)"
         )
 
-    def _send(self, title, message, system):
+    def _send(self, title: Any, message: Any, system: Any) -> Any:
         """按平台发送, 返回 {sent, backend, error?, fallback_used?}。"""
         if system == "Windows":
             # 先转义单引号再填充模板
@@ -140,7 +142,7 @@ class NotifyEngine:
         return {"sent": code == 0, "backend": "notify-send",
                 **({} if code == 0 else {"error": err})}
 
-    def notify(self, params):
+    def notify(self, params: Any) -> Any:
         """发送桌面通知; params.dry_run=true 时只报告将使用的后端, 不实际发送"""
         title = str(params.get("title", "Tuan-CLI"))[:200]
         message = str(params.get("message", ""))[:500]
@@ -157,7 +159,7 @@ class NotifyEngine:
         except Exception as e:
             return {"sent": False, "error": str(e), "system": system}
 
-    def beep(self, params):
+    def beep(self, params: Any) -> Any:
         """终端提示音; dry_run 只报告方式不响铃 (stdout 是 IPC 协议通道, 铃声走 stderr)"""
         system = platform.system()
         if params.get("dry_run"):
@@ -174,7 +176,7 @@ class NotifyEngine:
         except Exception as e:
             return {"played": False, "error": str(e)}
 
-    def handle(self, line):
+    def handle(self, line: Any) -> str:
         req_id = None
         try:
             req = json.loads(line)
@@ -191,7 +193,7 @@ class NotifyEngine:
             resp = {"id": req_id, "ok": False, "error": str(e)}
             return json.dumps(resp, ensure_ascii=False)
 
-    def run(self):
+    def run(self) -> None:
         sys.stdout.write(json.dumps({"ready": True}) + "\n")
         sys.stdout.flush()
         for line in sys.stdin:

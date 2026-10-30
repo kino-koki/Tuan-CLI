@@ -16,6 +16,7 @@ from ..paths import default_workspace
 
 import os
 from pathlib import Path
+from typing import Any
 
 from ..config import home_dir
 from ..ui.plain_console import console
@@ -37,7 +38,7 @@ def _resolve_session_file(sid: str) -> Path | None:
     return files[0] if files else None
 
 
-def cmd_rewind(args) -> int:
+def cmd_rewind(args: Any) -> int:
     """会话 Rewind: 把指定会话回退到之前的快照。"""
     from ..core.rewind import RewindError, RewindManager, rewind_session_file
 

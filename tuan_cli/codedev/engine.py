@@ -119,7 +119,7 @@ class CodeDevEngine:
         return idx.retrieve(task, top_k=top_k)
 
     # ---------------------------------------------------------------- 验证
-    def verify(self, cwd: Optional[str] = None, extra_commands=None) -> VerificationReport:
+    def verify(self, cwd: Optional[str] = None, extra_commands: Any = None) -> VerificationReport:
         cwd = cwd or self.workspace or default_workspace()
         return self.verifier.verify(cwd, extra_commands=extra_commands, kernel=self.kernel)
 

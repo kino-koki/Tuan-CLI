@@ -16,21 +16,21 @@ from __future__ import annotations
 import json
 import os
 import sys
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from ..gh.native import NativeGH, GHNotInstalledError, EXIT_FORBIDDEN, EXIT_NO_GH, _install_hint
 from ..gh.policy import Action, classify, load_policy, write_policy, SafetyPolicy
 from ..ui.plain_console import console
 
 
-def _print(obj) -> None:
+def _print(obj: Any) -> None:
     if sys.stdout.isatty():
         console.print(obj)
     else:
         print(obj)
 
 
-def _new_native(args, rest: bool = False) -> Optional[NativeGH]:
+def _new_native(args: Any, rest: bool = False) -> Optional[NativeGH]:
     pol = load_policy()
     gh = NativeGH(policy=pol)
     if rest and not gh.has_gh():
@@ -144,7 +144,7 @@ def _handle_doctor() -> int:
     return 0 if ok else 1
 
 
-def _handle_auth_status(gh_args: List[str], args) -> int:
+def _handle_auth_status(gh_args: List[str], args: Any) -> int:
     """tuan gh auth-status [--refresh] —— 认证状态 + 可选刷新引导。原样透传 gh 输出。"""
     refresh = _pop_flag(gh_args, "refresh")
     rc, out, err = NativeGH(policy=load_policy()).run(gh_args or ["auth", "status"])
@@ -212,7 +212,7 @@ def _handle_policy(gh_args: List[str]) -> int:
     return 1
 
 
-def _run_native(gh_args: List[str], args) -> int:
+def _run_native(gh_args: List[str], args: Any) -> int:
     """原生 gh 透传 (含安全闸门)。"""
     gh = NativeGH(policy=load_policy())
     try:
@@ -230,7 +230,7 @@ def _run_native(gh_args: List[str], args) -> int:
     return rc
 
 
-def _run_rest(gh_args: List[str], args) -> int:
+def _run_rest(gh_args: List[str], args: Any) -> int:
     """无本机 gh 时的内置 REST 回退 (仅支持少量只读能力)。"""
     from ..tools import gh_borrow
     client = gh_borrow.GitHubClient()
@@ -266,7 +266,7 @@ def _run_rest(gh_args: List[str], args) -> int:
 
 # ---------------------------------------------------------------- 入口
 
-def cmd_gh(args) -> int:
+def cmd_gh(args: Any) -> int:
     gh_args: List[str] = list(getattr(args, "gh_args", None) or [])
     rest = bool(getattr(args, "rest", False))
 

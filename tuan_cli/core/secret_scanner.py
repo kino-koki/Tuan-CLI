@@ -26,7 +26,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Any, Iterable, List, Optional
 
 
 # ------------------------------------------------------------ 规则定义
@@ -216,7 +216,7 @@ def scan_directory(
 
 # ------------------------------------------------------------ 与安全总线集成
 
-def emit_findings(bus, findings: List[SecretFinding]) -> int:
+def emit_findings(bus: Any, findings: List[SecretFinding]) -> int:
     """把高危发现汇入安全事件总线, 返回汇入条数 (bus 为 None 时返回 0)。
 
     用于审计留痕: 扫描出的密钥泄露事件可在 ``security_bus`` / 审计日志中追溯。

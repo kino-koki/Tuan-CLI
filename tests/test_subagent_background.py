@@ -72,6 +72,8 @@ class FakeAgent:
         self.session = None
         self.run_calls: list = []
         self._system_prompt = "你是青小团后台子代理。"
+        # ToolContext 兼容: BackgroundRunner 注入 agent.ctx.chain_depth
+        self.ctx = SimpleNamespace(chain_depth=0)
 
     def run(self, prompt: str, stream: bool = False, on_token=None,
             on_tool=None, **kwargs) -> str:
@@ -181,11 +183,12 @@ def test_subagent_tool_background_returns_job_id(tmp_path, monkeypatch):
             pass
 
         def submit(self, task, confirm=None, exclude_tools=(), system_extra="",
-                   skills=""):
+                   skills="", chain_depth=0):
             calls["task"] = task
             calls["exclude_tools"] = exclude_tools
             calls["system_extra"] = system_extra
             calls["skills"] = skills
+            calls["chain_depth"] = chain_depth
             return FakeJob()
 
     monkeypatch.setattr("tuan_cli.core.background.BackgroundRunner", FakeRunner)
@@ -198,8 +201,10 @@ def test_subagent_tool_background_returns_job_id(tmp_path, monkeypatch):
     assert calls["task"] == "梳理依赖关系"
     assert calls["skills"] == "web_research"
     assert "run_shell" in calls["exclude_tools"]
-    assert "subagent" in calls["exclude_tools"]  # 默认防递归
+    # 链深 0 (主会话): subagent 不再被默认排除 (允许子代理再 spawn 孙代理)
+    assert "subagent" not in calls["exclude_tools"]
     assert calls["system_extra"] == "你是架构师"
+    assert calls["chain_depth"] == 1  # 后台子代理链深注入为父链深 + 1
 
     # 同一 ctx 复用同一 runner (后台任务句柄共享)
     out2 = subagent_tool._run_subagent(ctx, "再来一个", run_in_background=True)
@@ -331,17 +336,20 @@ def test_subagent_resume_tool(tmp_path, monkeypatch):
         def get(self, jid):
             return done_job
 
-        def resume(self, job_id, task, confirm=None, run_in_background=False):
+        def resume(self, job_id, task, confirm=None, run_in_background=False,
+                   chain_depth=0):
             calls["job_id"] = job_id
             calls["task"] = task
             calls["run_in_background"] = run_in_background
+            calls["chain_depth"] = chain_depth
             return SimpleNamespace(result="续作完成。", error=None)
 
     monkeypatch.setattr("tuan_cli.core.background.BackgroundRunner", FakeRunner)
 
     out = subagent_tool._run_subagent_resume(ctx, "bg-xyz", "继续分析")
     assert out == "续作完成。"
-    assert calls == {"job_id": "bg-xyz", "task": "继续分析", "run_in_background": False}
+    assert calls == {"job_id": "bg-xyz", "task": "继续分析",
+                     "run_in_background": False, "chain_depth": 0}
 
     # 后台续作: 立即返回提示
     out2 = subagent_tool._run_subagent_resume(ctx, "bg-xyz", "后台继续",

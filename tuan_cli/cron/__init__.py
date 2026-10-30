@@ -1,11 +1,13 @@
 """定时任务子系统。"""
 
+from typing import Any
+
 from .store import CronStore
 
 __all__ = ["CronStore", "CronPlugin"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     # plugin 依赖 core/tools 全链 (~400ms), 惰性加载: 仅构建内核或显式访问时导入。
     if name == "CronPlugin":
         from .plugin import CronPlugin

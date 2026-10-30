@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import base64
 import secrets
+from typing import Any
 
 # PBKDF2 迭代次数下限: 低于此值视为配置错误而非兼容需求
 _MIN_ITERATIONS = 1000
@@ -34,7 +35,7 @@ except ImportError:
     _HAS_CRYPTOGRAPHY = False
 
 
-def _check_iterations(value) -> int:
+def _check_iterations(value: Any) -> int:
     """校验迭代次数为正整数, 且落在 [下限, 上限] 安全区间内。"""
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ValueError("iterations 必须是正整数")
@@ -149,7 +150,7 @@ def _open_aesgcm(ciphertext_with_tag: bytes, key: bytes, nonce: bytes) -> bytes:
 class CryptoEngine:
     """统一 JSONL IPC 协议的 crypto 引擎"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.methods = {
             "seal": self.seal,
             "open": self.open,
@@ -161,7 +162,7 @@ class CryptoEngine:
             "_meta/list": self.list_methods,
         }
 
-    def list_methods(self, params=None):
+    def list_methods(self, params: Any = None) -> Any:
         cipher = "aes-gcm" if _HAS_CRYPTOGRAPHY else "hmac-ctr"
         return {
             "engine": "crypto",
@@ -175,7 +176,7 @@ class CryptoEngine:
             "has_cryptography": _HAS_CRYPTOGRAPHY,
         }
 
-    def seal(self, params):
+    def seal(self, params: Any) -> Any:
         """加密: passphrase + salt_b64 + plaintext -> ciphertext_b64 + iv_b64
 
         优先使用 AES-GCM (cryptography 库可用时), 否则回退 CTR+HMAC。
@@ -216,7 +217,7 @@ class CryptoEngine:
                 "cipher": "ctr-hmac",
             }
 
-    def open(self, params):
+    def open(self, params: Any) -> Any:
         """解密: passphrase + salt_b64 + ciphertext_b64 + iv_b64 -> plaintext。
 
         自动检测 cipher 字段:
@@ -265,7 +266,7 @@ class CryptoEngine:
                 "解密结果不是有效 UTF-8: 密码错误, 或密文来源不符")
         return {"plaintext": text, "cipher": cipher or ("aes-gcm" if use_aesgcm else "ctr-hmac")}
 
-    def derive_key(self, params):
+    def derive_key(self, params: Any) -> Any:
         """派生密钥"""
         passphrase = params.get("passphrase", "")
         salt_b64 = params.get("salt_b64", "")
@@ -278,7 +279,7 @@ class CryptoEngine:
 
         return {"key_b64": base64.b64encode(key).decode(), "salt_b64": base64.b64encode(salt).decode()}
 
-    def fingerprint(self, params):
+    def fingerprint(self, params: Any) -> Any:
         """指纹"""
         data = params.get("data", "")
         if isinstance(data, str):
@@ -287,7 +288,7 @@ class CryptoEngine:
         return {"fingerprint": fp, "algorithm": "sha256"}
 
     @staticmethod
-    def _resolve_key(params) -> bytes:
+    def _resolve_key(params: Any) -> bytes:
         """从 key_b64 或 passphrase+salt_b64 解析 HMAC 密钥。"""
         key_b64 = params.get("key_b64", "")
         if key_b64:
@@ -298,7 +299,7 @@ class CryptoEngine:
         iterations = _check_iterations(params.get("iterations", 100000))
         return _derive_key(passphrase, salt, iterations)
 
-    def hmac_sign(self, params):
+    def hmac_sign(self, params: Any) -> Any:
         """HMAC-SHA256 签名: key_b64 (或 passphrase+salt_b64) + data -> mac_b64"""
         data = params.get("data", "")
         raw = data.encode() if isinstance(data, str) else data
@@ -306,7 +307,7 @@ class CryptoEngine:
         mac = hmac.new(key, raw, hashlib.sha256).digest()
         return {"mac_b64": base64.b64encode(mac).decode(), "algorithm": "hmac-sha256"}
 
-    def hmac_verify(self, params):
+    def hmac_verify(self, params: Any) -> Any:
         """HMAC 校验 (恒定时间比较): {valid: true/false}, 不泄露差异位置"""
         data = params.get("data", "")
         raw = data.encode() if isinstance(data, str) else data
@@ -316,7 +317,7 @@ class CryptoEngine:
         return {"valid": hmac.compare_digest(expected, mac_given),
                 "algorithm": "hmac-sha256"}
 
-    def random_token(self, params):
+    def random_token(self, params: Any) -> Any:
         """URL 安全随机令牌 (secrets 模块), length 为字节数 (默认 32, 上限 1024)"""
         length = int(params.get("length", 32))
         if not 1 <= length <= 1024:
@@ -324,7 +325,7 @@ class CryptoEngine:
         token = secrets.token_urlsafe(length)
         return {"token": token, "bytes": length}
 
-    def handle(self, line):
+    def handle(self, line: Any) -> Any:
         req_id = None
         try:
             req = json.loads(line)
@@ -341,7 +342,7 @@ class CryptoEngine:
             resp = {"id": req_id, "ok": False, "error": str(e)}
             return json.dumps(resp, ensure_ascii=False)
 
-    def run(self):
+    def run(self) -> None:
         sys.stdout.write(json.dumps({"ready": True}) + "\n")
         sys.stdout.flush()
         for line in sys.stdin:

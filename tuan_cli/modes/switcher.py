@@ -149,7 +149,7 @@ def current_mode() -> str:
     mode_data = cfg.get("mode", {}) or {}
     raw = mode_data.get("current") or mode_data.get("default") or "chat"
     meta = get_mode_meta(str(raw))
-    return meta["id"]
+    return str(meta["id"])
 
 
 def switch_mode(

@@ -79,34 +79,34 @@ class AgentTranscript:
     def get_tasks(self) -> dict:
         return dict(self._state.tasks)
 
-    def get_task(self, task_id: TaskId):
+    def get_task(self, task_id: TaskId) -> Any:
         return self._state.tasks.get(task_id)
 
     def get_interactions(self) -> dict:
         return dict(self._state.interactions)
 
-    def get_interaction(self, interaction_id: InteractionId):
+    def get_interaction(self, interaction_id: InteractionId) -> Any:
         return self._state.interactions.get(interaction_id)
 
     def get_attachments(self) -> dict:
         return dict(self._state.attachments)
 
-    def get_attachment(self, attachment_id: AttachmentId):
+    def get_attachment(self, attachment_id: AttachmentId) -> Any:
         return self._state.attachments.get(attachment_id)
 
     def get_todos(self) -> dict:
         return dict(self._state.todos)
 
-    def get_todo(self, todo_id: TodoId):
+    def get_todo(self, todo_id: TodoId) -> Any:
         return self._state.todos.get(todo_id)
 
     def get_prompts(self) -> dict:
         return dict(self._state.prompts)
 
-    def get_prompt(self, prompt_id: str):
+    def get_prompt(self, prompt_id: str) -> Any:
         return self._state.prompts.get(prompt_id)
 
-    def get_meta(self):
+    def get_meta(self) -> Any:
         return self._state.meta
 
     def list_pending_interactions(self) -> list:

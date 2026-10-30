@@ -255,7 +255,7 @@ class DispatchPlugin(Plugin):
 def _dispatch_handler(ctx: ToolContext, tasks: Any = None, max_workers: Any = 0,
                       prompt_prefix: Any = "", mode: Any = "parallel",
                       task_roles: Any = None, task_dependencies: Any = None,
-                      **_kwargs) -> str:
+                      **_kwargs: Any) -> str:
     tasks = tasks or []
     return _run_dispatch(
         tasks,

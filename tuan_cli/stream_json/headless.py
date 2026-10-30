@@ -164,7 +164,7 @@ class HeadlessDriver:
         self._guard = _StdoutGuard(real, sys.stderr)
         sys.stdout = self._guard
 
-    def _make_confirm(self):
+    def _make_confirm(self) -> Any:
         """权限闸门回调。bypassPermissions 直接放行；其余模式默认拒绝 (fail-closed)。
 
         headless 进程没有交互终端, 也没有 control_request RPC 回问壳, 所以

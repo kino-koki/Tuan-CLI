@@ -107,7 +107,7 @@ class BeforeToolExecuteEvent:
 
     # ---- 驱动 --------------------------------------------------------------
 
-    async def fire(self, subscribers: List[Callable[["BeforeToolExecuteEvent"], Awaitable[None]]]):
+    async def fire(self, subscribers: List[Callable[["BeforeToolExecuteEvent"], Awaitable[None]]]) -> Any:
         """依次通知订阅者，并汇总裁决。
 
         返回最终的 ``BeforeExecuteDecision``：有 veto 则带 veto；否则 None（放行）。

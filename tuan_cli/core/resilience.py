@@ -92,6 +92,92 @@ class AgentResilience:
         except Exception:  # noqa: BLE001
             return 2
 
+    def _resolve_explicit_fallback(
+        self,
+        item: Any,
+        adapter_cls: Any,
+        cur_provider: str,
+        avail: set,
+        need_vision: bool,
+    ) -> Optional[Dict[str, Any]]:
+        """解析单个显式 fallback 项 (model.fallbacks 成员)。
+
+        每项可以是:
+        - "provider/model" 字符串: 查 MODEL_PRESETS 取 provider/base_url/model/api_key_env;
+        - dict: 至少含 provider+model, 可选 base_url/api_key_env/temperature/max_tokens。
+        - 字符串裸 model 名: 仅当唯一预设命中时接受。
+
+        不满足条件 (无凭证 / 同主供应商 / vision 不匹配 / 未知预设) 返回 None。
+        """
+        fb_provider = ""
+        fb_model = ""
+        base_url = None
+        api_key_env = None
+        temperature = None
+        max_tokens = None
+
+        if isinstance(item, dict):
+            fb_provider = str(item.get("provider", "")).strip()
+            fb_model = str(item.get("model", "")).strip()
+            base_url = item.get("base_url")
+            api_key_env = item.get("api_key_env")
+            temperature = item.get("temperature")
+            max_tokens = item.get("max_tokens")
+        else:
+            s = str(item).strip()
+            if "/" in s:
+                fb_provider, fb_model = (x.strip() for x in s.split("/", 1))
+            else:
+                # 裸模型名: 仅当唯一预设命中
+                from ..models.router import MODEL_PRESETS
+                hits = [p for p in MODEL_PRESETS if p.model == s]
+                if len(hits) != 1:
+                    return None
+                fb_provider, fb_model = hits[0].provider, hits[0].model
+
+        if not fb_provider or not fb_model:
+            return None
+        if fb_provider == cur_provider or fb_provider not in avail:
+            return None
+
+        # 查预设补充元数据 (base_url/api_key_env); dict 显式字段优先
+        from ..models.router import MODEL_PRESETS
+        preset = next(
+            (p for p in MODEL_PRESETS
+             if p.provider == fb_provider and p.model == fb_model),
+            None,
+        )
+        if preset is None:
+            return None
+        if need_vision and "vision" not in preset.capabilities:
+            return None
+
+        api_key = os.environ.get(api_key_env or preset.api_key_env) \
+            or os.environ.get("TUAN_API_KEY")
+        if not api_key:
+            return None
+
+        from ..models.timeout_policy import resolve_read_timeout
+        try:
+            adapter = adapter_cls(
+                base_url=base_url or preset.base_url,
+                model=fb_model,
+                api_key=api_key,
+                temperature=float(temperature) if temperature is not None
+                else self.config.get("model.temperature", 0.7),
+                max_tokens=int(max_tokens) if max_tokens is not None
+                else self.config.get("model.max_tokens", 8192),
+                timeout=self.config.get("model.timeout", 120),
+                connect_timeout=self.config.get("model.connect_timeout", 10.0),
+                read_timeout=resolve_read_timeout(
+                    self.config.get("model.read_timeout", 300.0), fb_model
+                ),
+                prompt_cache=self.config.get("model.prompt_cache", True),
+            )
+        except Exception:  # noqa: BLE001 - 显式 fallback 构建失败退回自动选备
+            return None
+        return {"provider": fb_provider, "model": fb_model, "adapter": adapter}
+
     def _build_fallback_adapter(self, primary: Any) -> Optional[Dict[str, Any]]:
         """按候选顺序挑选备用供应商并构建适配器 (不改动用户配置, 线程安全)。
 
@@ -122,10 +208,23 @@ class AgentResilience:
 
         avail = set(ModelRouter.available_provider_names())
         avail.discard(cur_provider)
+        need_vision = bool(getattr(getattr(primary, "capabilities", None), "vision", False))
+
+        # ---- 1. 优先消费用户显式 model.fallbacks (对标 Claude Code fallbackModel) ----
+        # 按配置顺序回退; 最多 3 个; 跳过无凭证/同主供应商/vision 不匹配项。
+        explicit = config.get("model.fallbacks", []) or []
+        for item in list(explicit)[:3]:
+            fb = self._resolve_explicit_fallback(item, adapter_cls, cur_provider,
+                                                avail, need_vision)
+            if fb is not None:
+                info = {"provider": fb["provider"], "model": fb["model"], "adapter": fb["adapter"]}
+                self._fallback_cache[key] = info
+                return info
+
+        # ---- 2. 无显式列表 (或全失败): 退回 MODEL_PRESETS 自动选备 (历史行为) ----
         if not avail:
             return None
 
-        need_vision = bool(getattr(getattr(primary, "capabilities", None), "vision", False))
         candidates = [
             p for p in MODEL_PRESETS
             if p.provider in avail and (not need_vision or "vision" in p.capabilities)
@@ -139,26 +238,26 @@ class AgentResilience:
         same_or_higher = [p for p in candidates if p.tier >= cur_tier]
         pool = same_or_higher or candidates
         pool.sort(key=lambda p: (p.tier, p.cost_per_1k_input + p.cost_per_1k_output))
-        fb = pool[0]
+        preset = pool[0]
 
-        api_key = os.environ.get(fb.api_key_env) or os.environ.get("TUAN_API_KEY")
+        api_key = os.environ.get(preset.api_key_env) or os.environ.get("TUAN_API_KEY")
         # 口径与主链路一致 (models.timeout_policy): 陈旧的低 read_timeout 会被兜底,
         # 否则「主模型超时 → 切兜底 → 兜底也超时」, 退避重试只会放大等待。
         from ..models.timeout_policy import resolve_read_timeout
         adapter = adapter_cls(
-            base_url=fb.base_url,
-            model=fb.model,
+            base_url=preset.base_url,
+            model=preset.model,
             api_key=api_key,
             temperature=config.get("model.temperature", 0.7),
             max_tokens=config.get("model.max_tokens", 8192),
             timeout=config.get("model.timeout", 120),
             connect_timeout=config.get("model.connect_timeout", 10.0),
             read_timeout=resolve_read_timeout(
-                config.get("model.read_timeout", 300.0), fb.model
+                config.get("model.read_timeout", 300.0), preset.model
             ),
             prompt_cache=config.get("model.prompt_cache", True),
         )
-        info = {"provider": fb.provider, "model": fb.model, "adapter": adapter}
+        info = {"provider": preset.provider, "model": preset.model, "adapter": adapter}
         self._fallback_cache[key] = info
         return info
 
@@ -293,7 +392,7 @@ class AgentResilience:
             if on_reason is not None:
                 on_reason(t)
 
-        def _guarded():
+        def _guarded() -> Any:
             """模型调用: 已流出内容后的失败转为 StreamInterrupted (不可重试)。
 
             读超时/连接重置若发生在已流出半截回答之后, 重试会让模型把整个
@@ -310,7 +409,7 @@ class AgentResilience:
                     raise StreamInterrupted(str(exc)) from exc
                 raise
 
-        def _attempt():
+        def _attempt() -> Any:
             self._rate_limiter.acquire()
             try:
                 return self.retry_policy.call(
@@ -404,7 +503,7 @@ class AgentResilience:
         return self.retry_policy.max_retries
 
     @max_retries.setter
-    def max_retries(self, v) -> None:
+    def max_retries(self, v: Any) -> None:
         self.retry_policy.max_retries = int(v)
 
     @property
@@ -412,7 +511,7 @@ class AgentResilience:
         return self.retry_policy.backoff
 
     @retry_backoff.setter
-    def retry_backoff(self, v) -> None:
+    def retry_backoff(self, v: Any) -> None:
         self.retry_policy.backoff = float(v)
 
     @property
@@ -420,7 +519,7 @@ class AgentResilience:
         return self.retry_policy.jitter
 
     @retry_jitter.setter
-    def retry_jitter(self, v) -> None:
+    def retry_jitter(self, v: Any) -> None:
         self.retry_policy.jitter = float(v)
 
     @property
@@ -428,5 +527,5 @@ class AgentResilience:
         return self.retry_policy.retry_on
 
     @retry_on.setter
-    def retry_on(self, v) -> None:
+    def retry_on(self, v: Any) -> None:
         self.retry_policy.retry_on = set(v)

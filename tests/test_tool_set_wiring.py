@@ -37,6 +37,9 @@ def _make_minimal_agent(reg, *, plan_mode=False, yolo=False):
     agent.plan_mode = plan_mode
     agent.yolo = yolo
     agent._goal = None
+    agent._index_thread = None  # __new__ 不跑 __init__, 需手动补
+    agent._codebase_map = ""  # agent.py:151 初值, __new__ 不跑 __init__
+    agent._turn_started = False  # agent.py:152 初值, __new__ 不跑 __init__
     agent.exclude_tools = set()
     agent.workspace = "."
     agent.messages = []

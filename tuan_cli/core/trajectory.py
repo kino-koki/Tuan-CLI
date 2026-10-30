@@ -186,7 +186,7 @@ class Trajectory:
         return traj
 
     @classmethod
-    def from_session_store(cls, store, session_id: str = "") -> "Trajectory":
+    def from_session_store(cls, store: Any, session_id: str = "") -> "Trajectory":
         """从 SessionStore 实例重建。"""
         sid = session_id or getattr(store, "session_id", "")
         return cls.from_records(store.read_all(), session_id=sid)

@@ -67,7 +67,7 @@ class MediaRefPart:
         self.video_url = video_url
 
 
-def daemon_file_ref_from_pairing_part(part: MediaRefPart):
+def daemon_file_ref_from_pairing_part(part: MediaRefPart) -> Optional[dict]:
     if part.type != "image_url" and part.type != "video_url":
         return None
     url = (part.image_url or {}).get("url") if part.type == "image_url" else ((part.video_url or {}).get("url") if part.video_url else None)

@@ -487,7 +487,7 @@ class ModelRouter:
                 names.add(p.provider)
         return sorted(names)
 
-    def _preset_for(self, provider: Optional[str], model: Optional[str]):
+    def _preset_for(self, provider: Optional[str], model: Optional[str]) -> Any:
         """按 (provider, model) 精确匹配预设; model 为空时退化为 provider 任一匹配。"""
         for p in self._available_presets:
             if p.provider == provider and p.model == model:
@@ -498,7 +498,7 @@ class ModelRouter:
                     return p
         return None
 
-    def _current_preset(self, provider: Optional[str], model: Optional[str]):
+    def _current_preset(self, provider: Optional[str], model: Optional[str]) -> Any:
         """解析「当前模型」的档位: 同一 (provider, model) 可能注册在多个 tier
         (如 deepseek-chat 同时是 tier1/tier2), 用户显式配置的当前模型取其最高档,
         否则降级比较会把 tier2 的 deepseek-chat 误判成 tier1, 导致简单任务永不降级。"""
@@ -596,7 +596,7 @@ class ModelRouter:
         # 路由目标更贵且无额外能力 → 不切换
         return self._decision(chosen, difficulty, False, "保持当前模型 (路由目标更贵且无额外能力)")
 
-    def _decision(self, chosen, difficulty: int, switch: bool, reason: str) -> Dict[str, Any]:
+    def _decision(self, chosen: Any, difficulty: int, switch: bool, reason: str) -> Dict[str, Any]:
         return {
             "difficulty": difficulty,
             "provider": chosen.provider if chosen else self.default_provider,

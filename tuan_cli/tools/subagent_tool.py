@@ -29,6 +29,9 @@ log = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT = 180
 # 子任务返回摘要的最大长度
 _MAX_SUMMARY_LEN = 8000
+# subagent 递归链深上限 (对标 Claude Code: subagents can spawn subagents, 有限深度)。
+# 主会话链深 0; 达到此深度后子代理不再暴露 subagent 工具 (防无限递归)。
+_MAX_CHAIN_DEPTH = 5
 
 
 def _load_named_agent(spec: Any) -> Tuple[str, Tuple[str, ...], Tuple[str, ...]]:
@@ -60,17 +63,23 @@ def _resolve_subagent_params(
     instructions: str,
     exclude_tools: str,
     name: str,
+    *,
+    depth: int = 0,
 ) -> Tuple[set, str]:
     """解析子代理的隔离参数: (排除集, system_extra)。同步/后台两路径共用。
 
-    - 默认排除: subagent 自身不能递归嵌套, session/mcp 不需要子代理管理;
+    - 默认排除: session/mcp 不需要子代理管理;
+    - 递归链深 (depth>=_MAX_CHAIN_DEPTH) 时排除 subagent 自身, 防止无限递归;
     - 命名 agent: 从注册表加载定义 → 系统提示 + 工具白名单/额外排除;
     - 工具白名单折算进排除集 (复用既有 exclude_tools 端到端过滤, 零回归面)。
     """
     excluded = set()
     if exclude_tools:
         excluded = {t.strip() for t in exclude_tools.split(",") if t.strip()}
-    excluded.update({"subagent", "session_list", "session_resume", "session_delete"})
+    excluded.update({"session_list", "session_resume", "session_delete"})
+    # 链深达到上限: 子代理不再能 spawn 孙代理 (对标 Claude Code 的有限递归)
+    if depth >= _MAX_CHAIN_DEPTH:
+        excluded.add("subagent")
 
     tool_whitelist: Tuple[str, ...] = ()
     system_extra = instructions.strip() if instructions else ""
@@ -104,6 +113,7 @@ def _run_subagent(
     name: str = "",
     timeout: int = 0,
     run_in_background: bool = False,
+    depth: int = 0,
 ) -> str:
     """在隔离上下文中执行子任务, 返回摘要。
 
@@ -117,6 +127,10 @@ def _run_subagent(
         timeout: 超时秒数 (0=默认180s)
         run_in_background: true=后台运行, 立即返回 job_id, 之后用
               background_status 工具查询结果 (对标 Claude Code 异步 subagent)
+        depth: 递归链深 (主会话=0, 子代理=1, 孙代理=2…)。达到 ``_MAX_CHAIN_DEPTH``
+              时子代理不再暴露 subagent 工具 (防无限递归, 对标 Claude Code
+              subagents can spawn subagents 的有限深度)。通常由调用方传入
+              ``ctx.chain_depth``, 子代理自身从 ``ctx.chain_depth + 1`` 继续。
     """
     # 延迟导入避免循环: app.py -> tools -> core -> app.py
     from ..app import create_agent
@@ -125,7 +139,16 @@ def _run_subagent(
     config = kernel.require("config")
     workspace = ctx.workspace
 
-    excluded, system_extra = _resolve_subagent_params(ctx, instructions, exclude_tools, name)
+    # 递归链深: 显式 depth 优先 (供测试/程序化调用), 否则从当前上下文推断。
+    if depth == 0:
+        depth = int(getattr(ctx, "chain_depth", 0) or 0)
+    if depth >= _MAX_CHAIN_DEPTH:
+        return (f"[错误] 已达 subagent 递归链深上限 ({_MAX_CHAIN_DEPTH}), "
+                f"当前深度 {depth}。子代理不能再 spawn 孙代理 (防止无限递归)。"
+                "如确需更深的隔离工作, 请在主会话直接派发或合并任务。")
+
+    excluded, system_extra = _resolve_subagent_params(
+        ctx, instructions, exclude_tools, name, depth=depth)
     if name and not system_extra:
         return f"[错误] 未找到命名 agent: {name} (在 .claude/agents/ 或用户/内置 agents 目录中)"
 
@@ -144,6 +167,7 @@ def _run_subagent(
                 exclude_tools=tuple(excluded),
                 system_extra=system_extra,
                 skills=skills,
+                chain_depth=depth + 1,
             )
         except RuntimeError as exc:
             return f"[错误] 后台子代理启动失败: {exc}"
@@ -161,6 +185,8 @@ def _run_subagent(
         exclude_tools=tuple(excluded),
         system_extra=system_extra,
     )
+    # 递归链深: 子代理的 ToolContext 记录链深 (孙代理据此继续 +1)
+    sub_agent.ctx.chain_depth = depth + 1
 
     # 预加载技能 (如果有)
     if skills:
@@ -237,10 +263,12 @@ def _run_subagent_resume(
 
     if run_in_background:
         runner.resume(job_id, instructions.strip(), confirm=ctx.confirm,
-                      run_in_background=True)
+                      run_in_background=True,
+                      chain_depth=int(getattr(ctx, "chain_depth", 0) or 0))
         return f"续作已在后台启动 (job_id: {job_id})。用 background_status 查询结果。"
 
-    resumed = runner.resume(job_id, instructions.strip(), confirm=ctx.confirm)
+    resumed = runner.resume(job_id, instructions.strip(), confirm=ctx.confirm,
+                            chain_depth=int(getattr(ctx, "chain_depth", 0) or 0))
     if resumed is None:
         return f"[错误] 未找到后台任务: {job_id}"
     return resumed.result or resumed.error or "(无输出)"
@@ -296,6 +324,10 @@ class SubagentPlugin(Plugin):
                     "timeout": {"type": "integer", "description": "超时秒数 (默认 180)"},
                     "run_in_background": {"type": "boolean", "default": False,
                                           "description": "true=后台运行, 立即返回 job_id"},
+                    "depth": {"type": "integer", "default": 0,
+                              "description": "递归链深 (主会话=0, 子代理=1, 孙代理=2…); "
+                                             "达到 5 时不再能 spawn 孙代理 (防无限递归). "
+                                             "通常无需显式传入, 子代理自动继承 +1"},
                 },
                 "required": ["task"],
             },

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from ..ui.plain_console import console
 from ..tools.permissions import PermissionPolicy
@@ -26,7 +27,7 @@ def _fmt_rule(rule: dict) -> str:
     return f"{action:6s}  {detail}"
 
 
-def cmd_permissions(args) -> int:
+def cmd_permissions(args: Any) -> int:
     """权限规则查看与命中测试。"""
     from ..config import Config
 
@@ -71,10 +72,10 @@ def cmd_permissions(args) -> int:
 class _Cfg:
     """最小配置桩: 只回答 permissions.rules。"""
 
-    def __init__(self, rules):
+    def __init__(self, rules: Any) -> None:
         self._rules = rules
 
-    def get(self, key, default=None):
+    def get(self, key: Any, default: Any = None) -> Any:
         if key == "permissions.rules":
             return self._rules
         return default

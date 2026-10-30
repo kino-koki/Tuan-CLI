@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from typing import Any
 
 __all__ = [
     "Kernel", "Plugin", "PluginError", "plugin",
@@ -39,7 +40,7 @@ _CORE_SOURCES = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     mapping = _CORE_SOURCES.get(name)
     if mapping is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

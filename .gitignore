@@ -45,6 +45,10 @@ coverage.xml
 .pylint.d/
 .pytype/
 .pyre/
+# mypy 重定向产物 (mypy_*.txt / mypy_out*.txt): 本地类型检查快照, 不入库。
+# mypy_current.txt 曾未被忽略 (只匹配 mypy_out 前缀), 属历史调试残留, 已补规则。
+mypy_*.txt
+mypy_out*.txt
 
 # ===== 调试/临时输出（命令行重定向产物） =====
 *_out*.txt
@@ -210,3 +214,10 @@ Tuan/
 cc-haha-src/
 tuan-brand.html
 scripts/install_and_build.ps1
+
+# === 禁止入库的敏感方案文档 ===
+*方案*.md
+*大招*.md
+*融合*.md
+!ARCHITECTURE.md
+!README*.md

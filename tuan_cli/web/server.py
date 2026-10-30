@@ -609,11 +609,11 @@ class _WebHandler(BaseHTTPRequestHandler):
                 res = self._owner.skill_delete(str(body.get("name") or ""))
                 self._json(200 if res.get("ok") else 400, res)
             elif action == "search":
-                res = self._owner.skill_search(
+                skills_res = self._owner.skill_search(
                     str(body.get("query") or ""),
                     int(body.get("limit") or 5),
                 )
-                self._json(200, {"ok": True, "skills": res})
+                self._json(200, {"ok": True, "skills": skills_res})
             elif action == "read":
                 res = self._owner.skill_read(str(body.get("name") or ""))
                 self._json(200 if res.get("ok") else 404, res)
@@ -679,7 +679,7 @@ class _WebHandler(BaseHTTPRequestHandler):
             from .ext.sandbox import decide_execution_tier as _decide
 
             rv = _risk_assess(command, safety_score=verdict)
-            decision = _decide(rv, self.kernel.get("config") if self.kernel else None,
+            decision = _decide(rv, self._owner.kernel.get("config") if self._owner.kernel else None,
                                force_deny=bool(verdict.get("block")))
             verdict["risk_vector"] = rv.to_dict()
             verdict["execution"] = {"action": decision.action, "tier": int(decision.tier),
@@ -1454,7 +1454,7 @@ class WebServer:
             # 2. mss 备选（更快，跨平台）
             if png_bytes is None:
                 try:
-                    import mss  # type: ignore
+                    import mss
                     import io
                     with mss.mss() as sct:
                         monitor = sct.monitors[0]  # 主屏
@@ -1517,7 +1517,7 @@ class WebServer:
             img = Image.open(io.BytesIO(png_bytes))
 
             try:
-                import pytesseract  # type: ignore
+                import pytesseract
                 text = pytesseract.image_to_string(img, lang="chi_sim+eng")
                 return {"ok": True, "text": text.strip(), "via": "pytesseract"}
             except ImportError:
@@ -1667,7 +1667,7 @@ class WebServer:
         return True
 
     # ---------------- 模式 / 推理投入 / 工作区信任 / git / 斜杠命令 ----------------
-    def _cfg(self):
+    def _cfg(self) -> Any:
         """取配置对象; 无 kernel 时返回 None (调用方自降级)。"""
         try:
             return self.kernel.require("config") if self.kernel is not None else None
@@ -1772,7 +1772,7 @@ class WebServer:
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=self.workspace,
                 capture_output=True, text=True, timeout=10, errors="replace",
             )
-            branch = (br.stdout or "").strip()
+            branch: Optional[str] = (br.stdout or "").strip()
             if br.returncode != 0 or not branch:
                 branch = None
             st = subprocess.run(  # noqa: S603
@@ -2101,10 +2101,10 @@ class WebServer:
         if not provider or not model:
             return {"ok": False, "error": "供应商与模型不能为空"}
         try:
-            from ..models.provider_catalog import get_provider
+            from ..models.provider_catalog import get_provider as _get_provider
+            preset = _get_provider(provider)
         except Exception:  # noqa: BLE001
-            get_provider = None  # type: ignore
-        preset = get_provider(provider) if get_provider else None
+            preset = None
         if preset is None and not base_url:
             return {"ok": False, "error": f"未知供应商: {provider} (自定义端点需提供 base_url)"}
         # 模型名校验仅对目录内供应商生效 (剥掉 |free/|paid 标注后比对),
@@ -2175,7 +2175,7 @@ class WebServer:
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     # ---------------- 运行 ----------------
-    def make_agent(self):
+    def make_agent(self) -> Any:
         if self._make_agent_fn is not None:
             return self._make_agent_fn()
         from ..app import create_agent
@@ -2205,7 +2205,7 @@ class WebServer:
             pass
         return agent
 
-    def set_agent_factory(self, fn) -> None:
+    def set_agent_factory(self, fn: Any) -> None:
         """注入 agent 工厂 (测试/外部装配用)。"""
         self._make_agent_fn = fn
 

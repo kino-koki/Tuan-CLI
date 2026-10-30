@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 # ------------------------------------------------------------------ 分类
@@ -160,7 +160,7 @@ def all_commands_metadata() -> List[Dict[str, str]]:
     return result
 
 
-def cmd_commands(args) -> int:
+def cmd_commands(args: Any) -> int:
     """`tuan commands`: 以 JSON 输出全部斜杠命令元数据。"""
     payload = {
         "commands": all_commands_metadata(),
@@ -172,7 +172,7 @@ def cmd_commands(args) -> int:
     return 0
 
 
-def cmd_help(args) -> int:
+def cmd_help(args: Any) -> int:
     """`tuan help`：显示帮助（总览或特定子命令）。"""
     from ..ui.plain_console import console
 
@@ -243,7 +243,7 @@ def _show_quickstart() -> None:
     try:
         import importlib.resources
         pkg = importlib.resources.files("tuan_cli")
-        candidates.append(pkg.parent / "docs" / "QUICKSTART.md")
+        candidates.append(Path(str(pkg)) / "docs" / "QUICKSTART.md")
     except Exception:
         pass
 

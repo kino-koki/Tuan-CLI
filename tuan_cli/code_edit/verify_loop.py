@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 _PASS_RE = re.compile(r"(\d+)\s+passed")
 _FAIL_RE = re.compile(r"(\d+)\s+failed")
@@ -34,7 +34,7 @@ class TestResult:
 
 
 def run_tests(cmd: str, cwd: Optional[str] = None, timeout: int = 600,
-              kernel=None, confirm=None) -> TestResult:
+              kernel: Any = None, confirm: Any = None) -> TestResult:
     """运行测试命令并解析结果。默认解析 pytest 的 'X passed / Y failed' 摘要。
 
     统一安全层接入: 执行前经 command_guard (硬红线 / 网络出口 / 审计), 拦截即失败。
@@ -74,7 +74,7 @@ def run_tests(cmd: str, cwd: Optional[str] = None, timeout: int = 600,
                      errored=errored, output=out[:4000])
 
 
-def _first_int(rx, text: str) -> int:
+def _first_int(rx: Any, text: str) -> int:
     m = rx.search(text)
     return int(m.group(1)) if m else 0
 

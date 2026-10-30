@@ -31,7 +31,7 @@ def create_store(meta: Optional[Dict[str, object]] = None) -> SessionStore:
     """
     store = SessionStore(home_dir())
     if meta:
-        store.rotate(meta=dict(meta))  # type: ignore[arg-type]
+        store.rotate(meta=dict(meta))
     return store
 
 
@@ -94,7 +94,7 @@ def remove_session(target: str, *, all_sessions: bool = False,
 
 def load_history(path: Path) -> List[Dict[str, object]]:
     """从会话文件重建消息历史 (user/assistant 列表, 不含 system)。"""
-    return SessionStore.load_messages(path)  # type: ignore[return-value]
+    return SessionStore.load_messages(path)
 
 
 def session_title(path: Path) -> str:

@@ -8,7 +8,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
 from ..config import home_dir
 from ..i18n import t
@@ -17,17 +17,17 @@ from ..ui.format import Table
 
 
 # ---- app 链惰性加载: 仅 resume 真正恢复会话时才构建内核 ----
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def create_agent(*a, **k):
+def create_agent(*a: Any, **k: Any) -> Any:
     from ..app import create_agent as _f
     return _f(*a, **k)
 
 
-def seed_builtin_skills(*a, **k):
+def seed_builtin_skills(*a: Any, **k: Any) -> Any:
     from ..app import seed_builtin_skills as _f
     return _f(*a, **k)
 
@@ -73,11 +73,11 @@ def _resolve_session_target(files: List[Path], target: str) -> List[Path]:
     return [f for f in files if f.stem.startswith(target)]
 
 
-def _print_tree(res, roots: List[str]) -> None:
+def _print_tree(res: Any, roots: List[str]) -> None:
     """用缩进打印会话分叉树 (以多个根开始, 每层缩进子分支)。"""
     by_id = {s["session_id"]: s for s in res.list_sessions()}
 
-    def _label(sid):
+    def _label(sid: Any) -> str:
         info = by_id.get(sid, {})
         title = (info.get("title") or "(无标题)")
         mark = "*" if info.get("forked") else ""
@@ -88,7 +88,7 @@ def _print_tree(res, roots: List[str]) -> None:
 
     seen: set = set()
 
-    def _walk(sid, depth):
+    def _walk(sid: Any, depth: int) -> None:
         if sid in seen:
             print(f"{'  ' * depth}· {sid}  (环/重复, 已截断)")
             return
@@ -103,7 +103,7 @@ def _print_tree(res, roots: List[str]) -> None:
         _walk(rid, 0)
 
 
-def cmd_session(args) -> int:
+def cmd_session(args: Any) -> int:
     session_cmd = getattr(args, "session_cmd", None)
     sessions_dir = home_dir() / "sessions"
     if not sessions_dir.exists():
@@ -160,6 +160,9 @@ def cmd_session(args) -> int:
         console.print(f"{t('chat.resumed', path=loaded, count=len(agent.messages))}")
         mode = _apply_mode_override(kernel, getattr(args, "mode", None),
                                     yes=getattr(args, "yolo", False))
+        # Auto 模式 (对标 Claude Code): 内部标记, 由 ToolExecutor 经分类器按风险分级决策。
+        if mode == "auto":
+            agent.ctx.auto_mode = True
         effort = config.get("agent.effort", "high")
         return _run_chat_repl(agent, config, workspace, mode, effort)
 

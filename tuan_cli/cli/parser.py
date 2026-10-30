@@ -14,6 +14,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from .. import __version__
 from .parser_commands import register_subcommands
@@ -35,24 +36,29 @@ _COMMAND_REGISTRY: dict[str, str] = {}  # name -> module_path
 
 
 def _register_command(name: str, module_path: str) -> None:
-    """注册一个命令到全局注册表。
+    """注册一个命令到全局注册表 (幂等)。
 
     Args:
         name: 命令函数名 (如 "cmd_ext")。
         module_path: 模块相对路径 (如 ".ext_cli")。
 
     Raises:
-        AssertionError: 若 name 已被注册或路径不合法，确保"漏注册=错误"。
+        AssertionError: 仅当同名的命令已注册到**不同的**模块路径时抛出,
+            确保「重复注册到不同源=错误」; 同一路径重复注册视为幂等 (无副作用),
+            支持模块 reload 后重新注册 (如测试中 importlib.reload(parser))。
     """
-    if name in _COMMAND_REGISTRY:
+    existing = _COMMAND_REGISTRY.get(name)
+    if existing is not None:
+        if existing == module_path:
+            return  # 幂等: 同一源重复注册 (reload 场景) 直接忽略
         raise AssertionError(
-            f"命令 '{name}' 已被注册到 {_COMMAND_REGISTRY[name]}, "
+            f"命令 '{name}' 已被注册到 {existing}, "
             "重复注册会导致歧义。请检查模块是否多次注册。"
         )
     _COMMAND_REGISTRY[name] = module_path
 
 
-def _resolve_func(name: str):
+def _resolve_func(name: str) -> Any:
     """从注册表延迟导入命令函数: 轻量命令 (--version/--help) 不加载 app 链。
 
     使用注册表后，新增子命令只需在对应模块顶部调用 _register_command，
@@ -92,6 +98,30 @@ def _resolve_func(name: str):
 # 自动注册钩子: 模块导入时自动注册自己
 # ---------------------------------------------------------------------------
 
+# 独立注册的命令模块 (不在 commands._CMD_SOURCES 内, 模块顶部直接
+# _register_command)。reload 后这些模块已缓存, 需强制 reload 重触发注册。
+_INDEPENDENT_CMD_MODULES = (
+    ".ext_cli", ".improve_cli", ".cmd_gh", ".cmd_acp", ".cmd_safe",
+    ".cmd_harden", ".cmd_migrate", ".cmd_network", ".cmd_rewind",
+    ".cmd_project", ".cmd_worktree", ".cmd_handoff", ".cmd_help",
+    ".cmd_skills",
+)
+
+
+def _ensure_registered_after_reload() -> None:
+    """parser 被 importlib.reload 后, 各命令模块已在 sys.modules 缓存,
+    import_module 不会重跑其顶部 _register_command → 注册表可能为空。
+    此时对独立命令模块强制 reload, 让模块级注册代码重新执行。
+    """
+    import sys as _sys
+
+    if not _COMMAND_REGISTRY:
+        for mod in _INDEPENDENT_CMD_MODULES:
+            full = f"{__package__}{mod}"
+            if full in _sys.modules:
+                importlib.reload(_sys.modules[full])
+
+
 def _auto_register() -> None:
     """在模块加载时自动注册所有命令函数。
 
@@ -99,6 +129,11 @@ def _auto_register() -> None:
     新增子命令只需在对应模块顶部添加 _register_command 调用，
     无需修改本函数，避免 UnboundLocalError 风险。
     """
+    # 按功能分组导入 CLI 模块。若模块已在 sys.modules (如 parser 被
+    # importlib.reload 后再次加载), import_module 不会重跑模块顶部代码,
+    # 也就不会重调 _register_command —— 此时强制 reload 以重触发注册。
+    _ensure_registered_after_reload()
+
     # 按功能分组导入 CLI 模块
     importlib.import_module(".ext_cli", __package__)
     importlib.import_module(".improve_cli", __package__)
@@ -116,7 +151,14 @@ def _auto_register() -> None:
     importlib.import_module(".cmd_skills", __package__)
     # 导入 commands.py，它会通过 PEP 562 惰性路由注册所有命令
     importlib.import_module(".commands", __package__)
-    # 注意: commands.py 内的 _CMD_SOURCES 已经覆盖所有已注册 func
+    # 注意: commands.py 内的 _CMD_SOURCES 已经覆盖所有已注册 func。
+    # 无论首次加载还是 reload 后, 都不把 _CMD_SOURCES 的命令回填进注册表:
+    # 这些命令 (cmd_run/cmd_dev/cmd_chat 等) 依赖 commands.__getattr__ 门面
+    # 惰性路由, 若注册进注册表, _resolve_func 会走 import_module(.cmd_agents)
+    # 拿到真实函数, 绕过 commands 门面 → 外部 mock.patch.object(commands, ...)
+    # 失效 (见 test_parser::test_main_routes_run_to_cmd_run)。reload 后注册表
+    # 已由 _ensure_registered_after_reload 重建 (14 个独立模块), 剩余 cmd_*
+    # 命令继续经 _resolve_func 的 commands 门面 fallback 解析, 双轨保持可用。
     # 无需手动导入 cmd_run / cmd_chat / cmd_dev / cmd_config 等。
 
 
@@ -207,6 +249,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="CI/纯净模式: 仅用内置默认配置+内置工具, 跳过用户配置/skills自动加载/hooks/MCP/memory自动注入, 保证评测可复现",
     )
     parser.add_argument(
+        "--safe-mode",
+        action="store_true",
+        help="安全模式 (对标 Claude Code --safe-mode): 禁用用户级 hooks / skills 自动注入 / personality, "
+             "只保留核心工具与内置默认配置; 与 --bare 不同, 不跳过用户配置与 MCP。",
+    )
+    parser.add_argument(
         "--isolation",
         action="store_true",
         help="引擎进程级隔离: 开启后非判定类引擎(diff/crypto/index/ansi/json/search/notify/rules)以真实 JSONL 子进程运行, 子进程崩溃/超时安全回落进程内; safety 引擎恒进程内(fail-closed)。默认关(进程内直调)。持久开启用 `tuan config set engine.isolation true`",
@@ -293,7 +341,7 @@ def build_parser() -> argparse.ArgumentParser:
 # 启动路径, 仅保留下方纯 Python TUI。不再有任何 Node 进程被 tuan 拉起。
 
 
-def _rewrite_dev_codedev(argv):
+def _rewrite_dev_codedev(argv: Any) -> Any:
     """把 `dev codedev <rest>` 透明改写为 `__dev_codedev <rest>`。
 
     ``dev`` 的 task 是自由文本位置参数, 无法在其 ArgumentParser 上直接挂
@@ -339,7 +387,7 @@ def main() -> int:
         return handle_exception(exc, verbose=False)
 
 
-def _dispatch(parser: "argparse.ArgumentParser", args) -> int:
+def _dispatch(parser: "argparse.ArgumentParser", args: Any) -> int:
     """解析完成后的实际分发 (被 main() 的 try/except 包裹)。"""
     # 交互式/计划/免确认启动形态 (无子命令且非 --print) 直接走内置 Python TUI
     # (tuan_cli/tui/tui.py::QxtTUI, 仅依赖 rich + prompt_toolkit, 开箱即用,

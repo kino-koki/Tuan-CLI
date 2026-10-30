@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ..session.store import (
     list_recent,
     remove_session,
@@ -18,7 +20,7 @@ from ..session.store import (
 from ._ui_singleton import console
 
 
-def cmd_sessions(args) -> int:
+def cmd_sessions(args: Any) -> int:
     """`tuan sessions <list|rm>` CLI 入口。"""
     sub = getattr(args, "sessions_cmd", "list")
 
@@ -45,7 +47,7 @@ def _cmd_list() -> int:
     return 0
 
 
-def _cmd_rm(args) -> int:
+def _cmd_rm(args: Any) -> int:
     """删除会话: `rm <id>` 或 `--all`。"""
     if getattr(args, "all", False):
         n = remove_session("", all_sessions=True)

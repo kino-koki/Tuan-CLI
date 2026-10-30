@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from .classify import classify_session_dir
 from .kimi_cli_schema import parse_kimi_json, parse_session_state
@@ -57,7 +57,7 @@ def _format_error(error: BaseException) -> str:
     return str(error) or error.__class__.__name__
 
 
-def _list_dir_safe(dir_path: str, filter_fn) -> list[str]:
+def _list_dir_safe(dir_path: str, filter_fn: Any) -> list[str]:
     try:
         return [n for n in os.listdir(dir_path) if filter_fn(n)]
     except OSError:

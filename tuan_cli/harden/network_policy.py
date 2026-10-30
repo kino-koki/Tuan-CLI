@@ -17,7 +17,7 @@
 """
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
 from ..core.network_guard import NetworkGuard
 
@@ -29,7 +29,7 @@ class EgressRestrictedNetworkGuard(NetworkGuard):
         self,
         egress_cidr_allow: Optional[Iterable[str]] = None,
         one_way_mode: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         # 全部出口加固逻辑由 core.NetworkGuard 承担, 此处仅透传参数
         super().__init__(

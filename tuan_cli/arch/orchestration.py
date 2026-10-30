@@ -240,7 +240,7 @@ class SubAgent:
                     pass
         return result
 
-    def _make_worktree(self):
+    def _make_worktree(self) -> Any:
         """返回 (路径, layer|None, name|None)。layer 非 None 表示真 git worktree。"""
         if self.base_workspace:
             try:
@@ -337,9 +337,9 @@ class Orchestrator:
 
 
 def kernel_executor(
-    kernel,
+    kernel: Any,
     *,
-    exclude_tools=None,
+    exclude_tools: Any = None,
     max_iterations: int = 10,
     session_id: Optional[str] = None,
     per_agent_timeout: float = 300.0,
@@ -347,7 +347,7 @@ def kernel_executor(
     max_artifacts: int = 50,
     use_sandbox: bool = False,
     sandbox_backend: str = "local",
-):
+) -> Any:
     """创建一个真正的 Agent Loop 执行器, 供 Orchestrator 使用。
 
     返回与 ``default_executor`` 签名兼容的 callable: (goal, AgentContext, Path) -> (answer, artifacts)。
@@ -479,7 +479,7 @@ def kernel_executor(
     return _exec
 
 
-def _iter_results(r: SubAgentResult):
+def _iter_results(r: SubAgentResult) -> Any:
     """深度优先遍历 (含嵌套) 的所有 SubAgentResult。"""
     yield r
     for c in r.children:

@@ -134,7 +134,7 @@ class TelemetryCollector:
 
     @contextlib.contextmanager
     def span(self, name: str, trace_id: str = "", parent_id: Optional[str] = None,
-             attributes: Optional[Dict[str, Any]] = None):
+             attributes: Optional[Dict[str, Any]] = None) -> Any:
         """上下文管理器: 进入时开启 span, 退出时 (无论正常/异常) 自动关闭。"""
         s = self.start_span(name, trace_id=trace_id, parent_id=parent_id, attributes=attributes)
         try:

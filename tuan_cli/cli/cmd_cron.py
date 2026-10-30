@@ -17,17 +17,17 @@ from ..ui.format import Table
 from ._ui_singleton import console
 
 
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     """惰性构建内核: 仅实际执行 cron 命令时才加载 app 链。"""
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def _cron_pid_file(config) -> Path:
+def _cron_pid_file(config: Any) -> Path:
     return cast(Path, config.home / "cron" / "daemon.pid")
 
 
-def _cron_daemon_alive(config) -> bool:
+def _cron_daemon_alive(config: Any) -> bool:
     """守护进程是否存活。"""
     from ..core.background_store import _is_process_alive
     pid_file = _cron_pid_file(config)
@@ -40,7 +40,7 @@ def _cron_daemon_alive(config) -> bool:
     return _is_process_alive(pid)
 
 
-def _cron_spawn_daemon(config, workspace: str, check: int) -> int:
+def _cron_spawn_daemon(config: Any, workspace: str, check: int) -> int:
     """以独立子进程拉起 cron 守护。"""
     env = dict(os.environ)
     env["TUAN_HOME"] = str(config.home)
@@ -58,7 +58,7 @@ def _cron_spawn_daemon(config, workspace: str, check: int) -> int:
     return proc.pid
 
 
-def cmd_cron(args) -> int:
+def cmd_cron(args: Any) -> int:
     """定时任务管理。"""
     config = Config(profile=getattr(args, "profile", "default"),
                     patch_file=getattr(args, "patch", None))

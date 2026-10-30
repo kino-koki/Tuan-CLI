@@ -198,7 +198,7 @@ class OpenAICompatAdapter(ModelAdapter):
 
     # ------------------------------------------------------------------ 内部
 
-    def _chat_stream(self, kwargs: Dict[str, Any], on_token, on_reason) -> ModelResponse:
+    def _chat_stream(self, kwargs: Dict[str, Any], on_token: Any, on_reason: Any) -> ModelResponse:
         kwargs["stream"] = True
         kwargs["stream_options"] = {"include_usage": True}
         content_parts: List[str] = []
@@ -265,7 +265,7 @@ class OpenAICompatAdapter(ModelAdapter):
         return "other", status
 
     @staticmethod
-    def _parse(choice, usage) -> ModelResponse:
+    def _parse(choice: Any, usage: Any) -> ModelResponse:
         msg = choice.message
         tool_calls = [
             ToolCall(id=tc.id, name=tc.function.name, arguments=tc.function.arguments or "")
@@ -280,7 +280,7 @@ class OpenAICompatAdapter(ModelAdapter):
         )
 
 
-def _extract_usage(usage) -> Dict[str, int]:
+def _extract_usage(usage: Any) -> Dict[str, int]:
     """统一抽取 token 用量, 含 DeepSeek 的 prompt cache 命中字段。
 
     DeepSeek / OpenCode Zen 在 usage 里返回:

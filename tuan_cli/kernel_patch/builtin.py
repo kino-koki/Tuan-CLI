@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from .patch_base import patch_impl, SKIP_ORIGINAL
 
 # 本模块的补丁共享缓存: 由补丁实现读写, 不污染 i18n / retry 模块命名空间。
@@ -21,7 +23,7 @@ _T_RAW_CACHE: dict = {}   # (lang, key) -> raw_text
 # =================================================================== i18n.t 记忆化
 
 @patch_impl("tuan_cli.i18n.t", priority=1, version="1.0.0", min_kernel="0.2.0")
-def _i18n_t_memo(original, key, **kw):
+def _i18n_t_memo(original: Any, key: Any, **kw: Any) -> Any:
     """热路径翻译记忆化: 无插值 (纯取词) 场景直接查缓存返回原始模板。
 
     纯函数: 结果仅取决于 (当前语言, key)。语言切换由 _i18n_lang_clear 清缓存,
@@ -51,7 +53,7 @@ _MISS = object()
 
 @patch_impl("tuan_cli.i18n.set_language", priority=1, version="1.0.0",
             min_kernel="0.2.0")
-def _i18n_lang_clear(original, lang):
+def _i18n_lang_clear(original: Any, lang: Any) -> Any:
     """语言切换时清空翻译缓存, 保证记忆化结果不串语种。"""
     _T_RAW_CACHE.clear()
     return original(lang)
@@ -64,7 +66,7 @@ _RETRY_ADAPTER_CACHE: list = []   # [adapter|None]; 空表表示"尚未解析"
 
 @patch_impl("tuan_cli.core.retry.classify_error", priority=1, version="1.0.0",
             min_kernel="0.2.0", mode="replace")
-def _retry_classify_import_cache(exc):
+def _retry_classify_import_cache(exc: Any) -> Any:
     """消除 classify_error 每次调用都 try/except 重复 import 的开销。
 
     与原始逻辑逐字节等价, 仅把 `from ..models.openai_compat import ...`
@@ -80,7 +82,7 @@ def _retry_classify_import_cache(exc):
     return "other", None
 
 
-def _resolve_adapter():
+def _resolve_adapter() -> Any:
     try:
         from ..models.openai_compat import OpenAICompatAdapter
         return OpenAICompatAdapter
@@ -94,5 +96,5 @@ def _resolve_adapter():
 
 @patch_impl("tuan_cli.core.retry.retry_after_seconds", priority=999,
             version="9.9.9", min_kernel="9.0.0")
-def _demo_always_bypassed(original, exc):
+def _demo_always_bypassed(original: Any, exc: Any) -> Any:
     return original(exc)

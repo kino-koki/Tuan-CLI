@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from ._ui_singleton import ui
 
 
-def _cmd_blast(agent, arg: str) -> None:
+def _cmd_blast(agent: Any, arg: str) -> None:
     """/blast [file|tool|all] — Blast Radius 交互式可视化。
 
     用法:

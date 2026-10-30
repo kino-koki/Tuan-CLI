@@ -78,6 +78,10 @@ otel = [
 # JSON-RPC 2.0 over stdio; HTTP/SSE 传输用 tuan_cli._http, 配置校验用
 # tuan_cli._config_model —— 整个 MCP 子系统零第三方依赖。
 mcp = []
+# browser: Browser Use 浏览器 agent 工具 (tools/browser.py 的 BrowserPlugin)。
+# 纯可选 —— 未安装时工具 handler 一律返回安装指引 (INSTALL_HINT), 绝不炸 Agent 循环。
+# 版本上限 <1.0: 0.x 大版本可能破坏, 限定在 0.x 线内; Chromium 另行 `uvx browser-use install`。
+browser = ["browser-use>=0.1,<1.0"]
 # dev: 测试与静态检查。openai / httpx / PyYAML 之所以在这里而不是核心依赖,
 # 是因为测试代码拿它们当「真实 SDK 行为」的回归基准 (对照验证自研 shim),
 # 运行期完全不需要。

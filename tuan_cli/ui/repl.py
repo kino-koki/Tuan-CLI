@@ -8,7 +8,7 @@ import logging
 import os
 import time
 import unicodedata
-from typing import Optional, Tuple, cast
+from typing import Any, Optional, Tuple, cast
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -93,6 +93,8 @@ class UI:
         self._mascot = Mascot(IDLE)
         # 长输出折叠: 最近一次被折叠的内容, 供 /more 展开
         self._last_collapsed: Optional[str] = None
+        # git 探测缓存: (monotonic, branch, dirty), None 表示未缓存
+        self._git_cache: Optional[Tuple[float, str, bool]] = None
 
     # 状态栏每次重绘都会问一次 git; 无缓存时每条消息后都要 fork 两个 git 子进程,
     # 大 workspace 下 2s timeout 会真撞上。3 秒 TTL 足够新鲜, 又不会打满子进程。
@@ -160,7 +162,7 @@ class UI:
         muted_s = C["muted"]
         hl = "─" * inner
 
-        def _line(content) -> "Text":
+        def _line(content: Any) -> "Text":
             """把内容包成 │ ... │ 一行 (右填空白对齐右框)。"""
             cw = _disp_width(str(content))
             pad = max(1, inner - cw)
@@ -197,7 +199,7 @@ class UI:
         # 底
         console.print(Text("╰" + hl + "╯", style=border))
 
-    def banner(self, config=None, workspace: str = "", model_label: str = "", profile: str = "",
+    def banner(self, config: Any = None, workspace: str = "", model_label: str = "", profile: str = "",
                mode: str = "", effort: str = "") -> None:
         self._cwd = workspace or default_workspace()
         self._branch = self._detect_branch()
@@ -247,15 +249,15 @@ class UI:
             kb = KeyBindings()
 
             @kb.add("enter")
-            def _(event):
+            def _(event: Any) -> None:
                 event.current_buffer.validate_and_handle()
 
             @kb.add("escape", "enter")
-            def _(event):
+            def _(event: Any) -> None:
                 event.current_buffer.insert_text("\n")
 
             @kb.add("c-c")
-            def _(event):
+            def _(event: Any) -> None:
                 if event.current_buffer.text:
                     event.current_buffer.reset()
                 else:
@@ -417,7 +419,7 @@ class UI:
 
     # ------------------------------------------------------------ 快捷键面板
 
-    def _key_groups(self):
+    def _key_groups(self) -> Any:
         """快捷键 / 斜杠命令面板条目 (描述走 i18n, 键名保持原样)。"""
         return (
             (t("keymap.group.input"), (
@@ -466,8 +468,8 @@ class UI:
             self._print_keymap_fallback()
             return None
 
-    def _build_keymap_app(self, RadioList, Application, HSplit, Window,
-                          FormattedTextControl, D, KeyBindings, Condition) -> Optional[str]:
+    def _build_keymap_app(self, RadioList: Any, Application: Any, HSplit: Any, Window: Any,
+                          FormattedTextControl: Any, D: Any, KeyBindings: Any, Condition: Any) -> Optional[str]:
         options = []
         for grp_name, items in self._key_groups():
             for key, desc in items:
@@ -486,17 +488,17 @@ class UI:
         title_text = t("keymap.title")
 
         @Condition
-        def is_radiolist_selected():
+        def is_radiolist_selected() -> bool:
             return True
 
         kb = KeyBindings()
 
         @kb.add("escape")
-        def _(event):
+        def _(event: Any) -> None:
             event.app.exit(result=None)
 
         @kb.add("enter")
-        def _(event):
+        def _(event: Any) -> None:
             fill = radio.current_value
             event.app.exit(result=fill if fill else None)
 

@@ -24,7 +24,7 @@ import asyncio
 import json
 import time
 import uuid
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from ._ui_singleton import console, ui
 from ..agents.base import AgentInfo, EventType, TaskRequest
@@ -33,7 +33,7 @@ from ..ui.format import Table
 _MODES = ("chat", "collaboration", "gantong", "lingma", "boundless")
 
 
-def _new_task(prompt: str, args) -> TaskRequest:
+def _new_task(prompt: str, args: Any) -> TaskRequest:
     return TaskRequest(
         id=uuid.uuid4().hex[:8],
         prompt=prompt,
@@ -63,7 +63,7 @@ def _muted(text: str) -> None:
     console.print(f"  {text}", style="dim")
 
 
-def _dump(obj) -> None:
+def _dump(obj: Any) -> None:
     """机器可读输出: 直写 stdout, 不经 console (避免任何装饰/高亮混入)。"""
     import sys
 
@@ -73,7 +73,7 @@ def _dump(obj) -> None:
 
 # ---------------------------------------------------------------- status
 
-async def _collect(args) -> List[AgentInfo]:
+async def _collect(args: Any) -> List[AgentInfo]:
     from ..agents.discovery import discover_agents, probe_agent
 
     only = getattr(args, "agent_id", None)
@@ -107,7 +107,7 @@ def _status_table(infos: List[AgentInfo]) -> Table:
     return table
 
 
-def _cmd_status(args) -> int:
+def _cmd_status(args: Any) -> int:
     from ..agents.discovery import summarize
 
     infos = asyncio.run(_collect(args))
@@ -136,7 +136,7 @@ def _cmd_status(args) -> int:
 
 # ---------------------------------------------------------------- route (dry-run)
 
-def _cmd_route(args) -> int:
+def _cmd_route(args: Any) -> int:
     from ..agents.router import route_explain
 
     task = _new_task(args.prompt, args)
@@ -223,20 +223,22 @@ async def _run_task(task: TaskRequest, verbose: bool) -> int:
     finally:
         # 确定性关闭生成器 (子进程 reap + 临时文件清理), 不留给 loop 关停钩子
         try:
-            await agen.aclose()
+            _aclose = getattr(agen, "aclose", None)
+            if _aclose is not None:
+                await _aclose()
         except Exception:
             pass
     return 1
 
 
-def _cmd_run(args) -> int:
+def _cmd_run(args: Any) -> int:
     task = _new_task(args.prompt, args)
     return asyncio.run(_run_task(task, verbose=not getattr(args, "format", "text") == "json"))
 
 
 # ---------------------------------------------------------------- serve
 
-def _cmd_serve(args) -> int:
+def _cmd_serve(args: Any) -> int:
     from ..web.dispatch_server import build_parser, main_async
 
     ws_args = build_parser().parse_args([

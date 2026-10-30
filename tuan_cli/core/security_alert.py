@@ -46,7 +46,7 @@ class AlertRecord:
     source: str = ""
     notified: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.timestamp == 0.0:
             self.timestamp = time.time()
 
@@ -78,7 +78,7 @@ class DesktopNotifier:
             return DesktopNotifier._notify_linux(title, message)
 
     @staticmethod
-    def _run_with_timeout(argv, timeout: float = 5.0) -> bool:
+    def _run_with_timeout(argv: Any, timeout: float = 5.0) -> bool:
         """跨平台启动子进程 + 可靠超时。
 
         ``subprocess.run(timeout=)`` 在 Windows 上对长跑子进程 timeout 不可靠

@@ -149,11 +149,11 @@ class Swarm:
 
     def __init__(
         self,
-        kernel,
-        config,
+        kernel: Any,
+        config: Any,
         workspace: str,
-        main_agent=None,
-        confirm=None,
+        main_agent: Any = None,
+        confirm: Any = None,
         exclude_tools: Sequence[str] = (),
         max_workers: Optional[int] = None,
         planner_fn: Optional[Callable[[str], SwarmPlan]] = None,
@@ -343,7 +343,7 @@ class Swarm:
             except Exception:  # noqa: BLE001
                 pass
 
-    def _strong_switch_on(self, phase: str):
+    def _strong_switch_on(self, phase: str) -> Any:
         """规划/验收前临时切到强模型, 返回还原上下文 (无需切换时返回 None)。
 
         phase: "plan" | "accept" —— 对应阶段注入了自定义函数时跳过切换。
@@ -359,7 +359,7 @@ class Swarm:
         self._sync_main_agent_model()
         return (before, prev_adapter)
 
-    def _strong_switch_off(self, ctx) -> None:
+    def _strong_switch_off(self, ctx: Any) -> None:
         """完整还原强模型切换的副作用: 配置视图、内核适配器、主 Agent 缓存。
 
         切换本身 persist=False 不落盘, 因此还原内存视图即无残留。"""

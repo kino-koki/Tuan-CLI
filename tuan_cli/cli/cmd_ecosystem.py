@@ -18,7 +18,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from ..config import Config
 from ._ui_singleton import console
@@ -32,12 +32,12 @@ _EXPORT_KINDS = ("skills", "agents", "memory")
 _SOURCES = ("claude", "hermes", "all")
 
 
-def _cfg(args) -> Config:
+def _cfg(args: Any) -> Config:
     return Config(profile=getattr(args, "profile", "default"),
                   patch_file=getattr(args, "patch", None))
 
 
-def _probe(args, config: Optional[Config] = None) -> "EcosystemProbe":
+def _probe(args: Any, config: Optional[Config] = None) -> "EcosystemProbe":
     from ..ecosystem.detect import EcosystemProbe
 
     cfg = config or _cfg(args)
@@ -51,7 +51,7 @@ def _hint(ok: bool) -> str:
 
 # ---------------------------------------------------------------- scan / status
 
-def _cmd_scan(args) -> int:
+def _cmd_scan(args: Any) -> int:
     from ..ecosystem.detect import render_probe
 
     probe = _probe(args)
@@ -75,7 +75,7 @@ def _cmd_scan(args) -> int:
     return 0
 
 
-def _cmd_status(args) -> int:
+def _cmd_status(args: Any) -> int:
     from ..ecosystem.detect import EcosystemProbe
 
     config = _cfg(args)
@@ -107,7 +107,7 @@ def _cmd_status(args) -> int:
 
 # ---------------------------------------------------------------- import
 
-def _cmd_import(args) -> int:
+def _cmd_import(args: Any) -> int:
     from ..ecosystem.detect import EcosystemProbe
 
     kind = args.kind
@@ -153,7 +153,7 @@ def _sources_tuple(src: str) -> tuple:
     return ("claude_code", "hermes")
 
 
-def _import_skills(config, probe, sources: tuple) -> int:
+def _import_skills(config: Any, probe: Any, sources: tuple) -> int:
     from ..ecosystem.skills_bridge import import_skills
     from ..skills.manager import SkillManager
 
@@ -166,7 +166,7 @@ def _import_skills(config, probe, sources: tuple) -> int:
     return len(result.imported)
 
 
-def _import_memory(args, config, probe, sources: tuple) -> int:
+def _import_memory(args: Any, config: Any, probe: Any, sources: tuple) -> int:
     from ..ecosystem.memory_bridge import import_hermes_memory
     from ..memory.store import MemoryStore
 
@@ -185,7 +185,7 @@ def _import_memory(args, config, probe, sources: tuple) -> int:
     return len(result.memory_added) + len(result.user_added)
 
 
-def _import_agents(args, config, probe, sources: tuple) -> int:
+def _import_agents(args: Any, config: Any, probe: Any, sources: tuple) -> int:
     from ..ecosystem.agents_bridge import import_claude_agents
 
     if "claude_code" not in sources:
@@ -199,7 +199,7 @@ def _import_agents(args, config, probe, sources: tuple) -> int:
     return len(result.imported)
 
 
-def _import_context(args, config, probe, sources: tuple) -> int:
+def _import_context(args: Any, config: Any, probe: Any, sources: tuple) -> int:
     """导入上下文/人格: Hermes SOUL.md → tuan SOUL.md (存在且未 force 时跳过)。"""
     from ..ecosystem.memory_bridge import import_hermes_memory
     from ..memory.store import MemoryStore
@@ -218,7 +218,7 @@ def _import_context(args, config, probe, sources: tuple) -> int:
     return 1 if result.soul_copied else 0
 
 
-def _import_mcp(args, config, probe, sources: tuple) -> int:
+def _import_mcp(args: Any, config: Any, probe: Any, sources: tuple) -> int:
     from ..ecosystem.mcp_import import (
         import_mcp_servers, parse_claude_mcp_json, parse_hermes_config,
     )
@@ -240,7 +240,7 @@ def _import_mcp(args, config, probe, sources: tuple) -> int:
 
 # ---------------------------------------------------------------- export
 
-def _cmd_export(args) -> int:
+def _cmd_export(args: Any) -> int:
     from ..ecosystem.detect import EcosystemProbe
 
     kind = args.kind
@@ -273,7 +273,7 @@ def _cmd_export(args) -> int:
     return 0
 
 
-def _export_skill_targets(probe, dest: str) -> List[tuple]:
+def _export_skill_targets(probe: Any, dest: str) -> List[tuple]:
     targets: List[tuple] = []
     if dest in ("claude", "all") and probe.workspace is not None:
         targets.append(("claude", probe.workspace / ".claude" / "skills"))
@@ -282,7 +282,7 @@ def _export_skill_targets(probe, dest: str) -> List[tuple]:
     return targets
 
 
-def _export_agents(config, probe, dest: str) -> int:
+def _export_agents(config: Any, probe: Any, dest: str) -> int:
     from ..ecosystem.agents_bridge import export_to_claude
 
     if dest not in ("claude", "all") or probe.workspace is None:
@@ -293,7 +293,7 @@ def _export_agents(config, probe, dest: str) -> int:
     return len(result.exported)
 
 
-def _export_memory(config, probe, dest: str) -> int:
+def _export_memory(config: Any, probe: Any, dest: str) -> int:
     from ..ecosystem.memory_bridge import export_to_hermes
     from ..memory.store import MemoryStore
 
@@ -320,7 +320,7 @@ def _tuan_command() -> List[str]:
     return [sys.executable, "-m", "tuan_cli"]
 
 
-def _cmd_link(args) -> int:
+def _cmd_link(args: Any) -> int:
     from ..ecosystem.mcp_import import export_to_hermes_config
 
     config = _cfg(args)
@@ -371,7 +371,7 @@ def _cmd_link(args) -> int:
     return 0
 
 
-def _cmd_serve(args) -> int:
+def _cmd_serve(args: Any) -> int:
     from ..ecosystem.mcp_server import serve_stdio
 
     config = _cfg(args)
@@ -383,7 +383,7 @@ def _cmd_serve(args) -> int:
     )
 
 
-def cmd_ecosystem(args) -> int:
+def cmd_ecosystem(args: Any) -> int:
     """tuan ecosystem 分发器。"""
     action = getattr(args, "ecosystem_cmd", "scan")
     if action == "scan":

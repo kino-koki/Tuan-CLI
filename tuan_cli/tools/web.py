@@ -22,7 +22,7 @@ import urllib.parse
 import urllib.request
 import zlib
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from ..core.kernel import Kernel, Plugin
 from .base import Tool, ToolContext, string_prop
@@ -114,7 +114,7 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     max_redirections = 5
     allow_loopback = False
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(self, req: Any, fp: Any, code: Any, msg: Any, headers: Any, newurl: Any) -> Any:
         blocked = _check_ssrf(newurl, allow_loopback=self.allow_loopback)
         if blocked:
             raise urllib.error.URLError(blocked)
@@ -262,7 +262,7 @@ def parse_bing_results(html: str, max_results: int = 10) -> list[dict[str, str]]
     return out
 
 
-def _cache_dir(ctx) -> Optional[Path]:
+def _cache_dir(ctx: Any) -> Optional[Path]:
     """解析磁盘缓存目录 (可配, 默认 ~/.tuan/cache/web; 设为空字符串禁用)。"""
     cfg = ctx.config("network.search_cache_dir", "~/.tuan/cache/web")
     if not cfg:
@@ -278,7 +278,7 @@ def _cache_key(query: str, limit: int, engine: str) -> str:
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
-def _cache_load(ctx, query: str, limit: int, engine: str, ttl: float,
+def _cache_load(ctx: Any, query: str, limit: int, engine: str, ttl: float,
                 snippet_max: int) -> Optional[list[dict[str, str]]]:
     cd = _cache_dir(ctx)
     if cd is None or not ctx.config("network.search_cache", True):
@@ -298,7 +298,7 @@ def _cache_load(ctx, query: str, limit: int, engine: str, ttl: float,
         return None
 
 
-def _cache_store(ctx, query: str, limit: int, engine: str,
+def _cache_store(ctx: Any, query: str, limit: int, engine: str,
                  results: list[dict[str, str]]) -> None:
     cd = _cache_dir(ctx)
     if cd is None or not results or not ctx.config("network.search_cache", True):
@@ -318,8 +318,8 @@ def _cache_store(ctx, query: str, limit: int, engine: str,
             pass
 
 
-def _collect_pages(ctx, query: str, engine: str, base: str, limit: int,
-                   timeout: float, snippet_max: int, parse_fn, per_page: int,
+def _collect_pages(ctx: Any, query: str, engine: str, base: str, limit: int,
+                   timeout: float, snippet_max: int, parse_fn: Any, per_page: int,
                    page_param: str, step: int) -> "list[dict[str, str]] | str":
     """分页抓取单个搜索引擎的结果并按 URL 去重, 直到凑够 ``limit`` 条或触发页数上限。
 
@@ -354,7 +354,7 @@ def _collect_pages(ctx, query: str, engine: str, base: str, limit: int,
     return results[:limit]
 
 
-def _engine_duckduckgo(ctx, query: str, limit: int, timeout: float,
+def _engine_duckduckgo(ctx: Any, query: str, limit: int, timeout: float,
                        snippet_max: int) -> "list[dict[str, str]] | str":
     ttl = float(ctx.config("network.search_cache_ttl", 21600))
     cached = _cache_load(ctx, query, limit, "duckduckgo", ttl, snippet_max)
@@ -368,7 +368,7 @@ def _engine_duckduckgo(ctx, query: str, limit: int, timeout: float,
     return out
 
 
-def _engine_bing(ctx, query: str, limit: int, timeout: float,
+def _engine_bing(ctx: Any, query: str, limit: int, timeout: float,
                  snippet_max: int) -> "list[dict[str, str]] | str":
     ttl = float(ctx.config("network.search_cache_ttl", 21600))
     cached = _cache_load(ctx, query, limit, "bing", ttl, snippet_max)
@@ -390,7 +390,7 @@ _ENGINE_FNS = {
 _DEFAULT_ENGINES = ["duckduckgo", "bing"]
 
 
-def _search_pages(ctx, query: str, limit: int, timeout: float,
+def _search_pages(ctx: Any, query: str, limit: int, timeout: float,
                   snippet_max: int) -> "list[dict[str, str]] | str":
     """按 ``network.search_engines`` 顺序尝试各引擎, 主引擎失败自动切换下一个。
 

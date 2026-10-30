@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ._ui_singleton import ui
 
 
-def _cmd_export(agent, arg: str) -> None:
+def _cmd_export(agent: Any, arg: str) -> None:
     """/export [filename] — 导出会话为 Markdown 文件。"""
     import os
     from datetime import datetime
@@ -54,7 +56,7 @@ def _cmd_export(agent, arg: str) -> None:
         ui.error(f"导出失败: {exc}")
 
 
-def _cmd_import(agent, arg: str) -> None:
+def _cmd_import(agent: Any, arg: str) -> None:
     """/import <file> — 导入 Markdown 对话。"""
     import os
 

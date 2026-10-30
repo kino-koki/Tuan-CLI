@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import importlib
+from typing import Any
 
 _TUI_EXPORTS = {
     # 主力: 统一 TUI (已迁移至 tuan_cli/tui/ 包)
@@ -36,7 +37,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     entry = _TUI_EXPORTS.get(name)
     if entry is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Literal, Optional
 
 from . import _http
 
@@ -89,11 +89,11 @@ class _Choice:
         self.index = d.get("index", 0)
         self.finish_reason = d.get("finish_reason")
         self.logprobs = d.get("logprobs")
+        self.delta: Optional[_Message] = None
+        self.message: Optional[_Message] = None
         if "delta" in d:
             self.delta = _Message(d.get("delta"))
-            self.message = None
         else:
-            self.delta = None
             self.message = _Message(d.get("message"))
 
 
@@ -272,6 +272,6 @@ class OpenAI:
     def __enter__(self) -> "OpenAI":
         return self
 
-    def __exit__(self, *exc: Any) -> bool:
+    def __exit__(self, *exc: Any) -> Literal[False]:
         self.close()
         return False

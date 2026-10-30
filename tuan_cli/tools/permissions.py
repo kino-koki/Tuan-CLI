@@ -41,7 +41,7 @@ class PermissionDecision:
     explicit: bool = False  # True = 用户规则表显式 allow (可豁免危险工具确认)
 
 
-def _nested_get(args: dict, dotted: str):
+def _nested_get(args: dict, dotted: str) -> Any:
     """按点号路径从嵌套 dict 取值 (如 config.model); 取不到返回 None。"""
     cur = args
     for part in str(dotted).split("."):
@@ -89,7 +89,17 @@ class PermissionPolicy:
             return PermissionDecision("allow", f"YOLO 自动批准 (加固项: {reason})")
         return PermissionDecision("confirm", reason)
 
-    def decide(self, tool: Any, args: dict[str, Any], *, yolo: bool = False) -> PermissionDecision:
+    def decide(
+        self, tool: Any, args: dict[str, Any], *, yolo: bool = False,
+        auto_classifier: Any = None,
+    ) -> PermissionDecision:
+        """统一工具权限决策。
+
+        - ``yolo``: YOLO 模式, 危险工具自动批准 (硬红线仍拒绝);
+        - ``auto_classifier``: AutoMode 分类器 (core.auto_mode.AutoModeClassifier)。
+          传入时按风险分级决定 allow/confirm —— 安全操作自动批准,
+          敏感/危险操作仍需确认 (对标 Claude Code Auto Mode)。
+        """
         name = tool.name
         if name in {"web_fetch", "mcp_call"} and self.network_allow:
             url = args.get("url", "")
@@ -131,6 +141,23 @@ class PermissionPolicy:
             return PermissionDecision("confirm", f"权限规则 (permissions.rules) 要求确认 {name}")
         if rule_action == "allow":
             return PermissionDecision("allow", f"权限规则 (permissions.rules) 允许执行 {name}", explicit=True)
+
+        # Auto Mode (对标 Claude Code): 分类器按风险分级决定 allow/confirm。
+        # 硬红线仍由 _hardening_confirm 在下游拦截 (rm -rf /、DROP TABLE 等),
+        # 分类器的 auto_approve 不会放行这些; needs_confirm=True 时仍需人工确认。
+        if auto_classifier is not None:
+            try:
+                assessment = auto_classifier.assess(name, args)
+                if getattr(assessment, "needs_confirm", False):
+                    return PermissionDecision(
+                        "confirm",
+                        f"Auto 模式分类器要求确认: {assessment.reason}")
+                if getattr(assessment, "auto_approve", False):
+                    return PermissionDecision(
+                        "allow",
+                        f"Auto 模式自动批准: {assessment.reason}")
+            except Exception:  # noqa: BLE001 - 分类器异常时回退常规决策 (fail-safe)
+                pass
 
         if not getattr(tool, "dangerous", False):
             return PermissionDecision("allow", "只读或非危险工具")

@@ -55,8 +55,13 @@ def _pool(tmp_path, tuan_home, model, max_workers: int):
 
 
 def test_subagents_run_truly_in_parallel(tmp_path, tuan_home):
-    """3 个各 sleep 0.4s 的子任务, max_workers=3 → 墙钟应明显 < 串行 1.2s。"""
-    pool = _pool(tmp_path, tuan_home, SlowEchoModel(delay=0.4), max_workers=3)
+    """3 个各 sleep 1.2s 的子任务, max_workers=3 → 墙钟应明显 < 串行 3.6s。
+
+    注: 子 Agent 构建是 CPU 密集段, 受 GIL 限制无法真并行 (约 0.6s/任务);
+    但 sleep 段 (time.sleep 释放 GIL) 可真并行。故用较大 delay 让睡眠主导,
+    并行墙钟 ≈ 构建串行 + 单任务 sleep ≈ 1.8s, 仍远小于串行总和 3.6s。
+    """
+    pool = _pool(tmp_path, tuan_home, SlowEchoModel(delay=1.2), max_workers=3)
     tasks = [SubTask(task_id=f"P{i}", prompt=f"调研{i}") for i in range(3)]
     start = time.time()
     results = pool.dispatch(tasks, stream=False)
@@ -64,8 +69,8 @@ def test_subagents_run_truly_in_parallel(tmp_path, tuan_home):
 
     assert len(results) == 3
     assert all(r.ok for r in results)
-    # 串行应约 1.2s; 真并行应接近单任务 0.4s。给足余量仍远小于串行总和。
-    assert elapsed < 1.0, f"3×0.4s 真并行墙钟应 <1.0s, 实际 {elapsed:.2f}s (疑似串行)"
+    # 串行应约 3.6s; 真并行接近 构建串行 + 单任务 sleep (≈1.8s)。
+    assert elapsed < 2.5, f"3×1.2s 真并行墙钟应 <2.5s, 实际 {elapsed:.2f}s (疑似串行)"
 
 
 def test_subagent_results_structured_and_sourced(tmp_path, tuan_home):

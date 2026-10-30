@@ -74,7 +74,7 @@ def _windows_reserved_device(path: str) -> Optional[str]:
     return stem if stem in _WIN_RESERVED_DEVICES else None
 
 
-def _iter_text_values(obj: Any):
+def _iter_text_values(obj: Any) -> Any:
     """递归收集对象中的字符串值 (命令/脚本等可执行文本字段)。
 
     也处理 JSON 字符串: 参数以字符串形式传入时 (如 '{"command": "rm -rf /"}'),
@@ -275,7 +275,7 @@ class SecurityGate:
     _SYSTEM_PATH_RE = None  # Lazy init to avoid import at module level
 
     @classmethod
-    def _get_system_path_re(cls):
+    def _get_system_path_re(cls) -> Any:
         if cls._SYSTEM_PATH_RE is None:
             import re as _re
             # 路径段级匹配 (不依赖 ^ 开头锚定): 相对形态 ./.ssh/config / sub/.ssh/x

@@ -17,7 +17,7 @@ from ..paths import default_workspace
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..config import home_dir
 
@@ -169,7 +169,7 @@ def run_onboarding(
     return 0
 
 
-def cmd_onboarding(args) -> int:
+def cmd_onboarding(args: Any) -> int:
     """`tuan onboarding` CLI 入口。"""
     skip = bool(getattr(args, "skip", False))
     workspace = getattr(args, "workspace", None) or default_workspace()

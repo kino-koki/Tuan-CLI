@@ -103,15 +103,15 @@ created_at: {time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(self.created_at))
 class PatternCluster:
     """模式聚类 —— 把相关经验聚合为一个潜在技能。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.tool_patterns: Dict[str, List[Experience]] = defaultdict(list)
         self.sequence_patterns: Dict[str, List[str]] = defaultdict(list)
 
-    def add(self, exp: Experience):
+    def add(self, exp: Experience) -> None:
         """添加一个经验到聚类。"""
         self.tool_patterns[exp.tool].append(exp)
 
-    def add_sequence(self, tools: List[str]):
+    def add_sequence(self, tools: List[str]) -> None:
         """添加一个工具调用序列模式。"""
         key = " → ".join(tools)
         self.sequence_patterns[key].extend(tools)
@@ -152,12 +152,12 @@ class AutoDistiller:
 
     def __init__(
         self,
-        session_store=None,
-        skill_manager=None,
-        memory_store=None,
-        config=None,
+        session_store: Any = None,
+        skill_manager: Any = None,
+        memory_store: Any = None,
+        config: Any = None,
         home: str = "",
-    ):
+    ) -> None:
         self._store = session_store
         self._skill_manager = skill_manager
         self._memory = memory_store
@@ -185,7 +185,7 @@ class AutoDistiller:
     def _skills_dir(self) -> str:
         return os.path.join(self._home, "skills", "distilled")
 
-    def _load_distilled_skills(self):
+    def _load_distilled_skills(self) -> None:
         """从磁盘加载已蒸馏的技能。"""
         if not self._home:
             return
@@ -203,7 +203,7 @@ class AutoDistiller:
             except Exception:  # 损坏条目跳过, 不阻断加载
                 continue
 
-    def _save_distilled_skill(self, skill: DistilledSkill):
+    def _save_distilled_skill(self, skill: DistilledSkill) -> None:
         """保存蒸馏技能到磁盘: JSON 元数据 + SKILL.md。"""
         if not self._home:
             return
@@ -217,7 +217,7 @@ class AutoDistiller:
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(skill.to_skill_md())
 
-    def _remove_skill_files(self, name: str):
+    def _remove_skill_files(self, name: str) -> None:
         """删除技能相关文件 (json + SKILL.md 目录), 失败静默。"""
         if not self._home:
             return
@@ -312,7 +312,7 @@ class AutoDistiller:
                 merged[key] = e
         return list(merged.values())
 
-    def _extract_sequences(self, experiences: List[Experience]):
+    def _extract_sequences(self, experiences: List[Experience]) -> None:
         """从经验中提取工具调用序列模式。"""
         tool_calls = [e for e in experiences if e.kind in ("repeated_ok", "failure")]
         for i in range(len(tool_calls) - 1):
@@ -360,7 +360,7 @@ class AutoDistiller:
             )
         return None
 
-    def _apply_decay(self):
+    def _apply_decay(self) -> None:
         """衰减: 长期不用的技能降低置信度 (只影响非活跃期)。"""
         now = time.time()
         for skill in self._skills.values():
@@ -371,7 +371,7 @@ class AutoDistiller:
                 if skill.confidence < 0.1:
                     skill.active = False
 
-    def _enforce_limit(self):
+    def _enforce_limit(self) -> None:
         """超过最大技能数时, 移除最低置信度的。"""
         if len(self._skills) <= self._max_skills:
             return
@@ -381,7 +381,7 @@ class AutoDistiller:
             del self._skills[skill.name]
             self._remove_skill_files(skill.name)
 
-    def _sync_to_skill_manager(self):
+    def _sync_to_skill_manager(self) -> None:
         """把激活的蒸馏技能注册进 SkillManager 技能库 (若注入)。"""
         mgr = self._skill_manager
         if mgr is None:
@@ -413,7 +413,7 @@ class AutoDistiller:
 
     # ---------------------------------------------------------- 反馈闭环
 
-    def feedback(self, skill_name: str, success: bool):
+    def feedback(self, skill_name: str, success: bool) -> None:
         """技能使用效果反馈。
 
         成功 → success_count++, confidence += 0.02

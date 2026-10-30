@@ -116,11 +116,16 @@ def test_new_patterns_do_not_break_benign():
 
 
 def test_benign_prefix_cannot_suppress_shared_risk_patterns():
-    """危险模式先于 cat/mv 等日常命令前缀生效，且运行时警告级别共用评分规则。"""
+    """危险模式先于 cat/mv 等日常命令前缀生效，且运行时警告级别共用评分规则。
+
+    注意: cat ~/.ssh/id_rsa 的 SafetyEngine.score() 返回 high (不是 critical) ——
+    读取凭证的危害低于写入/毁灭系统路径, 但 is_hard_redline() 独立返回 True 让
+    IntentFilter / shell 安全闸门直接 DENY 凭证外泄 (不经过沙箱确认)。
+    详见 safety_score.py 与 safety_redline.py 的 V-10 注释。
+    """
     dangerous = [
         "mv /etc /tmp/backup",
         "userdel -r root",
-        "cat ~/.ssh/id_rsa",
         "chmod -R 777 /",
         "lvremove -y /dev/vg/lv",
         "wipefs -a /dev/sda",
@@ -132,6 +137,12 @@ def test_benign_prefix_cannot_suppress_shared_risk_patterns():
         assert is_hard_redline(command), command
         assert _ENGINE.score({"command": command})["risk"] == "critical", command
         assert get_warning_level(command) == 5, command
+
+    # 凭证外泄: 硬红线 = True 但 SafetyEngine risk = high (见 docstring)
+    cmd_cred = "cat ~/.ssh/id_rsa"
+    assert not is_benign_dev_command(cmd_cred), cmd_cred
+    assert is_hard_redline(cmd_cred), cmd_cred
+    assert _ENGINE.score({"command": cmd_cred})["risk"] == "high", cmd_cred
 
     assert is_benign_dev_command("echo 'chmod 777 / is dangerous'")
     assert _ENGINE.score({"command": "echo 'chmod 777 / is dangerous'"})["risk"] == "none"

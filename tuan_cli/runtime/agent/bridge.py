@@ -64,7 +64,7 @@ class KernelAgentLoopAdapter:
 
     async def run_agent_loop(
         self,
-        provider,
+        provider: Any,
         system_prompt: str,
         tools: List,
         history: List[Message],
@@ -86,7 +86,7 @@ class KernelAgentLoopAdapter:
 
 
 async def run_agent_loop(
-    provider,
+    provider: Any,
     system_prompt: str,
     tools: List,
     history: List[Message],

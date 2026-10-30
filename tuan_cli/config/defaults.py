@@ -302,6 +302,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # 经济模式: 强模型规划 + 弱模型执行, 大幅降低 token 成本
         "planner": {"provider": ""},  # 留空 = 复用主 model
         "worker":  {"provider": ""},  # 留空 = 复用主 model
+        # 显式回退模型列表 (对标 Claude Code fallbackModel, 最多 3 个, 按序回退):
+        #   - 主模型不可用时优先按此列表依次尝试, 全部失败才退回 MODEL_PRESETS 自动选备;
+        #   - 每项为 provider/model 名或 dict (支持 base_url/api_key_env/temperature 覆盖);
+        #   - 留空 = 自动选择 (历史行为)。
+        "fallbacks": [],
     },
     "agent": {
         "max_iterations": 30,
@@ -335,10 +340,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # 推理投入级别 (Claude Code /effort 对应物): low=快省, medium=均衡, high=深究
         # 影响自主循环的迭代上限与自测严格度, 以及一次性任务的思考深度。
         "effort": "high",
+        # 推理投入上限 (对标 Claude Code maxEffortLevel): 任何渠道 (CLI --effort /
+        # /effort 命令 / 配置) 设置的 effort 不得高于此档, 超限自动截断。
+        # 可选值: low/medium/high/xhigh/max; "max" = 不设限。
+        "max_effort_level": "max",
         "effort_profiles": {
             "low":    {"loop_max_iter": 6,  "auto_test": False, "temperature": 0.8},
             "medium": {"loop_max_iter": 12, "auto_test": True,  "temperature": 0.6},
             "high":   {"loop_max_iter": 20, "auto_test": True,  "temperature": 0.4},
+            "xhigh":  {"loop_max_iter": 30, "auto_test": True,  "temperature": 0.2},
+            "max":    {"loop_max_iter": 40, "auto_test": True,  "temperature": 0.1},
         },
         # 并发子 Agent (青小团的"多双手"): 把独立子任务派给隔离实例并发执行
         "subagent_max_workers": 5,        # 子 Agent 并发上限 (1~16)

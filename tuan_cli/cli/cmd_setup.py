@@ -25,17 +25,17 @@ from ._ui_singleton import console
 
 
 # ---- app 链惰性加载: 仅真正执行 setup/bench 时才构建内核 ----
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def create_agent(*a, **k):
+def create_agent(*a: Any, **k: Any) -> Any:
     from ..app import create_agent as _f
     return _f(*a, **k)
 
 
-def seed_builtin_skills(*a, **k):
+def seed_builtin_skills(*a: Any, **k: Any) -> Any:
     from ..app import seed_builtin_skills as _f
     return _f(*a, **k)
 
@@ -45,7 +45,7 @@ def seed_builtin_skills(*a, **k):
 
 # ===================================================================== cmd_setup
 
-def _ask_sandbox_setup(config) -> None:
+def _ask_sandbox_setup(config: Any) -> None:
     """安全加固选项: 是否启用分层沙箱隔离 (高风险命令自动路由到隔离执行域)。
 
     三档:
@@ -91,7 +91,7 @@ def _ask_sandbox_setup(config) -> None:
             console.print("     ✓ 沙箱运行时就绪; 随时可用 `tuan safe vm-status` 查看状态。")
 
 
-def cmd_setup(args) -> int:
+def cmd_setup(args: Any) -> int:
     """初始化向导。"""
     # C-1.6 跳过机制: `tuan setup --skip` 或 TUAN_SKIP_SETUP=1 直接写完成标记退出。
     if getattr(args, "skip", False) or os.environ.get("TUAN_SKIP_SETUP") == "1":
@@ -131,7 +131,7 @@ def cmd_setup(args) -> int:
     return 0
 
 
-def _setup_quick(config) -> int:
+def _setup_quick(config: Any) -> int:
     """快速设置: 供应商 + 模型 + API Key。"""
     console.print(f"\n{t('setup.quick_title')}")
     picked = _pick_setup_provider()
@@ -191,7 +191,7 @@ _CURATED_PROVIDERS = [
 ]
 
 
-def _wizard_first_run(config) -> int:
+def _wizard_first_run(config: Any) -> int:
     """C-1 首次精简三步向导: Step1 选 Provider -> Step2 填 API Key -> Step3 选模式。
 
     默认推荐模式「协同」(collaboration)。完成后写配置 + onboarding 完成标记。
@@ -279,7 +279,7 @@ def _wizard_first_run(config) -> int:
     return 0
 
 
-def _pick_from_free_tier():
+def _pick_from_free_tier() -> Any:
     """免费层子菜单: 只列"不花钱、不绑卡就能跑通"的供应商 (见 provider_catalog.free_providers)。
 
     这是新用户最快的首次跑通路径 —— 不必先掏卡、先充值。
@@ -305,7 +305,7 @@ def _pick_from_free_tier():
     return provider, model_name, preset.base_url, preset.api_key_env
 
 
-def _pick_setup_provider():
+def _pick_setup_provider() -> Any:
     """setup 向导的供应商选择: 前 12 个内置预设 + 免费层筛选 + 末尾"自定义 (OpenAI 兼容端点)"。
 
     在编号处输入 ``f`` / ``free`` / ``免费`` 可切到**只看免费层**
@@ -382,7 +382,7 @@ def _ask_choice(prompt: str, options: List[str], default: str) -> str:
     return raw if raw in options else default
 
 
-def _setup_full(config) -> int:
+def _setup_full(config: Any) -> int:
     """完整设置: 供应商/模型/API Key + 运行模式/推理投入/温度/输出上限。"""
     console.print(f"\n{t('setup.full_title')}")
     picked = _pick_setup_provider()
@@ -432,7 +432,7 @@ def _setup_full(config) -> int:
     return 0
 
 
-def _setup_blank(config) -> int:
+def _setup_blank(config: Any) -> int:
     """空白设置: 仅创建目录骨架, 不配置模型。"""
     config.ensure_home()
     console.print(f"\n{t('setup.blank_title')}")
@@ -451,7 +451,7 @@ _BENCH_EXCLUDE_TOOLS = (
 )
 
 
-def cmd_bench(args) -> int:
+def cmd_bench(args: Any) -> int:
     """基准测试。"""
     bench_cmd = getattr(args, "bench_cmd", None)
     if bench_cmd == "cache":
@@ -462,7 +462,7 @@ def cmd_bench(args) -> int:
     return 0
 
 
-def _bench_cache(args) -> int:
+def _bench_cache(args: Any) -> int:
     """实测 prompt cache 命中率。"""
     from ..ui.format import Table as FTable
 
@@ -547,7 +547,7 @@ def _bench_cache(args) -> int:
     return 0
 
 
-def _bench_latency(args) -> int:
+def _bench_latency(args: Any) -> int:
     """实测模型响应延迟与吞吐。"""
     rounds = max(1, getattr(args, "rounds", 5))
     task = getattr(args, "task", "ping")
@@ -615,7 +615,7 @@ def _bench_latency(args) -> int:
 
 # ===================================================================== cmd_open
 
-def cmd_open(args) -> int:
+def cmd_open(args: Any) -> int:
     """打开文件并定位到行: tuan open <file>[:<line>]。"""
     target = getattr(args, "target", "")
     if not target:

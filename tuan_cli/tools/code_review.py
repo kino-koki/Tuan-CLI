@@ -15,7 +15,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from .base import Tool, ToolContext, string_prop
 
@@ -307,7 +307,7 @@ class CodeReviewPlugin(_Plugin):
     name = "tools.code_review"
     requires = ["tool_registry"]
 
-    def activate(self, kernel) -> None:
+    def activate(self, kernel: Any) -> None:
         registry = kernel.require("tool_registry")
         registry.register(Tool(
             name="code_review",

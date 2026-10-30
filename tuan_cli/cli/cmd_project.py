@@ -13,12 +13,13 @@ from __future__ import annotations
 from ..paths import default_workspace
 
 import os
+from typing import Any
 
 from ..config import Config
 from ..ui.plain_console import console
 
 
-def cmd_project(args) -> int:
+def cmd_project(args: Any) -> int:
     """Project 层: 项目级记忆/配置/工作区隔离。"""
     from ..core.project_layer import ProjectLayer
 

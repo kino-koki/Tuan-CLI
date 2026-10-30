@@ -126,7 +126,7 @@ class BackgroundJob:
 class BackgroundRunner:
     """管理一组后台自主任务 (青小团的"手"在后台同时干活)。"""
 
-    def __init__(self, kernel: Kernel, config, workspace: str) -> None:
+    def __init__(self, kernel: Kernel, config: Any, workspace: str) -> None:
         self.kernel = kernel
         self.config = config
         self.workspace = workspace
@@ -148,6 +148,7 @@ class BackgroundRunner:
         exclude_tools: tuple = (),
         system_extra: str = "",
         skills: str = "",
+        chain_depth: int = 0,
     ) -> BackgroundJob:
         """提交一个后台任务, 立即返回 job 句柄 (不阻塞)。
 
@@ -155,6 +156,7 @@ class BackgroundRunner:
         子代理类型的能力边界与角色指令 (默认空, 向后兼容)。
         skills: 逗号分隔的技能名列表, 后台 Agent 启动时预加载
         (与 subagent 工具同步路径同语义; 默认空 = 不预加载)。
+        chain_depth: subagent 递归链深 (子代理的后台模式透传, 默认 0 = 主会话)。
         """
         if not self._enabled:
             raise RuntimeError("后台模式已在配置中关闭 (background.enabled=false)")
@@ -178,6 +180,8 @@ class BackgroundRunner:
             exclude_tools=exclude_tools,
             system_extra=system_extra,
         )
+        # subagent 递归链深: 后台子代理自身记录链深 (孙代理据此继续 +1)
+        agent.ctx.chain_depth = chain_depth
         # 让 Agent 的进度写入后台会话流 (而非主会话)
         agent.session = store
         # 技能预加载 (subagent 后台模式同语义): 失败只记日志, 不阻断任务。
@@ -267,6 +271,7 @@ class BackgroundRunner:
         system_extra: str = "",
         skills: str = "",
         run_in_background: bool = False,
+        chain_depth: int = 0,
     ) -> Optional[BackgroundJob]:
         """续作一个已结束的后台任务: 复用同一会话流/上下文, 追加指令继续跑。
 
@@ -289,6 +294,8 @@ class BackgroundRunner:
             exclude_tools=exclude_tools,
             system_extra=system_extra,
         )
+        # subagent 递归链深: 续作的后台子代理保持原链深 (孙代理据此继续 +1)
+        agent.ctx.chain_depth = chain_depth
         agent.session = job.store
         # 系统提示手动前置 (Agent.run 只在 messages 为空时自动追加; 预置历史后须手动)
         agent.messages.append({"role": "system", "content": agent._system_prompt})

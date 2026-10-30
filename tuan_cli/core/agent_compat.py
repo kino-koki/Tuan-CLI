@@ -30,14 +30,14 @@ class CompatMixin:
     _resilience: Any
     _obs: Any
 
-    def _get_fallback(self, component: str, attr: str, fallback_key: str):
+    def _get_fallback(self, component: str, attr: str, fallback_key: str) -> Any:
         """从子组件读取属性, 组件不存在时回退到 __dict__ fallback。"""
         comp = self.__dict__.get(component)
         if comp is not None:
             return getattr(comp, attr)
         return self.__dict__.get(fallback_key)
 
-    def _set_fallback(self, component: str, attr: str, fallback_key: str, value):
+    def _set_fallback(self, component: str, attr: str, fallback_key: str, value: Any) -> None:
         """向子组件设置属性, 组件不存在时写入 __dict__ fallback。"""
         comp = self.__dict__.get(component)
         if comp is not None:
@@ -46,59 +46,59 @@ class CompatMixin:
             self.__dict__[fallback_key] = value
 
     @property
-    def _last_route(self):
+    def _last_route(self) -> Any:
         return self._router.last_route
 
     @_last_route.setter
-    def _last_route(self, v):
+    def _last_route(self, v: Any) -> None:
         self._router.last_route = v
 
     @property
-    def _model_switcher(self):
+    def _model_switcher(self) -> Any:
         return self._router._model_switcher
 
     @_model_switcher.setter
-    def _model_switcher(self, v):
+    def _model_switcher(self, v: Any) -> None:
         self._router._model_switcher = v
 
     @property
-    def _circuit_breaker(self):
+    def _circuit_breaker(self) -> Any:
         return self._get_fallback('_resilience', '_circuit_breaker', '_cb_fallback')
 
     @_circuit_breaker.setter
-    def _circuit_breaker(self, v):
+    def _circuit_breaker(self, v: Any) -> None:
         self._set_fallback('_resilience', '_circuit_breaker', '_cb_fallback', v)
 
     @property
-    def _rate_limiter(self):
+    def _rate_limiter(self) -> Any:
         return self._get_fallback('_resilience', '_rate_limiter', '_rl_fallback')
 
     @_rate_limiter.setter
-    def _rate_limiter(self, v):
+    def _rate_limiter(self, v: Any) -> None:
         self._set_fallback('_resilience', '_rate_limiter', '_rl_fallback', v)
 
     @property
-    def _telemetry(self):
+    def _telemetry(self) -> Any:
         return self._get_fallback('_obs', 'telemetry', '_tel_fallback')
 
     @_telemetry.setter
-    def _telemetry(self, v):
+    def _telemetry(self, v: Any) -> None:
         self._set_fallback('_obs', '_telemetry', '_tel_fallback', v)
 
     @property
-    def _telemetry_trace(self):
+    def _telemetry_trace(self) -> Any:
         return self._get_fallback('_obs', 'trace_id', '_trace_fallback')
 
     @_telemetry_trace.setter
-    def _telemetry_trace(self, v):
+    def _telemetry_trace(self, v: Any) -> None:
         self._set_fallback('_obs', 'trace_id', '_trace_fallback', v)
 
     @property
-    def retry_policy(self):
+    def retry_policy(self) -> Any:
         return self._get_fallback('_resilience', 'retry_policy', 'retry_policy')
 
     @retry_policy.setter
-    def retry_policy(self, v):
+    def retry_policy(self, v: Any) -> None:
         self._set_fallback('_resilience', 'retry_policy', 'retry_policy', v)
 
     @property
@@ -106,7 +106,7 @@ class CompatMixin:
         return cast(int, self._resilience.max_retries)
 
     @max_retries.setter
-    def max_retries(self, v) -> None:
+    def max_retries(self, v: Any) -> None:
         self._resilience.max_retries = int(v)
 
     @property
@@ -114,7 +114,7 @@ class CompatMixin:
         return cast(float, self._resilience.retry_backoff)
 
     @retry_backoff.setter
-    def retry_backoff(self, v) -> None:
+    def retry_backoff(self, v: Any) -> None:
         self._resilience.retry_backoff = float(v)
 
     @property
@@ -122,7 +122,7 @@ class CompatMixin:
         return cast(float, self._resilience.retry_jitter)
 
     @retry_jitter.setter
-    def retry_jitter(self, v) -> None:
+    def retry_jitter(self, v: Any) -> None:
         self._resilience.retry_jitter = float(v)
 
     @property
@@ -130,11 +130,11 @@ class CompatMixin:
         return cast(set, self._resilience.retry_on)
 
     @retry_on.setter
-    def retry_on(self, v) -> None:
+    def retry_on(self, v: Any) -> None:
         self._resilience.retry_on = set(v)
 
     @staticmethod
-    def _classify(exc: Exception):
+    def _classify(exc: Exception) -> Any:
         return _classify_error(exc)
 
     @staticmethod

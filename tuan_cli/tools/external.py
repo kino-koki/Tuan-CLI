@@ -56,22 +56,22 @@ def _call(engine: str, method: str, params: dict, timeout: int = 30) -> Any:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
-def _diff(ctx, old: str, new: str) -> str:
+def _diff(ctx: Any, old: str, new: str) -> str:
     res = _call("diff", "diff", {"old": old, "new": new})
     if isinstance(res, dict) and "diff" in res:
         return cast(str, res["diff"])
     return _fmt(res)
 
 
-def _patch(ctx, patch: str, content: str) -> str:
+def _patch(ctx: Any, patch: str, content: str) -> str:
     return _fmt(_call("diff", "patch", {"source": content, "patch": patch}))
 
 
-def _merge3(ctx, base: str, a: str, b: str) -> str:
+def _merge3(ctx: Any, base: str, a: str, b: str) -> str:
     return _fmt(_call("diff", "merge3", {"base": base, "ours": a, "theirs": b}))
 
 
-def _crypto_seal(ctx, plaintext: str, password: str, salt: str = "") -> str:
+def _crypto_seal(ctx: Any, plaintext: str, password: str, salt: str = "") -> str:
     res = _call("crypto", "seal", {"passphrase": password, "plaintext": plaintext})
     if isinstance(res, dict) and "ciphertext_b64" in res:
         blob = json.dumps({
@@ -85,7 +85,7 @@ def _crypto_seal(ctx, plaintext: str, password: str, salt: str = "") -> str:
     return _fmt(res)
 
 
-def _crypto_unseal(ctx, blob: str, salt: str, password: str) -> str:
+def _crypto_unseal(ctx: Any, blob: str, salt: str, password: str) -> str:
     try:
         data = json.loads(blob) if isinstance(blob, str) else blob
     except json.JSONDecodeError:
@@ -102,18 +102,18 @@ def _crypto_unseal(ctx, blob: str, salt: str, password: str) -> str:
     return _fmt(res)
 
 
-def _safety_score(ctx, command: str) -> str:
+def _safety_score(ctx: Any, command: str) -> str:
     return _fmt(_call("safety", "score", {"command": command}))
 
 
-def _ansi_strip(ctx, text: str) -> str:
+def _ansi_strip(ctx: Any, text: str) -> str:
     res = _call("ansi", "strip", {"text": text})
     if isinstance(res, dict) and "text" in res:
         return cast(str, res["text"])
     return _fmt(res)
 
 
-def _index_build(ctx, root: str) -> str:
+def _index_build(ctx: Any, root: str) -> str:
     paths = []
     if os.path.isdir(root):
         for dirpath, _dirnames, filenames in os.walk(root):
@@ -132,14 +132,14 @@ def _index_build(ctx, root: str) -> str:
     return _fmt(res)
 
 
-def _index_query(ctx, symbol: str) -> str:
+def _index_query(ctx: Any, symbol: str) -> str:
     ws = ctx.workspace or ""
     data = _INDEX_CACHE.get(ws, [])
     res = _call("index", "search", {"query": symbol, "index": data})
     return _fmt(res)
 
 
-def _rules_load(ctx, rules_yaml: str = "", rules_path: str = "") -> str:
+def _rules_load(ctx: Any, rules_yaml: str = "", rules_path: str = "") -> str:
     params = {}
     if rules_yaml:
         params["rules_yaml"] = rules_yaml
@@ -150,29 +150,29 @@ def _rules_load(ctx, rules_yaml: str = "", rules_path: str = "") -> str:
     return _fmt(_call("rules", "load", params))
 
 
-def _rules_check(ctx, path: str, content: str) -> str:
+def _rules_check(ctx: Any, path: str, content: str) -> str:
     return _fmt(_call("rules", "check", {"path": path, "content": content}))
 
 
 
 
-def _json_pointer(ctx, doc: Any, pointer: str) -> str:
+def _json_pointer(ctx: Any, doc: Any, pointer: str) -> str:
     return _fmt(_call("json", "pointer_get", {"doc": _maybe_json(doc), "pointer": pointer}))
 
 
-def _json_diff(ctx, base: Any, overlay: Any) -> str:
+def _json_diff(ctx: Any, base: Any, overlay: Any) -> str:
     return _fmt(_call("json", "diff", {"base": _maybe_json(base), "overlay": _maybe_json(overlay)}))
 
 
-def _json_merge(ctx, base: Any, overlay: Any) -> str:
+def _json_merge(ctx: Any, base: Any, overlay: Any) -> str:
     return _fmt(_call("json", "merge", {"base": _maybe_json(base), "overlay": _maybe_json(overlay)}))
 
 
-def _search(ctx, root: str, pattern: str, max_results: int = 100) -> str:
+def _search(ctx: Any, root: str, pattern: str, max_results: int = 100) -> str:
     return _fmt(_call("search", "search", {"root": root, "pattern": pattern, "max_results": max_results}))
 
 
-def _notify(ctx, title: str, message: str) -> str:
+def _notify(ctx: Any, title: str, message: str) -> str:
     return _fmt(_call("notify", "notify", {"title": title, "message": message}))
 
 
@@ -210,7 +210,7 @@ class ExternalToolsPlugin(Plugin):
     provides = ["safety_check"]
     requires = ["tool_registry"]
 
-    def activate(self, kernel) -> None:
+    def activate(self, kernel: Any) -> None:
         registry = kernel.require("tool_registry")
         kernel.provide("safety_check", _SafetyService(), owner=self.name)
 

@@ -36,23 +36,23 @@ from .cmd_slash import list_slash_commands, slash_command_meta, slash_command_ti
 
 
 # ---- app 链惰性加载: 构建内核 (~1s) 只在真正进入交互/需要内核时才付出 ----
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
-def create_agent(*a, **k):
+def create_agent(*a: Any, **k: Any) -> Any:
     from ..app import create_agent as _f
     return _f(*a, **k)
 
 
-def seed_builtin_skills(*a, **k):
+def seed_builtin_skills(*a: Any, **k: Any) -> Any:
     from ..app import seed_builtin_skills as _f
     return _f(*a, **k)
 
 
-def _run_json_schema(agent, task_text: str, json_schema_spec: str,
-                     args, session_id: str) -> int:
+def _run_json_schema(agent: Any, task_text: str, json_schema_spec: str,
+                     args: Any, session_id: str) -> int:
     """--json-schema 结构化输出: 注入指令 -> 跑任务 -> 校验 -> 失败修复重试。
 
     返回进程退出码 (0=校验通过; 1=任务/校验失败)。
@@ -100,7 +100,7 @@ def _run_json_schema(agent, task_text: str, json_schema_spec: str,
 
 # ===================================================================== 会话辅助
 
-def _load_session_into_agent(agent, path: Path) -> str:
+def _load_session_into_agent(agent: Any, path: Path) -> str:
     """把会话文件的消息重建进 agent.messages (补回系统提示)。返回会话文件名。"""
     from ..memory.sessions import SessionStore
     messages = SessionStore.load_messages(path)
@@ -108,7 +108,7 @@ def _load_session_into_agent(agent, path: Path) -> str:
     return path.name
 
 
-def _resume_session(agent, arg: str) -> Optional[str]:
+def _resume_session(agent: Any, arg: str) -> Optional[str]:
     """从历史会话恢复上下文 (--continue/--resume)。"""
     store = agent.session
     if store is None:
@@ -131,7 +131,7 @@ def _resume_session(agent, arg: str) -> Optional[str]:
     return None
 
 
-def _list_sessions(agent) -> None:
+def _list_sessions(agent: Any) -> None:
     """列出最近会话 (编号 + 标题 + 时间), 供 /resume 选择。"""
     import datetime as _dt
     store = agent.session
@@ -164,7 +164,7 @@ def _auto_first_run() -> bool:
 
 # ===================================================================== cmd_chat
 
-def _prepare_agent(args, workspace: str, session_id: str, on_progress=None):
+def _prepare_agent(args: Any, workspace: str, session_id: str, on_progress: Any = None) -> Any:
     """构建内核 + Agent + 会话钩子 + 内置技能 (TUI / REPL / --print 共用)。
 
     返回 (kernel, config, agent, mode, effort); 会话恢复失败时返回 None。
@@ -182,7 +182,10 @@ def _prepare_agent(args, workspace: str, session_id: str, on_progress=None):
         pass
     if on_progress:
         on_progress(30, "构建内核…")
-    kernel = build_kernel()
+    kernel = build_kernel(
+        bare=bool(getattr(args, "bare", False)),
+        safe_mode=bool(getattr(args, "safe_mode", False)),
+    )
     config = kernel.require("config")
     ensure_language(config)
     # 显式 --mode 优先, 否则 fallback 到 --permission-mode 映射
@@ -190,7 +193,11 @@ def _prepare_agent(args, workspace: str, session_id: str, on_progress=None):
     mode = _apply_mode_override(kernel, eff_mode,
                                 yes=getattr(args, "yolo", False))
     if getattr(args, "effort", None):
-        config.set_user("agent.effort", args.effort)
+        clamped = clamp_effort(config, args.effort)
+        if clamped:
+            config.set_user("agent.effort", clamped)
+    # --fallback-model: 接线到 model.fallbacks (对标 Claude Code fallbackModel)
+    _apply_fallback_model(config, getattr(args, "fallback_model", None))
     if on_progress:
         on_progress(55, "创建 Agent…")
     agent = create_agent(kernel, workspace, user_mode=True)
@@ -211,6 +218,9 @@ def _prepare_agent(args, workspace: str, session_id: str, on_progress=None):
     if plan_requested:
         agent.plan_mode = True
         agent.ctx.plan_mode = True
+    # Auto 模式 (对标 Claude Code): 内部标记, 由 ToolExecutor 经分类器按风险分级决策。
+    if mode == "auto":
+        agent.ctx.auto_mode = True
     _setup_security_alerts()
     _run_session_hooks(agent, "SessionStart", {
         "workspace": workspace,
@@ -230,7 +240,7 @@ def _prepare_agent(args, workspace: str, session_id: str, on_progress=None):
     return kernel, config, agent, mode, config.get("agent.effort", "high")
 
 
-def cmd_chat(args) -> int:
+def cmd_chat(args: Any) -> int:
     """交互式对话 (默认命令)。"""
     _auto_first_run()
     workspace = getattr(args, "workspace", None) or default_workspace()
@@ -385,7 +395,7 @@ def cmd_chat(args) -> int:
                     # 幂等: 信任确认回调与常规就绪路径都可能触发, 只生效一次
                     if getattr(tui, "_tuan_ready_done", False):
                         return
-                    tui._tuan_ready_done = True
+                    setattr(tui, "_tuan_ready_done", True)
                     tui.set_ready(config, agent, workspace, tools=_names,
                                   no_key=not config.api_key(),
                                   no_key_env=_no_key_env(config), mode=mode)
@@ -471,7 +481,7 @@ def cmd_chat(args) -> int:
     return rc
 
 
-def _run_session_hooks(agent, event: str, payload: Optional[Dict[str, Any]]) -> None:
+def _run_session_hooks(agent: Any, event: str, payload: Optional[Dict[str, Any]]) -> None:
     """触发会话级 Hooks (SessionStart/SessionEnd), 异常隔离、不影响主流程。"""
     ctx = getattr(agent, "ctx", None)
     hooks = getattr(ctx, "hooks", None) if ctx is not None else None
@@ -482,7 +492,7 @@ def _run_session_hooks(agent, event: str, payload: Optional[Dict[str, Any]]) -> 
             log.debug("会话钩子 %s 执行失败: %s", event, exc)
 
 
-def _security_alerter(event) -> None:
+def _security_alerter(event: Any) -> None:
     """安全事件 -> 桌面实时告警 (吞异常, 绝不干扰主流程)。"""
     try:
         from ..ext.notify_engine import NotifyEngine
@@ -512,7 +522,7 @@ def _setup_security_alerts() -> None:
         pass
 
 
-def _run_chat_repl(agent, config: Config, workspace: str, mode: str, effort: str,
+def _run_chat_repl(agent: Any, config: Config, workspace: str, mode: str, effort: str,
                    session_id: Optional[str] = None, bare: bool = False) -> int:
     """普通 REPL 对话循环 (cmd_chat 与 session resume 共用)。"""
     ui.banner(config, workspace, f"{config.get('model.provider')}/{config.get('model.model')}",
@@ -554,7 +564,7 @@ def _run_chat_repl(agent, config: Config, workspace: str, mode: str, effort: str
     return 0
 
 
-def _run_turn(agent, user_input: str, config: Config, stream: bool | None = None,
+def _run_turn(agent: Any, user_input: str, config: Config, stream: bool | None = None,
               session_id: Optional[str] = None, bare: bool = False) -> Optional[str]:
     """执行一轮对话 (模型 → 工具 → 观察 → 回答)。
 
@@ -630,7 +640,7 @@ def _run_turn(agent, user_input: str, config: Config, stream: bool | None = None
     return _maybe_auto_handoff(agent, config, _ws, session_id, bare=bare)
 
 
-def _maybe_auto_handoff(agent, config: Config, workspace: str,
+def _maybe_auto_handoff(agent: Any, config: Config, workspace: str,
                         session_id: Optional[str], bare: bool = False) -> Optional[str]:
     """本轮结束后检查是否达到交接阈值; 达阈值则自动交接并打印报告, 返回新 session_id。
 
@@ -664,7 +674,7 @@ def _maybe_auto_handoff(agent, config: Config, workspace: str,
         return None
 
 
-def _parse_args(a):
+def _parse_args(a: Any) -> Any:
     try:
         return json.loads(a)
     except Exception:
@@ -692,7 +702,7 @@ from .cmd_model import (  # noqa: F401
 
 # ===================================================================== cmd_doctor
 
-def cmd_doctor(args) -> int:
+def cmd_doctor(args: Any) -> int:
     """环境健康检查: 配置 / 依赖 / 引擎 / 网络 / 模型连通 / 工作区, 分级输出。"""
     issues: List[tuple] = []
 
@@ -844,10 +854,53 @@ def cmd_doctor(args) -> int:
 
 # ===================================================================== 模式覆盖辅助
 
-def _apply_mode_override(kernel, mode: Optional[str], yes: bool = False) -> str:
+# 推理投入档位顺序 (低→高), 用于 maxEffortLevel 截断比较
+_EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max"]
+
+
+def clamp_effort(config: Any, desired: Optional[str]) -> Optional[str]:
+    """按 agent.max_effort_level 截断 desired effort (对标 Claude Code maxEffortLevel)。
+
+    - desired 为空/None: 返回 None (无需设置);
+    - 档位高于 max_effort_level: 返回 max_effort_level (截断);
+    - 合法且未超限: 返回原值。
+    """
+    if not desired:
+        return None
+    d = str(desired).strip().lower()
+    if d not in _EFFORT_ORDER:
+        return None  # 非法值交由校验层报错
+    cap = str(config.get("agent.max_effort_level", "max")).strip().lower()
+    if cap not in _EFFORT_ORDER:
+        return d  # 配置非法时不做截断 (校验层负责报错)
+    if _EFFORT_ORDER.index(d) > _EFFORT_ORDER.index(cap):
+        return cap
+    return d
+
+
+def _apply_fallback_model(config: Any, raw: Optional[str]) -> None:
+    """接线 --fallback-model 到 model.fallbacks (对标 Claude Code fallbackModel)。
+
+    支持逗号分隔多值, 如 ``--fallback-model "openai/gpt-4o,anthropic/claude-3-5"``。
+    单个值可写 "provider/model" 或 dict 风格 (不解析 JSON, 简单 provider/model)。
+    空值/None 不修改; 追加到现有 model.fallbacks 之后 (显式 CLI 优先覆盖)。
+    """
+    if not raw:
+        return
+    parts = [p.strip() for p in str(raw).split(",") if p.strip()]
+    if not parts:
+        return
+    # CLI 显式指定: 整体替换 (而非追加), 保证确定性
+    config.set_user("model.fallbacks", parts[:3])
+
+
+def _apply_mode_override(kernel: Any, mode: Optional[str], yes: bool = False) -> str:
     """应用模式覆盖 (不写用户配置, 避免污染后续启动)。
 
     旧三档体系 (standard/yolo/plan) 向后兼容; 新五模式通过 switch_mode 走 TUI/Web。
+    ``--permission-mode auto`` 是内部标记 (对标 Claude Code Auto Mode): 不写入
+    ``mode.default`` (避免污染五模式体系校验), 由调用方读取返回的 ``"auto"`` 设置
+    ``agent.ctx.auto_mode``。返回值为字符串, 供调用方分派。
     """
     if yes:
         effective = "yolo"
@@ -858,6 +911,9 @@ def _apply_mode_override(kernel, mode: Optional[str], yes: bool = False) -> str:
         config = kernel.require("config")
         mode_data = config.get("mode", {}) or {}
         effective = str(mode_data.get("default") or "standard")
+    # auto 是内部标记, 不写入 mode.default (避免五模式校验拒绝), 原样返回。
+    if effective == "auto":
+        return "auto"
     if effective != str(kernel.require("config").get("mode", {}).get("default", "standard")):
         config = kernel.require("config")
         config.data.setdefault("mode", {})["default"] = effective
@@ -869,13 +925,13 @@ _PERMISSION_MODE_MAP = {
     "default": "standard",
     "acceptEdits": "standard",
     "plan": "plan",
-    "auto": "standard",          # 自动模式分类器未内置, 退化为 standard
+    "auto": "auto",              # Auto 模式 (对标 Claude Code): 分类器按风险分级, 安全操作自动批准
     "dontAsk": "yolo",
     "bypassPermissions": "yolo",
 }
 
 
-def resolve_mode_from_permission(args) -> Optional[str]:
+def resolve_mode_from_permission(args: Any) -> Optional[str]:
     """根据 --permission-mode 推导内部模式; 显式 --mode 优先。返回 None 表示无需覆盖。"""
     pm = getattr(args, "permission_mode", None)
     if pm:

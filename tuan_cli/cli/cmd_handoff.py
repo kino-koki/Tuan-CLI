@@ -10,6 +10,8 @@
 """
 
 from __future__ import annotations
+from typing import Any
+
 from ..paths import default_workspace
 
 import os
@@ -28,7 +30,7 @@ def _resolve_session_file(sid: str) -> Path | None:
     return files[0] if files else None
 
 
-def cmd_chat_handoff(args) -> int:
+def cmd_chat_handoff(args: Any) -> int:
     """Chat 层: 交接指定会话 (生成摘要 -> 开新会话)。"""
     from ..core.chat_handoff import ChatHandoff
     from ..core.project_layer import ProjectLayer

@@ -35,9 +35,10 @@ class FusionPermissionPolicy:
         self._delegate = delegate
 
     def decide(
-        self, tool: Any, args: dict[str, Any], *, yolo: bool = False
+        self, tool: Any, args: dict[str, Any], *, yolo: bool = False,
+        auto_classifier: Any = None,
     ) -> PermissionDecision:
-        base = self._delegate.decide(tool, args, yolo=yolo)
+        base = self._delegate.decide(tool, args, yolo=yolo, auto_classifier=auto_classifier)
         # 原生已拒绝/已要求确认: 尊重原生裁决, 不降级、不重复升级。
         if base.action in ("deny", "confirm"):
             return base

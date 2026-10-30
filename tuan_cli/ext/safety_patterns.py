@@ -53,10 +53,7 @@ _CRITICAL_PATTERNS = [
      "move system directory (移动系统目录, 可能导致系统不可用)"),
     (r"\buserdel\b[^\n]*\s+root\b",
      "userdel root (删除 root 账户及其文件)"),
-    (r"\b(?:cat|tac|less|more|head|tail|nl|bat|type)\b[^\n]*"
-     r"(?:~?/\.ssh/(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/\s]+_key)(?!\.pub\b)|"
-     r"/root/\.ssh/|/etc/shadow\b)",
-     "read private key (读取 SSH 私钥或系统凭据)"),
+    # 读取敏感文件 / 私钥 —— 风险低于写入/删除系统路径, 降为 high (见 _HIGH_PATTERNS 同规则)。
     (r"\bchmod\b(?=[^\n]*\-[Rr]\b)(?=[^\n]*\b7777?\b)(?=[^\n]*\s/(?:\s|$))",
      "chmod -R 777 / (递归开放系统目录全部权限)"),
     # ---- 系统关机 / 重启 ----
@@ -397,6 +394,233 @@ _CRITICAL_PATTERNS = [
      "write Startup folder (写入启动目录持久化)"),
     # 注册表 Run 持久化 (reg add) —— 与既有 reg add Run 规则互补, 强化覆盖
     (r"reg(?:\.exe)?\s+add[^\n]*(?:\\Run|\\RunOnce)", "reg add Run key (注册表自启动持久化)"),
+
+    # ======================================================== 第四轮: 外部安全围堵方案 (V-02~V-09)
+    # 依据 Tuan-CLI-安全漏洞与围堵方案.md 的 P0/P1 漏洞清单补齐规则库覆盖面。
+
+    # ---- V-02 Windows LOLBins 下载/执行 (此前 10/13 条放行, 现全部 critical) ----
+    # certutil -urlcache: 从 URL 下载文件/执行。任意旗标组合都拦截, 不限于 -f。
+    (r"\bcertutil(?:\.exe)?\b[^\n]*-urlcache\b", "certutil urlcache (下载/执行文件)"),
+    # bitsadmin /transfer /create: Windows 后台传输服务, 下载恶意载荷。
+    (r"\bbitsadmin(?:\.exe)?\b[^\n]*/(?:transfer|create|addfile|addfilewithranges)\b",
+     "bitsadmin transfer (后台下载/上传文件)"),
+    # mshta: 执行 HTA (HTML Application) —— 常被用于下载即执行。
+    (r"\bmshta(?:\.exe)?\b[^\n]*(?:https?://|javascript:|vbscript:|ms-its:|mk:@|file://)",
+     "mshta execute HTA (HTML 应用执行)"),
+    # rundll32 javascript:... —— 经典 LOLBin 绕过 (MSHTML 应用执行)。
+    (r"\brundll32(?:\.exe)?\b[^\n]*javascript:",
+     "rundll32 javascript (MSHTML 应用执行)"),
+    # rundll32 / regsvr32 加载 .sct (Scriptlet) —— 远程脚本执行。
+    (r"(?:rundll32|regsvr32)(?:\.exe)?\b[^\n]*\.sct\b",
+     "regsvr32/rundll32 sct (远程脚本组件执行)"),
+    # regsvr32 /i:http 或 /i:https —— 远程脚本执行。
+    (r"\bregsvr32(?:\.exe)?\b[^\n]*/i:https?://",
+     "regsvr32 i:http (远程脚本执行)"),
+    # installutil: .NET 安装器, 可执行任意程序集。
+    (r"\binstallutil(?:\.exe)?\b", "installutil (执行 .NET 程序集)"),
+    # wmic process call create: 创建进程。
+    (r"\bwmic(?:\.exe)?\b[^\n]*process[^\n]*call[^\n]*create",
+     "wmic process call create (创建进程)"),
+    # forfiles /c "cmd ...": 对匹配文件执行命令 (批量执行/删除)。
+    (r"\bforfiles(?:\.exe)?\b[^\n]*/c\b[^\n]*\bcmd\b",
+     "forfiles /c cmd (批量执行命令)"),
+    # PowerShell 下载即执行: Invoke-WebRequest|iwr|wget|curl + Start-Process / iex / .\script.
+    # 关键: 中间的 [^\n]* 必须是非贪婪 [^\n]*? — 贪婪会吞掉 http:// 让正则后半段无法匹配。
+    # .\script 正则 \.[\\/] 表示点号 + (反斜杠或正斜杠), 文件名 + .ps1 结尾。
+    (r"(?:\bInvoke-WebRequest\b|\biwr\b|\bwget\b|\bcurl\b|\bDownloadFile\b|\bDownloadString\b)"
+     r"[^\n]*?(?:https?://)[^\n]*"
+     r"(?:\bStart-Process\b|\bInvoke-Expression\b|\biex\b|\bir\b|\bash\b|\bcmd\b"
+     r"|\.[\\/][A-Za-z0-9_.-]+\.ps1\b)",
+     "PS download then execute/dot-source (下载后执行脚本)"),
+    # .NET WebClient / HttpWebRequest + DownloadFile/DownloadString (下载任意内容)。
+    (r"\b(?:Net\.WebClient|HttpWebRequest|HttpClient)\b[^\n]*(?:DownloadString|DownloadFile|Send|GetAsync)\b",
+     ".NET web client download (下载任意内容)"),
+    # Set-ExecutionPolicy Bypass -Force: 绕过脚本执行策略 (常配合下载即执行)。
+    (r"\bSet-ExecutionPolicy\b[^\n]*Bypass\b[^\n]*-\s*Force\b",
+     "Set-ExecutionPolicy Bypass (绕过执行策略)"),
+
+    # ---- V-03 权限篡改与持久化: 写入目标路径敏感集抽象 ----
+    # 凡写入/覆盖系统关键路径 (不限于 /etc), 与命令名无关, 一律 critical。
+    # 敏感路径集: /etc /usr /bin /sbin /lib /boot /root /dev /sys /proc /var (系统级)
+    # 以及家目录下 .ssh / .aws / .config / .env / 启动脚本 (用户级持久化)。
+    # **排除项**: /dev/null / /dev/zero / /dev/random / /dev/urandom —— 这些是合法的
+    # 丢弃输出/设备文件目标 (`echo x > /dev/null`) 而非恶意写入, 列入敏感路径会误伤
+    # (官方测试 test_safety_redline_fix::test_dd_block_device_blind_spot_closed)。
+    # 覆盖写入方向: 重定向 >、tee、cp/mv/install/ln 的**末操作数**, 以及 dd of=。
+    (r"(?:>+\s*|tee\s+|cp\s+\S+\s+|mv\s+\S+\s+|install\s+[^\n]*\s|ln\s+[^\n]*\s)"
+     r"(?:/etc/|/usr/|/bin/|/sbin/|/lib(?:64)?/|/boot/|/root/|/sys/|/proc/|/var/|"
+     r"~?/\.ssh/|~?/\.aws/|~?/\.config/|~?/\.bashrc|~?/\.bash_profile|~?/\.profile|"
+     r"~?/\.zshrc|~?/\.zprofile|~?/\.env\b)",
+     "write sensitive path (写入/覆盖系统或用户敏感路径)"),
+    # setfacl 提权: 修改 ACL 指向系统目录或关键文件。
+    (r"\bsetfacl\b[^\n]*(?:/etc\b|/usr\b|/bin\b|/sbin\b|/root\b|/var\b|~?/\.ssh/)",
+     "setfacl on system path (ACL 篡改系统路径)"),
+    # useradd/usermod 带 -o -u 0 / -g 0 (UID 0 后门账户) —— 补充已有规则未覆盖的
+    # `-o -u 0 -g 0` 组合 (已有规则只覆盖 -u 0 / --uid 0, 但 `-o` 组合写法更隐蔽)。
+    (r"\b(?:useradd|usermod|adduser)\b[^\n]*(?:-o\b|--non-unique\b)",
+     "useradd -o (允许重复 UID, 可创建 UID 0 后门)"),
+    # tee 写入系统配置目录 (heredoc 形态 `tee -a /etc/... <<<`), 已有 cat> 覆盖但 tee 漏。
+    (r"\btee\b[^\n]*(?:/etc/|/usr/|/bin/|/sbin/|/boot/|/root/|/var/)",
+     "tee write system path (tee 写入系统路径, 持久化)"),
+
+    # ---- V-04 供应链与发布操作 (不可逆) ----
+    # gh repo delete: 删除远程仓库 (不可逆)。
+    (r"\bgh\s+repo\s+delete\b", "gh repo delete (删除远程仓库, 不可逆)"),
+    # git filter-branch --force: 改写历史 (不可逆, 影响所有协作方)。
+    (r"\bgit\s+filter-branch\b[^\n]*--force\b", "git filter-branch --force (改写历史, 不可逆)"),
+    # git remote set-url: 劫持推送目标。
+    (r"\bgit\s+remote\s+set-url\b", "git remote set-url (劫持推送目标)"),
+    # git push --mirror: 镜像推送 (覆盖远端所有引用)。
+    (r"\bgit\s+push\b[^\n]*--mirror\b", "git push --mirror (镜像推送, 覆盖远端)"),
+    # git gc --prune=now: 强制 GC, 清除 reflog (不可逆)。
+    (r"\bgit\s+gc\b[^\n]*--prune=now\b", "git gc --prune=now (强制 GC, 清除引用)"),
+    # npm publish: 发布包 (若 access public 则公开泄露; 即使 restricted 也可能发布错误版本)。
+    (r"\bnpm\s+publish\b", "npm publish (发布 npm 包)"),
+    (r"\byarn\s+publish\b", "yarn publish (发布 yarn 包)"),
+    (r"\bpnpm\s+publish\b", "pnpm publish (发布 pnpm 包)"),
+    # 依赖混淆: pip install 使用非默认/不可信 index-url / extra-index-url。
+    (r"\bpip[0-9.]*\s+install\b[^\n]*(?:--index-url|--extra-index-url|-i\b)",
+     "pip install custom index (依赖混淆, 从自定义源拉取)"),
+    # npm install 使用非默认 registry (依赖混淆)。
+    (r"\bnpm\s+(?:install|i|ci)\b[^\n]*--registry\b",
+     "npm install custom registry (依赖混淆)"),
+    (r"\byarn\s+(?:install|add)\b[^\n]*--registry\b",
+     "yarn install custom registry (依赖混淆)"),
+    # pip uninstall -y 静默卸载 (不可逆, 破坏环境)。
+    (r"\bpip[0-9.]*\s+uninstall\b[^\n]*-\s*y\b",
+     "pip uninstall -y (静默卸载核心依赖)"),
+    # NPM 供应链投毒: install 含 preinstall/postinstall/install 关键词的包名
+    # (包名伪装成含恶意 lifecycle hook 的已知包变体, 如 `ua-parser-js-preinstall`)。
+    # 真实攻击: npm 生态中多次出现这类伪装包, postinstall 脚本执行 C2 payload。
+    (r"\bnpm\s+(?:install|i|add)\b[^\n]*\b([A-Za-z0-9._-]+[-_](?:preinstall|postinstall|install|prepare|prepublish))\b",
+     "npm install suspicious lifecycle hook pkg (疑似含恶意 preinstall/postinstall 的包)"),
+    # 两段式下载执行: curl/wget/iwr 下载文件后接 && 或 ; + 解释器/直接执行。
+    # 文档 V-11 标记为架构上限, 但正则可在单行内识别 download+execute 组合。
+    # 不匹配 `curl ... | sh` 管道式 (已有 pipe to shell 规则覆盖), 只覆盖 && / ; 两段式。
+    (r"(?:\bcurl\b|\bwget\b|\bInvoke-WebRequest\b|\biwr\b)[^\n]*https?://"
+     r"[^\n]*(?:&&|;)[^\n]*\b(?:bash|sh|zsh|ksh|fish|dash|ash|csh|tcsh|python\d*|perl|ruby|node|php|lua|powershell|pwsh|cmd)\b",
+     "two-step download then interpreter exec (下载文件后接解释器执行, GuardFall V-11)"),
+    # 两段式变体: 下载文件后 chmod +x && 直接执行二进制 (不经过解释器)。
+    (r"(?:\bcurl\b|\bwget\b|\biwr\b)[^\n]*https?://[^\n]*(?:&&|;)[^\n]*"
+     r"\bchmod\b[^\n]*(?:\+x|\b7\d{2}\b)[^\n]*(?:&&|;)[^\n]*/(?:tmp|var|home|etc)/[^\s]*",
+     "download + chmod +x + exec (下载后 chmod +x 并直接执行)"),
+    # 两段式变体: 下载并覆盖已知二进制路径 (后续执行时自动触发)。
+    (r"(?:\bcurl\b|\bwget\b|\biwr\b)[^\n]*https?://[^\n]*(?:\s|\|\s*)[>/]+[^\n]*"
+     r"/(?:usr|usr/local|bin|sbin|etc|root)/[A-Za-z0-9_.-]+\b",
+     "download overwrites system bin (下载并覆盖系统二进制路径)"),
+    # git clone 从明显可疑域名 (供应链投毒)。
+    # 只拦截含恶意特征关键词的域名 (evil/malware/trojan/backdoor/exploit/payload/c2 等)
+    # 或直接用 IP 地址的 git clone (典型的临时 C2/投毒服务器)。
+    # 排除法 (仅白名单 github/gitlab/bitbucket 外全部拦截) 会误伤良性域名
+    # (test_shell_safety_guard::test_benign_commands_recognized 明确要求
+    # `git clone https://example.com/repo.git` 为良性)。
+    (r"\bgit\s+clone\b[^\n]*https?://"
+     r"(?:[\d]{1,3}\.[\d]{1,3}\.[\d]{1,3}\.[\d]{1,3}"
+     r"|[^\s/]*(?:evil|malware|trojan|backdoor|exploit|payload|c2|botnet|ransom|worm)[^\s/]*)",
+     "git clone suspicious host (从可疑域名/IP 克隆仓库, 供应链投毒)"),
+    # git submodule update --init --recursive + 从不可信 URL: 供应链投毒。
+    (r"\bgit\s+submodule\s+update\b[^\n]*--recursive\b",
+     "git submodule update --recursive (子模块投毒风险)"),
+
+    # ---- V-06 云 / 编排 / 分布式存储删除类 ----
+    (r"\betcdctl\b[^\n]*\b(?:del|delete|purge)\b", "etcdctl del (删除 etcd 键)"),
+    (r"\bconsul\s+kv\s+(?:delete|del)\b", "consul kv delete (删除 Consul 键)"),
+    (r"\bvault\s+kv\s+(?:delete|destroy)\b", "vault kv delete (删除 Vault 密钥)"),
+    # sysctl 关闭安全特性 (ASLR / Yama 等)。
+    (r"\bsysctl\b[^\n]*-w\b[^\n]*kernel\.(?:randomize_va_space|yama|kptr_restrict|dmesg_restrict)",
+     "sysctl disable security (关闭内核安全特性)"),
+    # iptables 清空全部规则 (-F 已有 high; -X 清空自定义链一并拦截)。
+    (r"\biptables\b[^\n]*\s-X\b", "iptables -X (清空自定义链)"),
+    # ufw disable (已有 high 兜底, 但此处显式强化为 critical 语义? 保持 high 即可, 不重复)。
+    # setenforce 0 已有 critical (见上), 不重复。
+
+    # ---- V-09 破坏性删除与日志擦除 ----
+    # unlink: rm 的同义命令。
+    (r"\bunlink\b[^\n]*\s(?:/etc/|/usr/|/bin/|/sbin/|/boot/|/root/|/var/|/home/)",
+     "unlink system path (unlink 删除系统路径)"),
+    # set +o history / set -o history 关闭命令历史 (反取证)。
+    (r"\bset\s+[+-]o\s+history\b", "set +o history (关闭命令历史, 反取证)"),
+    # history -c / clear history (已有 history -c 在 high, 但 `history -c` 在 _HIGH 已列, 补 `fc -l` 无需)。
+    # shred -u (已有 shred 在 critical), 但补 `shred -u` 明确 (已有覆盖)。
+
+    # ---- V-05 解释器内联载荷: 网络外泄 + 敏感文件读取组合 ----
+    # Python: import socket / urllib / requests + connect/urlopen/post 的组合 (外泄)。
+    (r"(?=[^\n]*\b(?:import\s+(?:socket|urllib|requests|ftplib|smtplib|http\.client|aiohttp|httpx)\b)"
+     r")(?=[^\n]*(?:\.connect\s*\(|urlopen\s*\(|\.post\s*\(|\.request\s*\(|\.send\s*\())(?=[^\n]*"
+     r"(?:open\s*\([^\n]*(?:/etc/|/home/|/root/|~?/\.ssh|~?/\.aws|id_rsa|\.env\b|credentials|shadow|passwd)))",
+     "interpreter network exfil (解释器内联网络外泄)"),
+    # Node: require('net')/http + connect/request + fs.readFileSync 敏感文件。
+    (r"(?=[^\n]*\b(?:require\s*\(\s*['\"](?:net|http|https|dgram|tls)['\"]|fetch\s*\())(?=[^\n]*"
+     r"(?:connect\s*\(|request\s*\(|fetch\s*\())(?=[^\n]*"
+     r"(?:readFileSync\s*\([^\n]*(?:/etc/|/home/|/root/|~?/\.ssh|~?/\.aws|id_rsa|\.env\b|credentials|shadow|passwd)))",
+     "node network exfil (Node 内联网络外泄)"),
+    # Node http.get / http.post + fs.readFileSync 敏感路径外泄。
+    # 用连续匹配 (不嵌套 lookahead), 只要同个命令里同时出现: http 模块 + .get 调用
+    # + 敏感路径 + fs.readFileSync 就判定为外泄。
+    (r"(?:require\s*\(\s*['\"]http['\"]\)|require\s*\(\s*['\"]https['\"]\)|require\s*\(\s*['\"]fetch['\"]\))"
+     r"[^\n]*\.(?:get|post)\s*\([^\n]*"
+     r"(?:require\s*\(\s*['\"]fs['\"]\)|readFileSync)"
+     r"[^\n]*(?:/etc/|/root/|/home/|~?/\.ssh|~?/\.aws|id_rsa|\.env\b|credentials|shadow|passwd)",
+     "node http.get + fs.readFileSync (Node http.get 组合文件读取外泄)"),
+    # 反弹 shell / 反向连接 (无敏感文件, 但 socket 外连本身就是外泄通道)。
+    # 覆盖 python/perl/ruby/node 内联 socket.connect + subprocess/exec/system/dup2 的
+    # 反向 shell 形态。doc V-05 实测: python socket.connect → none。
+    (r"(?=[^\n]*\b(?:socket\.socket|socket\.create_connection|socket\.socketpair)\s*\()(?=[^\n]*"
+      r"(?:\.connect\s*\(|\.send\s*\(|\.sendall\s*\())(?=[^\n]*"
+      r"(?:subprocess|os\.system|os\.exec|exec\s*\(|Popen|dup2|pty\.spawn))",
+      "reverse shell (解释器内联反弹 shell / 反向连接)"),
+
+    # ==================== 独立评测补丁 (VULN-2026-10) ====================
+    # 依据 Tuan-CLI-全量冒烟验证报告.md 的安全围堵方案补漏。
+    # 本段落与既有第四轮 V-02~V-09 互补: 补入报告指出但第四轮写法未覆盖的条目,
+    # 以及报告唯一新增真漏洞 (云元数据 IMDS 探测)。
+
+    # ---- V-02 补: Set-ExecutionPolicy Bypass (绕执行策略, 常配合下载即执行) ----
+    (r"\bpowershell(?:\.exe)?\b[^\n]*-ExecutionPolicy\s+Bypass\b",
+     "PS ExecutionPolicy Bypass (绕过执行策略)"),
+    # ---- V-03 补: chown -R 用户主目录 (递归变更用户目录所有权, 数据失权) ----
+    (r"\bchown\b(?=[^\n]*\s-[Rr]\b)(?=[^\n]*\s/home(?:/[^/\s]+)?(?:\s|$))",
+     "chown -R home dir (递归变更用户目录所有权)"),
+    # ---- V-05 补: 解释器内联读取敏感文件 (命令名驱动的 secret read 缺口) ----
+    (r"\b(?:python|python3|python\d|perl|ruby|node|php|lua|awk|gawk)\b[^\n]*\s-[ce]\b"
+     r"[^\n]*(?:id_rsa|id_ed25519|authorized_keys|\.aws/credentials|/etc/(?:passwd|shadow)|"
+     r"\.env\b|\.npmrc|\.git-credentials|\.docker/config\.json)",
+     "interp secret read (内联脚本读取敏感文件)"),
+    # ---- V-03 补: chmod 移除敏感文件权限 (原为 medium) ----
+    (r"\bchmod\b[^\n]*\b0{3,4}\b[^\n]*\s/(?:etc|usr|var|home|root|boot)/",
+     "chmod 000 system file (移除系统文件权限)"),
+    # ---- V-09 补: history -c (原为 high/medium, 反取证) ----
+    (r"\bhistory\s+-c\b", "history -c (清空命令历史, 反取证)"),
+    # ---- 第二轮冒烟补漏: 清空凭据 hive / 抹除磁盘 (凭据窃取前奏) ----
+    (r"\bClear-Content\b[^\n]*(?:SAM|SECURITY|SYSTEM\\config|ntds\.dit|shadow)",
+     "Clear-Content credentials (清空凭据文件, 破坏性)"),
+    (r"\bClear-Disk\b[^\n]*-(?:RemoveData|RemoveOEM|Sanitize)",
+     "Clear-Disk (抹除磁盘全部数据)"),
+    (r"\bClear-Disk\b", "Clear-Disk (清空磁盘, 数据毁灭)"),
+    # Start-Process 启动被编码/混淆载荷的进程
+    (r"\bStart-Process\b[^\n]*(?:-(?:EncodedCommand|enc|e|ec)\b|"
+     r"(?:-ArgumentList|-Args?)\s+['\"][^'\"]*-e(?:nc|c)?\s+[A-Za-z0-9+/=]{16,})",
+     "Start-Process encoded payload (启动编码载荷进程)"),
+    # ---- 第二轮冒烟补漏: 数据外泄 (命令名驱动 -> 语义驱动) ----
+    # curl/wget/httpie 带文件内容 POST/PUT 上传
+    (r"\b(?:curl|wget|http|httpie|xh)\b[^\n]*(?:-(?:d|T|F|data|data-raw|data-binary|upload-file)\s|"
+     r"--(?:data|data-raw|data-binary|upload-file)\b)[^\n]*@\s*\S+",
+     "curl upload file (上传本地文件内容, 外泄)"),
+    # PowerShell Invoke-RestMethod/irm 带 Body 且 Body 含本地文件读取
+    (r"\b(?:Invoke-RestMethod|irm|iwr|Invoke-WebRequest)\b[^\n]*"
+     r"(?:-(?:Method|m)\s+(?:POST|PUT)|-(?:Body|b)\b)[^\n]*"
+     r"(?:Get-Content|cat|gc\b|type\b|Import-Csv|ConvertTo-Json|[A-Za-z]:\\\\|~?/|\./)",
+     "PS irm POST body (带本地内容的外发请求, 外泄)"),
+    # 邮件外带附件 (经典 exfil 通道)
+    (r"\bSend-MailMessage\b[^\n]*-(?:Attachments?|Body)\b",
+     "Send-MailMessage attach (邮件外带附件/正文, 外泄)"),
+
+    # ---- 第二轮冒烟补漏: 云元数据服务 (IMDS) 凭据窃取 —— 报告唯一新增真漏洞 ----
+    # 攻击者拿 shell 后第一件事就是打 IMDS 拿临时云凭证横向移动 (真实攻击链第一步)。
+    # 覆盖 AWS / Azure / 阿里云 / GCP / AWS IPv6 全部探测形态。
+    (r"(?:curl|wget)\b[^\n]*(?:169\.254\.169\.254\b|100\.100\.100\.200\b|"
+     r"metadata\.google\.internal\b|\[fd00:ec2::254\])",
+     "cloud IMDS probe (云元数据服务探测, 凭据窃取)"),
 ]
 
 _HIGH_PATTERNS = [
@@ -428,6 +652,14 @@ _HIGH_PATTERNS = [
     # 管道到 shell 解释器执行 (仅当 | 后紧跟解释器时才算, 避免 `ps | grep bash` 误匹配)
     (r"\|\s*(?:sh|bash|zsh|ksh|fish|dash|ash|csh|tcsh|python\d*|perl|ruby|node|php|lua|powershell|pwsh|cmd)\b",
      "pipe to shell (管道到 shell 执行)"),
+    # V-10: tar 归档通过管道送到远端 ssh (打包整个工作区外泄)。
+    # 原 ssh remote exec 一刀切 high 规则被移除后, 此条补位数据外泄检测。
+    # 不需要敏感路径关键词 —— 打包 `.` / `*` 本身就是外泄。
+    (r"\btar\b[^\n]*\|\s*ssh\b", "tar pipe to ssh (归档通过 SSH 管道外泄)"),
+    # 管道 split 后, `ssh host tar xf -` 独立出现 —— 在远端接收管道数据并写入文件系统。
+    # 也覆盖 `ssh host 'tar xf -'` / `ssh host tar xzf -` / `dd | ssh host dd of=...` 等。
+    (r"\bssh\b(?:\s+-[A-Za-z0-9]+(?:\s+\S+)?)*\s+[A-Za-z0-9_.@:-]+\s+(?:tar\s+[xzf]+|dd\s+of=)",
+     "ssh remote untar/dd (SSH 远端接收管道数据并写入文件)"),
     # GNU sed 的 e 标志 / e 命令会把替换结果或其后文本当 shell 命令执行
     # (sed 's/x/rm -rf \//e' / sed 'e rm -rf /'), 与 | sh 同级的执行汇。
     # 替换串/模式里允许转义分隔符 (\\. 覆盖 `\/`), 否则 `s/x/rm -rf \//e` 会漏判。
@@ -541,9 +773,11 @@ _HIGH_PATTERNS = [
     (r"\bnet\s+stop\b[^\n]*MpsSvc", "net stop MpsSvc (停用 Windows 防火墙服务)"),
     (r"\bStop-Service\b[^\n]*(?:-Force|wuauserv|WinUpdate|Windows\s*Update|winlogon|lsass|csrss|spoolsv|DefWatch|MpsSvc|bits|wisvc|DHCP|DNS)",
      "Stop-Service critical/security (停用关键/安全服务)"),
-    # ---- 远程命令执行 (ssh 后跟命令; 纯登录 ssh host / ssh -T git@github.com 不算) ----
-    (r"\bssh\b(?:\s+-[A-Za-z0-9]+(?:\s+\S+)?)*\s+[A-Za-z0-9_.@:-]+\s+[^-]\S*",
-     "ssh remote exec (SSH 远程执行命令)"),
+    # ---- SSH 远程执行内容的危险度由远程命令本身决定, 不在此一刀切 ----
+    # V-10 修复: 原规则把所有 `ssh host 'cmd'` 都判 high, 导致
+    # `ssh user@host 'ls -la'` 这种良性远程操作误报。移除一刀切规则,
+    # 让远程执行的危险命令 (rm -rf / / chmod -R 777 / / cat ~/.ssh/id_rsa 等)
+    # 被其本身的 critical/high 规则自然触发。SSH 本身作为合法远程运维工具保持良性。
 ]
 
 _MEDIUM_PATTERNS = [

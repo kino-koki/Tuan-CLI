@@ -27,7 +27,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from ..version import __version__
 
@@ -81,7 +81,7 @@ def _fetch_json(url: str, *, ttl_seconds: int = 3600) -> Optional[Dict[str, Any]
         now = __import__("time").time()
         if now - age < ttl_seconds:
             try:
-                return json.loads(cache_file.read_text("utf-8"))
+                return cast(Dict[str, Any], json.loads(cache_file.read_text("utf-8")))
             except Exception:
                 pass
 
@@ -90,12 +90,12 @@ def _fetch_json(url: str, *, ttl_seconds: int = 3600) -> Optional[Dict[str, Any]
         with urllib.request.urlopen(req, timeout=10) as resp:
             raw = resp.read()
         cache_file.write_bytes(raw)
-        return json.loads(raw)
+        return cast(Dict[str, Any], json.loads(raw))
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         # 网络失败 → 若有过期缓存则降级, 没有就返回 None
         if cache_file.exists():
             try:
-                return json.loads(cache_file.read_text("utf-8"))
+                return cast(Dict[str, Any], json.loads(cache_file.read_text("utf-8")))
             except Exception:
                 pass
         return None

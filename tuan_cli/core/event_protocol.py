@@ -50,6 +50,14 @@ class AgentEvent(str):
     GOAL_ACHIEVED = "goal.achieved"
     BUDGET_EXCEEDED = "budget.exceeded"
 
+    # 后台任务生命周期 (BackgroundRunner 写入后台会话流, Monitor 工具增量订阅)
+    BACKGROUND_JOB_START = "job.start"
+    BACKGROUND_JOB_DONE = "job.done"
+    BACKGROUND_JOB_ERROR = "job.error"
+    BACKGROUND_JOB_CANCEL = "job.cancel"
+    BACKGROUND_JOB_RESUME = "job.resume"
+    BACKGROUND_TURN = "agent.turn"
+
     # 用量
     USAGE = "usage"
 

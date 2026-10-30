@@ -6,6 +6,7 @@ import json
 import sys
 import os
 import re
+from typing import Any, List, Tuple
 
 _LANG_MAP = {
     ".py": "python", ".js": "javascript", ".ts": "typescript",
@@ -40,9 +41,9 @@ _SYMBOL_PATTERNS["typescript"] = _SYMBOL_PATTERNS["javascript"]
 _SYMBOL_PATTERNS["c"] = [(re.compile(r"^\w[\w\s\*]*\s+\**(\w+)\s*\("), "func")]
 
 
-def _extract_symbols(content: str, lang: str):
+def _extract_symbols(content: str, lang: str) -> Tuple[List[str], List[dict]]:
     """按语言提取符号; 返回 (名字列表, [{name,kind,line} 列表])。"""
-    details = []
+    details: List[dict] = []
     seen = set()
     for pattern_def in _SYMBOL_PATTERNS.get(lang, []):
         regex, kind = pattern_def
@@ -54,21 +55,21 @@ def _extract_symbols(content: str, lang: str):
                 if key not in seen:
                     seen.add(key)
                     details.append({"name": name, "kind": kind, "line": i})
-    names = list(dict.fromkeys(d["name"] for d in details))
+    names: List[str] = list(dict.fromkeys(d["name"] for d in details))
     return names, details
 
 
 class IndexEngine:
     """统一 JSONL IPC 协议的 index 引擎"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.methods = {
             "index": self.index,
             "search": self.search,
             "_meta/list": self.list_methods,
         }
 
-    def list_methods(self, params=None):
+    def list_methods(self, params: Any = None) -> Any:
         return {
             "engine": "index",
             "version": "1.1.0-python",
@@ -86,7 +87,7 @@ class IndexEngine:
             h = h & 0xFFFFFFFF
         return h
 
-    def index(self, params):
+    def index(self, params: Any) -> Any:
         """索引文件路径
         每个条目返回 path/lang/hash/symbols (名字列表, 向后兼容) 以及
         symbol_details ([{name,kind,line}], 可直接定位跳转)。
@@ -102,7 +103,8 @@ class IndexEngine:
             ext = os.path.splitext(path)[1].lower()
             lang = _LANG_MAP.get(ext, "unknown")
 
-            names, details = [], []
+            names: List[str] = []
+            details: List[dict] = []
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     content = f.read()
@@ -121,7 +123,7 @@ class IndexEngine:
 
         return {"indexed": indexed, "count": len(indexed)}
 
-    def search(self, params):
+    def search(self, params: Any) -> Any:
         """检索符号"""
         query = params.get("query", "")
         lang = params.get("lang", None)
@@ -140,7 +142,7 @@ class IndexEngine:
 
         return {"results": results, "count": len(results)}
 
-    def handle(self, line):
+    def handle(self, line: Any) -> str:
         req_id = None
         try:
             req = json.loads(line)
@@ -157,7 +159,7 @@ class IndexEngine:
             resp = {"id": req_id, "ok": False, "error": str(e)}
             return json.dumps(resp, ensure_ascii=False)
 
-    def run(self):
+    def run(self) -> None:
         sys.stdout.write(json.dumps({"ready": True}) + "\n")
         sys.stdout.flush()
         for line in sys.stdin:

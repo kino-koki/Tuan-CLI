@@ -75,7 +75,7 @@ def _to_kernel_tool(t: Dict[str, Any]) -> Tool:
 class KernelModelAdapter(ModelAdapter):
     """委托给一个 kernel ChatProvider 的 ModelAdapter 实现。"""
 
-    def __init__(self, provider, model: Optional[str] = None) -> None:
+    def __init__(self, provider: Any, model: Optional[str] = None) -> None:
         self._provider = provider
         self.name = getattr(provider, "name", "kernel")
         self.model_name = getattr(provider, "model_name", model or "")
@@ -123,7 +123,7 @@ class KernelModelAdapter(ModelAdapter):
         )
 
 
-def create_kernel_adapter(config) -> KernelModelAdapter:
+def create_kernel_adapter(config: Any) -> KernelModelAdapter:
     """从青小团 Config 构造 KernelModelAdapter（统一入口开关：model.backend=kernel）。"""
     # 透传三段式超时: 早先只传 max_tokens/temperature, 导致 kernel 后端拿不到
     # model.read_timeout, 退回 _http.build_client 的硬编码值（长上下文必超时）。

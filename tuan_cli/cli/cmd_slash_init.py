@@ -228,7 +228,7 @@ def render_tuan_md(info: Dict[str, Any]) -> str:
 
 
 def write_tuan_md(workspace: Path, *, force: bool = False,
-                 confirm=None) -> str:
+                 confirm: Any = None) -> str:
     """生成并写入 TUAN.md。返回状态说明文案。
 
     - 已存在且 force=False: 若传入 confirm 回调则交互确认; 否则不覆盖。
@@ -251,7 +251,7 @@ def write_tuan_md(workspace: Path, *, force: bool = False,
     return f"已生成 {TUAN_MD_NAME} (项目: {info['name']}, 语言: {langs}, 测试: {info['test_framework'] or '未检测'})。"
 
 
-def _cmd_init(agent, arg: str, config, workspace: str) -> None:
+def _cmd_init(agent: Any, arg: str, config: Any, workspace: str) -> None:
     """/init 斜杠命令入口: 扫描工作区并生成 TUAN.md。"""
     from ._ui_singleton import ui
     force = bool(arg) and ("force" in arg.lower() or "y" == arg.strip().lower())

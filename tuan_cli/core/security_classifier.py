@@ -82,9 +82,15 @@ _SUBSHELL_C_RE = re.compile(r"^(?:bash|sh|zsh|dash|ksh)\s+-[^\s]*c\s+(['\"])(.+)
 # 只读动词只有在「没有把内容写出去」时才算只读。一旦出现重定向 / 管道 / tee /
 # cp / mv / rsync / scp, 内容就被搬走了, 不再只是查看 ——
 # `awk {print} ~/.ssh/id_rsa > /tmp/x` 是真实外泄, 不能被豁免。
+# 安全修复: 原第一分支 `\s>[^\s0-9]` 只匹配无空格重定向 (`>/tmp/x`), 带空格的
+# `> /tmp/x` 被漏掉 —— `cat ~/.ssh/id_rsa > /tmp/leak` 因此被误判为"只读"豁免,
+# 真实外泄漏检。改为 `\s>\s*(?!/dev/null\b)[^\s0-9]`:
+#   - 允许 `>` 后带空格再跟路径 (`> /tmp/x`);
+#   - 用 `(?!/dev/null\b)` 排除 `> /dev/null` —— 那是丢弃输出, 不是外泄。
 _EXFIL_HINT_RE = re.compile(
-    r"(?:\s>[^\s0-9]|\s>>\s*|[^<]\|\s|\btee\b|\bcp\b|\bmv\b|\brsync\b|\bscp\b"
-    r"|\bzip\b|\btar\b|\bbase64\b|\bxxd\b|\biconv\b|\bnc\b|\bncat\b|\bcurl\b|\bwget\b)",
+    r"(?:\s>\s*(?!/dev/null\b)[^\s0-9]|\s>>\s*|[^<]\|\s|\btee\b|\bcp\b|\bmv\b"
+    r"|\brsync\b|\bscp\b|\bzip\b|\btar\b|\bbase64\b|\bxxd\b|\biconv\b|\bnc\b"
+    r"|\bncat\b|\bcurl\b|\bwget\b)",
     re.IGNORECASE,
 )
 
@@ -124,14 +130,27 @@ def _is_keychain_query(command: str) -> bool:
     `import` (植入证书) 与 `delete/remove-certificate` (破坏信任链), 那些由
     safety_patterns 的专门规则负责, 不依赖本特征。
     """
+    # 破坏性 security 子命令: 植入/删除证书等, 命中则**不**算查询 (交回特征判定)。
+    _DESTRUCTIVE_KEYCHAIN_RE = re.compile(
+        r"security\s+(?:import|delete|remove-certificate|add-certificates"
+        r"|delete-certificates|create-keychain|delete-keychain)\b",
+        re.IGNORECASE,
+    )
     for _seg in re.split(r"[;&|]+", command):
         _seg = _seg.strip()
         if not _seg:
             continue
         _seg = _EXEC_PREFIX_RE.sub("", _seg)
         _seg = _ENV_ASSIGN_RE.sub("", _seg)
-        if re.match(r"(?:security|security\s+(?:show|list|find|dump|unlock|set-attr|read)\b)",
-                    _seg):
+        # 安全修复: 裸 `security` 太宽 —— `security import cert.pem` (植入证书,
+        # 破坏信任链) 也被误判为查询, accesses_password_db 因此漏检。先排除
+        # 破坏性子命令, 再对剩余 `security` 或查询/管理子命令返回 True。
+        if _DESTRUCTIVE_KEYCHAIN_RE.search(_seg):
+            continue
+        if re.match(
+            r"security(?:\s+(?:show|list|find|dump|unlock|set-attr|read)\b)?",
+            _seg,
+        ):
             return True
     return False
 
@@ -186,8 +205,11 @@ class CommandFeatures:
             r'\b(?:nc|netcat|socat|ss|lsof)\b.*\b(?:-l|listen|port)\b',
             c, re.IGNORECASE,
         ))
+        # 安全修复: `\b(?:-e|...)` 的 `\b` 在 `-e` 前要求 word 边界 —— `-` 是非 word
+        # 字符, 前面若跟空格 (如 `nc -e /bin/sh`) 则 `\b` 不匹配, 反向 shell 漏检。
+        # 用 `(?:^|\s)(?:-e|...)` 替代: `-e` 前是行首或空白即可命中。
         features["has_reverse_shell"] = bool(re.search(
-            r'\b(?:nc|netcat|socat|bash|sh)\b.*\b(?:-e|/dev/tcp|/dev/udp)\b',
+            r'\b(?:nc|netcat|socat|bash|sh)\b.*(?:^|\s)(?:-e|/dev/tcp|/dev/udp)\b',
             c, re.IGNORECASE,
         ))
 
@@ -368,7 +390,10 @@ class CommandFeatures:
             _seg = _seg.strip()
             if not _seg or not re.search(r'/etc/(?:shadow|passwd|sudoers)', _seg):
                 continue
-            if _leading_verb_is_readonly_or_meta(_seg, strict=True):
+            # 与 ssh 密钥逻辑同口径: 有重定向/管道/拷贝类动作时内容已被搬走,
+            # 不算"只看一眼", 必须交给敏感外泄判定 (fail-closed)。
+            if (_leading_verb_is_readonly_or_meta(_seg, strict=True)
+                    and not _EXFIL_HINT_RE.search(_seg)):
                 _auth_readonly = True
             break
         features["reads_shadow_passwd"] = bool(re.search(
@@ -442,6 +467,9 @@ _FEATURE_RISK_WEIGHTS: Dict[str, float] = {
 _THRESHOLD_DENY = 60  # >= 此分值: deny
 _THRESHOLD_CONFIRM = 30  # >= 此分值: confirm (需用户确认)
 _THRESHOLD_ALLOW = 0  # < 此分值: allow
+
+# 审计历史上限 (保留最近 N 条决策, 供 stats / 事后审计)
+_MAX_HISTORY = 500
 
 
 # ============================================================ 分类器核心
@@ -564,10 +592,14 @@ class SecurityClassifier:
             elapsed_ms=elapsed,
         )
 
-        # 6. 审计 (保留最近 1000 条)
+        # 6. 审计 (保留最近 _MAX_HISTORY 条)
+        # 安全修复: 原逻辑 `if len > 1000: self._history = self._history[-500:]`
+        # 只在首次越过 1000 时裁一次到 500, 之后每次 append 到 599 不再裁,
+        # 稳态是 500~599 波动而非 500, 与注释「保留最近 500 条」不符。
+        # 改为严格上限 _MAX_HISTORY, 每次超出即裁到最近 _MAX_HISTORY。
         self._history.append(result)
-        if len(self._history) > 1000:
-            self._history = self._history[-500:]
+        if len(self._history) > _MAX_HISTORY:
+            self._history = self._history[-_MAX_HISTORY:]
 
         if action != "allow":
             log.info(

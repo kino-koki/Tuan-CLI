@@ -128,6 +128,23 @@ class IntentFilter:
             return deny(self.name, "命中致命红线(文件系统/OS级毁灭操作), 永不自动执行",
                         SEV["critical"])
 
+        # V-10 补充: 读取 SSH 私钥 / 系统凭证 —— 不是毁灭操作但**凭证外泄**危害等同,
+        # 需硬拒 (跟 is_hard_redline 同级)。不放进 is_hard_redline 本体是因为
+        # SafetyEngine.score() 调 is_hard_redline 升 risk 到 critical 会拉 RiskVector
+        # engine_floor=10 让 composite 超过 8.0, 破坏 test_risk_sandbox 预期
+        # (SafetyEngine 判 high 即可, IntentFilter 独立做 DENY)。
+        try:
+            from ..ext.safety_redline import _CRED_READ_RE_HARD
+            cred_read_hard = _CRED_READ_RE_HARD
+        except Exception:
+            cred_read_hard = None
+        if cred_read_hard is not None:
+            for t in texts:
+                if t.strip() and cred_read_hard.search(t):
+                    return deny(self.name,
+                                "读取 SSH 私钥/系统凭证 —— 凭证外泄等同毁灭, 永不自动执行",
+                                SEV["critical"])
+
         # 数据外泄 / 远程执行: 网络门控判定为 deny 的红线
         try:
             from ..core.network_guard import get_network_guard
@@ -210,7 +227,7 @@ class TrustFilter:
         return None
 
     @staticmethod
-    def _detected_domains(payload: Payload, guard) -> List[str]:
+    def _detected_domains(payload: Payload, guard: Any) -> List[str]:
         out: List[str] = []
         for t in payload.text:
             if not t.strip():
@@ -322,7 +339,7 @@ class SandboxFilterChain:
     # 其它先进可插拔滤网 (如 ai 语义滤网 / 政策规则滤网), 默认空
     extras: List[Any] = field(default_factory=list)
 
-    def _order(self):
+    def _order(self) -> Any:
         yield self.intent
         yield self.trust
         yield from self.extras

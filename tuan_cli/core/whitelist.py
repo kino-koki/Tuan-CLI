@@ -279,7 +279,7 @@ class MultiStageConfirm:
         self._confirm_fn = confirm_fn
         self._min_interval = min_interval
 
-    def set_confirm_fn(self, confirm_fn) -> None:
+    def set_confirm_fn(self, confirm_fn: Any) -> None:
         """设置确认回调."""
         self._confirm_fn = confirm_fn
 

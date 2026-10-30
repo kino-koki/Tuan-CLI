@@ -17,7 +17,7 @@ free_tier=True 同样进入免费筛选 —— 完整名单见 FREE_TIER_NAMES�
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .model_lists import MODEL_LISTS
 
@@ -793,7 +793,7 @@ _TIER_ALIASES: Dict[str, str] = {
 }
 
 
-def _normalize_tier(raw) -> str:
+def _normalize_tier(raw: Any) -> str:
     """把目录里的 tier 字段归一成 free/cheap/standard 标签。
 
     ``ProviderPreset.tier`` 是**字符串标签** (free | cheap | standard), 但历史上
@@ -810,7 +810,7 @@ def _normalize_tier(raw) -> str:
     return _TIER_ALIASES.get(key, key if key in TIER_ORDER else "standard")
 
 
-def presets_from_catalog(data) -> List[ProviderPreset]:
+def presets_from_catalog(data: Any) -> List[ProviderPreset]:
     """从本地目录 JSON (见 local_catalog.load_catalog) 重建供应商预设列表。
 
     仅提取结构合法的条目; 欠字段/错误类型的条目跳过,

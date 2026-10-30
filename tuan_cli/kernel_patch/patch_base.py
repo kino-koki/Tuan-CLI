@@ -83,7 +83,7 @@ def patch_impl(
     min_kernel: str = "0.0.0",
     mode: str = "wrap",
     kind: str = "capability",
-):
+) -> Any:
     """声明式补丁装饰器: 把实现函数注册为对 target 的新增补丁。
 
     mode 语义:

@@ -46,7 +46,7 @@ class OllamaStatus:
     models: Optional[List[OllamaModel]] = None
     error: Optional[str] = None
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.models is None:
             self.models = []
 

@@ -57,13 +57,13 @@ async def route(task: TaskRequest) -> Tuple[Optional[AgentAdapter], Optional[str
         *(ADAPTERS[aid].detect() for aid in adapter_ids), return_exceptions=True
     )
     candidates = []
-    for aid, info in zip(adapter_ids, infos):
-        if isinstance(info, BaseException):
+    for aid, probe in zip(adapter_ids, infos):
+        if isinstance(probe, BaseException):
             continue
-        if not info.healthy:
+        if not probe.healthy:
             continue
         weight = ADAPTERS[aid].weights.get(task.mode, 1)
-        candidates.append((aid, ADAPTERS[aid], weight, info.score))
+        candidates.append((aid, ADAPTERS[aid], weight, probe.score))
 
     if not candidates:
         return None, "NO_AGENT_AVAILABLE: 本机未安装任何可用代理"
@@ -101,10 +101,10 @@ async def route_explain(task: TaskRequest) -> dict:
         })
 
     if task.agent and task.agent != "auto":
-        adapter = ADAPTERS.get(task.agent)
-        if adapter is None:
+        explicit_adapter = ADAPTERS.get(task.agent)
+        if explicit_adapter is None:
             return {"agent": None, "error": f"AGENT_NOT_FOUND: {task.agent}", "candidates": rows}
-        info = await adapter.detect()
+        info = await explicit_adapter.detect()
         if not info.healthy:
             return {
                 "agent": None,

@@ -420,7 +420,7 @@ class MCPClient:
         except asyncio.TimeoutError:
             raise MCPError(f"MCP 调用超时: {method}")
 
-    async def _request(self, method: str, params: Dict[str, Any]):
+    async def _request(self, method: str, params: Dict[str, Any]) -> Any:
         self._req_id += 1
         rid = self._req_id
         fut = self._loop.create_future()  # type: ignore[union-attr]

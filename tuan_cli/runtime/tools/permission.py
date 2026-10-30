@@ -89,15 +89,47 @@ class _ModeHolder:
 
 
 class AutoModeApprovePolicy:
+    """Auto 模式策略：按风险分级决定 approve / ask（对齐主路径 AutoModeClassifier）。
+
+    不再无条件 APPROVE——危险操作 (run_shell 危险命令、delete_file 等) 交由
+    下游人工确认，仅安全操作自动放行（对标 Claude Code Auto Mode）。
+    """
+
     name = "auto-mode-approve"
 
-    def __init__(self, mode: _ModeHolder) -> None:
+    def __init__(self, mode: _ModeHolder, classifier: Any = None) -> None:
         self._mode = mode
+        self._classifier = classifier
+
+    def _get_classifier(self) -> Any:
+        if self._classifier is None:
+            try:
+                from ...core.auto_mode import AutoModeClassifier
+                self._classifier = AutoModeClassifier()
+            except Exception:  # noqa: BLE001 - 分类器不可用时回退常规行为
+                self._classifier = False
+        return self._classifier
 
     def evaluate(self, context: PolicyContext) -> Optional[PermissionPolicyResult]:
-        if self._mode.mode == PermissionMode.AUTO:
+        if self._mode.mode != PermissionMode.AUTO:
+            return None
+        classifier = self._get_classifier()
+        if not classifier:
+            return None  # 分类器不可用, 交给下一个策略
+        try:
+            assessment = classifier.assess(
+                context.tool_call.name, dict(context.args) if context.args else {}
+            )
+        except Exception:  # noqa: BLE001 - fail-safe: 分类器异常交给下一个策略
+            return None
+        if getattr(assessment, "needs_confirm", False):
+            return PermissionPolicyResult(
+                kind=PermissionDecision.ASK,
+                message=f"Auto 模式分类器要求确认: {getattr(assessment, 'reason', '')}",
+            )
+        if getattr(assessment, "auto_approve", False):
             return PermissionPolicyResult(kind=PermissionDecision.APPROVE)
-        return None
+        return None  # 非决定性结果, 交给下一个策略
 
 
 class YoloModeApprovePolicy:

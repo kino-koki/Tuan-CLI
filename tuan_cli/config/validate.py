@@ -37,7 +37,7 @@ _RULES: List[Tuple[str, Any, Any]] = [
     ("background.poll_interval", (int, float), (0.1, 60)),
 ]
 
-def _build_enum_rules():
+def _build_enum_rules() -> List[Tuple[str, tuple]]:
     """构建枚举校验规则 (mode.current 使用权威 MODE_IDS 清单)。"""
     try:
         from ..modes.registry import MODE_IDS
@@ -49,6 +49,7 @@ def _build_enum_rules():
         ("mode.default", tuple(["standard", "yolo", "plan"]) + mode_ids),
         ("mode.current", mode_ids),
         ("agent.effort", ("low", "medium", "high", "xhigh", "max")),
+        ("agent.max_effort_level", ("low", "medium", "high", "xhigh", "max")),
         ("ui.theme", ("dark", "light")),
         ("context.compact_strategy", ("smart", "none")),
         ("prompt.tier", ("auto", "compact", "full")),
@@ -59,7 +60,7 @@ def _build_enum_rules():
 _ENUM_RULES: List[Tuple[str, tuple]] = _build_enum_rules()
 
 
-def validate(config) -> Tuple[List[str], List[str]]:
+def validate(config: Any) -> Tuple[List[str], List[str]]:
     """返回 (errors, warnings)。error 阻断性, warning 提示性。"""
     errors: List[str] = []
     warnings: List[str] = []

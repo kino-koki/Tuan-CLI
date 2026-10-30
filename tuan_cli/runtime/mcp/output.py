@@ -65,7 +65,7 @@ def convert_content_block(block: MCPContentBlock) -> ContentPart:
     return _dropped(f"content block of unsupported type '{t}'")
 
 
-def _apply_binary_cap(parts: List[ContentPart]):
+def _apply_binary_cap(parts: List[ContentPart]) -> Any:
     out: List[ContentPart] = []
     truncated = False
     notices: List[str] = []
@@ -93,7 +93,7 @@ def _apply_binary_cap(parts: List[ContentPart]):
     return out, truncated, notices
 
 
-def _collapse_single_text(parts: List[ContentPart]):
+def _collapse_single_text(parts: List[ContentPart]) -> Any:
     if len(parts) == 1 and parts[0].type == "text":
         return parts[0].text
     return parts

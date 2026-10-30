@@ -17,7 +17,7 @@ import os
 import re
 import tempfile
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 # SPDXID 合法字符: 字母/数字/连字符/点
 _SPDX_ID_SAFE = re.compile(r"[^A-Za-z0-9.-]")
@@ -120,7 +120,7 @@ def generate_sbom(
     }
 
 
-def write_sbom(path: str, **kwargs) -> str:
+def write_sbom(path: str, **kwargs: Any) -> str:
     """生成并写入 SBOM JSON 文件 (原子写), 返回路径。"""
     data = generate_sbom(**kwargs)
     directory = os.path.dirname(os.path.abspath(path))

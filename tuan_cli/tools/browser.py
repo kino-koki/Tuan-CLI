@@ -94,7 +94,7 @@ def _preflight() -> Optional[str]:
 
 # ---------------------------------------------------------------- 同步/异步桥
 
-def _run_async(coro, timeout: float) -> Any:
+def _run_async(coro: Any, timeout: float) -> Any:
     """在独立线程里跑一个协程, 让同步工具 handler 也能用 asyncio 库。
 
     不能直接 asyncio.run(): Tauri/Web 后端所在线程可能已经有事件循环在跑,
@@ -134,7 +134,7 @@ def _make_llm(spec: str) -> Any:
     spec = (spec or "auto").strip().lower()
     family, _, model = spec.partition(":")
 
-    def _bump(name: str, model_arg: Optional[str]) -> Any:
+    def _bump(name: Any, model_arg: Optional[str]) -> Any:
         kwargs: Dict[str, Any] = {}
         if model_arg:
             kwargs["model"] = model_arg
@@ -147,19 +147,19 @@ def _make_llm(spec: str) -> Any:
     try:
         from browser_use.llm.browser_use.chat import ChatBrowserUse
     except Exception:  # noqa: BLE001
-        ChatBrowserUse = None  # type: ignore[assignment]
+        ChatBrowserUse = None
     try:
         from browser_use.llm.openai.chat import ChatOpenAI
     except Exception:  # noqa: BLE001
-        ChatOpenAI = None  # type: ignore[assignment]
+        ChatOpenAI = None
     try:
         from browser_use.llm.anthropic.chat import ChatAnthropic
     except Exception:  # noqa: BLE001
-        ChatAnthropic = None  # type: ignore[assignment]
+        ChatAnthropic = None
     try:
         from browser_use.llm.google.chat import ChatGoogle
     except Exception:  # noqa: BLE001
-        ChatGoogle = None  # type: ignore[assignment]
+        ChatGoogle = None
 
     try:
         if family == "browser-use":

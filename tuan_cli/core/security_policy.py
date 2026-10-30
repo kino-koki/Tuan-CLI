@@ -308,7 +308,7 @@ class SecurityPolicyEngine:
     def watch_rules_file(self, interval: float = 5.0) -> None:
         """启动规则文件监控线程 (可选)。"""
         import threading
-        def _watcher():
+        def _watcher() -> None:
             last_mtime = 0.0
             while True:
                 try:

@@ -217,3 +217,50 @@ def test_main_returns_2_when_not_tty_and_interactive():
     with mock.patch("sys.stdin.isatty", return_value=False), \
          mock.patch.object(sys, "argv", ["tuan"]):
         assert parser.main() == 2
+
+
+def test_reload_rebuilds_registry_and_keeps_gateway():
+    """reload 后注册表重建, 但不破坏 commands 门面路由。
+
+    回归: test_api_config_fixes::test_verbose_alone_prints_version_no_tui 曾
+    importlib.reload(parser) 重置 _COMMAND_REGISTRY, 而命令模块已缓存不重跑
+    _register_command, 导致注册表为空。旧 _backfill_from_cmd_sources() 把
+    cmd_run 等回填进注册表 (映射 .cmd_agents), 使 _resolve_func 绕过
+    commands.__getattr__ 门面 → mock.patch.object(commands, "cmd_run", spy)
+    失效 (test_main_routes_run_to_cmd_run 曾失败: assert 1 == 0)。
+    修复后: reload 由 _ensure_registered_after_reload 重建 (14 个独立模块),
+    剩余 cmd_* 继续走门面 fallback, 双轨保持可用。
+    """
+    saved = parser._COMMAND_REGISTRY.copy()
+    parser._COMMAND_REGISTRY.clear()
+    try:
+        parser._ensure_registered_after_reload()
+
+        # 独立注册模块重建进注册表
+        assert "cmd_ext" in parser._COMMAND_REGISTRY
+        assert parser._COMMAND_REGISTRY["cmd_ext"] == ".ext_cli"
+
+        # cmd_run 等依赖 commands 门面惰性路由, 不得进注册表
+        assert "cmd_run" not in parser._COMMAND_REGISTRY
+        assert "cmd_dev" not in parser._COMMAND_REGISTRY
+
+        # 双轨均能解析到可调用对象
+        assert callable(parser._resolve_func("cmd_ext"))
+        assert callable(parser._resolve_func("cmd_run"))
+        assert callable(parser._resolve_func("cmd_dev"))
+    finally:
+        parser._COMMAND_REGISTRY.clear()
+        parser._COMMAND_REGISTRY.update(saved)
+
+
+def test_cmd_ext_registered_to_independent_module():
+    """cmd_ext 必须注册到 .ext_cli (独立注册模块)。
+
+    回归: ext_cli.py 曾定义 cmd_ext 但从未 _register_command("cmd_ext",
+    ".ext_cli"), 也不在 _CMD_SOURCES → _resolve_func("cmd_ext") 抛
+    AttributeError, `tuan ext` 子命令不可达。属既有缺陷, 补注册修复。
+    """
+    assert parser._COMMAND_REGISTRY.get("cmd_ext") == ".ext_cli"
+    resolved = parser._resolve_func("cmd_ext")
+    assert callable(resolved)
+    assert resolved.__module__ == "tuan_cli.cli.ext_cli"

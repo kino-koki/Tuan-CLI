@@ -103,7 +103,7 @@ class SubAgentPool:
     def __init__(
         self,
         kernel: Kernel,
-        config,
+        config: Any,
         workspace: str,
         main_agent: Optional[Agent] = None,
         confirm: Optional[Callable[[str], bool]] = None,

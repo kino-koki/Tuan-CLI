@@ -10,12 +10,13 @@ ArgumentParser 声明集中在本模块的 `register_subcommands(sub)` 里,
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # dispatch 子命令共用的五模式 (与 tuan_cli/agents/base.py TaskRequest.mode 对齐)
 _DISPATCH_MODES = ("chat", "collaboration", "gantong", "lingma", "boundless")
 
 
-def _add_network_parser(sub, name: str, help_text: str) -> "argparse.ArgumentParser":
+def _add_network_parser(sub: Any, name: str, help_text: str) -> "argparse.ArgumentParser":
     """注册 `tuan <name> <configuration|con|config> [action key? value?]`。
 
     网络/搜索配置基础设施入口。``network`` 与 ``net`` 等价, command 层又提供
@@ -40,7 +41,7 @@ def _add_network_parser(sub, name: str, help_text: str) -> "argparse.ArgumentPar
     return p
 
 
-def register_subcommands(sub) -> None:
+def register_subcommands(sub: Any) -> None:
     """注册全部 tuan 子命令到 subparsers。"""
 
     p = sub.add_parser(
@@ -1072,3 +1073,80 @@ def register_subcommands(sub) -> None:
         help='工具参数 JSON, 如 \'{"command":"rm -rf /"}\'',
     )
     p.set_defaults(func="cmd_permissions")
+
+    # ---- Claude Code 对齐 CLI 命令面 (docs/GAP-ANALYSIS-vs-ClaudeCode.md A2) ----
+    p = sub.add_parser(
+        "review",
+        help="自动代码评审 (静态分析 + 逻辑审查 + 安全扫描, 输出评分报告)",
+    )
+    p.add_argument("path", nargs="?", default="", help="评审路径 (目录或文件, 默认工作区)")
+    p.add_argument("--files", default="", help="逗号分隔的文件列表")
+    p.add_argument(
+        "--categories",
+        default=None,
+        help="评审类别 (security/logic/style/complexity, 逗号分隔; 默认全部)",
+    )
+    p.add_argument("--json", action="store_true", help="以 JSON 输出结构化结果")
+    p.add_argument("--workspace", default=None, help="工作区目录 (默认当前目录)")
+    p.set_defaults(func="cmd_review")
+
+    p = sub.add_parser(
+        "security-review",
+        help="安全扫描评审 (仅 security 类别: 密钥/注入/XSS/pickle 等)",
+    )
+    p.add_argument("path", nargs="?", default="", help="扫描路径 (默认工作区)")
+    p.add_argument("--files", default="", help="逗号分隔的文件列表")
+    p.add_argument("--json", action="store_true", help="以 JSON 输出结构化结果")
+    p.add_argument("--workspace", default=None, help="工作区目录 (默认当前目录)")
+    p.set_defaults(func="cmd_security_review", security=True)
+
+    p = sub.add_parser(
+        "simplify",
+        help="简化冗余技能 (检测相似技能对, 提议合并; --apply 实际执行)",
+    )
+    p.add_argument("--dry-run", action="store_true", help="只报告不合并 (默认)")
+    p.add_argument("--apply", action="store_true", help="实际执行合并")
+    p.add_argument("--threshold", type=float, default=0.7, help="相似度阈值 (默认 0.7)")
+    p.add_argument("--workspace", default=None, help="工作区目录 (默认当前目录)")
+    p.set_defaults(func="cmd_simplify")
+
+    p = sub.add_parser(
+        "debug",
+        help="环境/配置/运行时诊断摘要 (python/cwd/home/config/环境变量)",
+    )
+    p.set_defaults(func="cmd_debug")
+
+    # ---- auto-mode: Auto 模式分类器展示与测试 (对标 Claude Code auto-mode) ----
+    p = sub.add_parser(
+        "auto-mode",
+        help="Auto 模式分类器: 展示工具风险基线; test 评估单次调用的自动批准决策",
+    )
+    p.add_argument(
+        "action",
+        nargs="?",
+        default="list",
+        choices=["list", "test"],
+        help="list=展示风险基线 (默认); test=评估单次调用",
+    )
+    p.add_argument(
+        "tool",
+        nargs="?",
+        default="",
+        help="test 时: 要评估的工具名 (如 Bash / Edit)",
+    )
+    p.add_argument(
+        "args",
+        nargs="?",
+        default="{}",
+        help="test 时: 调用参数 JSON 对象 (如 '{\"command\":\"git status\"}')",
+    )
+    p.set_defaults(func="cmd_auto_mode")
+
+    p = sub.add_parser(
+        "batch",
+        help="批量执行一组只读 slash 命令 (--file <命令文件> 或直接给命令)",
+    )
+    p.add_argument("commands", nargs="*", help="要批量执行的 slash 命令")
+    p.add_argument("--file", dest="file", default=None, help="命令文件 (每行一条)")
+    p.add_argument("--workspace", default=None, help="工作区目录 (默认当前目录)")
+    p.set_defaults(func="cmd_batch")

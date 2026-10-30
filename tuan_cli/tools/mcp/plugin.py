@@ -123,7 +123,7 @@ def _build_security_policy(server_config: Dict[str, Any], global_config: Any) ->
     )
 
 
-def _build_stdio_clients(config, multitransport_enabled: bool) -> List[MCPClient]:
+def _build_stdio_clients(config: Any, multitransport_enabled: bool) -> List[MCPClient]:
     """构建 stdio 客户端（仅 ``command`` 类 server）。远程 server 交由融合层处理。"""
     servers = config.get("mcp.servers", []) or []
     clients = []
@@ -211,7 +211,7 @@ def register_mcp_tool(
     # 检查是否需要确认
     needs_confirm = policy.requires_confirm(remote_name) or needs_confirm_override
 
-    def handler(_ctx, **kwargs) -> str:
+    def handler(_ctx: Any, **kwargs: Any) -> str:
         # MCP 安全加固: 扫描工具参数中的注入
         try:
             from ..mcp.security import get_mcp_security_guard
@@ -306,7 +306,7 @@ class MCPPlugin(Plugin):
         # (stdio server 走 mcp_clients; 远程 server 走 mcp_remote, 二者合并展示)。
         kernel.provide("mcp_remote", self._mt, owner=self.name)
 
-    def _build_search_engine(self, config) -> Optional[Any]:
+    def _build_search_engine(self, config: Any) -> Optional[Any]:
         ts_config = config.get("mcp.tool_search", {}) or {}
         enabled = ts_config.get("enabled")
         if enabled is False:
@@ -330,7 +330,7 @@ class MCPPlugin(Plugin):
             log.warning("MCP Tool Search 引擎初始化失败: %s", exc)
             return None
 
-    def _activate_multitransport(self, config, registry) -> None:
+    def _activate_multitransport(self, config: Any, registry: Any) -> None:
         servers = config.get("mcp.servers", []) or []
         remote = {str(s.get("name", f"server-{i}")): s
                   for i, s in enumerate(servers) if isinstance(s, dict) and _is_remote(s)}
@@ -351,7 +351,7 @@ class MCPPlugin(Plugin):
         except Exception as exc:  # noqa: BLE001
             log.error("MCP 融合层（多传输）启动失败: %s", exc)
 
-    def _register_tool(self, registry, client: MCPClient, spec: Dict[str, Any]) -> None:
+    def _register_tool(self, registry: Any, client: MCPClient, spec: Dict[str, Any]) -> None:
         register_mcp_tool(
             registry,
             client.name,

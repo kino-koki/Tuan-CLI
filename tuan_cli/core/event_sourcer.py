@@ -115,7 +115,7 @@ class EventSourcer:
     在 SessionStore (append-only JSONL) 之上提供结构化操作。
     """
 
-    def __init__(self, session_store=None, home=None):
+    def __init__(self, session_store: Any = None, home: Any = None) -> None:
         """
         Args:
             session_store: 现有 SessionStore 实例 (可选, 若提供则直接操作其文件)
@@ -131,7 +131,7 @@ class EventSourcer:
         if session_store is not None:
             self._load_from_store()
 
-    def _load_from_store(self):
+    def _load_from_store(self) -> None:
         """从 SessionStore 加载现有事件, 初始化序号计数器。"""
         if self._store is None:
             return
@@ -179,7 +179,7 @@ class EventSourcer:
 
         return ev
 
-    def emit_parallel(self, events: List[Tuple[str, Dict[str, Any]]], **kwargs) -> List[SourcedEvent]:
+    def emit_parallel(self, events: List[Tuple[str, Dict[str, Any]]], **kwargs: Any) -> List[SourcedEvent]:
         """写入并行事件组 (多个子代理同时执行)。"""
         results = []
         for kind, payload in events:
@@ -187,7 +187,7 @@ class EventSourcer:
             results.append(ev)
         return results
 
-    def emit_waterfall(self, stages: List[Tuple[str, Dict[str, Any]]], **kwargs) -> List[SourcedEvent]:
+    def emit_waterfall(self, stages: List[Tuple[str, Dict[str, Any]]], **kwargs: Any) -> List[SourcedEvent]:
         """写入瀑布管线 (pre→exec→post, 不可重排)。"""
         results = []
         for kind, payload in stages:
@@ -195,7 +195,7 @@ class EventSourcer:
             results.append(ev)
         return results
 
-    def emit_bail(self, kind: str, payload: Dict[str, Any], **kwargs) -> SourcedEvent:
+    def emit_bail(self, kind: str, payload: Dict[str, Any], **kwargs: Any) -> SourcedEvent:
         """写入短路事件 (遇到则中止当前循环)。"""
         return self.emit(kind, payload, semantics="bail", **kwargs)
 
@@ -291,7 +291,7 @@ class EventSourcer:
     def replay(
         self,
         fork_id: str,
-        to_session_store=None,
+        to_session_store: Any = None,
         *,
         from_seq: Optional[int] = None,
         to_seq: Optional[int] = None,
@@ -365,7 +365,7 @@ class EventSourcer:
 
     # ---------------------------------------------------------- 导出
 
-    def to_trajectory(self):
+    def to_trajectory(self) -> Any:
         """导出为 Trajectory 对象 (复用 trajectory.py)。"""
         from .trajectory import Trajectory
         records = [ev.to_dict() for ev in self._events]

@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import Any
 
 from ..core.proc import normalize_shell_command
 
@@ -214,7 +215,7 @@ _whitelist_manager: WhitelistManager | None = None
 _whitelist_lock = threading.Lock()
 
 
-def _get_whitelist_manager(home=None) -> WhitelistManager:
+def _get_whitelist_manager(home: Any = None) -> WhitelistManager:
     """获取全局白名单管理器单例。"""
     global _whitelist_manager
     with _whitelist_lock:
@@ -642,7 +643,7 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
             pass
 
 
-def _route_sandbox_isolation(ctx: ToolContext, command: str, timeout: int):
+def _route_sandbox_isolation(ctx: ToolContext, command: str, timeout: int) -> Any:
     """若统一滤网裁决本命令需隔离, 用隔离后端执行并返回结果文本 (None=无需隔离)。
 
     消费 ToolExecutor 在 ctx._sandbox_verdict 写下的 L3 裁决; 未裁决或后端不可用

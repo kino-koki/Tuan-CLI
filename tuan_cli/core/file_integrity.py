@@ -416,7 +416,7 @@ class FileIntegrityMonitor:
         directory: Path,
         include_patterns: Optional[List[str]] = None,
         exclude_patterns: Optional[List[str]] = None,
-    ):
+    ) -> Any:
         """遍历目录下的文件。"""
         import fnmatch
         for root, dirs, files in os.walk(directory):

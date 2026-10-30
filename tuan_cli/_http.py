@@ -52,9 +52,11 @@ from typing import (
     Any,
     AsyncIterator,
     Dict,
+    Generator,
     Iterable,
     Iterator,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
@@ -359,7 +361,7 @@ def _open(
             if body:
                 conn.send(body)
             response = conn.getresponse()
-            response._tuan_conn = conn  # 持有连接, 便于随 Response 关闭
+            setattr(response, "_tuan_conn", conn)  # 持有连接, 便于随 Response 关闭
         except socket.timeout as exc:
             sock.close()
             raise ReadTimeout(f"请求超时 ({current_url})") from exc
@@ -474,7 +476,7 @@ class Response:
         ) from None
 
     # -- 流式 --------------------------------------------------------------- #
-    def iter_lines(self) -> Iterator[str]:
+    def iter_lines(self) -> Generator[str, None, None]:
         """逐行迭代 SSE / 换行分隔正文, 去掉行尾的 ``\\r``。
 
         用文本缓冲 + ``split("\\n")`` 处理跨 chunk 的半行, 保证 chunked 解码
@@ -550,7 +552,7 @@ class Response:
     def __enter__(self) -> "Response":
         return self
 
-    def __exit__(self, *exc: Any) -> bool:
+    def __exit__(self, *exc: Any) -> Literal[False]:
         self.close()
         return False
 
@@ -709,16 +711,17 @@ class Client:
         """
         url = _resolve_url(self.base_url, url)
         headers = self._merged_headers(headers)
+        body: Optional[bytes] = None
         if json is not None:
-            content = _json.dumps(json, ensure_ascii=False).encode("utf-8")
+            body = _json.dumps(json, ensure_ascii=False).encode("utf-8")
             headers.setdefault("Content-Type", "application/json")
         elif data is not None:
-            content = data if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
+            body = bytes(data) if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
             headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
-        elif content is not None and isinstance(content, str):
-            content = content.encode("utf-8")
+        elif content is not None:
+            body = content.encode("utf-8") if isinstance(content, str) else bytes(content)
         final_url, resp = _open(
-            method.upper(), url, headers=headers, body=content,
+            method.upper(), url, headers=headers, body=body,
             timeout=self.timeout, proxy=self._proxy, verify=self.verify,
         )
         return Response(resp.status, list(resp.getheaders()), url=final_url, stream=resp)
@@ -750,7 +753,7 @@ class Client:
     def __enter__(self) -> "Client":
         return self
 
-    def __exit__(self, *exc: Any) -> bool:
+    def __exit__(self, *exc: Any) -> Literal[False]:
         self.close()
         return False
 
@@ -844,7 +847,7 @@ def _kw_timeout(timeout: Any) -> Timeout:
         return timeout
     if isinstance(timeout, (int, float)):
         return Timeout(float(timeout), connect=float(timeout))
-    return _DEFAULT_TIMEOUT
+    return Timeout(_DEFAULT_TIMEOUT, connect=_DEFAULT_TIMEOUT)
 
 
 def request(
@@ -864,15 +867,15 @@ def request(
     t = _kw_timeout(timeout)
     merged = {"Accept": "*/*"}
     merged.update(headers or {})
-    body = None
+    body: Optional[bytes] = None
     if json is not None:
         body = _json.dumps(json, ensure_ascii=False).encode("utf-8")
         merged.setdefault("Content-Type", "application/json")
     elif data is not None:
-        body = data if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
+        body = bytes(data) if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
         merged.setdefault("Content-Type", "application/x-www-form-urlencoded")
     elif content is not None:
-        body = content.encode("utf-8") if isinstance(content, str) else content
+        body = content.encode("utf-8") if isinstance(content, str) else bytes(content)
     final_url, resp = _open(
         method.upper(), url, headers=merged, body=body,
         timeout=t, proxy=None, verify=verify,

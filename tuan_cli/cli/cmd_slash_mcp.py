@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ._ui_singleton import ui
 
 
-def _cmd_mcp(agent, arg: str) -> None:
+def _cmd_mcp(agent: Any, arg: str) -> None:
     """/mcp [list|tools|audit|security] [args] — MCP 管理。
 
     用法:
@@ -116,7 +118,7 @@ def _cmd_mcp(agent, arg: str) -> None:
     ui.error(f"未知操作: {action}. 可用: list / tools / audit / security")
 
 
-def _cmd_audit(agent, arg: str) -> None:
+def _cmd_audit(agent: Any, arg: str) -> None:
     """/audit [export|stats|recent] [args] — 审计报告管理。
 
     用法:

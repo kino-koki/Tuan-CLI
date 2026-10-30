@@ -112,7 +112,7 @@ agent 收到视频意图后，先输出分镜脚本：
       "duration": 8,
       "title": "特性展示",
       "layout": "grid-3",
-      "content": {"items": [{"icon": "⚡", "text": "特性1"}, ...]},
+      "content": {"items": [{"icon": "bolt", "text": "特性1"}, ...]},
       "animation": "stagger-fade-in"
     }
   ],
@@ -171,13 +171,13 @@ const timeline = {
 hyperframes doctor
 
 # 输出示例:
-# ✓ Node.js >= 18.0 (detected: v20.11.0)
-# ✓ Chromium/Puppeteer (detected: headless chrome 120)
-# ✓ FFmpeg (detected: 6.1)
-# ✓ Fonts (detected: 42 system fonts)
-# ✓ Canvas rendering (WebGL: enabled)
-# ✓ Audio output (ListenHub: available)
-# ⚠ Slow disk write speed (120 MB/s, recommended: 300+ MB/s)
+# [OK] Node.js >= 18.0 (detected: v20.11.0)
+# [OK] Chromium/Puppeteer (detected: headless chrome 120)
+# [OK] FFmpeg (detected: 6.1)
+# [OK] Fonts (detected: 42 system fonts)
+# [OK] Canvas rendering (WebGL: enabled)
+# [OK] Audio output (ListenHub: available)
+# [WARN] Slow disk write speed (120 MB/s, recommended: 300+ MB/s)
 ```
 
 ### 步骤 5: 渲染输出 (Render)

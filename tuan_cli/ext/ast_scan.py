@@ -236,7 +236,7 @@ class _DangerousCallVisitor(ast.NodeVisitor):
             if base_name and node.attr == fname:
                 # 检查 base_name 是否对应 mod (考虑别名)
                 actual_mod = self._import_aliases.get(base_name, base_name)
-                return actual_mod == mod
+                return bool(actual_mod == mod)
 
         # from os import system → system(x)
         if isinstance(node, ast.Name):
@@ -486,7 +486,7 @@ def extract_python_sources(command: str, workspace: str = "") -> List[Tuple[str,
     Returns:
         [(filename, source), ...] 列表; 无法提取时返回空列表
     """
-    results: List[Tuple[str, str]] = []
+    results: List[Tuple[str, Optional[str]]] = []
 
     # 先尝试匹配 -c 内联代码
     for m in _PYTHON_EXE_RE.finditer(command):

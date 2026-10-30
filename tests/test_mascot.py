@@ -6,7 +6,10 @@ def test_states_constant():
     assert STATES == (IDLE, THINKING, WORKING, ALERT, DONE)
 
 
-def test_ascii_renders_per_state():
+def test_ascii_renders_per_state(monkeypatch):
+    # 测试必须与运行终端无关: 强制走标准 block-art 路径 (非 VS Code 变体),
+    # 否则在 VS Code 集成终端 (VSCODE_PID/TERM_PROGRAM) 下 logo 换成全块, 断言失配。
+    monkeypatch.setattr("tuan_cli.ui.mascot._in_vscode_terminal", lambda: False)
     for st in STATES:
         m = Mascot(st)
         art = m.ascii(0)

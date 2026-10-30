@@ -3,9 +3,10 @@ RFC 6901 Pointer 精确取值 / 逐路径 diff / 深合并
 """
 import json
 import sys
+from typing import Any, List
 
 
-def _pointer_get(obj, pointer: str):
+def _pointer_get(obj: Any, pointer: str) -> Any:
     """RFC 6901 JSON Pointer 取值"""
     if not pointer:
         return obj
@@ -21,7 +22,7 @@ def _pointer_get(obj, pointer: str):
     return obj
 
 
-def _deep_diff(base, overlay, path=""):
+def _deep_diff(base: Any, overlay: Any, path: str = "") -> List[Any]:
     """逐路径 diff"""
     diffs = []
     if isinstance(base, dict) and isinstance(overlay, dict):
@@ -48,7 +49,7 @@ def _deep_diff(base, overlay, path=""):
     return diffs
 
 
-def _deep_merge(base, overlay):
+def _deep_merge(base: Any, overlay: Any) -> Any:
     """深合并 (overlay 覆盖 base)"""
     if isinstance(base, dict) and isinstance(overlay, dict):
         merged = dict(base)
@@ -64,7 +65,7 @@ def _deep_merge(base, overlay):
 class JsonEngine:
     """统一 JSONL IPC 协议的 json 引擎"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.methods = {
             "pointer_get": self.pointer_get,
             "diff": self.diff,
@@ -72,7 +73,7 @@ class JsonEngine:
             "_meta/list": self.list_methods,
         }
 
-    def list_methods(self, params=None):
+    def list_methods(self, params: Any = None) -> Any:
         return {
             "engine": "json",
             "version": "1.0.0-python",
@@ -80,28 +81,28 @@ class JsonEngine:
             "capabilities": ["rfc6901_pointer", "deep_diff", "deep_merge"],
         }
 
-    def pointer_get(self, params):
+    def pointer_get(self, params: Any) -> Any:
         """RFC 6901 Pointer 取值 (未命中时抛异常 -> 上层转 ok:false)"""
         doc = params.get("doc", {})
         pointer = params.get("pointer", "")
         result = _pointer_get(doc, pointer)
         return {"value": result, "found": True}
 
-    def diff(self, params):
+    def diff(self, params: Any) -> Any:
         """逐路径 diff"""
         base = params.get("base", {})
         overlay = params.get("overlay", {})
         diffs = _deep_diff(base, overlay)
         return {"changes": diffs, "count": len(diffs)}
 
-    def merge(self, params):
+    def merge(self, params: Any) -> Any:
         """深合并"""
         base = params.get("base", {})
         overlay = params.get("overlay", {})
         merged = _deep_merge(base, overlay)
         return {"merged": merged}
 
-    def handle(self, line):
+    def handle(self, line: Any) -> str:
         req_id = None
         try:
             req = json.loads(line)
@@ -118,7 +119,7 @@ class JsonEngine:
             resp = {"id": req_id, "ok": False, "error": str(e)}
             return json.dumps(resp, ensure_ascii=False)
 
-    def run(self):
+    def run(self) -> None:
         sys.stdout.write(json.dumps({"ready": True}) + "\n")
         sys.stdout.flush()
         for line in sys.stdin:

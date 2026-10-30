@@ -169,7 +169,7 @@ class ChunkFlusher:
 
 # ===================================================================== 用量/成本
 
-def estimate_total_cost(config, total_usage: Dict[str, int]) -> float:
+def estimate_total_cost(config: Any, total_usage: Dict[str, int]) -> float:
     """估算当前会话总花费 (USD)。"""
     try:
         from ..models.router import estimate_cost

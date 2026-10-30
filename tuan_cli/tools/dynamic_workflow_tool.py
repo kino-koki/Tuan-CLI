@@ -15,7 +15,7 @@ from typing import Any, Optional
 from .base import Tool, ToolResult, ToolContext
 
 
-def _engine(ctx: ToolContext):
+def _engine(ctx: ToolContext) -> Any:
     """取当前 run 的共享引擎并注入运行时资源。"""
     from ..config import home_dir
     from ..core.dynamic_workflow import get_engine
@@ -40,7 +40,7 @@ def _engine(ctx: ToolContext):
 
 def _start_workflow(ctx: ToolContext, name: Optional[str] = "",
                     steps: Any = None, parallel: Any = True,
-                    note: Optional[str] = "", **kwargs) -> str:
+                    note: Optional[str] = "", **kwargs: Any) -> str:
     from ..core.dynamic_workflow import parse_steps
 
     eng = _engine(ctx)
@@ -65,7 +65,7 @@ def _start_workflow(ctx: ToolContext, name: Optional[str] = "",
 def _status_workflow(ctx: ToolContext, action: str = "status", wf_id: str = "",
                      steps_json: Any = None, name: Optional[str] = None,
                      title: str = "", prompt: str = "", role: str = "general-purpose",
-                     **kwargs) -> str:
+                     **kwargs: Any) -> str:
     from ..core.dynamic_workflow import parse_steps
     eng = _engine(ctx)
     action = (action or "status").lower()
@@ -200,7 +200,7 @@ class DynamicWorkflowPlugin:
     provides = ["dynamic_workflow_engine"]
     requires = ["tool_registry"]
 
-    def activate(self, kernel) -> None:
+    def activate(self, kernel: Any) -> None:
         from ..config import home_dir
         from ..core.dynamic_workflow import get_engine
 

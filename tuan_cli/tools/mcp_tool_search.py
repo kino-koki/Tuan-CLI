@@ -249,7 +249,7 @@ class MCPToolSearchEngine:
             group="mcp",
         )
 
-    def _handle_search(self, _ctx, **kwargs) -> str:
+    def _handle_search(self, _ctx: Any, **kwargs: Any) -> str:
         query = str(kwargs.get("search", "") or "")
         hits = self.search(query, sticky=True)
         if not hits:

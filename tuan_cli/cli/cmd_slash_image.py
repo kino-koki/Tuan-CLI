@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ._ui_singleton import ui
 
 
-def _cmd_image(agent, head: str, arg: str) -> None:
+def _cmd_image(agent: Any, head: str, arg: str) -> None:
     """/image /images /clear-images /image generate: 多模态图片管理 + AI 生成。"""
     if head == "/images":
         if not getattr(agent, "pending_images", None):
@@ -47,7 +49,7 @@ def _cmd_image(agent, head: str, arg: str) -> None:
         ui.error(f"挂接图片失败: {exc}")
 
 
-def _cmd_image_generate(agent, arg: str) -> None:
+def _cmd_image_generate(agent: Any, arg: str) -> None:
     """/image generate <描述> — AI 图片生成。"""
     if not arg:
         ui.info("用法: /image generate <图片描述>")

@@ -16,7 +16,7 @@ import threading
 import time
 import os
 import sys
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.completion import WordCompleter
@@ -127,7 +127,7 @@ class FullScreenTUI:
             self._app_kwargs["output"] = DummyOutput()
             self._app = Application(**self._app_kwargs)  # type: ignore[arg-type]
 
-    def _build_layout(self):
+    def _build_layout(self) -> Any:
         side = Window(FormattedTextControl(self._render_side), width=22,
                       style="class:panel", wrap_lines=True)
         log = ScrollablePane(Window(self._log_control, wrap_lines=True), height=None)
@@ -142,27 +142,27 @@ class FullScreenTUI:
         keys = KeyBindings()
 
         @keys.add("c-q")
-        def _quit(event) -> None:
+        def _quit(event: Any) -> None:
             self._closed = True
             event.app.exit()
 
         @keys.add("c-l")
-        def _clear(event) -> None:
+        def _clear(event: Any) -> None:
             self._events.clear()
             event.app.invalidate()
 
         @keys.add("tab")
-        def _toggle_focus(event) -> None:
+        def _toggle_focus(event: Any) -> None:
             self._cycle_focus()
             event.app.invalidate()
 
         @keys.add("c-x")
-        def _cycle_mode(event) -> None:
+        def _cycle_mode(event: Any) -> None:
             self.cycle_mode()
             event.app.invalidate()
 
         @keys.add("c-c")
-        def _cancel(event) -> None:
+        def _cancel(event: Any) -> None:
             if not self._busy:
                 self.append_log(t("fs.no_task"))
                 return
@@ -175,7 +175,7 @@ class FullScreenTUI:
             event.app.invalidate()
 
         @keys.add("enter")
-        def _submit(event) -> None:
+        def _submit(event: Any) -> None:
             text = self.input.text.strip()
             if not text:
                 return
@@ -328,7 +328,7 @@ class FullScreenTUI:
             last_drawn = key
             self._app.invalidate()
 
-    def _render_status(self):
+    def _render_status(self) -> Any:
         icon = MASCOT_ICONS.get(self._mascot_state, "◦")
         parts = [f"{icon} {self.title}", self._status]
         if self._plan_mode:
@@ -339,7 +339,7 @@ class FullScreenTUI:
             parts.append(f"ctx={self._context_pct:.0f}%")
         return [("class:title", "  " + "  |  ".join(parts))]
 
-    def _render_footer(self):
+    def _render_footer(self) -> Any:
         """底部状态栏 (tuan_cli 风格): 模式/模型徽章 + 上下文占用 + 快捷键提示。"""
         mode_badge = f"[{self._mode}]"
         badges = [("class:badge", mode_badge)]
@@ -353,7 +353,7 @@ class FullScreenTUI:
         right = [("", t("fs.hints_footer"))]
         return left + right
 
-    def _render_side(self):
+    def _render_side(self) -> Any:
         state = t("fs.busy_state") if self._busy else t("fs.idle_state")
         self._mascot.set(self._mascot_state)
         art = self._mascot.ascii(self._mascot_frame, color=False)
@@ -379,5 +379,5 @@ class FullScreenTUI:
         lines.append(("", t("fs.hints_side")))
         return lines
 
-    def _render_events(self):
+    def _render_events(self) -> Any:
         return "\n".join(self._events) or t("fs.placeholder")

@@ -29,14 +29,14 @@ from ..ui.plain_console import console
 
 # ---- app 链惰性加载: 构建内核 (~1s) 只在真正需要热切换时付出 ----
 # 与 cmd_chat.build_kernel 同款惰性包装 (拆分前 cmd_model 依赖 cmd_chat 的同名函数)。
-def build_kernel(*a, **k):
+def build_kernel(*a: Any, **k: Any) -> Any:
     from ..app import build_kernel as _f
     return _f(*a, **k)
 
 
 # ===================================================================== cmd_model
 
-def _show_provider_models(name: str, by_name=None) -> None:
+def _show_provider_models(name: str, by_name: Optional[Dict[str, Any]] = None) -> None:
     """打印某供应商的可选模型清单。
     by_name: 本地目录视图 (呼叫方传入); 缺省内置 get_provider。
     """
@@ -74,7 +74,7 @@ def _ellipsize(text: str, max_chars: int = 40) -> str:
     return head + "…"
 
 
-def _offer_keep_original_config(config, chosen) -> None:
+def _offer_keep_original_config(config: Any, chosen: Any) -> None:
     """换供应商时: Y/n 保留原 API 配置(可随时切回) / 删除原配置。不覆写已持久化的旧密钥。
 
     chosen 需具备 .name / .api_key_env。tuan models 交互式切换与 tuan setup 向导共用。
@@ -99,13 +99,13 @@ def _offer_keep_original_config(config, chosen) -> None:
             console.print(f"  已保留原配置 {old_env} (可随时切回 {old_provider})")
 
 
-def _no_key_env(config) -> str:
+def _no_key_env(config: Any) -> str:
     """缺失密钥的环境变量名 (状态栏提示用, 让"未配置"可操作)。"""
     env = config.get("model.api_key_env", "DEEPSEEK_API_KEY") or "API Key"
     return env
 
 
-def _pick_api_key_interactive(preset) -> str:
+def _pick_api_key_interactive(preset: Any) -> str:
     """提示用户输入 API Key。已配置过 (环境变量或 .env 文件) 则优先复用, 避免换模型重输。"""
     env_name = preset.api_key_env
     if not env_name:
@@ -136,7 +136,7 @@ def _pick_api_key_interactive(preset) -> str:
     return key
 
 
-def _pick_model_interactive(preset) -> tuple:
+def _pick_model_interactive(preset: Any) -> tuple:
     """展示供应商模型清单并让用户选择。"""
     models = preset.recommended_models
     if not models:
@@ -166,7 +166,7 @@ def _pick_model_interactive(preset) -> tuple:
 class _ConfigOverride:
     """只读配置视图: 在基础 config 上覆盖若干键 (不写盘)。"""
 
-    def __init__(self, base, overrides: Dict[str, Any]):
+    def __init__(self, base: Any, overrides: Dict[str, Any]) -> None:
         self._base = base
         self._overrides = overrides
 
@@ -183,7 +183,7 @@ class _ConfigOverride:
         return cast(Optional[str], self._base.api_key())
 
 
-def _model_test(config, args=None) -> int:
+def _model_test(config: Any, args: Any = None) -> int:
     """连通性测试。"""
     overrides: Dict[str, Any] = {}
     for attr, dotted in (("provider", "model.provider"), ("model", "model.model"),
@@ -267,7 +267,7 @@ def _model_local() -> int:
     return 0
 
 
-def _model_update(args, config) -> int:
+def _model_update(args: Any, config: Any) -> int:
     """tuan models update: 本地更新模型/供应商目录。
     全程离线: 把内置最新清单合并写入本地 JSON,
     保留用户自建条目; --check 只报告不写盘; --background 后台执行。
@@ -294,7 +294,7 @@ def _model_update(args, config) -> int:
     return 0
 
 
-def _print_update_done(n_p, n_m, error=None) -> None:
+def _print_update_done(n_p: int, n_m: int, error: Optional[str] = None) -> None:
     """后台更新完成回调。"""
     if error:
         console.print(f"[后台更新失败] {error}")
@@ -302,7 +302,7 @@ def _print_update_done(n_p, n_m, error=None) -> None:
         console.print(f"[后台更新完成] 模型/供应商目录: {n_p} 供应商 / {n_m} 模型")
 
 
-def cmd_model(args) -> int:
+def cmd_model(args: Any) -> int:
     """配置/热切换模型供应商。"""
     model_cmd = getattr(args, "model_cmd", None)
     config = Config(profile=getattr(args, "profile", "default"),

@@ -168,7 +168,7 @@ class SecurityAuditor:
         self._load_existing()
 
     @staticmethod
-    def _resolve_provider(name: str):
+    def _resolve_provider(name: str) -> Any:
         """解析加密后端; 依赖缺失或不适用时降级到 software 并明确告警 (绝不静默)。"""
         from ..harden.crypto_provider import get_crypto_provider
         try:
@@ -185,7 +185,7 @@ class SecurityAuditor:
         return f"{self._provider.name}/{self._provider.algorithm}"
 
     @staticmethod
-    def _chmod_600(path) -> None:
+    def _chmod_600(path: Any) -> None:
         """收紧审计目录/文件权限 (POSIX 0600; Windows 上尽力而为, 失败静默)。"""
         try:
             if os.name == "nt":
@@ -207,7 +207,7 @@ class SecurityAuditor:
         fingerprint = f"{os.getlogin() if hasattr(os, 'getlogin') else 'unknown'}@{os.uname().nodename if hasattr(os, 'uname') else os.environ.get('COMPUTERNAME', 'unknown')}"
         return hashlib.pbkdf2_hmac("sha256", fingerprint.encode(), b"tuan-audit-device", 100000)
 
-    def _load_existing(self):
+    def _load_existing(self) -> None:
         """加载已有审计日志, 恢复序号和 prev_hash。"""
         if not self._log_file.exists():
             return
@@ -278,7 +278,7 @@ class SecurityAuditor:
 
             return rec
 
-    def _append_encrypted(self, rec: AuditRecord):
+    def _append_encrypted(self, rec: AuditRecord) -> None:
         """AEAD 加密并追加写入审计日志。"""
         try:
             data = json.dumps(rec.to_dict(), ensure_ascii=False).encode()
@@ -452,9 +452,9 @@ class SecurityAuditor:
 
     # ---------------------------------------------------------- 与 SecurityEventBus 集成
 
-    def subscribe_bus(self, bus) -> None:
+    def subscribe_bus(self, bus: Any) -> None:
         """订阅 SecurityEventBus, 自动将安全事件写入审计日志。"""
-        def _on_security_event(event):
+        def _on_security_event(event: Any) -> None:
             # 映射 SecurityEvent → AuditRecord
             severity_map = {
                 "critical": "critical", "high": "high",

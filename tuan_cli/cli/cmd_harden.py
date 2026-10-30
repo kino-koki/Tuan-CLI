@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 from ..harden import (
     AuditExporter,
@@ -54,7 +55,7 @@ def _resolve_bus_log() -> Path:
     return candidates[0]
 
 
-def _audit_export(args) -> int:
+def _audit_export(args: Any) -> int:
     fmts = []
     for part in (args.format or "jsonl").split(","):
         part = part.strip()
@@ -79,7 +80,7 @@ def _audit_export(args) -> int:
     return 0
 
 
-def _sbom(args) -> int:
+def _sbom(args: Any) -> int:
     out = getattr(args, "out", None) or "sbom.spdx.json"
     data = generate_sbom()
     path = write_sbom(out)
@@ -89,7 +90,7 @@ def _sbom(args) -> int:
     return 0
 
 
-def _crypto_provider(args) -> int:
+def _crypto_provider(args: Any) -> int:
     avail = available_providers()
     active = get_crypto_provider("auto").name
     print("[harden] 可用密码学后端:")
@@ -103,7 +104,7 @@ def _crypto_provider(args) -> int:
     return 0
 
 
-def _network_check(args) -> int:
+def _network_check(args: Any) -> int:
     command = getattr(args, "command", None)
     if not command:
         sys.stderr.write("[harden] 请通过 --command \"...\" 传入待评估命令\n")
@@ -121,7 +122,7 @@ def _network_check(args) -> int:
     return 0 if decision.action != "deny" else 0  # 仅展示, 退出码 0
 
 
-def _repro_lock(args) -> int:
+def _repro_lock(args: Any) -> int:
     if getattr(args, "verify", False):
         ok, diff = verify_lock(getattr(args, "out", None) or "requirements.lock")
         if ok:
@@ -136,7 +137,7 @@ def _repro_lock(args) -> int:
     return 0
 
 
-def _status(args) -> int:
+def _status(args: Any) -> int:
     """展示当前加固态势: 加密后端 / 审计落盘 / SBOM / 网络策略。"""
     from ..harden import available_providers, get_crypto_provider
     from ..harden.sbom import generate_sbom
@@ -183,7 +184,7 @@ def _status(args) -> int:
     return 0
 
 
-def cmd_harden(args) -> int:
+def cmd_harden(args: Any) -> int:
     cmd = getattr(args, "harden_cmd", None)
     if cmd == "audit-export":
         return _audit_export(args)

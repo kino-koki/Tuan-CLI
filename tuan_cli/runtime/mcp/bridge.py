@@ -49,7 +49,7 @@ def _run_async(coro: Any) -> Any:
         return ex.submit(lambda: asyncio.run(coro)).result()
 
 
-def bridge_executable_to_base_tool(exe: ExecutableTool):
+def bridge_executable_to_base_tool(exe: ExecutableTool) -> Any:
     """把一个 kernel ``ExecutableTool`` 适配成 ``tools.base.Tool``。"""
     from ...tools.base import Tool as BaseTool
 
@@ -71,7 +71,7 @@ def bridge_executable_to_base_tool(exe: ExecutableTool):
     )
 
 
-def bridge_to_existing_mcp(manager: Any, registry: Any = None):
+def bridge_to_existing_mcp(manager: Any, registry: Any = None) -> Any:
     """把连接管理器的状态变化桥接到现有 ``ToolRegistry``。
 
     当某 server 变为 connected，自动把其 MCP 工具注册进 registry（适配为 BaseTool）；

@@ -17,6 +17,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -28,7 +29,7 @@ from ..ui.plain_console import console
 _TUTORIAL_DIR = Path(__file__).resolve().parent.parent / "resources" / "tutorials"
 
 
-def _read_tutorials():
+def _read_tutorials() -> list[Any]:
     """读取 tutorials 目录下的全部 YAML, 返回 dict 列表 (按 name 去重)。"""
     if not _TUTORIAL_DIR.exists():
         return []
@@ -139,7 +140,7 @@ def _run_tutorial(name: str, exec_demo: bool, start_step: int, no_pause: bool) -
     return 0
 
 
-def cmd_tutorial(args) -> int:
+def cmd_tutorial(args: Any) -> int:
     sub = getattr(args, "tutorial_cmd", None)
     if sub == "run":
         name = getattr(args, "name", None)
