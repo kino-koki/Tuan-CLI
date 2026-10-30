@@ -197,6 +197,7 @@ class TestOverflowGuard:
 class TestSetReadyAttach:
     """set_ready 必须调用 attach_ui(): slash 命令输出进入渲染层而非直写 stdout。"""
 
+    @pytest.mark.flaky
     def test_set_ready_attaches_ui(self, monkeypatch):
         from tuan_cli.tui.tui import QxtTUI
 

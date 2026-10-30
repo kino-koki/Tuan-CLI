@@ -28,8 +28,11 @@ _MEDIUM_PATTERNS, 见 ext/safety_engine.py), 用来在 shell 护栏 / MCP 守卫
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, List, Set
+
+log = logging.getLogger(__name__)
 
 try:  # 延迟到运行时, 避免任何导入副作用
     from ..config.loader import home_dir
@@ -100,8 +103,9 @@ def _save_raw(raw: dict) -> None:
         atomic_write_text(p, json.dumps(raw, ensure_ascii=False, indent=2))
         global _cache_loaded
         _cache_loaded = False  # 写盘后让缓存失效, 下次从磁盘重读
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # 写盘失败属运维可见问题, 但不应阻断安全裁决; 记录日志而非静默吞掉。
+        log.warning("写入黑名单抑制文件失败 (安全裁决不受影响): %s", exc)
 
 
 def suppress(keyword: str) -> bool:

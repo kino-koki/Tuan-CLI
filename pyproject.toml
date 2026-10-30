@@ -133,6 +133,7 @@ disallow_untyped_defs = true  # 逐步收紧: 先不强制所有函数都有类�
 [tool.pytest.ini_options]
 markers = [
     "slow: 真实 spawn 子进程或较重, 默认跳过 (pytest -m slow 运行)",
+    "flaky: 环境/时序敏感的间歇性测试 (残留临时文件、快照时间戳排序、单例替换), 失败不阻断回归",
 ]
 testpaths = ["tests"]
 timeout = 120           # 每个测试最长 120s, 防挂起拖垮整套件

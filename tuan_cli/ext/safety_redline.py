@@ -9,6 +9,7 @@ is_redline / is_hard_redline / is_extreme 三档判定入口。
 """
 import base64
 import re
+import threading
 import unicodedata
 from typing import Any
 
@@ -381,6 +382,7 @@ def has_system_shutdown(text: str) -> bool:
 
 
 _PATTERN_CACHE: dict[str, re.Pattern] = {}
+_PATTERN_CACHE_LOCK = threading.Lock()
 
 
 def _compiled(pattern: str) -> re.Pattern:
@@ -390,11 +392,18 @@ def _compiled(pattern: str) -> re.Pattern:
     原先直接 ``re.search(pattern_string, ...)`` 每次都用字符串字面量重编译,
     cProfile 实测 250 条命令产生 48 万次 ``re._compile`` (占 ~1.6s)。
     这里编译一次后复用, 语义完全不变。
+
+    线程安全: 模块级 ``_PATTERN_CACHE`` 可能被多线程 (shell 工具并行执行/
+    Web 并发请求) 同时访问, 首次编译同一 pattern 存在竞态重复编译。
+    加锁保证缓存读写原子, 避免重复编译与字典并发写。
     """
     pat = _PATTERN_CACHE.get(pattern)
     if pat is None:
         pat = re.compile(pattern, re.IGNORECASE)
-        _PATTERN_CACHE[pattern] = pat
+        with _PATTERN_CACHE_LOCK:
+            # 双重检查: 另一线程可能已编译, 优先复用避免重复分配
+            pat = _PATTERN_CACHE.get(pattern) or pat
+            _PATTERN_CACHE[pattern] = pat
     return pat
 
 

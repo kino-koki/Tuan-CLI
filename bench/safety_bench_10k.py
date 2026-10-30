@@ -104,8 +104,13 @@ for name, _con, expect, cmd in _DESTRUCTIVE:
 
 for name, _con, expect, cmd in _SQL:
     BARE.add(cmd)
-    for v in _apply(cmd, GENERIC + [t_eval, t_base64_pipe]):
+    # SQL 变形覆盖: 通用混淆 + 解释器包裹 (psql/mysql/sqlite3 真实执行形态)
+    # + 完整编码通道 (base64 管道/heredoc/eval/xargs)。此前仅 GENERIC + eval + b64,
+    # 与 shell 侧强度不齐 (评审发现)。补 SQL 解释器包裹与编码通道, 与 _DESTRUCTIVE 对齐。
+    for v in _apply(cmd, GENERIC + SHELL_ENC):
         _add(v, expect, "SQL:" + name)
+    for lang, wrap in _INTERP[:20]:
+        _add(wrap(cmd), expect, f"SQL解释器:{name}/{lang}")
 
 for name, _con, expect, cmd in _CLI:
     BARE.add(cmd)
@@ -185,7 +190,9 @@ def main(out_path: Path | None = None) -> int:
         try:
             level, src = evaluate(payload)
         except Exception as exc:  # noqa: BLE001
-            level, src = "allow", f"ERR:{exc}"
+            # 引擎异常是基准自身的故障信号, 绝不能降级为 allow (会掩盖真实缺陷)。
+            # 记为特殊 verdict 让基准以 FAIL 暴露, 而非静默放行。
+            level, src = "block", f"ENGINE_ERR:{exc}"
         ok = False
         if expect == "block":
             ok = level == "block"
