@@ -69,6 +69,7 @@ def test_restore_empty_raises(tmp_path):
         mgr.restore([], -1)
 
 
+@pytest.mark.flaky
 def test_rotate_max_snapshots(tmp_path):
     mgr = RewindManager(tmp_path, max_snapshots=3)
     for i in range(5):

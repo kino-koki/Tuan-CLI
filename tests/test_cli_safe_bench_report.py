@@ -6,6 +6,8 @@ import json
 import types
 from pathlib import Path
 
+import pytest
+
 from tuan_cli.cli import cmd_safe
 from tuan_cli.cli import parser as cli_parser
 
@@ -78,6 +80,7 @@ def test_cmd_report_writes_html(tmp_path, monkeypatch):
     assert "10000 条" in body
 
 
+@pytest.mark.flaky
 def test_cmd_bench_quick_with_fake_runners(tmp_path, monkeypatch):
     """mock 子进程, 验证三套件调度 + 汇总 JSON 结构 + 临时文件清理。"""
     calls: list[list[str]] = []

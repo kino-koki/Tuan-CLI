@@ -14,6 +14,12 @@ from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 
+# 所有存活的外部引擎管理器实例。测试/工具若创建局部 ExternalEngineManager
+# 而忘记 close(), 其 IpcClient 子进程会泄漏 (Windows 上句柄 + 管道不释放,
+# 全量套件后期管道积压导致 pytest 挂起)。由 close_all_managers() 统一回收。
+_live_managers: set["ExternalEngineManager"] = set()
+_manager_lock = threading.Lock()
+
 
 class IpcError(Exception):
     """IPC 通信错误"""
@@ -292,6 +298,8 @@ class ExternalEngineManager:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.clients: Dict[str, IpcClient] = {}
         self.config = config or {}
+        with _manager_lock:
+            _live_managers.add(self)
 
     def _ensure_client(self, name: str) -> IpcClient:
         """获取或创建引擎客户端"""
@@ -321,6 +329,8 @@ class ExternalEngineManager:
         for client in self.clients.values():
             client.close()
         self.clients.clear()
+        with _manager_lock:
+            _live_managers.discard(self)
 
 
 # 单例
@@ -340,6 +350,17 @@ def close_all_managers() -> None:
 
     供 tests/conftest.py 的 autouse fixture 调用; 管理器的单例在进程内常驻,
     测试间若不显式关闭, Windows 上子进程句柄会泄漏并拖慢后续用例。
+    同时回收所有存活的局部 ExternalEngineManager 实例 (含测试直接 new 且
+    忘记 close() 的), 否则其 json_engine 等子进程会残留并阻塞管道。
     """
+    with _manager_lock:
+        all_managers = list(_live_managers)
+    for mgr in all_managers:
+        try:
+            mgr.close_all()
+        except Exception:  # noqa: BLE001
+            log.debug("关闭外部引擎管理器失败", exc_info=True)
+    with _manager_lock:
+        _live_managers.clear()
     if _engine_manager is not None:
         _engine_manager.close_all()

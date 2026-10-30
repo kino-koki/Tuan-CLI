@@ -35,6 +35,11 @@ class SafetyEngine:
     HIGH_PATTERNS = _HIGH_PATTERNS
     MEDIUM_PATTERNS = _MEDIUM_PATTERNS
 
+    # ---- V-12 跨阶段迭代预算哨兵 ----
+    # _expand_var_defs 累计替换超限时返回此哨兵: 必然命中硬红线 (递归删除),
+    # 让上层 fail-closed 保守拦截, 而非放行一个未能完全归一化的输入。
+    _EXPANSION_SENTINEL = "rm -rf / __tuan_expansion_budget_exceeded__"
+
     # ---- V-10 降噪 (独立评测 2026-10) ----
     # ssh 远程执行只读命令 -> 不打扰 (危险载荷仍由 critical 规则独立命中)
     _SSH_READONLY_RE = re.compile(
@@ -111,8 +116,15 @@ class SafetyEngine:
 
     @classmethod
     def _expand_var_defs(cls, text: str, max_rounds: int = 8) -> str:
-        """把 `VAR=$'...'` / `VAR="..."` 定义内联展开, 让真实命令名浮现。有界迭代防爆炸。"""
+        """把 `VAR=$'...'` / `VAR="..."` 定义内联展开, 让真实命令名浮现。有界迭代防爆炸。
+
+        跨阶段迭代预算: 变量展开与 brace 展开/命令替换可能互相交织 (如
+        `X={rm,-rf,/}; eval $X`), 单独限制每步的 max_rounds 无法约束「展开→再归一化→
+        再展开」的多轮往返总代价。这里按**累计替换次数**设总预算, 超限即返回一个
+        必然命中红线的哨兵, 让上层 fail-closed (保守拦截), 避免病态输入拖垮判定。
+        """
         out = text
+        total_substitutions = 0
         for _ in range(max_rounds):
             defs = {}
             for m in cls._VAR_DEF.finditer(out):
@@ -126,7 +138,12 @@ class SafetyEngine:
                 break
             new = out
             for n, v in defs.items():
-                new = re.sub(r"\$\{?" + re.escape(n) + r"(?:\}|(?![A-Za-z0-9_]))", v, new)
+                new, count = re.subn(r"\$\{?" + re.escape(n) + r"(?:\}|(?![A-Za-z0-9_]))", v, new)
+                total_substitutions += count
+                # 累计替换总预算: 防止变量间相互引用 (A=$B, B=$A) 或指数级膨胀
+                # 在 max_rounds 内反复替换导致 O(2^n) 级文本增长。
+                if total_substitutions > 64:
+                    return cls._EXPANSION_SENTINEL
             if new == out:
                 break
             out = new

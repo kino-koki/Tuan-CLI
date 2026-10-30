@@ -935,20 +935,25 @@ CASES[:] = [(t[0], t[1], t[2], "—") if len(t) == 3 else (t[0], t[1], t[2], t[3
 
 
 def evaluate(payload: str):
-    """返回 (level, 命中来源)。level ∈ block|flag|allow。"""
+    """返回 (level, 命中来源)。level ∈ block|flag|allow。
+
+    引擎异常视为基准故障: 任何 *!ERR 命中都会把 level 强制抬到 "block" 并在
+    src 里保留 "!ERR" 标记, 使该用例在结果里以「引擎故障」而非「绕过/误杀」
+    暴露 —— 绝不静默降级, 避免掩盖引擎真实缺陷。
+    """
     hits = []
 
     try:
         if is_hard_redline(payload):
             hits.append("hard")
     except Exception as exc:  # noqa: BLE001
-        hits.append("hard!ERR")
+        hits.append(f"hard!ERR:{exc}")
 
     try:
         if is_redline(payload):
             hits.append("redline")
     except Exception as exc:  # noqa: BLE001
-        hits.append("red!ERR")
+        hits.append(f"red!ERR:{exc}")
 
     try:
         nd = GUARD.check(payload)
@@ -958,7 +963,7 @@ def evaluate(payload: str):
         elif act == "confirm":
             hits.append("net:confirm")
     except Exception as exc:  # noqa: BLE001
-        hits.append("net!ERR")
+        hits.append(f"net!ERR:{exc}")
 
     risk = "none"
     try:
@@ -967,7 +972,7 @@ def evaluate(payload: str):
         if risk in ("high", "critical"):
             hits.append(f"score:{risk}")
     except Exception as exc:  # noqa: BLE001
-        hits.append("score!ERR")
+        hits.append(f"score!ERR:{exc}")
 
     # ③ 语义分类器 / 模型审核层
     mact, msrc = model_review(payload)
@@ -977,20 +982,24 @@ def evaluate(payload: str):
             mact = cr.action
             msrc = "classifier"
         except Exception as exc:  # noqa: BLE001
-            mact, msrc = None, "cls!ERR"
+            mact, msrc = None, f"cls!ERR:{exc}"
     if mact == "deny":
         hits.append(f"cls:deny[{msrc}]")
     elif mact == "confirm":
         hits.append(f"cls:confirm[{msrc}]")
-    elif msrc == "cls!ERR":
-        hits.append("cls!ERR")
+    elif msrc and msrc.startswith("cls!ERR"):
+        hits.append(msrc)
 
+    has_engine_err = any("!ERR" in h for h in hits)
     if any(h.startswith(("hard", "redline", "net:deny", "cls:deny")) for h in hits):
         level = "block"
     elif any(h.startswith(("score:", "net:confirm", "cls:confirm")) for h in hits):
         level = "flag"
     else:
         level = "allow"
+    # 引擎异常强制抬到 block, 让基准以「故障」暴露而非静默放行
+    if has_engine_err:
+        level = "block"
     return level, ",".join(hits) or f"全放行(risk={risk})"
 
 

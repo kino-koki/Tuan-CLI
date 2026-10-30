@@ -339,7 +339,10 @@ class BackgroundShellManager:
         # 补充磁盘上已结束、本进程未见过的 job (按文件 mtime 排序)
         seen = {j.job_id for j in jobs}
         disk = []
-        for p in sorted(self.dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        for p in sorted(
+            (p for p in self.dir.glob("*.json") if not p.name.endswith(".tmp.json")),
+            key=lambda p: p.stat().st_mtime, reverse=True,
+        ):
             if p.stem in seen:
                 continue
             rehydrated: ShellJob | None = self._rehydrate(p.stem)
@@ -427,7 +430,9 @@ class BackgroundShellManager:
         保留 running/queued 的 job (跨进程重启后仍需读其状态)。返回移除文件数。
         """
         removed = 0
-        for meta in list(self.dir.glob("*.json")):
+        for meta in list(
+            p for p in self.dir.glob("*.json") if not p.name.endswith(".tmp.json")
+        ):
             jid = meta.stem
             job = self.get(jid, live_only=True)
             if job is not None and job.status in ("queued", "running"):

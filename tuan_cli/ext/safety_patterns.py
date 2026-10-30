@@ -447,11 +447,27 @@ _CRITICAL_PATTERNS = [
     # 丢弃输出/设备文件目标 (`echo x > /dev/null`) 而非恶意写入, 列入敏感路径会误伤
     # (官方测试 test_safety_redline_fix::test_dd_block_device_blind_spot_closed)。
     # 覆盖写入方向: 重定向 >、tee、cp/mv/install/ln 的**末操作数**, 以及 dd of=。
-    (r"(?:>+\s*|tee\s+|cp\s+\S+\s+|mv\s+\S+\s+|install\s+[^\n]*\s|ln\s+[^\n]*\s)"
+    # ① 重定向 / tee: 本身即写入动作, 无"源/目标"歧义 → 出现敏感路径即命中。
+    #    例外: /var/log/<app>/ 应用日志追加属常规运维, 不拦 (但系统级日志仍拦)。
+    (r"(?:>+\s*|tee\s+)"
+     r"(?!/var/log/(?!syslog|auth\.log|messages|secure|kern\.log|dpkg\.log|wtmp|btmp|lastlog\b))"
      r"(?:/etc/|/usr/|/bin/|/sbin/|/lib(?:64)?/|/boot/|/root/|/sys/|/proc/|/var/|"
      r"~?/\.ssh/|~?/\.aws/|~?/\.config/|~?/\.bashrc|~?/\.bash_profile|~?/\.profile|"
      r"~?/\.zshrc|~?/\.zprofile|~?/\.env\b)",
      "write sensitive path (写入/覆盖系统或用户敏感路径)"),
+    # ② cp/mv/ln/install: 锚定**最后一个操作数** (\S*\s*$), 并排除 /usr/local/。
+    #    修复前 ln/install 用 [^\n]* 会匹配到命令中段, 把"源"当成"目标" → 误报
+    #    (如 `ln -s /usr/bin/python3 py`、`install -m 755 app /usr/local/bin/app`)。
+    (r"\b(?:cp|mv|ln|install)\b[^\n]*\s"
+     r"(?:/etc/|/usr/(?!local/)|/bin/|/sbin/|/lib(?:64)?/|/boot/|/root/|/sys/|/proc/|/var/|"
+     r"~?/\.ssh/|~?/\.aws/|~?/\.config/|~?/\.bashrc|~?/\.bash_profile|~?/\.profile|"
+     r"~?/\.zshrc|~?/\.zprofile|~?/\.env\b)\S*\s*$",
+     "write sensitive path target (写入目标为系统/用户敏感路径)"),
+    # ③ 兜底: 覆盖已知系统二进制 —— 即使落在 /usr/local/bin (被②排除) 仍须 critical。
+    (r"\b(?:cp|mv|ln|install|tee)\b[^\n]*/(?:usr(?:/local)?/s?bin|s?bin|usr/sbin)/\s*"
+     r"(?:sudo|su|doas|passwd|login|init|ssh|sshd|python3?|perl|ruby|node|curl|wget|git|"
+     r"bash|sh|zsh|ls|cat|ps|kill|systemctl|crontab|at|chsh|usermod)\s*$",
+     "overwrite system binary (覆盖系统二进制, 后门持久化)"),
     # setfacl 提权: 修改 ACL 指向系统目录或关键文件。
     (r"\bsetfacl\b[^\n]*(?:/etc\b|/usr\b|/bin\b|/sbin\b|/root\b|/var\b|~?/\.ssh/)",
      "setfacl on system path (ACL 篡改系统路径)"),
@@ -794,8 +810,9 @@ _MEDIUM_PATTERNS = [
     (r"\bkill\s+-9\b", "kill -9 (强制终止进程)"),
     (r"\bpkill\s+", "pkill (按名称终止进程)"),
     (r"\bkillall\s+", "killall (终止全部同名进程)"),
-    # 日志写入: 覆盖/清空系统日志, 影响范围限于单个日志文件
-    (r">\s*/var/log", "overwrite system log (覆盖/清空系统日志)"),
+    # 日志写入: 覆盖/清空系统日志, 影响范围限于单个日志文件。
+    # 只提示写 /var/log 根下的系统日志; 应用日志子目录 (/var/log/<app>/) 不打扰。
+    (r"(?<!>)>\s*/var/log(?!/(?:[\w.-]+/))", "overwrite system log (覆盖/清空系统日志)"),
     # 权限变更
     (r"chmod\s+000\s+", "chmod 000 (移除所有权限)"),
     (r"chown\s+root\s+", "chown root (变更 root 所有权)"),

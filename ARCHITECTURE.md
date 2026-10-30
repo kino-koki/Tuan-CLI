@@ -141,6 +141,11 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
 - 切换语义：`set_current("planner")` 立即换「脑子」，不影响已加载的服务；Agent 每轮读
   `kernel.require("loop_provider")` 拿当前 Loop。
 - **硬红线语义**：Loop 切换是策略切换，不改变 Security 的拦截口径（见 4.4）。
+- **弃用兼容层（`core/loop_registry.py`）**：⚠ 已弃用，仅供向后兼容。事件管线已合并到
+  `arch/execution.py`（`SemanticBus` + `ToolPipeline`，支持 EMIT/OBSERVE/DECIDE/REFLECT/TERMINATE
+  五种语义 + 中间件链 + handler 异常隔离）。新代码请使用 `arch/execution` 或
+  `core/loop_provider.py` 的 `LoopProvider` / `ReActLoop` / `PlannerExecuteLoop`，不要新引入
+  对 `core/loop_registry` 的依赖。
 
 ### 4.4 Security（安全子系统）
 - 文件：
@@ -215,11 +220,15 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
    这些是**实际生效**的调用，修改 `arch/orchestration.py`、`arch/platform.py` 会影响生产行为。
 2. **作为参考实现（测试/原型）**：`arch/execution.py` 的 `ReActLoop`、`context.py`、
    `observability.py` 等主要供单元测试与原型验证使用——**生产环境的 Agent 循环、上下文与
-   事件总线由 `core/loop_provider`、`core/context`、`core/event_sourcer` 承载**，
+   事件总线由 `core/loop_provider`、`context/manager.py`（`ContextManager`）、`core/event_sourcer` 承载**，
    不要以 `arch/` 中的这些同名实现为权威。
 
 > 结论：**新增功能请接入 `core/`**；改 `arch/` 时请先确认它是被 `codedev` / `sandbox` 复用的
-> 生产件（orchestration / platform），还是仅供测试的参考件（execution / context / observability）。
+> 生产件（orchestration / platform），还是仅供测试的参考件（execution / context / observability / security）。
+> 其中 `arch/security.py`（`ImmutableSecurityPolicy` / `SyscallSandbox` / `CryptoVault`）经
+> `ArchPlugin` 注册为一等公民服务，但生产**安全裁决**（红线 / 评分 / 网络门控 / 审计）实际由
+> `ext/safety_engine` + `ext/security_gate` + `core/security_{classifier,guard,bus,auditor,plugin}` 承载，
+> `arch/security.py` 属参考件/策略原型，修改它不会改变生产安全行为。
 
 ---
 
@@ -269,6 +278,7 @@ ModelRouter.decide(task, difficulty, available_providers)
 | `mcp_import.py` | MCP 配置互导（`.mcp.json` / Hermes `config.yaml` ⇄ tuan；密钥 env 脱敏为占位符） | `import_mcp_servers()` · `export_to_claude_mcp_json()` · `export_to_hermes_config()` |
 | `mcp_server.py` | MCP Server（`tuan ecosystem serve`）：纯标准库 stdio、JSON-RPC 2.0 换行帧 | `McpToolServer.handle_line()` · `serve_stdio()` |
 | `invoke.py` | 委派工具插件（`claude_code_run` / `hermes_run`），CLI 存在才注册 | `EcosystemPlugin` |
+| `registry.py` | 远程仓库 Registry 客户端（Tuan-Skills / Tuan-Craft），用于技能/资产的外部源发现与拉取 | `list_skills()` · `list_craft()` · `install()` |
 
 **运行时接线（零配置即生效）**：
 - `skills/manager.py::_build_search_dirs` 把 `项目/.claude/skills`、`~/.claude/skills`、
