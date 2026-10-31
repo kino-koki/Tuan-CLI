@@ -51,8 +51,23 @@ _CRITICAL_PATTERNS = [
      "vssadmin delete shadows (删除卷影副本, 破坏勒索恢复能力)"),
     (r"\bmv\b[^\n]*\s/(?:etc|usr|var|bin|sbin|lib|lib64|boot|root|dev|proc|sys|opt|home|srv|run)(?:/|\s|$)",
      "move system directory (移动系统目录, 可能导致系统不可用)"),
+    # V-11: mv 移动**根目录本身** (mv / /tmp/x) —— 前面规则只枚举具名系统目录, 不含 `/`。
+    (r"\bmv\b[^\n]*\s/\s+\S", "move root directory (移动根目录, 系统不可恢复)"),
     (r"\buserdel\b[^\n]*\s+root\b",
      "userdel root (删除 root 账户及其文件)"),
+    # V-11: shell 级 truncate 截断系统关键文件 (SQL TRUNCATE 已有, 命令版缺失)。
+    # 注意: 路径前不能加 `\b` —— `/` 与空白都是非词字符, `\b` 需一侧为词字符,
+    # 放在 ` /etc/` 前会导致 `\b/etc/` 永远匹配不到 (空格后直接是 `/`)。
+    (r"\btruncate\b[^\n]*(?:/etc/|/var/|/usr/|/boot/|/dev/|~?/\.(?:ssh|config|bashrc|profile|zshrc))",
+     "truncate system file (截断系统关键文件/配置, 数据不可恢复)"),
+    # V-11: 进程替换把远程/外部输出直接喂给 shell 解释器 (bash <(curl ...)) ——
+    # 语义等价于 `curl ... | bash` (已被拦截), 但走了进程替换通道, 属于覆盖缺口。
+    (r"\b(?:bash|sh|zsh|ksh|dash|source|\.)\s*<\s*\([^)]*(?:curl\b|wget\b|fetch\b|nc\b|base64\b)",
+     "shell via process substitution (进程替换将远程/外部输出直接喂给 shell 解释器)"),
+    # V-11: awk/gawk -i inplace 就地改写 + 内嵌命令执行 (system/print) ——
+    # `-i inplace` 一个旗标即可绕过不带 -i 的 awk 检测。
+    (r"\bg?awk\b[^\n]*\s-i\s+inplace[^\n]*(?:system\s*\(|\bprint\b|\bprintf\b)",
+     "awk in-place code execution (awk -i inplace 中执行命令/打印, 就地改写文件)"),
     # 读取敏感文件 / 私钥 —— 风险低于写入/删除系统路径, 降为 high (见 _HIGH_PATTERNS 同规则)。
     (r"\bchmod\b(?=[^\n]*\-[Rr]\b)(?=[^\n]*\b7777?\b)(?=[^\n]*\s/(?:\s|$))",
      "chmod -R 777 / (递归开放系统目录全部权限)"),
