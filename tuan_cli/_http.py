@@ -275,6 +275,7 @@ def _open(
     timeout: Union[Timeout, float],
     proxy: Optional[str],
     verify: Union[bool, str],
+    follow_redirects: bool = True,
 ) -> Tuple[str, HTTPResponse]:
     """发送请求并返回 (最终 URL, 未读取正文的 HTTPResponse)。"""
     if isinstance(timeout, (int, float)):
@@ -296,8 +297,11 @@ def _open(
             seen_te = True
 
     current_url = url
-    original_method = method
-    original_body = body
+    # V-11: 跨源重定向必须剥离凭据头 (Authorization / Proxy-Authorization / Cookie),
+    # 否则 provider 端点返回 302 时, API 密钥会随重定向原样发往第三方主机; 同理
+    # HTTPS→HTTP 降级也属跨源 (scheme 变化), 一并剥离, 避免凭据落入明文信道。
+    _SENSITIVE_HEADERS = ("authorization", "proxy-authorization", "cookie")
+    prev_origin: Optional[Tuple[str, str, int]] = None
     for _ in range(_MAX_REDIRECTS + 1):
         parts = urllib.parse.urlsplit(current_url)
         scheme = parts.scheme or "https"
@@ -307,6 +311,12 @@ def _open(
         if not host:
             raise HTTPError(f"URL 缺少主机名: {current_url!r}")
         port = parts.port or (443 if scheme == "https" else 80)
+        origin = (scheme, host, port)
+        if prev_origin is not None and origin != prev_origin:
+            # 目标源 ≠ 来源源: 剥离敏感头, 防止凭据跨站泄漏。
+            for _lk in _SENSITIVE_HEADERS:
+                for _k in [k for k in req_headers if k.lower() == _lk]:
+                    req_headers.pop(_k, None)
         path = parts.path or "/"
         if parts.query:
             path += "?" + parts.query
@@ -373,7 +383,7 @@ def _open(
             raise ConnectError(f"连接失败 ({host}:{port}): {exc}") from exc
 
         code = response.status
-        if code in (301, 302, 303, 307, 308) and response.getheader("Location"):
+        if code in (301, 302, 303, 307, 308) and response.getheader("Location") and follow_redirects:
             location = response.getheader("Location")
             # 先把旧响应读掉/关掉, 释放 socket
             try:
@@ -385,6 +395,7 @@ def _open(
             except Exception:  # noqa: BLE001
                 pass
             current_url = urllib.parse.urljoin(current_url, location)
+            prev_origin = origin  # 记录来源源, 供下一跳跨源判定
             if code == 303 or (code in (301, 302) and method in ("POST", "PUT")):
                 method, body = "GET", None
             continue
@@ -642,6 +653,7 @@ class Client:
         json: Any = None,
         content: Optional[Union[bytes, str]] = None,
         data: Any = None,
+        follow_redirects: bool = True,
         **_: Any,
     ) -> Response:
         url = _resolve_url(self.base_url, url)
@@ -663,6 +675,7 @@ class Client:
             final_url, resp = _open(
                 method.upper(), url, headers=headers, body=body,
                 timeout=self.timeout, proxy=self._proxy, verify=self.verify,
+                follow_redirects=follow_redirects,
             )
         except HTTPError:
             raise
@@ -701,6 +714,7 @@ class Client:
         json: Any = None,
         content: Optional[Union[bytes, str]] = None,
         data: Any = None,
+        follow_redirects: bool = True,
     ) -> Response:
         """建立流式响应: 打开连接并保持, 返回带 ``stream`` 的 Response。
 
@@ -723,6 +737,7 @@ class Client:
         final_url, resp = _open(
             method.upper(), url, headers=headers, body=body,
             timeout=self.timeout, proxy=self._proxy, verify=self.verify,
+            follow_redirects=follow_redirects,
         )
         return Response(resp.status, list(resp.getheaders()), url=final_url, stream=resp)
 
@@ -879,6 +894,7 @@ def request(
     final_url, resp = _open(
         method.upper(), url, headers=merged, body=body,
         timeout=t, proxy=None, verify=verify,
+        follow_redirects=follow_redirects,
     )
     body_bytes = resp.read()
     headers_list = list(resp.getheaders())

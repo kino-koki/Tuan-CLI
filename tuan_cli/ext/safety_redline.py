@@ -1294,6 +1294,15 @@ _REDLINE_PATTERNS = [
     if not p[0].lstrip().upper().startswith(("DROP", "DELETE", "TRUNCATE"))
 ]
 
+# V-11: 参数展开默认值 `${VAR:-default}` —— 与 safety_score._expand_var_defs 同口径,
+# 此处独立实现以避免 safety_score ↔ safety_redline 循环导入。展开后让危险词在
+# is_hard_redline 的 token/模式判定下浮现 (`${RM:-rm} -rf /` → `rm -rf /`)。
+_PARAM_DEFAULT_EXPAND = re.compile(r"\$\{([A-Za-z_]\w*):?([-=])([^}]*)\}")
+
+
+def _expand_param_defaults(text: str) -> str:
+    return _PARAM_DEFAULT_EXPAND.sub(lambda m: m.group(3), text)
+
 
 def is_hard_redline(command: str) -> bool:
     """硬红线: 文件系统 / OS 级毁灭操作, 即使在 YOLO 模式 / 确认通道存在时也永不自动执行。
@@ -1304,6 +1313,8 @@ def is_hard_redline(command: str) -> bool:
     if (_eval_is_unverifiable(command)
             or _has_unresolved_dangerous_substitution(command)):
         return True
+    # V-11: 先展开参数默认值, 再交给后续判定 (`${RM:-rm}` 才能浮现为 rm)。
+    command = _expand_param_defaults(command)
     if _is_base64_pipeline_dangerous(command):
         return True
     if _is_encoded_literal_dangerous(command):
@@ -1354,6 +1365,8 @@ def is_redline(command: str) -> bool:
     if (_eval_is_unverifiable(command)
             or _has_unresolved_dangerous_substitution(command)):
         return True
+    # V-11: 与 is_hard_redline 同口径 —— 先展开参数默认值, `${RM:-rm}` 才能浮现为 rm。
+    command = _expand_param_defaults(command)
     if _is_base64_pipeline_dangerous(command):
         return True
     if _is_encoded_literal_dangerous(command):

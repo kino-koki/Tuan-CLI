@@ -4,6 +4,7 @@
 """
 import json
 import re
+import shlex
 import sys
 from typing import Any
 
@@ -99,6 +100,13 @@ class SafetyEngine:
     _VAR_DEF = re.compile(
         r"(?:^|[;|\s])([A-Za-z_]\w*)=(\$'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|"
         r"'[^']*'|[^\s;|&]+)")
+    # V-11: bash 参数展开默认值 `${VAR:-default}` / `${VAR-default}` / `${VAR:=default}` /
+    # `${VAR=default}`。变量未设或为空时展开为 default —— 攻击者可用 `${RM:-rm}` 隐去真实命令名
+    # (对照 `c=rm; $c` 已被 _expand_var_defs 拦截, 此形态是覆盖缺口)。保守处理: 一律按「未设」展开
+    # 为默认值, 让危险词浮现; 代价是变量**已设**为良性值时可能误报, 属 fail-closed 方向的取舍。
+    # 不做 `${VAR:+alt}` / `${VAR:?err}` (它们在变量未设时产生空值/报错, 无真实命令浮现)。
+    _PARAM_DEFAULT = re.compile(
+        r"\$\{([A-Za-z_]\w*):?([-=])([^}]*)\}")
 
     @classmethod
     def _decode_ansi_c(cls, s: str) -> str:
@@ -134,8 +142,6 @@ class SafetyEngine:
                 elif val[:1] in ('"', "'"):
                     val = val[1:-1]
                 defs.setdefault(name, val)
-            if not defs:
-                break
             new = out
             for n, v in defs.items():
                 new, count = re.subn(r"\$\{?" + re.escape(n) + r"(?:\}|(?![A-Za-z0-9_]))", v, new)
@@ -144,6 +150,14 @@ class SafetyEngine:
                 # 在 max_rounds 内反复替换导致 O(2^n) 级文本增长。
                 if total_substitutions > 64:
                     return cls._EXPANSION_SENTINEL
+            # V-11: 展开 `${VAR:-default}` 形态的默认值 (变量未设/为空时浮现真实命令词)。
+            # 必须**独立于 defs 空判断**执行 —— `${RM:-rm}` 这类载荷没有 `VAR=...` 定义,
+            # 若只在 defs 非空时展开会被上方提前 break 跳过。默认值本身可能又含变量引用
+            # /另一层默认, 交给下一轮迭代继续 (有界, 不会无限)。
+            new, count = cls._PARAM_DEFAULT.subn(lambda m: m.group(3), new)
+            total_substitutions += count
+            if total_substitutions > 64:
+                return cls._EXPANSION_SENTINEL
             if new == out:
                 break
             out = new
@@ -302,15 +316,30 @@ class SafetyEngine:
             risk = "none"
             score_val = 0
 
-        # 计算 blast radius
+        # 计算 blast radius —— 影响半径预览。旧实现用子串匹配 (`"rm" in text`), 会把
+        # `firmware` 里的 "rm" 误判、并从 `gawk '...rm -rf /...'` 引号载荷里刮出垃圾路径,
+        # 与「影响半径预览」这一头条宣称严重不符。这里改为**词法级**: shlex 分词后按
+        # 命令名与旗标提取, 不再对任意文本做子串扫描。
         blast_radius: dict[str, list[str]] = {"files": [], "services": [], "data": []}
-        if "rm" in text:
-            files = re.findall(r"rm\s+(?:-{1,2}[\w-]+\s+)+(.+)", text)
-            blast_radius["files"].extend(f.split()[0] for f in files if f.strip())
-        if "git" in text and "push" in text:
-            blast_radius["services"].append("git-remote")
-        if "DROP" in text.upper() or "DELETE" in text.upper():
-            blast_radius["data"].append("database")
+        try:
+            tokens = shlex.split(text, posix=True)
+        except ValueError:
+            tokens = text.split()
+        for idx, tok in enumerate(tokens):
+            if tok == "rm":
+                j = idx + 1
+                while j < len(tokens) and tokens[j].startswith("-") and len(tokens[j]) > 1:
+                    j += 1
+                files = [t for t in tokens[j:] if not t.startswith("-")]
+                blast_radius["files"].extend(files)
+            elif tok == "git" and idx + 1 < len(tokens) and tokens[idx + 1] == "push":
+                blast_radius["services"].append("git-remote")
+            elif re.match(r"(?:DROP|DELETE|TRUNCATE)\b", tok, re.IGNORECASE):
+                blast_radius["data"].append("database")
+        # 去重且限长, 防止恶意长参数撑爆响应
+        blast_radius["files"] = list(dict.fromkeys(blast_radius["files"]))[:50]
+        blast_radius["services"] = list(dict.fromkeys(blast_radius["services"]))[:10]
+        blast_radius["data"] = list(dict.fromkeys(blast_radius["data"]))[:10]
 
         # 替代建议 (命令感知安全替代引擎: 按具体命令形态给出可执行的安全替代)
         from ..harden.safe_alternatives import suggest_for_decision
