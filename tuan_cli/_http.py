@@ -284,16 +284,10 @@ def _open(
         t = timeout
 
     req_headers = {k: str(v) for k, v in (headers or {}).items()}
-    seen_host_header = False
-    seen_len = False
+    # 只保留真正被读取的标志: seen_te (是否显式指定 Transfer-Encoding)。
     seen_te = False
     for k in req_headers:
-        lk = k.lower()
-        if lk == "host":
-            seen_host_header = True
-        elif lk == "content-length":
-            seen_len = True
-        elif lk == "transfer-encoding":
+        if k.lower() == "transfer-encoding":
             seen_te = True
 
     current_url = url
