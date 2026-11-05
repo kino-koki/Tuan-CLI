@@ -18,13 +18,16 @@ from .safety_normalize import (
     _DASH_MAP,
     _INTERP_RE,
     _cmd_name,
+    _cmd_name_glob,
     _decode_ansi_c_escapes,
     _eval_is_unverifiable,
     _normalize,
     _scan_variants,
     _segments,
+    _strip_shell_comments,
     _strip_sudo,
     _unicode_clean,
+    _unescape_win,
 )
 
 # 模式库已抽到独立模块 safety_patterns.py (纯数据); 此处 import 复用并对外 re-export,
@@ -170,7 +173,7 @@ def has_dangerous_recursive_rm(text: str) -> bool:
         parts = _strip_sudo(seg.split())
         if not parts:
             continue
-        cmd = _cmd_name(parts[0])
+        cmd = _cmd_name_glob(parts[0])
         if cmd == "rm":
             if _check_rm_flags(parts) and any(
                 _is_dangerous_rm_target(t) for t in _rm_targets(parts)
@@ -180,7 +183,7 @@ def has_dangerous_recursive_rm(text: str) -> bool:
         if cmd in _TEXT_MENTION_VERBS and not exec_sink:
             continue
         for i, tok in enumerate(parts):
-            if _cmd_name(tok) == "rm" and i + 1 < len(parts):
+            if _cmd_name_glob(tok) == "rm" and i + 1 < len(parts):
                 remaining = [''] + parts[i + 1:]
                 if _check_rm_flags(remaining) and any(
                     _is_dangerous_rm_target(t) for t in _rm_targets(remaining)
@@ -195,6 +198,13 @@ _TEXT_MENTION_VERBS = frozenset({
     "echo", "cat", "printf", "print", "sed", "awk", "grep", "rg", "ag",
     "head", "tail", "less", "more", "sort", "uniq", "cut", "tr", "journalctl",
     "strings", "xxd", "od", "git", "type", "file",
+})
+
+# 毁灭类命令: 当它们后面紧跟命令替换 (rm`echo ' -rf /'`) 时, 替换输出会成为其旗标
+# 而非「提及」, mask 时必须保留原文 —— 见 _mask_mentioned_literals 中的替换 span 分支。
+_DESTRUCTIVE_OUTER = frozenset({
+    "rm", "del", "rmdir", "erase", "chmod", "chown", "dd", "mkfs",
+    "shred", "wipefs", "format", "mv", "truncate", "userdel",
 })
 
 
@@ -227,7 +237,7 @@ def has_recursive_rm(text: str) -> bool:
         parts = _strip_sudo(seg.split())
         if not parts:
             continue
-        cmd = _cmd_name(parts[0])
+        cmd = _cmd_name_glob(parts[0])
         # 直接 rm 命令
         if cmd == "rm":
             if _check_rm_flags(parts):
@@ -238,7 +248,7 @@ def has_recursive_rm(text: str) -> bool:
             continue
         # 其余动词 (diff/xargs/find/sh/bash/eval/env/sudo/未知...): 全文扫描 rm 执行
         for i, tok in enumerate(parts):
-            if _cmd_name(tok) == "rm" and i + 1 < len(parts):
+            if _cmd_name_glob(tok) == "rm" and i + 1 < len(parts):
                 remaining = [''] + parts[i + 1:]  # 空字符串代替 rm 占位
                 if _check_rm_flags(remaining):
                     return True
@@ -262,10 +272,10 @@ def has_auth_overwrite(text: str) -> bool:
         parts = _strip_sudo(seg.split())
         if not parts:
             continue
-        cmd = _cmd_name(parts[0])
+        cmd = _cmd_name_glob(parts[0])
         if cmd in _TEXT_MENTION_VERBS and not exec_sink:
             continue
-        if any(_cmd_name(t) == "ln" and any(auth_file.search(u) for u in parts[i + 1:])
+        if any(_cmd_name_glob(t) == "ln" and any(auth_file.search(u) for u in parts[i + 1:])
                for i, t in enumerate(parts)):
             return True
     return False
@@ -277,12 +287,28 @@ def _has_unresolved_dangerous_substitution(text: str) -> bool:
         "rm", "chmod", "chown", "userdel", "wipefs", "shred", "blkdiscard",
         "lvremove", "vgremove", "pvremove", "sgdisk", "parted", "dd", "mkfs",
         "format", "shutdown", "reboot", "halt", "poweroff",
+        # 报告 P0-1/P0-2/P0-3 新增: 命令型提权 / 系统破坏/挂载类, 无法静态求值时同样 fail-closed。
+        "su", "passwd", "umount", "mount", "mv", "chmod", "setuid", "setcap",
+        "chage", "usermod", "groupmod",
     }
+    # 报告 P0-1: 参数展开 `${...}` 无法静态求值且可能合成破坏性命令 → fail-closed。
+    # 无法求值形态: 变量未定义 (${x#p})、含未定义变量嵌套、含通配符模式等。
+    # 若参数展开出现在**命令名位置**(段首或紧跟在 sudo/透传后), 且展开内容可能
+    # 是破坏性命令, 一律按危险处理 —— 绝不因"看不清"而放行。
+    _PARAM_SUB_RE = re.compile(r"\$\{[^{}]*\}")
     for segment in _segments(text):
         parts = _strip_sudo(segment.split())
         if not parts:
             continue
-        token = parts[0].strip("'\"").rsplit("/", 1)[-1].lower()
+        # 报告 P1-1: 通配命令名 (/bin/r?) 也按危险命令名识别, 与 _cmd_name_glob 同源。
+        token = _cmd_name_glob(parts[0]).rsplit("/", 1)[-1].lower()
+        # 命令名位置含残留参数展开: ${CMD:-rm} 这类, 无法求值即危险
+        if _PARAM_SUB_RE.search(token):
+            # 展开体里若出现破坏性命令名, 或根本无法求值 (无对应 env), 判危险。
+            # 保守: 只要命令名 token 本身就是参数展开形态且无法被普通直引替换
+            # (即含 - / # % : 等操作符), 一律危险。
+            if any(ch in token for ch in "-#%:+/[]"):
+                return True
         if any(token.startswith(name + "$(") or token.startswith(name + "`")
                for name in destructive):
             return True
@@ -306,7 +332,7 @@ def has_force_push(text: str, *, include_lease: bool = True) -> bool:
     found_lease = False
     for seg in _scan_variants(text):
         parts = seg.split()
-        names = [_cmd_name(p) for p in parts]
+        names = [_cmd_name_glob(p) for p in parts]
         if "push" not in names:
             continue
         rest = parts[names.index("push") + 1:]
@@ -342,10 +368,26 @@ def has_unconditional_force_push(text: str) -> bool:
 
 
 def has_win_recursive_delete(text: str) -> bool:
-    """Windows 递归删除: del /s /q、rd /s、rmdir /s (同样先归一化)。"""
+    """Windows 递归删除: del /s /q、rd /s、rmdir /s、PowerShell Remove-Item -Recurse (同样先归一化)。
+
+    PowerShell 别名覆盖: ri (Remove-Item), rm (PowerShell 下 rm 是 Remove-Item 别名),
+    以及 cmd 内置 del/rd/erase/rmdir。旗标覆盖 /s /q /f (cmd) 与 -Recurse/-r -Force/-fo
+    -ErrorAction (PowerShell)。
+    """
+    WIN_DEL_CMDS = {"del", "rd", "rmdir", "erase", "ri", "remove-item"}
+    PS_RECURSE_FLAGS = {"-r", "-recurse", "-re", "-ra"}
     for seg in _scan_variants(text):
         parts = seg.split()
-        if not parts or _cmd_name(parts[0]) not in ("del", "rd", "rmdir", "erase"):
+        if not parts:
+            continue
+        cmd = _cmd_name_glob(parts[0])
+        if cmd in ("ri", "remove-item"):
+            # PowerShell Remove-Item -Recurse (-r): 递归删除, 危险目标在下方统一判定。
+            flags = {t.lower() for t in parts[1:]}
+            if flags & PS_RECURSE_FLAGS:
+                return True
+            continue
+        if cmd not in WIN_DEL_CMDS:
             continue
         if "/s" in {t.lower() for t in parts[1:] if t.startswith("/")}:
             return True
@@ -363,7 +405,7 @@ def has_system_shutdown(text: str) -> bool:
         parts = _strip_sudo(seg.split())
         if not parts:
             continue
-        cmd = _cmd_name(parts[0])
+        cmd = _cmd_name_glob(parts[0])
         # shutdown / halt / poweroff / reboot (无参数或带参数均命中)
         if cmd in SHUTDOWN_TOKENS:
             return True
@@ -376,6 +418,74 @@ def has_system_shutdown(text: str) -> bool:
     return False
 
 
+# rsync --delete 的危险目标端: 根/家目录 + 不可重建的系统目录。
+# /home 作**目标端**不列 (清空 home 备份是常规运维); 源端系统目录 (删的是目标端)
+# 天然不触发 —— 这正是 token 化相比正则的核心优势 (正则贪婪匹配到源端就误杀)。
+_RSYNC_SYS_DIRS = frozenset(
+    {"etc", "usr", "var", "bin", "sbin", "lib", "lib64", "boot", "root", "opt", "srv", "dev"}
+)
+
+
+def _is_dangerous_rsync_target(tok: str) -> bool:
+    """rsync --delete 的目标端是否危险 (根/家/系统目录)。
+
+    取 --delete 后**最后一个路径参数**作为目标端。危险 = 根 `/`、家 `~`、
+    或首段是系统目录 (`/etc`、`/etc/nginx` 都算, 清空它们即破坏系统)。
+
+    注意绝对路径必须先剥前导 `/` 再取首段, 否则 `/usr`.split("/")[0] == "" (空串)
+    会漏判 —— 这是初版 bug。
+    """
+    t = tok.strip("'\"").rstrip("/")
+    if t in ("", "/", "~"):
+        return True
+    # 去 Windows 盘符前缀后判断首段
+    t = re.sub(r"^[A-Za-z]:", "", t)
+    t = t.lstrip("/\\")  # 绝对路径剥前导分隔符, 否则 split 后首段为空串
+    first = t.split("/")[0].split("\\")[0].lower()
+    return first in _RSYNC_SYS_DIRS
+
+
+def has_rsync_delete_target(text: str) -> bool:
+    """rsync --delete 同步删除危险目标端: rsync --delete / /x、rsync --delete /x /etc。
+
+    rsync --delete 会**删除目标端多余文件**, 把它对准根/系统目录等价于递归删除,
+    是绕过 rm 判定的攻击通道。归一化后 token 分类, 精确定位最后一个路径参数作目标端
+    —— 源端系统目录的良性备份 (rsync --delete /etc /b) 不误杀, 区别于正则贪婪匹配。
+    """
+    for seg in _scan_variants(text):
+        parts = _strip_sudo(seg.split())
+        if not parts:
+            continue
+        if _cmd_name_glob(parts[0]) != "rsync":
+            continue
+        # 旗标: 首字母带 - 且非 "--"; 操作数: 路径 / @host:path / 空格分隔的目标。
+        operands: list[str] = []
+        has_delete = False
+        for raw in parts[1:]:
+            tok = raw.strip("'\"")
+            if tok.startswith("--"):
+                if tok == "--":
+                    # "--" 之后的都是操作数
+                    operands.append(tok)
+                    break
+                if tok == "--delete" or tok.startswith("--delete="):
+                    has_delete = True
+                continue
+            if tok.startswith("-") and tok != "-":
+                # 合并短旗标; 若用 = 传值 (少见), 值仍是操作数
+                if "=" in tok:
+                    operands.append(tok.split("=", 1)[1])
+                continue
+            operands.append(tok)
+        if not has_delete:
+            continue
+        # 取最后一个操作数作目标端 (--delete 不消耗参数, 故它必然是真目标)
+        real = [o for o in operands if o != "--"]
+        if real and _is_dangerous_rsync_target(real[-1]):
+            return True
+    return False
+
+
 # ------------------------------------------------------------ 致命红线模式库 (label 双语)
 # 注: rm 递归强删与 force push 由上方 token 化函数覆盖 (正则易被写法变体绕过), 不再重复列出。
 # 这些模式仅作正则补充, 供 score() 与 is_redline 共用, 保证「单一来源」口径一致。
@@ -383,6 +493,12 @@ def has_system_shutdown(text: str) -> bool:
 
 _PATTERN_CACHE: dict[str, re.Pattern] = {}
 _PATTERN_CACHE_LOCK = threading.Lock()
+
+# ReDoS 护栏: 单行超过此长度时截断正则扫描 (与 _GLOB_MAX_TOTAL_CHARS 同思路)。
+# 实测含嵌套 [^\n]* 的模式在 20k 行上单个吃 22.5s、全量 >120s, 攻击者可用超长
+# 载荷冻结安全闸门。4000 仍不够 (纯填充 4000 行仍 20s), 降到 1500 —— 真实 shell
+# 命令极少超过此长度, 关键 token 都在行首附近, 截断不漏判。
+_MATCH_LINE_MAX: int = 1500
 
 
 def _compiled(pattern: str) -> re.Pattern:
@@ -456,9 +572,23 @@ def _match_any(text: str, patterns: Any) -> bool:
     而换行本身是 shell 命令分隔符 —— 归一化后的文本常是多行的。整段扫描时
     `[^\n]*` 无法跨行, 多行载荷会漏判; 逐行扫描既补上漏判, 又把单次扫描长度
     限制在单个命令行内, 避免长文本上产生平方级以上的回溯耗时。
+
+    ReDoS 护栏 (安全闸门 fail-safe): 模式库中有 11 个模式含嵌套/重复 ``[^\n]*``
+    (fork bomb / reverse shell / exfil / icacls / taskkill / rundll32 / alias rm 等),
+    单行超长输入 (如 `echo x…20000`) 会触发 O(n²)~O(n³) 回溯 —— 实测单个最慢模式
+    在 20k 行上吃 22.5s, 全量模式 >120s, 等于让攻击者用一条超长载荷**冻结整个安全
+    闸门**, 危险命令反而无法被及时判定。
+
+    这里对单行做长度上限截断: 真实危险命令的关键 token (命令名 / 危险旗标 / 目标路径)
+    都集中在行首附近, 截断扫描**不漏判**这些; 超长尾部一般是填充/噪声 (base64 段 /
+    长 URL / 重复填充), 截断后仍由 token 化硬红线 (rm / dd / force push 等独立判定,
+    不受长度限制) 与首部模式兜住。这是与 `_GLOB_MAX_TOTAL_CHARS` 同思路的防御性上限:
+    宁可对极端超长行减少正则扫描覆盖, 也不给 DoS 留活口。
     """
     lines = text.split("\n") if "\n" in text else (text,)
     for line in lines:
+        if len(line) > _MATCH_LINE_MAX:
+            line = line[:_MATCH_LINE_MAX]
         for pattern, label in patterns:
             if _label_suppressed(label):
                 continue
@@ -1031,7 +1161,11 @@ _EXEC_SINK_RE = re.compile(
     r'|\b(?:eval|xargs|exec)\b'                              # eval / xargs
     r'|\b(?:ba|z|k|fi|da|a|c|tc)?sh\b\s+-[A-Za-z]'           # sh -c
     r'|\b(?:ba|z|k|fi|da|a|c|tc)?sh\b\s+\S'                  # sh script.sh
-    r'|>>?\s*\S+\.(?:sh|bash|py|pl|rb)\b',                   # > x.sh (落地后执行)
+    r'|>>?\s*\S+\.(?:sh|bash|py|pl|rb)\b'                    # > x.sh (落地后执行)
+    # Gap-2026-11h: at/batch 是执行汇 —— 内容经管道/重定向交给 at/batch 会被真正执行
+    # (计划任务), 与 | sh 同级, 不得被「提及豁免」当作文本剥除 (echo 'rm -rf /' | at now)。
+    r'|\|\s*(?:at|batch)\b'                                  # | at / | batch
+    r'|\bat\b[^\n]*<',                                       # at 从 stdin/重定向读命令
     re.IGNORECASE,
 )
 
@@ -1054,7 +1188,19 @@ _SINK_GLOBAL_RE = re.compile(
     r'|\b(?:eval|xargs|exec)\b'
     r'|\b(?:ba|z|k|fi|da|a|c|tc)?sh\b\s+-[A-Za-z]'
     r'|\b(?:ba|z|k|fi|da|a|c|tc)?sh\b\s+\S'
-    r'|>>?\s*\S+\.(?:sh|bash|py|pl|rb)\b',
+    r'|>>?\s*\S+\.(?:sh|bash|py|pl|rb)\b'
+    # Gap-2026-11: 写入 .git/hooks/ (无扩展名 hook 脚本) 或 tee 到 git hooks 目录
+    # 是真实副作用 (持久化 RCE), 不得被「提及豁免」mask 掉 —— 否则
+    # `tee .git/hooks/post-checkout <<< "evil"` 整段被当作提及剥除后漏判。
+    r'|>>?\s*\.git\s*[/\\]hooks\s*[/\\]\S+'
+    r'|\btee\b[^\n]*\.git\s*[/\\]hooks\s*[/\\]\S+'
+    # Gap-2026-11h: at/batch 执行汇 (同 _EXEC_SINK_RE), 内容交由其执行不得当文本抹除。
+    r'|\|\s*(?:at|batch)\b'
+    r'|\bat\b[^\n]*<'
+    # Gap-2026-11h: tee 写入系统路径 / 重定向到认证关键文件 —— 真实写动作, 引号数据
+    # 不得当「提及文本」抹除 (tee /etc/shadow <<< 'x' 连目标都被 mask 掉 → is_redline 漏判)。
+    r'|\btee\b[^\n]*(?:/etc/|/usr/|/bin/|/sbin/|/boot/|/root/|/var/|~?/\.ssh/|~?/\.aws/|~?/\.config/)'
+    r'|>>?\s*(?:/etc/(?:shadow|passwd|sudoers|gshadow)|~?/\.ssh/authorized_keys)',
     re.IGNORECASE,
 )
 
@@ -1135,7 +1281,19 @@ def _mask_mentioned_literals(text: str) -> str:
     parts: list[str] = []
     cursor = 0
     seg_sep_re = re.compile(r"[;&|\n]")
+    # 预算全文所有命令替换 ($() / ` `) 的绝对区间: 落在其中的引号内容会被真实 shell
+    # 先求值再执行。若**外层命令**是毁灭类 (rm/del/chmod/...) 则替换输出成为其旗标
+    # (rm`echo ' -rf /'`), 绝非提及, 须保留; 若外层是文本动词 (echo/grep/...) 则替换
+    # 内的引号只是参数 (echo $(grep 'rm -rf /' f)), 仍按提及抹除。
+    all_sub_spans = _substitution_spans(text, 0, len(text))
     for start, end in sorted(_mention_spans(text)):
+        if any(a <= start and end <= b for a, b in all_sub_spans):
+            # 引号在命令替换内: 看外层命令 (替换 span 之前最近的命令名)
+            pre = text[:all_sub_spans[0][0]] if all_sub_spans else ""
+            outer_words = pre.split()
+            outer_cmd = outer_words[0].strip("'\"") if outer_words else ""
+            if outer_cmd.lower() in _DESTRUCTIVE_OUTER:
+                continue  # 外层毁灭命令 + 替换: 替换输出是其旗标, 保留
         # 找到当前 mention span 所在段的开头 (上一个段分隔符之后)
         head = text[:start]
         cut = -1
@@ -1304,12 +1462,36 @@ def _expand_param_defaults(text: str) -> str:
     return _PARAM_DEFAULT_EXPAND.sub(lambda m: m.group(3), text)
 
 
+# 命令整体长度护栏: 超过此长度的输入在 is_hard_redline / is_redline 入口处截断。
+# 真实 shell 命令极少超 2KB: rm -rf / =8字符, reverse shell=~200字符,
+# base64 编码载荷=~500字符。超长尾部是填充/噪声, 截断不漏判——危险 token 集中在
+# 行首附近。实测 8KB 输入在 fork bomb 模式仍吃 9s (O(n²) 回溯), 2048 后 <0.1s。
+_COMMAND_MAX_LEN: int = 2048
+
+# ReDoS 护栏: 单行超过此长度时截断正则扫描 (与 _GLOB_MAX_TOTAL_CHARS 同思路)。
+# 含嵌套 [^\n]* 的 11 个模式在 20k 单行上单个吃 22.5s、全量 >120s; 4000 仍太慢,
+# 1500 也偏慢 (fork bomb 在 1500 仍 4s+); 512 字符足够覆盖任何真实危险命令, 且
+# 嵌套模式在 512 上 <0.01s。与 _COMMAND_MAX_LEN 互补: 前者截整条命令, 后者截单行。
+_MATCH_LINE_MAX: int = 512
+
+
+def _clamp_command(command: str) -> str:
+    """超长命令截断到安全长度, 消除 token 化函数上的 DoS 放大。"""
+    if len(command) > _COMMAND_MAX_LEN:
+        return command[:_COMMAND_MAX_LEN]
+    return command
+
+
 def is_hard_redline(command: str) -> bool:
     """硬红线: 文件系统 / OS 级毁灭操作, 即使在 YOLO 模式 / 确认通道存在时也永不自动执行。
 
     与 is_redline() 的区别: 排除 SQL 破坏性操作 (DROP/DELETE/TRUNCATE), 后者走
     「可确认关键级」流程。本函数仅供 shell 护栏 step1 使用, 以保持「硬红线」语义纯净。
+
+    ReDoS 护栏: 入口处先截断超长命令 (_COMMAND_MAX_LEN), 防止攻击者用超长载荷
+    冻结 token 化 + _match_any 全套扫描 (实测 20k 输入 >20s)。
     """
+    command = _clamp_command(command)
     if (_eval_is_unverifiable(command)
             or _has_unresolved_dangerous_substitution(command)):
         return True
@@ -1331,12 +1513,17 @@ def is_hard_redline(command: str) -> bool:
     # 不进硬红线, 交确认流程处理 (否则推荐的安全替代方案会被本函数永久拦死)。
     if (has_dangerous_recursive_rm(pattern_text) or has_unconditional_force_push(pattern_text)
             or has_win_recursive_delete(pattern_text) or has_system_shutdown(pattern_text)
-            or has_auth_overwrite(pattern_text)):
+            or has_rsync_delete_target(pattern_text) or has_auth_overwrite(pattern_text)):
         return True
     if _match_any(pattern_text, _REDLINE_PATTERNS):
         return True
     # 归一化后 (PowerShell -EncodedCommand / 命令替换解码等) 的红线模式也要命中
     if _match_any(_mask_mentioned_literals(_normalize(pattern_text)), _REDLINE_PATTERNS):
+        return True
+    # V-13 (Windows 平台转义): cmd.exe `^` / PowerShell `` ` `` 转义把真实命令名藏在
+    # 转义符后 (d^d / f`ormat)。_normalize 不做全局 ^/` 剥离 (会误伤 grep '^foo' 等),
+    # 故在此对 _unescape_win 额外变体再判一轮 —— 归一化只能增加命中。
+    if _match_any(_mask_mentioned_literals(_unescape_win(pattern_text)), _REDLINE_PATTERNS):
         return True
     # V-10 补充: 读取 SSH 私钥 / 系统凭证 —— 不是毁灭操作但凭证外泄危害等同,
     # 也构成硬红线。不放入 SafetyEngine.score() 的硬红线子集 (见 safety_score.py 注释),
@@ -1361,7 +1548,10 @@ def is_redline(command: str) -> bool:
 
     返回 True 即代表「命中致命/危险操作」; 其中文件系统/OS 级毁灭操作同时构成硬红线
     (见 is_hard_redline), SQL 破坏性操作则由调用方按可确认关键级处理。
+
+    ReDoS 护栏: 入口处先截断超长命令 (_COMMAND_MAX_LEN), 与 is_hard_redline 同理。
     """
+    command = _clamp_command(command)
     if (_eval_is_unverifiable(command)
             or _has_unresolved_dangerous_substitution(command)):
         return True
@@ -1379,7 +1569,7 @@ def is_redline(command: str) -> bool:
     pattern_text = _mask_mentioned_literals(command)
     if (has_recursive_rm(pattern_text) or has_force_push(pattern_text)
             or has_win_recursive_delete(pattern_text) or has_system_shutdown(pattern_text)
-            or has_auth_overwrite(pattern_text)):
+            or has_rsync_delete_target(pattern_text) or has_auth_overwrite(pattern_text)):
         return True
     if _match_any(pattern_text, _REDLINE_PATTERNS) or _sql_redline(pattern_text):
         return True
@@ -1415,7 +1605,7 @@ def is_extreme(command: str) -> bool:
     # 额外做一次 normalize 后的 token 化检测 (覆盖 rm -rf / 变体)
     for seg in _segments(normalized.lower()):
         parts = seg.split()
-        if parts and parts[0] in ("rm",) :
+        if parts and _cmd_name_glob(parts[0]) == "rm" :
             # 检查 -rf/-fr/-r -f/-f -r 组合 + 目标为 / ~ $HOME /*
             flags = set()
             target = None

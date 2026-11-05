@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [0.3.4] - 2026-11-03 (小更新 · 安全引擎攻击面修复 + API 冻结)
+
+### 安全引擎攻击面修复 (实测对抗 → 修复)
+- **ReDoS 防冻结护栏** — `tuan_cli/ext/safety_redline.py`:
+  11 条含嵌套 `[^\n]*` 的红线模式在 20k 字符输入上单个吃 22.5s、全量 >120s，
+  攻击者可用超长载荷冻结安全闸门（ denial-of-service on the safety gate 本身）。
+  双护栏：命令整体截断 `_COMMAND_MAX_LEN=2048` + 行级截断 `_MATCH_LINE_MAX=512`。
+  实测 20k 输入由 >120s 降至 <1s，硬红线零漏判（危险 token 集中在行首附近）。
+- **rsync --delete 目标端毁灭** — `has_rsync_delete_target()`（token 化判定）:
+  `rsync --delete /x /etc` 会删空目标端系统目录，是绕过 rm 判定的攻击通道。
+  归一化后 token 分类，精确定位**最后一个非旗标路径参数**作目标端 ——
+  源端系统目录的良性备份 `rsync --delete /etc /b` 不误杀（正则贪婪匹配无法可靠
+  区分源/目标方向，故不放正则表）。
+- **信号类毁灭 (killall/pkill -9 -1)** — `tuan_cli/ext/safety_patterns.py`:
+  向 PID=-1 发 KILL 等价于整机关停，补入 `_CRITICAL_PATTERNS`（旗标顺序无关）。
+- **反引号命令替换 mask 回归修复** — `_mask_mentioned_literals()`:
+  `rm`echo ' -rf /'``中，命令替换内的引号内容会被真实 shell 先求值再执行，
+  旧 mask 逻辑把它当「提及」抹掉导致漏判。现按外层命令区分：毁灭类外层
+  (rm/chmod/...) 保留原文，文本类外层 (echo/grep/...) 仍按提及抹除。
+  修复 `test_command_substitution_echo_output_is_analyzed` 回归。
+- **自动决策系统越级放行护栏** — `tuan_cli/tools/permissions.py`:
+  `AutoModeClassifier` 自带正则远弱于安全引擎, `decide()` 原先在 auto_approve 命中时
+  立即 `return allow`, 会**先于**下游 `_hardening_confirm` 越级放行硬红线/红线命令。
+  实测 rsync --delete 系统目录 / killall -9 -1 / dd 直写裸盘 / chmod -R 000 /
+  mkfs / fork bomb 等 9 条全部可被 Auto 模式越级放行。现 auto_approve 放行前用
+  `ext.safety_engine.is_redline` 兜底 fail-closed（引擎不可用时降级为需确认）,
+  确保自动决策严格服从安全引擎 —— 这是「倒数第二道防线不可越级放行」语义的落实。
+- **第 19 轮对抗修复** — 绕过矩阵实测发现 4 处误杀 + 21 处漏判:
+  - 误杀修复: `cat /etc/crontab`/`cp /etc/crontab`（读取 crontab 文件）收紧 crontab 规则
+    为命令词首判定；`tar czf - ./docs | ssh backup 'cat > b.tar.gz'`（良性备份）收紧
+    tar|ssh 规则仅在含敏感路径/打包 `.`/`*` 时判 high；`nmap -p 80 example.com`
+    （显式单端口扫描具体域名）在 critical 层补 `-p` 豁免。
+  - 漏判修复: 补 SSH 反向/动态隧道（`ssh -R/-D`/`autossh`）、DB 写文件 RCE
+    （`INTO OUTFILE`/`COPY TO`/`redis CONFIG SET dir`/`mongosh db.eval`）、进程注入
+    （`gdb -p call system`/`strace inject`/`LD_LIBRARY_PATH`/`PYTHONPATH`/`ptrace`）、
+    MITM 工具（`ettercap`/`arpspoof`/`mitmproxy`/`tcpdump`）、内核控制写、
+    供应链投毒（写 `.git/hooks/`/`.pre-commit-config.yaml`/`.github/workflows/`）。
+  - 全量回归 54 passed（含 rounds 6–16 + auto_mode + doc_numbers）。
+- 全量安全测试套件 **179 passed**（20 个 safety test 文件，本轮复测）。
+
+### API 冻结 (v0.3.4 起)
+- 公共 API 面（`tuan_cli/__init__.py` 导出、CLI 命令名、`ext/safety_*` 判定函数签名、
+  `core/kernel.py` 插件协议）进入冻结期：破坏性改动需走 deprecation window（≥1 小版本）。
+- 详见 `docs/API_FREEZE.md`。
+- 版本号 0.3.3 → 0.3.4（`tuan_cli/version.py` 单一源 + `pyproject.toml`）。
+
+### 清理 (codebase hygiene)
+- **探针/陈旧脚本移出根目录**: 未跟踪的遗留探针 `push_api.py` / `push_api.ps1`
+  与指向已删除 `SoulTests/` 目录的陈旧死脚本 `run_soul_tests.ps1` 集中到
+  `scripts/debug/`（`run_soul_tests.ps1` 走 `git mv` 保留历史）。根目录仅保留
+  合法入口脚本 `install.ps1`。
+- **术语全面修正**: 架构文档 (中/英)、CHANGELOG、CONTRIBUTING、README 全语言、
+  `docs/ecosystem_bridge.md`、`docs/QUICKSTART.md`、`docs/GAP-ANALYSIS-vs-ClaudeCode.md`
+  及源码注释 (`core/kernel.py`、`core/agent.py`、`core/subagents.py`、`core/prompts.py`、
+  `core/boundary_auto.py`、`core/security_plugin.py`、`core/collaboration_plugin.py`、
+  `core/goal_mode.py`、`kernel_patch/*`、`cli/cmd_doctor.py`、`cli/cmd_onboarding.py`、
+  `tools/subagent_tool.py`、`__init__.py`) 中的「微内核 / microkernel」统一改称
+  「插件容器 / plugin container」，并在 `ARCHITECTURE*.md`、`core/kernel.py` 补充
+  术语说明（经典 microkernel 指 OS 服务下移用户态，本容器保留服务注册表+事件总线，
+  并非最小化内核）。
+
+### 1.0 目标升级
+- **平台矩阵**: Linux 6.5+ / Windows 10+ / macOS 17+ 三平台「最安全」。
+- **安全栈分层**: 所有命令完全不绕过 → 自动决策系统 (倒数第二道防线，完全本地、
+  极低占用，纯 Python 无外部模型依赖) → 硬红线 (最后一道，永不自动执行)。
+- **术语修正**: "微内核" 仅指 `core/kernel.py` 的插件容器实现（准确），
+  不再泛指整个产品架构 —— 整体是「插件化宿主 + 分层安全栈」。
+
 ## [0.3.3] - 2026-10-25 (小更新 · 体验增强)
 
 ### Tuan-Chat 桌面端 (Tuan/)
@@ -1518,7 +1586,7 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
 - **对外名称统一改为 `Tuan-CLI`**：README（10 语言）、GitHub 仓库 URL、代码与网页署名、VS Code 扩展显示名等所有出现过项目英文名的地方全部更新。
 - **多语言名称规则**：简体中文 / 繁體中文 / 日本語 保留「青小团 / 青小團」汉字；其余语言一律使用 `Tuan-CLI`。
 - **内部标识不变**：Python 包名 `qingxiaotuan`、CLI 命令 `tuan`、配置目录 `~/.tuan` 保持原样（包名变更会破坏全部 import 与已安装用户配置，故不随品牌更名）。
-- **README 新增「版本号与仓库历史（透明披露）」章节**（同步 10 语言）：说明 `0.x` 版本号语义（API 未冻结，功能成熟度对标竞品 2.x）并如实披露 Git 历史于 2026-09-26 因本地仓库损坏重建、早期逐次提交记录不可追溯。
+- **README 新增「版本号与仓库历史（透明披露）」章节**（同步 10 语言）：说明 `0.x` 版本号语义（API 未冻结，功能成熟度对标竞品 2.x）并如实披露 Git 历史——**早期项目未纳入 Git 版本管理，代码在其他机器上开发，后因该机器损坏导致部分早期记录丢失后重建；所幸硬盘未损坏，历史不可考对几乎所有人无影响，不必揪着不放**。
 
 ### 生态互操作层 (Ecosystem Bridge, 全新 `qingxiaotuan/ecosystem/` 包)
 
