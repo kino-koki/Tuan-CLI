@@ -144,7 +144,7 @@ TRANSLATIONS = {
     "tui.ask_free_hint": "답변을 입력 · Enter 로 전송",
     "tui.ask_answer": "답변: {answer}",
     "tui.ask_skipped": "(건너뜀)",
-    "tui.scroll_back_hint": "· PgUp/PgDn 페이지 이동 · Shift+PgUp 한 줄 · End 맨 아래",
+    "tui.scroll_back_hint": "· pgup/pgdn 페이지 이동 · shift+pgup 한 줄 · end 맨 아래",
     # ---- 설정 마법사
     "setup.title": "투안-CLI 설정 마법사",
     "setup.opt_quick": "빠른 설정 (권장)",

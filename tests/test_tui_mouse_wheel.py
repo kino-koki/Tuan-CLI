@@ -205,8 +205,15 @@ def test_wheel_to_bottom_restores_follow():
 
 
 def test_wheel_does_nothing_when_content_fits_one_screen():
-    """内容不足一屏时滚轮不应产生位移 (也不能把 follow 弄丢)。"""
-    tui = _tui(n=3)
+    """内容不足一屏时滚轮不应产生位移 (也不能把 follow 弄丢)。
+
+    n 必须是 2 而不是更大: codex 会话头 (空行 + >_ 标题 + 目录 + 空行) 在
+    _show_welcome 就绪后已占 4 行基线, 每追加一条日志 +2 行, n=3 时总行数
+    超出视口上限 20 (headless CI 终端 24 行 − 输入框边框 3 − 底栏 1),
+    max_top>0 会让滚轮**合法地**滚 1 行 —— 那正是"内容超一屏"的预期行为,
+    不是 bug。n=2 总行数仍在 20 以内, 内容确实不足一屏, 才能验证"滚轮无位移"。
+    """
+    tui = _tui(n=2)
     tui._scroll_to_bottom()
     before = tui._scroll_state()
     _wheel(tui, up=True, count=10)

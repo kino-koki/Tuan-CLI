@@ -1,7 +1,7 @@
 """Agent 主循环 —— ReAct: think -> tool -> observe -> think ... 直到完成。
 
 融合点:
-- Harness: 循环本身也是一个挂在微内核上的组件, 每个 step 都发出内核事件
+- Harness: 循环本身也是一个挂在插件容器上的组件, 每个 step 都发出内核事件
   并写入 append-only 会话事件流 (可审计、可回放)。
 - Hermes: 每隔 skill_nudge_interval 个 turn, 循环会"自我提醒"反思 —
   这次的方法值不值得蒸馏成技能? 这就是自进化闭环的触发器。

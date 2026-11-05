@@ -70,9 +70,30 @@ def _ensure_rich() -> None:
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             kwargs.setdefault("highlight", False)
+            # 记录调用方是否显式指定了输出流: 显式指定 (如测试传 file=buf) 时
+            # 必须尊重该流; 只有走默认 sys.stdout 时才允许打印前同步为当前 stdout。
+            self._explicit_file = "file" in kwargs or bool(args)
             super().__init__(*args, **kwargs)
 
+        def _sync_file(self) -> None:
+            """Rich Console 构造时固化了当时的 ``sys.stdout``。
+
+            测试 (pytest capsys / monkeypatch) 或调用方可能替换 ``sys.stdout``,
+            若仍写旧流会丢失输出。每次打印前把输出目标同步为当前 ``sys.stdout``,
+            保证 CLI 输出始终落在调用方期望的流上 (含重定向/捕获)。
+
+            仅当调用方**未显式指定**输出流时同步; 显式传 ``file=`` (如单元测试
+            注入 ``StringIO``) 必须原样尊重, 不能被覆盖成 ``sys.stdout``。
+            """
+            if self._explicit_file:
+                return
+            import sys
+
+            if self._file is not sys.stdout:
+                self._file = sys.stdout
+
         def print(self, *objects: Any, **kwargs: Any) -> Any:
+            self._sync_file()
             plain = tuple(
                 strip_markup(o) if isinstance(o, str) else render_plain(o) for o in objects
             )

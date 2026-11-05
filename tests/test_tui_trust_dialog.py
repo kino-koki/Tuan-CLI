@@ -62,11 +62,18 @@ def test_resolve_trust_invalid_keeps_pending():
 
 
 def test_trust_confirm_card_renders_with_border():
-    """确认卡片应渲染出边框 (╭ ╯) 与目录信息, 不抛异常。"""
+    """确认卡片应渲染出 codex 无边框背景块 (render_menu_surface 同款), 不抛异常。
+
+    对齐 codex selection_popup_common.rs: 弹窗是整块 ``user_message_style`` 背景
+    (``Block::default().style(...)``, 无 border), 因此**不含** ``╭``/``╯`` 边框字符,
+    而是每行片段携带背景色 ``bg:#333B47`` (USER_MESSAGE_BG)。
+    """
     tui = _tui()
     tui.prompt_trust("E:/some/workspace", on_confirm=lambda _ok: None)
-    text = "".join(seg for cls, seg in tui._render_trust_confirm())
-    assert "╭" in text and "╯" in text
+    segs = tui._render_trust_confirm()
+    text = "".join(seg for cls, seg in segs)
+    assert "╭" not in text and "╯" not in text   # 无边框 (对齐 codex 悬浮背景块)
+    assert any("bg:#333B47" in cls for cls, _ in segs)   # 背景填充
     assert "E:/some/workspace" in text
 
 
@@ -76,7 +83,7 @@ def test_trust_pending_hides_conversation_shows_card():
     tui.prompt_trust("E:/proj", on_confirm=lambda _ok: None)
     lines = tui._scrolled_lines()
     flat = "".join(seg for line in lines for _, seg in line)
-    assert "╭" in flat
+    assert "E:/proj" in flat
 
 
 # ---------------------------------------------------------------- 不得阻塞就绪

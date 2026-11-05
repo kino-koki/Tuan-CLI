@@ -6,7 +6,7 @@
   最大自动续轮数防死循环、持久化到 ``<workspace>/.tuan/goal.json``。
 
 设计原则: 全部外部依赖 (LLM 调用、测试命令执行) 以可注入参数传入,
-本模块不直接 import model/tool 层, 保证微内核下可独立测试、可被插件替换。
+本模块不直接 import model/tool 层, 保证插件容器下可独立测试、可被插件替换。
 
 状态机:
     目标状态: pending -> in_progress -> done

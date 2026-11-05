@@ -1,4 +1,4 @@
-# 发布路线图：从 0.3.3 到 1.0
+﻿# 发布路线图：从 0.3.4 到 1.0
 
 > 本文档回答两个问题：**API 什么时候冻结、怎么冻结**，以及**社区里程碑怎么走**。
 > 配套约束见 [VERSION_POLICY.md](../VERSION_POLICY.md) 与 [TUAN.md](../TUAN.md)。
@@ -6,7 +6,7 @@
 
 ## 1. 现状（2026-10-18）
 
-- 当前版本 `0.3.3`，公共 API **未冻结**：CLI 子命令表面、配置 schema、工具协议、插件契约都还可能变。
+- 当前版本 `0.3.4`，公共 API **未冻结**：CLI 子命令表面、配置 schema、工具协议、插件契约都还可能变。
 - `CHANGELOG.md` 的 `[Unreleased]` 已积累一批修复与新特性（工作区路径、提示词档位、TUI 命令面板、WebUI 流式），按版本策略应发 `0.4.0`（含向后兼容新功能 → 升 MINOR）。
 - 质量门禁已就位：安全基准 CI（`bench/security-bench.json` 对比）、版本策略门禁（`scripts/check_version_policy.py`）、mypy、pytest（含超时防挂起）。
 

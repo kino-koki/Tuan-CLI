@@ -29,9 +29,3 @@ def test_tui_imports_win_compat():
     # tui 包内应能安全导入 win_compat (跨平台)
     from tuan_cli.tui.tui import QxtTUI  # noqa: F401
     assert True
-
-
-def test_fullscreen_imports_win_compat():
-    # ui.fullscreen 引用 ..tui.win_compat, 需能成功导入 (路径正确性回归)
-    import tuan_cli.ui.fullscreen  # noqa: F401
-    assert True

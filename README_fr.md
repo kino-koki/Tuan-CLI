@@ -1,7 +1,7 @@
-# Tuan-CLI
+﻿# Tuan-CLI
 
 > **« Model + Harness = Agent. »** — on sépare « comment penser » de « comment l'exécuter en sécurité », et on vous remet les deux clés.
-> Un harness d'agents IA en pur Python, sécurité d'abord, agnostique du modèle. `v0.3.3` · MIT · Python ≥ 3.10
+> Un harness d'agents IA en pur Python, sécurité d'abord, agnostique du modèle. `v0.3.4` · MIT · Python ≥ 3.10
 
 > ### Positionnement : un agent sécurité d'abord — sans sacrifier l'expérience développeur
 >
@@ -28,7 +28,7 @@
 
 L'idée centrale : **le modèle pense ; le harness fait que cette réflexion tourne de façon sûre et contrôlable.** Tuan-CLI découple « le modèle » de l'« hôte » : hot-swap entre plusieurs fournisseurs, tourner complètement hors ligne, annuler les erreurs destructives, et voir le rayon d'impact *avant* que la commande ne parte. Le but est d'être un hôte d'agent de terminal raisonnablement neutre, auto-hébergeable — pas un emballage captif autour d'un seul fournisseur.
 
-**Ce que ce n'est pas** : ni un emballage captif d'un modèle (hot-swap / auto-hébergement / hors ligne, vous choisissez) ; ni un sous-fifre d'IDE (c'est un outil de terminal, pilotable via ACP par VSCode/Zed/JetBrains) ; ni une seule abstraction fuible (architecture micro-noyau pour les constructeurs, plus un `setup` d'un coup pour les autres).
+**Ce que ce n'est pas** : ni un emballage captif d'un modèle (hot-swap / auto-hébergement / hors ligne, vous choisissez) ; ni un sous-fifre d'IDE (c'est un outil de terminal, pilotable via ACP par VSCode/Zed/JetBrains) ; ni une seule abstraction fuible (architecture à conteneur de plugins pour les constructeurs, plus un `setup` d'un coup pour les autres).
 
 ---
 
@@ -40,7 +40,7 @@ L'idée centrale : **le modèle pense ; le harness fait que cette réflexion tou
 | 🎯 **Expérience développeur** | Les commandes dev bénignes passent sans confirmation, `/undo` vous a le dos, 40+ commandes slash, `tuan safe allow` pour des opt-outs explicites, YOLO pour sauter les confirmations répétées |
 | 🔌 **Agnostique modèle** | 58 fournisseurs + Ollama local + hot-swap à l'exécution + routage automatique (`router.*`) |
 | 🧠 **Trois boucles principales** | ReAct / Planner-Execute / DevLoop — débranchables ; un seul noyau, différents « rythmes de pensée » |
-| 🔧 **Microkernel** | `@plugin` en une ligne, registre de services, bus d'événements append-only, middleware de hooks |
+| 🔧 **Conteneur de Plugins** | `@plugin` en une ligne, registre de services, bus d'événements append-only, middleware de hooks |
 | 🗂️ **Mémoire** | SQLite FTS5 + flux d'événements de session ; mémoire à trois niveaux, `/undo`, checkpoint, replay, export Trajectory |
 | 🧩 **Écosystème** | MCP + ACP + **interopérabilité Claude Code / Hermes Agent** : skills / agents nommés / mémoire / SOUL / configs MCP vont dans les deux sens (`tuan ecosystem`), dès la sortie de boîte |
 | 🌍 **Dix langues** | zh-CN par défaut, localisation native de toute l'interface |
@@ -86,11 +86,11 @@ class MyTool(Plugin):
 
 ## Numéro de version et historique du dépôt (divulgation transparente)
 
-**Pourquoi `0.3.3` et non `1.0` ?** Sémantique [SemVer](https://semver.org/) honnête : **une version `0.x` signifie que l'API publique (surface CLI, schéma de config, protocole d'outils, contrat de plugins) n'est pas encore gelée** et peut encore changer entre les releases. Tuan-CLI livre déjà un large ensemble de fonctionnalités — contrôle de sécurité / rollback transactionnel, hot-swap modèle-neutre (58 fournisseurs + Ollama local), trois boucles principales, architecture micro-noyau à plugins, mémoire à trois niveaux, interopérabilité d'écosystèmes (MCP / ACP / pont Claude Code / Hermes), sous-agents et Swarm, cron et tâches d'arrière-plan, mode Goal et permissions précises — le tout couvert par des tests. Mais **le numéro de version reflète la stabilité de l'interface, pas l'exhaustivité des fonctionnalités** : un ensemble complet de fonctionnalités ne signifie pas que l'API doit être gelée. `1.0` est réservé au moment où l'API publique sera réellement stable et où nous pourrons promettre la rétrocompatibilité. D'ici là : les changements cassants montent MINOR dans `0.x` (avec pistes de migration), les fonctions compatibles montent MINOR, les correctifs montent PATCH (voir [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Pourquoi `0.3.4` et non `1.0` ?** Sémantique [SemVer](https://semver.org/) honnête : **une version `0.x` signifie que l'API publique (surface CLI, schéma de config, protocole d'outils, contrat de plugins) n'est pas encore gelée** et peut encore changer entre les releases. Tuan-CLI livre déjà un large ensemble de fonctionnalités — contrôle de sécurité / rollback transactionnel, hot-swap modèle-neutre (58 fournisseurs + Ollama local), trois boucles principales, architecture à conteneur de plugins, mémoire à trois niveaux, interopérabilité d'écosystèmes (MCP / ACP / pont Claude Code / Hermes), sous-agents et Swarm, cron et tâches d'arrière-plan, mode Goal et permissions précises — le tout couvert par des tests. Mais **le numéro de version reflète la stabilité de l'interface, pas l'exhaustivité des fonctionnalités** : un ensemble complet de fonctionnalités ne signifie pas que l'API doit être gelée. `1.0` est réservé au moment où l'API publique sera réellement stable et où nous pourrons promettre la rétrocompatibilité. D'ici là : les changements cassants montent MINOR dans `0.x` (avec pistes de migration), les fonctions compatibles montent MINOR, les correctifs montent PATCH (voir [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Sémantique de version | Signification |
 |---|---|
-| `0.3.3` (actuel) | **API pas encore gelée** : `0.x` autorise des ajustements cassants, annoncés avec des pistes de migration ; rétrocompatibilité non promise |
+| `0.3.4` (actuel) | **API pas encore gelée** : `0.x` autorise des ajustements cassants, annoncés avec des pistes de migration ; rétrocompatibilité non promise |
 | `1.0` (réservé) | Activé lorsque l'API publique sera gelée et la rétrocompatibilité promise ; c'est seulement alors que les changements cassants montent MAJOR (`2.0`) |
 
 **Note sur l'historique Git (transparence open source) :** l'historique des commits de ce dépôt a été **volontairement reconstruit le 2026-09-26 — l'historique initial des commits a été délibérément écrasé par l'auteur** ; l'évolution commit par commit antérieure à cette date n'est plus conservée. Le code actuel est entièrement revoyable, de l'architecture à l'implémentation ; pour l'évolution des fonctionnalités antérieure à 2026-09-26, fiez-vous aux enregistrements de version de [CHANGELOG.md](CHANGELOG.md) (la discipline de version n'est pas affectée). Nous choisissons de le divulguer franchement — sans fard, sans rien cacher.
@@ -103,7 +103,7 @@ Tuan-CLI n'est pas né de rien : sa conception s'appuie explicitement sur les pr
 
 | Source | Ce que nous avons emprunté |
 |---|---|
-| **DeepSeek Harness / Cordis** | Architecture micro-noyau + registre de services + bus d'événements append-only (annotée dans `core/kernel.py`) |
+| **DeepSeek Harness / Cordis** | Architecture à conteneur de plugins + registre de services + bus d'événements append-only (annotée dans `core/kernel.py`) |
 | **Kimi Code** | Le ressenti d'interaction du TUI terminal et la palette (voir [NOTICE](NOTICE)) |
 | **Claude Code** | Système de commandes `/`, agents nommés (compatible `.claude/agents`), mode Goal, DevLoop — alignement d'interface |
 | **Hermes Agent** | Mémoire à trois niveaux, boucle d'auto-évolution de skills, identité SOUL, outils auto-enregistrés, sémantique cron — aligné ; `tuan ecosystem` synchronise mémoire/skills/SOUL bidirectionnellement avec lui |
@@ -260,7 +260,7 @@ tuan --print run "Salut, une ligne." # smoke
 ```
 
 - **Discipline i18n** : README_zh-CN est le maître de référence ; chaque langue est une localisation vivante, zéro dérive — **aucune traduction mécanique.**
-- **Version** : `v0.3.3` (une lignée `0.x` — l'API n'est pas encore gelée) ; les ajustements cassants arrivent avec préavis + notes de migration, et `1.0` est réservé au gel de l'API.
+- **Version** : `v0.3.4` (une lignée `0.x` — l'API n'est pas encore gelée) ; les ajustements cassants arrivent avec préavis + notes de migration, et `1.0` est réservé au gel de l'API.
 - **En profondeur** : signatures des moteurs et un tour de vis de nouvel outil vivent dans l'appendice de `README_zh-CN.md`.
 
 ---

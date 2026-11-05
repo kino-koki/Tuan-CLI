@@ -254,18 +254,16 @@ def test_welcome_box_rows_fit_width(width):
 
 
 @pytest.mark.parametrize("width", WIDTHS)
-def test_boot_screen_rows_fit_width(width):
-    """启动屏: 进度条长度必须随宽度自适应 (旧实现固定 30 格 = 37 列)。"""
+def test_boot_error_screen_rows_fit_width(width):
+    """启动失败态: 错误行必须按宽度裁切, 不超宽 (加载屏已删除, 仅错误屏保留)。
+
+    旧 `_render_boot` (粒子徽记盒 + 进度条) 已随加载屏删除; 启动即进入对话界面,
+    只剩 `_render_boot_error` 在**构建内核失败**时展示。超长错误详情 (CJK) 必须
+    被 `_clip_dw` 裁到盒子宽内, 否则软换行撑破布局。
+    """
     tui = _make(width)
-    for pct in (0, 37, 100):
-        tui._booting = True
-        tui._boot_progress = pct
-        tui._boot_error = None
-        tui._boot_status = LONG_CJK
-        _assert_rows_fit(_rows_of(tui._render_boot()), width, f"boot/{pct}")
-    # 启动失败态: 错误详情也可能很长
     tui._boot_error = "OSError: " + LONG_CJK
-    _assert_rows_fit(_rows_of(tui._render_boot()), width, "boot/error")
+    _assert_rows_fit(_rows_of(tui._render_boot_error()), width, "boot/error")
 
 
 @pytest.mark.parametrize("width", WIDTHS)

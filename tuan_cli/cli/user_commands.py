@@ -292,12 +292,6 @@ def _sync_ui_lists(table: Dict[str, UserCommand]) -> None:
         _repl._SLASH_COMMANDS.extend(new)
     except Exception:  # noqa: BLE001
         pass
-    try:
-        from ..ui import fullscreen as _fs
-        new = [n for n in names if n not in _fs._SLASH_COMMANDS]
-        _fs._SLASH_COMMANDS.extend(new)
-    except Exception:  # noqa: BLE001
-        pass
     # /help 追加段落 (只在首次安装时拼一次, 用标记防重复)
     import tuan_cli.cli.commands as _cmds
     marker = "\n\n## 自定义斜杠命令"

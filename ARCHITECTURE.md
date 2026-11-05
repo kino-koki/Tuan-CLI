@@ -4,9 +4,15 @@
 > 降低上手与贡献门槛。配套命令：`tuan others`（能力目录）、`tuan safe`（安全总入口）、
 > `tuan models`（模型与本地 LLM）。
 
-青小团是一个**微内核 + 插件**架构的 Agent CLI。内核本身不携带任何 Agent 能力，
-只负责「插件注册 / 服务发现 / 生命周期事件」；所有能力（工具、模型适配器、记忆、
-技能、安全、路由、Loop）都以**插件**形式挂载。
+青小团是一个**插件化宿主 + 分层安全栈**架构的 Agent CLI。核心容器 `core/kernel.py`（Kernel）
+本身不携带任何 Agent 能力, 只负责「插件注册 / 服务发现 / 生命周期事件」；所有能力（工具、
+模型适配器、记忆、技能、安全、路由、Loop）都以**插件**形式挂载。
+
+（术语说明: 早期文档把 Kernel 称作「微内核 / microkernel」, 这并不准确 —— 经典微内核
+（microkernel）指把操作系统服务移到用户态、内核只保留最小机制（地址空间 / IPC / 调度）。
+本项目的 Kernel 更接近「**插件容器 / plugin container**」或「插件式宿主」: 它保留服务注册表
+（ServiceContainer）与事件总线（MiddlewareEventBus）这两个"较厚"的设施, 并非最小化内核。
+故本架构文档统一改称「**插件容器**」; 整体产品架构是「插件化宿主 + 分层安全栈」, 不泛称微内核。）
 
 公式：**模型负责思考，Harness（青小团）负责让思考可控地运行。**
 
@@ -16,7 +22,7 @@
 
 | 子系统 | 职责 | 核心模块 | 关键类 / 函数 |
 | --- | --- | --- | --- |
-| **Kernel** | 微内核：插件生命周期、服务注册表、事件总线 | `core/kernel.py` | `Kernel` · `Plugin` · `@plugin` · `ServiceContainer` · `MiddlewareEventBus` |
+| **Kernel** | 插件容器：插件生命周期、服务注册表、事件总线 | `core/kernel.py` | `Kernel` · `Plugin` · `@plugin` · `ServiceContainer` · `MiddlewareEventBus` |
 | **Plugin** | 能力即插件：工具 / 模型 / 记忆 / 安全 / Loop 都注册为服务 | `core/loop_plugin.py` 及各 `@plugin` 类 | `LoopPlugin` · `provide()` / `require()` |
 | **Loop** | Agent 主循环策略：ReAct / 规划-执行 / 开发循环，可热切换 | `core/loop_provider.py` · `core/loop_plugin.py` | `LoopRegistry` · `ReActLoop` · `PlannerExecuteLoop` · `DevLoopProvider` · `set_current()` |
 | **Security** | 红线拦截、白名单放行、审计落盘、本地黑名单减负 | `ext/safety_engine.py` · `core/whitelist.py` · `core/security_bus.py` · `core/blacklist_override.py` · `ext/security_gate.py` | `is_redline()` · `is_hard_redline()` · `score()` · `WhitelistManager` · `SecurityEventBus` · `emit_command_blocked()` |
@@ -28,7 +34,7 @@
 
 ```
                          ┌──────────────────────────────────────────┐
-                         │                Kernel (微内核)              │
+                         │           Kernel (插件容器)                 │
                          │  ServiceContainer  ·  MiddlewareEventBus   │
                          │  provide("loop_provider") / require(...)    │
                          └───────────────┬───────────────┬────────────┘
@@ -111,7 +117,7 @@ Router 按难度/卡住情况升降级模型 → 所有安全事件落盘审计�
 
 ## 4. 各子系统详解
 
-### 4.1 Kernel（微内核）
+### 4.1 Kernel（插件容器）
 - 文件：`core/kernel.py`
 - 三件事：**插件注册/激活/依赖解析**、**服务注册表**（插件间经服务名发现，不直接 import）、
   **生命周期事件**（append-only 事件总线 + 中间件管线）。

@@ -313,10 +313,12 @@ def _export_memory(config: Any, probe: Any, dest: str) -> int:
 # ---------------------------------------------------------------- link / serve
 
 def _tuan_command() -> List[str]:
-    """定位 tuan 可执行命令 (优先 PATH 里的 tuan, 否则当前解释器 -m 根包)。"""
-    exe = shutil.which("tuan")
-    if exe:
-        return [exe]
+    """定位 tuan 可执行命令: 恒用当前解释器 `-m` 根包形式。
+
+    不能优先 `shutil.which("tuan")`: PATH 里的入口可能是**别的解释器/旧版本**
+    装的全局入口, 与当前进程不一致, 会让 MCP server 挂到错误的代码库。MCP
+    命令必须可复现且与当前解释器同源, 故恒用 ``sys.executable -m tuan_cli``。
+    """
     return [sys.executable, "-m", "tuan_cli"]
 
 

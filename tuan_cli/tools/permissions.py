@@ -52,6 +52,21 @@ def _nested_get(args: dict, dotted: str) -> Any:
     return cur
 
 
+def _engine_redline(command: str) -> bool:
+    """安全引擎红线兜底 (fail-closed)。
+
+    自动决策 (AutoModeClassifier) 自带正则远弱于 ext.safety_engine, 绝不能让它
+    越级放行安全引擎判定的红线命令 (rsync --delete 系统目录 / killall -9 -1 /
+    dd 直写裸盘 / chmod -R 000 / mkfs / fork bomb 等实测可绕过)。安全引擎不可用
+    时返回 True (保守降级为需确认), 与 _hardening_confirm 的 fail-closed 方向一致。
+    """
+    try:
+        from ..ext.safety_engine import is_redline
+        return bool(is_redline(command))
+    except Exception:  # noqa: BLE001 - 安全引擎不可用时保守视为红线 (降级确认)
+        return True
+
+
 class PermissionPolicy:
     """集中处理工具权限。对标 Claude Code 2.1.214 的安全加固。"""
 
@@ -143,8 +158,12 @@ class PermissionPolicy:
             return PermissionDecision("allow", f"权限规则 (permissions.rules) 允许执行 {name}", explicit=True)
 
         # Auto Mode (对标 Claude Code): 分类器按风险分级决定 allow/confirm。
-        # 硬红线仍由 _hardening_confirm 在下游拦截 (rm -rf /、DROP TABLE 等),
-        # 分类器的 auto_approve 不会放行这些; needs_confirm=True 时仍需人工确认。
+        # 安全修复 (分层不越级): 分类器的 auto_approve 绝不能放行安全引擎判定的
+        # 硬红线/红线命令 —— AutoModeClassifier 自带正则远弱于 ext.safety_engine,
+        # 若在此直接 return allow, 会在下游 _hardening_confirm 之前越级放行
+        # (rsync --delete 系统目录 / killall -9 -1 / dd 直写裸盘 / chmod -R 000 /
+        # mkfs / fork bomb 等全部实测可绕过)。故 auto_approve 放行前先用安全引擎
+        # is_redline 兜底 fail-closed, 安全引擎不可用时也降级为需确认。
         if auto_classifier is not None:
             try:
                 assessment = auto_classifier.assess(name, args)
@@ -153,6 +172,12 @@ class PermissionPolicy:
                         "confirm",
                         f"Auto 模式分类器要求确认: {assessment.reason}")
                 if getattr(assessment, "auto_approve", False):
+                    if name == "run_shell":
+                        command = str(args.get("command", ""))
+                        if _engine_redline(command):
+                            return PermissionDecision(
+                                "confirm",
+                                "安全引擎判定红线, 自动决策不可越级放行")
                     return PermissionDecision(
                         "allow",
                         f"Auto 模式自动批准: {assessment.reason}")

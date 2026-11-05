@@ -46,13 +46,18 @@ def _make_tui():
 
 
 def test_boot_starts_in_loading_state():
+    """加载屏已删除: 启动即进入对话界面, 底部显示启动进度而不是独立加载屏。
+
+    回归背景: 此前的『Splash→TUI 双全屏 App 切换』在 Windows Terminal (conpty)
+    下会闪退/卡顿, 故加载屏被移除, 改为单 Application 内在对话区顶部短进度行。
+    """
     tui = _make_tui()
-    assert tui._booting is True
+    assert tui._booting is False
     assert tui._boot_error is None
-    # 加载态下对话区应渲染加载屏 (含进度条/吉祥物), 而非欢迎横幅
+    # 对话区渲染: 无独立加载屏 (无吉祥物/ASCII 盒), 未就绪时显示简短"已就绪"行
     rendered = tui._render_conversation()
     flat = "".join(seg for _, seg in rendered)
-    assert "█" in flat or "启动" in flat
+    assert "已就绪" in flat or "ready" in flat.lower()
     assert not any("Directory:" in e for e in tui._events)
 
 
@@ -83,9 +88,12 @@ def test_set_ready_switches_to_chat_and_populates():
     assert tui._booting is False
     assert tui._boot_error is None
     joined = "\n".join(_event_text(e) for e in tui._events)
-    # 欢迎横幅含工作区行 (ASCII 标签以规避 CJK 双宽导致的右边框错位)
-    assert "Directory:" in joined
-    assert "opencode-zen/deepseek-v4-flash-free" in joined
+    # codex 同款会话头: 无欢迎盒, 只有 ">_ Tuan-CLI (vX)" + 目录行 (工作区路径)
+    assert ">_ Tuan-CLI" in joined
+    assert "Tuan-CLI" in joined
+    assert os.path.normcase(os.getcwd()) in os.path.normcase(joined)
+    # 工作区已按会话头目录行展示 (不再有 ASCII 盒的 "Directory:" 字段)
+    assert "Directory:" not in joined
     # 工具列表已填充 (无侧栏, 存于 _tools)
     assert tui._tools == ["read", "write", "shell"]
     # 模型标签已设置

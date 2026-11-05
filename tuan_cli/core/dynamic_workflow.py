@@ -31,6 +31,24 @@ if TYPE_CHECKING:
     from ..config import Config
 
 
+def _replace_with_retry(src: Path, dst: Path, attempts: int = 5,
+                        delay: float = 0.02) -> None:
+    """带短重试的原子替换 (Windows 文件锁竞态兜底)。
+
+    Windows 上 ``os.replace`` 在目标文件被并发线程/进程短暂占用 (查询方 read_text
+    或另一线程的 write) 时会抛 PermissionError。这是**瞬时**锁竞争, 短重试即可吸收;
+    若 attempts 次后仍失败则原样抛出, 交由调用方处理。
+    """
+    for i in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(delay)
+
+
 @dataclass
 class WorkflowTask:
     title: str             # 任务短标题 (展示用)
@@ -69,7 +87,10 @@ class WorkflowStore:
         try:
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                            encoding="utf-8")
-            os.replace(tmp, path)
+            # Windows 上 `os.replace` 在目标被并发线程/进程短暂占用时会抛
+            # PermissionError (worker 线程与查询方并发写同一 wf JSON)。短重试
+            # 吸收这种瞬时锁竞争, 避免原子写偶发失败导致测试/运行抖动。
+            _replace_with_retry(tmp, path)
         except OSError:
             try:
                 os.unlink(tmp)

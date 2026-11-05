@@ -274,14 +274,23 @@ class TestOverflowFixes:
         parts = [("class:a", "短行")]
         assert t._clip_parts(parts) == parts
 
-    def test_kimi_box_rows_within_width(self):
+    def test_ask_card_rows_within_width(self):
+        """提问卡片 (codex 无边框背景块) 逐行宽度不超过盒子宽度。
+
+        加载屏已删除 (不再有 `_welcome_box`), 但"卡片行不超宽"这一不变量
+        仍有意义 —— 提问卡/信任卡/命令卡共用 `_menu_row` 裁切逻辑, 这里直接
+        渲染提问卡验证逐行宽度 ≤ 盒子宽。
+        """
         t = _tui()
         t._app = _FakeApp()
-        box = t._kimi_box("标题", "副标题", [("键", "值" * 60), ("长键名", "x" * 100)])
-        for row in box:
-            if isinstance(row, list):
-                w = sum(_disp_width(s) for _, s in row)
-                assert w <= 40, f"欢迎盒行宽 {w} 超过 40"
+        t._ask_pending = {"question": "请选择", "options": ["选项" * 60, "x" * 100],
+                          "event": None}
+        t._ask_index = 0
+        from tuan_cli.tui.tui import _split_flat_lines
+        box_w = t._box_width()
+        for row in _split_flat_lines(t._render_ask_card()):
+            w = sum(_disp_width(s) for _, s in row)
+            assert w <= box_w, f"提问卡行宽 {w} 超过盒子宽 {box_w}"
 
 
 # ---------------------------------------------------------------- 终端标题

@@ -1,4 +1,4 @@
-"""内核补丁层的装配 Plugin —— 无缝接入现有微内核。
+"""内核补丁层的装配 Plugin —— 无缝接入现有插件容器。
 
 作为 `@plugin("kernel_patch")` 注册进 Kernel, 被 `kernel.activate_all()` 激活。
 激活时:

@@ -29,6 +29,17 @@ class TuiUI:
     def info(self, text: str) -> None:
         self._tui.append_log(str(text), cls="class:textdim")
 
+    def agent_info(self, text: str, cls: str = "class:textdim") -> None:
+        """后台自主任务输出 (经 @agent 徽章, OpenCode 风格)。
+
+        供 /superagent 的子命令把「后台任务视角」的文本 (如 status/panel)
+        以 @agent 青绿徽章推入对话区, 与用户主动发起的普通命令输出区分。
+        """
+        if hasattr(self._tui, "_append_agent_line"):
+            self._tui._append_agent_line(str(text), cls=cls)
+        else:
+            self._tui.append_log(str(text), cls=cls)
+
     def error(self, text: str) -> None:
         self._tui.append_log(f"  ✗ {text}", cls="class:error")
 
@@ -59,6 +70,10 @@ class TuiUI:
         self._tui.append_log(f"  └─ {icon} {s}", cls="class:error" if failed else "class:textdim")
 
     def usage(self, usage: dict) -> None:
+        # Kimi 风格配额面板 (复用 kimi_modules.render_usage_panel)
+        if hasattr(self._tui, "append_usage_panel"):
+            self._tui.append_usage_panel(usage)
+            return
         pt = usage.get("prompt_tokens", 0)
         ct = usage.get("completion_tokens", 0)
         self._tui.append_log(f"  tokens: prompt {pt} / completion {ct}", cls="class:textdim")

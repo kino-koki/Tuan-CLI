@@ -1,6 +1,6 @@
 # 内核补丁层 (Kernel Patch Layer) —— 扩展增强模块层设计
 
-> 对现有微内核**零改动**地注入可回滚、可审计、版本感知的增强补丁。
+> 对现有插件容器**零改动**地注入可回滚、可审计、版本感知的增强补丁。
 > 本质是"内核补丁类"的扩展增强模块层：不新增能力，而是**在既有实现上做安全热补丁**。
 
 ---
@@ -46,7 +46,7 @@ tuan_cli/kernel_patch/
 ├── __init__.py      # 门面: install / get_manager / patch_impl / ensures
 ├── patch_base.py    # 引擎: PatchSpec / TargetPatcher / KernelPatchManager / 装饰器
 ├── builtin.py       # 内置补丁: i18n.t 记忆化 / retry 导入缓存 / 版本跳过演示
-└── plugin.py        # KernelPatchPlugin: 接入微内核生命周期
+└── plugin.py        # KernelPatchPlugin: 接入插件容器生命周期
 ```
 
 ### 3.2 补丁四种模式（`mode`）
@@ -65,7 +65,7 @@ tuan_cli/kernel_patch/
 
 | 机制 | 属层 | 职责 |
 | --- | --- | --- |
-| `ServiceContainer.extend_service/provide_multi` | 微内核服务 | **服务级**叠加（`tool_executor` 等多贡献者服务） |
+| `ServiceContainer.extend_service/provide_multi` | 插件容器服务 | **服务级**叠加（`tool_executor` 等多贡献者服务） |
 | `ext/extension_registry` | 能力扩展 | **能力 key**贡献者叠加（diff/crypto/safety…） |
 | **`kernel_patch`（本层）** | 内核补丁 | **对既有内部可调用对象**做安全热补丁 |
 
@@ -90,7 +90,7 @@ tuan_cli/kernel_patch/
 ## 5. 使用方式
 
 ```python
-# 1) 随微内核自动激活 (app.build_kernel 已注册 KernelPatchPlugin)
+# 1) 随插件容器自动激活 (app.build_kernel 已注册 KernelPatchPlugin)
 mgr = kernel.require("kernel_patch")   # 其它插件可取用
 mgr.status()                            # 已应用 / 跳过 / 目标清单
 

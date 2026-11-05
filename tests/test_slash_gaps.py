@@ -189,6 +189,20 @@ def test_slash_stats_disabled_message(tmp_path, tuan_home, capsys):
     assert "observability.telemetry.enabled" in out
 
 
+def test_slash_new_is_clear_alias(tmp_path, tuan_home, capsys):
+    """OpenCode: /new 是 /clear 的别名, 清空上下文且不报错。"""
+    from tuan_cli.cli.commands import _handle_slash
+    agent = _build_agent(tmp_path, tuan_home)
+    config = agent.config
+    agent.messages.append({"role": "user", "content": "hello"})
+    assert len(agent.messages) >= 1
+    assert _handle_slash("/new", agent, config, str(tmp_path)) is True
+    out = capsys.readouterr().out
+    assert "清空" in out or "已清空" in out
+    # 上下文已清空
+    assert all(m.get("role") != "user" for m in agent.messages) or len(agent.messages) <= 1
+
+
 def test_slash_stats_shows_run_metrics(tmp_path, tuan_home, capsys):
     """开启 telemetry 后跑一轮, /stats 能展示累积的 span 与指标。"""
     from tuan_cli.cli.commands import _handle_slash

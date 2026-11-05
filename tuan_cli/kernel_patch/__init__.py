@@ -1,7 +1,7 @@
 """内核补丁层 (Kernel Patch Layer) —— 扩展增强模块层。
 
 在不对现有模块做任何修改的前提下, 为内核/既有实现注入声明式、可回滚、
-可审计的增强补丁。与现有微内核、ServiceContainer、MiddlewareEventBus、
+可审计的增强补丁。与现有插件容器、ServiceContainer、MiddlewareEventBus、
 extension_registry 完全兼容 (详见 `KERNEL_PATCH_LAYER.md`)。
 
 典型用法::
