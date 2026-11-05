@@ -204,6 +204,13 @@ _CRITICAL_PATTERNS = [
     # (./data)、命名卷 (mydata:)、/tmp 绑定挂载均不命中, 避免开发场景误报。
     (r"\bdocker\s+run\b[^\n]*(?:-v|--volume)\s*=?\s*(?:/(?:etc|usr|bin|sbin|lib|boot|sys|proc|dev|var)(?:/[^\s:]*)?|/)\s*:",
      "docker run 挂载宿主根/系统目录 (容器逃逸)"),
+    # round23: docker cp 敏感文件外传 — 把宿主敏感文件复制进容器 (准备外传/篡改)
+    # 命中: 源端是宿主敏感路径 (凭据/密钥/密码/影子口令/云配置)。
+    (r"\bdocker\s+cp\b[^\n]*(?:/etc/(?:shadow|passwd|sudoers|ssh)|/root/\.ssh|/root/\.aws|/root/\.kube|~?/\.ssh|~?/\.aws|~?/\.env|id_rsa|\.kube/config)",
+     "docker cp 敏感文件入容器 (凭据/密钥复制, 外传前置)"),
+    # WSL --import: 导入恶意 distro tarball (持久化后门, 隐藏在 WSL 文件系统内)
+    (r"\bwsl(?:\.exe)?\s+(?:--import|-i)\b",
+     "wsl --import 导入 distro (导入 WSL 发行版 tarball, 持久化后门)"),
     # ---- 云 CLI 不可逆销毁 ----
     (r"\baws\s+s3\s+(?:rm|rb)\b[^\n]*--(?:recursive|force)", "aws s3 递归删除对象/强制删桶"),
     (r"\baws\s+ec2\s+terminate-instances\b", "aws terminate instances (终止 EC2 实例)"),
@@ -1253,6 +1260,19 @@ _CRITICAL_PATTERNS = [
     (r"\bStart-Process\b[^\n]*(?:-(?:EncodedCommand|enc|e|ec)\b|"
      r"(?:-ArgumentList|-Args?)\s+['\"][^'\"]*-e(?:nc|c)?\s+[A-Za-z0-9+/=]{16,})",
      "Start-Process encoded payload (启动编码载荷进程)"),
+    # ---- round23: UAC 绕过 + Hyper-V/WSL 提权 (平台特定提权面) ----
+    # Start-Process -Verb runAs: 静默 UAC 提权启动进程 (绕过确认对话框)
+    (r"\bStart-Process\b[^\n]*-Verb\s+runAs\b",
+     "Start-Process runAs (UAC bypass 静默提权启动)"),
+    # .NET Process.Start(...) + Verb runAs: 经 .NET API 提权, 绕过 cmd 可见性
+    (r"\[System\.Diagnostics\.Process\]::Start\s*\([^\n]*runAs",
+     ".NET Process Start UAC (经 .NET API 提权启动, UAC bypass)"),
+    # reg add EnableLUA=0: 关闭用户账户控制, 为后续提权铺路
+    (r"\breg(?:\.exe)?\s+add\b[^\n]*EnableLUA\b[^\n]*/d\s+0\b",
+     "disable UAC (EnableLUA=0 关闭用户账户控制)"),
+    # Hyper-V 在线启用 (需管理员 + 重启, 常见于恶意 VM 隔离/持久化)
+    (r"\bEnable-WindowsOptionalFeature\b[^\n]*-Online\b[^\n]*-FeatureName\b",
+     "enable optional feature (在线启用系统可选功能, 需提权)"),
     # ---- 第二轮冒烟补漏: 数据外泄 (命令名驱动 -> 语义驱动) ----
     # curl/wget/httpie 带文件内容 POST/PUT 上传。
     # Gap-2026-11b 收窄: 原规则 `@\s*\S+` 拦任意文件上传, 误伤良性图床/网盘上传
