@@ -280,8 +280,6 @@ tuan models                              # configuração interativa (chave em ~
 
 As chaves ficam em `~/.tuan/.env` (chmod 600, nunca commitar); variáveis de ambiente (ex.: `DEEPSEEK_API_KEY`) também funcionam.
 
-> **Transparência**: versões anteriores traziam login GitHub / Apple / DeepSeek (incluindo caminho por token de sessão web). Isso conflitava com o posicionamento «totalmente local e offline», e o endpoint web era uma interface privada e não suportada que disparava controles de risco — por isso o recurso foi **totalmente removido**. Chamadas de modelo usam APIs oficiais com a sua própria chave.
-
 ## Licença & links
 
 - **Licença**: MIT (use, modifique, redistribua; mantenha o aviso)
