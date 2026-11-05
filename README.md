@@ -85,7 +85,7 @@ class MyTool(Plugin):
 
 ---
 
-## Version number & repository history (transparent disclosure)
+## Version number
 
 **Why `0.3.3` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (58 providers + local Ollama), three main loops, microkernel plugin architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
 
@@ -93,10 +93,6 @@ class MyTool(Plugin):
 |---|---|
 | `0.3.3` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
 | `1.0` (reserved) | Enabled once the public API is frozen and backward compatibility is promised; only then do breaking changes bump MAJOR (`2.0`) |
-
-**Git history note (open-source transparency):** This repository's Git commit history was **deliberately rebuilt on 2026-09-26 — the early commit history was intentionally overwritten by the author**; the per-commit evolution before that date is no longer preserved. The current code is fully reviewable from architecture to implementation; for feature evolution before 2026-09-26, please rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We choose to disclose this plainly — no polishing, no hiding.
-
-**Provenance & auditability:** the rebuild above has concrete audit consequences (five `init` commits interleaved with feature work, two author identities on non-contiguous ranges, two unsigned tags, an empty reflog, and two discarded `.git` backup stores still present in the working tree). See [PROVENANCE.md](PROVENANCE.md) for the verifiable evidence and the remediation items.
 
 ---
 

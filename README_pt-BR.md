@@ -84,7 +84,7 @@ class MyTool(Plugin):
 
 ---
 
-## Número de versão e histórico do repositório (divulgação transparente)
+## Número de versão
 
 **Por que `0.3.3` e não `1.0`?** Semântica [SemVer](https://semver.org/) honesta: **uma versão `0.x` significa que a API pública (superfície CLI, schema de configuração, protocolo de ferramentas, contrato de plugins) ainda não está congelada** e pode mudar entre releases. O Tuan-CLI já entrega um conjunto amplo de recursos — controle de segurança / rollback transacional, hot-swap agnóstico de modelo (58 provedores + Ollama local), três loops principais, arquitetura de microkernel com plugins, memória de três níveis, interoperabilidade de ecossistemas (MCP / ACP / ponte Claude Code / Hermes), subagentes e Swarm, cron e tarefas em segundo plano, modo Goal e permissões precisas — tudo coberto por testes. Mas **o número de versão reflete a estabilidade da interface, não a completude dos recursos**: um conjunto completo de recursos não significa que a API deva ser congelada. `1.0` fica reservado pra quando a API pública for realmente estável e pudermos prometer retrocompatibilidade. Até lá: mudanças que quebram sobem MINOR dentro de `0.x` (com dicas de migração), recursos compatíveis sobem MINOR, correções sobem PATCH (veja [VERSION_POLICY.md](VERSION_POLICY.md)).
 
@@ -92,8 +92,6 @@ class MyTool(Plugin):
 |---|---|
 | `0.3.3` (atual) | **API ainda não congelada**: `0.x` permite ajustes que quebram, anunciados com dicas de migração; retrocompatibilidade não é prometida |
 | `1.0` (reservado) | Ativado quando a API pública for congelada e a retrocompatibilidade for prometida; só então mudanças que quebram sobem MAJOR (`2.0`) |
-
-**Nota sobre o histórico do Git (transparência de código aberto):** o histórico de commits deste repositório foi **reconstruído deliberadamente em 2026-09-26 — o histórico inicial de commits foi sobrescrito de propósito pelo autor**; a evolução commit a commit anterior a essa data não é mais preservada. O código atual é totalmente revisável, da arquitetura à implementação; para a evolução de recursos anterior a 2026-09-26, confie nos registros de versão do [CHANGELOG.md](CHANGELOG.md) (a disciplina de versões não é afetada). A gente escolhe divulgar isso abertamente — sem polir, sem esconder.
 
 ---
 

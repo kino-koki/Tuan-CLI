@@ -157,10 +157,6 @@ scripts/_replace_icons.py
 111.md
 # 本地 git 备份目录，不入库
 .git.bak-*/
-# 损坏/重建前的 .git 备份 (2026-09-26 与 2026-10-15 两次历史重建的遗留物)。
-# 不入库但也不删除: 内含被重建覆盖掉的早期提交历史, 是 PROVENANCE.md 记录的
-# 溯源证据。误入库会把整段废弃提交历史重新暴露给使用者, 故显式忽略。
-.git.broken-*/
 # GitHub token / 凭据文件（根目录，不入库）
 github token*
 *.token
