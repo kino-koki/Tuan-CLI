@@ -305,8 +305,6 @@ tuan models                              # interactive setup (key written to ~/.
 
 Keys live in `~/.tuan/.env` (chmod 600, never commit); environment variables (e.g. `DEEPSEEK_API_KEY`) work too.
 
-> **Transparency**: earlier versions shipped GitHub / Apple / DeepSeek account login (including a web-session token path). It conflicted with the "fully local & offline" positioning, and the web endpoint was a private, unsupported interface that triggered risk controls — so the whole capability has been **removed**. Model calls go through official APIs with your own key.
-
 ## License & links
 
 - **License**: MIT (use/modify/redistribute freely, keep the notice)

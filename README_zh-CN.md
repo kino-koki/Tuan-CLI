@@ -290,10 +290,6 @@ tuan models                              # 交互式配置 (API Key 写入 ~/.tu
 
 密钥集中存放于 `~/.tuan/.env`（建议权限 600、勿入库），也可直接用环境变量（如 `DEEPSEEK_API_KEY`）。
 
-> **透明披露**：早期版本曾提供 GitHub / Apple / DeepSeek 三家账号登录（含网页会话令牌路径）。
-> 这与「完全本地离线」的定位冲突，且网页端点属私有非受支持接口、会触发风控，
-> 该能力已**整体移除**。模型调用请走官方 API + 你自己的 Key。
-
 ---
 ## License & 关联阅读
 
@@ -323,7 +319,6 @@ tuan models                              # 交互式配置 (API Key 写入 ~/.tu
 引擎统一入口：`tuan ext engines`（列表）· `tuan ext selftest`（健康检查）·
 `tuan ext call <engine> <method>`（单次调用）· `tuan ext info <engine>`（方法清单）。
 进程隔离场景下引擎经 `core/engine_isolation.py` 以真实 JSONL 子进程运行，崩溃/超时安全回落。
-
 
 ---
 

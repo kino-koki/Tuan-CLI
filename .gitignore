@@ -157,11 +157,9 @@ scripts/_replace_icons.py
 111.md
 # 本地 git 备份目录，不入库
 .git.bak-*/
-# GitHub token / 凭据文件（根目录，不入库）
+# 凭据类文件与个人待办笔记一律不入库
 github token*
 *.token
-# 个人待办/备忘笔记（根目录）。历史教训: `26.10.13午代办` 曾因未忽略而被提交,
-# 把一枚真实的 GitHub PAT 推到了远端仓库 —— 从此任何 *代办* 一律不入库。
 *代办*
 # .build_tmp/ 是打包/构建中间产物 (dist-assets-backup 等) 与 Node 编译缓存
 # (NODE_COMPILE_CACHE 落点), 含本机路径, 不入库。
@@ -178,7 +176,7 @@ github token*
 .venv_test/
 *.venv/
 # 一次性推送脚本: 面向单次全量迁移的临时工具, 不走版本控制。
-# 脚本内绝不硬编码凭据 (只读 GITHUB_TOKEN 环境变量), 但仍属个人操作留痕, 不入库。
+# 属个人操作留痕, 不入库。
 push_api.py
 push_api.ps1
 # 本地依赖投放目录: 在 .venv 损坏时用来给测试装依赖的临时 --target 目录, 不入库。

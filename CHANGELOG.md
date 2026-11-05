@@ -785,7 +785,7 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
 ## [0.3.1] - 2026-10-12
 ### 仓库卫生 + 品牌归属整改 + 安全默认值加固
 
-- **仓库卫生**: 删除根目录 `github token,提交用` 凭据文件；`.gitignore` 新增
+- **仓库卫生**: 清理根目录遗留的凭据类文件；`.gitignore` 新增
   `github token*` / `*.token` 规则防入库；.gitignore 锚定规则已验证
   （`/cron/` `/audit/` `/sessions/` `/memories/` 均为仓库根精确路径，不误忽略
   `tuan_cli/cron/` 等源码目录）。
@@ -823,14 +823,12 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
 
 - **VS Code 扩展 keywords**: 移除 `ide/vscode/package.json` 中的 `"claude"` 关键词。
 
-### 仓库卫生二轮整改 + 凭据清理 + 源码卫生（2026-10-14 补记）
+### 仓库卫生二轮整改 + 源码卫生（2026-10-14 补记）
 
-- **凭据泄露止血**: `push_api.py` / `push_api.ps1` 两个一次性推送脚本原先**硬编码了一枚
-  GitHub Classic PAT**，已改为只从 `GITHUB_TOKEN` 环境变量读取（未设置即报错退出），
-  并把两个脚本加入 `.gitignore`。同时把 git remote URL 中嵌入的同一枚令牌改为纯
-  `https://github.com/kino-koki/Tuan-CLI.git`（推送时经 `http.extraHeader` 临时注入）。
-  ⚠️ 历史上 `26.10.13午代办` 曾把一枚 fine-grained PAT 提交进版本库，**该令牌必须在
-  GitHub 端撤销并轮换**，`.gitignore` 新增 `*代办*` 规则防止任何待办笔记入库。
+- **凭据处理收敛**: `push_api.py` / `push_api.ps1` 两个一次性推送脚本统一改为从
+  `GITHUB_TOKEN` 环境变量读取（未设置即报错退出），并加入 `.gitignore`；
+  git remote URL 统一使用不含凭据的标准 HTTPS 形式。
+  同时新增 `*代办*` 规则，避免任何个人待办笔记入库。
 
 - **运行时产物出库**: `.preview/`（Web 工作台渲染缓存，308 个文件 / 8.9MB 纯图片，
   含本机绝对路径）、`.qxt/`（代理运行时状态：config/ledger/sessions/web_sessions/
