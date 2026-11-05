@@ -181,6 +181,40 @@ def _status(args: Any) -> int:
         print(f"[harden] 网络策略: 出口CIDR白名单={cidrs or '未配置(不限制)'}, 单向模式={one_way}")
     except Exception:
         print("[harden] 网络策略: 未加载到配置 (可用 tuan harden network-check 单独评估)")
+
+    # ------------------------------------------------------------------ 安全基线
+    # 把文档里的"建议"变成可执行的态势检查: 关键降级项必须显式告警,
+    # 避免"代码有开关、部署没开、文档却说已默认开启"的错觉。
+    try:
+        from ..config import Config
+        from ..sandbox.backends import detect_backends
+        cfg = Config()
+        sb = cfg.get("sandbox", {}) or {}
+        enforce = bool(sb.get("enforce_required", True))
+        deny_net = bool((sb.get("resource", {}) or {}).get("deny_network_by_default", False))
+        allowed = sb.get("allowed_domains", []) or []
+        strong = [b["name"] for b in detect_backends()
+                  if b.get("available") and b.get("name") != "local"]
+        print("[harden] 安全基线:")
+        print(f"  - 无强后端时 fail-closed : {'OK 开启' if enforce else '!! 关闭 (会静默降级为裸执行)'}")
+        print(f"  - 默认禁网               : {'OK 开启' if deny_net else '!! 关闭 (生产环境建议开启)'}")
+        print(f"  - 出网域名白名单         : {allowed or '未配置 (不限制)'}")
+        print(f"  - 可用强隔离后端         : {', '.join(strong) if strong else '无 (需隔离的执行将被拒绝)'}")
+        issues = []
+        if not enforce:
+            issues.append("sandbox.enforce_required=false")
+        if not deny_net:
+            issues.append("sandbox.resource.deny_network_by_default=false")
+        if not strong:
+            issues.append("无 docker/bwrap/seatbelt 等强隔离后端")
+        if issues:
+            print("[harden] 基线待加固: " + "; ".join(issues))
+            print("         生产/托管部署请在 config.yaml 的 sandbox: 段开启上述项, 并把整个")
+            print("         进程放进一次性容器或 VM (见 SECURITY_BASELINE.md)。")
+        else:
+            print("[harden] 基线检查通过")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[harden] 安全基线: 检查失败 ({exc})")
     return 0
 
 

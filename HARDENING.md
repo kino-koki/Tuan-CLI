@@ -14,6 +14,9 @@
 - **Shell 风险规则单一来源**：Shell 执行前的 `SecurityGate`、警告分级和 `SafetyEngine.score()` 共用 `tuan_cli.ext.safety_patterns` 风险模式；危险命令不会因 `mv`、`cat` 等良性命令前缀或用户白名单而跳过规则，YOLO 下命中高风险规则仍要求明确确认。
 - **审计溯源默认开启**：所有工具调用的安全决策（允许/拒绝）写入 `security_auditor` 审计日志（AEAD 加密 + 防篡改链），落盘到 `~/.tuan/security-audit.jsonl`（或 `audit/security_events.jsonl`），任何会话均可追溯。
 - **网络出口与入站监听** 的门控在 shell 执行路径默认生效（见 §3）。
+- **fail-closed 一致性**：`SandboxManager.DEFAULT_POLICY` 与 `config/defaults.py` 的 `enforce_required` 统一为 `True`；显式指定的强隔离后端不可用时不再回落到 `local` 裸执行。
+- **异常路径不再放行**：红线引擎 / 网络红线 / 域名白名单 / 凭据扫描任一环节抛异常时，一律拒绝或升级为人工确认（见 `tests/test_fail_closed_regressions.py`）。
+- **仓库代码执行面**：`pip/npm/yarn/pnpm/poetry/uv install`、`pytest/tox/nox/go test/cargo test/mvn/gradle/make` 等会执行仓库内脚本的命令，L0 升级为人工确认，不再与 `git status` 同级"零确认放行"。
 - **MCP 工具** 的描述注入扫描与参数注入扫描默认生效。
 
 如需更强的边界（国密 SM4、CIDR 出口白名单、单向光闸模式、MCP 频率限制），在 `config.yaml` 的 `security:` 段配置即可（见末尾速查）。关闭这些增强边界**不会**关闭基础红线拦截与审计——基础安全永远是 fail-closed 的。
@@ -150,6 +153,13 @@ security:
     provider: software          # software / gmssl / hsm
   network:
     allowed_domains: []         # 出网域名白名单 (空=不限制域名)
+# 注意: 默认禁网开关不在 security: 段, 而在 sandbox.resource 段:
+#   sandbox:
+#     enforce_required: true                 # 无强后端时拒绝裸执行 (必须保持 true)
+#     resource:
+#       deny_network_by_default: true        # 生产建议开启; 默认 false
+#     allowed_domains: [...]                 # 生产建议配置出网域名白名单
+# 运行 `tuan harden status` 可一次性查看上述基线状态。
     blocked_domains: []         # 额外禁止域名 (叠加内置敏感域名)
     deny_remote_exec: true      # 禁止 wget/curl | sh 等远程执行
     deny_data_exfil: true       # 禁止向外上传/外泄数据

@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 DEFAULT_POLICY: Dict[str, Any] = {
     "enabled": True,
     "backend": "auto",                 # auto | local | docker | landlock | seatbelt | jobobject
-    "enforce_required": False,         # 强隔离场景无强后端时是否 fail-closed 拒绝
+    "enforce_required": True,          # 无强后端时 fail-closed 拒绝; 与 config/defaults.py 一致, 禁止静默降级裸执行
     "deny_unknown_shell": False,
     "resource": {
         "deny_network_by_default": False,

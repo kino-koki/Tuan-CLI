@@ -50,7 +50,7 @@
 |----|------|------|----------|
 | L0 意图 | `sandbox/filters.py::IntentFilter` | 硬红线(`rm -rf /`/`format c:`)、数据外泄、远程执行 → deny-critical/high | 模型无关、确定性最强 |
 | L1 信任 | `sandbox/filters.py::TrustFilter` | 工作区信任分级(trusted/limited/untrusted/unknown) + 域名白名单 + 计划模式 | trusted 放行 / untrusted 拒 / unknown 确认 |
-| L2 资源 | `sandbox/filters.py::ResourceFilter` | 默认禁网 → 无网隔离；高危写 → 副本模式 | 决定"上不上 L3" |
+| L2 资源 | `sandbox/filters.py::ResourceFilter` | **可选**禁网开关 (`sandbox.resource.deny_network_by_default`，默认**关闭**)；高危写 → 副本模式 | 决定"上不上 L3" |
 | L3 强隔离 | `sandbox/filters.py::HardIsolationFilter` | 后端自动选择；需强隔离但无强后端 → **fail-closed 拒绝** | 真正的容器/OS 隔离 |
 
 **隔离后端自动选择**（强度降序探测）：`landlock → docker → seatbelt → token-acl → jobobject → local`。
@@ -87,7 +87,7 @@
 ### 5.1 网络出口（权威判定 = `NetworkGuard.check`）
 - **L0 意图滤网**：消费 `guard.check().action == "deny"`（外泄/远程执行/敏感域名/端口扫描/CIDR 越界）→ 沙箱 deny high。**不负责**白名单强制。
 - **L1 信任滤网**：负责**域名白名单强制**（`payload.meta.allowed_domains` ← `sandbox.allowed_domains` / `permissions.network.allow_domains`）。
-- **L2 资源滤网**：负责**存在性 + 无网开关**：含网络请求且默认禁网 → `network=False + isolate=True`（气隙执行）。本地命令不受影响。
+- **L2 资源滤网**：负责**存在性 + 无网开关**：检测到网络请求且 `deny_network_by_default` 开启 → `network=False + isolate=True`（气隙执行）。**该开关默认关闭**，即开箱不禁用出网；生产配置见 `SECURITY_BASELINE.md`。网络探测自身异常时按「存在网络请求」处理（fail-closed）。本地命令不受影响。
 
 > 一致性契约：被 `NetworkGuard` 判 deny 的命令，沙箱 L0 必须 deny 且严重度一致（high）。
 
