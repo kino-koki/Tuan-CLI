@@ -1312,7 +1312,11 @@ _CRITICAL_PATTERNS = [
     # ---- 第二轮冒烟补漏: 云元数据服务 (IMDS) 凭据窃取 —— 报告唯一新增真漏洞 ----
     # 攻击者拿 shell 后第一件事就是打 IMDS 拿临时云凭证横向移动 (真实攻击链第一步)。
     # 覆盖 AWS / Azure / 阿里云 / GCP / AWS IPv6 全部探测形态。
-    (r"(?:curl|wget)\b[^\n]*(?:169\.254\.169\.254\b|100\.100\.100\.200\b|"
+    # 工具覆盖 curl/wget/Invoke-RestMethod/Invoke-WebRequest (PowerShell IMDS);
+    # 地址覆盖 IPv4 (169.254.169.254 AWS/Azure/GCP, 169.254.170.2 ECS)
+    # 与 IPv6 ([fd00:ec2::254]) 与 GCP 主机名。
+    (r"(?:curl|wget|Invoke-RestMethod|Invoke-WebRequest|irm|iwr)\b[^\n]*"
+     r"(?:169\.254\.169\.254\b|169\.254\.170\.2\b|100\.100\.100\.200\b|"
      r"metadata\.google\.internal\b|\[fd00:ec2::254\])",
      "cloud IMDS probe (云元数据服务探测, 凭据窃取)"),
 
