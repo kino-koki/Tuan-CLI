@@ -1137,11 +1137,37 @@ _CRITICAL_PATTERNS = [
     # 依赖混淆: pip install 使用非默认/不可信 index-url / extra-index-url。
     (r"\bpip[0-9.]*\s+install\b[^\n]*(?:--index-url|--extra-index-url|-i\b)",
      "pip install custom index (依赖混淆, 从自定义源拉取)"),
+    # pip install --trusted-host (信任非 HTTPS 主机, 绕过 pip 包完整性校验)。
+    (r"\bpip[0-9.]*\s+install\b[^\n]*--trusted-host\b",
+     "pip install trusted-host (信任非 HTTPS 主机, 绕过包完整性校验, 供应链)"),
+    # pip install 直接从 URL / git+ 装包 (装即执行 setup.py)。
+    (r"\bpip[0-9.]*\s+install\b[^\n]*https?://",
+     "pip install from URL (直接从 URL 装包, 装即执行 setup.py, 供应链)"),
+    (r"\bpip[0-9.]*\s+install\b[^\n]*git\+(?:https?|ssh)://",
+     "pip install from git (直接从 git 源装包, 装即执行 setup.py, 供应链)"),
     # npm install 使用非默认 registry (依赖混淆)。
     (r"\bnpm\s+(?:install|i|ci)\b[^\n]*--registry\b",
      "npm install custom registry (依赖混淆)"),
     (r"\byarn\s+(?:install|add)\b[^\n]*--registry\b",
      "yarn install custom registry (依赖混淆)"),
+    # npm install --preinstall / --postinstall 直接挂 RCE payload。
+    (r"\bnpm\s+(?:install|i|add)\b[^\n]*--(?:pre|post)?install\s*=\s*['\"]?\S",
+     "npm install lifecycle flag (npm --preinstall/--postinstall 直接挂 payload, RCE)"),
+    # 包管理器配置持久化 (供应链投毒持久层: 改默认源为攻击者控制的 registry)。
+    (r"\bpip[0-9.]*\s+config\s+set\b[^\n]*(?:index-url|extra-index-url|trusted-host)",
+     "pip config set index (改 pip 默认源为攻击者 registry, 供应链持久化)"),
+    (r"\bnpm\s+config\s+set\b[^\n]*registry\b",
+     "npm config set registry (改 npm 默认 registry, 供应链持久化)"),
+    (r"\byarn\s+config\s+set\b[^\n]*registry\b",
+     "yarn config set registry (改 yarn 默认 registry, 供应链持久化)"),
+    (r"\bgem\s+sources\b[^\n]*--add\b",
+     "gem sources add (添加攻击者 gem 源, 供应链持久化)"),
+    # 写入包管理器配置文件 (pip.conf / npmrc / yarnrc)。
+    # 注意: 只匹配写动词 (cp/mv/echo/printf/tee/Out-File/Set-Content/Add-Content),
+    # 不含 cat (读取配置是良性只读操作)。
+    (r"(?:\bcp\b|\bmv\b|\becho\b|\bprintf\b|\btee\b|Out-File\b|Set-Content\b|Add-Content\b)[^\n]*"
+     r"(?:\.pip[\\/](?:pip\.conf|pip\.ini)|\.npmrc|\.yarnrc|\.gemrc)",
+     "write package manager config (写入包管理器配置文件, 供应链持久化)"),
     # pip uninstall -y 静默卸载 (不可逆, 破坏环境)。
     (r"\bpip[0-9.]*\s+uninstall\b[^\n]*-\s*y\b",
      "pip uninstall -y (静默卸载核心依赖)"),
