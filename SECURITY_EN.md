@@ -51,7 +51,7 @@
 |-------|--------|---------------|---------|
 | L0 Intent | `sandbox/filters.py::IntentFilter` | Hard redline (`rm -rf /` / `format c:`), data exfiltration, remote execution → deny-critical/high | Model-agnostic, most deterministic |
 | L1 Trust | `sandbox/filters.py::TrustFilter` | Workspace trust grading (trusted/limited/untrusted/unknown) + domain whitelist + plan mode | trusted → pass / untrusted → deny / unknown → confirm |
-| L2 Resource | `sandbox/filters.py::ResourceFilter` | Default no-network → air-gapped; high-risk write → copy mode | Determines "whether to use L3" |
+| L2 Resource | `sandbox/filters.py::ResourceFilter` | **Opt-in** no-network switch (`sandbox.resource.deny_network_by_default`, default **off**); high-risk write → copy-diff-apply | Determines "whether to use L3" |
 | L3 Hard Isolation | `sandbox/filters.py::HardIsolationFilter` | Backend auto-selection; needs hard isolation but no backend available → **fail-closed deny** | Real container/OS isolation |
 
 **Isolation backend auto-selection** (strength descending): `landlock → docker → seatbelt → token-acl → jobobject → local`. See `sandbox/backends.py`.
@@ -87,7 +87,7 @@
 ### 5.1 Network Egress (Authority = `NetworkGuard.check`)
 - **L0 Intent Filter**: Consumes `guard.check().action == "deny"` (exfiltration/remote execution/sensitive domain/port scan/CIDR violation) → sandbox deny high. **Does not** enforce whitelist.
 - **L1 Trust Filter**: Enforces **domain whitelist** (`payload.meta.allowed_domains` ← `sandbox.allowed_domains` / `permissions.network.allow_domains`).
-- **L2 Resource Filter**: Handles **existence + no-network switch**: contains network request and default no-network → `network=False + isolate=True` (air-gapped execution). Local commands unaffected.
+- **L2 Resource Filter**: Handles **existence + no-network switch**: if a network request is detected **and** `deny_network_by_default` is enabled → `network=False + isolate=True` (air-gapped execution). **The switch is off by default** — outbound access is not disabled out of the box; see `SECURITY_BASELINE.md` for the production configuration. A failure inside the network-probe now fails closed (treated as "network requested"). Local commands unaffected.
 
 > Consistency contract: Commands denied by `NetworkGuard` must be denied by sandbox L0 with consistent severity (high).
 
