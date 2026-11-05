@@ -1369,6 +1369,39 @@ _CRITICAL_PATTERNS = [
     # 数据库数据文件删除
     (r"\brm\b[^\n]*/var/lib/(?:mysql|postgresql|mongodb)/(?:ibdata|base|data)",
      "rm 数据库数据文件 (数据全毁)"),
+    # ---- round25: 云 CLI 凭据收割 (临时 token / 服务账号密钥创建) ----
+    # `gcloud auth print-access-token` / `az account get-access-token` 直接打印可用
+    # 云凭证, 攻击者拿 shell 后用它横向移动; `aws iam create-access-key` /
+    # `gcloud iam service-accounts keys create` 创建**新的**长期凭据 = 凭据外带持久化。
+    (r"\bgcloud\s+auth\s+(?:print-access-token|application-default\s+print-access-token)\b",
+     "gcloud print access token (导出云访问令牌, 凭据窃取)"),
+    (r"\baz\s+account\s+get-access-token\b",
+     "az get access token (导出 Azure 访问令牌, 凭据窃取)"),
+    (r"\baws\s+iam\s+create-access-key\b",
+     "aws create access key (创建新 IAM 长期凭据, 凭据外带)"),
+    (r"\bgcloud\s+iam\s+service-accounts\s+keys\s+create\b",
+     "gcloud create SA key (创建服务账号密钥, 凭据外带)"),
+    # ---- round25: 浏览器凭据库窃取 (Chrome/Firefox 密码/cookie 库) ----
+    # 攻击者拿 shell 后读本地浏览器密码库/cookie 库是最常见的凭据收割动作。
+    # `Login[\\\s]+Data` 同时覆盖字面空格 (macOS/Linux) 与反斜杠转义空格
+    # (PowerShell/cmd: `Login\ Data` / `Login\\ Data`)—— 归一化不会还原转义空格,
+    # 故必须显式容忍。其余变体 (logins.json / cookies / key4.db) 是单 token 无此问题。
+    (r"\b(?:cp|cat|sqlite3|tar|mv|ls|find)\b[^\n]*"
+     r"(?:Login[\\\s]+Data|Login[\\\s]*Vault|logins\.json|cookies\.sqlite|key4\.db|"
+     r"(?:(?:Chrome|Firefox|Mozilla|Application[\\\s]+Support)[^\n]*cookies)|"
+     r"cookies(?:\.sqlite)?\b(?=[^\n]*(?:Chrome|Firefox|Mozilla)))",
+     "browser credential DB access (读取浏览器密码/cookie 库, 凭据窃取)"),
+    # ---- round25: docker load 从远程 URL 加载镜像 (供应链/后门镜像投递) ----
+    (r"\bdocker\s+load\b[^\n]*https?://",
+     "docker load remote tar (从远程加载镜像, 供应链/后门)"),
+    # ---- round25: SSH agent 劫持 (重定向 SSH_AUTH_SOCK 窃取 agent 转发的密钥) ----
+    # 攻击者把 SSH_AUTH_SOCK 指向自己控制的 socket, 即可窃取通过 agent 转发
+    # (ssh -A) 流入的私钥签名, 是横向移动的经典手法。
+    (r"SSH_AUTH_SOCK\s*=\s*\S+", "SSH_AUTH_SOCK redirect (SSH agent 劫持, 窃取转发密钥)"),
+    # ---- round25: 剪贴板外泄 (pbpaste/xclip 输出经网络外带) ----
+    # pbpaste | nc / pbpaste | curl 把剪贴板内容外带 (剪贴板常含临时粘贴的密钥/令牌)。
+    (r"\bpbpaste\b[^\n]*\|\s*(?:nc|ncat|netcat|curl|wget)\b",
+     "pbpaste exfil (剪贴板内容经网络外带)"),
 ]
 
 _HIGH_PATTERNS = [
