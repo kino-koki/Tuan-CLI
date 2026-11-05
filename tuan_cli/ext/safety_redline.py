@@ -494,13 +494,6 @@ def has_rsync_delete_target(text: str) -> bool:
 _PATTERN_CACHE: dict[str, re.Pattern] = {}
 _PATTERN_CACHE_LOCK = threading.Lock()
 
-# ReDoS 护栏: 单行超过此长度时截断正则扫描 (与 _GLOB_MAX_TOTAL_CHARS 同思路)。
-# 实测含嵌套 [^\n]* 的模式在 20k 行上单个吃 22.5s、全量 >120s, 攻击者可用超长
-# 载荷冻结安全闸门。4000 仍不够 (纯填充 4000 行仍 20s), 降到 1500 —— 真实 shell
-# 命令极少超过此长度, 关键 token 都在行首附近, 截断不漏判。
-_MATCH_LINE_MAX: int = 1500
-
-
 def _compiled(pattern: str) -> re.Pattern:
     """按字符串缓存编译后的正则。
 
