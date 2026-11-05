@@ -199,6 +199,8 @@ _CRITICAL_PATTERNS = [
     # 批量 dump secrets (跨命名空间) = 凭据收割, 高敏感动作
     (r"\bkubectl\s+get\s+secrets\b[^\n]*-[An]\b",
      "kubectl dump all secrets (跨命名空间导出 K8s secrets, 凭据收割)"),
+    (r"\bkubectl\s+create\s+token\b",
+     "kubectl create token (创建 K8s service account token, 凭据收割)"),
     # ---- round24: kubectl debug node (在节点上启动特权调试 Pod = 节点级逃逸) ----
     # `kubectl debug node/<name>` 会在目标节点上创建一个挂载宿主根文件系统的特权调试 Pod,
     # 等价于拿到节点 shell, 是 k8s 集群里最直接的节点逃逸通道。
@@ -1388,6 +1390,7 @@ _CRITICAL_PATTERNS = [
     # 故必须显式容忍。其余变体 (logins.json / cookies / key4.db) 是单 token 无此问题。
     (r"\b(?:cp|cat|sqlite3|tar|mv|ls|find)\b[^\n]*"
      r"(?:Login[\\\s]+Data|Login[\\\s]*Vault|logins\.json|cookies\.sqlite|key4\.db|"
+     r"Local[\\\s]+State|"
      r"(?:(?:Chrome|Firefox|Mozilla|Application[\\\s]+Support)[^\n]*cookies)|"
      r"cookies(?:\.sqlite)?\b(?=[^\n]*(?:Chrome|Firefox|Mozilla)))",
      "browser credential DB access (读取浏览器密码/cookie 库, 凭据窃取)"),
