@@ -176,6 +176,16 @@ _CRITICAL_PATTERNS = [
     (r"\bdocker\s+system\s+prune\b", "docker system prune (清理全部镜像/容器/卷)"),
     (r"\bkubectl\s+delete\s+namespace\b", "kubectl delete namespace (删除命名空间及其全部资源)"),
     (r"\bkubectl\s+delete\b[^\n]*--all", "kubectl delete --all (批量删除 K8s 资源)"),
+    # ---- round21: K8s RBAC 提权 + secrets 泄露 ----
+    # `kubectl create clusterrolebinding ... --clusterrole=cluster-admin` = 提权到集群管理员
+    (r"\bkubectl\s+create\s+clusterrolebinding\b[^\n]*--clusterrole=cluster-admin",
+     "kubectl escalate to cluster-admin (RBAC 提权, 集群管理员)"),
+    # 读取 SA token = 容器内攻击者最常见动作, 可冒充 service account 访问 API
+    (r"\bcat\b[^\n]*/var/run/secrets/kubernetes\.io/serviceaccount/token",
+     "read k8s service account token (读取容器 SA token, 身份冒充)"),
+    # 批量 dump secrets (跨命名空间) = 凭据收割, 高敏感动作
+    (r"\bkubectl\s+get\s+secrets\b[^\n]*-[An]\b",
+     "kubectl dump all secrets (跨命名空间导出 K8s secrets, 凭据收割)"),
     # ---- 容器逃逸: docker run 挂载宿主根/系统目录 (含 docker.sock 挂载) ----
     # 仅当卷源是「绝对系统路径」时命中: `/`(宿主根) 或 /etc|/usr|/var 等; 相对路径
     # (./data)、命名卷 (mydata:)、/tmp 绑定挂载均不命中, 避免开发场景误报。
@@ -593,6 +603,9 @@ _CRITICAL_PATTERNS = [
      "umount / (卸载根文件系统, 系统不可用)"),
     (r"\bmount\b[^\n]*(?:-o\s+remount[^\n]*(?:,|,\s*)?rw|--make-rprivate)",
      "mount remount rw (重挂载读写, 可覆盖系统)"),
+    # round21: mount overlay 逃逸 (lowerdir=/ 暴露宿主根, 配合 upperdir/workdir 可写逃逸)
+    (r"\bmount\b[^\n]*-t\s+overlay[^\n]*lowerdir\s*=\s*/(?:[,s]|\s|$)",
+     "mount overlay escape (overlay 挂载暴露宿主根文件系统, 容器逃逸)"),
     (r"\bswapoff\s+-a", "swapoff -a (关闭全部交换空间)"),
     (r"\b(?:lvremove|vgremove|pvremove)\b", "LVM remove (删除逻辑卷/卷组/物理卷)"),
     (r"\bmdadm\b[^\n]*--zero-superblock", "mdadm zero-superblock (销毁 RAID 元数据)"),
