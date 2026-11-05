@@ -92,6 +92,53 @@ def test_auto_mode_no_classifier_uses_regular_path():
     assert decision.action in {"allow", "confirm"}
 
 
+# ------------------------------------------------------------------ 不越级护栏
+# AutoModeClassifier 自带正则远弱于 ext.safety_engine: 下列命令被分类器误判 LOW
+# (auto_approve=True), 若 decide() 在分类器命中时直接 return allow, 会先于下游
+# _hardening_confirm 越级放行安全引擎判定的红线命令。护栏必须把它们的 auto_approve
+# 兜底降级为 confirm —— 倒数第二道防线不可越级放行。
+
+
+@pytest.mark.parametrize("command", [
+    "rsync --delete /x /etc",       # 目标端系统目录毁灭 (正则贪婪匹配不到)
+    "killall -9 -1",                 # 向 PID=-1 发 KILL (整机崩溃)
+    "dd if=/dev/zero of=/dev/sda",   # 直写裸磁盘
+    "chmod -R 000 /",                # 权限全灭
+    "truncate -s 0 /etc/passwd",     # 截断认证文件
+    "mkfs.ext4 /dev/sdb",            # 格式化
+    "vssadmin delete shadows /all",  # Windows 删卷影 (反勒索恢复)
+    ":(){ :|:& };:",                 # fork bomb
+])
+def test_auto_approve_never_bypasses_engine_redline(command):
+    """安全引擎判红线但 AutoMode 弱正则误判 auto_approve 的命令, 不得放行。"""
+    from tuan_cli.ext.safety_engine import is_redline
+    # 前置: 确认这些命令确实是安全引擎红线, 且分类器会误判为 auto_approve
+    assert is_redline(command), f"测试前提失效: {command} 未被安全引擎判红线"
+    assessment = AutoModeClassifier().assess("run_shell", {"command": command})
+    if not assessment.auto_approve:
+        pytest.skip("分类器已正确判高危, 非越级场景")
+    # 护栏: decide() 必须把 auto_approve 降级为 confirm, 不能 return allow
+    policy = PermissionPolicy(config=None)
+    decision = policy.decide(
+        _Tool("run_shell"), {"command": command},
+        auto_classifier=AutoModeClassifier(),
+    )
+    assert decision.action != "allow", (
+        f"自动决策越级放行安全引擎红线: {command}"
+    )
+
+
+def test_auto_approve_allows_benign_shell():
+    """护栏不误伤: 良性 shell 命令在 Auto 模式下仍自动批准。"""
+    policy = PermissionPolicy(config=None)
+    for command in ("ls -la", "git status", "cat README.md"):
+        decision = policy.decide(
+            _Tool("run_shell"), {"command": command},
+            auto_classifier=AutoModeClassifier(),
+        )
+        assert decision.action == "allow", f"良性命令被护栏误拦: {command}"
+
+
 def test_auto_mode_no_yolo_confirm_redline_when_classifier_absent():
     """无 yolo、无分类器时, 内置加固 (超长命令) 仍走 confirm (常规路径不受 auto 影响)。"""
     policy = PermissionPolicy(config=None)

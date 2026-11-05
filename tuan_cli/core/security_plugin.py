@@ -1,4 +1,4 @@
-"""安全插件 (Security Plugin) —— 把安全子系统注册到微内核。
+"""安全插件 (Security Plugin) —— 把安全子系统注册到插件容器。
 
 将 security_classifier / network_guard / security_bus / mcp_security_guard
 统一注册为内核服务, 其它模块通过 kernel.require("security_*") 获取,

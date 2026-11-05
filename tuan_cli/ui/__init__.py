@@ -3,7 +3,7 @@
 统一 TUI (tuan_cli.tui.tui.QxtTUI) 融合了多套设计的精华:
   1. Kimi Code CLI: 三区布局、流式 delta、Moon spinner、工具状态
   2. tuan 原版: 吉祥物状态机、圆角框式横幅、上下文占用条
-  3. fullscreen: 侧栏 focus 循环、context bar 可视化
+  3. Codex CLI 风格: 蓝主色、› 输入前缀、底部状态条、? 快捷键帮助
 
 向后兼容:
   - QxtTUI  -> tuan_cli.tui.tui.QxtTUI (主力, cmd_chat.py 使用)

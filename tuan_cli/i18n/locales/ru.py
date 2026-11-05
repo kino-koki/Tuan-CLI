@@ -144,7 +144,7 @@ TRANSLATIONS = {
     "tui.ask_free_hint": "Введите ответ · Enter отправить",
     "tui.ask_answer": "Ответ: {answer}",
     "tui.ask_skipped": "(пропущено)",
-    "tui.scroll_back_hint": "· PgUp/PgDn — постранично · Shift+PgUp — построчно · End вниз",
+    "tui.scroll_back_hint": "· pgup/pgdn — постранично · shift+pgup — построчно · end вниз",
     # ---- Мастер настройки
     "setup.title": "Мастер настройки Туан-CLI",
     "setup.opt_quick": "Быстрая настройка (рекомендуется)",

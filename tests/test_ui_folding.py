@@ -164,9 +164,9 @@ def test_banner_renders_box_art():
     assert "Session:" in out
     assert "Model:" in out
     assert "Version:" in out
-    # 原始吉祥物 (box-art, 不改): 顶行 ▛ 缺口眼 + 底行实心底
-    assert "▐█▛█▛█▌" in out
-    assert "▐█████▌" in out
+    # 粒子 TUAN 徽记 (对齐 Codex 粒子视觉)
+    assert "◆▢◆▢◆▢◆" in out
+    assert "▢◆▢◆▢◆▢" in out
     # 蓝色圆角框边框字符
     assert "╭" in out and "╮" in out and "╰" in out and "╯" in out
     # 状态栏提示区

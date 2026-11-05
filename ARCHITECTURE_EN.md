@@ -2,7 +2,9 @@
 
 > Goal: Help new contributors understand "how the kernel works, how safety blocks, how loops switch, how models route" in 10 minutes, lowering the barrier to onboarding and contribution. Companion commands: `tuan others` (capability catalog), `tuan safe` (safety entry), `tuan models` (models and local LLM).
 
-Tuan-CLI is a **microkernel + plugin** architecture Agent CLI. The kernel itself carries no Agent capabilities, only responsible for "plugin registration / service discovery / lifecycle events"; all capabilities (tools, model adapters, memory, skills, safety, routing, loops) are mounted as **plugins**.
+Tuan-CLI is a **plugin-container + layered-safety-stack** architecture Agent CLI. The kernel itself carries no Agent capabilities, only responsible for "plugin registration / service discovery / lifecycle events"; all capabilities (tools, model adapters, memory, skills, safety, routing, loops) are mounted as **plugins**.
+
+(Terminology note: earlier docs called the Kernel a "microkernel", which is inaccurate — a classic microkernel moves OS services to user space and keeps only minimal mechanisms (address space / IPC / scheduling) in the kernel. This project's Kernel is closer to a "**plugin container**" or plugin host: it keeps two relatively "thick" facilities — a service registry (ServiceContainer) and an event bus (MiddlewareEventBus) — and is not a minimized kernel. This document therefore uses "plugin container" throughout; the overall product architecture is "plugin host + layered safety stack".)
 
 Formula: **The model is responsible for thinking, the Harness (Tuan-CLI) is responsible for making thinking run in a controlled way.**
 
@@ -12,7 +14,7 @@ Formula: **The model is responsible for thinking, the Harness (Tuan-CLI) is resp
 
 | Subsystem | Responsibility | Core Module | Key Classes / Functions |
 | --- | --- | --- | --- |
-| **Kernel** | Microkernel: plugin lifecycle, service registry, event bus | `core/kernel.py` | `Kernel` · `Plugin` · `@plugin` · `ServiceContainer` · `MiddlewareEventBus` |
+| **Kernel** | Plugin container: plugin lifecycle, service registry, event bus | `core/kernel.py` | `Kernel` · `Plugin` · `@plugin` · `ServiceContainer` · `MiddlewareEventBus` |
 | **Plugin** | Capabilities as plugins: tools / models / memory / safety / loops all registered as services | `core/loop_plugin.py` and various `@plugin` classes | `LoopPlugin` · `provide()` / `require()` |
 | **Loop** | Agent main loop strategies: ReAct / Planner-Execute / DevLoop, hot-swappable | `core/loop_provider.py` · `core/loop_plugin.py` | `LoopRegistry` · `ReActLoop` · `PlannerExecuteLoop` · `DevLoopProvider` · `set_current()` |
 | **Security** | Redline interception, whitelist pass-through, audit logging, local blacklist override | `ext/safety_engine.py` · `core/whitelist.py` · `core/security_bus.py` · `core/blacklist_override.py` · `ext/security_gate.py` | `is_redline()` · `is_hard_redline()` · `score()` · `WhitelistManager` · `SecurityEventBus` · `emit_command_blocked()` |
@@ -24,7 +26,7 @@ Formula: **The model is responsible for thinking, the Harness (Tuan-CLI) is resp
 
 ```
                          ┌──────────────────────────────────────────┐
-                         │              Kernel (Microkernel)          │
+                         │            Kernel (Plugin Container)       │
                          │  ServiceContainer  ·  MiddlewareEventBus   │
                          │  provide("loop_provider") / require(...)   │
                          └───────────────┬───────────────┬────────────┘
@@ -107,7 +109,7 @@ One-liner call chain: **Kernel loads plugins → Loop decides how to think → S
 
 ## 4. Detailed Subsystem Documentation
 
-### 4.1 Kernel (Microkernel)
+### 4.1 Kernel (Plugin Container)
 - File: `core/kernel.py`
 - Three responsibilities: **plugin registration/activation/dependency resolution**, **service registry** (plugins discover each other via service names, not direct imports), **lifecycle events** (append-only event bus + middleware pipeline).
 - Key APIs:

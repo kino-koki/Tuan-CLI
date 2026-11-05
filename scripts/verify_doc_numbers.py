@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# 确保仓库根在 sys.path, 而不依赖 cwd (subprocess 起脚本时 sys.path[0] 是 scripts/)。
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 # ---- 数量断言的正则 ------------------------------------------------------------------
 # 量词: 中文/日文/韩文里数字与名词之间常夹一个量词, 如「57 家供应商」「5 個模型」。

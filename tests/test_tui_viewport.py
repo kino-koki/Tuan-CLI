@@ -182,4 +182,4 @@ class TestScrollHint:
         from tuan_cli.i18n import t
 
         hint = t("tui.scroll_back_hint")
-        assert "PgUp" in hint and "PgDn" in hint, f"提示未说明翻页键位: {hint}"
+        assert "pgup" in hint and "pgdn" in hint, f"提示未说明翻页键位: {hint}"

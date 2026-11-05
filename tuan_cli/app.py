@@ -65,7 +65,7 @@ def build_kernel(
     bare: bool = False,
     safe_mode: bool = False,
 ) -> Kernel:
-    """构建微内核, 注册所有插件。
+    """构建插件容器, 注册所有插件。
 
     bare=True (CI/纯净模式): 仅用内置默认配置 + 内置工具, 跳过
     用户级 config.yaml / skills 自动播种 / MCP server / hooks / 记忆自动注入,

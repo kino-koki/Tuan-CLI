@@ -40,6 +40,8 @@ _SLASH_COMMANDS = [
     "/context", "/clear", "/more", "/model", "/effort", "/mode", "/plan",
     "/goal", "/blast", "/sandbox", "/offline", "/audit", "/resume", "/swarm", "/route", "/diff", "/undo", "/impact", "/mcp",
     "/hooks", "/image", "/images", "/clear-images", "/exit", "/quit",
+    # CodeX 常见命令: 会话管理 / 配置 / 状态
+    "/status", "/config", "/session",
 ]
 
 
@@ -174,10 +176,10 @@ class UI:
         # 顶
         console.print(Text("╭" + hl + "╮", style=border))
 
-        # 吉祥物 (原始 box-art, 不改): 顶行用原始 ▛ 缺口眼, 底行实心底。
-        r1 = Text("  ▐█▛█▛█▌  ", style=primary)
+        # 粒子 TUAN 徽记 (对齐 Codex 粒子视觉): 两行等宽粒子点。
+        r1 = Text("  ◆▢◆▢◆▢◆  ", style=primary)
         r1.append(t("banner.welcome"), style=primary)
-        r2 = Text("  ▐█████▌  ", style=primary)
+        r2 = Text("  ▢◆▢◆▢◆▢  ", style=primary)
         r2.append(t("banner.help_hint"), style=dim_s)
         console.print(_line(r1))
         console.print(_line(r2))

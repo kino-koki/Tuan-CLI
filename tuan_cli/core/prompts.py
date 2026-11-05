@@ -721,7 +721,7 @@ def build_system_prompt(
         config=config,
         tier=tier,
     )
-    # cache_stable_prefix 仅为边界声明; 拼接结果逐字节一致 (微内核行为不变)。
+    # cache_stable_prefix 仅为边界声明; 拼接结果逐字节一致 (插件容器行为不变)。
     del cache_stable_prefix
     return "\n\n".join([stable, dynamic])
 

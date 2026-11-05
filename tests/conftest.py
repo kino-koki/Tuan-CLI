@@ -194,6 +194,22 @@ def _reset_i18n_language():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _restore_ui_singleton():
+    """每个测试后把 `_ui_singleton._ui` 还原为测试前的值。
+
+    解释: QxtTUI 构造 / `set_ready` 会调用 `attach_ui()`, 把全局
+    `_ui_singleton._ui` 替换为 `TuiUI` (走 TUI 日志区而非 stdout)。
+    若不还原, 后续 CLI 测试 (如 test_slash_gaps) 的 `ui.info` 会被导向
+    TUI 日志区, capsys 捕获为空、断言失败。任何 TUI 测试文件都可能触发
+    此副作用, 故在全局 conftest 兜底恢复, 保证测试互不污染。
+    """
+    from tuan_cli.cli import _ui_singleton
+    before = _ui_singleton._ui
+    yield
+    _ui_singleton._ui = before
+
+
 # ---------------------------------------------------------------------------
 # 共享: 本地 OpenAI 兼容 mock 端点 (供模型/CLI/worker 端到端测试复用)
 # ---------------------------------------------------------------------------

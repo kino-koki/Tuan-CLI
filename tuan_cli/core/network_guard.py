@@ -85,6 +85,52 @@ _SSH_RE = re.compile(
     r'(?<![\w.-])ssh(?![\w.-])', re.IGNORECASE
 )
 
+
+# 安全修复 (P2 误杀): `ssh user@host` 纯登录被当作「远程命令执行」硬拦。
+# 区分纯登录 (无远程命令参数, 正常交互 shell 登录) 与远程命令执行
+# (ssh user@host 'cmd'), 前者降为 confirm, 后者仍硬拦。
+_SSH_ARG_OPTS = frozenset({
+    "-p", "-P", "-l", "-i", "-F", "-o", "-b", "-c", "-E", "-J", "-W",
+    "-m", "-O", "-S", "-w", "-I", "-e", "-Q",
+})
+
+
+def _ssh_has_remote_command(command: str) -> bool:
+    """ssh 调用是否携带远程命令参数 (ssh user@host 'cmd')。
+
+    纯登录 ``ssh user@host`` 无远程命令参数, 是正常交互式 shell 登录, 不应被当作
+    网络外泄硬拦。``ssh user@host 'rm -rf /'`` 才是远程命令执行, 必须硬拦。
+    判定: 跳过选项及带参选项后, destination 之后仍有 token → 远程命令。
+    无法解析时 fail-closed 判为远程命令 (保守拦截)。
+    """
+    m = _SSH_RE.search(command)
+    if not m:
+        return True  # fail-closed
+    seg = command[m.end():]
+    seg = re.split(r"[;\n|&]", seg, maxsplit=1)[0]  # 只取 ssh 调用段
+    try:
+        import shlex
+        toks = shlex.split(seg, posix=True)
+    except ValueError:
+        return True  # 引号不闭合 → 保守
+    i, n = 0, len(toks)
+    while i < n:
+        t = toks[i]
+        if t.startswith("--") and len(t) > 2:
+            # 长选项: --opt=val 或 --opt val
+            i += 1 if "=" in t else 2
+            continue
+        if t.startswith("-") and t != "-":
+            base = t[:2]
+            # 复合短选项 (-p2222) 参数内联; 单字母带参选项 (-p 2222) 吞下一 token
+            if base in _SSH_ARG_OPTS and len(t) == 2:
+                i += 2
+            else:
+                i += 1
+            continue
+        break
+    return (n - i) > 1  # 剩余: [destination, ...], >1 说明有远程命令
+
 # DNS 查询 (注意: 不含裸词 `host` —— `host` 既是 DNS 工具也是常见主机名占位符,
 # 匹配 \bhost\b 会把 `scp file.txt host:/tmp/` 中的目标主机误判为 DNS 隧道)
 _DNS_RE = re.compile(
@@ -379,8 +425,13 @@ class NetworkGuard:
         elif _SSH_RE.search(command) and not _ssh_is_transfer:
             # 前置 ssh = 远程命令执行 (ssh user@host 'cmd')。在 deny_remote_exec 策略下
             # 一律 deny (高风险), 与 test_security_network_ownership 钉死的契约一致。
-            is_remote_exec = True
-            reasons.append("检测到远程命令执行 (ssh)")
+            # 安全修复 (P2 误杀): 纯登录 `ssh user@host` 无远程命令参数, 不是远程执行,
+            # 降为 confirm (需用户确认) 而非硬拦 —— 只在携带远程命令时判远程执行。
+            if _ssh_has_remote_command(command):
+                is_remote_exec = True
+                reasons.append("检测到远程命令执行 (ssh)")
+            else:
+                reasons.append("检测到 SSH 登录 (无远程命令, 交互式 shell)")
 
         # 4b. netcat/socat: 仅执行(-e/-c)/监听(-l)/输入重定向(<) 才拦截;
         #     连通性探针 (-z) 放行; 其余原始连接升级为 confirm 而非硬拦截。

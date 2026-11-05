@@ -76,7 +76,7 @@ def _is_interactive() -> bool:
 def _print_welcome() -> None:
     print()
     print("  欢迎使用青小团 tuan!  🎯")
-    print("  一个会成长、微内核插件化的跨平台 Agent CLI。")
+    print("  一个会成长、插件容器化的跨平台 Agent CLI。")
     print("  我能读代码、跑测试、改文件、提交 git —— 边做边学, 越用越顺手。")
     print()
 

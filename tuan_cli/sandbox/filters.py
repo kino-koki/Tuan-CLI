@@ -79,6 +79,107 @@ def _scan_embedded_secrets(texts: List[str]) -> Optional[Verdict]:
     )
 
 
+# ================================================================ 高层意图判据 (报告 P1-2)
+# L0 原本只消费 is_hard_redline —— 与命令引擎同源: 引擎认不出的载荷, L0 也认不出,
+# 所谓「四层纵深」在这类载荷上退化为单层。这里补一个**独立于命令词法**的意图判据:
+# 不看 token / 不看命令名, 只按「意图语义」直接扫描文本 —— 目标路径指向系统关键位置、
+# 触碰身份/凭据文件、请求特权位。即使命令引擎因全新变形而失明, 高层语义仍兜得住。
+#
+# 设计约束: 必须**保守** —— 只命中「明确无疑」的高危意图, 避免把 chmod +x ./build
+# / passwd 改自己密码 / usermod -aG docker 这类常规操作误杀。正则按纯文本语义匹配,
+# 不依赖 _cmd_name / _normalize (异源), 也不依赖真实文件系统 (平台无关)。
+
+import re as _re
+
+# 身份/凭据/系统关键文件: 出现即意味着触碰认证或系统边界, 无论用什么命令写。
+_SYS_IDENTITY_FILE_RE = _re.compile(
+    r"/etc/(?:passwd|shadow|sudoers|gshadow)\b"
+    r"|~?/\.ssh/authorized_keys\b"
+    r"|/root/\.[a-zA-Z]+\b"
+)
+
+# 系统关键目录前缀 (写/移/删/卸载目标指向这里都是高危意图)。含根目录 `/` 与盘根。
+# 只列「明确无疑」的系统关键位置, 不含 /tmp /home/data 这类常规工作目录 (防误杀)。
+_SYS_CRITICAL_PATH_RE = _re.compile(
+    r"/(?:etc|boot|dev|proc|sys|run|srv|opt|home|usr|var|bin|sbin|lib|lib64|root)(?:/|\s|$)"
+    r"|(?:^|\s)/\s+(?=\S)"            # 根目录 `/` 后跟其它参数 (mv / /tmp/y · rm -rf / x)
+    r"|(?:^|\s)/\s*$"                 # 根目录本身结尾 (umount / · rm -rf /)
+    r"|[A-Za-z]:[\\/]{1,2}\s*$"       # Windows 盘根
+)
+
+# 特权位请求: chmod +s / +u+s / --setuid / setuid / setcap 特权 capability,
+# 以及八进制 SUID/SGID (chmod 4755 / 2755 — 首位 2/4/6/7)。
+_PRIVILEGE_BIT_RE = _re.compile(
+    r"\bchmod\b[^\n]*(?:\+\s*[ugoa]*s\b|--setuid|--setgid|\s[0-7]*[2467][0-7]{3}\b)"
+    r"|\bsetuid\b"
+    r"|\bsetcap\b[^\n]*(?:cap_setuid|cap_setgid|cap_sys_admin)"
+)
+
+# root 账户接管: 改 root 密码 / 重复 uid=0 / 写 root 家目录 / 切到 root shell。
+_ROOT_TAKEOVER_RE = _re.compile(
+    r"\bpasswd\b[^\n]*\broot\b"
+    r"|\b(?:useradd|usermod)\b[^\n]*\s-u\s*0\b"
+    r"|\bchage\b[^\n]*\s-[dD]\s*0\b[^\n]*\broot\b"
+    r"|\bsu\b[^\n]*(?:\s-|--login)?\s*root\b|\bsu\s*-\b"
+    r"|\bsudo\b[^\n]*\s(?:su|bash|sh|zsh|ksh|dash|i)\b"
+)
+
+# 写意图动词: 触碰身份文件时必须伴随「写入」而非「读取」才构成逃逸。
+# cat /etc/passwd (读) 不算, echo 'x' >> /etc/passwd (写) 才算 —— 防误杀。
+_WRITE_VERB_RE = _re.compile(
+    r">>|>\s|>\S"
+    r"|\btee\b|\bcat\s*>"
+    r"|\b(?:cp|mv|ln|truncate|chmod|chown|chpasswd)\b"
+    r"|\b(?:sed|awk|perl)\b[^\n]*\s-i\b"
+    r"|\bdd\b[^\n]*\bof\s*="
+)
+
+
+def _has_system_escape_intent(texts: List[str]) -> bool:
+    """高层意图判据 (异源于命令词法): 身份文件写入 / 系统关键路径破坏 / 特权位 / root 接管。
+
+    与 is_hard_redline 形成双判: 命令引擎按 token+旗标判定, 这里按语义意图判定。
+    二者独立来源, 任一命中都足以在 L0 硬拒 (fail-closed 精神)。
+    """
+    for t in texts:
+        t = (t or "").strip()
+        if not t:
+            continue
+        # 报告 P2: 先剥离整行/行尾 shell 注释 —— `# 谨慎: rm -rf /` 是注释不是执行。
+        # 不剥则注释里的 `rm -rf /` 会被下面意图判据误判为真实逃逸 (误杀)。
+        try:
+            from ..ext.safety_normalize import _strip_shell_comments
+            t = _strip_shell_comments(t)
+        except Exception:  # noqa: BLE001
+            pass
+        if not t.strip():
+            continue
+        # 1) 触碰身份/凭据文件 —— 必须伴随「写入」意图才算逃逸 (cat /etc/passwd 读不算)
+        if _SYS_IDENTITY_FILE_RE.search(t) and _WRITE_VERB_RE.search(t):
+            return True
+        # 2) 特权位请求 (SUID/SGID/setuid/setcap)
+        if _PRIVILEGE_BIT_RE.search(t):
+            return True
+        # 3) root 账户接管
+        if _ROOT_TAKEOVER_RE.search(t):
+            return True
+        # 4) 向系统关键目录的写入/删除/移动 (mv /etc、rm -rf /dev、umount /boot ...)
+        #    意图判据: 系统关键路径 + 破坏性动作。破坏性动作 = 具名破坏动词 (写/移/删/
+        #    卸载/格式化) **或** 递归+强制旗标 (`-rf` / `-r -f` / `--recursive --force`)。
+        #    后者让「命令名被参数展开/通配隐藏」的变形也能被语义兜住 (异源于命令词法)。
+        if _SYS_CRITICAL_PATH_RE.search(t) and (
+            _re.search(
+                r"\b(?:rm|mv|dd|mkfs|wipefs|shred|blkdiscard|umount|chmod|chown|truncate)\b",
+                t,
+            )
+            or _re.search(
+                r"-(?:[rfR]{1,2}|recursive|force)\b", t
+            )
+        ):
+            return True
+    return False
+
+
 def _has_network_request(texts: List[str]) -> bool:
     """任一命令串带网络获取/上传/传输/监听特征。"""
     try:
@@ -127,6 +228,13 @@ class IntentFilter:
         if critical:
             return deny(self.name, "命中致命红线(文件系统/OS级毁灭操作), 永不自动执行",
                         SEV["critical"])
+
+        # 报告 P1-2: 异源双判 —— L0 不再单依赖命令引擎 (is_hard_redline)。
+        # 高层意图判据不看 token/命令名, 按语义扫描文本; 引擎因全新变形失明时仍兜底。
+        if _has_system_escape_intent(texts):
+            return deny(self.name,
+                        "命中系统逃逸意图(身份文件写入/特权位/root接管/系统关键路径破坏), "
+                        "永不自动执行", SEV["critical"])
 
         # V-10 补充: 读取 SSH 私钥 / 系统凭证 —— 不是毁灭操作但**凭证外泄**危害等同,
         # 需硬拒 (跟 is_hard_redline 同级)。不放进 is_hard_redline 本体是因为

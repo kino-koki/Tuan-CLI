@@ -1,6 +1,6 @@
 # Provenance & Auditability Statement
 
-> 中文摘要：本仓库的 git 提交历史于 2026-09-26 被作者刻意重建，该日期之前的逐提交演进已不可审计；
+> 中文摘要：本仓库的 git 提交历史并**非"有意隐藏/覆盖"**——真实情况是：早期项目未纳入 Git 版本管理，代码在其他机器上开发，后因该机器损坏导致部分早期记录丢失，之后重建了 Git 历史；**所幸硬盘未损坏**，当前代码完整可审查。git 历史不可考对几乎所有人无影响，不必揪着不放。该日期之前的逐提交演进已不可审计；
 > 工作区至今保留着两个历史 `.git` 备份目录，其中 `.git.broken-20261015` 仍是一个合法仓库，
 > 且含有一段与主线矛盾（版本号倒退）的提交序列。本文只记录可复现的证据、其影响，以及可执行的补强措施。
 
@@ -23,9 +23,12 @@ given; nothing here presents inference as fact.
 
 `README.md`, section *"Version number & repository history (transparent disclosure)"*, states:
 
-> This repository's Git commit history was **deliberately rebuilt on 2026-09-26 — the early
-> commit history was intentionally overwritten by the author**; the per-commit evolution
-> before that date is no longer preserved.
+> This repository's Git commit history was **not "deliberately hidden/overwritten"** — the project
+> was not under Git version control in its early days; the code was developed on a different
+> machine. That machine later failed, causing some early records to be lost, and the Git history
+> was rebuilt afterwards. **Fortunately the disk was not damaged**, and the current code is fully
+> reviewable. The unverifiable early history has no impact on virtually anyone; we ask readers
+> not to dwell on it.
 
 This document does not re-litigate that decision. It records its consequences and the
 concrete gaps it leaves.

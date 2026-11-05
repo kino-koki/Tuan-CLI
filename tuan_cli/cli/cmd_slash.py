@@ -25,6 +25,7 @@ from .cmd_slash_image import _cmd_image
 from .cmd_slash_memory import _cmd_memory
 from .cmd_slash_provider import _cmd_provider
 from .cmd_slash_session import _cmd_export, _cmd_import
+from .cmd_slash_superagent import _cmd_superagent
 from .cmd_slash_claude import (
     cmd_fork,
     cmd_branch,
@@ -56,7 +57,7 @@ _HELP = """
   /model     切换/查看模型
   /mode      切换运行模式 (感通/灵码/闲聊/无界/协同; 旧名 standard/yolo/plan 可用)
   /memory    查看记忆
-  /clear     清空对话上下文
+  /clear     清空对话上下文 (OpenCode /new 别名)
   /compact   手动压缩上下文 (折叠旧历史)
   /context   上下文占用
   /cost      成本估算 (token + 缓存命中率 + 费用)
@@ -100,11 +101,13 @@ _HELP = """
   [...]/provider  查看/设置/清除 API Key 与供应商 ( /provider set <ENV> <KEY> · /provider clear [ENV] )
   [...]/quit      退出
   [...]/resume    恢复历史会话 (编号/会话id/latest)
+  [...]/session   会话管理 (无参列出; /session <编号|会话id|latest> 恢复)
   [...]/route     智能模型路由建议 (咨询式, 输入 /route <任务>)
   [...]/rewind    会话时间线回溯 ( /rewind 回退一步; /rewind list 列快照; /rewind to <N> )
   [...]/sandbox   沙箱执行 (在 Docker 容器中隔离执行危险命令)
   [...]/stats     Agent 可观测性面板 (trace/span/延迟/错误率, 需开启 telemetry)
   [...]/subagent  派发隔离子代理 (独立上下文) 执行任务并回收摘要
+  [...]/superagent  Super-Agent: DeepSeek 双层架构 (start/stop/status/panel/ingest/speculate)
   [...]/swarm     多 Agent 协作 (强模型规划 -> 弱模型并发执行 -> 强模型验收)
   [...]/verify    编码验证闭环 (自动跑 test/typecheck/lint, 失败自修复)
   [...]/worktree  git worktree 并行实验 ( create/list/remove/switch )
@@ -130,6 +133,7 @@ _HELP = """
   [...]/design    前端设计生成 ( /design <界面描述> )
   [...]/artifacts Artifact 生成 ( /artifacts <工件描述> )
   [...]/auto-mode-setup  Auto 模式分类器展示与测试 ( /auto-mode-setup [test <tool> '<json>'] )
+  [...]/language   切换界面语言 ( /language [代码]; 无参列出可用 )
 
 提示: Enter 发送 · Esc+Enter 换行 · 多行可用三引号
 TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执行; 仅列核心层, 输入首字母可展开专家层)"""
@@ -139,16 +143,17 @@ TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执�
 # 供 TUI / REPL 的补全词表、命令发现、ACP/IDE 能力清单共用, 避免多处维护漂移。
 SLASH_COMMAND_NAMES: tuple = (
     "/add-dir", "/audit", "/background", "/blast", "/branch", "/btw", "/budget", "/cd", "/checkpoint",
-    "/clear", "/clear-images", "/color", "/commands", "/compact", "/config",
+    "/clear", "/new", "/clear-images", "/color", "/commands", "/compact", "/config",
     "/context", "/copy", "/cost", "/debug", "/diff", "/doctor",
     "/effort", "/exit", "/export", "/fork", "/gh-borrow", "/goal",
     "/help", "/hooks", "/image", "/init", "/images", "/impact", "/import", "/log",
-    "/loop", "/mcp", "/mcp-tools", "/memory", "/mode", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/review", "/route", "/sandbox", "/security-review", "/simplify", "/skills", "/stats",
-    "/status", "/subagent", "/swarm", "/tasks", "/theme", "/tools", "/undo", "/usage", "/verify",
+    "/loop", "/mcp", "/mcp-tools", "/memory", "/mode", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/review", "/route", "/sandbox", "/security-review", "/session", "/simplify", "/skills", "/stats",
+    "/status", "/subagent", "/superagent", "/swarm", "/tasks", "/theme", "/tools", "/undo", "/usage", "/verify",
     "/rewind", "/handoff", "/worktree",
     "/web", "/workflow", "/code", "/commands",
     "/personality",
     "/batch", "/dataviz", "/design", "/artifacts",
+    "/language",
 )
 
 
@@ -157,9 +162,9 @@ SLASH_COMMAND_NAMES: tuple = (
 # 权威分层定义已移至 slash_tier.py (§2.3), 此处保留兼容副本供 _handle_slash 与
 # cmd_chat.py 的 slash_command_tiers() 使用; TUI 补全菜单应导入 slash_tier.slash_command_tier。
 CORE_SLASH_COMMANDS: frozenset = frozenset({
-    "/help", "/model", "/mode", "/memory", "/clear", "/compact",
+    "/help", "/model", "/mode", "/memory", "/clear", "/new", "/compact",
     "/context", "/cost", "/usage", "/undo", "/diff", "/export",
-    "/exit", "/status", "/tools", "/skills", "/mcp", "/permissions",
+    "/exit", "/status", "/tools", "/skills", "/mcp",
     "/web", "/plan",
 })
 
@@ -198,7 +203,8 @@ _CMD_META: Dict[str, str] = {
     "/effort": "切换推理档位",
     "/plan": "进入/退出只读规划模式",
     "/permissions": "权限模式设置",
-    "/clear": "清空对话上下文",
+    "/clear": "清空对话上下文 (OpenCode /new 别名)",
+    "/new": "清空对话上下文 (OpenCode 别名)",
     "/compact": "压缩上下文",
     "/context": "查看上下文占用",
     "/undo": "撤销最近一次文件改动",
@@ -207,12 +213,14 @@ _CMD_META: Dict[str, str] = {
     "/export": "导出会话为 Markdown",
     "/import": "导入 Markdown 对话",
     "/resume": "恢复历史会话",
+    "/session": "会话管理 (无参列出; /session <编号|会话id|latest> 恢复)",
     "/checkpoint": "会话检查点 (save/restore/list)",
     "/web": "启动本地 Web 工作台 (无参数) 或快捷联网",
     "/code": "代码感知问答: 检索工作区后带上下文执行",
     "/commands": "热插拔命令管理: list/reload/enable/disable",
     "/verify": "编码验证闭环 (test/typecheck/lint 失败自修复)",
     "/subagent": "派发隔离子代理执行任务 (run/status)",
+    "/superagent": "Super-Agent: DeepSeek 双层架构 (Router/Worker/事件驱动/Watchdog)",
     "/personality": "人设管理 (list/show/set/auto)",
     "/rewind": "会话时间线回溯 (快照回退)",
     "/handoff": "会话交接: 摘要压缩后开新会话",
@@ -259,6 +267,7 @@ _CMD_META: Dict[str, str] = {
     "/dataviz": "数据可视化任务 (图表生成)",
     "/design": "设计工作流 (前端设计产出)",
     "/artifacts": "生成 artifact (自包含 HTML 产物)",
+    "/language": "切换界面语言 (/language [代码]; 无参列出可用语言)",
 }
 
 
@@ -923,6 +932,43 @@ def _cmd_mcp_tools(agent: Any, arg: str) -> None:
     ui.info("  切换: /mcp-tools on|off · 检索: /mcp-tools search <关键词>")
 
 
+def _cmd_language(agent: Any, config: Any, arg: str) -> None:
+    """/language: 查看或切换界面语言 (运行时生效, 写入 config)。
+
+    无参列出可用语言; 传代码 (如 /language en) 立即切换并持久化。
+    依赖 i18n 的运行时 set_language, 不重启即可让后续取词用新语言。
+    """
+    from ..i18n import (
+        available_languages, get_language, normalize_language, set_language,
+    )
+
+    codes = list(available_languages())
+    current = get_language()
+    target = arg.strip()
+    if not target:
+        ui.info(f"  当前语言: {current} ({available_languages().get(current, {}).get('native', '')})")
+        ui.info("  可用语言:")
+        for code in codes:
+            info = available_languages().get(code, {})
+            marker = " ✓" if code == current else ""
+            ui.info(f"    {code:<8} {info.get('native', ''):<20} ({info.get('english', '')}){marker}")
+        ui.info("  用法: /language <代码> 立即切换并写入配置")
+        return
+    normalized = normalize_language(target)
+    if not normalized:
+        ui.error(f"无法识别语言: {target} (可用: {', '.join(codes)})")
+        return
+    applied = set_language(normalized)
+    # 持久化: config 有 set_user 就写 (测试/桩可能没有)
+    try:
+        if config is not None and hasattr(config, "set_user"):
+            config.set_user("language", applied)
+    except Exception:  # noqa: BLE001
+        pass
+    info = available_languages().get(applied, {})
+    ui.success(f"界面语言已切换为: {applied} ({info.get('native', '')})")
+
+
 def _handle_slash(cmd: str, agent: Any, config: Any, workspace: str) -> bool:
     """处理斜杠命令。返回 True 表示已处理。"""
     parts = cmd.strip().split(None, 1)
@@ -1007,7 +1053,8 @@ def _handle_slash(cmd: str, agent: Any, config: Any, workspace: str) -> bool:
         ui.context_bar(st)
         ui.info(f"  预算: {st.get('budget_tokens', '?')} tokens")
         ui.info(f"  已用: {st.get('estimated_tokens', '?')} tokens")
-    elif head == "/clear":
+    elif head in ("/clear", "/new"):
+        # OpenCode: /new 是 /clear 的别名 (开新会话, 清空上下文)
         agent.messages.clear()
         ui.info("上下文已清空。")
     elif head == "/more":
@@ -1123,6 +1170,8 @@ def _handle_slash(cmd: str, agent: Any, config: Any, workspace: str) -> bool:
                 ui.success("Plan 模式已关闭: 可以正常执行修改操作。")
     elif head == "/provider":
         _cmd_provider(agent, config, head, arg)
+    elif head == "/language":
+        _cmd_language(agent, config, arg)
     elif head == "/goal":
         _cmd_goal(agent, arg)
     elif head == "/blast":
@@ -1134,6 +1183,16 @@ def _handle_slash(cmd: str, agent: Any, config: Any, workspace: str) -> bool:
     elif head == "/audit":
         _cmd_audit(agent, arg)
     elif head == "/resume":
+        if arg:
+            from .cmd_chat import _resume_session
+            name = _resume_session(agent, arg)
+            if name:
+                ui.success(t("chat.resumed", path=name, count=len(agent.messages)))
+        else:
+            from .cmd_chat import _list_sessions
+            _list_sessions(agent)
+    elif head == "/session":
+        # CodeX 风格会话管理: 无参列出历史会话, 带参恢复 (复用 /resume 语义)。
         if arg:
             from .cmd_chat import _resume_session
             name = _resume_session(agent, arg)
@@ -1229,6 +1288,8 @@ def _handle_slash(cmd: str, agent: Any, config: Any, workspace: str) -> bool:
         _boundary_worktree(agent, arg, workspace)
     elif head == "/subagent":
         _cmd_subagent_enhanced(agent, arg)
+    elif head == "/superagent":
+        _cmd_superagent(agent, arg)
     elif head in ("/workflow", "/workflow-authoring", "/deep-research"):
         # /workflow-authoring <主题> 与 /deep-research <主题> 是 /workflow 编排模式的别名。
         if head == "/workflow-authoring":

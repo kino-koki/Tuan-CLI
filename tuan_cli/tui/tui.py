@@ -1,7 +1,7 @@
 """青小团 TUI —— 单一 Application (启动加载屏 + 对话界面)。
 
-以 splash.py 的蓝色吉祥物加载屏为基底, 扩展出对话模块:
-  - 启动期: 内嵌加载屏 (蓝字吉祥物 ▐█▛█▛█▌ + braille 转圈 + 进度条 + Ctrl-C 退出)
+以 Codex CLI 风格加载屏为基底, 扩展出对话模块:
+  - 启动期: 内嵌加载屏 (粒子风格 TUAN 徽记 + braille 转圈 + 进度条 + Ctrl-C 退出)
   - 就绪后: 对话界面 (对话区 + 输入栏 + 底部上下文条), 无侧栏, 保持简陋。
 
 单一 Application / 事件循环: 启动加载屏与对话界面共用同一 App, 杜绝
@@ -72,6 +72,9 @@ try:
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.completion import Completer, Completion
     from prompt_toolkit.keys import Keys
+    from prompt_toolkit.layout.processors import (Processor,
+                                                   Transformation,
+                                                   TransformationInput)
     _HAS_PT = True
 except Exception:
     # prompt_toolkit 是可选依赖, 缺失时本模块仍必须可导入 —— cli/cmd_chat.py 会
@@ -93,6 +96,13 @@ if not _HAS_PT:  # pragma: no cover - 仅在无 prompt_toolkit 环境
     class Completer:  # type: ignore[no-redef]
         """占位基类: prompt_toolkit 缺失时仅为让下面的类定义通过。"""
 
+    class Window:  # type: ignore[no-redef]
+        """占位基类: prompt_toolkit 缺失时仅为让 `class _MeasuredWindow(Window)` 通过。
+
+        只保证**导入**成功 (模块级基类解析); 真正实例化 _MeasuredWindow 仍需
+        prompt_toolkit, 此时会在 TUI 启动处给出清晰错误, 而不是在 import 时 NameError。
+        """
+
     def Completion(*args: Any, **kwargs: Any) -> None:  # type: ignore[no-redef]
         """占位构造器: prompt_toolkit 缺失时给出可读错误, 而不是 NameError。"""
         raise RuntimeError(
@@ -100,30 +110,79 @@ if not _HAS_PT:  # pragma: no cover - 仅在无 prompt_toolkit 环境
         )
 
 
-# ---- 配色: 青小团自研的深色视觉语言 ----
-# 主界面观感与 Kimi Code 保持一致的清爽蓝色系; 法定署名见仓库根 NOTICE。
-_PRIMARY = "#4FA8FF"      # 主品牌蓝: 盒子边框 / 吉祥物 / 标题 / 输入框提示符
-_BLUE_DIM = "#5E97CC"     # 次级蓝: 盒子副标题 / 信息行
+class _PlaceholderProcessor:  # type: ignore[no-redef]
+    """占位处理器: prompt_toolkit 缺失时仅让模块级 `input_processors` 构造可通过。
+
+    真正实例化时 (TUI 启动) 会因缺少 pt 而在别处报清晰错误, 这里只是占位基类。
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        raise RuntimeError(
+            "prompt_toolkit 未安装, 无法渲染输入框 placeholder; 安装 prompt_toolkit"
+        )
+
+
+if _HAS_PT:
+
+    class _PlaceholderProcessor(Processor):  # type: ignore[no-redef]
+        """Codex 同款输入框 placeholder (空输入时显示 dim 灰提示文本)。
+
+        prompt_toolkit 3.0.53 的 ``TextArea`` 尚无 ``placeholder`` 参数 (那是
+        更新版才加的), 因此用自定义 ``Processor`` 在**空文档**时把提示文本注入
+        fragments 末尾 (``BeforeInput`` 已把 "› " 前缀注入 fragments 头部)。
+
+        空文档时 document.text 为空、光标恒在 0, 恒等映射 source_to_display /
+        display_to_source 即可 (0→0), placeholder 仅是视觉提示层, 不参与光标
+        定位; 一旦用户键入任意字符, document.text 非空, 本处理器立即透传原
+        fragments, placeholder 消失。对齐 codex-rs/tui 输入框 placeholder 行为。
+        """
+
+        def __init__(self, text: str = "Ask Codex to do anything",
+                     style: str = "class:textdim") -> None:
+            self._text = text
+            self._style = style
+
+        def apply_transformation(
+            self, ti: TransformationInput,
+        ) -> Transformation:
+            doc = ti.document
+            # 仅在空文档 (无输入) 且无选区时显示 placeholder; 否则透传。
+            if doc.text == "" and not doc.selection:
+                fragments = ti.fragments + [(self._style, self._text)]
+                # 文本长度与 document.text 不一致 (placeholder 是视觉提示),
+                # 但空文档下光标恒在 0, 恒等映射是精确的。
+                return Transformation(fragments, (lambda i: i), (lambda i: i))
+            return Transformation(ti.fragments)
+
+
+# ---- 配色: Codex CLI 深色视觉语言 (chatgpt-blue 200 #63A8F8 主强调) ----
+# TUI 整体观感对齐开源 Codex CLI (openai/codex, codex-rs/tui/src/style.rs):
+#   UI_ACCENT = CHATGPT_BLUE_200 (99,168,248) 为选中/强调主色,
+#   语义色 status_style: success→green / failure→red / attention→yellow,
+#   secondary_text_style: 前景与背景 0.6 blend 的弱化文字。
+# 法定署名见仓库根 NOTICE。
+_PRIMARY = "#63A8F8"      # Codex 主强调蓝 (CHATGPT_BLUE_200): 选中/强调/输入提示符
+_BLUE_DIM = "#63A8F8"     # 次级蓝: 与主强调同源 (Codex accent 不加粗时弱化)
 
 # 通用界面 (对话 / 输入 / 底栏) 的深色字号层次
 _TEXT = "#E0E0E0"
 _TEXT_STRONG = "#F5F5F5"
 _DIM = "#888888"
 _MUTED = "#6B6B6B"
-_BORDER = "#5A5A5A"
-_ACCENT = "#5BC0BE"
+_BORDER = "#4A4A4A"       # 弱化边框: 暗灰, 与面板背景区分但不抢眼 (OpenCode 克制边框)
+_ACCENT = "#63A8F8"       # 辅助强调统一为 Codex 蓝
 _BG_PANEL = "#1E2836"     # 面板背景色 (补全菜单用，与 _BORDER 同色系)
 _SUCCESS = "#4EC87E"
 _WARNING = "#E8A838"
 _ERROR = "#E85454"
-_ROLEUSER = "#FFCB6B"
+_ROLEUSER = "#63A8F8"     # 用户消息前缀强调改为 Codex accent (原暖金 #FFCB6B 移除)
 _SHELL = "#BD93F9"
 
 try:
     from .. import __version__  # pyproject.toml 的真实版本
     VERSION = f"v{__version__}"
 except Exception:  # noqa: BLE001
-    VERSION = "v0.3.3"
+    VERSION = "v?.?.?"  # import 失败兜底, 避免硬编码版本漂移
 
 #: TUI 启动时写入的终端窗口/标签标题 (Windows Terminal 标签页 / ConHost 标题栏)。
 #: 环境变量 TUAN_TERMINAL_TITLE 可覆盖 (留空则不修改标题)。
@@ -132,8 +191,9 @@ TERMINAL_TITLE = os.environ.get("TUAN_TERMINAL_TITLE", "").strip() or "Tuan-CLI"
 # 加载屏转圈帧
 _SPLASH_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-# 思考态月亮转圈帧 (每帧 90ms, 8 相走完一圈约 0.72s, 观感更流畅稳定)
-_MOON_FRAMES = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
+# 思考态粒子转圈帧 (每帧 90ms, 8 相走完一圈约 0.72s, 观感更流畅稳定)
+# 用粒子点簇代替具象月亮, 与粒子 Logo 同语言。
+_MOON_FRAMES = ["◐", "◓", "◑", "◒", "●", "◒", "◑", "◓"]
 _MOON_INTERVAL = 0.09
 
 # ---- 输出溢出防护 (规范化: 单条/流式缓冲/思考全文都有界, 防止巨文本拖垮渲染) ----
@@ -218,6 +278,29 @@ _SLASH_SUBCMDS: Dict[str, List[Tuple[str, str]]] = {
     "/web": [
         ("search <关键词>", "快捷联网搜索"),
     ],
+    "/language": [
+        ("list", "列出可用界面语言"),
+        ("en", "切换为英语"),
+        ("zh-CN", "切换为简体中文"),
+        ("zh-TW", "切换为繁体中文"),
+    ],
+    "/superagent": [
+        ("start", "启动 Super-Agent 引擎 (Watchdog + 恢复)"),
+        ("stop", "停止 Super-Agent 引擎"),
+        ("status", "状态摘要 (Router/Worker/Watchdog/面板)"),
+        ("panel", "渲染「现在有什么需要我」面板"),
+        ("mode <off|observe|auto>", "切换接单模式"),
+        ("ingest <来源> <内容>", "注入一条外部事件 (自动启动引擎)"),
+        ("speculate <提示> [标题]", "投机执行 (后台提前尝试)"),
+        ("source [name]", "注册外部事件源"),
+        ("rule <匹配> [allow|drop]", "添加程序层过滤规则"),
+        ("recover", "手动恢复未完成工单"),
+        ("accept <ticket_id>", "验收工单 (待审阅 → 完成)"),
+        ("retry <ticket_id>", "重试工单 (失败/受阻 → 重新分派)"),
+        ("reply <ticket_id> <内容>", "回答待回答工单"),
+        ("list", "列出面板条目"),
+        ("summary", "一行摘要 (状态栏用)"),
+    ],
 }
 
 # 第三级: 子命令后的标志补全 (键 = "/命令 子命令", 值 = [(标志, 帮助)])
@@ -246,9 +329,6 @@ def _fuzzy_rank(name: str, query: str) -> int:
         return 2
     return -1
 
-# 吉祥物字符标
-KIMI_LOGO = ['▐█▛█▛█▌', '▐█████▌']
-
 # prompt_toolkit 缺失时 (仅 import 本模块) 也要能安全导入:
 # STYLE 降级为 None, 真正使用 TUI 时自会因缺少 pt 而报清晰错误。
 _STYLE_DICT = {
@@ -265,12 +345,19 @@ _STYLE_DICT = {
     "warning": _WARNING,
     "success": _SUCCESS,
     "primary": _PRIMARY,      # 盒子边框 / 输入框提示符 (蓝)
-    "roleuser": _ROLEUSER,    # 用户消息: 金
+    "roleuser": _ROLEUSER,    # 用户消息前缀: Codex accent 蓝 (原暖金 #FFCB6B 已移除)
+    # OpenCode 风格角色徽章: 后台自主任务 (@agent) 用青绿, 与用户蓝/助手灰区分。
+    # OpenCode 的 agent 角色徽章常用绿色系; 在 Codex 深蓝主体上取柔和青绿,
+    # 让「后台任务」这一类别在对话区一眼可辨。
+    "roleagent": "#5FD3B3",
     "border": _BORDER,        # 输入框边框: 灰
     "shellmode": _SHELL,
+    # Codex CollaborationModeIndicator::Plan 用 magenta (footer.rs:164)。
+    # 深底上取亮洋红, 与蓝 accent 区分。
+    "plan": "#E879F9",
     # ---- "/" 命令面板 (Claude Code 同款: 高亮选择 + 描述) ----
     "slashbg": "bg:#16202C",          # 面板背景 (深色终端下与对话区区分)
-    "slashsel": "bg:#26456B #FFFFFF bold",  # 选中行: 亮底加粗反显
+    "slashsel": "bg:#234163 #E0E0E0",      # 选中行: 柔和强调蓝底 (去纯白粗体反显, OpenCode 克制高亮)
     "slashcmd": _PRIMARY,             # 命令名 (品牌蓝)
     "slashdesc": _DIM,                # 命令描述 (弱化)
     "slashhint": _MUTED,              # 面板底部操作提示
@@ -290,9 +377,13 @@ _STYLE_DICT = {
 }
 STYLE = Style.from_dict(_STYLE_DICT) if _HAS_PT else None
 
-# 对话区符号约定
-USER_MESSAGE_BULLET = "✨ "
-STATUS_BULLET = "● "
+# 对话区符号约定 (Codex CLI 风格)
+# Codex 用户消息无 emoji 前缀, 采用左对齐浅灰半透明底 (history_prompt_style);
+# 这里保留一个前缀标记用于区分用户行, 但用 Codex 同款 "›" 而非 emoji。
+USER_MESSAGE_BULLET = "› "      # Codex 输入区同款前缀符号
+USER_MESSAGE_BG = "#333B47"     # history_prompt_style 深底 (255,255,255)@0.16 近似
+STATUS_BULLET = "• "             # Codex 助手消息前缀 (U+2022, dim) —— 非 ● (U+25CF)
+
 SUCCESS_MARK = "✓"
 FAILURE_MARK = "✗"
 
@@ -580,12 +671,25 @@ class QxtTUI:
 
         # 状态
         self._events: List[Any] = []
+        # 性能: 历史 screen 缓存。`_scrolled_lines` 每帧都要把 `_events` 全量渲染成
+        # 逻辑行并逐行算换行高度 (`_line_heights`), 流式期间每帧全量重算导致卡顿。
+        # 只有 `_events` 真的变化 (append/trim) 时才重建缓存, 否则复用。
+        self._history_dirty = True
+        self._history_screen: Optional[List[List[Tuple[str, str]]]] = None
+        self._history_heights: Optional[List[int]] = None
+        self._history_width: int = 0
+        # 行高缓存: `_line_heights` 按 ``(width, text)`` 缓存每个逻辑行的换行高度,
+        # 历史 screen 复用期间每帧只做 dict 查找 (2000+ 行历史原本每帧数万次 C 调用)。
+        self._height_cache: Dict[Tuple[int, str], int] = {}
         self._closed = False
         self._busy = False
         self._cancel_requested = threading.Event()
+        # 回合开始单调时钟 (codex 状态行 "Working (Ns · esc to interrupt)" 的 elapsed 来源)
+        self._turn_started = 0.0
+        self._last_streamed_ts = 0.0  # 流式最后更新时间, 驱动 idle 检测
 
-        # 模式
-        self._mode = "standard"
+        # 模式: 标准五模式 ID (set_mode 统一解析; standard 别名 → collaboration)
+        self._mode = "collaboration"
         self._plan_mode = False
         self._permission_mode = "default"
         self._no_key = False
@@ -598,10 +702,12 @@ class QxtTUI:
         self._model_label = os.environ.get("TUAN_MODEL_LABEL", "")
         self._tools: List[str] = []
 
-        # 启动引导 (loading) 状态: 内核后台构建期间显示内嵌加载屏,
-        # 就绪后切到对话界面。同一 Application / 事件循环, 杜绝双屏切换崩溃。
-        self._booting = True
-        self._boot_progress = 0
+        # 启动引导 (loading) 状态: 旧实现用粒子徽记加载屏 (与 Codex 脱节), 已删除。
+        # 现在启动即渲染对话界面 (会话头 + 空输入区, 对齐 codex startup_draft),
+        # 内核在后台构建, 就绪后 set_ready 填充会话头。_boot_error 仅在启动失败时
+        # 显示简短错误行。同一 Application / 事件循环, 杜绝双屏切换崩溃。
+        self._booting = False
+        self._boot_progress = 100
         self._boot_status = t("tui.boot_starting")
         self._boot_error: Optional[str] = None
         self._agent: Any = None
@@ -630,6 +736,11 @@ class QxtTUI:
         self._stream_buf = ""
         self._streaming = False
         self._streamed = False
+        # 复制文本: 记录最后助手回复全文 / 最后用户输入 (F6 / Ctrl+Shift+C 复制)。
+        self._last_assistant_text = ""
+        self._last_user_text = ""
+        self._toast = ""          # 状态行临时提示 (复制成功等), 2 秒后消失
+        self._toast_until = 0.0
         self._running: List[str] = []
         self._tool_start_times: dict = {}
         # 抑制月亮: 流式收尾到回合真正结束之间, 不渲染"刚答完还转月亮"的鬼影。
@@ -641,6 +752,17 @@ class QxtTUI:
         self._reason_full = ""                # 本轮累计思考全文
         self._audit_visible = False           # Ctrl+O 折叠面板开关
         self._audit_log: List[Tuple[str, str]] = []  # (cls, text) 审计行
+
+        # Kimi 移植面板状态 (Ctrl+R 会话选择器 / Ctrl+T 任务浏览器 / F2 MCP):
+        # 必须在此初始化, 否则 `_handle_enter`/键位路由在面板未打开时访问
+        # `self._sp_panel` 会抛 AttributeError (测试在无 app 下直接调 _handle_enter)。
+        self._sp_panel: Optional[Dict[str, Any]] = None    # 会话选择器面板
+        self._tb_panel: Optional[Dict[str, Any]] = None    # 任务浏览器面板
+        self._mcp_visible = False                          # MCP 状态面板开关
+        self._mcp_servers: List[Any] = []                  # MCP 服务器缓存
+        # Codex 同款 "?" 快捷键帮助浮层 (bottom_pane/shortcut_overlay.rs):
+        # 空输入时按 "?" 打开三栏 Compose/Session/Transcript, "?" / esc 关闭。
+        self._help_open = False
 
         # Diff 实时面板 (对标 Claude Code 的 /diff 并排实时面板): Ctrl+D 开合。
         # 面板在渲染时同步取一次工作区 diff, 但按 _diff_fetched_at 节流 (默认 1.5s),
@@ -676,8 +798,11 @@ class QxtTUI:
             show_cursor=False,
         )
         self._footer_control = FormattedTextControl(self._render_footer)
+        # Codex CLI 风格输入区: 无边框, 左 "›" 前缀 (bold primary, 2 列),
+        # 空输入时显示 dim 灰 placeholder "Ask Codex to do anything"。
+        # prompt_toolkit 3.0.53 无 placeholder 参数, 用 _PlaceholderProcessor 注入。
         self._input = TextArea(
-            prompt=FormattedText([("class:primary", "> ")]),
+            prompt=FormattedText([("class:primary", "› ")]),
             multiline=False,
             # 单行输入必须横向滚动: 若 wrap_lines=True 且 height=1, 中文/宽字符贴到
             # 右边界触发裁剪式软换行 → 最后列宽核算错一位, 高亮重绘(思考动画)把错位
@@ -686,6 +811,8 @@ class QxtTUI:
             scrollbar=False,
             height=1,
             history=InMemoryHistory(),
+            # 空输入时显示 Codex 同款 placeholder "Ask Codex to do anything"。
+            input_processors=[_PlaceholderProcessor()],
             # "/" 命令面板由 QxtTUI 自绘 (见 _render_slash_menu): 输入 "/" 即弹出,
             # ↑↓ 选择 · Enter/Tab 确认 · Esc 关闭。不走 prompt_toolkit 补全器 ——
             # 其下拉菜单位于输入框下方, 而本布局输入框贴屏幕底部, 菜单会被裁掉。
@@ -698,30 +825,10 @@ class QxtTUI:
         except Exception:  # noqa: BLE001 - 测试桩/旧版 pt 无该事件时静默降级
             pass
 
-        # 输入框: 单行细边框 (可见性优先)。裸 TextArea 在深色终端 conpty 下
-        # 无边框无背景, 观感"输入框消失"; 恢复三层 ╭─╮ 细边框保证任何终端可见,
-        # 内部 prompt 仍是 Kimi 同款 "> "。
-        _b = "class:border"
-        input_top = VSplit([
-            Window(width=1, char="╭", style=_b, height=1),
-            Window(char="─", style=_b, height=1),
-            Window(width=1, char="╮", style=_b, height=1),
-        ])
-        input_mid = VSplit([
-            Window(width=1, char="│", style=_b),
-            self._input,
-            Window(width=1, char="│", style=_b),
-        ])
-        input_bottom = VSplit([
-            Window(width=1, char="╰", style=_b, height=1),
-            Window(char="─", style=_b, height=1),
-            Window(width=1, char="╯", style=_b, height=1),
-        ])
-        input_frame = HSplit([
-            input_top,
-            input_mid,
-            input_bottom,
-        ])
+        # 输入区: Codex 风格无边框 (仅 "› " 前缀 + 底部状态条), 直接占满底部。
+        # 移除早期三层 ╭─╮ 细边框 —— Codex 输入区与消息区之间无绘制边框,
+        # 仅靠 "›" 前缀与 placeholder 区分, 与开源 codex-rs/tui 视觉一致。
+        self._input_frame = self._input
 
         # 对话区占满剩余空间: 自绘虚拟视口 (自己切片内容 + 自己算滚动), 不用
         # ScrollablePane (后者在 Windows/conpty 下碎滚动) 也不用伪造光标定位。
@@ -732,14 +839,20 @@ class QxtTUI:
             height=Dimension(min=1, weight=1),
         )
         conversation = self._log_window
-        # 审计面板 (kimi 折叠思考): 默认隐藏, Ctrl+O 展开; 展开约占 45% 高度
+        # 审计面板 (kimi 折叠思考): 默认隐藏, Ctrl+O 展开; 展开约占 45% 高度。
+        # 复用同一区域显示 Kimi 移植面板 (Ctrl+R 会话 / Ctrl+T 任务 / F2 MCP)。
         self._audit_control = FormattedTextControl(self._render_audit)
         audit_wrap = ConditionalContainer(
             HSplit([
                 Window(char="─" * 1, height=1, style="class:border"),
                 Window(self._audit_control, wrap_lines=True, height=Dimension(min=3, weight=2)),
             ]),
-            filter=to_filter(self._audit_visible),
+            filter=Condition(lambda: (
+                self._audit_visible
+                or bool(getattr(self, "_sp_panel", None))
+                or bool(getattr(self, "_tb_panel", None))
+                or bool(getattr(self, "_mcp_visible", False))
+            )),
         )
         # 就绪前 (booting / 启动失败) 隐藏输入框与底栏: 加载屏只显示盒子+进度条,
         # 避免"输入框空悬 + 底栏信息残缺"的杂乱观感; boot→ready 切换时强制
@@ -760,10 +873,25 @@ class QxtTUI:
             ),
             filter=Condition(lambda: self._slash_open and bool(self._slash_items)),
         )
+        # Codex 同款 "?" 快捷键帮助浮层: 覆盖输入区上方, 三栏 Compose/Session/
+        # Transcript + 底部 "/keymap customize" 提示 (对齐 shortcut_overlay.rs)。
+        self._help_control = FormattedTextControl(
+            self._render_help_overlay, show_cursor=False, focusable=False,
+        )
+        help_overlay = ConditionalContainer(
+            Window(
+                self._help_control,
+                height=self._help_overlay_rows,
+                style="class:slashbg",
+                wrap_lines=False,
+            ),
+            filter=Condition(lambda: self._help_open),
+        )
         bottom = ConditionalContainer(
             HSplit([
+                help_overlay,
                 slash_menu,
-                input_frame,
+                self._input_frame,
                 Window(self._footer_control, height=1),
             ]),
             filter=_ready,
@@ -860,6 +988,32 @@ class QxtTUI:
         self._closed = True
         event.app.exit()
 
+    def _set_clipboard(self, event: Any, text: str, label: str) -> None:
+        """写系统剪贴板并给用户一条可感知的状态提示。
+
+        prompt_toolkit 的 ``app.clipboard.set_text`` 在 Windows 上经
+        ``WindowsClipboard`` 走 win32 剪贴板; 在无剪贴板的伪终端/测试环境,
+        ``InMemoryClipboard`` 兜底, 状态提示会标注已复制而非报错。
+        """
+        text = text.rstrip("\n")
+        if not text:
+            return
+        try:
+            event.app.clipboard.set_text(text)
+            # 状态行提示: 临时写入 _status_toast, 由 _status_hud 优先展示
+            self._toast = f"已复制{label} ({len(text)} 字符)"
+            self._toast_until = time.monotonic() + 2.0
+        except Exception as exc:  # noqa: BLE001
+            self._toast = f"复制失败: {exc}"
+            self._toast_until = time.monotonic() + 2.0
+        event.app.invalidate()
+
+    def _copy_last_answer(self, event: Any) -> None:
+        self._set_clipboard(event, self._last_assistant_text, "助手回复")
+
+    def _copy_last_user(self, event: Any) -> None:
+        self._set_clipboard(event, self._last_user_text, "输入")
+
     def _build_keys(self) -> "KeyBindings":
         kb = KeyBindings()
 
@@ -878,6 +1032,35 @@ class QxtTUI:
         @kb.add("c-o")
         def _(event: Any) -> None:
             self.toggle_audit()
+
+        # ---- 命令面板 (OpenCode ctrl+p): 打开 "/" 命令面板 ----
+        # OpenCode 用 ctrl+p 唤起命令面板; 我们复用 Claude Code 同款 "/" 面板,
+        # ctrl+p 等价于在输入框预填 "/" 并弹出面板 (空前缀列出全部命令)。
+        @kb.add("c-p")
+        def _(event: Any) -> None:
+            if self._booting or self._boot_error or self._trust_pending:
+                return
+            # 打开 "/" 面板: 若输入框为空则预填 "/", 否则保持原文本触发过滤
+            try:
+                if not self._input.text:
+                    self._input.text = "/"
+                self._slash_open = True
+                self._on_input_changed()
+                event.app.invalidate()
+            except Exception:  # noqa: BLE001 - 输入框未就绪 (极早期启动)
+                pass
+
+        # ---- 复制文本 (不能复制很难受) ----
+        # F6: 复制最后一条助手回复到系统剪贴板; F7: 复制最后一条用户输入。
+        # prompt_toolkit 的剪贴板是 Application 级, 用 app.clipboard.set_text
+        # 写系统剪贴板 (Windows 下自动走 win32/msvcrt)。
+        @kb.add("f6")
+        def _(event: Any) -> None:
+            self._copy_last_answer(event)
+
+        @kb.add("f7")
+        def _(event: Any) -> None:
+            self._copy_last_user(event)
 
         # ---- 对话区回卷 (Claude Code 同款): 整屏翻页 / 逐行 / 到顶到底 ----
         # (不用 Ctrl+U/Ctrl+D: 会被输入框的编辑键抢占, 见 TextArea buffer 绑定)
@@ -938,6 +1121,12 @@ class QxtTUI:
             data = getattr(event, "data", None)
             etype = getattr(data, "event_type", None)
             name = getattr(etype, "name", "") or str(etype)
+            # Shift 修饰: 交回终端/默认绑定 —— 让 Shift+拖选走**终端原生复制**,
+            # Shift+滚轮走终端原生滚动。prompt_toolkit 已把 VT100/SGR 序列里的
+            # modifier (Shift) 解析进 data.modifiers (见 mouse_events.MouseEvent)。
+            modifiers = getattr(data, "modifiers", frozenset()) or frozenset()
+            if any(getattr(m, "name", "") == "SHIFT" for m in modifiers):
+                return  # 不消费
             if name == "SCROLL_UP":
                 self._mouse_wheel(event, up=True)
                 return
@@ -968,6 +1157,12 @@ class QxtTUI:
 
         @kb.add("down")
         def _(event: Any) -> None:
+            if self._sp_panel:
+                self._sp_move(1)
+                return
+            if self._tb_panel:
+                self._tb_move(1)
+                return
             if self._ask_pending:
                 self._ask_move(1)
                 event.app.invalidate()
@@ -990,6 +1185,12 @@ class QxtTUI:
 
         @kb.add("up")
         def _(event: Any) -> None:
+            if self._sp_panel:
+                self._sp_move(-1)
+                return
+            if self._tb_panel:
+                self._tb_move(-1)
+                return
             if self._ask_pending:
                 self._ask_move(-1)
                 event.app.invalidate()
@@ -1015,13 +1216,93 @@ class QxtTUI:
             self.toggle_diff()
             event.app.invalidate()
 
+        # ---- Kimi 移植: Ctrl+R 会话选择器 / Ctrl+T 后台任务浏览器 / F2 MCP 状态 ----
+        @kb.add("c-r")
+        def _(event: Any) -> None:
+            """Ctrl+R: 打开会话选择器 (Kimi Code 同款, 浏览/恢复会话)。"""
+            if not self._session_picker_open():
+                self._open_session_picker()
+            event.app.invalidate()
+
+        @kb.add("c-t")
+        def _(event: Any) -> None:
+            """Ctrl+T: 打开后台任务浏览器 (Kimi Code 同款, 查看/停止任务)。"""
+            if not self._task_browser_open():
+                self._open_task_browser()
+            event.app.invalidate()
+
+        @kb.add("f2")
+        def _(event: Any) -> None:
+            """F2: 开合 MCP 服务器状态面板。
+
+            注意: prompt_toolkit 中 ``Keys.Enter == Keys.ControlM`` (都是 ``c-m``),
+            而 codex (crossterm) 里 Enter 与 Ctrl+M 是不同键。若绑定 ``c-m``,
+            合并注册表 ``matches[-1]`` 会选中最后注册的 ``c-m``, 导致回车被
+            MCP 面板开关劫持、提交/信任确认卡死。因此改用 F2 (codex 无该键位,
+            且与现有绑定无冲突)。
+            """
+            self.toggle_mcp_status()
+            event.app.invalidate()
+
+        # ---- 面板内单键: 会话选择器 Ctrl+A 切范围 / 任务浏览器 A 切过滤、X 停止 ----
+        @kb.add("c-a")
+        def _(event: Any) -> None:
+            if self._sp_panel:
+                self._sp_toggle_scope()
+                return
+            # 面板关闭: 交还默认 (Ctrl+A = 光标到行首), 避免输入框编辑行为被吞
+            b = event.current_buffer
+            b.beginning_of_line()
+
+        @kb.add("a")
+        def _(event: Any) -> None:
+            if self._tb_panel:
+                self._tb_toggle_filter()
+                return
+
+        @kb.add("x")
+        def _(event: Any) -> None:
+            if self._tb_panel:
+                self._tb_stop()
+                return
+
         @kb.add("escape")
         def _(event: Any) -> None:
-            # Esc: 关闭 "/" 命令面板 (未展开时不消费按键, 不影响信任/确认等其它流程)
+            # Esc 逐层关闭: 面板 > 审计 > diff > "/" 命令面板
+            if self._sp_panel:
+                self._close_session_picker()
+                event.app.invalidate()
+                return
+            if self._tb_panel:
+                self._close_task_browser()
+                event.app.invalidate()
+                return
+            if getattr(self, "_mcp_visible", False):
+                self.toggle_mcp_status()
+                event.app.invalidate()
+                return
             if self._slash_open:
                 self._close_slash_menu()
                 event.app.invalidate()
                 return
+            if self._help_open:
+                self._toggle_help()
+                event.app.invalidate()
+                return
+
+        # Codex 同款 "?": 空输入时开合快捷键帮助浮层 (shortcut_overlay.rs)。
+        # 只在输入框为空且非 busy/streaming/面板态时响应 —— "?" 本身仍是可输入字符,
+        # 不能劫持用户正想打问号的消息。
+        @kb.add("?")
+        def _(event: Any) -> None:
+            if (self._help_open
+                    or (not self._busy and not self._streaming
+                        and not self._slash_open and not self._commands
+                        and not self._sp_panel and not self._tb_panel
+                        and not self._mcp_visible
+                        and not self._input.text.strip())):
+                self._toggle_help()
+                event.app.invalidate()
 
         return kb
 
@@ -1211,6 +1492,228 @@ class QxtTUI:
             out.append(row(cls, seg))
         return out
 
+    # ============================================================ Kimi 移植模块
+    # 会话选择器 (Ctrl+R) / 后台任务浏览器 (Ctrl+T) / MCP 状态面板 (F2)。
+    # 数据与渲染逻辑在 tuan_cli/tui/kimi_modules.py (直接移植自 Kimi Code
+    # ui/shell/{session_picker,task_browser,mcp_status}.py 并适配 tuan_cli 后端),
+    # 这里只负责: 状态持有、键位派发、与主布局 (对话区+底栏) 的渲染合流。
+
+    def _session_picker_open(self) -> bool:
+        """会话选择器是否正在展开。"""
+        return bool(getattr(self, "_sp_panel", None))
+
+    def _task_browser_open(self) -> bool:
+        """任务浏览器是否正在展开。"""
+        return bool(getattr(self, "_tb_panel", None))
+
+    def _open_session_picker(self) -> None:
+        """Ctrl+R: 打开会话选择器面板 (Kimi 同款: ↑↓ 选会话, Ctrl+A 切范围, Enter 恢复)。
+
+        面板渲染在对话区底部 (输入框上方), 与 slash 菜单 / 信任卡片同层。
+        选择后调用 `_resume_session(session_id)` (由 cmd_chat 通过 on_command 路由)。
+        """
+        try:
+            from .kimi_modules import (
+                SessionEntry, SessionPickerModel, collect_sessions,
+                format_session_choice, _EMPTY_SESSION_ID,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._audit_log.append(("class:error", f"[Kimi 会话选择器] 加载失败: {exc}"))
+            if self._app and self._app.is_running:
+                self._app.invalidate()
+            return
+        sessions = collect_sessions()
+        model = SessionPickerModel(sessions)
+        model.current_dir = getattr(self, "workspace", os.getcwd())
+        model.refresh()
+        self._sp_panel = {
+            "model": model,
+            "rows": [],
+            "open": True,
+        }
+        self._render_sp_rows()
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def _render_sp_rows(self) -> None:
+        """构建会话选择器面板的富文本行 (style, text)。"""
+        from .kimi_modules import format_session_choice, _EMPTY_SESSION_ID
+        model = self._sp_panel["model"]
+        rows: List[Tuple[str, str]] = []
+        rows.append(("class:primary", " 会话选择器"))
+        rows.append(("class:textdim",
+                     f"  范围: {'全部目录' if model.scope == 'all' else '当前目录'} · "
+                     f"↑↓选择 · Enter恢复 · Ctrl+A切范围 · Esc关闭"))
+        if not model.filtered:
+            rows.append(("class:textdim", "  (无会话; Ctrl+A 切换范围查看全部)"))
+        for i, s in enumerate(model.filtered):
+            mark = "▶" if i == model.selected_index else " "
+            cls = "class:primary" if i == model.selected_index else "class:text"
+            rows.append((cls, f" {mark} {format_session_choice(s)}"))
+        self._sp_panel["rows"] = rows
+
+    def _sp_move(self, delta: int) -> None:
+        model = self._sp_panel["model"]
+        model.move(delta)
+        self._render_sp_rows()
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def _sp_toggle_scope(self) -> None:
+        model = self._sp_panel["model"]
+        model.toggle_scope()
+        self._render_sp_rows()
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def _sp_accept(self) -> bool:
+        """确认选中会话; 返回是否消费了按键 (有选中项才算)。"""
+        model = self._sp_panel["model"]
+        sel = model.selected
+        if sel is None:
+            return False
+        self._close_session_picker()
+        self.append_log(f"[会话] 恢复 {sel.session_id} ({sel.work_dir})")
+        self.audit("info", f"会话选择: {sel.session_id}")
+        # 交给命令路由 (cmd_chat.command_in_tui 的 /session resume 语义)
+        try:
+            if self.on_command:
+                self.on_command(f"/session resume {sel.session_id}")
+        except Exception as exc:  # noqa: BLE001
+            self.append_log(f"[会话] 恢复失败: {exc}")
+        return True
+
+    def _close_session_picker(self) -> None:
+        self._sp_panel = None
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    # ---- 任务浏览器 ----
+
+    def _open_task_browser(self) -> None:
+        """Ctrl+T: 打开后台任务浏览器 (Kimi 同款: ↑↓ 选任务, A 切过滤, Enter 看输出, X 停止)。"""
+        try:
+            from .kimi_modules import TaskBrowserModel, collect_tasks
+        except Exception as exc:  # noqa: BLE001
+            self._audit_log.append(("class:error", f"[Kimi 任务浏览器] 加载失败: {exc}"))
+            if self._app and self._app.is_running:
+                self._app.invalidate()
+            return
+        tasks = collect_tasks()
+        model = TaskBrowserModel(tasks)
+        self._tb_panel = {"model": model, "rows": [], "open": True}
+        self._render_tb_rows()
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def _render_tb_rows(self) -> None:
+        from .kimi_modules import format_task_choice
+        model = self._tb_panel["model"]
+        rows: List[Tuple[str, str]] = []
+        rows.append(("class:primary", " 后台任务"))
+        rows.append(("class:textdim",
+                     f"  过滤: {'进行中' if model.filter_mode == 'active' else '全部'} · "
+                     f"↑↓选择 · A切过滤 · X停止 · Esc关闭"))
+        msg = model.message_live()
+        if msg:
+            rows.append(("class:warning", f"  {msg}"))
+        if not model.filtered:
+            rows.append(("class:textdim", "  (无后台任务)"))
+        for i, v in enumerate(model.filtered):
+            mark = "▶" if i == model.selected_index else " "
+            cls = "class:primary" if i == model.selected_index else "class:text"
+            rows.append((cls, f" {mark} {format_task_choice(v)}"))
+        self._tb_panel["rows"] = rows
+
+    def _tb_move(self, delta: int) -> None:
+        model = self._tb_panel["model"]
+        model.move(delta)
+        self._render_tb_rows()
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def _tb_toggle_filter(self) -> None:
+        model = self._tb_panel["model"]
+        model.toggle_filter()
+        self._render_tb_rows()
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def _tb_stop(self) -> bool:
+        """停止选中的后台任务 (Kimi 同款 X); 返回是否消费按键。"""
+        model = self._tb_panel["model"]
+        sel = model.selected
+        if sel is None:
+            return False
+        try:
+            from ..core.background_store import kill_process_tree
+            if sel.pid:
+                kill_process_tree(sel.pid)
+                model.flash_message(f"已发送停止信号给 {sel.task_id}")
+            else:
+                model.flash_message(f"任务 {sel.task_id} 无运行进程")
+        except Exception as exc:  # noqa: BLE001
+            model.flash_message(f"停止失败: {exc}")
+        # 刷新任务列表
+        try:
+            from .kimi_modules import collect_tasks
+            model.all_tasks = collect_tasks()
+        except Exception:  # noqa: BLE001
+            pass
+        model.refresh()
+        self._render_tb_rows()
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+        return True
+
+    def _tb_accept(self) -> bool:
+        """查看选中任务输出; 返回是否消费按键。"""
+        model = self._tb_panel["model"]
+        sel = model.selected
+        if sel is None:
+            return False
+        self._close_task_browser()
+        self.append_log(f"[任务] {sel.task_id} · {sel.status} · 输出:\n{sel.result or '(无输出)'}")
+        self.audit("info", f"任务浏览: {sel.task_id} [{sel.status}]")
+        return True
+
+    def _close_task_browser(self) -> None:
+        self._tb_panel = None
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    # ---- MCP 状态面板 ----
+
+    def toggle_mcp_status(self) -> None:
+        """F2: 开合 MCP 服务器状态面板。"""
+        self._mcp_visible = not getattr(self, "_mcp_visible", False)
+        if self._mcp_visible:
+            try:
+                from .kimi_modules import collect_mcp_servers
+                self._mcp_servers = collect_mcp_servers()
+            except Exception:  # noqa: BLE001
+                self._mcp_servers = []
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def _render_mcp_panel(self) -> Any:
+        """MCP 状态面板渲染 (对话区上方 / 复用 audit 面板区域)。"""
+        if not getattr(self, "_mcp_visible", False):
+            return []
+        try:
+            from .kimi_modules import render_mcp_panel
+            servers = getattr(self, "_mcp_servers", [])
+            rows = render_mcp_panel(servers)
+        except Exception:  # noqa: BLE001
+            rows = [("class:textdim", "  MCP 状态不可用")]
+        out: List[Tuple[str, str]] = [("class:primary", " MCP 服务器状态")]
+        for cls, seg in rows:
+            out.append(("", "\n"))
+            out.append((cls, seg))
+        out.append(("", "\n"))
+        out.append(("class:textdim", "  Esc 关闭"))
+        return out
+
     # ---- 对话区滚动 (自定义光标定位, Windows/conpty 下可靠) ----
 
     def _page_rows(self) -> int:
@@ -1324,16 +1827,29 @@ class QxtTUI:
         与 prompt_toolkit 的换行规则对齐: 按显示宽度断行; 空行/零宽占 1 行。
         视口偏移与切片都按**终端行**计量, 避免长消息 (无换行大段) 使逻辑行与
         终端行错位 → 中间内容永远够不到。
+
+        性能: 历史 screen 由 `_build_history_screen` 缓存复用, 其行文本在流式期间
+        不变。这里按 ``(width, text)`` 缓存高度, 命中即返回, 避免每帧对全部历史
+        逐行 join + ``wcswidth`` (2000+ 行历史每帧数万次 C 调用)。
         """
         width = self._log_width()
+        cache = self._height_cache
         heights: List[int] = []
         for line in lines:
             text = "".join(seg for _, seg in line)
             if not text:
                 heights.append(1)
                 continue
-            disp = _display_width(text)
-            heights.append(max(1, math.ceil(disp / width)))
+            key = (width, text)
+            h = cache.get(key)
+            if h is None:
+                disp = _display_width(text)
+                h = max(1, math.ceil(disp / width))
+                # 有界缓存: 超限清空 (键是 (width,text), 内存占用与历史量级相当)
+                if len(cache) > 20000:
+                    cache.clear()
+                cache[key] = h
+            heights.append(h)
         return heights
 
     def _line_starts(self, heights: List[int]) -> List[int]:
@@ -1437,7 +1953,17 @@ class QxtTUI:
         面板是 `wrap_lines=True`, 正文长文本会软换行 (正常)。但标题与
         "Ctrl+O 收起" 提示拼在同一行, i18n 变长 (德/俄语) 或窄终端下会超宽,
         这里按显示宽度裁剪以免首行被折成两行、标题与正文错位。
+
+        复用同一区域承载 Kimi 移植面板 (Ctrl+R 会话 / Ctrl+T 任务 / F2 MCP):
+        它们打开时优先渲染, 否则回落审计内容。
         """
+        # ---- Kimi 面板优先级最高 (会话选择器 > 任务浏览器 > MCP) ----
+        if getattr(self, "_sp_panel", None):
+            return self._sp_panel.get("rows", [])
+        if getattr(self, "_tb_panel", None):
+            return self._tb_panel.get("rows", [])
+        if getattr(self, "_mcp_visible", False):
+            return self._render_mcp_panel()
         width = max(8, self._log_width())
         head = self._clip_dw(t("tui.audit_title"), width)
         if not self._audit_visible:
@@ -1867,6 +2393,179 @@ class QxtTUI:
                 out.append(("", "\n"))
         return out
 
+    # ============================================================ "?" 快捷键帮助浮层
+    # 移植自 codex-rs/tui/src/bottom_pane/shortcut_overlay.rs: 标题 "Keyboard shortcuts",
+    # 三栏 Compose / Session / Transcript (open first), 底部 "/keymap customize" 提示,
+    # 关闭提示 "? / esc close"。快捷键标签按 Windows 平台规范 (ctrl+t / pgup / pgdn / enter)。
+
+    _HELP_GROUPS: List[Tuple[str, List[Tuple[str, str]]]] = [
+        ("Compose", [
+            ("/", "Commands"),
+            ("@", "Mention files"),
+            ("!", "Shell command"),
+            ("shift+enter", "New line"),
+            ("ctrl+v", "Paste image"),
+            ("ctrl+g", "External editor"),
+            ("ctrl+r", "Search history"),
+            ("esc", "Edit last message"),
+        ]),
+        ("Session", [
+            ("tab", "Send message"),
+            ("alt+shift+tab", "Change mode"),
+            ("alt+,", "Less reasoning"),
+            ("alt+.", "More reasoning"),
+            ("alt+left / alt+right", "Subagents (empty prompt)"),
+            ("f4", "Inspect activity"),
+            ("ctrl+c", "Quit"),
+        ]),
+        ("Transcript (open first)", [
+            ("ctrl+t", "Open transcript"),
+            ("f3", "Find text"),
+            ("pgup / pgdn", "Scroll"),
+            ("ctrl+space", "Start selection"),
+            ("ctrl+home / ctrl+end", "Top / latest"),
+            ("alt+shift+, / alt+shift+.", "Top / latest"),
+        ]),
+    ]
+
+    def _help_overlay_rows(self) -> int:
+        """快捷键浮层高度 (布局期 callable 求值): 内容行数 + 空行 + 底部提示行。"""
+        rows = 1 + len(self._HELP_GROUPS[0][1])  # 标题 + 最长组 (Compose)
+        return max(1, rows + 3)  # 标题/空行 + 尾部空行 + close 提示
+
+    def _render_help_overlay(self) -> Any:
+        """Codex 同款 "Keyboard shortcuts" 三栏帮助浮层。
+
+        复刻 shortcut_help.rs 的 group_lines 布局: 宽度够就三栏并排, 不够
+        两栏 (Session+Transcript 同栏), 再不够单栏堆叠。键名 accent 蓝加粗,
+        动作普通文字; key 列左对齐, 动作缩进 key_width + 2 列; 栏间 4 列 gap。
+        整行按累积显示宽度裁剪, 防止窄屏下溢出。
+        """
+        width = self._term_width()
+
+        # 每个 group 先转成 ["标题行", (key, action)...] 的 (style, text) 列表。
+        # 保留原始 key/action (无 "  " 前缀), 前缀在渲染时按栏宽精确补齐。
+        group_cols: List[List[List[Tuple[str, str]]]] = []
+        for gtitle, entries in self._HELP_GROUPS:
+            col: List[List[Tuple[str, str]]] = [
+                [("class:textstrong", gtitle)]
+            ]
+            for key, action in entries:
+                col.append([
+                    ("class:primary", key),
+                    ("class:textdim", action),
+                ])
+            group_cols.append(col)
+
+        def _col_width(col: List[List[Tuple[str, str]]]) -> int:
+            """一栏的渲染宽度 = max(标题宽, max(key_w + 2 + action_w))。"""
+            title_w = _disp_width(col[0][0][1])
+            body = max(
+                (_disp_width(r[0][1]) + 2 + _disp_width(r[1][1]) for r in col[1:]),
+                default=0,
+            )
+            return max(title_w, body)
+
+        def _render_col(
+            col: List[List[Tuple[str, str]]], col_w: int,
+        ) -> List[List[Tuple[str, str]]]:
+            """把一栏渲染成 (style, text) 行; key 列左对齐, 标题不缩进。"""
+            key_w = max(
+                (_disp_width(r[0][1]) for r in col[1:]), default=0,
+            )
+            out: List[List[Tuple[str, str]]] = []
+            for r_i, row in enumerate(col):
+                if len(row) == 1:  # 标题行
+                    out.append([(row[0][0], row[0][1])])
+                else:
+                    pad = " " * (key_w - _disp_width(row[0][1]) + 2)
+                    out.append([
+                        (row[0][0], row[0][1]),
+                        (row[1][0], pad + row[1][1]),
+                    ])
+            return out
+
+        gap = 4
+        widths = [_col_width(c) for c in group_cols]
+
+        # 选择布局: 三栏 / 两栏 (Session+Transcript 同栏) / 单栏堆叠。
+        if sum(widths) + gap * 2 <= width:
+            layout_cols = group_cols
+            layout_widths = widths
+            # 每栏渲染后按本栏宽补齐 (栏间加 gap)。
+            max_rows = max(len(c) for c in layout_cols)
+            rows: List[List[Tuple[str, str]]] = []
+            for r_i in range(max_rows):
+                row: List[Tuple[str, str]] = []
+                for ci, col in enumerate(layout_cols):
+                    rendered = _render_col(col, layout_widths[ci])
+                    if r_i < len(rendered):
+                        row.extend(rendered[r_i])
+                    if ci < len(layout_cols) - 1:
+                        row.append(("", " " * gap))
+                rows.append(row)
+        else:
+            # 两栏: 左 Compose, 右 Session + 空行 + Transcript。
+            right: List[List[Tuple[str, str]]] = (
+                list(group_cols[1]) + [[("", "")]] + list(group_cols[2])
+            )
+            two = [group_cols[0], right]
+            two_w = [
+                max(widths[0], 0),
+                max(widths[1], widths[2]),
+            ]
+            max_rows = max(len(two[0]), len(two[1]))
+            rows = []
+            for r_i in range(max_rows):
+                row = []
+                for ci, col in enumerate(two):
+                    rendered = _render_col(col, two_w[ci])
+                    if r_i < len(rendered):
+                        row.extend(rendered[r_i])
+                    if ci < len(two) - 1:
+                        row.append(("", " " * gap))
+                rows.append(row)
+
+        # 组装最终输出: 标题 + 空行 + 栏行 + 尾部空行 + "/keymap customize" + 空行 + close。
+        out_lines: List[List[Tuple[str, str]]] = [
+            [("class:textstrong", "  Keyboard shortcuts")],
+            [("", "")],
+        ]
+        out_lines.extend(rows)
+        out_lines.append([("", "")])
+        out_lines.append([
+            ("class:primary", "  /keymap"),
+            ("class:textdim", " customize"),
+        ])
+        out_lines.append([("", "")])
+        out_lines.append([("class:textdim", "  ? / esc close")])
+
+        # 扁平化为 FormattedTextControl 的 fragments, 每行按宽度裁剪。
+        out: List[Tuple[str, str]] = []
+        for r_i, row in enumerate(out_lines):
+            # 整行累积宽度裁剪, 防止某栏超宽撑破全屏。
+            used = 0
+            for cls, seg in row:
+                if not seg:
+                    continue
+                w = _disp_width(seg)
+                if used + w > width:
+                    seg = self._clip_dw(seg, max(0, width - used))
+                out.append((cls, seg))
+                used += _disp_width(seg)
+            if r_i < len(out_lines) - 1:
+                out.append(("", "\n"))
+        return out
+
+    def _toggle_help(self) -> None:
+        """开合 "?" 快捷键帮助浮层。"""
+        self._help_open = not self._help_open
+        if self._app and self._app.is_running:
+            try:
+                self._app.invalidate()
+            except Exception:  # noqa: BLE001
+                pass
+
     def _clip_parts(self, parts: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
         """按终端显示宽度裁剪一行分段 (防文字溢出顶破全屏布局)。
 
@@ -1891,6 +2590,32 @@ class QxtTUI:
             break
         return out
 
+    def _clip_parts_upto(
+        self, parts: List[Tuple[str, str]], budget: int,
+    ) -> List[Tuple[str, str]]:
+        """按**指定列预算**裁剪一行分段 (不依赖终端全宽)。
+
+        与 `_clip_parts` 同逻辑, 但预算由调用方给出 —— 底栏两端布局需要给
+        右端 context 提示预留空间, 左端只能占剩余列。
+        """
+        if budget <= 0:
+            return []
+        out: List[Tuple[str, str]] = []
+        used = 0
+        for cls, seg in parts:
+            if not seg:
+                continue
+            w = _disp_width(seg)
+            if used + w <= budget:
+                out.append((cls, seg))
+                used += w
+                continue
+            room = budget - used
+            if room > 0:
+                out.append((cls, self._clip_dw(seg, room)))
+            break
+        return out
+
     def _handle_enter(self, event: Any) -> None:
         # 模型提问态优先级最高: 模型在等用户拍板, 输入框此刻就是选项答复通道
         # (↑↓ 已由键位路由到 _ask_move; Enter 取高亮项 / 编号 / 自由文本)。
@@ -1900,20 +2625,29 @@ class QxtTUI:
             self._input.buffer.reset()
             event.app.invalidate()
             return
+        # Kimi 面板确认: 会话选择器 Enter=恢复, 任务浏览器 Enter=看输出
+        if self._sp_panel:
+            self._sp_accept()
+            event.app.invalidate()
+            return
+        if self._tb_panel:
+            self._tb_accept()
+            event.app.invalidate()
+            return
         # "/" 命令面板展开: Enter 确认高亮项 (填入输入框, 不直接执行 —— 与
         # Claude Code 一致, 填好后可继续输参数或再按回车执行)
         if self._slash_open and self._slash_items:
             self._accept_slash(event)
             return
         text = self._input.text.strip()
-        if not text:
-            return
         # 信任确认态: 优先按 y/n 解析; 若用户直接输入了别的内容, 说明他就是要用这个
         # 工作区 —— 自动记为信任, 并把这句当作正常消息继续往下走。
         # (此前非 y/n 输入只提示"无效"并停在确认态: 用户不按 y/n 就永远进不了对话,
-        #  表现即"TUI 没有输入框 / 输入没反应"。)
+        #  表现即"TUI 没有输入框 / 输入没反应"。
+        #  **必须排在空输入 guard 之前**: 否则空输入按 Enter 会在 `if not text: return`
+        #   处提前退出, 永远到不了这里 —— 默认高亮项 (信任) 无法用回车确认, 信任卡
+        #   就此卡死 (用户"完全进不去")。空回车 = 按当前 ↑↓ 高亮项确认。)
         if self._trust_pending:
-            _ws = (self._trust_pending or {}).get("workspace", "")
             # ① 用户直接输入了明确的 y/n/1/2/是/否/信任/只读 → 按文本解析
             if text and self._resolve_trust(text):
                 self._input.buffer.reset()
@@ -1927,10 +2661,13 @@ class QxtTUI:
             return
         # 命令确认态: 同样只接受 y/n (或确认码)。必须排在 _busy 判断之前 ——
         # 确认期间 _busy=True (防止用户又提交一轮对话), 但输入框此刻正是答复通道。
+        # 空回车按"未答复"处理 (不误放行), 不提前 return —— 交给 _resolve_confirm 判无效。
         if self._confirm_pending:
             self._resolve_confirm(text)
             self._input.buffer.reset()
             event.app.invalidate()
+            return
+        if not text:
             return
         if self._booting or self._boot_error:
             self.append_log(t("tui.booting_wait"))
@@ -1942,6 +2679,7 @@ class QxtTUI:
         self._push_history(text)
         self._input.buffer.reset()
         self._busy = True
+        self._turn_started = time.monotonic()
         self._cancel_requested.clear()
         self._moon_suppressed = False  # 新一轮回合, 思考月亮恢复可用
         # 新一轮: 重置工具折叠缓冲, 并回到自动跟随底部 (让最新回复可见)
@@ -1966,6 +2704,7 @@ class QxtTUI:
             return
 
         self.append_log(f"{USER_MESSAGE_BULLET}{text}")
+        self._last_user_text = text  # 供复制
         threading.Thread(
             target=self._run_submit, args=(text,),
             name="tuan-submit", daemon=True,
@@ -1987,10 +2726,17 @@ class QxtTUI:
         同时把 tuan 根 logger 的终端 handler 替换为 TUI 转发器 (模块级
         _TuiLogHandler): MCP / 内核等模块的 logging 输出不再裸写 stdout
         污染全屏界面, 而是以整齐的错误/警告/普通行进入对话区日志。
+
+        记录原 _ui 供 detach_ui() 恢复 (测试隔离: QxtTUI 构造/就绪会污染
+        全局 _ui_singleton._ui, 测试结束后需还原, 否则后续 CLI 测试的
+        ui.info 会被导向 TUI 日志区而非 stdout)。
         """
         from ..cli import _ui_singleton
         from ..ui.tui_bridge import TuiUI
 
+        # 仅首次 attach 时记录原值, 多次 attach (set_ready 幂等) 不覆盖已存原值
+        if not hasattr(self, "_prev_ui"):
+            self._prev_ui = getattr(_ui_singleton, "_ui", None)
         _ui_singleton._ui = TuiUI(self)
         try:
             import logging as _logging
@@ -2036,6 +2782,134 @@ class QxtTUI:
         except Exception:  # noqa: BLE001
             pass
 
+    def detach_ui(self) -> None:
+        """撤销 attach_ui 的全局副作用, 恢复被替换的 _ui_singleton._ui 与 logger。
+
+        测试隔离用: QxtTUI 在测试中构造/就绪会替换全局 _ui_singleton._ui 为
+        TuiUI, 若未还原, 后续 CLI 测试的 ``ui.info`` 会被导向 TUI 日志区而非
+        stdout (capsys 捕获不到 → out 为空)。detach_ui 把 _ui 恢复为 attach 前的
+        原值, 并移除本实例挂载的 _TuiLogHandler, 保证测试互不污染。
+        """
+        from ..cli import _ui_singleton
+        import logging as _logging
+
+        prev = getattr(self, "_prev_ui", None)
+        if prev is None:
+            _ui_singleton._ui = None
+        else:
+            _ui_singleton._ui = prev
+
+        # 移除本实例的日志转发器 (根 / tuan / tuan_cli), 恢复原传播设置
+        for name in ("", "tuan", "tuan_cli"):
+            lg = _logging.getLogger(name)
+            for h in list(lg.handlers):
+                if isinstance(h, _TuiLogHandler):
+                    lg.removeHandler(h)
+            if name == "tuan_cli":
+                lg.propagate = True
+
+    # ============================================================ Super-Agent 绑定
+    def _bind_superagent(self) -> None:
+        """把 Super-Agent 引擎挂到主 Agent 并把后台任务事件推入对话区。
+
+        融合点: TUI 就绪时即创建/绑定引擎 (与 /superagent 命令的 _get_engine
+        复用同一单例), 让后台自主任务 (Router dispatch / Worker 汇报) 不再
+        只显示为底栏徽标, 而是作为日志行进入对话区, 用户可见可追溯。
+
+        引擎 start() 延迟到 /superagent start 或首次 ingest; 但 listener 立即
+        注册, 保证事件从第一次起就可见。
+        """
+        try:
+            agent = self._agent
+            if agent is None:
+                return
+            eng = getattr(agent, "_superagent", None)
+            if eng is None:
+                from ..superagent import SuperAgent, WorkMode
+                eng = SuperAgent(home="~/.tuan", agent=agent, work_mode=WorkMode.OBSERVE)
+                setattr(agent, "_superagent", eng)
+
+            # 幂等: 避免重复绑定 listener (set_ready 可能被多次调用)。
+            if getattr(eng, "_tui_bound", False):
+                return
+            eng._tui_bound = True
+
+            def _on_sa_event(name: str, payload: Dict[str, Any]) -> None:
+                """Router 事件 → 对话区日志行 (线程安全, 只做 invalidate)。
+
+                OpenCode 风格角色徽章 ``@agent`` 作前缀 (CodeX 主体不变), 让后台
+                自主任务在对话区里与用户/助手消息区分开, 可读性更高。
+                徽章用独立青绿 ``roleagent`` 着色 (经 ``_append_agent_line``),
+                正文沿用语义色 —— 徽章与正文不同色, 一眼可辨。
+                """
+                try:
+                    if name == "dispatch":
+                        title = payload.get("title", "")
+                        wid = payload.get("worker_id", "")
+                        self._append_agent_line(f"后台任务已开单 · {title}",
+                                                cls="class:warning")
+                    elif name == "ticket_update":
+                        report = payload.get("report", {})
+                        status = report.get("status", "")
+                        progress = report.get("progress", "") or \
+                            report.get("result", "") or report.get("error", "")
+                        if status == "done":
+                            # done = 结果已产出, 工单进入「待审阅」面板; 提示用 /superagent panel 验收
+                            self._append_agent_line(
+                                f"任务完成·待审阅 · {progress[:500]}",
+                                cls="class:primary")
+                        elif status == "accepted":
+                            # 用户已验收: REVIEW → DONE (工单动作经 /superagent accept)
+                            self._append_agent_line(
+                                f"已验收 · {progress[:200]}",
+                                cls="class:success")
+                        elif status == "retrying":
+                            self._append_agent_line(
+                                f"已重试 · {progress[:200]}",
+                                cls="class:warning")
+                        elif status == "failed":
+                            self._append_agent_line(f"任务失败 · {progress[:500]}",
+                                                    cls="class:error")
+                        elif status == "needs_input":
+                            # 需要人: 面板里最醒目的交互点 —— 用 @agent 徽章 +
+                            # 明确行动命令, 让用户一眼看到「现在有什么需要我」。
+                            tid = payload.get("ticket_id", "")
+                            self._append_agent_line(
+                                f"需要你回答 · {progress[:300]}",
+                                cls="class:warning")
+                            if tid:
+                                self._append_agent_line(
+                                    f"  回答: /superagent reply {tid} <内容>",
+                                    cls="class:textdim")
+                        elif progress:
+                            self._append_agent_line(f"进展 · {progress[:300]}",
+                                                    cls="class:dim")
+                except Exception:  # noqa: BLE001 - 事件展示绝不阻断引擎
+                    pass
+
+            eng.router.add_listener(_on_sa_event)
+
+            # 投机执行结果 → 对话区 (OpenCode 风格 @agent 徽章, 只展示有价值/失败)。
+            def _on_spec_result(entry: Dict[str, Any]) -> None:
+                try:
+                    st = entry.get("status", "")
+                    title = entry.get("title", "")
+                    if st == "done":
+                        result = entry.get("result", "") or ""
+                        self._append_agent_line(
+                            f"投机执行完成 · {title} · {result[:300]}",
+                            cls="class:textdim")
+                    elif st == "failed":
+                        self._append_agent_line(
+                            f"投机执行失败 · {title}",
+                            cls="class:error")
+                except Exception:  # noqa: BLE001
+                    pass
+
+            eng._on_speculate_result = _on_spec_result
+        except Exception:  # noqa: BLE001 - Super-Agent 绑定失败不阻断 TUI 启动
+            pass
+
     def set_no_key(self, no_key: bool, env: str = "") -> None:
         """刷新"未配置 API Key"横幅状态 (配置密钥后立即清除, 无需重启会话)。"""
         self._no_key = bool(no_key)
@@ -2077,6 +2951,9 @@ class QxtTUI:
         # 接线: 把 _ui_singleton.ui 替换为 TUI 桥接, 使 slash 命令 / 后台线程
         # 的输出进入渲染层 (append_log), 不再直接打 stdout 挤爆全屏界面。
         self.attach_ui()
+        # Super-Agent 引擎绑定: 让 TUI 与 /superagent 命令复用同一引擎,
+        # 并把 Router 的后台任务事件推入对话区 (而不仅是底栏徽标)。
+        self._bind_superagent()
         # 只读提示作为普通日志行展示 (紧凑布局, 不单独占 hint 行)
         self.append_log(hint, cls="class:textdim")
         # 滚动键提示: 让用户知道可以回看历史 (否则长会话"无法回溯"的反馈会归因于产品)
@@ -2172,134 +3049,20 @@ class QxtTUI:
         except Exception:
             return 80
 
-    def _kimi_box(self, title: str, subtitle: str,
-                   info_pairs: List[Tuple[str, str]]) -> List[List[Tuple[str, str]]]:
-        """欢迎盒: 全宽圆角边框 + 2 空格内边距 + 吉祥物与标题并排 + 标签(蓝次级)/值(浅色)。
+    def _render_boot_error(self) -> List[Tuple[str, str]]:
+        """启动失败态: 简短错误行 (对齐 codex startup_error, 无粒子盒子/进度条)。
 
-        返回 List[行]; 每行是 (class, text) 分段列表, 便于在 events 路径逐行渲染,
-        保证 CJK/绘图形字符下右边框仍对齐。
+        旧实现 `_render_boot` 把粒子徽记盒 + 进度条画在错误信息上面, 与 Codex
+        启动观感脱节; 现在启动即渲染对话界面, 只在**构建内核失败**时展示这一屏。
         """
-        width, inner = self._box_budget()    # 真实 App 列宽, 全宽
-        pad = "  "
-        pad_w = _disp_width(pad)
-        logo_w = max(_disp_width(r) for r in KIMI_LOGO)
-        gap_w = 2
-        # 窄屏 (放不下 logo + 至少 4 列文字) 时把文字挪到 logo 下方另起 ——
-        # 旧实现用 max(4, ...) 强行保底 4 列文字, 在 16 列终端下整行算成
-        # 2+logo+2+4+2 远大于 inner, 右边框被顶到下一行 (观感即"文字溢出")。
-        stacked = (inner - pad_w - gap_w) < (logo_w + 4)
-        info_w = max(1, inner - pad_w)
-        if stacked:
-            head_text_w = info_w
-        else:
-            head_text_w = max(4, inner - pad_w - logo_w - gap_w)
-
-        def clip_dw(s: str, n: int) -> str:
-            if _disp_width(s) > n:
-                res = ""
-                for ch in s:
-                    if _disp_width(res) + _disp_width(ch) > n:
-                        break
-                    res += ch
-                return res
-            return s + " " * (n - _disp_width(s))
-
-        # 头部两行: 吉祥物 + 右侧文字并排 (row0 蓝标题 / row1 蓝次级);
-        # 窄屏则 logo 独占两行, 文字在其后另起, 保证每行 ≤ inner。
-        head: List[List[Tuple[str, str]]] = []
-        rights = [clip_dw(title, head_text_w), clip_dw(subtitle, head_text_w)]
-        for i, lg in enumerate(KIMI_LOGO):
-            seg: List[Tuple[str, str]] = []
-            seg.append(("class:primary", "│"))
-            seg.append(("", pad))
-            if stacked:
-                seg.append(("class:title", lg.ljust(max(1, logo_w))))
-                seg.append(("", " " * max(0, inner - pad_w - logo_w)))
-            else:
-                seg.append(("class:title", lg.ljust(max(1, logo_w))))
-                seg.append(("", "  "))
-                r = rights[i]
-                seg.append(("class:title" if i == 0 else "class:boxsub", r))
-                rp = max(0, (inner - pad_w - logo_w - gap_w) - _disp_width(r))
-                seg.append(("", " " * rp))
-            seg.append(("class:primary", "│"))
-            head.append(seg)
-        if stacked:
-            for i, r in enumerate(rights):
-                if not r.strip():
-                    continue
-                seg = [("class:primary", "│"), ("", pad),
-                       ("class:title" if i == 0 else "class:boxsub", r),
-                       ("", " " * max(0, info_w - _disp_width(r))),
-                       ("class:primary", "│")]
-                head.append(seg)
-
-        # 信息行: 标签(蓝次级) + 值(浅色)
-        info_rows: List[List[Tuple[str, str]]] = []
-        for label, value in info_pairs:
-            # 极窄终端下标签本身就放不下 (如"Directory: " 12 列而可用仅 8 列),
-            # 旧实现只裁 value、label 全宽输出 → 整行超宽, 右边框被顶飞。
-            # 这里把标签和值放进同一个预算里按顺序分配。
-            label = self._clip_dw(str(label), info_w)
-            value = str(value)
-            v_room = max(0, info_w - _disp_width(label))
-            value = clip_dw(value, v_room) if v_room > 0 else ""
-            seg = [("class:primary", "│")]
-            seg.append(("", pad))
-            seg.append(("class:boxsub", label))
-            seg.append(("class:text", value))
-            seg.append(("", " " * max(0, info_w - _disp_width(label) - _disp_width(value))))
-            seg.append(("class:primary", "│"))
-            info_rows.append(seg)
-
-        blank = [("class:primary", "│" + " " * (width - 2) + "│")]
-        rows: List[List[Tuple[str, str]]] = [
-            [("class:primary", "╭" + "─" * (width - 2) + "╮")],
-            *head,
-            blank,
-            *info_rows,
-            [("class:primary", "╰" + "─" * (width - 2) + "╯")],
-        ]
-        return rows
-
-    def _render_boot(self) -> List[Tuple[str, str]]:
-        frame = _SPLASH_FRAMES[self._frame % len(_SPLASH_FRAMES)]
         out: List[Tuple[str, str]] = []
-        box_rows = self._kimi_box(
-            title=t("tui.welcome_title"),
-            subtitle=t("tui.welcome_subtitle"),
-            info_pairs=[],
-        )
-        for i, row in enumerate(box_rows):
-            for cls, seg in row:
-                out.append((cls, seg))
-            if i < len(box_rows) - 1:
-                out.append(("", "\n"))
-        out.append(("", "\n"))
-        # 启动态的几行文本也按宽度裁剪: 状态串 (含 i18n 与错误详情) 与提示行
-        # 在窄终端下会超宽 → 软换行把加载屏顶乱。
         budget = max(4, self._box_width() - 2)
 
         def emit(cls: str, text: str) -> None:
             out.append((cls, self._clip_dw(text, budget) + "\n"))
 
-        if self._boot_error:
-            emit("class:error", f"  ✗ {self._boot_error}")
-            emit("class:textdim", f"  {t('tui.exit_ctrl_c')}")
-        elif self._boot_progress >= 100:
-            emit("class:success", f"  {SUCCESS_MARK} {t('fs.ready')}")
-        else:
-            emit("class:text", f"  {frame} {self._boot_status}")
-        # 进度条按终端宽度自适应: 固定 30 格 = 37 列, 窄终端 (<40 列) 下
-        # 整行超宽 → 软换行把加载屏顶成两行, 观感即"溢出/错位"。
-        # 这里把可用宽度扣掉缩进、方括号、百分比和空格后作为条长。
-        bar_len = max(3, min(30, budget - 6))
-        filled = int(self._boot_progress / 100 * bar_len)
-        filled = max(0, min(bar_len, filled))
-        bar = "█" * filled + "░" * (bar_len - filled)
-        emit("class:dim", f"  [{bar}] {self._boot_progress}%")
-        out.append(("", "\n"))
-        emit("class:dim", f"  {t('tui.exit_ctrl_c')}")
+        emit("class:error", f"  ✗ {self._boot_error}")
+        emit("class:textdim", f"  {t('tui.exit_ctrl_c')}")
         return out
 
     # ============================================================ 流式 / 工具
@@ -2327,6 +3090,7 @@ class QxtTUI:
         if len(self._stream_buf) > _MAX_STREAM_BUF:
             head, self._stream_buf = self._stream_buf[:_MAX_STREAM_BUF], self._stream_buf[_MAX_STREAM_BUF:]
             self._events.append(f"{STATUS_BULLET}{head.lstrip(chr(10))}…[流式超长, 已分段]")
+            self._history_dirty = True
             if len(self._events) > 5000:
                 del self._events[: len(self._events) - 4000]
         self._throttled_invalidate()
@@ -2358,6 +3122,7 @@ class QxtTUI:
             buf = self._stream_buf.lstrip("\n")
             if buf:
                 self.append_log(f"{STATUS_BULLET}{buf}", max_len=_MAX_LOG_LEN * 4)
+                self._last_assistant_text = buf  # 供 F6 / Ctrl+Shift+C 复制全文
             self._stream_buf = ""
         # 本轮思考收尾进审计面板: 折叠后首行是标题, 展开看全文
         if self._reason_full:
@@ -2412,9 +3177,33 @@ class QxtTUI:
         self._tools = list(tools or [])
 
     def set_mode(self, mode: str) -> None:
-        """设置运行模式 (standard / yolo / plan), 底部状态栏徽标随之更新。"""
-        self._mode = mode or "standard"
-        self._plan_mode = (mode == "plan")
+        """设置运行模式, 底部状态栏徽标随之更新。
+
+        接受旧三档别名 (standard / yolo / plan) 与五模式 ID (gantong / lingma /
+        chat / boundless / collaboration), 统一经 modes.registry.resolve_mode_id
+        解析为标准五模式 ID 后存 ``self._mode``。展示名 (徽标文本) 用中文名,
+        徽标颜色按等级映射 (见 ``_mode_badge_style``)。
+
+        兼容: plan 别名解析为 chat, 同时保持 ``_plan_mode`` 语义 (plan 是只读
+        规划态, 独立于五模式, 徽标仍以 plan 呈现)。
+        """
+        raw = (mode or "standard").strip().lower()
+        # plan 是只读规划态, 保留为独立徽标 (不并入五模式 ID)
+        if raw == "plan":
+            self._plan_mode = True
+            self._mode = "plan"
+        elif raw == "auto":
+            # auto 是内部标记 (Claude Code Auto Mode), 按 standard 呈现, 不改变五模式。
+            self._plan_mode = False
+            self._mode = "standard"
+        else:
+            self._plan_mode = False
+            try:
+                from ..modes.registry import resolve_mode_id
+                self._mode = resolve_mode_id(raw)   # 标准五模式 ID
+            except Exception:
+                # 未知/未初始化 (modes 不可用): 保守回退为 standard, 绝不抛给渲染帧。
+                self._mode = "standard"
         if self._app and self._app.is_running:
             self._app.invalidate()
 
@@ -2424,6 +3213,39 @@ class QxtTUI:
             self._mode = "plan"
         elif self._mode == "plan":
             self._mode = "standard"
+
+    def _mode_badge(self) -> Tuple[str, str]:
+        """底部状态栏模式徽标 (fragment 对)。
+
+        展示名: 五模式用中文名 (感通/灵码/闲聊/无界/协同), plan 只读态用 "plan"。
+        颜色按等级映射: chat→dim, collaboration→warning, gantong/lingma→primary,
+        boundless→error (原 yolo 的红), plan→magenta (codex footer.rs:164)。
+        """
+        mode = self._mode or "standard"
+        # plan 是只读规划态, 独立于五模式, 用 codex 的 magenta。
+        if mode == "plan":
+            return ("class:plan", "plan")
+        # 徽标文本: 优先中文名, 未知 ID 回退原文 (绝不让渲染帧抛错)。
+        try:
+            from ..modes.registry import MODE_NAMES
+            label = MODE_NAMES.get(mode, mode)
+        except Exception:
+            label = mode
+        # 颜色按等级 (含历史别名回退): 未知一律 warning, 保守不炸。
+        try:
+            from ..modes.registry import MODE_LEVELS
+            level = MODE_LEVELS.get(mode, "")
+        except Exception:
+            level = ""
+        if level == "L4":          # boundless: 原 yolo 红
+            cls = "class:error"
+        elif level in ("L3", "L2"):  # gantong/lingma/collaboration: 蓝
+            cls = "class:primary"
+        elif level == "L0":        # chat: dim
+            cls = "class:textdim"
+        else:
+            cls = "class:warning"
+        return (cls, label)
 
     def set_context_info(self, estimated: int, budget: int) -> None:
         self._ctx_tokens = int(estimated)
@@ -2488,6 +3310,81 @@ class QxtTUI:
 
         return f"context: {pct:.0f}% ({_fmt(est)}/{_fmt(bud)})"
 
+    def _elapsed_since_turn(self) -> str:
+        """codex `fmt_elapsed_compact` 同款: <60s→"{s}s", <3600→"{m}m {ss:02}s", 否则 "{h}h {mm:02}m {ss:02}s"."""
+        if not self._turn_started:
+            return "0s"
+        s = max(0, int(time.monotonic() - self._turn_started))
+        if s < 60:
+            return f"{s}s"
+        if s < 3600:
+            return f"{s // 60}m {s % 60:02d}s"
+        return f"{s // 3600}h {(s % 3600) // 60:02d}m {s % 60:02d}s"
+
+    def _completion_footer_text(self) -> str:
+        """codex `FinalMessageSeparator` 同款完成分隔线文案。
+
+        对齐 separators.rs::label(): 回合结束时显示 ``Worked for {elapsed}``,
+        其中 elapsed 按 codex 规则格式化 —— <1s→"<1s", <60s→"{s}s",
+        <3600→"{m}m {s}s", 否则 "{h}h {m}m {s}s" (仅保留非零单位)。
+        末尾附完成时刻 HH:MM (24h), 与 " • " 连接。
+        """
+        if not self._turn_started:
+            return ""
+        s = max(0, int(time.monotonic() - self._turn_started))
+        if s <= 0:
+            elapsed = "<1s"
+        elif s < 60:
+            elapsed = f"{s}s"
+        else:
+            h, rem = divmod(s, 3600)
+            m, sec = divmod(rem, 60)
+            parts = []
+            if h:
+                parts.append(f"{h}h")
+            if m or h:
+                parts.append(f"{m}m")
+            parts.append(f"{sec}s")
+            elapsed = " ".join(parts)
+        label = f"Worked for {elapsed}"
+        try:
+            label += f" · {time.strftime('%H:%M', time.localtime())}"
+        except Exception:  # noqa: BLE001 - 时钟失败绝不影响完成分隔线
+            pass
+        return label
+
+    def _working_status_line(self) -> List[Tuple[str, str]]:
+        """codex 忙碌状态行: `Working (Ns · esc to interrupt)` (无 hint 时 `Working (Ns)`)。
+
+        对齐 status_indicator_widget.rs: activity_indicator + summary_shimmer("Working")
+        + " " + "({pretty_elapsed} • {interrupt} to interrupt)".dim()。
+        """
+        parts: List[Tuple[str, str]] = [("class:textdim", "• ")]
+        parts.append(("class:textstrong", "Working"))
+        elapsed = self._elapsed_since_turn()
+        parts.append(("class:textdim", f" ({elapsed} • esc to interrupt)"))
+        return parts
+
+    def _working_status_text(self) -> str:
+        """footer 用纯文本忙碌状态 (与 _working_status_line 同文案, 无样式)。"""
+        return f"Working ({self._elapsed_since_turn()} • esc to interrupt)"
+
+    def _context_left_hint(self) -> str:
+        """Codex 同款 "X% context left" (底栏右端 context 提示)。
+
+        对齐 codex-rs/tui/src/bottom_pane/footer.rs 的 ``context_window_line()``:
+        有预算时显示**剩余**百分比 (``100 - 已用%``, clamp 到 0..100);
+        无预算 (模型窗口未知) 回落 ``100% context left`` —— 即 Codex 空态快照
+        ``empty.snap`` 的初始渲染。
+        """
+        est = self._ctx_tokens or 0
+        bud = self._ctx_budget or 0
+        if bud > 0:
+            used_pct = min(100.0, est / bud * 100.0)
+            remaining = max(0.0, 100.0 - used_pct)
+            return f"{int(round(remaining))}% context left"
+        return "100% context left"
+
     def append_log(self, text: str, cls: Optional[str] = None,
                    max_len: int = _MAX_LOG_LEN) -> None:
         """追加一条事件日志 (超长自动截断, 防巨文本挤爆渲染)。
@@ -2501,11 +3398,71 @@ class QxtTUI:
             self._events.append((cls, text))
         else:
             self._events.append(text)
+        self._history_dirty = True
         # 修剪: 超过 600 条才裁到 500 (避免每次 append 都做 O(n) 切片)
         if len(self._events) > 5000:
             del self._events[: len(self._events) - 4000]
         if self._app and self._app.is_running:
             self._app.invalidate()
+
+    def _append_agent_line(self, text: str, cls: str = "class:textdim",
+                           max_len: int = _MAX_LOG_LEN) -> None:
+        """追加一条后台自主任务日志行: ``@agent`` 徽章用独立青绿 (roleagent)。
+
+        OpenCode 风格角色徽章: 把 ``@agent`` 前缀与正文拆成两个 fragment, 徽章用
+        青绿 ``roleagent`` 着色、正文沿用语义色 ``cls``。这样后台任务在对话区里
+        一眼可辨 (青绿徽章 + 语义正文), 与用户蓝 / 助手灰消息真正区分开。
+        """
+        text = str(text)
+        if max_len and len(text) > max_len:
+            text = text[:max_len] + f"…[已截断 {len(text) - max_len} 字符]"
+        # fragment 行: [徽章(roleagent), 正文(cls)] —— _build_history_screen 对
+        # list 类型直接 append, 不做整行配色, 因此徽章/正文可各用各的颜色。
+        self._events.append([
+            ("class:roleagent", " @agent "),
+            (cls, text),
+        ])
+        self._history_dirty = True
+        if len(self._events) > 5000:
+            del self._events[: len(self._events) - 4000]
+        if self._app and self._app.is_running:
+            self._app.invalidate()
+
+    def append_usage_panel(self, usage: dict) -> None:
+        """Kimi 风格用量配额面板 (F2 同款面板路由, 供 /usage 与 TuiUI.usage)。
+
+        把本地会话 token 计数 + TUI 上下文状态映射成 Kimi usage.py 的配额条面板,
+        渲染为 (cls, text) 行列表追加进 _events (复用 _colored_lines 的配色通道),
+        并强制回到底部让面板可见。
+        """
+        try:
+            from ..tui.kimi_modules import (
+                build_usage_rows, render_usage_panel,
+            )
+            pt = int(usage.get("prompt_tokens", 0) or 0)
+            ct = int(usage.get("completion_tokens", 0) or 0)
+            budget = int(getattr(self, "_ctx_budget", 0) or 0)
+            ctx_used = int(getattr(self, "_ctx_tokens", 0) or 0)
+            rows = build_usage_rows(pt, ct, budget, ctx_used)
+            panel = render_usage_panel(rows)
+            # 把 rich Panel 渲染成纯文本行 (去 ANSI), 走 _colored_lines 配色。
+            from rich.console import Console
+            from io import StringIO
+            buf = StringIO()
+            Console(file=buf, force_terminal=False, color_system=None,
+                    width=max(60, self._app.output.get_size().columns
+                              if self._app else 80)).print(panel)
+            text = buf.getvalue().rstrip("\n")
+            self._events.append(("class:textdim", text))
+            self._history_dirty = True
+            self._follow = True
+            if self._app and self._app.is_running:
+                self._app.invalidate()
+        except Exception:  # noqa: BLE001 - 面板失败绝不影响 Agent 循环
+            self.append_log(
+                f"  tokens: prompt {usage.get('prompt_tokens', 0)} "
+                f"/ completion {usage.get('completion_tokens', 0)}",
+                cls="class:textdim")
 
     def confirm(self, prompt: str, *, expected: Optional[str] = None,
                 position: Optional[int] = None) -> bool:
@@ -2723,6 +3680,12 @@ class QxtTUI:
             self._streaming = False
             self._moon_suppressed = False
             self._running.clear()
+            # codex `FinalMessageSeparator`: 回合结束注入完成分隔线
+            # `  Worked for Xs · HH:MM` (缩进 2 空格, dim), 紧贴助手回复下方。
+            footer = self._completion_footer_text()
+            if footer:
+                self._events.append(("class:textdim", "  " + footer))
+                self._history_dirty = True
         if self._app and self._app.is_running:
             self._app.invalidate()
 
@@ -2781,10 +3744,7 @@ class QxtTUI:
 
     def _animate(self) -> None:
         while not self._closed:
-            if self._booting:
-                self._frame = (self._frame + 1) % len(_SPLASH_FRAMES)
-                time.sleep(0.08)
-            elif self._busy or self._streaming or self._running:
+            if self._busy or self._streaming or self._running:
                 # 模型思考/流式/工具期间: 月亮转圈, 每帧 120ms
                 self._moon_frame = (self._moon_frame + 1) % len(_MOON_FRAMES)
                 self._frame = (self._frame + 1) % len(_SPLASH_FRAMES)
@@ -2912,28 +3872,62 @@ class QxtTUI:
                 i += 1
         return out
 
-    def _msg_to_lines(self, role: str, text: str) -> List[List[Tuple[str, str]]]:
-        # 用户消息: 整块暖金底 (气泡感) + 金色正文; 助手消息走 Markdown 渲染。
+    def _msg_to_lines(self, role: str, text: str,
+                      width: Optional[int] = None) -> List[List[Tuple[str, str]]]:
+        # 用户消息: Codex CLI 风格 —— 左对齐浅灰半透明底 (history_prompt_style 近似),
+        # "›" 前缀 **dim** (codex messages.rs:266 `"› ".bold().dim()`), 正文 **accent**
+        # (user_message_element_style 把 fg 设成 accent)。快照佐证: user_prompt_has_a_
+        # background...snap 中 x=0 `›` 是 BOLD|DIM、x=2 正文是 NONE(accent)。无 emoji;
+        # 助手消息走 Markdown 渲染。
         if role == "user":
             bullet = USER_MESSAGE_BULLET
-            userbg = "class:roleuser bg:#2b2416"
-            bcls = ccls = cont = userbg
+            userbg = f"class:text bg:{USER_MESSAGE_BG}"
+            bcls = "class:textdim"        # 前缀 › : dim (codex "› ".bold().dim())
+            ccls = f"class:primary bg:{USER_MESSAGE_BG}"  # 正文: accent + 浅灰底
+            cont = f"class:text bg:{USER_MESSAGE_BG}"
         else:
             # log/助手: 直接走 Markdown (代码块语法高亮), 不再逐行纯文本。
-            return self._render_markdown_message(text)
+            # 统一灰色底层: 助手消息与用户消息刷同一种灰底 (用户选择"全部统一灰色",
+            # 消除"一块灰一块不灰"的割裂感)。
+            rows = self._render_markdown_message(text)
+            return [self._with_user_bg(row) for row in rows]
         # 事件可能已带 bullet 前缀 (写入时角色标记), 渲染时防重复叠加 (修复双 ✨)。
-        lines = str(text).lstrip("\n").split("\n")
+        raw = str(text).lstrip("\n")
+        if raw.startswith(bullet):
+            raw = raw[len(bullet):]
+        # codex wrap_width = width - (LIVE_PREFIX_COLS + 1) = width - 3:
+        # 左侧 2 列留给 "› " 前缀, 右侧再留 1 列 margin, 用户消息不贴右缘。
+        wrap_w = max(1, (width or self._log_width()) - 3)
+        lines: List[str] = []
+        for ln in raw.split("\n"):
+            lines.extend(self._wrap_dw(ln, wrap_w) or [""])
         out: List[List[Tuple[str, str]]] = []
         for i, ln in enumerate(lines):
             if i == 0:
                 seg: List[Tuple[str, str]] = []
-                if bullet and not ln.startswith(bullet):
+                if bullet:
                     seg.append((bcls, bullet))
                 if ln:
                     seg.append((ccls, ln))
                 out.append(seg)
             else:
                 out.append([(cont, "  " + ln)])
+        return out
+
+    def _with_user_bg(self, row: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        """给一行 fragment 统一补灰底 (class 后追加 ``bg:USER_MESSAGE_BG``)。
+
+        ``_render_markdown_message`` 返回的 fragment class 可能是 ``class:text``、
+        ``class:code_xxx`` 或空串 ``""``。空 class 直接拼接会得到 ``" bg:..."``
+        (前导空格, prompt_toolkit 可能报错), 所以空 class 单独构造。
+        """
+        bg = f" bg:{USER_MESSAGE_BG}"
+        out: List[Tuple[str, str]] = []
+        for cls, seg in row:
+            if cls:
+                out.append((cls + bg, seg))
+            else:
+                out.append((bg.lstrip(), seg))
         return out
 
     def _colored_lines(self, cls: str, text: str) -> List[List[Tuple[str, str]]]:
@@ -2955,33 +3949,32 @@ class QxtTUI:
         if self._trust_pending:
             return _split_flat_lines(self._render_trust_confirm())
 
-        if self._booting or self._boot_error:
-            return _split_flat_lines(self._render_boot())
+        # 启动失败态: 整屏只显示简短错误行 (不再有粒子加载屏盒子)。
+        if self._boot_error:
+            return _split_flat_lines(self._render_boot_error())
 
-        screen: List[List[Tuple[str, str]]] = []
-        prev_role = ""
-        for ev in self._events:
-            if isinstance(ev, tuple):
-                screen.extend(self._colored_lines(ev[0], ev[1]))
-            elif isinstance(ev, list):
-                screen.append(ev)
-            else:
-                role = "user" if ev.startswith(USER_MESSAGE_BULLET) else "log"
-                # 块间空行分隔, 但**对标 Claude Code 的紧凑排版**做两处收敛:
-                # 1. 提问与其回答之间不空行 —— 一次问答是一个整体, 空行会把它拆成
-                #    两个视觉区块, 是"行距偏松"的最大来源;
-                # 2. 连续空行去重 —— 代码块尾部已补过空行, 块分隔再补一次就变成
-                #    两行空白, 累积起来把对话撑得又长又散。
-                if screen and screen[-1] and not (prev_role == "user" and role == "log"):
-                    screen.append([])
-                screen.extend(self._msg_to_lines(role, ev))
-                prev_role = role
+        # 历史部分走缓存: 只有 `_events` 真的变化 (append/trim) 或对话区宽度变化
+        # 时才全量重建, 否则复用。流式期间 `_events` 不变, 这一大段 O(n) 渲染
+        # (含逐行 `_display_width`) 不再每帧重跑 —— 这是卡顿的主因。
+        #
+        # 重要: `_build_history_screen` 返回的是**缓存 list 对象**, 绝不能直接
+        # extend 动态卡片 (工具行/流式/确认卡/提问卡)。否则每调用一次就把这些
+        # 动态卡片追加进缓存, 行数逐帧累积 (116→126→136...), 虚拟视口总高不断
+        # 膨胀, 表现为"提问卡片态滚轮翻历史"(top 随每次重渲染漂移) 与内存泄漏。
+        # 这里浅拷贝缓存后再追加动态内容, 缓存本身保持只含 `_events` 的纯历史。
+        screen = list(self._build_history_screen())
 
         # 本轮工具调用: 折叠成一行摘要 (see N), 展开时逐条; 始终镜像进审计面板
         if self._turn_tool_lines:
             if self._tool_detail:
+                # codex exec_cell/render.rs: 工具详情首行前缀 "  └ ", 续行 "    " (dim)。
+                # 前缀占 4 显示列, 内容须截到 log_width-4, 保证整行不超一屏宽。
+                detail_w = max(4, self._log_width() - 4)
                 for ln in self._turn_tool_lines:
-                    screen.append([("class:textdim", self._fit(ln))])
+                    detail_lines = self._clip_dw(ln, detail_w).split("\n")
+                    for i, dl in enumerate(detail_lines):
+                        prefix = "  └ " if i == 0 else "    "
+                        screen.append([("class:textdim", prefix + dl)])
             else:
                 n = len(self._turn_tool_lines)
                 screen.append([("class:primary", self._fit(
@@ -2992,8 +3985,8 @@ class QxtTUI:
             screen.append([("class:text", self._fit(
                 STATUS_BULLET + self._stream_buf.lstrip(chr(10))))])
         elif self._busy and not self._running and not self._streaming and not self._moon_suppressed:
-            moon = _MOON_FRAMES[self._moon_frame % len(_MOON_FRAMES)]
-            screen.append([("class:primary", f"{moon} {t('tui.thinking')}")])
+            # codex 忙碌状态行 "Working (Ns · esc to interrupt)" (替代旧月亮行)
+            screen.append(self._working_status_line())
         # 在途工具
         for name in self._running:
             elapsed = self._tool_start_times.get(name)
@@ -3013,6 +4006,44 @@ class QxtTUI:
         if self._ask_pending:
             screen.extend(_split_flat_lines(self._render_ask_card()))
 
+        return screen
+
+    def _build_history_screen(self) -> List[List[Tuple[str, str]]]:
+        """把 `_events` 渲染成历史逻辑行, 结果缓存供 `_scrolled_lines` 复用。
+
+        性能关键: 流式输出时每帧都会调用 `_scrolled_lines`, 而 `_events` 里的
+        历史 (含每条用户/助手消息) 在流式期间**不变**。旧实现对全部历史逐帧
+        重新 `_msg_to_lines` + 逐行 `_display_width`, 2000+ 行时每帧多花数十毫秒,
+        直接表现为卡顿。这里仅在 dirty 或宽度变化时重建。
+        """
+        log_w = self._log_width()
+        if (not self._history_dirty
+                and self._history_screen is not None
+                and self._history_width == log_w):
+            return self._history_screen
+
+        screen: List[List[Tuple[str, str]]] = []
+        prev_role = ""
+        for ev in self._events:
+            if isinstance(ev, tuple):
+                screen.extend(self._colored_lines(ev[0], ev[1]))
+            elif isinstance(ev, list):
+                screen.append(ev)
+            else:
+                role = "user" if ev.startswith(USER_MESSAGE_BULLET) else "log"
+                # 块间空行分隔, 但**对标 Claude Code 的紧凑排版**做两处收敛:
+                # 1. 提问与其回答之间不空行 —— 一次问答是一个整体, 空行会把它拆成
+                #    两个视觉区块, 是"行距偏松"的最大来源;
+                # 2. 连续空行去重 —— 代码块尾部已补过空行, 块分隔再补一次就变成
+                #    两行空白, 累积起来把对话撑得又长又散。
+                if screen and screen[-1] and not (prev_role == "user" and role == "log"):
+                    screen.append([])
+                screen.extend(self._msg_to_lines(role, ev, width=log_w))
+                prev_role = role
+
+        self._history_screen = screen
+        self._history_width = log_w
+        self._history_dirty = False
         return screen
 
     def _viewport_slice(self, screen: List[List[Tuple[str, str]]]) -> List[List[Tuple[str, str]]]:
@@ -3069,6 +4100,9 @@ class QxtTUI:
     def _render_header(self) -> Any:
         """顶部状态 HUD: 实时状态(启动转圈/思考月亮/就绪勾) + 模式 + 模型。"""
         parts: List[Tuple[str, str]] = []
+        # 复制/操作反馈 toast: 优先于常规状态展示 (2 秒后自动消失)
+        if self._toast and time.monotonic() < self._toast_until:
+            return self._clip_parts([("class:text", " " + self._toast)])
         if self._trust_pending:
             parts.append(("class:warning", f"? {t('tui.trust_title')}"))
             return self._clip_parts(parts)
@@ -3078,16 +4112,13 @@ class QxtTUI:
         if self._confirm_pending:
             parts.append(("class:warning", f"? {t('tui.confirm_title')}"))
             return self._clip_parts(parts)
-        if self._booting:
-            frame = _SPLASH_FRAMES[self._frame % len(_SPLASH_FRAMES)]
-            parts.append(("class:primary", f"{frame} {t('tui.boot_starting')}"))
-        elif self._busy or self._running or self._streaming:
-            moon = _MOON_FRAMES[self._moon_frame % len(_MOON_FRAMES)]
-            parts.append(("class:primary", f"{moon} {t('fs.processing')}"))
+        if self._busy or self._running or self._streaming:
+            # codex 状态行: "• Working (Ns • esc to interrupt)" (替代旧月亮 + Processing)
+            parts.extend(self._working_status_line())
         else:
             parts.append(("class:success", f"{SUCCESS_MARK} {t('fs.ready')}"))
         if self._plan_mode:
-            parts.append(("class:primary", f"  [{t('tui.plan_badge')}]"))
+            parts.append(("class:plan", f"  [{t('tui.plan_badge')}]"))
         if self._model_label:
             parts.append(("class:text", f"  {self._model_label}"))
         # header 也是 height=1 的单行控件: 长模型名 (provider/model 很长) 会顶破
@@ -3095,14 +4126,13 @@ class QxtTUI:
         return self._clip_parts(parts)
 
     def _render_footer(self) -> Any:
-        """单行底部状态栏: 模式 + 命令提示 + 模型 + 状态 + 目录 + git + context。
+        """单行底部状态栏 (Codex CLI 两端布局)。
 
-        格式: standard  +/命令  deepseek-v4-free 就绪  Qingxiaotuan Agent CLI  main[±]  ctx 0% (0/131.1k)
-        模型名省略 provider 前缀 (欢迎盒 Model 行已含完整 prov/model);
-        context 在窄屏下自动降级为 "ctx 0%" 保证 80 列不截断。
+        左端: `? for shortcuts` (空闲) 或 `mode · model · status · dir · branch`;
+        右端: `X% context left` (secondary dim)。中间以空格隔开。
+        语义色对齐 Codex status_line_style: model→cyan/primary、dir→green、
+        branch→magenta、separator 用 " · "。
         """
-        parts: List[Tuple[str, str]] = []
-
         # 信任确认期: 底栏只显示确认提示 (不展示模型/状态/目录; 超宽裁剪防溢出)
         if self._trust_pending:
             return self._clip_parts([("class:warning", " " + t("tui.trust_footer"))])
@@ -3115,85 +4145,112 @@ class QxtTUI:
         if self._confirm_pending:
             return self._clip_parts([("class:warning", " " + t("tui.confirm_footer"))])
 
-        # 模式徽标 (standard / yolo / plan)
-        mode_label = self._mode or "standard"
-        if mode_label == "yolo":
-            mode_cls = "class:error"
-        elif mode_label == "plan":
-            mode_cls = "class:primary"
-        else:
-            mode_cls = "class:warning"
-        parts.append((mode_cls, mode_label))
+        left: List[Tuple[str, str]] = []
 
-        # C-5.2 离线横幅: 消费 CLI 核心分片新建的 core/network_check.is_offline()。
-        # 该模块由并行分片提供; 未落地时 try/import 静默降级, 横幅不激活也不报错,
-        # 待联调。探测结果缓存 30s (footer 随动画高频重绘, 不能每帧探网络)。
-        _is_offline: Optional[Callable[..., bool]] = None
-        try:
-            from ..core.network_check import is_offline as _is_offline_impl
-            _is_offline = _is_offline_impl
-        except Exception:  # noqa: BLE001 - network_check 尚未就绪: 横幅暂不激活
-            pass
-        if _is_offline is not None:
+        # Codex footer 整行从第 2 列开始 (FOOTER_INDENT_COLS=2, footer.rs:255)。
+        left.append(("", "  "))
+
+        # Codex 同款 "? for shortcuts": 空闲且无命令面板时, 左端显示快捷键提示。
+        # codex key_hint_style() 对键标签用 加粗前景 (深底 Reset+bold, key_hint.rs:284),
+        # 非 dim; " for shortcuts" 用 secondary。因此 `?` 用 textstrong (加粗亮白)。
+        if (not self._busy and not self._streaming and not self._slash_open
+                and not self._commands):
+            left.append(("class:textstrong", "?"))
+            left.append(("class:textdim", " for shortcuts"))
+        else:
+            # 模式徽标 (五模式 ID + plan 只读态) —— codex 对 Plan mode 用 magenta。
+            left.append(self._mode_badge())
+
+            # C-5.2 离线横幅: 消费 CLI 核心分片新建的 core/network_check.is_offline()。
+            # 该模块由并行分片提供; 未落地时 try/import 静默降级, 横幅不激活也不报错,
+            # 待联调。探测结果缓存 30s (footer 随动画高频重绘, 不能每帧探网络)。
+            _is_offline: Optional[Callable[..., bool]] = None
             try:
-                now = time.monotonic()
-                if now - self._offline_ts > 30.0:
-                    self._offline_cache = bool(_is_offline())
-                    self._offline_ts = now
-                if self._offline_cache:
-                    # 离线模式: 已切到本地模型; 优先展示当前模型标签, 缺省给约定示例
-                    offline_label = self._model_label or "ollama/qwen2.5:7b"
-                    parts.append(("class:warning",
-                                  f"  ⚠ 离线模式 — 已切换至本地模型 {offline_label}"))
-            except Exception:  # noqa: BLE001 - 探测异常不阻断底栏渲染
+                from ..core.network_check import is_offline as _is_offline_impl
+                _is_offline = _is_offline_impl
+            except Exception:  # noqa: BLE001 - network_check 尚未就绪: 横幅暂不激活
+                pass
+            if _is_offline is not None:
+                try:
+                    now = time.monotonic()
+                    if now - self._offline_ts > 30.0:
+                        self._offline_cache = bool(_is_offline())
+                        self._offline_ts = now
+                    if self._offline_cache:
+                        offline_label = self._model_label or "ollama/qwen2.5:7b"
+                        left.append(("class:warning",
+                                     f"  ⚠ 离线模式 — 已切换至本地模型 {offline_label}"))
+                except Exception:  # noqa: BLE001 - 探测异常不阻断底栏渲染
+                    pass
+
+            # Kimi 同款命令行提示: 仅当启用了命令补全且空闲时展示, 保持简短
+            if self._commands and not self._busy and not self._streaming:
+                left.append(("class:textdim", f"  {t('tui.cmd_hint')}"))
+
+            # 模型名 (去 provider 前缀, 语义色 cyan) + 状态
+            model = self._model_label or "default"
+            if "/" in model:
+                model = model.rsplit("/", 1)[-1]
+            if self._no_key and not self._booting:
+                status = t("tui.no_key_hint", env=self._no_key_env or "API Key")
+                status_cls = "class:warning"
+            elif self._booting:
+                status = t("tui.boot_starting")
+                status_cls = "class:textdim"
+            elif self._busy or self._streaming:
+                # codex 同款: "Working (Ns · esc to interrupt)" 而非简单 "Thinking…"
+                status = self._working_status_text()
+                status_cls = "class:text"
+            elif self._running:
+                tool = self._running[-1] if self._running else ""
+                status = tool if tool else t("fs.ready")
+                status_cls = "class:accent"
+            else:
+                status = t("fs.ready")
+                status_cls = "class:success"
+            left.append(("class:primary", f" {model}"))
+            left.append((status_cls, f" {status}"))
+
+            # 工作目录 (语义色 green)
+            cwd = os.path.basename(os.path.normpath(self.workspace)) or self.workspace
+            left.append(("class:success", f" · {cwd}"))
+
+            # git 分支 (语义色 magenta / shell)
+            git_branch = self._git_branch()
+            if git_branch:
+                left.append(("class:shellmode", f" · {git_branch.replace(' ', '')}"))
+
+            # Super-Agent 活动提示: 绑定引擎有存活 Worker 或待人工处理项时,
+            # 在底栏左端追加轻量徽标 (让"后台自主任务"对用户可见, 而非隐藏)。
+            try:
+                sa = getattr(self._agent, "_superagent", None)
+                if sa is not None and sa.is_running():
+                    seg = self._superagent_footer_seg(sa)
+                    if seg:
+                        left.extend(seg)
+            except Exception:  # noqa: BLE001 - Super-Agent 提示绝不阻断底栏渲染
                 pass
 
-        # Kimi 同款命令行提示: 仅当启用了命令补全且空闲时展示, 保持简短
-        if self._commands and not self._busy and not self._streaming:
-            parts.append(("class:textdim", f"  {t('tui.cmd_hint')}"))
-
-        # 模型名 (去 provider 前缀) + 状态 (未配 key / thinking / ready / running tool)
-        model = self._model_label or "default"
-        if "/" in model:
-            model = model.rsplit("/", 1)[-1]
-        if self._no_key and not self._booting:
-            status = t("tui.no_key_hint", env=self._no_key_env or "API Key")
-            status_cls = "class:warning"
-        elif self._booting:
-            status = t("tui.boot_starting")
-            status_cls = "class:textdim"
-        elif self._busy or self._streaming:
-            status = t("tui.thinking")
-            status_cls = "class:text"
-        elif self._running:
-            tool = self._running[-1] if self._running else ""
-            status = tool if tool else t("fs.ready")
-            status_cls = "class:accent"
-        else:
-            status = t("fs.ready")
-            status_cls = "class:success"
-        parts.append(("class:text", f"  {model}"))
-        parts.append((status_cls, f" {status}"))
-
-        # 工作目录
-        cwd = os.path.basename(os.path.normpath(self.workspace)) or self.workspace
-        parts.append(("class:textdim", f"  {cwd}"))
-
-        # git 分支 (紧凑: 去空格)
-        git_branch = self._git_branch()
-        if git_branch:
-            parts.append(("class:textdim", f"  {git_branch.replace(' ', '')}"))
-
         # 回卷位置指示: 一旦用户上翻离开底部就高亮提示 (Claude Code 同款),
-        # 否则"看不到最新回复"会让人误以为界面卡住。回到底部自动消失。
-        parts.extend(self._scroll_indicator())
+        left.extend(self._scroll_indicator())
 
-        # 注: 此处曾显示 "context: X% (est/budget)" 上下文占用条, 已移除 ——
-        # 预算靠模型名猜 (所有模型都退化成 131.1k), 用量是字符数估算而非真实 token,
-        # 数字既不准确又占版面。需要真实用量请用 /context 或 Web 工作台的上下文面板。
-        # 收尾: 单行控件 (Window height=1 无软换行) 必须按显示宽度裁剪,
-        # 否则 no_key 长提示/长模型名/长目录名会把底栏顶出屏幕 (文字溢出)。
-        return self._clip_parts(parts)
+        # 右端: Codex 同款 "X% context left" (secondary dim)。
+        # 预算靠模型名猜不可靠, 用 token 计数估算百分比 (无真实预算则显示 100%)。
+        context_right = self._context_left_hint()
+        context_w = _disp_width(context_right)
+        width = self._term_width()
+        # 两端布局: 右端 context 提示固定贴右缘, 左端裁剪到剩余宽度。
+        # 窄屏下若连左端 + context 都放不下, 丢弃 context (保留左端更有信息量)。
+        if context_w + 2 > width:  # context 本身都超宽: 只显示左端
+            return self._clip_parts(left)
+        # 左端裁剪预算 = 宽度 - context - 最小 1 列间隙。
+        left_budget = max(0, width - context_w - 1)
+        parts = self._clip_parts_upto(left, left_budget)
+        used = sum(_disp_width(seg) for _c, seg in parts)
+        gap = max(1, width - used - context_w - 1)
+        parts.append(("", " " * gap))
+        parts.append(("class:textdim", context_right))
+        return parts
 
     def _scroll_indicator(self) -> List[Tuple[str, str]]:
         """底栏回卷指示片段 (未上翻时返回空)。
@@ -3207,8 +4264,9 @@ class QxtTUI:
             return []
         if not scrolled or total <= vp:
             return []
-        return [("class:warning", f"  ↑ {top + 1}/{total}"),
-                ("class:textdim", f" {t('tui.scroll_back_hint')}")]
+        # OpenCode 克制配色: 位置用 accent 蓝 (非警示黄), 回底提示用更弱灰。
+        return [("class:accent", f"  ↑ {top + 1}/{total}"),
+                ("class:textmuted", f" {t('tui.scroll_back_hint')}")]
 
     def _git_branch(self) -> str:
         """探测当前 git 分支 (带缓存, 避免每行渲染都调 git)。"""
@@ -3239,6 +4297,25 @@ class QxtTUI:
             self._git_branch_cache = ""
         self._git_branch_ts = now
         return self._git_branch_cache or ""
+
+    def _superagent_footer_seg(self, sa: Any) -> List[Tuple[str, str]]:
+        """Super-Agent 底栏徽标片段 (有存活 Worker 或待人工处理时显示)。
+
+        轻量单次查询 (避免每帧重算): 返回空列表表示无活动, 底栏保持纯净。
+        """
+        try:
+            active = sa.workers.active_count() if sa.workers else 0
+            needs = len(sa.panel.needs_human()) if sa.panel else 0
+        except Exception:  # noqa: BLE001
+            return []
+        seg: List[Tuple[str, str]] = []
+        # OpenCode 风格: 后台自主任务徽标用独立青绿 (roleagent), 与用户蓝/助手灰区分。
+        # 活跃 Worker 用青绿, 待人工处理用 warning (需动作) —— 颜色即优先级提示。
+        if active:
+            seg.append(("class:roleagent", f" · SA:{active}"))
+        if needs:
+            seg.append(("class:warning", f" · SA!{needs}"))
+        return seg
 
     # ============================================================ 信任确认对话框
     # 首次访问未知目录时由 cmd_chat._boot 调用 prompt_trust(): 挂起确认卡片并
@@ -3360,23 +4437,70 @@ class QxtTUI:
         width = max(4, self._box_width())
         return width, max(2, width - 2)
 
+    def _menu_blank(self, width: int) -> List[Tuple[str, str]]:
+        """codex `render_menu_surface` 同款整行背景填充 (上下 inset V=1 的留白行)。"""
+        bg = f"bg:{USER_MESSAGE_BG}"
+        return [(bg, " " * max(0, width))]
+
+    def _menu_row(self, segs: List[Tuple[str, str]], width: int,
+                  inset_h: int = 2) -> List[Tuple[str, str]]:
+        """codex `render_menu_surface` 同款**无边框背景块**内容行。
+
+        对齐 selection_popup_common.rs: 整块只刷 ``user_message_style`` 背景
+        (``Block::default().style(...)``, 无 border), 内容区 inset H=2 (左右各
+        2 格), 因此没有 ``│``/``╭`` 边框字符 —— 选项弹窗是悬浮背景块而非盒子。
+
+        内容总宽超过 ``width - inset_h*2`` 时逐段累计裁剪 (与 ``_box_row`` 同规则)。
+        """
+        bg = f"bg:{USER_MESSAGE_BG}"
+        pad = " " * inset_h
+        avail = max(1, width - inset_h * 2)
+        body_w = sum(_disp_width(s) for _, s in segs)
+        if body_w > avail:
+            clipped: List[Tuple[str, str]] = []
+            rest = avail
+            for cls, s in segs:
+                w = _disp_width(s)
+                if w <= rest:
+                    clipped.append((cls, s))
+                    rest -= w
+                    continue
+                if rest > 0:
+                    clipped.append((cls, self._clip_dw(s, rest)))
+                break
+            segs = clipped
+            body_w = sum(_disp_width(s) for _, s in segs)
+        line: List[Tuple[str, str]] = [(bg, pad)]
+        for cls, s in segs:
+            # 内容片段统一继承背景色, 否则中间露出对话区底色, 背景块不连续。
+            if bg not in (cls or ""):
+                cls = f"{cls} {bg}" if cls else f"class:text {bg}"
+            line.append((cls, s))
+        line.append((bg, " " * max(0, avail - body_w)))
+        return line
+
     def _render_trust_confirm(self) -> List[Tuple[str, str]]:
-        """Kimi/Claude Code 风格信任确认卡片 (全宽盒子, 复用欢迎盒排版)。"""
+        """codex 无边框背景块风格信任确认卡 (对齐 render_menu_surface)。
+
+        codex approval/elicitation 弹窗是整块 ``user_message_style`` 背景 (无
+        ``╭─╮`` 边框), 内容 inset V=1 / H=2, 选项前缀 ``› N. ``。这里改为同款
+        悬浮背景块, 不再画圆角边框。
+        """
         pending = self._trust_pending or {}
         ws = str(pending.get("workspace", ""))
-        width, inner = self._box_budget()   # 边框内侧显示列数
-        pad = "  "
-
+        width = max(8, self._box_width())
         clip_dw = self._clip_dw
 
         def row(segs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
-            return self._box_row(segs, inner, pad)
+            return self._menu_row(segs, width)
 
-        out: List[Tuple[str, str]] = [("class:primary", "╭" + "─" * (width - 2) + "╮\n")]
+        out: List[Tuple[str, str]] = []
+        out += self._menu_blank(width)                      # 顶部 inset V=1
+        out.append(("", "\n"))
         out += row([("class:warning", t("tui.trust_title"))])
         out.append(("", "\n"))
         out += row([("class:boxsub", t("tui.trust_folder") + ": "),
-                    ("class:text", clip_dw(ws, max(1, inner - 4 - _disp_width(t("tui.trust_folder") + ": "))))])
+                    ("class:text", clip_dw(ws, max(1, width - 4 - _disp_width(t("tui.trust_folder") + ": "))))])
         out.append(("", "\n"))
         for ln in t("tui.trust_desc").split("\n"):
             out += row([("class:textdim", ln)])
@@ -3385,20 +4509,22 @@ class QxtTUI:
         out.append(("", "\n"))
         # 选项列表 (↑↓ 选择 · Enter 确认; 也可直接输入 1/2 或 y/n):
         # 此前这两行选项被遗漏渲染, 导致对话框"有标题没选项、完全无法进入工作区"。
+        # 选项前缀对齐 codex list_selection_view: 选中 "› N. ", 未选中 "  N. " (编号加 ".")。
         for _i, (_label, _desc) in enumerate((
             (t("tui.trust_opt_trust"), t("tui.trust_opt_trust_desc")),
             (t("tui.trust_opt_distrust"), t("tui.trust_opt_distrust_desc")),
         )):
             _sel = self._trust_index == _i
-            _mark = "▶ " if _sel else "  "
+            _mark = "› " if _sel else "  "
             out += row([("class:accent" if _sel else "class:textdim",
-                         f"{_mark}{_i + 1}) {_label}")])
+                         f"{_mark}{_i + 1}. {_label}")])
             out.append(("", "\n"))
-            out += row([("class:textdim", "   " + clip_dw(_desc, max(1, inner - 4)))])
+            out += row([("class:textdim", "   " + clip_dw(_desc, max(1, width - 4)))])
             out.append(("", "\n"))
-        out.append(("class:primary", "╰" + "─" * (width - 2) + "╯\n"))
+        out += self._menu_blank(width)                      # 底部 inset V=1
         out.append(("", "\n"))
-        out.append(("class:textdim", "  " + clip_dw(t("tui.trust_prompt"), max(1, inner - 2)) + "\n"))
+        # footer 提示: codex 弹窗 footer 缩进 2 格、弱化色 (accept_cancel_hint_line)。
+        out.append(("class:textdim", "  " + clip_dw(t("tui.trust_prompt"), max(1, width - 4)) + "\n"))
         return out
 
     def _wrap_dw(self, text: str, width: int) -> List[str]:
@@ -3428,26 +4554,27 @@ class QxtTUI:
         return out or [""]
 
     def _render_confirm_card(self) -> List[Tuple[str, str]]:
-        """Kimi 风格命令确认卡片 (与信任卡片同排版)。
+        """codex 无边框背景块风格命令确认卡 (对齐 render_menu_surface)。
 
         取代旧的 run_in_terminal 方案: 旧方案把提示 print 到输入框所在光标位置,
         长命令直接撑破输入框边框, 且"确认"在语义上变成了输入框内容 —— 既不美观
         也不该出现在那儿。现在卡片渲染在对话区底部, 输入框只负责收 y/n。
         """
         pending = self._confirm_pending or {}
-        width, inner = self._box_budget()
-        pad = "  "
+        width = max(8, self._box_width())
         clip_dw = self._clip_dw
 
         def row(segs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
-            return self._box_row(segs, inner, pad)
+            return self._menu_row(segs, width)
 
-        out: List[Tuple[str, str]] = [("class:primary", "╭" + "─" * (width - 2) + "╮\n")]
+        out: List[Tuple[str, str]] = []
+        out += self._menu_blank(width)                      # 顶部 inset V=1
+        out.append(("", "\n"))
         out += row([("class:warning", t("tui.confirm_title"))])
         out.append(("", "\n"))
         # 命令正文逐行铺开; 超宽行折行而非截断, 保证命令尾部可见
         for ln in str(pending.get("prompt", "")).split("\n"):
-            for seg in self._wrap_dw(ln, max(1, inner - 4)):
+            for seg in self._wrap_dw(ln, max(1, width - 4)):
                 out += row([("class:text", seg)])
                 out.append(("", "\n"))
         expected = pending.get("expected")
@@ -3456,71 +4583,112 @@ class QxtTUI:
             out.append(("", "\n"))
         out += row([("class:success", t("tui.confirm_opt"))])
         out.append(("", "\n"))
-        out.append(("class:primary", "╰" + "─" * (width - 2) + "╯\n"))
+        out += self._menu_blank(width)                      # 底部 inset V=1
         out.append(("", "\n"))
-        out.append(("class:textdim", "  " + clip_dw(t("tui.confirm_prompt"), max(1, inner - 2)) + "\n"))
+        out.append(("class:textdim", "  " + clip_dw(t("tui.confirm_prompt"), max(1, width - 4)) + "\n"))
         return out
 
     def _render_ask_card(self) -> List[Tuple[str, str]]:
-        """模型提问卡片 (Claude Code 同款): 问题 + 可选列表 + 高亮项。
+        """codex 无边框背景块风格模型提问卡 (对齐 render_menu_surface)。
 
         渲染在对话区底部 (与确认卡片同位), 因此天然进入虚拟视口切片 —— 长问题
         自动折行、超长选项按显示宽度裁剪, 不会再把输入框/边框顶破。
         """
         pending = self._ask_pending or {}
-        width, inner = self._box_budget()
-        pad = "  "
+        width = max(8, self._box_width())
         clip_dw = self._clip_dw
         opts: List[str] = list(pending.get("options") or [])
         sel = max(0, min(len(opts) - 1, self._ask_index)) if opts else -1
 
         def row(segs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
-            return self._box_row(segs, inner, pad)
+            return self._menu_row(segs, width)
 
-        out: List[Tuple[str, str]] = [("class:primary", "╭" + "─" * (width - 2) + "╮\n")]
-        out += row([("class:warning", "? " + clip_dw(t("tui.ask_title"), max(1, inner - 2)))])
+        out: List[Tuple[str, str]] = []
+        out += self._menu_blank(width)                      # 顶部 inset V=1
+        out.append(("", "\n"))
+        out += row([("class:warning", "? " + clip_dw(t("tui.ask_title"), max(1, width - 4)))])
         out.append(("", "\n"))
         # 问题正文: 逐行折行铺开, 保证长问题不溢出卡片
         for ln in str(pending.get("question", "")).split("\n"):
-            for seg in self._wrap_dw(ln, max(1, inner - 4)):
+            for seg in self._wrap_dw(ln, max(1, width - 4)):
                 out += row([("class:text", seg)])
                 out.append(("", "\n"))
-        # 选项: 高亮项加 ▸ 前缀 + 反显, 未选项缩进对齐
+        # 选项: 高亮项加 › 前缀 + 反显, 未选项缩进对齐 (对齐 codex list_selection_view)
         if opts:
             out.append(("", "\n"))
             for i, o in enumerate(opts):
-                marker = "▸ " if i == sel else "  "
+                marker = "› " if i == sel else "  "
                 cls = "class:success" if i == sel else "class:text"
-                out += row([(cls, marker + clip_dw(f"{i + 1}. {o}", max(1, inner - 4)))])
+                out += row([(cls, marker + clip_dw(f"{i + 1}. {o}", max(1, width - 4)))])
                 out.append(("", "\n"))
             out += row([("class:textdim",
-                         clip_dw(t("tui.ask_opt_hint"), max(1, inner - 2)))])
+                         clip_dw(t("tui.ask_opt_hint"), max(1, width - 4)))])
             out.append(("", "\n"))
         else:
             out += row([("class:textdim",
-                         clip_dw(t("tui.ask_free_hint"), max(1, inner - 2)))])
+                         clip_dw(t("tui.ask_free_hint"), max(1, width - 4)))])
             out.append(("", "\n"))
-        out.append(("class:primary", "╰" + "─" * (width - 2) + "╯\n"))
+        out += self._menu_blank(width)                      # 底部 inset V=1
         return out
 
-    def _show_welcome(self) -> None:
-        """就绪后展示欢迎盒 (吉祥物/模型/项目目录)。
+    def _format_home_dir(self, path: str) -> str:
+        """codex `format_directory_inner` 同款目录展示: 相对 home 显示 `~/...`。
 
-        盒子逐行作为事件 (分段列表) 追加, 由 _render_conversation 按行渲染,
-        保证 CJK/绘图形字符下右边框仍对齐。
+        对齐 session.rs::format_directory_inner —— 若目录位于用户 home 下,
+        前缀 `~` + 分隔符 + 相对路径; 否则返回原绝对路径。
+        """
+        try:
+            home = os.path.expanduser("~")
+            norm = os.path.normpath(path)
+            if os.path.normcase(norm) == os.path.normcase(home):
+                return "~"
+            home_prefix = home.rstrip(os.sep) + os.sep
+            if os.path.normcase(norm).startswith(os.path.normcase(home_prefix)):
+                rel = os.path.normpath(norm[len(home_prefix):])
+                return "~" + os.sep + rel.replace(os.sep, "/")
+        except Exception:  # noqa: BLE001 - 目录格式化失败回退原路径
+            pass
+        return path
+
+    def _show_welcome(self) -> None:
+        """就绪后展示 codex 同款会话头 (SessionHeaderHistoryCell::display_lines)。
+
+        精确对齐 codex-rs/tui/src/history_cell/session.rs 的 display_lines:
+            空行
+              >_ Tuan-CLI (vX)   ← accent ">_ " 前缀 + bold 标题 + dim (vX)
+                 ~/path/to/dir   ← 5 空格缩进 + dim 目录 (relativize_to_home)
+        无任何 ╭─╮ 欢迎盒 (codex 就绪态顶部只有会话头, 那是用户看到的"残留"
+        来源 —— 旧实现把品牌盒画在会话头之前, 观感与 codex 不一致)。
+
+        这两行是固定文本, 不经过 _scrolled_lines 的 _fit, 必须按对话区宽裁剪,
+        否则窄屏 (≤44 列) 下 `  >_ Tuan-CLI (v0.3.3)` / 长目录行会超宽溢出。
+        注意用 _box_width() (真实 App 列宽) 而非 _log_width() (有 max(20,..) 下限),
+        否则 16/12 列终端仍会按 20 列预算裁, 结果还是超宽。
         """
         cwd = os.path.abspath(self.workspace)
-        session = getattr(self, "_session_id", "") or "new-session"
-        model = self._model_label or "default"
-        info_pairs = [
-            (f"{t('banner.directory')}: ", cwd),
-            (f"{t('banner.session')}:   ", session),
-            (f"{t('banner.model')}:     ", model),
-            (f"{t('banner.version')}:   ", VERSION),
+        log_w = max(8, self._box_width())
+        cwd_disp = self._format_home_dir(cwd)
+        self._events.append([("", " ")])  # 顶部空行 (2 空格视觉留白)
+        title_segs = [
+            ("class:primary", "  >_ "),   # accent >_ 前缀 (2 空格缩进)
+            ("class:textstrong", "Tuan-CLI"),
+            ("class:textdim", f" ({VERSION})"),
         ]
-        for row in self._kimi_box(
-            title=t("tui.welcome_title"),
-            subtitle=t("tui.welcome_subtitle"),
-            info_pairs=info_pairs,
-        ):
-            self._events.append(row)
+        # 逐段累计裁剪 (与 _box_row 同规则): 段累计超预算即裁当前段并丢弃后续段。
+        clip_title: List[Tuple[str, str]] = []
+        rest = log_w
+        for cls, s in title_segs:
+            w = _disp_width(s)
+            if w <= rest:
+                clip_title.append((cls, s))
+                rest -= w
+                continue
+            if rest > 0:
+                clip_title.append((cls, self._clip_dw(s, rest)))
+            break
+        self._events.append(clip_title)
+        self._events.append([
+            ("class:textdim", self._clip_dw("     " + cwd_disp, log_w)),
+        ])
+        # 会话头后留一个空行, 与 codex 首轮消息间距一致 (对话区不再被盒子压顶)。
+        self._events.append([])

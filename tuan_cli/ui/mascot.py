@@ -1,17 +1,17 @@
-"""青小团吉祥物 — block art logo。
+"""青小团吉祥物 — 粒子风格 TUAN 徽记。
 
-设计语言 (对齐 TUI):
-  参考实现的终端 TUI 没有 ASCII 脸吉祥物,
-  使用的是 block art logo: ▐█▛█▛█▌ / ▐█████▌
-  配合 moon phase spinner (🌑🌒🌓🌔🌕🌖🌗🌘) 做状态动画。
+设计语言 (对齐 TUI / Codex CLI 风格):
+  使用离散粒子点组成的抽象徽记, 无具象图形:
+  ◆▢◆▢◆▢◆ / ▢◆▢◆▢◆▢
+  配合粒子点 spinner (◐◓◑◒●◒◑◓) 做状态动画。
 
   本模块提供:
-  * logo()   -> block art logo (两行)
-  * spinner() -> moon phase spinner frame
+  * logo()   -> 粒子 TUAN 徽记 (两行)
+  * spinner() -> 粒子点 spinner frame
   * state_icon() -> 单字符状态图标
   * svg()    -> SVG 动态组件 (用于富 UI / README)
 
-状态由 UI 层驱动: thinking->moon spinner, working->moon spinner,
+状态由 UI 层驱动: thinking->particle spinner, working->particle spinner,
 安全拦截 -> alert icon, 任务结束 -> done icon, 空闲 -> idle icon。
 """
 
@@ -36,21 +36,19 @@ _SUCCESS = "#4EC87E"
 _WARNING = "#E8A838"
 _ERROR = "#E85454"
 
-# Moon phase spinner frames (原版)
-MOON_FRAMES = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
+# 粒子点 spinner frames (与 TUI _MOON_FRAMES 同语言)
+MOON_FRAMES = ["◐", "◓", "◑", "◒", "●", "◒", "◑", "◓"]
 MOON_INTERVAL_MS = 120
 
 # Braille spinner (备用)
 BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-# block art logo (原版)
-_LOGO_LINE1 = "▐█▛█▛█▌"
-_LOGO_LINE2 = "▐█████▌"
+# 粒子 TUAN 徽记 (两行等宽, 每行 7 列)
+_LOGO_LINE1 = "◆▢◆▢◆▢◆"
+_LOGO_LINE2 = "▢◆▢◆▢◆▢"
 
-# VS Code variant: half-block/quadrant characters replaced with full blocks
-# to avoid 1px rendering gaps in VS Code integrated terminal (xterm.js).
-# CMD / PowerShell / Windows Terminal render the original correctly — this
-# variant is only used when we detect a VS Code terminal environment.
+# VS Code variant: 半块/象限字符换成实心全块, 避免 xterm.js 渲染 1px 间隙。
+# CMD / PowerShell / Windows Terminal 渲染原版正确 —— 仅在检测到 VS Code 终端时使用。
 _LOGO_LINE1_VSCODE = "███████"
 _LOGO_LINE2_VSCODE = "███████"
 
@@ -104,13 +102,13 @@ class Mascot:
         """当前状态对应的主色。"""
         return _SVG_PALETTE[self.state]["body"]
 
-    # ---------------------------------------------------------- Block Art Logo
+    # ---------------------------------------------------------- 粒子 TUAN 徽记
     def logo(self) -> tuple[str, str]:
-        """返回 block art logo (两行)。
+        """返回粒子 TUAN 徽记 (两行)。
 
         >>> m = Mascot()
         >>> m.logo()
-        ('▐█▛█▛█▌', '▐█████▌')
+        ('◆▢◆▢◆▢◆', '▢◆▢◆▢◆▢')
         """
         return _LOGO_LINE1, _LOGO_LINE2
 
@@ -148,14 +146,14 @@ class Mascot:
     def ascii(self, frame: int | None = None, color: bool = True) -> str:
         """返回 风格的 ASCII 表示。
 
-        与原版不同: 不再使用 ASCII 脸, 而是 block art logo + 状态 spinner。
+        与原版不同: 不再使用 ASCII 脸, 而是粒子 TUAN 徽记 + 状态 spinner。
         适合嵌在侧栏或 banner。
 
         布局:
-          ▐█▛█▛█▌  🌑  ← logo + spinner
-          ▐█████▌  ●   ← logo + 状态图标
+          ◆▢◆▢◆▢◆  ◐  ← logo + spinner
+          ▢◆▢◆▢◆▢  ●   ← logo + 状态图标
 
-        VS Code 终端中, 半块/象限字符 (▐▛▌) 会渲染出 1px 间隙;
+        VS Code 终端中, 半块/象限字符 (▢◆) 会渲染出 1px 间隙;
         此时自动切换为实心全块变体, 非 VS Code 环境保持原样。
         """
         f = self._frame if frame is None else (frame % len(MOON_FRAMES))

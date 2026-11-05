@@ -1,6 +1,6 @@
 """并发子 Agent 编排 (SubAgentPool) —— 给青小团装上"多双手"。
 
-设计要点 (融合 Harness 微内核 + Hermes 隔离上下文):
+设计要点 (融合 Harness 插件容器 + Hermes 隔离上下文):
 - 每个子任务跑在**隔离的 Agent 实例**里: 各自的 messages / 上下文, 互不污染主循环;
 - 但**共享同一个内核的工具注册表** (shell / web_fetch / filesystem / code …),
   所以子 Agent 天然拥有和主 Agent 一样的"手";

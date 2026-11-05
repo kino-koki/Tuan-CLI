@@ -59,21 +59,23 @@ def test_render_security_report_html_contains_numbers_and_no_external():
     assert "https://cdn" not in html
 
 
-def test_cmd_report_writes_html(tmp_path, monkeypatch):
-    # 用仓库现成的基准汇总驱动报告生成 (不重跑基准)
-    root = cmd_safe._repo_root()
-    bench_json = root / "bench" / "security-bench.json"
-    if not bench_json.exists():
-        bench_json.write_text(json.dumps({
-            "adversarial": {"total": 10000, "block_recall": 100.0, "flag_catch": 100.0,
-                            "false_positive_rate": 1.87, "bypass": 0},
-            "powershell": {"total": 5000, "accuracy": 1.0, "fn": 0, "fp": 0},
-            "bypass_matrix": {"total": 1083, "bypass": 0, "false_pos": 1, "all_disaster_blocked": True},
-        }), encoding="utf-8")
-    out = tmp_path / "report.html"
-    args = types.SimpleNamespace(out=str(out))
-    rc = cmd_safe._cmd_report(args)
-    assert rc == 0
+def test_cmd_report_writes_html(tmp_path):
+    # 用 tmp 存档驱动报告生成（不依赖仓库真实 bench JSON，它可能是超时错误数据）
+    bench_dir = tmp_path / "bench"
+    bench_dir.mkdir()
+    (bench_dir / "security-bench.json").write_text(json.dumps({
+        "adversarial": {"total": 10000, "block_recall": 100.0, "flag_catch": 100.0,
+                        "false_positive_rate": 1.87, "bypass": 0},
+        "powershell": {"total": 5000, "accuracy": 1.0, "fn": 0, "fp": 0},
+        "bypass_matrix": {"total": 1083, "bypass": 0, "false_pos": 1, "all_disaster_blocked": True},
+    }), encoding="utf-8")
+    # monkeypatch repo_root 指向 tmp
+    import unittest.mock as _m
+    with _m.patch.object(cmd_safe, "_repo_root", return_value=tmp_path):
+        out = tmp_path / "report.html"
+        args = types.SimpleNamespace(out=str(out))
+        rc = cmd_safe._cmd_report(args)
+        assert rc == 0
     assert out.exists()
     body = out.read_text(encoding="utf-8")
     assert "安全状态报告" in body

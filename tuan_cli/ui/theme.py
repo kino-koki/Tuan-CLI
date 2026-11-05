@@ -1,20 +1,20 @@
 """统一主题 —— 忠实采用 Kimi Code CLI 的原版设计令牌 (无改动)。
 
-本模块的色彩 / 符号 / spinner / diff 颜色全部取自 kimi-code `src/tui`, 与
-Kimi Code CLI 原版视觉完全一致:
-  * theme/colors.ts (darkColors): primary=#4FA8FF, accent=#5BC0BE …
-  * constant/symbols.ts: STATUS_BULLET='● ', USER_MESSAGE_BULLET='✨ ' …
-  * constant/rendering.ts: MOON_SPINNER(120ms) / BRAILLE_SPINNER(80ms)
+本模块的色彩 / 符号 / spinner / diff 颜色对齐开源 Codex CLI 深色视觉语言
+(chatgpt-blue 200 主强调), 供 REPL (Rich) 与 TUI 共用:
+  * 主强调 UI_ACCENT = CHATGPT_BLUE_200 = #63A8F8 (选中/强调/标题/提示符)
+  * 语义色 status_style: success=green / failure=red / attention=yellow
+  * 用户消息前缀 › + 深底; 粒子风格 TUAN 徽记 (◆▢◆▢◆▢◆)
 
-设计原则 (与 Kimi Code 原版一致):
-  * 唯一品牌色 primary=#4FA8FF 用于标题/徽章/提示符;
+设计原则:
+  * 唯一品牌色 primary=#63A8F8 用于标题/徽章/提示符;
   * 其余按角色取色 (text/roleUser/success/warning/error/shellMode …);
   * C         -> Rich 颜色名 (repl.py 用)
-  * PT_STYLE  -> prompt_toolkit 样式表 (fullscreen.py 用)
+  * PT_STYLE  -> prompt_toolkit 样式表 (repl.py 用)
   * BRAND     -> 品牌元信息 (名称/标语/版本色), GUI/TUI 共用
 
-注意: 产品名仍为「青小团」, TUI 视觉令牌 (颜色/符号/布局) 沿用 Kimi Code
-原版设计，已在上游 MIT 许可下于 NOTICE 中完整署名。所有功能逻辑为独立自研实现。
+注意: 产品名仍为「青小团」, TUI 视觉令牌 (颜色/符号/布局) 对齐 Codex CLI
+设计语言, 已在 NOTICE 中完整署名。所有功能逻辑为独立自研实现。
 """
 
 from __future__ import annotations
@@ -22,24 +22,24 @@ from __future__ import annotations
 import os
 
 # ================================================================ 品牌元信息
-# 产品身份保留青小团, TUI 视觉令牌采用 Kimi Code 原版。
+# 产品身份保留青小团, TUI 视觉令牌采用 Codex CLI 深色视觉语言。
 BRAND = {
     "name": "青小团",
     "name_en": "Tuan-CLI",
     "tagline": "终端智能体 · 自主借鉴 · 安全可控",
-    "primary": "#4FA8FF",   # Kimi Code 原版品牌主色
-    "accent": "#5BC0BE",    # Kimi Code 原版次要高亮
+    "primary": "#63A8F8",   # Codex 主强调蓝 (CHATGPT_BLUE_200)
+    "accent": "#63A8F8",    # Codex 辅助强调同源
 }
 
-# Kimi Code 原版唯一品牌色
+# Codex 主强调蓝 (唯一品牌色)
 ACCENT_COLOR = BRAND["primary"]
 
-# ---------------------------------------------------------------- Rich 颜色名 (Kimi Code dark 主题)
-# 保留 repl.py / fullscreen.py 已用的键名 (accent/dim/box/primary/text/muted/err/ok/warn),
-# 并补齐 Kimi 原版角色色。
+# ---------------------------------------------------------------- Rich 颜色名 (Codex 深色主题)
+# 保留 repl.py 已用的键名 (accent/dim/box/primary/text/muted/err/ok/warn),
+# 并补齐 Codex 角色色。
 C = {
-    "primary": "#4FA8FF",
-    "accent": "#5BC0BE",
+    "primary": "#63A8F8",
+    "accent": "#63A8F8",
     "text": "#E0E0E0",
     "textstrong": "#F5F5F5",
     "textdim": "#888888",
@@ -52,24 +52,24 @@ C = {
     "ok": "#4EC87E",
     "warn": "#E8A838",
     "err": "#E85454",
-    "roleuser": "#FFCB6B",
+    "roleuser": "#63A8F8",     # 用户消息前缀强调 = Codex accent
     "shellmode": "#BD93F9",
 }
 
-# ---------------------------------------------------------------- prompt_toolkit 样式 (Kimi 原版)
+# ---------------------------------------------------------------- prompt_toolkit 样式 (Codex 深色)
 # 仅标题/徽章/提示符用 primary 蓝, 其余无样式 (继承终端默认)。
 PT_STYLE = {
     "status": "",
-    "title": "#4FA8FF",
+    "title": "#63A8F8",
     "panel": "",
     "log": "",
     "input": "",
     "bottom-toolbar": "",
-    "badge": "#4FA8FF",
-    "badge-plan": "#4FA8FF",
+    "badge": "#63A8F8",
+    "badge-plan": "#63A8F8",
     "badge-yolo": "#E8A838",
-    "prompt": "#4FA8FF",
-    "text-area.prompt": "#4FA8FF",
+    "prompt": "#63A8F8",
+    "text-area.prompt": "#63A8F8",
     "context-ok": "",
     "context-warn": "",
     "context-err": "",

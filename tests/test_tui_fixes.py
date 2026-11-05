@@ -190,7 +190,7 @@ class TestOverflowGuard:
         tui = self._tui()
         tui.stream_assistant("hello")
         tui.end_stream()
-        assert tui._events[-1].startswith("● hello")
+        assert tui._events[-1].startswith("• hello")
 
 
 # ---------------------------------------------------------------- set_ready 接线
@@ -248,7 +248,7 @@ class TestTrustDialogRender:
         assert t("tui.trust_opt_distrust") in flat
         assert t("tui.trust_opt_trust_desc") in flat
         assert t("tui.trust_opt_distrust_desc") in flat
-        assert "1)" in flat and "2)" in flat
+        assert "1." in flat and "2." in flat
 
     def test_highlight_switches(self):
         # index=1 时不应影响两个选项的可见性 (仅高亮态变化)

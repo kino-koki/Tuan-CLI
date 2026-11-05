@@ -7,7 +7,7 @@ Claude Code 的 subagent:
 - 适合研究任务、并行工作、专业 worker
 
 青小团 subagent:
-- 复用微内核的工具注册表, 但拥有独立的 messages 列表
+- 复用插件容器的工具注册表, 但拥有独立的 messages 列表
 - 主会话只收到最终摘要, 不被子任务的中间输出污染
 - 支持 skill 预加载 (通过 skills 参数指定)
 - 支持可选的工具过滤 (exclude_tools)

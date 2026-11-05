@@ -28,7 +28,10 @@ from ..models.provider_catalog import (
     get_provider,
 )
 from ..logging_conf import log
-from ..i18n import ensure_language, t
+from ..i18n import (
+    ensure_language, t, choose_language_interactive, normalize_language,
+    DEFAULT_LANGUAGE, get_language,
+)
 from ..ui.plain_console import console
 from ._ui_singleton import ui
 from .cmd_config import _validate_config
@@ -163,6 +166,42 @@ def _auto_first_run() -> bool:
 
 
 # ===================================================================== cmd_chat
+
+def _preselect_language() -> None:
+    """TUI 首启语言预置 (主线程、进入全屏前调用)。
+
+    根因修复: 此前 ``ensure_language`` 在 ``_boot`` 后台线程里、prompt_toolkit
+    ``app.run()`` 全屏渲染期间调用原生 ``input()``, 与 TUI 的终端重绘状态
+    冲突 → 表现为"语言输入后无响应卡死 + 第二次启动渲染错乱"。
+
+    这里在 TUI 进入全屏**之前**于主线程同步完成交互式选择: 此时终端仍由
+    CLI 控制, ``input()`` 安全。选择结果写盘后, ``_boot`` 里的 ``ensure_language``
+    命中"已配置"分支直接返回, 不再触碰原生 input。
+
+    非交互 / 已配置 / 非 TTY: 直接返回, 零开销。
+    """
+    try:
+        cfg = Config()
+        if normalize_language(str(cfg.get("language", "") or "")):
+            return  # 已配置, 无需询问
+        try:
+            interactive = sys.stdin.isatty() and sys.stdout.isatty()
+        except Exception:  # noqa: BLE001
+            interactive = False
+        if not interactive:
+            return  # 非 TTY (管道/CI/重定向): 让 _boot 走默认 zh-CN
+        chosen = choose_language_interactive()
+        set_language_global(chosen)
+        cfg.set_user("language", chosen)
+    except Exception:  # noqa: BLE001 - 语言预置绝不阻断 TUI 启动
+        pass
+
+
+def set_language_global(lang: str) -> None:
+    """把语言写进 i18n 全局态 (等价 set_language, 供预置路径复用)。"""
+    from ..i18n import set_language as _set
+    _set(lang)
+
 
 def _prepare_agent(args: Any, workspace: str, session_id: str, on_progress: Any = None) -> Any:
     """构建内核 + Agent + 会话钩子 + 内置技能 (TUI / REPL / --print 共用)。
@@ -342,6 +381,16 @@ def cmd_chat(args: Any) -> int:
                     tui.set_context_used(_real if _real > 0 else _est)
             except Exception:
                 pass
+            # Super-Agent 融合 (观察, 非接单): 用户对话消息记录进 Router 的
+            # 跨任务上下文。只记录不研判不开单 —— 用户消息已由主 Agent 处理,
+            # 不能再喂给 Router 开单 (否则双份执行工具)。引擎若尚未创建则跳过
+            # (用户未用 /superagent 时零开销, 也不因普通聊天意外开单)。
+            try:
+                _sa = getattr(agent, "_superagent", None)
+                if _sa is not None:
+                    _sa.observe_text(text, sender="你", source="local")
+            except Exception:  # noqa: BLE001 - 观察失败不阻断对话
+                pass
             return answer or t("tui.no_output")
 
         def command_in_tui(text: str) -> Optional[str]:
@@ -355,6 +404,14 @@ def cmd_chat(args: Any) -> int:
             handled = _handle_slash(text, agent,
                                     state["config"], workspace)
             tui.set_plan_mode(agent.plan_mode)
+            # 同步五模式徽标: /mode <id> 切换后底部状态栏徽标随之更新
+            # (plan 只读态仍由 set_plan_mode 主导, 非 plan 时用 current_mode 刷新)。
+            try:
+                if not agent.plan_mode:
+                    from ..modes.switcher import current_mode
+                    tui.set_mode(current_mode())
+            except Exception:
+                pass
             # 若刚通过 /provider 设置密钥, 立即清除"未配置"横幅 (无需重启)
             try:
                 tui.set_no_key(not state["config"].api_key(),
@@ -432,6 +489,11 @@ def cmd_chat(args: Any) -> int:
                 import traceback as _tb
                 _tb.print_exc()
                 tui.boot_error(f"{type(exc).__name__}: {exc}")
+
+        # 语言预置必须在 _boot 线程启动前、主线程同步完成 —— 否则 _boot 里的
+        # ensure_language 会在 app.run() 全屏渲染期间用原生 input() 抢终端,
+        # 导致"输入后卡死 + 二次启动渲染错乱"。见 _preselect_language 注释。
+        _preselect_language()
 
         threading.Thread(target=_boot, name="tuan-boot", daemon=True).start()
         try:

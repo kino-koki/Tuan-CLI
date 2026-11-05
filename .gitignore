@@ -181,6 +181,15 @@ github token*
 .venv_*/
 .venv_test/
 *.venv/
+# 测试临时目录变体 (历史多代 .pytest-tmp-v*), 不入库
+.pytest-tmp-v*/
+# 上游参考源码抓取 (Codex CLI / Kimi Code 的只读研究素材, 非本仓库代码), 不入库
+.codex_src/
+.kimi_src/
+# git 历史手工备份 (git_backup_manual + 引用/合成清单), 属于溯源证据副本, 不入库
+.git_backup_manual/
+.git_refs_backup.txt
+.git_synth_files.txt
 # 一次性推送脚本: 面向单次全量迁移的临时工具, 不走版本控制。
 # 脚本内绝不硬编码凭据 (只读 GITHUB_TOKEN 环境变量), 但仍属个人操作留痕, 不入库。
 push_api.py

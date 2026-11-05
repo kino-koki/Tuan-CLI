@@ -1,9 +1,14 @@
-"""微内核 (Microkernel) —— 源自 DeepSeek Harness / Cordis 的理念。
+"""插件容器 (Plugin Container) —— 灵感来自 DeepSeek Harness / Cordis 的插件式架构。
 
-内核本身不携带任何 Agent 能力, 只负责:
+容器本身不携带任何 Agent 能力, 只负责:
 1. 插件的注册 / 激活 / 停用 / 依赖解析
 2. 服务注册表 (插件之间通过服务名互相发现, 而非直接 import)
 3. 生命周期事件钩子 (append-only 事件总线 + 中间件管线)
+
+术语说明: 早期文档沿用 DeepSeek Harness 把本类称作「微内核 (microkernel)」。这并不准确 ——
+经典微内核指 OS 把服务移到用户态、内核仅保留最小机制 (地址空间 / IPC / 调度)。本类更接近
+「插件容器 / plugin container」: 保留服务注册表与事件总线这两个较厚设施, 并非最小化内核。
+故统一改称「插件容器」。
 
 增强 (v0.3):
 - @plugin 装饰器: 一行声明插件元数据 + activate/deactivate
@@ -452,10 +457,10 @@ class KernelEvent:
     payload: Dict[str, Any]
 
 
-# =================================================================== 微内核
+# =================================================================== 插件容器
 
 class Kernel:
-    """青小团微内核。相当于 Cordis 的极简实现。
+    """青小团插件容器。相当于 Cordis 的极简实现。
 
     v0.3 增强:
     - ServiceContainer 替代原始 dict, 支持懒工厂和生命周期钩子

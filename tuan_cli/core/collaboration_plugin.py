@@ -1,4 +1,4 @@
-"""协作插件 (Collaboration Plugin) —— 把多 Agent 协作子系统注册到微内核。
+"""协作插件 (Collaboration Plugin) —— 把多 Agent 协作子系统注册到插件容器。
 
 将 TaskDAG / specialized_roles / result_aggregator / collaboration_protocol
 注册为内核服务, 供 Swarm / SubAgentPool / dispatch_tasks 等模块使用。

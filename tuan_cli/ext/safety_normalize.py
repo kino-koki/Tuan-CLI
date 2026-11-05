@@ -54,7 +54,16 @@ def _cmd_name(tok: str) -> str:
     while s != prev:                       # 逐层剥掉包裹引号 ('rm' / "rm")
         prev = s
         s = s.strip("'\"")
+    # 平台转义字符剥离: cmd.exe 用 ^ 转义 (r^m → rm), PowerShell 用 ` 转义
+    # (r`m → rm)。两者都让命令名 token 在文本层面与真实命令名不同, 但实际执行的是
+    # 被转义还原后的命令。必须在取 basename / 小写化之前剥掉, 否则 is_hard_redline
+    # 看到的是 r^m / r`m, 漏判 Windows 上的毁灭命令。
+    s = s.replace("^", "").replace("`", "")
     s = _unicode_clean(s)                  # echo\u200b → echo (零宽/变体/控制符, 防提及豁免失效)
+    # 西里尔之外的同形字: 希腊 (ρ→r / ο→o / е→e / с→c / х→x / у→y / α→a / κ→k 等),
+    # 亚美尼亚 (հ→h 等) 及零散全/半角混淆。攻击者可用同形字母造一个可执行文件名
+    # (如 ρm, 内含 shebang) 绕过 ASCII 精确比较。先做同形字归一, 再继续常规剥离。
+    s = _HOMOGLYPH_MAP_TRANSLATE(s)
     # 剥掉 token 内部的引号: 对抗 `r'm'` / `r"m"` / `r''m''` 等把命令名
     # 拆成「字母 + 引号拼接」的写法 (旧实现只剥外层, 残留内部引号导致 r'm ≠ rm)。
     s = s.replace("'", "").replace('"', "")
@@ -68,6 +77,75 @@ def _cmd_name(tok: str) -> str:
             s = s[: -len(suf)]
             break
     return s.lower()
+
+
+# 报告 P1-1: 命令名含 glob 通配符 (/bin/r? / /bin/{r,c}m) 时, 命令名不出现在 token 里,
+# 引擎无法静态识别。这里用 fnmatch 把通配命令名与已知危险命令名集合做匹配,
+# 命中则返回该危险命令名 (供 token 化判定把 `/bin/r?` 当 `rm` 处理)。
+# 平台无关: 不依赖真实文件系统 (Windows 无 /bin/rm, 但安全引擎必须保守)。
+_GLOB_CMD_MATCH_RE = re.compile(r'[*?[{]')
+_DANGEROUS_GLOB_CMDS = frozenset({
+    'rm', 'chmod', 'chown', 'userdel', 'wipefs', 'shred', 'blkdiscard',
+    'lvremove', 'vgremove', 'pvremove', 'sgdisk', 'parted', 'dd', 'mkfs',
+    'format', 'shutdown', 'reboot', 'halt', 'poweroff',
+    'su', 'passwd', 'umount', 'mount', 'mv', 'setuid', 'setcap',
+    'chage', 'usermod', 'groupmod', 'groupadd', 'useradd', 'pkill',
+    'kill', 'killall', 'systemctl', 'iptables', 'swapoff', 'ln', 'truncate',
+})
+
+
+def _glob_command_name(tok: str) -> str | None:
+    """若命令名 token 含 glob 通配符且能匹配已知危险命令, 返回规范化命令名。
+
+    例: ``/bin/r?`` → ``rm``; ``/bin/{r,c}m`` 已由 brace 展开预处理, 若残留
+    ``{r,c}m`` 形态则在此展开; ``/bin/p?*`` → ``pkill``。
+    无法匹配任何危险命令 (如 ``/bin/ls?`` → 无) 返回 None, 保留原文走常规判定。
+    """
+    bare = tok.strip("'\"")
+    base = bare.rsplit("/", 1)[-1]
+    if not _GLOB_CMD_MATCH_RE.search(base):
+        return None
+    import fnmatch
+    # brace 残留: {r,c}m → r m (逗号平面列表), 再逐项匹配
+    candidates = [base]
+    if '{' in base:
+        def _flat(s: str) -> list[str]:
+            m = re.fullmatch(r'([^{}]*)\{([^{}]+)\}([^{}]*)', s)
+            if not m:
+                return [s]
+            out = []
+            for part in m.group(2).split(','):
+                out.extend(_flat(m.group(1) + part + m.group(3)))
+            return out
+        candidates = _flat(base)
+    for cand in candidates:
+        low = cand.lower()
+        # 模式必须含至少一个「具体锚定字符」(非通配/非空), 否则 `*`/`?` 这类纯泛化
+        # 模式会匹配一切危险命令名 (如路径参数 `node_modules/*` 的 basename 是 `*`,
+        # fnmatch 恒真, 会把任意参数误映射成危险命令 → 硬红线误判)。无锚定的纯通配
+        # 模式无法确定映射到「一个」危险命令, 应返回 None 保留原文走常规判定。
+        if not re.search(r"[A-Za-z0-9_]", low):
+            continue
+        # low 作为 glob 模式去匹配危险命令名: r? 匹配 rm / p?* 匹配 pkill。
+        # 反方向 (dname 匹配 low) 只用于 low 本身是字面名 (无通配) 的精确相等,
+        # 且要求模式不含通配才成立 —— 否则 `*` 会匹配一切造成全面误杀。
+        for dname in _DANGEROUS_GLOB_CMDS:
+            if fnmatch.fnmatchcase(dname, low):
+                return dname
+    return None
+
+
+def _cmd_name_glob(tok: str) -> str:
+    """命令名规范化 + glob 通配命令名识别 (报告 P1-1)。
+
+    ``/bin/r?`` / ``/bin/p?*`` / ``/bin/{r,c}m`` 等命令名被通配符/花括号隐藏时,
+    静态识别出真实危险命令名, 供 token 化判定把通配命令当具名命令处理。
+    非通配命令名退化为 _cmd_name 原逻辑, 零性能损失。
+    """
+    g = _glob_command_name(tok)
+    if g is not None:
+        return g
+    return _cmd_name(tok)
 
 
 def _detect_passthrough_danger(args: list[str]) -> bool:
@@ -85,6 +163,44 @@ def _detect_passthrough_danger(args: list[str]) -> bool:
     return False
 
 
+def _unescape_win(text: str) -> str:
+    """剥掉 Windows 平台转义字符 (cmd.exe 的 ``^``、PowerShell 的 `````), 供判定使用。
+
+    ``cmd /c d^d ...`` / ``powershell -c d`d ...`` 里的 ``^`` / ```` ``` `` 是平台转义符,
+    实际执行的是被还原后的命令 (``dd`` / ``format``)。shell 侧 ``^`` / ```` ``` `` 是字面量 /
+    命令替换, 不受影响 —— 因此本函数**只产出额外扫描段**, 不替换原始文本, 保证不误伤
+    ``grep '^foo'`` / ``echo `n`` 这类良性写法。
+
+    引号区间 (单/双引号) 内的 ``^`` / ```` ``` `` 在两个平台里都失去转义语义, 一并跳过。
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+            i += 1
+            while i < n:
+                if text[i] == "\\" and quote == '"':
+                    out.append(text[i:i + 2])
+                    i += 2
+                    continue
+                out.append(text[i])
+                if text[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch in ("^", "`"):
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _scan_variants(text: str) -> Iterator[str]:
     """产出待扫描的命令段: **原始文本 + 归一化文本** 的并集。
 
@@ -96,7 +212,9 @@ def _scan_variants(text: str) -> Iterator[str]:
     因此原始与归一化两者都扫: **归一化只能增加命中, 绝不能减少命中。**
     """
     seen = set()
-    for src in (text, _normalize(text)):
+    for src in (text, _unescape_win(text), _normalize(text)):
+        # 报告 P2: 原始文本也可能带整行注释 (`# 谨慎: rm -rf /`), 先剥注释再分段。
+        src = _strip_shell_comments(src)
         try:
             segs = _segments(src)
         except Exception:  # noqa: BLE001 - 归一化异常时至少保住原始文本
@@ -110,7 +228,123 @@ def _scan_variants(text: str) -> Iterator[str]:
 # 前缀变量赋值 (NAME=value, 值可为带引号串), 仅在文本开头或分隔符后识别,
 # 避免误收 `echo foo=bar` / `--opt=val` 这类普通参数。
 _VAR_DEF_RE = re.compile(
-    r"(?:^|[;|&\n])\s*([A-Za-z_]\w*)=(\"[^\"]*\"|'[^']*'|[^\s;&|]+)")
+    r"(?:^|[;|&\n])\s*([A-Za-z_]\w*)=(\"[^\"]*\"|'[^']*'|[^\s;&|]*)")
+
+# 数组赋值收集: a=(rm) / cmd=(r m) 等。必须在普通 _VAR_DEF_RE 之前处理, 否则
+# `cmd=(r` 会被值捕获截断 (值部分遇空格即停), 残留 ` m)` 破坏后续 token。
+_ARRAY_ASSIGN_RE = re.compile(
+    r"(?:^|[;|&\n])\s*([A-Za-z_]\w*)=\(\s*([^)]*?)\s*\)")
+
+
+def _expand_param_ops(text: str, env: dict[str, str],
+                      arrays: dict[str, list[str]]) -> str:
+    """静态求值 Bash 参数展开 (报告 P0-1 系统性盲区)。
+
+    覆盖:
+      ${var:off:len}     切片      x=_rm_; ${x:1:2}  → rm
+      ${var#pat}         前缀剥离  x=xxrm; ${x#xx}   → rm
+      ${var%pat}         后缀剥离  x=rmxx; ${x%xx}   → rm
+      ${var/pat/repl}    替换      x=zm; ${x/z/r}    → rm
+      ${var:-default}    默认值    ${CMD:-rm}        → rm
+      ${!var}            间接展开  v=C; C=rm; ${!v}  → rm
+      ${arr[i]}          数组索引  a=(rm); ${a[0]}   → rm
+      ${arr[*]}          数组+IFS cmd=(r m); IFS=; ${cmd[*]} → rm
+
+    无法静态求值 (变量未定义 / 模式含未定义变量 / 含通配符模式) 时保留原文,
+    由 _has_unresolved_dangerous_substitution 做 fail-closed 兜底判定。
+    """
+    _PARAM_OP_RE = re.compile(r"\$\{([^{}]*)\}")
+
+    def _eval_one(expr: str) -> Any:
+        expr = expr.strip()
+        if not expr:
+            return None
+        # 1) 间接展开 ${!var}: 取 var 的值作为变量名, 再取值
+        if expr.startswith("!"):
+            name = expr[1:].strip()
+            inner = env.get(name)
+            if inner is None:
+                return None
+            return env.get(inner)
+        # 2) 默认值 ${var:-def} / ${var-def} / ${var:=def} / ${var:+alt}
+        m = re.fullmatch(r"([A-Za-z_]\w*):?(-|:=|\+)(.*)", expr, re.S)
+        if m:
+            name, op, val = m.group(1), m.group(2), m.group(3)
+            has = name in env and env.get(name) != ""
+            if op == "+":          # ${var:+alt}: 已设置非空 → alt, 否则空
+                return val if has else ""
+            if has:                # ${var:-def}: 已设置非空 → 原值
+                return env[name]
+            if op == ":=":         # ${var:=def}: 未设置则赋值并返回 def
+                env[name] = val
+                return val
+            return val if op in ("-", ":-") else ""
+        # 3) 切片 ${var:off:len} / ${var:off}
+        m = re.fullmatch(r"([A-Za-z_]\w*):(-?\d+)(?::(-?\d+))?", expr)
+        if m:
+            name, off = m.group(1), int(m.group(2))
+            s = env.get(name)
+            if s is None:
+                return None
+            if m.group(3) is None:
+                return s[off:]
+            return s[off:off + int(m.group(3))]
+        # 4) 替换 ${var/pat/repl} / ${var//pat/repl} / ${var/#pat/repl} / ${var/%pat/repl}
+        m = re.fullmatch(r"([A-Za-z_]\w*)(//|/#|/%|/)(.+)", expr, re.S)
+        if m:
+            name, op, rest = m.group(1), m.group(2), m.group(3)
+            s = env.get(name)
+            if s is None:
+                return None
+            pat, _, repl = rest.partition("/")
+            if op == "/":
+                return s.replace(pat, repl, 1)
+            if op == "//":
+                return s.replace(pat, repl)
+            if op == "/#":
+                return repl + s[len(pat):] if s.startswith(pat) else s
+            if op == "/%":
+                return s[: -len(pat)] + repl if s.endswith(pat) else s
+        # 5) 前缀/后缀剥离 ${var#pat} / ${var##pat} / ${var%pat} / ${var%%pat}
+        m = re.fullmatch(r"([A-Za-z_]\w*)(##|%%|#|%)(.+)", expr, re.S)
+        if m:
+            name, op, pat = m.group(1), m.group(2), m.group(3)
+            s = env.get(name)
+            if s is None:
+                return None
+            if op in ("#", "##"):   # 前缀剥离 (字面模式; 通配模式无法静态求值 → 保留)
+                return s[len(pat):] if s.startswith(pat) else s
+            return s[: -len(pat)] if s.endswith(pat) else s
+        # 6) 数组 ${arr[i]} / ${arr[*]} / ${arr[@]}
+        m = re.fullmatch(r"([A-Za-z_]\w*)\[([^]]*)\]", expr)
+        if m:
+            name, idx = m.group(1), m.group(2).strip()
+            els = arrays.get(name)
+            if els is None:
+                return None
+            if idx in ("*", "@"):
+                sep = env.get("IFS", " ")
+                if sep == "":       # IFS 清空 → 无分隔连接 (cmd=(r m); IFS= → rm)
+                    return "".join(els)
+                return sep[0].join(els) if sep else "".join(els)
+            try:
+                i = int(idx)
+            except ValueError:
+                return None
+            if i < 0:
+                i += len(els)
+            if 0 <= i < len(els):
+                return els[i]
+            return ""
+        return None
+
+    def _sub(m: Any) -> Any:
+        val = _eval_one(m.group(1))
+        if val is None:
+            return m.group(0)       # 无法求值 → 保留原文, fail-closed 兜底
+        return val
+
+    return _PARAM_OP_RE.sub(_sub, text)
 
 
 # ------------------------------------------------------------ 间接写法展开 (绕过修复)
@@ -505,6 +739,48 @@ def _expand_globs(text: str) -> str:
                      for line in text.split('\n'))
 
 
+def _expand_glob_cmd_names(text: str) -> str:
+    """把含 glob 通配符的**命令名**展开为真实危险命令名 (报告 P1-1)。
+
+    与 _expand_globs (路径 token) 不同, 本函数针对**命令名位置**的 token:
+    ``/bin/r?`` → ``/bin/rm``、``/bin/c?mod`` → ``/bin/chmod``、
+    ``/bin/umou?t`` → ``/bin/umount``。展开后让正则模式库 (\\bchmod\\b 等) 也能命中。
+
+    平台无关: 不依赖真实文件系统; 无法匹配任何危险命令名的通配 token 原样保留。
+    """
+    out_tokens: list[str] = []
+    for line in text.split('\n'):
+        toks = _tokenize_shell(line)
+        new_toks: list[str] = []
+        # 只把「命令名位置」的 token 当命令名 glob 处理。命令名位置 = 每条子命令的
+        # 首 token; 子命令由 `;`/`&&`/`||`/`|`/`&`/`(` 分隔。否则路径参数里的通配
+        # (如 `rm -rf node_modules/*` 的 `node_modules/*`) 会被误当成命令名 glob,
+        # 其 basename `*` 匹配一切危险命令名, 造成硬红线误判。
+        at_cmd_start = True
+        for tok in toks:
+            stripped = tok.strip("'\"")
+            if stripped in (";", "&&", "||", "|", "&", "(", ")"):
+                at_cmd_start = True
+                new_toks.append(tok)
+                continue
+            if at_cmd_start:
+                g = _glob_command_name(tok)
+                if g is not None:
+                    # 保留路径前缀, 替换 basename 为真实命令名 (/bin/r? → /bin/rm)
+                    prefix = tok.strip("'\"")
+                    base = prefix.rsplit("/", 1)
+                    if len(base) == 2:
+                        new_toks.append(base[0] + "/" + g)
+                    else:
+                        new_toks.append(g)
+                    at_cmd_start = False
+                    continue
+            at_cmd_start = False
+            new_toks.append(tok)
+        out_tokens.append(' '.join(new_toks))
+    return '\n'.join(out_tokens)
+
+
 # ---------- 受限 glob: 防止 `**` 递归遍历全盘 / 输出膨胀 / CPU 抖动 ----------
 _GLOB_MAX_DEPTH = 6          # ** 允许穿越的最大目录层数
 _GLOB_MAX_MATCHES = 1000     # 单 token 展开结果条数上限
@@ -598,8 +874,52 @@ _CYRILLIC_MAP = {
     0x0445: ord('x'),  # Cyrillic х → Latin x
 }
 
+# 同形字归一表 (西里尔之外的 confusables): 希腊 / 亚美尼亚等脚本中视觉上与 ASCII
+# 字母相同、但码点不同的字符。攻击者可用同形字母命名可执行文件 (如 ρm, 内含 shebang)
+# 或在命令名里混入同形字, 使 ASCII 精确比较 (parts[0]=="rm") 落空。此处把它们归一到
+# ASCII, 供 _cmd_name 在小写化前调用, 令 ρm → rm 等被识别。
+# 仅收录与危险命令字母重叠的 ASCII 对应项, 控制表规模。
+_HOMOGLYPH_MAP: dict[int, int] = {
+    # --- Greek ---
+    0x0391: ord('A'), 0x03B1: ord('a'),  # Alpha
+    0x0392: ord('B'), 0x03B2: ord('b'),  # Beta
+    0x0395: ord('E'), 0x03B5: ord('e'),  # Epsilon
+    0x0397: ord('H'), 0x03B7: ord('h'),  # Eta (visual h)
+    0x0399: ord('I'), 0x03B9: ord('i'),  # Iota
+    0x039A: ord('K'), 0x03BA: ord('k'),  # Kappa
+    0x039C: ord('M'), 0x03BC: ord('m'),  # Mu
+    0x039D: ord('N'), 0x03BD: ord('n'),  # Nu
+    0x039F: ord('O'), 0x03BF: ord('o'),  # Omicron
+    0x03A1: ord('P'), 0x03C1: ord('r'),  # Rho  (ρ → r, 关键)
+    0x03A4: ord('T'), 0x03C4: ord('t'),  # Tau
+    0x03A5: ord('Y'), 0x03C5: ord('u'),  # Upsilon
+    0x03A7: ord('X'), 0x03C7: ord('x'),  # Chi
+    # Greek with tonos (ά έ ή ί ό ύ ώ) — 归一到无调 ASCII
+    0x03AC: ord('a'), 0x03AD: ord('e'), 0x03AE: ord('h'),
+    0x03AF: ord('i'), 0x03CC: ord('o'), 0x03CD: ord('u'), 0x03CE: ord('w'),
+    # --- Armenian ---
+    0x0561: ord('a'), 0x0562: ord('b'), 0x0563: ord('g'), 0x0564: ord('d'),
+    0x0565: ord('e'), 0x0567: ord('i'), 0x056B: ord('h'), 0x056D: ord('x'),
+    0x056E: ord('c'), 0x0570: ord('h'), 0x0571: ord('r'),  # հ / ր 视觉接近
+    0x0578: ord('n'), 0x0579: ord('o'), 0x0580: ord('p'),
+}
+
+_HOMOGLYPH_TRANSLATION = str.maketrans(_HOMOGLYPH_MAP)
+
+
+def _HOMOGLYPH_MAP_TRANSLATE(text: str) -> str:
+    """把同形字 (希腊/亚美尼亚 confusables) 归一到 ASCII, 供命令名比较使用。
+
+    与 `_CYRILLIC_MAP` 分开维护: 二者覆盖不同 Unicode 区块, 合并会扩大每次翻译
+    的查找表。本函数在 `_unicode_clean` 之后调用 —— 控制符/变体选择符已先被剥离,
+    不会干扰同形字判定。
+    """
+    if not text.isascii():
+        return text.translate(_HOMOGLYPH_TRANSLATION)
+    return text
+
+
 # 组合变音符号范围: U+0300-U+036F (Combining Diacritical Marks)
-# 这些字符会附着在前一个字符上, 使其看起来不同但实际是同一个字母
 _COMBINING_MARKS_RE = re.compile(r'[\u0300-\u036f\u0483-\u0489]')
 
 # 控制字符 (除常见空白外): null byte, backspace, bell, escape, etc.
@@ -629,6 +949,39 @@ def _unicode_clean(text: str) -> str:
     return text
 
 
+# 整行 / 行尾 shell 注释剥离 (报告 P2 误杀修复)。
+# `# 谨慎: rm -rf /`(整行注释) 与 `rm -rf / # 说明`(行尾注释) 在 shell 里都是注释,
+# 不是要执行的命令。旧实现未剥离, `# 谨慎: rm -rf /` 被 is_redline 误判为执行。
+# 剥离必须在 token 化/变量展开之前, 且不能破坏引号内的 `#` (如 echo '# rm -rf /')。
+def _strip_shell_comments(text: str) -> str:
+    out_lines: list[str] = []
+    for line in text.split('\n'):
+        # 逐字符扫描: 引号内 / 转义字符的 # 不算注释开始
+        in_s = in_d = False
+        esc = False
+        cut = len(line)
+        for i, ch in enumerate(line):
+            if esc:
+                esc = False
+                continue
+            if ch == '\\' and not in_s and not in_d:
+                esc = True
+                continue
+            if ch == "'" and not in_d:
+                in_s = not in_s
+                continue
+            if ch == '"' and not in_s:
+                in_d = not in_d
+                continue
+            if ch == '#' and not in_s and not in_d:
+                # # 前是空白或行首 → 注释开始; 否则是参数 (如 ${x#pat} 的 # 是操作符)
+                if i == 0 or line[i - 1] in ' \t':
+                    cut = i
+                    break
+        out_lines.append(line[:cut])
+    return '\n'.join(out_lines)
+
+
 def _normalize(text: str) -> str:
     """归一化间接写法, 让红线判定穿透子壳 / 变量 / 引号 / 解释器包装。
 
@@ -654,6 +1007,9 @@ def _normalize(text: str) -> str:
     # 不合并则跨行模式 (dd ... of=/dev/...) 的 [^\n]* 前瞻会断在换行处 → 漏判;
     # 这是「多行 dd 写裸设备」这类真实绕过手法的根因。必须在各分词/逐行步骤之前做。
     text = re.sub(r"\\\r?\n", " ", text)
+    # 安全修复 (报告 P2): 剥离整行/行尾 shell 注释。`# 谨慎: rm -rf /` 是注释不是执行,
+    # 旧实现未剥离导致误判。须在 Unicode/变量/token 化之前做, 且不破坏引号内 `#`。
+    text = _strip_shell_comments(text)
     # 安全修复: 先 NFD 解构 (把预组合 ŕ 拆回 r + 组合重音), 剥掉组合变音/变体选择符/
     # 零宽/控制字符, 再 NFKC 折叠全角→ASCII —— 顺序颠倒会让 NFKC 先把 r+U+0301 拼成
     # 预组合 ŕ (U+0155), 组合重音就此逃出删除范围, 形成 `r\u0301m` 混淆绕过。
@@ -773,12 +1129,27 @@ def _normalize(text: str) -> str:
         env[name] = raw
         return " "
 
+    arrays: dict[str, list[str]] = {}
     if "=" in text:
+        # 先收集数组赋值 (a=(rm)), 防止普通 _VAR_DEF_RE 把 `cmd=(r` 截断。
+        def _collect_array(m: Any) -> str:
+            name, body = m.group(1), m.group(2)
+            # 按空白分词, 剥离包裹引号
+            raw = [t.strip("'\"") for t in re.split(r"\s+", body.strip()) if t.strip()]
+            arrays[name] = raw
+            env[name] = raw[0] if raw else ""   # ${arr} 取首元素 (Bash 语义)
+            return " "
+        text = _ARRAY_ASSIGN_RE.sub(_collect_array, text)
         text = _VAR_DEF_RE.sub(_collect, text)
 
-    if env:
+    if env or arrays or "${" in text:
         def _expand(m: Any) -> Any:
             return env.get(m.group(1) or m.group(2), m.group(0))
+        text = re.sub(r"\$\{(\w+)\}|\$(\w+)", _expand, text)
+        # 报告 P0-1: 静态求值参数展开 (切片/前缀/后缀/替换/间接/数组/默认值)。
+        # 无法静态求值的 ${...} 保留原文, 由 _has_unresolved_dangerous_substitution fail-closed。
+        text = _expand_param_ops(text, env, arrays)
+        # 参数展开可能新引入普通 ${VAR} 直引 (如 ${x:-${CMD}}), 再替换一轮。
         text = re.sub(r"\$\{(\w+)\}|\$(\w+)", _expand, text)
 
     # 安全修复: 未定义变量 / 位置参拼接混淆 — 清空残余 ${VAR} / $VAR / $9,
@@ -794,4 +1165,7 @@ def _normalize(text: str) -> str:
     cleaned = _resolve_symlinks(cleaned)
     # 安全修复: Glob 展开 — 展开通配符为实际路径
     cleaned = _expand_globs(cleaned)
+    # 安全修复 (报告 P1-1): 命令名位置的 glob/花括号通配 token → 真实危险命令名,
+    # 让正则模式库 (\bchmod\b / \bumount\b / \bpkill\b) 也能命中被通配隐藏的命令名。
+    cleaned = _expand_glob_cmd_names(cleaned)
     return cleaned

@@ -22,7 +22,7 @@ EXPERT_SLASH_COMMANDS: frozenset[str] = frozenset({
     "/offline", "/provider", "/route", "/sandbox", "/stats",
     "/subagent", "/swarm", "/verify", "/rewind", "/handoff",
     "/worktree", "/workflow", "/code", "/commands", "/personality",
-    "/add-dir", "/init", "/resume",
+    "/add-dir", "/init", "/resume", "/language",
 })
 
 
