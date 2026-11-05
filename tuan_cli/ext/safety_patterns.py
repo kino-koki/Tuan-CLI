@@ -1429,6 +1429,54 @@ _CRITICAL_PATTERNS = [
     # (Get-Content secret → base64 → DNS 查询)。普通 `Resolve-DnsName example.com` 放行。
     (r"\bResolve-DnsName\b[^\n]*\$\(",
      "PowerShell DNS exfil (Resolve-DnsName 内嵌命令替换作 DNS 子域外带)"),
+    # ---- round27: 内核内存直接读取 (dd/cat 从 /dev/mem /dev/kmem /proc/kcore) ----
+    # `dd if=/dev/mem of=...` / `cat /proc/kcore > ...` 转储内核物理/虚拟内存,
+    # 可从中提取凭据、密钥、内核数据结构, 是内核级信息窃取。
+    (r"\bdd\b[^\n]*\bif\s*=\s*(?:/dev/mem|/dev/kmem|/proc/kcore)\b",
+     "dd kernel memory read (从 /dev/mem|/dev/kmem|/proc/kcore 转储内核内存)"),
+    (r"\b(?:cat|cp|dd|tee|tar)\b[^\n]*(?:/dev/mem|/dev/kmem|/proc/kcore)\b",
+     "kernel memory dump (读取 /dev/mem|/dev/kmem|/proc/kcore 内核内存)"),
+    # ---- round27: debugfs 直接写入文件系统 (绕过内核 VFS 与权限检查) ----
+    # `debugfs -w /dev/sda1` 打开 ext 文件系统为**可写**模式, 可直接改写 inode/目录
+    # 项而绕过 mount 权限和审计。`debugfs /dev/sda1` (只读) 放行。
+    (r"\bdebugfs\b(?=[^\n]*\s-w\b|[^\n]*-R\s+['\"][^\"]*\b(?:write|rm|mkdir|ln)\b)",
+     "debugfs write (debugfs -w 或 -R write 直接写入 ext 文件系统)"),
+    # ---- round27: usbip bind (把 USB 设备通过网络暴露给远程主机) ----
+    # `usbip bind -b 1-1.2` 让 USB 设备可被远端 `usbip attach` 透传, 攻击者借此把
+    # 恶意 USB 设备/HID 注入到目标主机或窃取本地 USB 设备数据。
+    (r"\busbip\s+bind\b", "usbip bind (USB over IP 设备暴露给远程主机)"),
+    # `uhubctl -a cycle|off|on` 控制端口电源循环, 可对 USB 设备做物理级 DoS / 强制重连
+    # 触发 BadUSB 重枚举。`uhubctl -l` (list) 只读查询放行。
+    (r"\buhubctl\b(?=[^\n]*\s-a\s+(?:cycle|off|on)\b)", "uhubctl power cycle (USB 端口电源控制/物理 DoS)"),
+    # ---- round27: 无线攻击工具 (monitor 模式 / 抓包 / WPA 破解) ----
+    # 这些是双用途工具 (渗透测试合法用途), 但由 agent 执行属明显越界攻击行为:
+    # airmon-ng (开 monitor 模式), airodump-ng (WiFi 嗅探), aircrack-ng (WPA 握手
+    # 破解), kismet (无线扫描)。--help/--version 不拦。
+    (r"\bairmon-ng\b(?!\s+(?:--help|-h|--version)\b)", "airmon-ng (无线 monitor 模式)"),
+    (r"\bairodump-ng\b(?!\s+(?:--help|-h|--version)\b)", "airodump-ng (无线嗅探/抓包)"),
+    (r"\baircrack-ng\b(?!\s+(?:--help|-h|--version)\b)", "aircrack-ng (WPA/WEP 握手破解)"),
+    (r"\bkismet\b(?!\s+(?:--help|-h|--version)\b)", "kismet (无线网络扫描)"),
+    # macchanger -r/-a/-m 改 MAC (反侦察/MAC 伪造); macchanger -s (show) 放行
+    (r"\bmacchanger\b(?=[^\n]*\s-(?:r|a|m|A|e)\b)", "macchanger randomize/spoof MAC (MAC 伪造, 反侦察)"),
+    # ---- round27: sysctl -w 敏感内核参数 (提权/反取证, 内核安全弱化) ----
+    # 注意: `net.ipv4.ip_forward` / `ipv6 forwarding` 已由 _HIGH_PATTERNS 的
+    # `sysctl network forwarding` 规则判 high (见 test_confirm_level_not_critical),
+    # 不能在本 critical 规则重复, 否则越级成 critical 造成回归。
+    # 本规则只拦**内核安全弱化类**: 关 ASLR / 泄露内核指针 / 开任意 ptrace /
+    # 允许非特权 eBPF / 泄露 dmesg / core dump 含 setuid / 暴露 sysrq。
+    # 普通 `sysctl <param>` 查询与 `sysctl -w vm.swappiness=10` 等非敏感项放行。
+    (r"\bsysctl\b[^\n]*\s-w\b[^\n]*\b(?:"
+     r"kernel\.kptr_restrict|kernel\.randomize_va_space|kernel\.dmesg_restrict|"
+     r"kernel\.yama\.ptrace_scope|kernel\.unprivileged_bpf_disabled|"
+     r"kernel\.perf_event_paranoid|fs\.suid_dumpable|kernel\.sysrq)\s*=\s*[01]",
+     "sysctl -w kernel security param (弱化内核安全: 关 ASLR/泄露 kptr/开 ptrace/开 eBPF)"),
+    # ---- round27: setcap 高危能力授予 (rawio/module/raw/mac_admin) ----
+    # `setcap cap_net_raw+ep` 授予原始套接字能力 (可 ARP/包嗅探/伪造);
+    # cap_sys_rawio (原始 IO 绕过内核), cap_sys_module (加载内核模块), cap_sys_admin
+    # (近乎 root), cap_mac_admin (绕过 MAC 策略) 全部高危。
+    # cap_net_bind_service (绑 80/443) 与 cap_dac_read_search (读文件) 是常见服务需求, 放行。
+    (r"\bsetcap\b[^\n]*\bcap_(?:sys_rawio|sys_module|sys_admin|net_raw|mac_admin|sys_ptrace|sys_boot)\+",
+     "setcap high-risk capability (授予高危 Linux capability: rawio/module/raw/admin)"),
 ]
 
 _HIGH_PATTERNS = [
