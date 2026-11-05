@@ -199,6 +199,21 @@ _CRITICAL_PATTERNS = [
     # 批量 dump secrets (跨命名空间) = 凭据收割, 高敏感动作
     (r"\bkubectl\s+get\s+secrets\b[^\n]*-[An]\b",
      "kubectl dump all secrets (跨命名空间导出 K8s secrets, 凭据收割)"),
+    # ---- round24: kubectl debug node (在节点上启动特权调试 Pod = 节点级逃逸) ----
+    # `kubectl debug node/<name>` 会在目标节点上创建一个挂载宿主根文件系统的特权调试 Pod,
+    # 等价于拿到节点 shell, 是 k8s 集群里最直接的节点逃逸通道。
+    (r"\bkubectl\s+debug\s+node\b",
+     "kubectl debug node (节点级调试 Pod, 挂载宿主根文件系统 = 节点逃逸)"),
+    # ---- round24: containerd ctr / crictl 直接操作容器运行时 socket ----
+    # `ctr` / `crictl` 绕过 Docker/k8s 直接与 containerd/CRI-O 通信, 是容器逃逸后
+    # 的常见横向移动通道 (创建特权容器/挂载宿主根)。
+    (r"\bctr\b[^\n]*(?:--address|run|snapshot)", "ctr runtime (直接操作 containerd, 逃逸通道)"),
+    (r"\bcrictl\b[^\n]*(?:--runtime=host|--runtime\s+host|runp?)",
+     "crictl host runtime (CRI-O host 模式, 逃逸)"),
+    # ---- round24: runc 直接运行 OCI 容器 (绕过 Docker/k8s 抽象) ----
+    (r"\brunc\b[^\n]*\srun\b", "runc run (直接运行 OCI 容器, 绕过编排层)"),
+    # ---- round24: ECS task metadata (169.254.170.2, AWS Fargate/ECS 专用凭据端点) ----
+    (r"169\.254\.170\.2", "ECS task metadata (AWS ECS/Fargate 任务凭据端点, 凭据窃取)"),
     # ---- 容器逃逸: docker run 挂载宿主根/系统目录 (含 docker.sock 挂载) ----
     # 仅当卷源是「绝对系统路径」时命中: `/`(宿主根) 或 /etc|/usr|/var 等; 相对路径
     # (./data)、命名卷 (mydata:)、/tmp 绑定挂载均不命中, 避免开发场景误报。
