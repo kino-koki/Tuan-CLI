@@ -62,7 +62,8 @@ _CRITICAL_PATTERNS = [
      "truncate system file (截断系统关键文件/配置, 数据不可恢复)"),
     # V-11: 进程替换把远程/外部输出直接喂给 shell 解释器 (bash <(curl ...)) ——
     # 语义等价于 `curl ... | bash` (已被拦截), 但走了进程替换通道, 属于覆盖缺口。
-    (r"\b(?:bash|sh|zsh|ksh|dash|source|\.)\s*<\s*\([^)]*(?:curl\b|wget\b|fetch\b|nc\b|base64\b)",
+    # round20 修复: 支持 stdin 重定向形态 `sh < <(wget ...)`（`<` 间可夹空白）。
+    (r"\b(?:bash|sh|zsh|ksh|dash|source|\.)\s*<[\s<]*\([^)]*(?:curl\b|wget\b|fetch\b|nc\b|base64\b)",
      "shell via process substitution (进程替换将远程/外部输出直接喂给 shell 解释器)"),
     # V-11: awk/gawk -i inplace 就地改写 + 内嵌命令执行 (system/print) ——
     # `-i inplace` 一个旗标即可绕过不带 -i 的 awk 检测。
