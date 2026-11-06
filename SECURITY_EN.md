@@ -130,16 +130,16 @@
 
 | # | Module | Enhancement Direction | Status |
 |---|--------|----------------------|--------|
-| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server trust grading**: persist each server's permission domain (read-only/tool whitelist/allowed domains) to persistent policy; add "pre-call tool-level authorization + in-session revocable" to replace scattered ad-hoc confirmations | TODO |
+| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server trust grading**: persist each server's permission domain (read-only/tool whitelist/allowed domains) to persistent policy; add "pre-call tool-level authorization + in-session revocable" to replace scattered ad-hoc confirmations | ✅ Done |
 | E2 | `core/workspace_trust.py` | Trust **auto-decay and re-validation**: trusted auto-downgrades to limited when directory changes or new sensitive files (.env/.git config/keys) appear, prompting re-review | ✅ Done |
 | E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object resource quota enforcement**: CPU quota, memory limit, process tree kill timeout fallback (currently only existence probe) | ✅ Done |
 | E4 | `core/security_auditor.py` + `harden/audit_export.py` | Audit **correlation/consolidation + cross-session anomaly detection**: aggregate alerts for repeated same-source redlines (e.g., MCP repeated injection); export supports rotation and encryption | ✅ Partial (correlation + rotation done; export encryption not done) |
 | E5 | `core/tool_executor.py` | **Write storm detection**: high-frequency write/delete in single session triggers throttling and alerts, preventing batch accidental deletion | ✅ Done |
 | E6 | `tools/permissions.py` | `permissions.rules` enhancement: **negative glob** (`!bin/**`), MCP tool name rules, in-session temporary authorization elevation | ◐ Partial (first two done) |
-| E7 | `sandbox/isolation.py` | Copy mode **diff visualization confirmation**: display changes via CLI/interactive card before applying | TODO |
+| E7 | `sandbox/isolation.py` | Copy mode **diff visualization confirmation**: display changes via CLI/interactive card before applying | ✅ Done (backend) |
 | E8 | `config` | `sandbox`/`permissions` config **schema strict validation + fail-closed observability** (enabled/degraded items visualization) | ✅ Done |
 
-> Priority judgment: High priority and independently evolvable → **E2, E3, E5** (E2/E5 done); depends on interaction design → **E1, E7**; polish/hardening → **E4, E6, E8**.
+> Priority judgment: High priority and independently evolvable → **E2, E3, E5** (done); depends on interaction design → **E1, E7** (backend done, TUI card TODO); polish/hardening → **E4, E6, E8**.
 
 **E2 implementation note (2026-11-06):** `check_for_decay()` / `apply_decay()` were
 previously invoked only by unit tests; both the CLI (`cli/cmd_chat.py`) and the Web
@@ -245,6 +245,72 @@ one, so repeated same-source injection was invisible.
     but SIEM export files need an independent key-management design.
   - Regression: `tests/test_e3_jobobject.py` (25) and
     `tests/test_e4_correlation.py` (24).
+
+
+
+**E1 implementation note (2026-11-06):** new `tools/mcp/policy.py`.
+`mcp/security.py` only scanned tool descriptions/params for injection (content
+layer); it never answered "what is this server actually allowed to do". Every
+MCP call was a blanket allow/deny on the outer `mcp_call` tool.
+
+  - `MCPPolicyStore` persists each server's permission domain: `tier`
+    (untrusted/limited/readonly/trusted), `read_only`, `tool_allowlist`,
+    `tool_denylist`, `allowed_domains`, `max_calls_per_session`,
+    `require_confirm`; atomic write to `~/.tuan/mcp_server_policy.json` (0600).
+  - **Default untrusted:** an unregistered server is denied, not temporarily
+    allowed just because it is new. `trusted` tier REQUIRES an explicit
+    tool_allowlist, rejecting "no list = allow everything".
+  - **deny wins**, domain allowlist (including nested URL params), per-session
+    call quota, and **in-session revocation** (`revoke_session()` takes effect
+    immediately, no restart).
+  - **Corrupt = locked:** a damaged/unknown-version policy file locks all MCP
+    calls instead of being rebuilt as an empty policy. An empty policy looks
+    like "no restrictions", which is the opposite of "unverifiable".
+  - **Wiring (key):** `build_permission_policy()` injects the global store so
+    the main `mcp_call` path really goes through trust grading; unit tests that
+    construct `PermissionPolicy` directly are unaffected. If the policy layer
+    fails to initialise, a `_DenyAllMCPPolicy` is injected instead of silently
+    falling back to the bare path. New config key `mcp.policy.enabled`
+    (default on) is covered by E8 validation; disabling it is reported as a
+    security downgrade.
+  - Still TODO: a TUI card for granting trust tiers (`grant` is API-only).
+
+**E7 implementation note (2026-11-06):** two findings mattered far more than
+"adding a preview".
+
+  1. **`copy_diff_apply` was a documentation-only feature.** The L2 filter set
+     `verdict.workspace_mode = "copy_diff_apply"` on high severity and put it
+     into the audit context, but `SandboxManager.execute_isolated()` never read
+     that field. `isolate_workdir` / `diff` / `apply` had ZERO production call
+     sites — high-risk commands still ran directly in the real workspace. It
+     is now dispatched on `workspace_mode`: the command really runs in an
+     isolated copy, and only writes back after preview + confirmation.
+  2. **Snapshot skipped hidden directories, so the confirmation UI lied.**
+     `Snapshot.capture()` used `not d.startswith(".")`, so editing
+     `.github/workflows/ci.yml` in the copy produced an EMPTY `diff()` — the
+     user saw "no changes". Reproduced and fixed: only `_IGNORED` dirs and the
+     sandbox copy itself are skipped now.
+
+  - New `DiffPreview` / `DiffEntry`: each change carries path/status/before and
+    after sizes, a **first-20-lines content preview** (so the user can see
+    whether that line is `curl evil|sh`, not just the filename), a binary
+    marker, and `[!sensitive]` highlighting for .env / keys / credentials.
+    `to_text()` renders plain text for CLI or a TUI card.
+  - `confirm_apply()` fail-closed contract: missing/raising/false `confirm`
+    never writes back; **TOCTOU re-check** rejects if the copy changed during
+    confirmation. No snapshot cache is introduced — judgement must not depend
+    on a filesystem point in time.
+  - `SandboxExecResult` gains `workspace_mode` / `applied` / `applied_files` /
+    `diff_preview` / `confirm_reason`; on rejection the preview is included in
+    `error` so the user still sees what would have changed. The copy is always
+    cleaned up in `finally`.
+  - **Limitations (stated plainly):** no TUI card yet; `to_text()` currently
+    rides the CLI text channel. A missing `ctx.confirm` is fail-closed (may make
+    headless scenarios without a confirm channel fail — upstream needs to
+    supply UI per scenario). When combined with a strong OS backend, the
+    backend runs inside the copy's cwd; the Windows Job Object combination has
+    not been verified on a real Windows host (same limitation as E3).
+  - Regression: `tests/test_e1_e7_hardening.py` (39 cases).
 
 
 

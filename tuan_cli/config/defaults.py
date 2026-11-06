@@ -421,6 +421,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "allow_switch": [],
         "yolo_require_confirm": [],
     },
+    # E1: MCP server 信任分级。缺省即启用 —— 未登记 server 一律拒绝,
+    # 必须由用户显式 grant 信任等级与权限域后才可调用。
+    "mcp": {
+        "policy": {
+            "enabled": True,
+        },
+    },
     "permissions": {
         "shell": {
             "deny_patterns": [

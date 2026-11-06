@@ -81,13 +81,42 @@ class FusionPermissionPolicy:
         return walk(args)
 
 
+class _DenyAllMCPPolicy:
+    """策略层不可用时的 fail-closed 代理: 所有 MCP 调用一律拒绝。
+
+    刻意不返回"无 store"让上层回退 —— 那正是本项目已修过多次的
+    「异常即放行」。宁可让 MCP 暂时不可用, 也不能在无法验证信任等级时执行。
+    """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def authorize(self, server: str, tool: str, args: Any = None,
+                  **_kw: Any) -> Any:
+        from .mcp.policy import AuthorizationDecision, ServerTier
+        return AuthorizationDecision("deny", self.reason,
+                                     ServerTier.UNTRUSTED, server, tool)
+
+
 def build_permission_policy(cfg: Any) -> PermissionPolicy:
     """工具执行权限策略工厂。
 
     总是包裹 ``FusionPermissionPolicy`` 叠加敏感文件纵深检测;
     原生 PermissionPolicy 仍是唯一决策源, 叠加层仅做 defense-in-depth。
     """
-    base = PermissionPolicy(cfg)
+    # E1: 主链路注入 MCP 信任分级策略。开关只提供"显式关闭"的逃生口
+    # (mcp.policy.enabled=false), 缺省即启用 —— 否则又是"实现了但没接线"。
+    store = None
+    if _cfg_bool(cfg, "mcp.policy.enabled", True):
+        try:
+            from .mcp.policy import get_mcp_policy_store
+            store = get_mcp_policy_store()
+        except Exception as exc:  # noqa: BLE001
+            # fail-closed: 策略层不可用 = 无法证明这台 server 可信。
+            # 绝不能像旧代码那样 `pass` 后让 mcp_call 回退到"无 store"的裸路径。
+            store = _DenyAllMCPPolicy(
+                f"MCP 策略层初始化失败 (fail-closed): {type(exc).__name__}: {exc}")
+    base = PermissionPolicy(cfg, mcp_policy_store=store)
     return FusionPermissionPolicy(base, cfg)  # type: ignore[return-value]  # 叠加层实现同一决策接口, 设计上不继承
 
 

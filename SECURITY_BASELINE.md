@@ -35,11 +35,16 @@ Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」*
 | R13 | E3 名义配额：`cpu_rate_pct` 参数从未使用、`MaximumWorkingSetSize` 缺 `WORKINGSET` flag、后端探测只看 `sys.platform == "win32"` | E3：class 9 + class 15 双次 `SetInformationJobObject` 落 CPU 硬上限；真实 `CreateJobObjectW` 能力探测；三级进程树击杀兜底 |
 | R14 | 审计逐条存储，同源反复红线无聚合信号；导出文件无轮转、权限不收紧 | E4：新增 `core/audit_correlation.py`（burst / cross_session / severity_escalation），历史 AEAD 重放；导出按大小轮转 + 0600 |
 | R15 | 无控制终端（CI / 容器 / systemd）下 `os.getlogin()` 抛 OSError，整个审计器初始化失败 | 改为 best-effort 环境变量兜底；**指纹格式保持不变**，既有加密日志仍可解密 |
+| R16 | **`copy_diff_apply` 是纯文档特性**：L2 写入 `verdict.workspace_mode`，但 `execute_isolated()` 从未读取，`isolate_workdir`/`diff`/`apply` 生产代码零调用点，高危命令实际在真实工作区裸跑 | E7：按 `workspace_mode` 分派，高危命令在隔离副本内执行，预览 + 确认后才写回 |
+| R17 | `Snapshot.capture()` 跳过所有点目录，副本里改 `.github/workflows/ci.yml` 时 `diff()` 返回空 —— 确认界面显示「无变更」 | E7：只跳过 `_IGNORED` 与隔离副本自身，隐藏目录纳入快照 |
+| R18 | 旧 `diff()` 只有 `path/status`，确认时看不到改了什么内容；敏感文件无高亮；`apply()` 无确认门控、无 TOCTOU 复检 | E7：`DiffPreview` 带内容预览/敏感标记，`confirm_apply()` fail-closed + 指纹复检，不引入缓存 |
+| R19 | MCP 无「这台 server 被允许做什么」的权限域：只有内容层注入扫描，外层 `mcp_call` 一刀切；未登记 server 首次出现即按外层策略放行 | E1：`MCPPolicyStore` 持久化信任分级 + 工具级授权 + 会话内可回撤；默认 untrusted 拒绝、损坏即 locked；由 `build_permission_policy()` 接入主链路，策略层失败注入 DenyAll |
 
 回归：`tests/test_fail_closed_regressions.py`（37 例）、`tests/test_e2_e5_hardening.py`（16 例）、
 `tests/test_e6_e8_hardening.py`（21 例）、`tests/test_e3_jobobject.py`（25 例）、
-`tests/test_e4_correlation.py`（24 例）、`bench/indep_verify.py`（29 例）；
-平台/沙箱/审计/导出分批回归 115 + 49 例通过。
+`tests/test_e4_correlation.py`（24 例）、`tests/test_e1_e7_hardening.py`（39 例）、
+`bench/indep_verify.py`（29 例）；沙箱 / 权限 / 配置批次 156 例，
+安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例通过。
 
 ```bash
 python -m pytest tests/test_fail_closed_regressions.py tests/test_e2_e5_hardening.py -q

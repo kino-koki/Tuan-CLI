@@ -84,8 +84,11 @@ def _rule_exclude(rule: dict) -> str:
 class PermissionPolicy:
     """集中处理工具权限。对标 Claude Code 2.1.214 的安全加固。"""
 
-    def __init__(self, config: Any = None) -> None:
+    def __init__(self, config: Any = None, mcp_policy_store: Any = None) -> None:
+        """E1: ``mcp_policy_store`` 由生产工厂注入; 单元测试直接构造时不启用,
+        避免影响既有权限用例, 同时保证主链路真的经过 MCP 信任分级。"""
         self.config = config
+        self.mcp_policy_store = mcp_policy_store
         self.shell_deny = tuple(self._get("permissions.shell.deny_patterns", ()))
         self.network_allow = tuple(self._get("permissions.network.allow_domains", ()))
         self.rules = tuple(self._get("permissions.rules", ()))
@@ -134,6 +137,28 @@ class PermissionPolicy:
           敏感/危险操作仍需确认 (对标 Claude Code Auto Mode)。
         """
         name = tool.name
+        mcp_authorized = False   # E1: 已由信任策略显式放行 (跳过末尾兜底确认)
+
+        # E1: MCP 调用前工具级授权 (在域名白名单之前, 因为策略自带 allowed_domains)。
+        # 默认 untrusted -> 未登记 server 一律拒绝; 绝不因为"第一次见"就临时放行。
+        if name in ("mcp_call", "mcp_tool", "mcp") and self.mcp_policy_store is not None:
+            server = str(args.get("server") or args.get("server_name")
+                         or args.get("mcp_server") or "")
+            mcp_tool = str(args.get("tool") or args.get("tool_name")
+                           or args.get("mcp_tool") or args.get("name") or "")
+            if not server:
+                return PermissionDecision(
+                    "deny", "MCP 调用缺少 server 标识, 无法做信任分级 (fail-closed)")
+            decision = self.mcp_policy_store.authorize(server, mcp_tool, args)
+            if decision.action == "deny":
+                return PermissionDecision("deny", f"MCP 信任策略拒绝: {decision.reason}")
+            if decision.action == "confirm":
+                return PermissionDecision(
+                    "confirm", f"MCP 信任策略要求确认: {decision.reason}")
+            # allow 不在这里直接 return: 后面还要过 permissions.rules,
+            # 用户显式配的 deny/ask 规则必须优先于策略的自动放行。
+            mcp_authorized = True
+
         if name in {"web_fetch", "mcp_call"} and self.network_allow:
             url = args.get("url", "")
             host = urlparse(url).hostname or ""
@@ -196,6 +221,8 @@ class PermissionPolicy:
             return PermissionDecision("allow", "只读或非危险工具")
         if yolo and name not in self.yolo_redline and not getattr(tool, "yolo_confirm", False):
             return PermissionDecision("allow", "YOLO 自动批准")
+        if mcp_authorized:
+            return PermissionDecision("allow", "MCP 信任策略已显式授权 (已过规则表)")
         return PermissionDecision("confirm", "危险工具需要用户确认")
 
     def match_rule(self, name: str, args: dict[str, Any]) -> str | None:
