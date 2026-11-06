@@ -39,12 +39,14 @@ Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」*
 | R17 | `Snapshot.capture()` 跳过所有点目录，副本里改 `.github/workflows/ci.yml` 时 `diff()` 返回空 —— 确认界面显示「无变更」 | E7：只跳过 `_IGNORED` 与隔离副本自身，隐藏目录纳入快照 |
 | R18 | 旧 `diff()` 只有 `path/status`，确认时看不到改了什么内容；敏感文件无高亮；`apply()` 无确认门控、无 TOCTOU 复检 | E7：`DiffPreview` 带内容预览/敏感标记，`confirm_apply()` fail-closed + 指纹复检，不引入缓存 |
 | R19 | MCP 无「这台 server 被允许做什么」的权限域：只有内容层注入扫描，外层 `mcp_call` 一刀切；未登记 server 首次出现即按外层策略放行 | E1：`MCPPolicyStore` 持久化信任分级 + 工具级授权 + 会话内可回撤；默认 untrusted 拒绝、损坏即 locked；由 `build_permission_policy()` 接入主链路，策略层失败注入 DenyAll |
+| R20 | E1/E7 只有后端 API，没有审批卡片；`ctx.confirm` 缺失的 headless 场景直接失败 | 新增 `ui/approval_overlay.py`（借鉴 Codex TUI 交互契约，等价移植、非 Rust 源码复制）：结构化审批卡片 + 显式决策事件 + Esc=Abort；E1 `request_grant()` 呈现完整权限域，E7 `confirm_apply()` 接 `card_renderer`，无 TUI 时提供同样要求显式决策的 headless 默认通道（精确确认码 + 非 TTY 即 ABORT）。**fail-closed 未放宽** |
 
 回归：`tests/test_fail_closed_regressions.py`（37 例）、`tests/test_e2_e5_hardening.py`（16 例）、
 `tests/test_e6_e8_hardening.py`（21 例）、`tests/test_e3_jobobject.py`（25 例）、
 `tests/test_e4_correlation.py`（24 例）、`tests/test_e1_e7_hardening.py`（39 例）、
-`bench/indep_verify.py`（29 例）；沙箱 / 权限 / 配置批次 156 例，
-安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例通过。
+`tests/test_tui_approval_overlay.py`（59 例）、`bench/indep_verify.py`（29 例）；
+沙箱 / 权限 / 配置批次 156 例，安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
+审批覆盖层与 E1/E7 接线 98 例通过。
 
 ```bash
 python -m pytest tests/test_fail_closed_regressions.py tests/test_e2_e5_hardening.py -q

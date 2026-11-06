@@ -136,10 +136,10 @@
 | E4 | `core/security_auditor.py` + `harden/audit_export.py` | 审计**关联合并 + 跨会话异常检测**：同源多次红线(如 MCP 反复注入)聚合告警；导出支持轮转与加密 | ✅ 部分（关联/轮转已落地，导出加密未做） |
 | E5 | `core/tool_executor.py` | **写操作风暴检测**：单会话内高频率写/删除触发节流与告警，防误删批量任务 | ✅ 已落地 |
 | E6 | `tools/permissions.py` | `permissions.rules` 增强：**负向 glob**(`!bin/**`)、MCP 工具名规则、会话内临时授权提升 | ◐ 部分（前两项已落地） |
-| E7 | `sandbox/isolation.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply | ✅ 已落地（后端） |
+| E7 | `sandbox/isolation.py` + `ui/approval_overlay.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply | ✅ 已落地（后端 + 审批卡片） |
 | E8 | `config` | `sandbox`/`permissions` 配置的 **schema 强校验 + fail-closed 可观测性**（开启项/降级项可视化） | ✅ 已落地 |
 
-> 判定"先做哪些"：优先级高且可独立演进 → **E2、E3、E5**（已落地）；依赖交互设计 → **E1、E7**（后端已落地，TUI 卡片待做）；属加固打磨 → **E4、E6、E8**。
+> 判定"先做哪些"：优先级高且可独立演进 → **E2、E3、E5**（已落地）；依赖交互设计 → **E1、E7**（后端 + 审批卡片已落地）；属加固打磨 → **E4、E6、E8**。
 
 **E2 落地说明（2026-11-06）**：此前 `check_for_decay()` / `apply_decay()` 只有单元测试调用，
 CLI (`cli/cmd_chat.py`) 与 Web (`web/server.py::trust_status`) 都直接读 `record.level`，
@@ -238,7 +238,9 @@ Docker 守护进程重定向都会在引擎不可用时被静默放行。现改�
   信任分级；单元测试直接构造 `PermissionPolicy` 时不受影响。策略层初始化失败时注入
   `_DenyAllMCPPolicy` 而不是 `pass` 回退到裸路径。新配置键 `mcp.policy.enabled`（缺省启用）
   已纳入 E8 强校验，显式关闭会报「安全降级」。
-- 仍待办：TUI 侧「授予信任等级」的交互卡片（`grant` 目前是 API，需接 UI）。
+- **TUI 卡片已落地**：`request_grant()` 通过 `ui/approval_overlay.py` 呈现完整权限域
+  （tier / allowlist / denylist / domains）并路由显式决策；「仅本会话」走内存临时策略不写盘，
+  「授予并持久化」才调 `grant()`。拒绝 / 中止 / 通道异常一律不改策略。见下方 TUI 外壳借鉴说明。
 
 **E7 落地说明（2026-11-06）**：本轮发现两个比"加个预览"严重得多的问题。
 
@@ -260,11 +262,52 @@ Docker 守护进程重定向都会在引擎不可用时被静默放行。现改�
 - `SandboxExecResult` 新增 `workspace_mode` / `applied` / `applied_files` / `diff_preview` /
   `confirm_reason`；拒绝时把预览一并放进 `error`，保证用户仍能看见本来要改什么；
   副本在 `finally` 里必定清理。
-- **边界（如实）**：TUI/交互卡片未做，`to_text()` 目前由 CLI 文本通道承载；
-  `ctx.confirm` 缺失时按 fail-closed 拒绝（可能让无确认通道的 headless 场景直接失败，
-  需上游按场景补 UI）。`copy_diff_apply` 与 OS 强后端叠加时，后端在副本 cwd 内执行，
-  未对 Windows Job Object 做真机验证（同 E3 边界）。
-- 回归：`tests/test_e1_e7_hardening.py`（39 例）。
+- **TUI 卡片已落地**：`confirm_apply()` 接受 `card_renderer`，由
+  `ui/approval_overlay.py` 渲染结构化审批卡片；有 `ctx.confirm` 时交给现有 TUI 挂起式
+  确认通道，无通道时提供 headless 默认通道（打印卡片 + 精确 6 位确认码 + stdin，
+  非 TTY/EOF 即 ABORT）。**行为变更**：上一轮「无 confirm 通道直接失败」的 headless 缺口
+  已补上，但**没有放宽 fail-closed** —— 只是提供了一个同样要求显式决策的通道。
+- **边界（如实）**：TUI 复用的是现有 `confirm()` 文本框渲染通道，**没有**把
+  prompt_toolkit 应用整体换成 ratatui 式 Widget/Buffer 架构（理由见下方借鉴说明）；
+  TUI 路径走 y/n（`_resolve_confirm`），不显示确认码提示，卡片文案与通道行为一致，
+  不出现「写着要输码、实际按 y 就放行」。`copy_diff_apply` 与 OS 强后端叠加时后端在副本
+  cwd 内执行，未对 Windows Job Object 做真机验证（同 E3 边界）。
+- 回归：`tests/test_e1_e7_hardening.py`（39 例）、`tests/test_tui_approval_overlay.py`（59 例）。
+
+
+
+**TUI 外壳借鉴说明（Codex CLI，2026-11-06）**：按需求把 `openai/codex` 的 TUI 源码
+**完整下载到本地核查**（`codex-rs/tui/`，Rust + ratatui + crossterm + tokio，
+567 个 `.rs` 文件、约 24.7 万行），并**完整照抄**其 `LICENSE` 与 `NOTICE` 原文到
+`THIRD_PARTY_LICENSES/`（Apache-2.0 第 4 条与上游 NOTICE 的归属要求）。
+
+**但 TUI 源码没有逐字复制，本项目也不宣称做了逐字复制。** 两个硬理由：
+
+1. **跨语言不可行**：上游 `codex-tui` 是独立 Rust crate，渲染建立在 ratatui 的
+   `Widget`/`Buffer` trait 与 crossterm 事件循环上；Tuan-CLI 是纯 Python +
+   prompt_toolkit/rich。逐字搬 24.7 万行 Rust 进 Python 仓库没有可执行语义。
+2. **整体替换 TUI 外壳会重新打开侧门**：权限策略注入（`build_permission_policy`）、
+   确认通道（`ctx.confirm`）、沙箱路由（`_route_sandbox_isolation`）都挂在现有 TUI
+   入口上。换壳等于把 E1–E8 修好的接线全部甩掉 —— 这正是前几轮反复在堵的问题。
+
+因此采取**等价移植交互外壳**：把上游 `bottom_pane/approval_overlay.rs` 的组件分层
+（`ApprovalRequest` → 选项列表 → 显式决策事件 → 路由）与四条交互契约，
+用 Python 独立实现并**内联**到 `tuan_cli/ui/approval_overlay.py`；卡片排版沿用
+Tuan 现有 `_render_confirm_card` / `_render_ask_card` 的盒子渲染器，不引入 ratatui。
+
+借鉴的四条契约（均已在代码中落地并有回归覆盖）：
+1. **选择总是发出显式决策事件** —— 没有「没输入 = 同意」；
+2. **Esc / 取消永远映射 Cancel/Abort** —— 上游对 MCP elicitation 特别保证「关闭对话框
+   不会静默变成 continue without info」，这里 ABORT 优先于确认码校验；
+3. **UI 层不判定安全性** —— 上游原文 "This module does not evaluate whether an
+   action is safe to run; it only presents choices and routes user decisions."；
+   安全裁决仍由 E1 策略库与 E7 `confirm_apply` 负责；
+4. **作用域区分**（`Accept` / `AcceptForSession`）→ `ONCE` / `SESSION`。
+
+相对上游的修改也如实记录：请求模型改为 Python dataclass；决策解析 fail-closed
+（未知输入 RETRY、错码 DENY、非 TTY headless 用 6 位确认码、stdin 不可用 ABORT）；
+新增 E1 持久化信任授予流程与 E7 结构化 DiffPreview 卡片（上游均无对应物）。
+归属、许可全文与「OpenAI 不背书」声明见 `NOTICE` 第 9 条。
 
 
 

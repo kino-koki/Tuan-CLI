@@ -136,10 +136,10 @@
 | E4 | `core/security_auditor.py` + `harden/audit_export.py` | Audit **correlation/consolidation + cross-session anomaly detection**: aggregate alerts for repeated same-source redlines (e.g., MCP repeated injection); export supports rotation and encryption | ✅ Partial (correlation + rotation done; export encryption not done) |
 | E5 | `core/tool_executor.py` | **Write storm detection**: high-frequency write/delete in single session triggers throttling and alerts, preventing batch accidental deletion | ✅ Done |
 | E6 | `tools/permissions.py` | `permissions.rules` enhancement: **negative glob** (`!bin/**`), MCP tool name rules, in-session temporary authorization elevation | ◐ Partial (first two done) |
-| E7 | `sandbox/isolation.py` | Copy mode **diff visualization confirmation**: display changes via CLI/interactive card before applying | ✅ Done (backend) |
+| E7 | `sandbox/isolation.py` + `ui/approval_overlay.py` | Copy mode **diff visualization confirmation**: display changes via CLI/interactive card before applying | ✅ Done (backend + approval card) |
 | E8 | `config` | `sandbox`/`permissions` config **schema strict validation + fail-closed observability** (enabled/degraded items visualization) | ✅ Done |
 
-> Priority judgment: High priority and independently evolvable → **E2, E3, E5** (done); depends on interaction design → **E1, E7** (backend done, TUI card TODO); polish/hardening → **E4, E6, E8**.
+> Priority judgment: High priority and independently evolvable → **E2, E3, E5** (done); depends on interaction design → **E1, E7** (backend + approval card done); polish/hardening → **E4, E6, E8**.
 
 **E2 implementation note (2026-11-06):** `check_for_decay()` / `apply_decay()` were
 previously invoked only by unit tests; both the CLI (`cli/cmd_chat.py`) and the Web
@@ -273,7 +273,12 @@ MCP call was a blanket allow/deny on the outer `mcp_call` tool.
     falling back to the bare path. New config key `mcp.policy.enabled`
     (default on) is covered by E8 validation; disabling it is reported as a
     security downgrade.
-  - Still TODO: a TUI card for granting trust tiers (`grant` is API-only).
+  - **TUI card done:** `request_grant()` presents the full permission domain
+    (tier / allowlist / denylist / domains) via `ui/approval_overlay.py` and
+    routes an explicit decision. "This session only" uses an in-memory policy
+    (never written to disk); only "grant and persist" calls `grant()`. Deny /
+    abort / channel failure never change policy. See the Codex attribution
+    note below.
 
 **E7 implementation note (2026-11-06):** two findings mattered far more than
 "adding a preview".
@@ -304,13 +309,73 @@ MCP call was a blanket allow/deny on the outer `mcp_call` tool.
     `diff_preview` / `confirm_reason`; on rejection the preview is included in
     `error` so the user still sees what would have changed. The copy is always
     cleaned up in `finally`.
-  - **Limitations (stated plainly):** no TUI card yet; `to_text()` currently
-    rides the CLI text channel. A missing `ctx.confirm` is fail-closed (may make
-    headless scenarios without a confirm channel fail — upstream needs to
-    supply UI per scenario). When combined with a strong OS backend, the
-    backend runs inside the copy's cwd; the Windows Job Object combination has
-    not been verified on a real Windows host (same limitation as E3).
-  - Regression: `tests/test_e1_e7_hardening.py` (39 cases).
+  - **TUI card done:** `confirm_apply()` accepts a `card_renderer`; the
+    structured approval card is rendered by `ui/approval_overlay.py`. With
+    `ctx.confirm` it goes to the existing TUI pending-confirm channel; without
+    one, a headless default channel is provided (print card + exact 6-char
+    confirmation code + stdin; non-TTY / EOF -> ABORT). **Behaviour change:**
+    the previous "no confirm channel -> immediate failure" headless gap is
+    closed, but fail-closed is NOT relaxed — the default channel equally
+    demands an explicit decision.
+  - **Limitations (stated plainly):** the TUI reuses the existing `confirm()`
+    text-box channel; the prompt_toolkit app was NOT replaced with a
+    ratatui-style Widget/Buffer architecture (see the attribution note below).
+    The TUI path uses y/n (`_resolve_confirm`) and does NOT display a
+    confirmation-code hint, so card wording and channel behaviour agree —
+    no "card says a code is required but y is accepted" mismatch. When
+    combined with a strong OS backend, the backend runs inside the copy's cwd;
+    the Windows Job Object combination has not been verified on a real
+    Windows host (same limitation as E3).
+  - Regression: `tests/test_e1_e7_hardening.py` (39 cases),
+    `tests/test_tui_approval_overlay.py` (59 cases).
+
+
+
+**Codex TUI attribution note (2026-11-06):** per request, the `openai/codex`
+TUI source was **downloaded and inspected in full locally** (`codex-rs/tui/`,
+Rust + ratatui + crossterm + tokio, 567 `.rs` files, ~247k lines). Its
+`LICENSE` and `NOTICE` are reproduced **verbatim** in `THIRD_PARTY_LICENSES/`
+(Apache-2.0 section 4 and the upstream NOTICE requirement).
+
+**No Rust TUI source was copied verbatim, and this project does not claim it
+was.** Two hard reasons:
+
+  1. **Cross-language:** `codex-tui` is a standalone Rust crate whose rendering
+     rests on ratatui `Widget`/`Buffer` traits and a crossterm event loop;
+     Tuan-CLI is pure Python + prompt_toolkit/rich. Literal 247k lines of
+     Rust have no executable meaning inside a Python repository.
+  2. **Replacing the TUI shell would re-open the side doors:** permission
+     policy injection (`build_permission_policy`), the confirmation channel
+     (`ctx.confirm`) and sandbox routing (`_route_sandbox_isolation`) all hang
+     off the existing TUI entry point. Swapping the shell would discard every
+     E1-E8 wiring fix — exactly the failure mode those rounds were closing.
+
+What was done instead is an **equivalent port of the interaction shell**:
+the component layering of `bottom_pane/approval_overlay.rs`
+(`ApprovalRequest` -> option list -> explicit decision event -> routing) and
+its four interaction contracts are independently implemented in Python and
+**inlined** into `tuan_cli/ui/approval_overlay.py`. Card layout reuses Tuan's
+existing `_render_confirm_card` / `_render_ask_card` box renderer; ratatui is
+not introduced.
+
+Four borrowed contracts (all implemented and regression-covered):
+  1. a selection always emits an explicit decision event (no "absence of
+     input means consent");
+  2. Esc / cancel always maps to Cancel/Abort — upstream guarantees this for
+     MCP elicitation so dismissal never becomes "continue without info";
+     here ABORT takes priority over confirmation-code validation;
+  3. the UI never evaluates safety — upstream: "This module does not evaluate
+     whether an action is safe to run; it only presents choices and routes
+     user decisions." Safety remains with the E1 policy store and E7
+     `confirm_apply`;
+  4. scope distinction (`Accept` / `AcceptForSession`) -> `ONCE` / `SESSION`.
+
+Modifications relative to upstream are recorded too: Python dataclass request
+model; fail-closed decision parsing (unknown -> RETRY, wrong code -> DENY,
+non-TTY headless -> 6-char code, unavailable stdin -> ABORT); new E1
+persistent trust-grant flow and E7 structured DiffPreview card, neither of
+which exists upstream. Attributions, full license text and the "OpenAI does
+not endorse" statement are in `NOTICE` section 9.
 
 
 
