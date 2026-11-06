@@ -27,6 +27,9 @@ Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」*
 | R5 | 加固项只有文档、没有态势检查 | `tuan harden status` 输出 `enforce_required` / 默认禁网 / 域名白名单 / 强后端可用性，并列出待加固项 |
 | R6 | E2 信任衰减**只有测试调用**：CLI 与 Web 都直接读 `record.level`，衰减从未生效；扫描异常 `except: pass` 静默放行；`last_used` 从不更新导致活跃工作区 30 天后被误判过期 | `check_trust()` 主链路自动衰减 + 敏感面指纹基线 + 扫描失败 fail-closed + `last_used` 自动维护 + 降级原因可观测 |
 | R7 | E5 写风暴「不同文件数」按会话累计，触发后永久告警，与 60 秒滑动窗口矛盾；告警文案把次数误写成秒数 | 文件维度与次数维度共用窗口、告警态随窗口复位、修正文案 |
+| R8 | `PermissionPolicy._hardening_confirm()` 安全引擎导入失败时 `except: pass` 后 YOLO 自动批准，超长命令 / FD 重定向 / IEX / Docker 守护进程重定向全部静默放行 | 异常时返回 `confirm` 并标注 fail-closed |
+| R9 | `permissions.rules` 无法对单台 MCP server 精确管控，宽泛 allow 也没有负向排除（「永远允许」= 提权入口） | E6：`exclude` / `!glob` 负向排除（deny 忽略）、`mcp__<server>__<tool>` 规范化名 |
+| R10 | `config/validate.py` 不覆盖 `sandbox` / `permissions`；非 dict 规则、未知 action、`sandbox.enabled=false` 都会静默失效 | E8：新增 `config/security_schema.py`，接入 `tuan config validate` 与 `tuan harden status` |
 
 回归：`tests/test_fail_closed_regressions.py`（37 例）、`tests/test_e2_e5_hardening.py`（16 例）、
 `bench/indep_verify.py`（29 例）、安全/i18n/文档一致性子集共 273 例通过。

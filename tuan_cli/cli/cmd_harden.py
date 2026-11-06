@@ -215,6 +215,24 @@ def _status(args: Any) -> int:
             print("[harden] 基线检查通过")
     except Exception as exc:  # noqa: BLE001
         print(f"[harden] 安全基线: 检查失败 ({exc})")
+
+    # ------------------------------------------------------------------ E8 schema
+    # 把「配置写错但规则表静默失效」变成可见的校验结果 (fail-closed 可观测性)。
+    try:
+        from ..config import Config
+        from ..config.security_schema import validate_security_config
+        sec_errors, sec_warnings = validate_security_config(Config())
+        print("[harden] 安全配置 schema:")
+        if sec_errors:
+            for msg in sec_errors:
+                print(f"  !! {msg}")
+            print(f"  共 {len(sec_errors)} 项阻断性错误 (运行 tuan config validate 查看详情)")
+        else:
+            print("  结构校验: OK (无静默失效的规则/开关)")
+        for msg in sec_warnings:
+            print(f"  - {msg}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[harden] 安全配置 schema: 检查失败 ({exc})")
     return 0
 
 

@@ -135,9 +135,9 @@
 | E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object 资源配额落地**：CPU 配额、内存上限、进程树击杀超时兜底(当前仅存在性探测) | 待办 |
 | E4 | `core/security_auditor.py` + `harden/audit_export.py` | 审计**关联合并 + 跨会话异常检测**：同源多次红线(如 MCP 反复注入)聚合告警；导出支持轮转与加密 | 待办 |
 | E5 | `core/tool_executor.py` | **写操作风暴检测**：单会话内高频率写/删除触发节流与告警，防误删批量任务 | ✅ 已落地 |
-| E6 | `tools/permissions.py` | `permissions.rules` 增强：**负向 glob**(`!bin/**`)、MCP 工具名规则、会话内临时授权提升 | 待办 |
+| E6 | `tools/permissions.py` | `permissions.rules` 增强：**负向 glob**(`!bin/**`)、MCP 工具名规则、会话内临时授权提升 | ◐ 部分（前两项已落地） |
 | E7 | `sandbox/isolation.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply | 待办 |
-| E8 | `config` | `sandbox`/`permissions` 配置的 **schema 强校验 + fail-closed 可观测性**（开启项/降级项可视化） | 待办 |
+| E8 | `config` | `sandbox`/`permissions` 配置的 **schema 强校验 + fail-closed 可观测性**（开启项/降级项可视化） | ✅ 已落地 |
 
 > 判定"先做哪些"：优先级高且可独立演进 → **E2、E3、E5**（E2/E5 已落地）；依赖交互设计 → **E1、E7**；属加固打磨 → **E4、E6、E8**。
 
@@ -157,6 +157,28 @@ CLI (`cli/cmd_chat.py`) 与 Web (`web/server.py::trust_status`) 都直接读 `re
 **E5 落地说明**：`_WriteStormDetector` 已接入 `ToolExecutor`，但「不同文件数」按整个会话累计，
 一旦改过 15 个文件就永久告警、与 60 秒滑动窗口矛盾。现在文件维度与次数维度共用同一窗口，
 告警态随窗口过期复位，并修正了把「写操作次数」误写成「秒数」的文案。
+
+**E6 部分落地说明（2026-11-06）**：`PermissionPolicy.match_rule()` 新增两类能力：
+
+- **负向排除**：规则支持 `exclude: "git push --force*"` 或 `pattern: "!git push --force*"`。
+  目标命中排除模式时该规则不生效，用于给宽泛 allow 开洞，避免「永远允许」成为提权入口。
+  **deny 规则忽略 exclude**（fail-closed：拒绝规则不允许被放宽），优先级仍为 deny > ask > allow。
+- **MCP 工具名规则**：`mcp_call` 按 `mcp__<server>__<tool>` 规范化参与 tool 匹配，
+  可写 `{"tool": "mcp__untrusted__*", "action": "deny"}` 对单台 server 精确管控。
+- 仍待办：会话内临时授权提升（依赖交互设计，未动）。
+- 回归：`tests/test_e6_e8_hardening.py`（21 例）。
+
+**E8 落地说明**：新增 `config/security_schema.py`，把此前完全不在 `config/validate.py`
+校验范围内的 `sandbox` / `permissions` 纳入强校验。最危险的不是配错值而是**静默配错**：
+`match_rule()` 对非 dict 规则 / 未知 action 一律跳过，`sandbox.enabled=false` 直接短路四层滤网。
+现在这些会变成 `tuan config validate` 的显式错误，并由 `tuan harden status` 输出
+「安全配置 schema」段。缺失字段不报错（由 DEFAULT_CONFIG 兜底），只报显式写错或显式关闭关键防线。
+
+**R8 同类异常即放行修复**：`PermissionPolicy._hardening_confirm()` 在安全引擎导入失败时
+`except: pass` 后继续走 YOLO 自动批准 —— 超长命令 / FD 重定向 / PowerShell IEX /
+Docker 守护进程重定向都会在引擎不可用时被静默放行。现改为返回 `confirm` 并标注 fail-closed。
+
+
 
 ---
 

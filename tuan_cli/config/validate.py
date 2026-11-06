@@ -114,4 +114,11 @@ def validate(config: Any) -> Tuple[List[str], List[str]]:
             f"model.base_url 未显式设置, 将按 provider={provider!r} 的默认端点连接"
         )
 
+    # E8: sandbox / permissions 的强校验。此前这些字段完全不在校验范围内,
+    # 而它们恰恰决定安全流水线是否生效; 写错一个键会让规则表静默失效。
+    from .security_schema import validate_security_config
+    sec_errors, sec_warnings = validate_security_config(config)
+    errors.extend(sec_errors)
+    warnings.extend(sec_warnings)
+
     return errors, warnings
