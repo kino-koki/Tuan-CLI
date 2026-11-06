@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 安全加固持续迭代
+
+### E2 信任自动衰减：主链路接线 + fail-closed（2026-11-06）
+- **接线**：`core/workspace_trust.py::check_trust()` 现在自动执行衰减校验。此前
+  `check_for_decay()` / `apply_decay()` 只有单元测试调用，`cli/cmd_chat.py` 与
+  `web/server.py::trust_status` 都直接读 `record.level`，衰减从未在运行时生效；
+  `get_project_info()` 也改为走 `check_trust()`，消除 CLI 已降级而 Web 仍显示 trusted 的口径分裂。
+- **指纹基线**：确认 trusted 时持久化「顶层目录结构 + 敏感文件 (`.env` / 密钥 /
+  `.git/config` / `*.pem` 等) 的路径、大小、mtime_ns」SHA-256；任一变化即降为 limited
+  并要求重新确认。扫描限深 4 层、限 20000 条目、跳过依赖/构建目录、不读文件内容。
+- **fail-closed**：扫描失败（目录消失 / 权限错误 / 条目超限）不再 `except: pass` 返回「无变化」，
+  而是降级为 limited；老版本无指纹记录只补建基线，避免每次启动误报。
+- **活跃时间**：`last_used` 由 `check_trust()` 自动维护（60 秒节流落盘），修掉活跃工作区
+  30 天后被误判「长期未使用」的问题；降级原因与时间写入记录并暴露给 UI / Web。
+- `cli/cmd_chat.py` 在衰减发生时给出可见提示（有 warning/info 接口时）。
+
+### E5 写风暴检测：滑动窗口一致性修复
+- `core/tool_executor.py::_WriteStormDetector` 的「不同文件数」原按整个会话累计，
+  一旦改过 15 个文件就永久告警且 `reset()` 前不可恢复。现在文件维度与次数维度共用
+  60 秒窗口，告警态随窗口过期复位。
+- 修正告警文案把「写操作次数」误写成「秒数」的问题。
+
+### 文档与回归
+- `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
+- 新增 `tests/test_e2_e5_hardening.py`（16 例）；安全 / i18n / 文档一致性子集 273 例通过。
+- 本轮为普通 fast-forward 提交，未改写历史、未使用 force push。
+
 ## [0.3.3] - 2026-10-25 (小更新 · 体验增强)
 
 ### Tuan-Chat 桌面端 (Tuan/)

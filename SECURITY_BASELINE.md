@@ -25,12 +25,14 @@ Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」*
 | R3 | 6 处异常路径 `except: pass` = 静默放行（网络探测、红线引擎导入、网络红线判定、域名白名单、凭据扫描、域名解析） | 全部改为 fail-closed：拒绝或升级人工确认 |
 | R4 | `pip/npm/yarn/pnpm/poetry/uv install`、`pytest/tox/nox/go test/cargo test/mvn/gradle/make` 被判「良性零确认」，但会执行仓库内 `postinstall` / `conftest.py` / `build.rs` / `Makefile` | L0 新增确认门控（`CONFIRM`，非 `DENY`），`--help/--version` 变体不触发 |
 | R5 | 加固项只有文档、没有态势检查 | `tuan harden status` 输出 `enforce_required` / 默认禁网 / 域名白名单 / 强后端可用性，并列出待加固项 |
+| R6 | E2 信任衰减**只有测试调用**：CLI 与 Web 都直接读 `record.level`，衰减从未生效；扫描异常 `except: pass` 静默放行；`last_used` 从不更新导致活跃工作区 30 天后被误判过期 | `check_trust()` 主链路自动衰减 + 敏感面指纹基线 + 扫描失败 fail-closed + `last_used` 自动维护 + 降级原因可观测 |
+| R7 | E5 写风暴「不同文件数」按会话累计，触发后永久告警，与 60 秒滑动窗口矛盾；告警文案把次数误写成秒数 | 文件维度与次数维度共用窗口、告警态随窗口复位、修正文案 |
 
-回归：`tests/test_fail_closed_regressions.py`（37 例）、`bench/indep_verify.py`（29 例）、
-`tests/test_sandbox_system.py` 等安全子集（96 例）。
+回归：`tests/test_fail_closed_regressions.py`（37 例）、`tests/test_e2_e5_hardening.py`（16 例）、
+`bench/indep_verify.py`（29 例）、安全/i18n/文档一致性子集共 273 例通过。
 
 ```bash
-python -m pytest tests/test_fail_closed_regressions.py -q
+python -m pytest tests/test_fail_closed_regressions.py tests/test_e2_e5_hardening.py -q
 python bench/indep_verify.py
 tuan harden status
 ```

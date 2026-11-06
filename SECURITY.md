@@ -128,18 +128,35 @@
 
 ## 8. 增强路线图（按价值排序）
 
-| # | 模块 | 增强方向 |
-|---|------|----------|
-| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server 信任分级**：把每台 server 的权限域(只读/工具白名单/允许的域名)落到持久化策略；新增"调用前工具级授权 + 会话内可回撤"，取代散落的临时确认 |
-| E2 | `core/workspace_trust.py` | 信任**自动衰减与重校验**：trusted 在目录变更/新敏感文件(.env/.git/config/密钥)出现时自动降级到 limited 并提示复议 |
-| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object 资源配额落地**：CPU 配额、内存上限、进程树击杀超时兜底(当前仅存在性探测) |
-| E4 | `core/security_auditor.py` + `harden/audit_export.py` | 审计**关联合并 + 跨会话异常检测**：同源多次红线(如 MCP 反复注入)聚合告警；导出支持轮转与加密 |
-| E5 | `core/tool_executor.py` | **写操作风暴检测**：单会话内高频率写/删除触发节流与告警，防误删批量任务 |
-| E6 | `tools/permissions.py` | `permissions.rules` 增强：**负向 glob**(`!bin/**`)、MCP 工具名规则、会话内临时授权提升 |
-| E7 | `sandbox/isolation.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply |
-| E8 | `config` | `sandbox`/`permissions` 配置的 **schema 强校验 + fail-closed 可观测性**（开启项/降级项可视化） |
+| # | 模块 | 增强方向 | 状态 |
+|---|------|----------|------|
+| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server 信任分级**：把每台 server 的权限域(只读/工具白名单/允许的域名)落到持久化策略；新增"调用前工具级授权 + 会话内可回撤"，取代散落的临时确认 | 待办 |
+| E2 | `core/workspace_trust.py` | 信任**自动衰减与重校验**：trusted 在目录变更/新敏感文件(.env/.git/config/密钥)出现时自动降级到 limited 并提示复议 | ✅ 已落地 |
+| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object 资源配额落地**：CPU 配额、内存上限、进程树击杀超时兜底(当前仅存在性探测) | 待办 |
+| E4 | `core/security_auditor.py` + `harden/audit_export.py` | 审计**关联合并 + 跨会话异常检测**：同源多次红线(如 MCP 反复注入)聚合告警；导出支持轮转与加密 | 待办 |
+| E5 | `core/tool_executor.py` | **写操作风暴检测**：单会话内高频率写/删除触发节流与告警，防误删批量任务 | ✅ 已落地 |
+| E6 | `tools/permissions.py` | `permissions.rules` 增强：**负向 glob**(`!bin/**`)、MCP 工具名规则、会话内临时授权提升 | 待办 |
+| E7 | `sandbox/isolation.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply | 待办 |
+| E8 | `config` | `sandbox`/`permissions` 配置的 **schema 强校验 + fail-closed 可观测性**（开启项/降级项可视化） | 待办 |
 
-> 判定"先做哪些"：优先级高且可独立演进 → **E2、E3、E5**；依赖交互设计 → **E1、E7**；属加固打磨 → **E4、E6、E8**。
+> 判定"先做哪些"：优先级高且可独立演进 → **E2、E3、E5**（E2/E5 已落地）；依赖交互设计 → **E1、E7**；属加固打磨 → **E4、E6、E8**。
+
+**E2 落地说明（2026-11-06）**：此前 `check_for_decay()` / `apply_decay()` 只有单元测试调用，
+CLI (`cli/cmd_chat.py`) 与 Web (`web/server.py::trust_status`) 都直接读 `record.level`，
+衰减逻辑从未在主链路生效。现在 `check_trust()` 自动执行衰减校验并统一 CLI / Web / 沙箱口径：
+
+- 指纹基线：确认 trusted 时采样「顶层目录结构 + 敏感文件 (`.env`/密钥/`.git/config` 等) 的
+  路径、大小、mtime_ns」，写入持久化记录；之后任一变化即降级为 limited 并要求重新确认。
+  扫描限深 4 层 / 限 20000 条目 / 跳过依赖与构建目录，不读文件内容，正常写代码不会误触发。
+- **fail-closed**：扫描失败（目录消失、权限错误、条目超限）不再 `except: pass` 静默放行，
+  而是降级为 limited；老版本无指纹的记录只补建基线，不每次启动误报。
+- `last_used` 由 `check_trust` 自动维护（60 秒节流落盘），修掉「活跃工作区 30 天后被误判过期」。
+- 降级原因 / 时间写入 `TrustRecord`，经 `get_project_info()` 暴露给 Web 与 TUI 提示。
+- 回归：`tests/test_e2_e5_hardening.py`（16 例）。
+
+**E5 落地说明**：`_WriteStormDetector` 已接入 `ToolExecutor`，但「不同文件数」按整个会话累计，
+一旦改过 15 个文件就永久告警、与 60 秒滑动窗口矛盾。现在文件维度与次数维度共用同一窗口，
+告警态随窗口过期复位，并修正了把「写操作次数」误写成「秒数」的文案。
 
 ---
 
