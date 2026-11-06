@@ -94,7 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **接线**：`build_permission_policy()` 注入全局 store，主链路 `mcp_call` 真的经过信任分级；
   策略层初始化失败注入 `_DenyAllMCPPolicy`，不再 `pass` 回退到裸路径。
   新键 `mcp.policy.enabled`（缺省启用）纳入 E8 强校验。
-- 仍待办：TUI「授予信任等级」交互卡片。
+- **TUI 卡片已落地**：`request_grant()` 经 `ui/approval_overlay.py` 呈现完整权限域并
+  路由显式决策；「仅本会话」用内存临时策略不写盘，「持久化」才调 `grant()`；
+  拒绝 / 中止 / 通道异常一律不改策略。
 
 ### E7 副本 diff 可视化确认（2026-11-06）
 - **发现 1**：`copy_diff_apply` 是纯文档特性 —— L2 写入 `verdict.workspace_mode` 并进审计
@@ -107,15 +109,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   拒绝均不写回）+ **TOCTOU 指纹复检**，不引入快照缓存。
 - `SandboxExecResult` 增加 `workspace_mode` / `applied` / `applied_files` / `diff_preview` /
   `confirm_reason`；拒绝时预览一并放进 `error`；副本在 `finally` 必定清理。
-- **边界**：TUI 卡片未做；`ctx.confirm` 缺失的 headless 场景会按 fail-closed 失败，需上游补 UI；
-  与 Windows Job Object 叠加未做真机验证（同 E3）。
+- **边界（后续修订）**：TUI 审批卡片与 headless 默认通道已补齐（见下方 TUI 条目），
+  `confirm_apply()` 的 fail-closed 与 TOCTOU 复检未放宽；与 Windows Job Object
+  叠加未做真机验证（同 E3）。
+
+### TUI 审批外壳：借鉴 Codex CLI 交互契约（2026-11-06）
+- 按需求把 `openai/codex` 的 TUI 源码**完整下载到本地核查**：
+  `codex-rs/tui/` 为 Rust + ratatui + crossterm + tokio，567 个 `.rs` 文件、约 24.7 万行。
+  `LICENSE` 与 `NOTICE` 原文**完整照抄**到 `THIRD_PARTY_LICENSES/`（Apache-2.0 第 4 条 +
+  上游 NOTICE 归属要求，其中还含 Ratatui 的 MIT 声明）。
+- **未逐字复制 Rust 源码，也不宣称复制了**：跨语言无可执行语义；且整体替换 TUI 外壳会
+  把权限策略注入 / `ctx.confirm` / 沙箱路由这些挂在现有入口上的接线全部甩掉，等于重新
+  打开 E1–E8 修好的侧门。改为**等价移植交互外壳并内联**到 `tuan_cli/ui/approval_overlay.py`：
+  `ApprovalRequest` → 选项列表 → 显式决策事件 → 路由，卡片排版沿用现有
+  `_render_confirm_card` / `_render_ask_card` 盒子渲染器，不引入 ratatui。
+- 借鉴并落地的四条契约（来自 `bottom_pane/approval_overlay.rs`）：
+  ① 选择总是发出显式决策事件（无「没输入 = 同意」）；
+  ② Esc / 取消永远映射 Abort，ABORT 优先于确认码校验（上游对 MCP elicitation 特别保证
+  "关闭对话框不会静默变成 continue without info"）；
+  ③ UI 层不判定安全性，只呈现选项并路由决策（上游原文注释）；
+  ④ `Accept` / `AcceptForSession` 作用域区分 → `ONCE` / `SESSION`。
+- 相对上游的修改：Python dataclass 请求模型；决策解析 fail-closed（未知输入 RETRY、
+  错码 DENY、非 TTY headless 用 6 位精确确认码、stdin 不可用 ABORT）；新增 E1 信任授予
+  与 E7 DiffPreview 两类卡片（上游无对应物）。
+- **E1 接线**：`request_grant()` 呈现 tier / allowlist / denylist / domains 全量权限域；
+  ONCE 用内存临时策略携带完整权限域（不写盘，避免"未登记 server + 会话授权 = 隐式全放行"），
+  SESSION 才 `grant()` 持久化；拒绝 / 中止 / 通道异常不改策略。
+- **E7 接线**：`confirm_apply()` 新增 `card_renderer`，manager 统一走 `make_confirm_callable()`；
+  有 `ctx.confirm` 时把结构化卡片交给现有 TUI 挂起式确认通道（卡片不显示确认码提示，
+  与 y/n 通道一致，杜绝"写着要输码、按 y 就放行"）；无通道时提供 headless 默认通道
+  （打印卡片 + 精确确认码 + stdin，非 TTY / EOF 即 ABORT）。
+  **行为变更**：上一轮「无 confirm 通道直接失败」的 headless 缺口已补上，但 fail-closed
+  未放宽 —— 只是给了一个同样要求显式决策的通道。
+- 归属：`NOTICE` 新增第 9 条（Apache-2.0、OpenAI 版权、Ratatui MIT、非源码移植说明、
+  "OpenAI 不背书"），`SECURITY.md` / `SECURITY_EN.md` 新增「TUI 外壳借鉴说明」并更新
+  E1/E7 路线图状态与边界口径。
+- **边界（如实）**：TUI 复用现有 `confirm()` 文本框通道，**没有**把 prompt_toolkit 应用
+  换成 ratatui 式 Widget/Buffer 架构；E1 的持久化授权作用域比 Codex 的 session 更宽，
+  已在卡片上明示「跨重启生效」。
 
 ### 文档与回归
 - `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
 - 新增 `tests/test_e2_e5_hardening.py`（16 例）、`tests/test_e6_e8_hardening.py`（21 例）、
   `tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）、
-  `tests/test_e1_e7_hardening.py`（39 例）；沙箱 / 权限 / 配置批次 156 例，
-  安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例通过。
+  `tests/test_e1_e7_hardening.py`（39 例）、`tests/test_tui_approval_overlay.py`（59 例）；
+  沙箱 / 权限 / 配置批次 156 例，安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
+  审批覆盖层与 E1/E7 接线 98 例通过。
 - 本轮为普通 fast-forward 提交，未改写历史、未使用 force push。
 
 ## [0.3.3] - 2026-10-25 (小更新 · 体验增强)

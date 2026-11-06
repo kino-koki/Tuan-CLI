@@ -424,7 +424,8 @@ class TestE7Wiring:
         assert res.applied is True
         assert "marker.txt" in res.applied_files
         assert marker.exists() and "hi" in marker.read_text()
-        assert calls and "变更预览" in calls[0]
+        # E7-TUI: 现在收到的是 Codex 风格结构化审批卡片 (标题为"变更确认")
+        assert calls and "变更确认" in calls[0] and "marker.txt" in calls[0]
         assert res.diff_preview and res.diff_preview["total"] >= 1
 
     def test_rejected_confirm_leaves_workspace_untouched(self, tmp_path):
@@ -441,6 +442,9 @@ class TestE7Wiring:
         assert "拒绝" in res.error or "未确认" in res.error
 
     def test_missing_confirm_channel_is_fail_closed(self, tmp_path):
+        """行为变更 (E7-TUI): 无 ctx.confirm 不再"直接失败", 而是提供同样
+        要求显式决策的 headless 默认通道。非 TTY (CI) 下 stdin 不可用 ->
+        ABORT -> 拒绝, 工作区保持不变, 且预览仍对用户可见。"""
         from tuan_cli.sandbox.manager import SandboxManager
         ws = tmp_path / "ws"; ws.mkdir()
         import types
@@ -453,7 +457,7 @@ class TestE7Wiring:
             "echo hi > marker.txt", self._verdict(), ctx, timeout=10)
         assert res.applied is False
         assert not (ws / "marker.txt").exists()
-        assert "fail-closed" in res.error
+        assert "不写回" in res.error and "预览" in res.error
 
     def test_direct_mode_unchanged(self, tmp_path):
         from tuan_cli.sandbox.manager import SandboxManager

@@ -104,12 +104,68 @@ THIRD-PARTY ATTRIBUTIONS
    or `ecosystem.hermes.enabled` is `True`.  Users can disable these in
    `~/.tuan/config.yaml` to prevent any access to third-party CLI data.
 
+9) Approval overlay interaction contracts (ui/approval_overlay.py)
+   Location: tuan_cli/ui/approval_overlay.py
+             (consumed by sandbox/isolation.py + sandbox/manager.py for E7,
+              and tools/mcp/policy.py for E1)
+   Origin:   interaction contracts and component layering of the Codex TUI
+             approval overlay, specifically
+             `codex-rs/tui/src/bottom_pane/approval_overlay.rs`,
+             `list_selection_view.rs`, `popup_consts.rs`
+   Upstream: https://github.com/openai/codex
+   Holder:   OpenAI (Copyright 2025 OpenAI)
+   License:  Apache License 2.0 (full text: THIRD_PARTY_LICENSES/Codex-LICENSE.txt;
+             upstream NOTICE reproduced verbatim in
+             THIRD_PARTY_LICENSES/Codex-NOTICE.txt, which additionally
+             acknowledges code derived from Ratatui under the MIT license,
+             Copyright (c) 2016-2022 Florian Dehau and
+             Copyright (c) 2023-2025 The Ratatui Developers)
+
+   Note: the upstream `codex-tui` crate is Rust + ratatui + crossterm + tokio
+   (567 .rs files, ~247k lines). Its source was downloaded and inspected in
+   full for this attribution. NO Rust source code is copied or ported
+   verbatim into Tuan-CLI: the project is pure Python with prompt_toolkit,
+   and replacing the TUI shell wholesale would also replace the entry point
+   that carries the permission-policy injection, the confirmation channel
+   and the sandbox routing (i.e. it would re-open the side doors fixed in
+   the E1-E8 hardening series). What is reproduced is the *interaction
+   contract* only, independently implemented in Python:
+
+     1. a selection always emits an explicit decision event (no implicit
+        "absence of input means consent");
+     2. Esc / cancel always maps to Cancel/Abort, never to "continue
+        without info" even with custom keybindings;
+     3. the UI never evaluates whether an action is safe — it presents the
+        choices and routes the decision (upstream wording: "This module
+        does not evaluate whether an action is safe to run; it only
+        presents choices and routes user decisions.");
+     4. turn-scope vs session-scope grants are distinguished.
+
+   The card layout follows Tuan-CLI's existing box renderer (the same one
+   used by `_render_confirm_card` / `_render_ask_card`), not ratatui's
+   Widget/Buffer traits. Modifications relative to upstream: the request
+   model is a Python dataclass; decision parsing is fail-closed (unknown
+   input -> RETRY, non-TTY headless -> an explicit 6-char confirmation
+   code, EOF/unavailable stdin -> ABORT); E1 adds a persistent MCP trust
+   grant flow and E7 adds a structured DiffPreview card, neither of which
+   exists upstream. OpenAI does not endorse or sponsor this project.
+
 -------------------------------------------------------------------------------
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
 
 pyyaml, rich, prompt_toolkit, httpx, openai — each under its own license
 (see pyproject.toml for version constraints).
+
+-------------------------------------------------------------------------------
+LICENSE TEXTS
+-------------------------------------------------------------------------------
+
+Components 1-7 are under MIT; the full text is reproduced below.
+Component 9 is under Apache License 2.0; its full license text and upstream
+NOTICE are reproduced verbatim in THIRD_PARTY_LICENSES/Codex-LICENSE.txt and
+THIRD_PARTY_LICENSES/Codex-NOTICE.txt respectively (Apache-2.0 section 4(a)/(c)
+and the upstream NOTICE requirement).
 
 -------------------------------------------------------------------------------
 MIT LICENSE (as required to be retained for components 1-7)

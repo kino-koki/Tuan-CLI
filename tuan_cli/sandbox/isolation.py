@@ -322,7 +322,8 @@ class ApplyResult:
 
 
 def confirm_apply(wd: "IsolatedWorkdir", confirm: Optional[Callable[[str], bool]],
-                  *, max_preview_lines: int = _PREVIEW_MAX_LINES) -> ApplyResult:
+                  *, card_renderer: Optional[Callable[[Dict[str, Any]], str]] = None,
+                  max_preview_lines: int = _PREVIEW_MAX_LINES) -> ApplyResult:
     """展示 diff -> 用户确认 -> **复检副本未被改动** -> apply。
 
     fail-closed 契约:
@@ -335,12 +336,16 @@ def confirm_apply(wd: "IsolatedWorkdir", confirm: Optional[Callable[[str], bool]
     """
     try:
         preview = build_diff_preview(wd)
+        # E7-TUI: 卡片渲染器由上层注入 (借鉴 Codex approval_overlay 的
+        # "UI 只呈现、不判安全" 分层)。生成失败仍 fail-closed 不写回。
+        card_text = (card_renderer(preview.to_dict())
+                     if card_renderer is not None else preview.to_text())
     except Exception as exc:  # noqa: BLE001
         return ApplyResult(False, f"生成变更预览失败 (fail-closed): {type(exc).__name__}: {exc}")
     if confirm is None:
         return ApplyResult(False, "缺少确认通道, 按 fail-closed 拒绝写回", preview=preview)
     try:
-        approved = confirm(preview.to_text())
+        approved = confirm(card_text)
     except Exception as exc:  # noqa: BLE001
         return ApplyResult(False, f"确认通道异常, 按 fail-closed 拒绝写回: {type(exc).__name__}: {exc}",
                            preview=preview)

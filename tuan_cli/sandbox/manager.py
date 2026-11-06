@@ -329,8 +329,13 @@ class SandboxManager:
                 res.error = (f"生成变更预览失败 (fail-closed, 不写回): "
                              f"{type(exc).__name__}: {exc}")
                 return res
-            confirm = getattr(ctx, "confirm", None)
-            outcome = confirm_apply(wd, confirm)
+            # E7-TUI: 统一走审批覆盖层 (借鉴 Codex TUI approval_overlay)。
+            # 有 ctx.confirm 时把结构化卡片交给现有 TUI 挂起式确认通道;
+            # 无通道时提供 headless 默认通道 (打印卡片 + 精确确认码 + stdin),
+            # 不再"直接失败", 但同样要求显式决策, 不放松 fail-closed。
+            from ..ui.approval_overlay import make_confirm_callable
+            card_renderer, confirm_fn = make_confirm_callable(ctx)
+            outcome = confirm_apply(wd, confirm_fn, card_renderer=card_renderer)
             res.diff_preview = outcome.preview.to_dict() if outcome.preview else preview.to_dict()
             res.applied = outcome.applied
             res.applied_files = list(outcome.files)

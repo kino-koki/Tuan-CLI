@@ -153,6 +153,9 @@ class MCPPolicyStore:
         self._policies: Dict[str, ServerPolicy] = {}
         # 会话内授权: session -> {(server, tool)} ; 空 tool 表示整台 server
         self._grants: Dict[str, Set[Tuple[str, str]]] = {}
+        # E1-TUI: 会话内临时策略 (只在内存, 绝不写盘)。request_grant 的
+        # ONCE 分支用它携带完整权限域, 避免"未登记 server 被会话授权 = 全放行"。
+        self._session_policies: Dict[Tuple[str, str], ServerPolicy] = {}
         # 会话内拒绝/回撤: 优先级高于 anything, 用于"立刻反悔"
         self._revoked: Dict[str, Set[Tuple[str, str]]] = {}
         self._call_counts: Dict[str, int] = {}
@@ -223,9 +226,13 @@ class MCPPolicyStore:
             return not self._locked
 
     # ------------------------------------------------------------ 策略管理
-    def get(self, server: str) -> ServerPolicy:
+    def get(self, server: str, *, session_id: Optional[str] = None) -> ServerPolicy:
+        """取当前生效策略: 会话内临时策略优先于持久化策略。"""
+        sid = str(session_id or self._session_id)
         with self._lock:
-            return self._policies.get(server) or ServerPolicy(server=server)
+            return (self._session_policies.get((sid, server))
+                    or self._policies.get(server)
+                    or ServerPolicy(server=server))
 
     def list_policies(self) -> List[ServerPolicy]:
         with self._lock:
@@ -273,15 +280,116 @@ class MCPPolicyStore:
         self.revoke_session(server)
         return True
 
+    # ------------------------------------------------------------ E1-TUI 授予流程
+    def request_grant(
+        self,
+        server: str,
+        tier: str,
+        *,
+        approval_channel: Optional[Any] = None,
+        read_only: bool = True,
+        tool_allowlist: Optional[List[str]] = None,
+        tool_denylist: Optional[List[str]] = None,
+        allowed_domains: Optional[List[str]] = None,
+        max_calls_per_session: int = 0,
+        require_confirm: bool = False,
+        note: str = "",
+    ) -> Dict[str, Any]:
+        """通过显式审批卡片请求信任授予 (E1 的 TUI 入口)。
+
+        借鉴 Codex approval_overlay 的分层: 本方法**不判定**该信任等级是否
+        安全, 只把完整权限域呈现给用户、路由其显式决策, 再按决策执行
+        ``grant`` / ``grant_session``。DENY / ABORT / 通道异常一律不写盘。
+
+        ``approval_channel`` 可注入 TUI 通道 (签名 ``(ApprovalRequest) ->
+        ApprovalResult``); 缺省走 headless 文本卡片 + stdin 显式输入。
+        """
+        from ...ui.approval_overlay import (
+            ApprovalDecision, build_mcp_trust_request, headless_approval,
+        )
+
+        req = build_mcp_trust_request(
+            server, tier,
+            tool_allowlist=tool_allowlist or [],
+            tool_denylist=tool_denylist or [],
+            allowed_domains=allowed_domains or [],
+            read_only=read_only,
+        )
+        try:
+            result = (approval_channel(req) if approval_channel is not None
+                      else headless_approval(req))
+            decision = getattr(result, "decision", None) or ApprovalDecision.ABORT
+            granted = bool(getattr(result, "granted", False))
+        except Exception as exc:  # noqa: BLE001 - 通道异常 = 未获授权
+            return {
+                "granted": False, "server": server, "tier": tier,
+                "reason": f"审批通道异常 (fail-closed): {type(exc).__name__}: {exc}",
+                "card": req.to_dict(),
+            }
+        if not granted:
+            return {
+                "granted": False, "server": server, "tier": tier,
+                "reason": f"用户未批准 ({decision.value if hasattr(decision, 'value') else decision})",
+                "card": req.to_dict(),
+            }
+
+        kwargs = dict(
+            read_only=read_only,
+            tool_allowlist=list(tool_allowlist or []),
+            tool_denylist=list(tool_denylist or []),
+            allowed_domains=list(allowed_domains or []),
+            max_calls_per_session=max_calls_per_session,
+            require_confirm=require_confirm, note=note,
+        )
+        try:
+            if decision == ApprovalDecision.SESSION:
+                policy = self.grant(server, tier, **kwargs)
+                mode = "persisted"
+            else:
+                # ONCE: 会话内临时授权, **绝不写盘**。用内存策略携带完整
+                # 权限域 (tier / allowlist / denylist / domains), 避免
+                # "未登记 server + 会话授权"退化成隐式全放行。
+                if tier == ServerTier.TRUSTED and not (tool_allowlist or []):
+                    raise ValueError("trusted 档必须显式提供 tool_allowlist")
+                temp = ServerPolicy(
+                    server=server, tier=tier, read_only=read_only,
+                    tool_allowlist=list(tool_allowlist or []),
+                    tool_denylist=list(tool_denylist or []),
+                    allowed_domains=list(allowed_domains or []),
+                    max_calls_per_session=max_calls_per_session,
+                    require_confirm=require_confirm,
+                    granted_at=float(self._now()), note=note,
+                )
+                self.grant_session(server, policy=temp)
+                policy = self.get(server)
+                mode = "session_only"
+        except Exception as exc:  # noqa: BLE001
+            return {"granted": False, "server": server, "tier": tier,
+                    "reason": f"授予失败 (fail-closed): {type(exc).__name__}: {exc}",
+                    "card": req.to_dict()}
+        return {
+            "granted": True, "server": server, "tier": policy.tier,
+            "mode": mode, "reason": "用户已显式批准",
+            "card": req.to_dict(),
+        }
+
     # ------------------------------------------------------------ 会话授权
     def grant_session(self, server: str, tool: str = "", *,
-                      session_id: Optional[str] = None) -> None:
-        """会话内临时授权 (不写盘, 进程结束即失效)。"""
+                      session_id: Optional[str] = None,
+                      policy: Optional[ServerPolicy] = None) -> None:
+        """会话内临时授权 (不写盘, 进程结束即失效)。
+
+        可选 ``policy`` 携带完整权限域: 用于 request_grant 的 ONCE 分支,
+        让"仅本会话"授权也有明确的 allowlist/denylist/tier, 而不是
+        "server 未登记 + 会话授权 = 隐式全放行"。
+        """
         sid = str(session_id or self._session_id)
         key = (server, str(tool or ""))
         with self._lock:
             self._grants.setdefault(sid, set()).add(key)
             self._revoked.get(sid, set()).discard(key)
+            if policy is not None:
+                self._session_policies[(sid, server)] = policy
 
     def revoke_session(self, server: Optional[str] = None, tool: Optional[str] = None,
                        *, session_id: Optional[str] = None) -> int:
@@ -307,6 +415,9 @@ class MCPPolicyStore:
                 # 即便没有现存 grant, 也记一条显式回撤, 防止之后被 grant_session 覆盖
                 self._revoked.setdefault(sid, set()).add(
                     (server, str(tool or "")))
+            for (s_id, srv) in list(self._session_policies):
+                if s_id == sid and (server is None or srv == server):
+                    self._session_policies.pop((s_id, srv), None)
             self._call_counts.pop(sid, None)
         return n
 
