@@ -333,7 +333,8 @@ MCP call was a blanket allow/deny on the outer `mcp_call` tool.
 
 **Codex TUI attribution note (2026-11-06):** per request, the `openai/codex`
 TUI source was **downloaded and inspected in full locally** (`codex-rs/tui/`,
-Rust + ratatui + crossterm + tokio, 567 `.rs` files, ~247k lines). Its
+Rust + ratatui + crossterm + tokio, 165 top-level modules, 1216 `.rs`
+   files, 492414 lines; 1491 snapshot files skipped). Its
 `LICENSE` and `NOTICE` are reproduced **verbatim** in `THIRD_PARTY_LICENSES/`
 (Apache-2.0 section 4 and the upstream NOTICE requirement).
 
@@ -342,7 +343,7 @@ was.** Two hard reasons:
 
   1. **Cross-language:** `codex-tui` is a standalone Rust crate whose rendering
      rests on ratatui `Widget`/`Buffer` traits and a crossterm event loop;
-     Tuan-CLI is pure Python + prompt_toolkit/rich. Literal 247k lines of
+     Tuan-CLI is pure Python + prompt_toolkit/rich. Literal 492k lines of
      Rust have no executable meaning inside a Python repository.
   2. **Replacing the TUI shell would re-open the side doors:** permission
      policy injection (`build_permission_policy`), the confirmation channel
@@ -376,6 +377,47 @@ non-TTY headless -> 6-char code, unavailable stdin -> ABORT); new E1
 persistent trust-grant flow and E7 structured DiffPreview card, neither of
 which exists upstream. Attributions, full license text and the "OpenAI does
 not endorse" statement are in `NOTICE` section 9.
+
+
+
+**TUI parity matrix (2026-11-06, round 10):** the goal "TUI completely
+identical to Codex, with local localization" is now broken into measurable
+items; see `TUI_PARITY.md` and `tuan tui parity`.
+
+  - New `tuan_cli/tui/parity/`: `upstream_spec.py` (165-module tree / layout
+    constants / key-spec normalization), `keymap.py` (Codex
+    `built_in_defaults`: 8 contexts / 82 actions / 74 bound, plus
+    `RuntimeKeymap` with context->global->defaults precedence, explicit
+    unbind, uniqueness conflicts, reserved `ctrl-c`), `i18n.py` (17 strings
+    -> 10 languages, en / zh-CN complete), `matrix.py` (per-module status
+    and gap queue).
+  - **Keys switched to Codex native:** `y` approve / `a` for session /
+    `p` for prefix / `d` deny / `n` decline / `c` cancel; new `PREFIX` and
+    `DECLINE` decisions added. Previous `s` / `1` / `2` remain as localized
+    compatibility aliases. `Esc` stays `ABORT` (stricter than upstream's
+    exec-mode decline; disclosed in TUI_PARITY.md section 6).
+  - **Layout constants match value-for-value:** LIVE_PREFIX_COLS=2,
+    MAX_POPUP_ROWS=8, MIN_LIST_WIDTH_FOR_SIDE=40, SIDE_CONTENT_GAP=2,
+    MENU_SURFACE_HORIZONTAL_INSET=4, MAX_KEY_CHORD_STROKES=2.
+  - **Scale correction:** a full extraction yields 165 modules / 1216 `.rs`
+    files / 492414 lines (1491 snapshots skipped), not the earlier
+    567 / 247k. Every reference to the old figures has been corrected.
+  - **Current metrics (no inflation):** aligned 14, localized 57,
+    not_applicable 63, **pending 31**; broad coverage 81.2%, strict
+    alignment 43.0%, **value-for-value alignment only 8.5%**;
+    `fully_identical = false`. `tuan tui parity --gaps` lists the 31
+    remaining modules and TUI_PARITY.md section 5 gives the round 11-15
+    plan to zero them. Status definitions are NOT loosened to inflate
+    numbers.
+  - **Localization boundary:** keys / layout / component tree / interaction
+    contracts are unchanged (these are the anchors of "completely
+    identical"); only strings, models, paths, palette, render backend and
+    approval-scope semantics are localized.
+  - Regression: new `tests/test_tui_parity.py` plus existing
+    `test_tui_approval_overlay.py` / `test_e1_e7_hardening.py` adapted to
+    Codex keys, 102 cases passing.
+  - Attribution: `NOTICE` section 10, `TUI_PARITY.md` section 8;
+    **still no Rust source copied verbatim**.
 
 
 

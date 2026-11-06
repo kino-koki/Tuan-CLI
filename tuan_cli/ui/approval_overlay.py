@@ -47,17 +47,20 @@ _REQUEST_KINDS = ("exec", "permissions", "file_change",
 
 
 class ApprovalDecision(str, Enum):
-    """一次审批的显式决策事件。"""
+    """一次审批的显式决策事件。键位与作用域对齐 Codex approval_overlay.rs。"""
 
-    ONCE = "once"          # 仅本次 (Codex: Accept / GrantForTurn)
-    SESSION = "session"    # 本会话 (Codex: AcceptForSession / GrantForSession)
-    DENY = "deny"          # 明确拒绝
-    ABORT = "abort"        # 中止 / Esc / Ctrl-C (Codex: Cancel -> Abort)
+    ONCE = "once"          # y — Accept / GrantForTurn
+    SESSION = "session"    # a — AcceptForSession / GrantForSession
+    PREFIX = "prefix"      # p — 允许命令/权限前缀 (approve_for_prefix)
+    DENY = "deny"          # d — No
+    DECLINE = "decline"    # n — No, and tell the agent what to do differently
+    ABORT = "abort"        # c / Esc — Cancel -> Abort
     RETRY = "retry"        # 无效输入, 由通道重问 (不视为批准, 也不视为拒绝)
 
     @property
     def granted(self) -> bool:
-        return self in (ApprovalDecision.ONCE, ApprovalDecision.SESSION)
+        return self in (ApprovalDecision.ONCE, ApprovalDecision.SESSION,
+                        ApprovalDecision.PREFIX)
 
 
 @dataclass(frozen=True)
@@ -88,11 +91,24 @@ class ApprovalRequest:
         if self.kind not in _REQUEST_KINDS:
             raise ValueError(f"未知审批类型: {self.kind}")
         if not self.options:
+            from ..tui.parity.i18n import pt
+            from ..tui.parity.keymap import codex_approval_hints
+            h = codex_approval_hints()
             self.options = [
-                ApprovalOption("确认，仅本次", ApprovalDecision.ONCE, "y / 1"),
-                ApprovalOption("确认，本会话不再询问", ApprovalDecision.SESSION, "s / 2"),
-                ApprovalOption("拒绝", ApprovalDecision.DENY, "n / 3"),
-                ApprovalOption("中止", ApprovalDecision.ABORT, "Esc"),
+                ApprovalOption(pt("approval.approve"), ApprovalDecision.ONCE,
+                               f"{h['approve']} / 1"),
+                ApprovalOption(pt("approval.approve_for_session"),
+                               ApprovalDecision.SESSION,
+                               f"{h['approve_for_session']} / 2"),
+                ApprovalOption(pt("approval.approve_for_prefix"),
+                               ApprovalDecision.PREFIX,
+                               f"{h['approve_for_prefix']} / 5"),
+                ApprovalOption(pt("approval.deny"), ApprovalDecision.DENY,
+                               f"{h['deny']} / 3"),
+                ApprovalOption(pt("approval.decline"), ApprovalDecision.DECLINE,
+                               f"{h['decline']} / 4"),
+                ApprovalOption(pt("approval.cancel"), ApprovalDecision.ABORT,
+                               f"{h['cancel']} / Esc"),
             ]
 
     def to_dict(self) -> Dict[str, Any]:
@@ -180,10 +196,14 @@ def render_approval_card(request: ApprovalRequest, width: int = 78) -> str:
                 lines.append("│  " + prefix + " " * max(0, inner - 4 - _disp_width(prefix)) + "  │")
 
     # Codex: accept_cancel_hint_line —— "Press <accept> to ... or <cancel> to ..."
-    hint_line = "Press y/1 to approve once  ·  s/2 for this session  ·  n/Esc to cancel"
+    from ..tui.parity.i18n import pt
+    from ..tui.parity.keymap import codex_approval_hints
+    h = codex_approval_hints()
+    hint_line = pt("hint.approve_line", y=h["approve"], a=h["approve_for_session"],
+                   p=h["approve_for_prefix"], d=h["deny"],
+                   n=h["decline"], c=h["cancel"])
     if request.expected_code:
-        hint_line = (f"高危操作: 必须精确键入确认码 {request.expected_code} 才授权"
-                     f"  ·  其它输入一律拒绝")
+        hint_line = pt("hint.confirm_code", code=request.expected_code)
     for seg in _wrap_dw(hint_line, inner - 4):
         lines.append("│  " + seg + " " * max(0, inner - 4 - _disp_width(seg)) + "  │")
     lines.append("╰" + "─" * (width - 2) + "╯")
@@ -191,13 +211,22 @@ def render_approval_card(request: ApprovalRequest, width: int = 78) -> str:
 
 
 # ---------------------------------------------------------------- 决策解析
+# Codex 契约 2 在 Tuan 里的本地化增强：Esc 仍映射 ABORT（比上游 decline
+# 更严格）。上游 exec 审批里 esc/n 是 decline、c 是 cancel；这里保留 esc
+# 为 ABORT 并在文档如实标注，n 单独走 DECLINE。
 _ABORT_WORDS = frozenset({
     "", "esc", "escape", "\x1b", "q", "quit", "abort", "cancel",
-    "取消", "中止", "退出", "ctrl-c", "\x03",
+    "取消", "中止", "退出", "ctrl-c", "\x03", "c",
 })
-_DENY_WORDS = frozenset({"n", "no", "deny", "reject", "否", "拒绝", "3"})
-_ONCE_WORDS = frozenset({"y", "yes", "ok", "approve", "是", "执行", "确认", "1"})
-_SESSION_WORDS = frozenset({"s", "session", "2", "本会话", "会话"})
+# Codex 主路径键位
+# 数字 1..6 统一走「选项索引」路径（见 resolve_decision），不再混进
+# 关键词表 —— 避免「3 到底是 deny 还是第 3 项」这种歧义。
+_DENY_WORDS = frozenset({"d", "no", "deny", "reject", "否", "拒绝"})
+_DECLINE_WORDS = frozenset({"n", "decline", "n-"})
+_PREFIX_WORDS = frozenset({"p", "prefix"})
+_ONCE_WORDS = frozenset({"y", "yes", "ok", "approve", "是", "执行", "确认"})
+# a = approve_for_session (Codex)；s 是上一轮 Tuan 的本地化兼容别名
+_SESSION_WORDS = frozenset({"a", "s", "session", "本会话", "会话"})
 
 
 def resolve_decision(text: Optional[str],
@@ -231,6 +260,10 @@ def resolve_decision(text: Optional[str],
 
     if low in _DENY_WORDS:
         return ApprovalDecision.DENY
+    if low in _DECLINE_WORDS:
+        return ApprovalDecision.DECLINE
+    if low in _PREFIX_WORDS:
+        return ApprovalDecision.PREFIX
     if low in _SESSION_WORDS:
         return ApprovalDecision.SESSION
     if low in _ONCE_WORDS:
@@ -250,7 +283,11 @@ def route_decision(request: ApprovalRequest,
         "kind": request.kind,
         "decision": decision.value,
         "granted": decision.granted,
-        "scope": "session" if decision == ApprovalDecision.SESSION else "turn",
+        "scope": {
+            ApprovalDecision.SESSION: "session",
+            ApprovalDecision.PREFIX: "prefix",
+            ApprovalDecision.ONCE: "turn",
+        }.get(decision, "none"),
         "sensitive": request.sensitive,
         "metadata": dict(request.metadata),
     }
@@ -322,9 +359,10 @@ def build_mcp_trust_request(server: str, tier: str, *,
             ApprovalOption("仅本会话临时授权 (不写盘, 进程结束失效)",
                            ApprovalDecision.ONCE, "y / 1"),
             ApprovalOption("授予并持久化 (写盘, 跨重启生效, 作用域更宽)",
-                           ApprovalDecision.SESSION, "s / 2"),
-            ApprovalOption("拒绝, 保持 untrusted", ApprovalDecision.DENY, "n / 3"),
-            ApprovalOption("中止", ApprovalDecision.ABORT, "Esc"),
+                           ApprovalDecision.SESSION, "a / 2"),
+            ApprovalOption("拒绝, 保持 untrusted", ApprovalDecision.DENY, "d / 3"),
+            ApprovalOption("拒绝并说明如何调整", ApprovalDecision.DECLINE, "n / 4"),
+            ApprovalOption("中止", ApprovalDecision.ABORT, "c / Esc"),
         ],
         expected_code=_new_confirmation_code() if require_code else None,
         metadata={"server": server, "tier": tier},

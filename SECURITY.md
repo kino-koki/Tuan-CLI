@@ -278,14 +278,15 @@ Docker 守护进程重定向都会在引擎不可用时被静默放行。现改�
 
 **TUI 外壳借鉴说明（Codex CLI，2026-11-06）**：按需求把 `openai/codex` 的 TUI 源码
 **完整下载到本地核查**（`codex-rs/tui/`，Rust + ratatui + crossterm + tokio，
-567 个 `.rs` 文件、约 24.7 万行），并**完整照抄**其 `LICENSE` 与 `NOTICE` 原文到
+**165 个顶层模块、1216 个 `.rs` 文件、492414 行**（另跳过 1491 个快照文件），
+  并**完整照抄**其 `LICENSE` 与 `NOTICE` 原文到
 `THIRD_PARTY_LICENSES/`（Apache-2.0 第 4 条与上游 NOTICE 的归属要求）。
 
 **但 TUI 源码没有逐字复制，本项目也不宣称做了逐字复制。** 两个硬理由：
 
 1. **跨语言不可行**：上游 `codex-tui` 是独立 Rust crate，渲染建立在 ratatui 的
    `Widget`/`Buffer` trait 与 crossterm 事件循环上；Tuan-CLI 是纯 Python +
-   prompt_toolkit/rich。逐字搬 24.7 万行 Rust 进 Python 仓库没有可执行语义。
+   prompt_toolkit/rich。逐字搬 49.2 万行 Rust 进 Python 仓库没有可执行语义。
 2. **整体替换 TUI 外壳会重新打开侧门**：权限策略注入（`build_permission_policy`）、
    确认通道（`ctx.confirm`）、沙箱路由（`_route_sandbox_isolation`）都挂在现有 TUI
    入口上。换壳等于把 E1–E8 修好的接线全部甩掉 —— 这正是前几轮反复在堵的问题。
@@ -308,6 +309,35 @@ Tuan 现有 `_render_confirm_card` / `_render_ask_card` 的盒子渲染器，不
 （未知输入 RETRY、错码 DENY、非 TTY headless 用 6 位确认码、stdin 不可用 ABORT）；
 新增 E1 持久化信任授予流程与 E7 结构化 DiffPreview 卡片（上游均无对应物）。
 归属、许可全文与「OpenAI 不背书」声明见 `NOTICE` 第 9 条。
+
+
+
+**TUI 对齐矩阵（2026-11-06，第 10 轮）**：目标「TUI 与 Codex 完全相同但保留本地化」
+已拆成可度量条目，见 `TUI_PARITY.md` 与 `tuan tui parity`。
+
+- 新增 `tuan_cli/tui/parity/`：`upstream_spec.py`（165 模块树 / 布局常量 /
+  键位规格规范化）、`keymap.py`（8 context / 82 动作 / 74 已绑定的 Codex
+  `built_in_defaults` + `RuntimeKeymap` 解析：context→global→defaults 优先级、
+  显式解绑、唯一性冲突、保留键 `ctrl-c`）、`i18n.py`（17 条文案 → 10 语言，
+  en / zh-CN 全量）、`matrix.py`（逐模块状态与差距队列）。
+- **键位改为 Codex 原生**：`y` 批准 / `a` 本会话 / `p` 前缀 / `d` 拒绝 /
+  `n` 拒绝并说明 / `c` 中止；新增 `PREFIX` / `DECLINE` 决策。上一轮的
+  `s` / `1` / `2` 等保留为本地化兼容别名。`Esc` 仍为 `ABORT`（比上游 exec
+  模式的 decline 更严格，`TUI_PARITY.md` §6 如实标注）。
+- **布局常量逐值对齐**：`LIVE_PREFIX_COLS=2` / `MAX_POPUP_ROWS=8` /
+  `MIN_LIST_WIDTH_FOR_SIDE=40` / `SIDE_CONTENT_GAP=2` /
+  `MENU_SURFACE_HORIZONTAL_INSET=4` / `MAX_KEY_CHORD_STROKES=2`。
+- **口径更正**：完整解压后上游为 165 模块 / 1216 个 `.rs` / 492414 行
+  （跳过 1491 个快照），不是上一轮的 567 / 24.7 万行。所有旧数字引用已修正。
+- **当前指标（不虚报）**：aligned 14、localized 57、not_applicable 63、
+  **pending 31**；宽口径 81.2%、严格对齐 43.0%、**逐值对齐仅 8.5%**；
+  `fully_identical = false`。`tuan tui parity --gaps` 列出 31 个待办模块，
+  `TUI_PARITY.md` §5 给出第 11–15 轮清零路线。**不靠改状态定义凑数。**
+- **本地化边界**：键位 / 布局 / 组件树 / 交互契约不改（这就是「完全相同」的
+  锚点）；只改文案、模型、路径、配色、渲染后端与审批作用域语义。
+- 回归：`tests/test_tui_parity.py`（新增）+ 既有 `test_tui_approval_overlay.py`
+  / `test_e1_e7_hardening.py` 已适配 Codex 键位，102 例通过。
+- 归属：`NOTICE` 第 10 条、`TUI_PARITY.md` §8；**仍未逐字复制任何 Rust 源码**。
 
 
 
