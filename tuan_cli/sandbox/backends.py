@@ -48,7 +48,38 @@ def _seatbelt_available() -> bool:
 
 
 def _jobobject_available() -> bool:
-    return sys.platform == "win32"
+    """E3: 真实能力探测 —— 旧实现只判断 ``sys.platform == "win32"``,
+    于是"Windows 上就一定宣称可用", 实际 CreateJobObjectW / 配额设置可能失败
+    (权限受限、策略禁用、远程会话)。探测失败时不能把 jobobject 列为强后端,
+    否则 auto 会选一个随后必然降级的后端, 上层却以为隔离已生效。
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        job = k32.CreateJobObjectW(None, None)
+        if not job:
+            return False
+        try:
+            # 只验证句柄可用与信息类可查询, 不在这里设配额 (配额由执行层设置)
+            class _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
+                _fields_ = [("TotalUserTime", ctypes.c_longlong),
+                            ("TotalKernelTime", ctypes.c_longlong),
+                            ("ThisPeriodTotalUserTime", ctypes.c_longlong),
+                            ("ThisPeriodTotalKernelTime", ctypes.c_longlong),
+                            ("TotalPageFaultCount", ctypes.c_ulong),
+                            ("TotalProcesses", ctypes.c_ulong),
+                            ("ActiveProcesses", ctypes.c_ulong),
+                            ("TotalTerminatedProcesses", ctypes.c_ulong)]
+            info = _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
+            ok = k32.QueryInformationJobObject(
+                job, 1, ctypes.byref(info), ctypes.sizeof(info), None)
+            return bool(ok)
+        finally:
+            k32.CloseHandle(job)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _token_acl_available() -> bool:
