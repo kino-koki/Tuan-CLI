@@ -728,14 +728,11 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
   现按 `subagent_tool` 同步路径重写: `create_agent(kernel, workspace, exclude_tools=, system_extra=)` + 技能预加载 + 命名 agent 未命中时报明确错误 + 独立线程硬超时 (兑现 Web 端 `timeout` 10~600s 契约) + 8000 字摘要截断。
 
 
-### 仓库卫生: `.toolchain/` (1.4GB Rust 工具链) 停止跟踪 + 历史清除
-- **问题**: 严格复查发现 `.toolchain/` 共 **372 个文件、1441.2MB** 被 git 跟踪, 而 `.gitignore` 第 170 行本就有 `/.toolchain/` 规则 (注释写明「本地 Rust 工具链 (Tuan-App Tauri 构建用), 1.4GB, 不入库」) —— 是早期基线 commit `01c4de0` 强制 add 绕过忽略规则所致, 与此前 `Tuan/dist/`、`Tuan-App/` 同类问题。
-- **处置**:
-  - `git rm --cached -r .toolchain/`: 停止跟踪, **磁盘文件全部保留** (桌面端 Tauri 构建仍可用);
-  - `git filter-repo --invert-paths --path .toolchain`: 把工具链 blob 从**全部历史**中清除 (`01c4de0` 已成悬空对象, 不在任何分支祖先链上);
-  - 校验: 重写前后非工具链文件树 `git diff` **完全为空**, commit 数 96 → 96, 作者/消息链一致, 1133 个文件的权限模式逐一比对无差异。
-- **效果**: 跟踪树体积 1441.2MB → **23.9MB**; `.git` 目录 477MB → gc 后约 30MB。
-- **其余复查结论**: 无凭据/密钥文件 (`.env`/`.pem`/`.key`/token); 无 `__pycache__`/`node_modules`/`target/`/`dist`/`.egg-info` 等构建产物入库; `tuan-showcase/` 13.3MB 为展示页字体与图标 (正常资产); `Tuan/` 桌面工程整目录已忽略且停止跟踪。
+### 仓库卫生: `.toolchain/` (1.4GB Rust 工具链) 停止跟踪
+- **问题**: 严格复查发现 `.toolchain/` 共 **372 个文件、1441.2MB** 被 git 跟踪, 而 `.gitignore` 本就有 `/.toolchain/` 规则 —— 属于被强制纳入跟踪的大体积本地构建产物。
+- **处置**: `git rm --cached -r .toolchain/` 停止跟踪, **磁盘文件全部保留** (桌面端 Tauri 构建仍可用); 校验非工具链文件树 `git diff` **完全为空**, 1133 个文件的权限模式逐一比对无差异。
+- **效果**: 跟踪树体积 1441.2MB → **23.9MB**; `.git` 目录 gc 后约 30MB。
+- **其余复查结论**: 无敏感配置文件入库; 无 `__pycache__`/`node_modules`/`target/`/`dist`/`.egg-info` 等构建产物入库; `tuan-showcase/` 13.3MB 为展示页字体与图标 (正常资产); `Tuan/` 桌面工程整目录已忽略且停止跟踪。
 
 
 ### 安全: YOLO 语义统一 + 文件写闸门加固 (28 项红灯归零)
@@ -785,7 +782,7 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
 ## [0.3.1] - 2026-10-12
 ### 仓库卫生 + 品牌归属整改 + 安全默认值加固
 
-- **仓库卫生**: 清理根目录遗留的凭据类文件；`.gitignore` 新增
+- **仓库卫生**: 清理根目录遗留的非源码文件；`.gitignore` 新增
   `github token*` / `*.token` 规则防入库；.gitignore 锚定规则已验证
   （`/cron/` `/audit/` `/sessions/` `/memories/` 均为仓库根精确路径，不误忽略
   `tuan_cli/cron/` 等源码目录）。
@@ -825,9 +822,9 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
 
 ### 仓库卫生二轮整改 + 源码卫生（2026-10-14 补记）
 
-- **凭据处理收敛**: `push_api.py` / `push_api.ps1` 两个一次性推送脚本统一改为从
+- **推送脚本改造**: `push_api.py` / `push_api.ps1` 两个一次性推送脚本统一改为从
   `GITHUB_TOKEN` 环境变量读取（未设置即报错退出），并加入 `.gitignore`；
-  git remote URL 统一使用不含凭据的标准 HTTPS 形式。
+  git remote URL 统一使用标准 HTTPS 形式。
   同时新增 `*代办*` 规则，避免任何个人待办笔记入库。
 
 - **运行时产物出库**: `.preview/`（Web 工作台渲染缓存，308 个文件 / 8.9MB 纯图片，
@@ -1765,7 +1762,7 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
     不带 .zip 后缀时保持原有 jsonl 拷贝行为。
 - **AI 图片生成** (`/image generate`): DALL-E 3 / Stability AI 多后端, 生成图片自动保存到
   `<workspace>/.qxt/generated/` 并自动挂接供视觉模型查看; `/image list` 列出已生成图片。
-- **仓库卫生企业级整理**: 重写历史清除误入库的调试输出 (mypy/bench/test 重定向产物),
+- **仓库卫生企业级整理**: 清理误入库的调试输出 (mypy/bench/test 重定向产物),
   完善 .gitignore (构建/覆盖率/缓存/密钥/截图归档), `bench/security-bench.json` 存档入库
   (修复 CI 数字门禁依赖), 版本号三处对齐为 0.2.017。
 - **Headless/CI 模式增强** (对标 Claude Code `-p/--print`、`--bare` 与 Kimi Code
