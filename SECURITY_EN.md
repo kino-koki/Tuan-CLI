@@ -128,18 +128,43 @@
 
 ## 8. Enhancement Roadmap (Prioritized by Value)
 
-| # | Module | Enhancement Direction |
-|---|--------|----------------------|
-| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server trust grading**: persist each server's permission domain (read-only/tool whitelist/allowed domains) to persistent policy; add "pre-call tool-level authorization + in-session revocable" to replace scattered ad-hoc confirmations |
-| E2 | `core/workspace_trust.py` | Trust **auto-decay and re-validation**: trusted auto-downgrades to limited when directory changes or new sensitive files (.env/.git config/keys) appear, prompting re-review |
-| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object resource quota enforcement**: CPU quota, memory limit, process tree kill timeout fallback (currently only existence probe) |
-| E4 | `core/security_auditor.py` + `harden/audit_export.py` | Audit **correlation/consolidation + cross-session anomaly detection**: aggregate alerts for repeated same-source redlines (e.g., MCP repeated injection); export supports rotation and encryption |
-| E5 | `core/tool_executor.py` | **Write storm detection**: high-frequency write/delete in single session triggers throttling and alerts, preventing batch accidental deletion |
-| E6 | `tools/permissions.py` | `permissions.rules` enhancement: **negative glob** (`!bin/**`), MCP tool name rules, in-session temporary authorization elevation |
-| E7 | `sandbox/isolation.py` | Copy mode **diff visualization confirmation**: display changes via CLI/interactive card before applying |
-| E8 | `config` | `sandbox`/`permissions` config **schema strict validation + fail-closed observability** (enabled/degraded items visualization) |
+| # | Module | Enhancement Direction | Status |
+|---|--------|----------------------|--------|
+| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server trust grading**: persist each server's permission domain (read-only/tool whitelist/allowed domains) to persistent policy; add "pre-call tool-level authorization + in-session revocable" to replace scattered ad-hoc confirmations | TODO |
+| E2 | `core/workspace_trust.py` | Trust **auto-decay and re-validation**: trusted auto-downgrades to limited when directory changes or new sensitive files (.env/.git config/keys) appear, prompting re-review | ✅ Done |
+| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object resource quota enforcement**: CPU quota, memory limit, process tree kill timeout fallback (currently only existence probe) | TODO |
+| E4 | `core/security_auditor.py` + `harden/audit_export.py` | Audit **correlation/consolidation + cross-session anomaly detection**: aggregate alerts for repeated same-source redlines (e.g., MCP repeated injection); export supports rotation and encryption | TODO |
+| E5 | `core/tool_executor.py` | **Write storm detection**: high-frequency write/delete in single session triggers throttling and alerts, preventing batch accidental deletion | ✅ Done |
+| E6 | `tools/permissions.py` | `permissions.rules` enhancement: **negative glob** (`!bin/**`), MCP tool name rules, in-session temporary authorization elevation | TODO |
+| E7 | `sandbox/isolation.py` | Copy mode **diff visualization confirmation**: display changes via CLI/interactive card before applying | TODO |
+| E8 | `config` | `sandbox`/`permissions` config **schema strict validation + fail-closed observability** (enabled/degraded items visualization) | TODO |
 
-> Priority judgment: High priority and independently evolvable → **E2, E3, E5**; depends on interaction design → **E1, E7**; polish/hardening → **E4, E6, E8**.
+> Priority judgment: High priority and independently evolvable → **E2, E3, E5** (E2/E5 done); depends on interaction design → **E1, E7**; polish/hardening → **E4, E6, E8**.
+
+**E2 implementation note (2026-11-06):** `check_for_decay()` / `apply_decay()` were
+previously invoked only by unit tests; both the CLI (`cli/cmd_chat.py`) and the Web
+API (`web/server.py::trust_status`) read `record.level` directly, so decay never
+took effect in the main path. `check_trust()` now performs the decay check itself,
+keeping CLI / Web / sandbox on the same level:
+
+- A fingerprint baseline (top-level directory names + sensitive file path/size/mtime_ns)
+  is persisted when trust is confirmed. Any later change (.env, keys, `.git/config`,
+  new top-level directory) downgrades to `limited` and asks for re-confirmation.
+  Scanning is bounded (depth 4 / 20k entries / dependency dirs skipped) and never
+  reads file contents, so ordinary source edits do not trigger it.
+- **Fail-closed:** a failed scan (missing directory, permission error, entry limit) no
+  longer silently returns "no change"; it downgrades to `limited`. Legacy records
+  without a fingerprint only build a baseline, avoiding startup false positives.
+- `last_used` is now maintained by `check_trust` (60 s write throttle), fixing active
+  workspaces being misclassified as stale after 30 days.
+- Decay reason / timestamp are persisted and surfaced via `get_project_info()`.
+- Regression suite: `tests/test_e2_e5_hardening.py` (16 cases).
+
+**E5 implementation note:** `_WriteStormDetector` was already wired into `ToolExecutor`,
+but the unique-file count accumulated over the whole session, so once 15 distinct files
+were touched the alert never cleared despite the 60 s sliding window. File and count
+dimensions now share one window, the alert flag expires with it, and the message no
+longer mislabels the write count as seconds.
 
 ---
 

@@ -410,6 +410,15 @@ def cmd_chat(args: Any) -> int:
                     from ..core.workspace_trust import TrustLevel, WorkspaceTrust
                     _trust = WorkspaceTrust(home_dir())
                     _level = _trust.check_trust(workspace)
+                    # E2: 衰减后的级别必须让用户看见, 否则"权限悄悄收紧"会让人困惑。
+                    _decay_reason = _trust.get_project_info(workspace).get("decay_reason", "")
+                    if _decay_reason:
+                        _notify = getattr(tui, "warning", None) or getattr(tui, "info", None)
+                        if callable(_notify):
+                            try:
+                                _notify(f"工作区信任已自动降级为 limited: {_decay_reason}")
+                            except Exception:  # noqa: BLE001
+                                pass
                     if _level == TrustLevel.UNKNOWN:
                         def _on_trust(trusted: bool) -> None:
                             try:

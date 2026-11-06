@@ -201,32 +201,44 @@ class _WriteStormDetector:
     def __init__(self) -> None:
         self._write_timestamps: List[float] = []
         self._delete_timestamps: List[float] = []
-        self._written_files: Dict[str, int] = {}  # file_path -> count
-        self._alerted = False  # 避免重复告警
+        self._write_events: List[tuple] = []      # (monotonic_ts, file_path)
+        self._written_files: Dict[str, int] = {}  # 窗口内 file_path -> count
+        self._alerted = False  # 避免窗口内重复告警
+        self._alerted_at = 0.0
 
     def record_write(self, file_path: str) -> Optional[str]:
         """记录一次写操作, 返回拦截消息 (None=允许)。"""
         now = _time.monotonic()
         self._write_timestamps.append(now)
-        self._written_files[file_path] = self._written_files.get(file_path, 0) + 1
-        # 清理过期记录
+        self._write_events.append((now, file_path))
         cutoff = now - _STORM_WINDOW_SECONDS
+        # 修复: 唯一文件数此前按「整个会话累计」统计, 一旦改过 15 个不同文件
+        # 就会永久告警且 reset() 之前不可恢复 —— 与 60 秒滑动窗口的语义矛盾。
+        # 现在文件维度与次数维度共用同一窗口。
         self._write_timestamps = [t for t in self._write_timestamps if t >= cutoff]
-        # 检查风暴
+        self._write_events = [(t, p) for t, p in self._write_events if t >= cutoff]
+        self._written_files = {}
+        for _t, _p in self._write_events:
+            self._written_files[_p] = self._written_files.get(_p, 0) + 1
+        # 告警态也随窗口过期复位, 避免风暴过后永久处于抑制分支
+        if self._alerted and now - self._alerted_at > _STORM_WINDOW_SECONDS:
+            self._alerted = False
+
         if len(self._write_timestamps) >= _STORM_WRITE_THRESHOLD:
             if not self._alerted:
                 self._alerted = True
+                self._alerted_at = now
                 return (
-                    f"[写操作风暴检测] {len(self._write_timestamps)} 秒内写操作达 "
+                    f"[写操作风暴检测] {_STORM_WINDOW_SECONDS:.0f} 秒内写操作达 "
                     f"{len(self._write_timestamps)} 次 (阈值 {_STORM_WRITE_THRESHOLD}), "
                     f"可能误入循环。建议检查当前任务。"
                 )
             return "[写操作风暴] 继续写操作, 请确认不会批量损坏文件。"
-        # 大量不同文件被修改也告警
         unique_count = len([f for f, c in self._written_files.items() if c > 0])
         if unique_count >= _STORM_UNIQUE_FILES_THRESHOLD:
             return (
-                f"[写操作风暴检测] 已修改 {unique_count} 个不同文件, "
+                f"[写操作风暴检测] {_STORM_WINDOW_SECONDS:.0f} 秒内已修改 "
+                f"{unique_count} 个不同文件 (阈值 {_STORM_UNIQUE_FILES_THRESHOLD}), "
                 f"可能批量改写超出预期。"
             )
         return None
@@ -256,8 +268,10 @@ class _WriteStormDetector:
         """重置风暴检测状态 (新会话开始时调用)。"""
         self._write_timestamps.clear()
         self._delete_timestamps.clear()
+        self._write_events.clear()
         self._written_files.clear()
         self._alerted = False
+        self._alerted_at = 0.0
 
 
 class ToolExecutor:
