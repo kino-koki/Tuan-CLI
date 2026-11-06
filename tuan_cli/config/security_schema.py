@@ -126,6 +126,27 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
                     continue
                 if not isinstance(val, int) or isinstance(val, bool) or val < 0:
                     errors.append(f"取值非法: sandbox.resource.{key}={val!r} 应为 >=0 的整数")
+            # E3: Job Object 配额。写错范围时执行层会抛 ValueError 并降级为裸跑,
+            # 必须在配置校验阶段就拦住, 否则运行时才发现"隔离没生效"。
+            for key, lo, hi in (("cpu_rate_pct", 1, 100),
+                                ("active_process_limit", 1, 1024)):
+                val = res.get(key)
+                if val is None:
+                    continue
+                if not isinstance(val, int) or isinstance(val, bool) or not (lo <= val <= hi):
+                    errors.append(
+                        f"取值非法: sandbox.resource.{key}={val!r} 应在 {lo}..{hi} 之间")
+            kt = res.get("kill_timeout_seconds")
+            if kt is not None:
+                if not isinstance(kt, (int, float)) or isinstance(kt, bool) \
+                        or not (0.5 <= kt <= 60.0):
+                    errors.append(
+                        f"取值非法: sandbox.resource.kill_timeout_seconds={kt!r} 应在 0.5..60 之间")
+            if res.get("max_memory_mb") not in (None, 0):
+                mm = res["max_memory_mb"]
+                if isinstance(mm, int) and not isinstance(mm, bool) and not (16 <= mm <= 65536):
+                    errors.append(
+                        f"取值非法: sandbox.resource.max_memory_mb={mm} 应在 16..65536 (或 0=不限)")
             thr = res.get("isolate_copy_threshold")
             if thr is not None and thr not in _THRESHOLDS:
                 errors.append(

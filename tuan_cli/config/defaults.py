@@ -666,8 +666,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "allowed_domains": [],           # 域名白名单 (叠加 security.network; 空=不限制)
         "resource": {
             "deny_network_by_default": False,   # 默认禁网: 含网络请求的命令改走无网隔离执行
-            "max_memory_mb": 0,                 # 强隔离内存上限 (MB, 0=不限)
+            "max_memory_mb": 0,                 # 强隔离内存上限 (MB, 0=不限; Windows Job Object 用默认 512)
             "max_timeout": 0,                   # 强隔离超时上限 (秒, 0=用调用方默认)
+            "cpu_rate_pct": 50,                 # E3: Windows Job Object CPU 硬上限 (1..100)
+            "active_process_limit": 16,         # E3: Job 内最大存活进程数 (防 fork 炸弹)
+            "kill_timeout_seconds": 5.0,        # E3: 整树击杀兜底超时 (0.5..60)
             "isolate_copy_threshold": "high",   # 高于等于该严重度(high/critical) 的写操作走副本→diff→apply
         },
     },

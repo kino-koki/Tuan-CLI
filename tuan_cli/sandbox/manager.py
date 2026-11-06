@@ -33,6 +33,9 @@ DEFAULT_POLICY: Dict[str, Any] = {
         "deny_network_by_default": False,
         "max_memory_mb": 0,
         "max_timeout": 0,
+        "cpu_rate_pct": 50,
+        "active_process_limit": 16,
+        "kill_timeout_seconds": 5.0,
         "isolate_copy_threshold": "high",   # 高危以上走 copy-diff-apply
     },
 }
@@ -291,17 +294,30 @@ class SandboxManager:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=str(exc))
 
-    @staticmethod
-    def _run_syscall(command: str, timeout: float, block_net: bool, cwd: str, backend: str) -> SandboxExecResult:
+    def _run_syscall(self, command: str, timeout: float, block_net: bool,
+                     cwd: str, backend: str) -> SandboxExecResult:
+        """调用 OS 原语执行, 并如实汇报是否真的拿到了强制隔离。
+
+        E3: 旧实现把 ``enforced=True`` 写死 —— 只要 platform 层没抛异常,
+        即使内部已降级为普通子进程 (libseccomp 缺失 / Job Object 挂不上),
+        上层也会认为"已强隔离执行"并放行。现在以 ``SyscallResult.enforced``
+        为准; ``enforce_required=True`` 时降级由 HardIsolationFilter 拒绝。
+        """
         try:
             from ..arch.platform import run_syscall_sandboxed
+            resource = self.policy.get("resource", {}) or {}
             res = run_syscall_sandboxed(
                 ["cmd", "/c", command] if os.name == "nt" else ["/bin/sh", "-c", command],
                 timeout=timeout or 30.0, block_network=block_net, cwd=cwd or None,
+                memory_limit_mb=int(resource.get("max_memory_mb", 0) or 512),
+                cpu_rate_pct=int(resource.get("cpu_rate_pct", 50) or 50),
+                active_process_limit=int(resource.get("active_process_limit", 16) or 16),
+                kill_timeout_seconds=float(resource.get("kill_timeout_seconds", 5.0) or 5.0),
             )
+            note = res.degraded_reason or res.error or ("blocked" if res.blocked else "")
             return SandboxExecResult(stdout=res.stdout or "", stderr=res.stderr or "",
                                      returncode=res.returncode, backend=res.mechanism or backend,
-                                     enforced=True, error="blocked" if res.blocked else "")
+                                     enforced=bool(res.enforced), error=note)
         except Exception as exc:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=str(exc))

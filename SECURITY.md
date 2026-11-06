@@ -132,8 +132,8 @@
 |---|------|----------|------|
 | E1 | `tools/mcp/policy.py` + `security.py` | MCP **server 信任分级**：把每台 server 的权限域(只读/工具白名单/允许的域名)落到持久化策略；新增"调用前工具级授权 + 会话内可回撤"，取代散落的临时确认 | 待办 |
 | E2 | `core/workspace_trust.py` | 信任**自动衰减与重校验**：trusted 在目录变更/新敏感文件(.env/.git/config/密钥)出现时自动降级到 limited 并提示复议 | ✅ 已落地 |
-| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object 资源配额落地**：CPU 配额、内存上限、进程树击杀超时兜底(当前仅存在性探测) | 待办 |
-| E4 | `core/security_auditor.py` + `harden/audit_export.py` | 审计**关联合并 + 跨会话异常检测**：同源多次红线(如 MCP 反复注入)聚合告警；导出支持轮转与加密 | 待办 |
+| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object 资源配额落地**：CPU 配额、内存上限、进程树击杀超时兜底(当前仅存在性探测) | ✅ 已落地 |
+| E4 | `core/security_auditor.py` + `harden/audit_export.py` | 审计**关联合并 + 跨会话异常检测**：同源多次红线(如 MCP 反复注入)聚合告警；导出支持轮转与加密 | ✅ 部分（关联/轮转已落地，导出加密未做） |
 | E5 | `core/tool_executor.py` | **写操作风暴检测**：单会话内高频率写/删除触发节流与告警，防误删批量任务 | ✅ 已落地 |
 | E6 | `tools/permissions.py` | `permissions.rules` 增强：**负向 glob**(`!bin/**`)、MCP 工具名规则、会话内临时授权提升 | ◐ 部分（前两项已落地） |
 | E7 | `sandbox/isolation.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply | 待办 |
@@ -177,6 +177,47 @@ CLI (`cli/cmd_chat.py`) 与 Web (`web/server.py::trust_status`) 都直接读 `re
 **R8 同类异常即放行修复**：`PermissionPolicy._hardening_confirm()` 在安全引擎导入失败时
 `except: pass` 后继续走 YOLO 自动批准 —— 超长命令 / FD 重定向 / PowerShell IEX /
 Docker 守护进程重定向都会在引擎不可用时被静默放行。现改为返回 `confirm` 并标注 fail-closed。
+
+
+
+**E3 落地说明（2026-11-06）**：最值钱的不是"补上 CPU 配额"，而是修掉**降级被误报为已隔离**：
+`SandboxManager._run_syscall()` 旧实现把 `enforced=True` 写死，只要 platform 层不抛异常，
+即使内部已因 libseccomp 缺失 / Job Object 不可用而退化为普通子进程，上层仍认为
+"已 OS 级强隔离执行"并放行。现在 `SyscallResult` 带 `enforced` / `degraded_reason`，
+所有 fallback 路径显式 `enforced=False`，交由 `enforce_required` 决定是否拒绝。
+
+- `arch/platform.py`：新增 `JobObjectLimits` 纯数据层（含范围校验、单位换算）；
+  `_set_job_limits()` 两次 `SetInformationJobObject` —— class 9 落内存/workingset/进程数、
+  class 15 落 CPU 硬上限（`ENABLE|HARD_CAP`，`CpuRate` 单位=百分数×100）。
+  旧实现 `cpu_rate_pct` **完全没被使用**，`MaximumWorkingSetSize` 也缺
+  `JOB_OBJECT_LIMIT_WORKINGSET` flag 而不生效。
+- **fail-closed**：`AssignProcessToJobObject` 失败时旧实现 `pass` 后照跑、却仍返回
+  `mechanism="job-object"`；现在杀掉子进程并返回 `blocked=True / enforced=False`。
+  配额设置任一步失败即抛错，不再"配额没设上却照跑"。
+- 进程树击杀超时兜底：`TerminateJobObject` → `taskkill /T /F` → `proc.kill()` 三级。
+- `backends._jobobject_available()` 从「`sys.platform == "win32"` 就算可用」改为真实
+  `CreateJobObjectW` + `QueryInformationJobObject` 能力探测。
+- 新配置键 `sandbox.resource.cpu_rate_pct / active_process_limit / kill_timeout_seconds`，
+  已纳入 `tuan config validate` 强校验（写错范围执行层会降级, 必须提前拦住）。
+- **边界（如实）**：Job Object 只在 Windows 生效；本环境为 Linux，Windows 路径由
+  fake kernel32 / fake Popen 单测覆盖，**未在真实 Windows 主机上跑过**。Linux/macOS
+  仍须靠外部容器或 VM，`enforced=False` 只是让降级可见，不提供额外隔离。
+
+**E4 落地说明（部分）**：新增 `core/audit_correlation.py`。此前审计是逐条的，
+1000 条 `deny` 只是 1000 行日志，同源反复注入看不出异常。
+
+- `AuditCorrelator` 产出三类聚合告警：`burst`（窗口内同源重复）、`cross_session`
+  （同一指纹出现在 ≥2 个会话，抓跨会话投毒/提示注入复用）、`severity_escalation`
+  （同源从 low 跃升 critical）。指纹不含 session/seq/ts，并归一化掉路径与数字。
+- **纯观测，绝不反作用于裁决**：不改 `AuditRecord`、不返回 allow/deny、异常一律吞掉记 log；
+  告警只推送到**已存在**的全局事件总线（不主动创建以免副作用）。
+- `SecurityAuditor` 启动时从 AEAD 日志 `replay()` 历史，使跨会话检测能跨越进程重启；
+  `recent_alerts()` / `correlation_stats()` / `stats()["correlation"]` 可查。
+- `harden/audit_export.py`：导出支持按大小轮转（`max_bytes` / `backup_count`），
+  文件权限收紧到 0600；`export_file()` 批量重放同样生效。
+- **仍待办**：导出加密。审计主日志本身已 AEAD 加密，但导出到 SIEM 的明文轮转文件
+  需要独立的密钥管理方案，未擅自塞进本轮。
+- 回归：`tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）。
 
 
 

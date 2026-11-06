@@ -30,9 +30,16 @@ Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」*
 | R8 | `PermissionPolicy._hardening_confirm()` 安全引擎导入失败时 `except: pass` 后 YOLO 自动批准，超长命令 / FD 重定向 / IEX / Docker 守护进程重定向全部静默放行 | 异常时返回 `confirm` 并标注 fail-closed |
 | R9 | `permissions.rules` 无法对单台 MCP server 精确管控，宽泛 allow 也没有负向排除（「永远允许」= 提权入口） | E6：`exclude` / `!glob` 负向排除（deny 忽略）、`mcp__<server>__<tool>` 规范化名 |
 | R10 | `config/validate.py` 不覆盖 `sandbox` / `permissions`；非 dict 规则、未知 action、`sandbox.enabled=false` 都会静默失效 | E8：新增 `config/security_schema.py`，接入 `tuan config validate` 与 `tuan harden status` |
+| R11 | **降级被误报为已隔离**：`SandboxManager._run_syscall()` 写死 `enforced=True`，platform 层内部退化为普通子进程时上层仍认为 OS 级强隔离生效 | E3：`SyscallResult` 带 `enforced` / `degraded_reason`，所有 fallback 置 `enforced=False`，由 `enforce_required` 决定拒绝 |
+| R12 | `AssignProcessToJobObject` 失败时 `pass` 后照跑，却仍返回 `mechanism="job-object"`；配额设置失败也照跑 | E3：杀掉子进程并返回 `blocked=True / enforced=False`；配额任一步失败即抛错 |
+| R13 | E3 名义配额：`cpu_rate_pct` 参数从未使用、`MaximumWorkingSetSize` 缺 `WORKINGSET` flag、后端探测只看 `sys.platform == "win32"` | E3：class 9 + class 15 双次 `SetInformationJobObject` 落 CPU 硬上限；真实 `CreateJobObjectW` 能力探测；三级进程树击杀兜底 |
+| R14 | 审计逐条存储，同源反复红线无聚合信号；导出文件无轮转、权限不收紧 | E4：新增 `core/audit_correlation.py`（burst / cross_session / severity_escalation），历史 AEAD 重放；导出按大小轮转 + 0600 |
+| R15 | 无控制终端（CI / 容器 / systemd）下 `os.getlogin()` 抛 OSError，整个审计器初始化失败 | 改为 best-effort 环境变量兜底；**指纹格式保持不变**，既有加密日志仍可解密 |
 
 回归：`tests/test_fail_closed_regressions.py`（37 例）、`tests/test_e2_e5_hardening.py`（16 例）、
-`bench/indep_verify.py`（29 例）、安全/i18n/文档一致性子集共 273 例通过。
+`tests/test_e6_e8_hardening.py`（21 例）、`tests/test_e3_jobobject.py`（25 例）、
+`tests/test_e4_correlation.py`（24 例）、`bench/indep_verify.py`（29 例）；
+平台/沙箱/审计/导出分批回归 115 + 49 例通过。
 
 ```bash
 python -m pytest tests/test_fail_closed_regressions.py tests/test_e2_e5_hardening.py -q

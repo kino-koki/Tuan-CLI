@@ -132,8 +132,8 @@
 |---|--------|----------------------|--------|
 | E1 | `tools/mcp/policy.py` + `security.py` | MCP **server trust grading**: persist each server's permission domain (read-only/tool whitelist/allowed domains) to persistent policy; add "pre-call tool-level authorization + in-session revocable" to replace scattered ad-hoc confirmations | TODO |
 | E2 | `core/workspace_trust.py` | Trust **auto-decay and re-validation**: trusted auto-downgrades to limited when directory changes or new sensitive files (.env/.git config/keys) appear, prompting re-review | ✅ Done |
-| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object resource quota enforcement**: CPU quota, memory limit, process tree kill timeout fallback (currently only existence probe) | TODO |
-| E4 | `core/security_auditor.py` + `harden/audit_export.py` | Audit **correlation/consolidation + cross-session anomaly detection**: aggregate alerts for repeated same-source redlines (e.g., MCP repeated injection); export supports rotation and encryption | TODO |
+| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object resource quota enforcement**: CPU quota, memory limit, process tree kill timeout fallback (currently only existence probe) | ✅ Done |
+| E4 | `core/security_auditor.py` + `harden/audit_export.py` | Audit **correlation/consolidation + cross-session anomaly detection**: aggregate alerts for repeated same-source redlines (e.g., MCP repeated injection); export supports rotation and encryption | ✅ Partial (correlation + rotation done; export encryption not done) |
 | E5 | `core/tool_executor.py` | **Write storm detection**: high-frequency write/delete in single session triggers throttling and alerts, preventing batch accidental deletion | ✅ Done |
 | E6 | `tools/permissions.py` | `permissions.rules` enhancement: **negative glob** (`!bin/**`), MCP tool name rules, in-session temporary authorization elevation | ◐ Partial (first two done) |
 | E7 | `sandbox/isolation.py` | Copy mode **diff visualization confirmation**: display changes via CLI/interactive card before applying | TODO |
@@ -189,6 +189,62 @@ used `except: pass` when the safety engine failed to import, then continued to
 YOLO auto-approve. Overlong commands, FD redirects, PowerShell IEX and Docker
 daemon redirects were all silently allowed whenever the engine was unavailable.
 It now returns `confirm` with a fail-closed reason.
+
+
+
+**E3 implementation note (2026-11-06):** the most valuable fix is not "adding
+a CPU quota" but stopping *degradation being reported as enforced*.
+`SandboxManager._run_syscall()` hardcoded `enforced=True`; as long as the
+platform layer did not raise, an internal fallback to a plain subprocess (missing
+libseccomp / Job Object unavailable) was still reported to callers as OS-level
+isolation. `SyscallResult` now carries `enforced` / `degraded_reason`, every
+fallback path sets `enforced=False`, and `enforce_required` decides whether to
+reject.
+
+  - `arch/platform.py`: new `JobObjectLimits` pure data layer (range checks,
+    unit conversion); `_set_job_limits()` issues two `SetInformationJobObject`
+    calls — class 9 for memory/workingset/process count, class 15 for the CPU
+    hard cap (`ENABLE|HARD_CAP`; `CpuRate` = percent x 100). The old code never
+    used `cpu_rate_pct` at all, and `MaximumWorkingSetSize` lacked
+    `JOB_OBJECT_LIMIT_WORKINGSET` so it had no effect.
+  - **Fail-closed:** `AssignProcessToJobObject` failure used to be a silent
+    `pass` while still returning `mechanism="job-object"`. Now the child is
+    killed and `blocked=True / enforced=False` is returned. Any quota setup
+    failure raises instead of running without quotas.
+  - Process-tree kill fallback chain: `TerminateJobObject` -> `taskkill /T /F`
+    -> `proc.kill()`.
+  - `backends._jobobject_available()` now performs a real `CreateJobObjectW` +
+    `QueryInformationJobObject` capability probe instead of merely checking
+    `sys.platform == "win32"`.
+  - New config keys `sandbox.resource.cpu_rate_pct / active_process_limit /
+    kill_timeout_seconds`, validated by `tuan config validate`.
+  - **Limitation (stated plainly):** Job Object applies to Windows only. This
+    environment is Linux; the Windows path is covered by fake-kernel32 /
+    fake-Popen unit tests and has **not been executed on a real Windows host**.
+    Linux/macOS still need an external container/VM; `enforced=False` makes
+    degradation visible, it does not add isolation.
+
+**E4 implementation note (partial):** new `core/audit_correlation.py`.
+Audit records were previously per-event — 1000 `deny` lines looked the same as
+one, so repeated same-source injection was invisible.
+
+  - `AuditCorrelator` emits three alert kinds: `burst` (repeated same-source
+    hits in a window), `cross_session` (same fingerprint in >= 2 sessions,
+    catching cross-session poisoning / prompt-injection reuse), and
+    `severity_escalation` (low -> critical on the same source). Fingerprints
+    exclude session/seq/ts and normalise away paths and digits.
+  - **Pure observation, never affects decisions:** does not modify
+    `AuditRecord`, never returns allow/deny, swallows all exceptions; alerts
+    are published only to an *already existing* global event bus.
+  - `SecurityAuditor` replays AEAD log history at startup so cross-session
+    detection survives process restarts; exposed via `recent_alerts()`,
+    `correlation_stats()` and `stats()["correlation"]`.
+  - `harden/audit_export.py` gains size-based rotation (`max_bytes` /
+    `backup_count`) and 0600 permissions; `export_file()` replay is covered too.
+  - **Still TODO:** export encryption. The main audit log is AEAD-encrypted,
+    but SIEM export files need an independent key-management design.
+  - Regression: `tests/test_e3_jobobject.py` (25) and
+    `tests/test_e4_correlation.py` (24).
 
 
 

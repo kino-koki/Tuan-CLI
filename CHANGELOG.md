@@ -51,10 +51,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   YOLO 自动批准，导致超长命令 / FD 重定向 / PowerShell IEX / Docker 守护进程重定向
   在引擎不可用时被静默放行。现改为返回 `confirm` 并标注 fail-closed。
 
+### E3 Job Object 资源配额落地 + 降级不再误报（2026-11-06）
+- **核心修复**：`SandboxManager._run_syscall()` 旧实现把 `enforced=True` 写死，
+  platform 层内部退化为普通子进程（libseccomp 缺失 / Job Object 不可用）时，
+  上层仍认为「已 OS 级强隔离执行」并放行。现在 `SyscallResult` 带
+  `enforced` / `degraded_reason` / `error`，所有 fallback 显式 `enforced=False`。
+- `arch/platform.py`：新增 `JobObjectLimits` 纯数据层；`_set_job_limits()` 两次
+  `SetInformationJobObject`（class 9 内存/workingset/进程数 + class 15 CPU 硬上限，
+  `ENABLE|HARD_CAP`）。旧实现 `cpu_rate_pct` 完全没用，`MaximumWorkingSetSize` 缺
+  `JOB_OBJECT_LIMIT_WORKINGSET` flag 不生效。
+- **fail-closed**：`AssignProcessToJobObject` 失败不再 `pass` 照跑，杀掉子进程并返回
+  `blocked=True / enforced=False`；配额任一步失败即抛错。
+- 进程树击杀三级兜底：`TerminateJobObject` → `taskkill /T /F` → `proc.kill()`。
+- `sandbox/backends.py::_jobobject_available()` 改为真实 `CreateJobObjectW` +
+  `QueryInformationJobObject` 能力探测，不再「win32 就算可用」。
+- 新配置键 `sandbox.resource.cpu_rate_pct / active_process_limit /
+  kill_timeout_seconds`，纳入 E8 强校验。
+- **边界**：Job Object 仅 Windows 生效；本环境为 Linux，Windows 路径由 fake kernel32 /
+  fake Popen 单测覆盖，**未在真实 Windows 主机验证**。Linux/macOS 仍须外部容器或 VM。
+
+### E4 审计关联合并 + 跨会话异常检测（部分落地）
+- 新增 `core/audit_correlation.py`：`burst`（窗口内同源重复）、`cross_session`
+  （同一指纹出现在 ≥2 会话，抓跨会话投毒/提示注入复用）、`severity_escalation`
+  三类聚合告警。指纹不含 session/seq/ts，归一化掉路径与数字；内存有上界。
+- **纯观测**：不改 `AuditRecord`、不参与裁决、异常全吞；告警只推送到**已存在**的
+  全局事件总线（不主动创建以免副作用）。
+- `SecurityAuditor` 启动时从 AEAD 日志 `replay()` 历史，跨会话检测可跨越进程重启；
+  `recent_alerts()` / `correlation_stats()` / `stats()["correlation"]` 可查。
+- `harden/audit_export.py`：按大小轮转（`max_bytes` / `backup_count`）、0600 权限，
+  `export_file()` 批量重放同样生效。**导出加密仍为待办**（需独立密钥管理方案）。
+- 顺手修复：无控制终端下 `os.getlogin()` 抛 OSError 导致审计器初始化崩溃；
+  指纹格式保持不变，既有加密日志仍可解密。
+
 ### 文档与回归
 - `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
-- 新增 `tests/test_e2_e5_hardening.py`（16 例）、`tests/test_e6_e8_hardening.py`（21 例）；
-  安全 / 权限 / TUI / Web / i18n 子集 496 passed / 1 skipped，E6/E8/R8 子集 21 passed。
+- 新增 `tests/test_e2_e5_hardening.py`（16 例）、`tests/test_e6_e8_hardening.py`（21 例）、
+  `tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）；
+  安全 / 权限 / TUI / Web / i18n 子集 496 passed / 1 skipped，平台 / 沙箱 / 审计 /
+  导出分批回归 115 + 49 例通过。
 - 本轮为普通 fast-forward 提交，未改写历史、未使用 force push。
 
 ## [0.3.3] - 2026-10-25 (小更新 · 体验增强)
