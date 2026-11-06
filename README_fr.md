@@ -136,7 +136,7 @@ tuan --print run "Salut, décris-toi en une phrase."
 
 ---
 
-## Surface de commandes : 49 sous-commandes principales + commandes slash
+## Surface de commandes : 50 sous-commandes principales + commandes slash
 
 | Commande | À quoi ça sert |
 |---|---|

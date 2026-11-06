@@ -38,9 +38,19 @@ class TestExplicitDecision:
     def test_approve_session(self, raw):
         assert resolve_decision(raw, self._req()) == ApprovalDecision.SESSION
 
-    @pytest.mark.parametrize("raw", ["n", "no", "3", "否", "拒绝"])
+    @pytest.mark.parametrize("raw", ["d", "no", "deny", "否", "拒绝"])
     def test_deny(self, raw):
         assert resolve_decision(raw, self._req()) == ApprovalDecision.DENY
+
+    @pytest.mark.parametrize("raw", ["n", "decline"])
+    def test_decline(self, raw):
+        """Codex: n = No, and tell the agent what to do differently."""
+        assert resolve_decision(raw, self._req()) == ApprovalDecision.DECLINE
+
+    @pytest.mark.parametrize("raw", ["p", "prefix"])
+    def test_prefix(self, raw):
+        """Codex: p = approve_for_prefix."""
+        assert resolve_decision(raw, self._req()) == ApprovalDecision.PREFIX
 
     def test_numeric_option_maps_to_its_decision(self):
         req = ApprovalRequest(kind="exec", title="t", options=[
@@ -127,7 +137,8 @@ class TestCardRendering:
         req = build_file_change_request(self._preview(), require_code=False)
         text = render_approval_card(req)
         assert "1)" in text and "2)" in text
-        assert "Press" in text or "高危操作" in text
+        # 本地化提示行（Codex 原文 "Press ... to ..." 的中文等价）
+        assert "按" in text and "确认" in text
         assert "╭" in text and "╰" in text
 
     def test_confirmation_code_hint_is_honest(self):
@@ -288,7 +299,7 @@ class TestE7CardWiring:
             "echo hi > f.txt", self._verdict_ctx(tmp_path), ctx, timeout=10)
         assert res.applied is True
         assert seen and "变更确认" in seen[0]
-        assert "f.txt" in seen[0] and "Press" in seen[0]
+        assert "f.txt" in seen[0] and "按" in seen[0]
         # TUI 路径不应谎称需要确认码
         assert "必须精确键入确认码" not in seen[0]
 

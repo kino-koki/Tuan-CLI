@@ -136,7 +136,7 @@ tuan --print run "Oi, descreva-se em uma frase."
 
 ---
 
-## Superfície de comandos: 49 subcomandos principais + comandos slash
+## Superfície de comandos: 50 subcomandos principais + comandos slash
 
 | Comando | Pra quê |
 |---|---|

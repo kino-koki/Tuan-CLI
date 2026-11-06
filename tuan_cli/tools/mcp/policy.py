@@ -333,6 +333,10 @@ class MCPPolicyStore:
                 "card": req.to_dict(),
             }
 
+        # PREFIX (Codex approve_for_prefix) 在 Tuan 没有「命令/权限前缀」
+        # 这一层模型，本地化映射为会话内临时授权，并在返回值里显式标注，
+        # 不静默当成持久化授权。
+        prefix_localized = decision == ApprovalDecision.PREFIX
         kwargs = dict(
             read_only=read_only,
             tool_allowlist=list(tool_allowlist or []),
@@ -370,6 +374,7 @@ class MCPPolicyStore:
         return {
             "granted": True, "server": server, "tier": policy.tier,
             "mode": mode, "reason": "用户已显式批准",
+            "prefix_localized_to_session": prefix_localized,
             "card": req.to_dict(),
         }
 

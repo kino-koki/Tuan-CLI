@@ -102,7 +102,7 @@ def _resolve_func(name: str) -> Any:
 # _register_command)。reload 后这些模块已缓存, 需强制 reload 重触发注册。
 _INDEPENDENT_CMD_MODULES = (
     ".ext_cli", ".improve_cli", ".cmd_gh", ".cmd_acp", ".cmd_safe",
-    ".cmd_harden", ".cmd_migrate", ".cmd_network", ".cmd_rewind",
+    ".cmd_harden", ".cmd_tui_parity", ".cmd_migrate", ".cmd_network", ".cmd_rewind",
     ".cmd_project", ".cmd_worktree", ".cmd_handoff", ".cmd_help",
     ".cmd_skills",
 )
@@ -141,6 +141,7 @@ def _auto_register() -> None:
     importlib.import_module(".cmd_acp", __package__)
     importlib.import_module(".cmd_safe", __package__)
     importlib.import_module(".cmd_harden", __package__)
+    importlib.import_module(".cmd_tui_parity", __package__)
     importlib.import_module(".cmd_migrate", __package__)
     importlib.import_module(".cmd_network", __package__)
     importlib.import_module(".cmd_rewind", __package__)

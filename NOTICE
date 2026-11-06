@@ -122,7 +122,8 @@ THIRD-PARTY ATTRIBUTIONS
              Copyright (c) 2023-2025 The Ratatui Developers)
 
    Note: the upstream `codex-tui` crate is Rust + ratatui + crossterm + tokio
-   (567 .rs files, ~247k lines). Its source was downloaded and inspected in
+   (1216 .rs files, 492414 lines; 165 top-level modules; 1491 snapshot files
+   skipped). Its source was downloaded and inspected in
    full for this attribution. NO Rust source code is copied or ported
    verbatim into Tuan-CLI: the project is pure Python with prompt_toolkit,
    and replacing the TUI shell wholesale would also replace the entry point
@@ -150,6 +151,42 @@ THIRD-PARTY ATTRIBUTIONS
    grant flow and E7 adds a structured DiffPreview card, neither of which
    exists upstream. OpenAI does not endorse or sponsor this project.
 
+10) TUI parity/alignment layer (tuan_cli/tui/parity/, cli/cmd_tui_parity.py)
+    Location: tuan_cli/tui/parity/{upstream_spec,keymap,i18n,matrix}.py
+              tuan_cli/cli/cmd_tui_parity.py, TUI_PARITY.md
+    Origin:   functional facts extracted from the Codex TUI source:
+              `lib.rs` (165 top-level module names),
+              `keymap.rs::built_in_defaults` (key bindings),
+              `config/src/tui_keymap.rs` (key-spec normalization rules),
+              `ui_consts.rs` / `bottom_pane/popup_consts.rs` /
+              `list_selection_view.rs` (layout constants),
+              `bottom_pane/approval_overlay.rs` / `popup_consts.rs` /
+              `ui_consts.rs` (English UI strings for localization)
+    Upstream: https://github.com/openai/codex
+    Holder:   OpenAI (Copyright 2025 OpenAI)
+    License:  Apache License 2.0 (same files as component 9)
+
+    Note: this layer records **verifiable functional facts** (module names,
+    numeric layout constants, key bindings, normalization rules) and
+    independently implements them in Python. NO Rust source is copied.
+    English UI strings are listed as source material only and are rendered
+    through Tuan-CLI's own 10-language localization; they are not shipped
+    as upstream expressive content. Modifications: component tree is
+    regrouped into Tuan functional domains; keymap resolution adds explicit
+    fail-closed behavior; `Esc` maps to ABORT (stricter than upstream's
+    exec-mode decline); `approve_for_prefix` is localized to an in-session
+    grant and flagged as such; E1 session-scope grants are persisted to
+    disk (a wider scope than upstream, disclosed on the card). See
+    TUI_PARITY.md sections 3, 6 and 8 for the full change list.
+
+    Scale correction: section 9 previously stated "567 .rs files, ~247k
+    lines", which came from an incomplete sparse extraction (1135 files).
+    A full tarball extraction yields 165 top-level modules, 1216 .rs files
+    and 492414 lines (1491 snapshot files skipped). All references to the
+    old figures have been corrected in NOTICE, SECURITY.md, SECURITY_EN.md
+    and CHANGELOG.md; TUI_PARITY.md section 2 records the correction.
+    OpenAI does not endorse or sponsor this project.
+
 -------------------------------------------------------------------------------
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
@@ -162,7 +199,7 @@ LICENSE TEXTS
 -------------------------------------------------------------------------------
 
 Components 1-7 are under MIT; the full text is reproduced below.
-Component 9 is under Apache License 2.0; its full license text and upstream
+Components 9 and 10 are under Apache License 2.0; their full license text and upstream
 NOTICE are reproduced verbatim in THIRD_PARTY_LICENSES/Codex-LICENSE.txt and
 THIRD_PARTY_LICENSES/Codex-NOTICE.txt respectively (Apache-2.0 section 4(a)/(c)
 and the upstream NOTICE requirement).

@@ -115,7 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### TUI 审批外壳：借鉴 Codex CLI 交互契约（2026-11-06）
 - 按需求把 `openai/codex` 的 TUI 源码**完整下载到本地核查**：
-  `codex-rs/tui/` 为 Rust + ratatui + crossterm + tokio，567 个 `.rs` 文件、约 24.7 万行。
+  `codex-rs/tui/` 为 Rust + ratatui + crossterm + tokio，**165 个顶层模块、1216 个
+  `.rs` 文件、492414 行**（另跳过 1491 个快照文件）。
   `LICENSE` 与 `NOTICE` 原文**完整照抄**到 `THIRD_PARTY_LICENSES/`（Apache-2.0 第 4 条 +
   上游 NOTICE 归属要求，其中还含 Ratatui 的 MIT 声明）。
 - **未逐字复制 Rust 源码，也不宣称复制了**：跨语言无可执行语义；且整体替换 TUI 外壳会
@@ -148,13 +149,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   换成 ratatui 式 Widget/Buffer 架构；E1 的持久化授权作用域比 Codex 的 session 更宽，
   已在卡片上明示「跨重启生效」。
 
+### TUI 对齐层：向「与 Codex 完全相同但有本地化」推进（2026-11-06，第 10 轮）
+- **口径更正**：上一轮把上游 TUI 写成「567 个 `.rs` / 约 24.7 万行」，来自一次
+  不完整的 sparse 解压（1135 个文件）。从 tarball **完整提取**后真实规模是
+  **165 个顶层模块 / 1216 个 `.rs` / 492414 行**（另跳过 1491 个快照文件）。
+  `NOTICE` 第 9/10 条、`SECURITY.md`、`SECURITY_EN.md`、本文件全部修正，
+  `TUI_PARITY.md` §2 记录更正过程。低估不当事实用。
+- 新增 `tuan_cli/tui/parity/`（纯 Python，零 Rust 源码）：
+  - `upstream_spec.py`：165 模块树（逐字取自 `lib.rs` 的 `mod` 声明）+ 功能域分组、
+    布局常量（`LIVE_PREFIX_COLS=2` / `MAX_POPUP_ROWS=8` /
+    `MIN_LIST_WIDTH_FOR_SIDE=40` / `SIDE_CONTENT_GAP=2` /
+    `MENU_SURFACE_HORIZONTAL_INSET=4` / `MAX_KEY_CHORD_STROKES=2`）、
+    键位规格规范化（修饰键恒按 `ctrl-alt-shift-super-<key>` 排序，
+    `escape→esc` / `pageup→page-up` 等别名，和弦最多 2 击，`leader <key>`）。
+  - `keymap.py`：Codex `keymap.rs::built_in_defaults()` 的默认键位表
+    （8 context / 82 动作 / 74 已绑定）+ `RuntimeKeymap`，对齐上游四条职责：
+    context→global→defaults 优先级、显式解绑（`[]`/`null` 不等于「未配置」）、
+    唯一性冲突检测、保留键 `ctrl-c`（`fixed.interrupt_or_quit`）不可重绑，
+    错误带 `tui.keymap.<ctx>.<action>` 路径。
+  - `i18n.py`：17 条 Codex 英文原文 → 10 语言本地化（en / zh-CN 全量），
+    接项目现有 i18n 回退链，永不抛异常、永不返回空串。
+  - `matrix.py`：165 模块逐条状态（aligned / localized / not_applicable /
+    pending）、覆盖率、差距队列、自检。
+- **审批键位对齐到 Codex 原生**：`y` 批准 / `a` 本会话 / `p` 前缀 / `d` 拒绝 /
+  `n` 拒绝并说明 / `c` 中止；新增 `PREFIX`、`DECLINE` 决策与对应 scope。
+  上一轮 `s` / `1` / `2` 等保留为本地化兼容别名。`Esc` 仍是 `ABORT`
+  （比上游 exec 模式 decline 更严格，`TUI_PARITY.md` §6 如实标注）。
+  卡片选项标签与提示行改走 `pt()`，中文呈现但键位与 Codex 一致。
+- 新增 `tuan tui parity` / `--gaps` / `--report-json`（避开主解析器
+  `--json-schema*` 前缀歧义），把对齐态势变成可观测命令。
+- 新增 `TUI_PARITY.md`：定义「完全相同」的五个可核验维度、分组矩阵、
+  **当前指标不虚报**（aligned 14 / localized 57 / n/a 63 / **pending 31**；
+  宽口径 81.2%、严格 43.0%、**逐值对齐仅 8.5%**、`fully_identical=false`）、
+  第 11–15 轮清零路线、本地化清单、合规声明。
+- 归属：`NOTICE` 第 10 条（组件树/键位/常量属事实性内容，文案为重新本地化，
+  列出全部修改点，"OpenAI 不背书"），许可全文仍在 `THIRD_PARTY_LICENSES/`。
+  **仍未逐字复制任何 Rust 源码**，也未替换 prompt_toolkit 应用骨架与安全接线。
+- **边界（如实）**：还没到「完全相同」——31 个模块待对齐；`localized` 表示
+  功能域等价 + 本地化实现，不是逐模块代码对齐；`not_applicable`（63）是
+  OpenAI 专属能力，不计入成果。逐值对齐 8.5% 是真实工作量。
+
 ### 文档与回归
 - `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
 - 新增 `tests/test_e2_e5_hardening.py`（16 例）、`tests/test_e6_e8_hardening.py`（21 例）、
   `tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）、
-  `tests/test_e1_e7_hardening.py`（39 例）、`tests/test_tui_approval_overlay.py`（59 例）；
-  沙箱 / 权限 / 配置批次 156 例，安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
-  审批覆盖层与 E1/E7 接线 98 例通过。
+  `tests/test_e1_e7_hardening.py`（39 例）、`tests/test_tui_approval_overlay.py`（59 例）、
+  `tests/test_tui_parity.py`（新增）；沙箱 / 权限 / 配置批次 156 例，
+  安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
+  审批覆盖层与 E1/E7 接线 102 例通过。
 - 本轮为普通 fast-forward 提交，未改写历史、未使用 force push。
 
 ## [0.3.3] - 2026-10-25 (小更新 · 体验增强)

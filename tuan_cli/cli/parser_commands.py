@@ -981,6 +981,15 @@ def register_subcommands(sub: Any) -> None:
     hsub.add_parser("status", help="展示当前加固态势: 加密后端/审计落盘/SBOM/网络策略")
     p.set_defaults(func="cmd_harden")
 
+    # ---- tui (TUI 对齐态势) ----
+    p = sub.add_parser("tui", help="TUI 与上游的对齐态势")
+    tsub = p.add_subparsers(dest="tui_cmd", required=True)
+    tp = tsub.add_parser("parity", help="展示与 OpenAI Codex TUI 的对齐矩阵")
+    tp.add_argument("--report-json", dest="report_json", action="store_true",
+                    help="输出结构化 JSON 报告 (规避 --json-schema 前缀歧义)")
+    tp.add_argument("--gaps", action="store_true", help="列出待对齐模块队列")
+    p.set_defaults(func="cmd_tui_parity")
+
     # ---- skills / craft (registry 远程技能与组件) ----
     sk = sub.add_parser(
         "skills",
