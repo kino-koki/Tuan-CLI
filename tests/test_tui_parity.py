@@ -233,14 +233,20 @@ class TestMatrix:
         assert {r.status for r in rows} <= set(mx._STATUSES)
 
     def test_summary_metrics(self):
+        """第 11 轮基线（input_keymap 7 个转 aligned）：pending 31 -> 24。"""
         s = mx.summary()
         assert s["total_modules"] == 165
-        assert s["pending"] == 31
-        assert s["coverage_pct"] == 81.2
-        assert s["aligned_pct"] == 43.0
-        assert s["aligned_only_pct"] == 8.5
+        assert s["pending"] == 24
+        assert s["by_status"]["aligned"] == 21
+        assert s["coverage_pct"] == 85.5
+        assert s["aligned_pct"] == 47.3
+        assert s["aligned_only_pct"] == 12.7
         assert s["fully_identical"] is False   # 如实：还没完全相同
         assert s["upstream_rs_files"] == 1216
+        # 派生一致性：防止以后改状态定义凑数而测试没发现
+        assert s["settled"] == sum(s["by_status"][k] for k in
+                                   ("aligned", "localized", "not_applicable"))
+        assert s["coverage_pct"] == round(s["settled"] * 100 / 165, 1)
 
     def test_aligned_items_have_notes(self):
         """每个 aligned 都必须能指向实现/测试，不能空标注。"""
@@ -250,7 +256,7 @@ class TestMatrix:
 
     def test_gaps_are_pending_modules(self):
         gaps = mx.gaps()
-        assert len(gaps) == 31
+        assert len(gaps) == mx.summary()["pending"]  # 派生，不硬编码
         pending = {r.module for r in mx.parity_status()
                    if r.status == mx.PENDING}
         assert {m for _, m in gaps} == pending
@@ -320,7 +326,7 @@ class TestParityCLI:
         args = type("A", (), {"report_json": False, "gaps": False})()
         assert cmd_tui_parity(args) == 0
         out = capsys.readouterr().out
-        assert "1216" in out and "165" in out and "81.2%" in out
+        assert "1216" in out and "165" in out and "85.5%" in out
         assert "完全相同  : 否" in out
 
     def test_json_report(self, capsys):
@@ -329,14 +335,14 @@ class TestParityCLI:
         assert cmd_tui_parity(args) == 0
         data = json.loads(capsys.readouterr().out)
         assert data["matrix"]["total_modules"] == 165
-        assert len(data["gaps"]) == 31
+        assert len(data["gaps"]) == 24
         assert data["validate"] == []
 
     def test_gaps_human(self, capsys):
         from tuan_cli.cli.cmd_tui_parity import cmd_tui_parity
         args = type("A", (), {"report_json": False, "gaps": True})()
         assert cmd_tui_parity(args) == 0
-        assert "待对齐队列 (31)" in capsys.readouterr().out
+        assert "待对齐队列 (24)" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------- 归属

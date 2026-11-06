@@ -52,6 +52,11 @@ def cmd_tui_parity(args: Any) -> int:
           f"{km['actions_with_binding']} 个已绑定 · {km['conflicts']} 处冲突")
     print(f"  文案      : {len(i18['languages'])} 语言 · {i18['total_keys']} 条 "
           f"(en / zh-CN 全量)")
+    ik = report.get("inputkit", {})
+    if isinstance(ik, dict) and "modules" in ik:
+        print(f"  输入层    : inputkit {ik['modules']} 个模块已对齐 "
+              f"(第 11 轮: vim_search / activation / copy_guard / "
+              f"custom_terminal / status / hyperlinks / viz_instructions)")
     print(f"  完全相同  : {'是' if m['fully_identical'] else '否'} "
           f"(还有 {m['pending']} 个模块待对齐)")
     if problems:
@@ -64,7 +69,7 @@ def cmd_tui_parity(args: Any) -> int:
         print(f"\n  待对齐队列 ({len(gaps)}):")
         for g, mod in gaps:
             print(f"    - {g:22s} {mod}")
-        print("\n  下一轮优先: core_app / input_keymap 组 (见 TUI_PARITY.md §5)")
+        print("\n  下一轮优先: core_app 组 9 个 (见 TUI_PARITY.md §5)")
     print("\n  归属: NOTICE 第 9 条 · THIRD_PARTY_LICENSES/ · TUI_PARITY.md")
     return 1 if problems else 0
 

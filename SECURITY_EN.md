@@ -419,6 +419,51 @@ items; see `TUI_PARITY.md` and `tuan tui parity`.
   - Attribution: `NOTICE` section 10, `TUI_PARITY.md` section 8;
     **still no Rust source copied verbatim**.
 
+  **Input / terminal capability alignment layer (2026-11-06, round 11):**
+  all 7 pending modules in the `input_keymap` group are now cleared.
+  `tuan tui parity` metrics: aligned 21 / localized 57 / n/a 63 /
+  **pending 24**; broad 85.5%, strict 47.3%, **value-for-value 12.7%**;
+  `fully_identical` remains `false` (reported honestly).
+
+  - New `tuan_cli/tui/inputkit/` (pure Python, zero Rust source):
+    `vim_search` (literal matching + complete graphemes),
+    `activation_key_guard` (dual 1s windows + Press/Repeat/Release state
+    machine), `copy_input_guard` (RAII release, **also on exception
+    paths**), `custom_terminal` (double-buffer diff, single row-tail
+    `ClearToEnd`, `AlwaysUpdate` retention, wide-glyph tail invalidation,
+    BSU/ESU synchronized frames, Drop cursor restoration),
+    `terminal_program_status` (OSC 7501/21337, VTE 5400 threshold,
+    dedup cache, `;`/`\` escaping), `terminal_hyperlinks` (8192-byte
+    cap, 17-entry extension allowlist, canonicalize containment,
+    symlink rejection, image magic probing, OSC 8 bytes excluded from
+    geometry), `terminal_visualization_instructions` (feature gate +
+    Chinese default, ASCII-only constraint preserved).
+  - **Local security hardening (STRICTER than upstream, not a relaxation):**
+    `web()` adds an http/https scheme allowlist and rejects OSC/BEL
+    control characters (upstream `web()` performs no validation);
+    terminal status uses a **no-op writer by default** and emits NO
+    escape sequences unless `configure()` is called; detail text is
+    sanitized and length-capped before escaping; workspace-file
+    validation fails closed on symlink ancestors. This closes the
+    "terminal interprets OSC sequences" attack surface.
+  - **Special MIT attribution:** upstream `custom_terminal.rs` explicitly
+    states it is derived from `ratatui::Terminal` under the MIT License
+    (Florian Dehau / The Ratatui Developers). `NOTICE` section 11 and
+    TUI_PARITY.md section 8 record the dual attribution; the MIT text is
+    in THIRD_PARTY_LICENSES/Codex-NOTICE.txt.
+  - **Localization disclosed honestly:** grapheme segmentation uses a
+    stdlib `unicodedata` UAX #29 *approximation* and is NOT claimed
+    byte-identical to Rust `unicode-segmentation`; kitty / sixel image
+    protocols are not implemented (`not_applicable`), with the field kept
+    empty rather than faking support.
+  - Regression: `tests/test_tui_input_layer.py` **88 cases** pass; the
+    previous round's metric assertions were synced to 24 / 85.5% /
+    47.3% / 12.7% and gained a derived-consistency check so status
+    definitions cannot be loosened unnoticed.
+  - Next round: the 9 `core_app` modules (`app_event` / `chatwidget`
+    state machine and event routing), **preserving the existing
+    permission-policy injection and sandbox wiring**.
+
 
 
 ---

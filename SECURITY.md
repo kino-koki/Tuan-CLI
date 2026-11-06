@@ -339,6 +339,39 @@ Tuan 现有 `_render_confirm_card` / `_render_ask_card` 的盒子渲染器，不
   / `test_e1_e7_hardening.py` 已适配 Codex 键位，102 例通过。
 - 归属：`NOTICE` 第 10 条、`TUI_PARITY.md` §8；**仍未逐字复制任何 Rust 源码**。
 
+**输入/终端能力对齐层（2026-11-06，第 11 轮）**：`input_keymap` 组 7 个待办
+模块全部清零，`tuan tui parity` 指标更新为 aligned 21 / localized 57 /
+n/a 63 / **pending 24**，宽口径 85.5%、严格 47.3%、**逐值对齐 12.7%**，
+`fully_identical` 仍为 `false`（如实）。
+
+- 新增 `tuan_cli/tui/inputkit/`（纯 Python，零 Rust 源码）：`vim_search`
+  （字面匹配 + 完整 grapheme）、`activation_key_guard`（1s 双窗口 +
+  Press/Repeat/Release 状态机）、`copy_input_guard`（RAII 释放，
+  **异常路径也释放**）、`custom_terminal`（双缓冲 diff / 行尾单条
+  `ClearToEnd` / `AlwaysUpdate` 保留 / 宽字符跨界 / BSU-ESU 同步帧 /
+  Drop 恢复光标）、`terminal_program_status`（OSC 7501/21337、VTE 5400
+  阈值、去重缓存、`;`/`\` 转义）、`terminal_hyperlinks`（8192 字节上限、
+  17 项扩展名白名单、canonicalize 逃逸校验、symlink 拒绝、图片魔数
+  探测、OSC 8 不影响几何）、`terminal_visualization_instructions`
+  （feature gate + 中文常量，ASCII-only 约束不变）。
+- **安全增强（比上游更严格，不是放宽）**：`web()` 增加 http/https
+  scheme 白名单与 OSC/BEL 控制字符拦截（上游 `web()` 不校验目的地）；
+  终端状态默认 **no-op writer**，未显式 `configure()` 绝不写转义序列；
+  detail 先剥离控制字符并限长再转义；工作区文件校验对 symlink 祖先
+  fail-closed。这补的是「终端解释 OSC 序列」这条攻击面。
+- **许可特别说明**：`custom_terminal.rs` 上游明确标注派生自
+  `ratatui::Terminal`、采用 **MIT**（Florian Dehau / The Ratatui
+  Developers）。`NOTICE` 第 11 条与 `TUI_PARITY.md` §8 记录双重归属，
+  MIT 全文在 `THIRD_PARTY_LICENSES/Codex-NOTICE.txt`。
+- **本地化如实标注**：grapheme 分段用 stdlib `unicodedata` 的 UAX #29
+  **近似**实现，不声称与 Rust `unicode-segmentation` 逐字节一致；kitty /
+  sixel 图片协议不实现（属 `not_applicable`），字段保留为空不谎称支持。
+- 回归：`tests/test_tui_input_layer.py` **88 例**通过；上一轮
+  `test_tui_parity.py` 指标断言同步到 24 / 85.5% / 47.3% / 12.7%，
+  并新增派生一致性校验（防以后改状态定义凑数）。
+- 下一轮：`core_app` 组 9 个（`app_event` / `chatwidget` 状态机与事件路由），
+  **保留现有权限策略注入与沙箱接线**。
+
 
 
 ---

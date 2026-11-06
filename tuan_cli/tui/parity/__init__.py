@@ -20,6 +20,11 @@ __all__ = ["upstream_spec", "keymap", "i18n", "matrix",
 
 def parity_report() -> dict:
     """可观测入口：``tuan tui parity`` 直接消费。"""
+    try:
+        from .. import inputkit
+        ik = inputkit.inputkit_report()
+    except Exception as exc:  # noqa: BLE001 - 报告不能因可选层失败而崩
+        ik = {"error": f"{type(exc).__name__}: {exc}"}
     return {
         "scale": dict(upstream_spec.SCALE),
         "layout": dict(upstream_spec.LAYOUT_CONSTANTS),
@@ -27,6 +32,7 @@ def parity_report() -> dict:
         "i18n": {"languages": list(i18n.available_languages()),
                  "total_keys": i18n.total_keys(),
                  "translated_zh_CN": i18n.translated_count("zh-CN")},
+        "inputkit": ik,
         "matrix": matrix.summary(),
         "groups": matrix.group_summary(),
     }
@@ -42,4 +48,9 @@ def parity_validate() -> list[str]:
     for lang in ("en", "zh-CN"):
         if i18n.translated_count(lang) != i18n.total_keys():
             problems.append(f"i18n 语言 {lang} 未覆盖全部 parity 文案")
+    try:
+        from .. import inputkit
+        problems.extend(f"inputkit: {p}" for p in inputkit.inputkit_validate())
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"inputkit 自检不可用: {type(exc).__name__}: {exc}")
     return problems
