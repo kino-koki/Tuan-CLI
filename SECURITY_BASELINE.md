@@ -41,6 +41,7 @@ Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」*
 | R19 | MCP 无「这台 server 被允许做什么」的权限域：只有内容层注入扫描，外层 `mcp_call` 一刀切；未登记 server 首次出现即按外层策略放行 | E1：`MCPPolicyStore` 持久化信任分级 + 工具级授权 + 会话内可回撤；默认 untrusted 拒绝、损坏即 locked；由 `build_permission_policy()` 接入主链路，策略层失败注入 DenyAll |
 | R20 | E1/E7 只有后端 API，没有审批卡片；`ctx.confirm` 缺失的 headless 场景直接失败 | 新增 `ui/approval_overlay.py`（借鉴 Codex TUI 交互契约，等价移植、非 Rust 源码复制）：结构化审批卡片 + 显式决策事件 + Esc=Abort；E1 `request_grant()` 呈现完整权限域，E7 `confirm_apply()` 接 `card_renderer`，无 TUI 时提供同样要求显式决策的 headless 默认通道（精确确认码 + 非 TTY 即 ABORT）。**fail-closed 未放宽** |
 | R21 | 文档把 Codex TUI 规模写成 567 个 `.rs` / 24.7 万行（来自不完整 sparse 解压）；且「与 Codex 完全相同」无度量口径 | 完整解压后更正为 165 模块 / 1216 `.rs` / 492414 行；新增 `tuan_cli/tui/parity/` 对齐层（组件树 / 键位 / 布局 / 文案 / 矩阵）、`tuan tui parity` 命令与 `TUI_PARITY.md`，把「完全相同」拆成可核销维度。**逐值对齐仅 8.5%、pending 31，如实标注 `fully_identical=false`** |
+| R22 | 终端 OSC 序列被解释执行，而上游 `terminal_hyperlinks::web()` 不校验目的地、`terminal_program_status` 直接 `execute!(stdout())`；且 `input_keymap` 组 7 个模块仍未对齐 | 新增 `tui/inputkit/` 7 模块：`web()` http/https 白名单 + OSC/BEL 拦截 + 8192 字节上限、`TrustedWorkspaceFile` canonicalize 逃逸/symlink/隐藏目录拒绝、状态发射默认 no-op writer 且 detail 先净化转义、RAII 守卫异常路径也释放、双缓冲 diff 与同步帧。指标 pending 31→24、逐值对齐 8.5%→12.7%，**如实保持 `fully_identical=false`** |
 
 回归：`tests/test_fail_closed_regressions.py`（37 例）、`tests/test_e2_e5_hardening.py`（16 例）、
 `tests/test_e6_e8_hardening.py`（21 例）、`tests/test_e3_jobobject.py`（25 例）、
@@ -48,7 +49,8 @@ Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」*
 `tests/test_tui_approval_overlay.py`（59 例）、`tests/test_tui_parity.py`（新增）、
 `bench/indep_verify.py`（29 例）；沙箱 / 权限 / 配置批次 156 例，
 安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
-审批覆盖层与 E1/E7 接线 102 例通过。
+审批覆盖层与 E1/E7 接线 102 例、输入层 `test_tui_input_layer.py` 88 例、
+对齐矩阵 `test_tui_parity.py` 85 例通过。
 
 ```bash
 python -m pytest tests/test_fail_closed_regressions.py tests/test_e2_e5_hardening.py -q

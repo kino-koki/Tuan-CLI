@@ -43,7 +43,16 @@ EXPLICIT_ALIGNED: Dict[str, str] = {
     "diff_model": "sandbox/isolation.py::DiffPreview（第 8 轮）",
     "diff_render": "ui/approval_overlay.py::render_approval_card（第 9/10 轮）",
     "permission_discovery": "tools/mcp/policy.py::MCPPolicyStore（第 8 轮）",
-    "security_setup": "SECURITY_BASELINE.md R1-R20 加固链",
+    "security_setup": "SECURITY_BASELINE.md R1-R22 加固链",
+    # ---- 第 11 轮：input_keymap 组 7 个待对齐模块，逐模块有实现+回归
+    "vim_search": "tui/inputkit/vim_search.py — 字面匹配 / 完整 grapheme / 方向反转",
+    "activation_key_guard": "tui/inputkit/activation_key_guard.py — 1s 双窗口 / Repeat/Release 状态机",
+    "copy_input_guard": "tui/inputkit/copy_input_guard.py — RAII 释放 / 异常路径也释放",
+    "custom_terminal": "tui/inputkit/custom_terminal.py — 双缓冲 diff / ClearToEnd / OSC8 / 同步帧",
+    "terminal_program_status": "tui/inputkit/terminal_program_status.py — OSC 7501/21337 / 去重缓存 / 注入转义",
+    "terminal_hyperlinks": "tui/inputkit/terminal_hyperlinks.py — 工作区逃逸校验 / OSC8 不影响几何",
+    "terminal_visualization_instructions":
+        "tui/inputkit/terminal_visualization_instructions.py — feature gate / 指令拼接（中文）",
 }
 
 EXPLICIT_LOCALIZED: Dict[str, str] = {

@@ -88,6 +88,25 @@ prompt_toolkit/rich 应用骨架；不接 OpenAI 账号、云服务、订阅与�
 **文案本地化**：`pt()` 先查项目现有 10 语言 i18n 的 `parity.*` 覆盖，
 再查内置表（当前语言 → zh-CN → en → key），永不抛异常、永不返回空串。
 
+**第 11 轮：输入/终端能力对齐层**（`tuan_cli/tui/inputkit/`，7 个模块，
+纯 Python、零 Rust 源码）。本轮把 `input_keymap` 组从 `pending 7` 清零：
+
+| 上游模块 | 本包落点 | 逐值/逐分支对齐点 |
+|---|---|---|
+| `vim_search.rs` | `vim_search.py` | 字面匹配（非正则）、范围覆盖完整 grapheme、`Forward/Backward` 与 `reversed()`、空查询无匹配 |
+| `activation_key_guard.rs` | `activation_key_guard.py` | `INITIAL_GUARD=1s` / `LEGACY_REPEAT_GUARD=1s`、Press/Repeat/Release 六分支状态机、物理键比较 |
+| `copy_input_guard.rs` | `copy_input_guard.py` | RAII/Drop 语义：`TranscriptCopyClosed` 释放、**异常路径也必须释放**、幂等 |
+| `custom_terminal.rs` | `custom_terminal.py` | 双缓冲 `diff_buffers`：行尾单条 `ClearToEnd`、`AlwaysUpdate` 空白不被尾部过滤、宽字符跨界强制清除、`Skip` 语义、BSU/ESU 同步帧、Drop 恢复光标 |
+| `terminal_program_status.rs` | `terminal_program_status.py` | `MIN_VTE_VERSION_WITH_SAFE_OSC=5400`、OSC 7501/21337、`Idle/Working/Waiting` 与 `#00d75f/#ff9500/#5f87ff`、Mutex 去重缓存、`invalidate()`、`;`/`\` 转义 |
+| `terminal_hyperlinks.rs` | `terminal_hyperlinks.py` | `MAX_HYPERLINK_DESTINATION_BYTES=8192`、**17 项**工作区扩展名白名单、`canonicalize`+`strip_prefix` 逃逸校验、symlink/隐藏目录拒绝、图片魔数探测、OSC 8 字节不参与几何 |
+| `terminal_visualization_instructions.rs` | `terminal_visualization_instructions.py` | feature gate、非空拼接、四条约束（表格/树/时间线/**ASCII-only**），中文常量为默认 |
+
+其中 `terminal_hyperlinks` 是安全价值最高的一块：链接目标会被终端解释，
+所以 `web()` 额外做了 **http/https scheme 白名单**与 OSC/BEL 控制字符
+拦截（上游 `web()` 不校验目的地，这是本项目**更严格**的本地化增强，
+不是削弱）。`terminal_program_status` 也做了安全默认：**未显式
+`configure(writer=...)` 时绝不往终端写任何转义序列**。
+
 ---
 
 ## 4. 对齐矩阵
@@ -107,7 +126,7 @@ prompt_toolkit/rich 应用骨架；不接 OpenAI 账号、云服务、订阅与�
 | 功能域 | aligned | localized | n/a | pending |
 |---|---:|---:|---:|---:|
 | core_app | 1 | 8 | 3 | 9 |
-| input_keymap | 5 | 6 | 0 | 7 |
+| input_keymap | 12 | 6 | 0 | **0** |
 | bottom_pane | 1 | 8 | 2 | 0 |
 | approval_permissions | 3 | 0 | 2 | 1 |
 | history_transcript | 0 | 9 | 9 | 1 |
@@ -138,34 +157,40 @@ prompt_toolkit/rich 应用骨架；不接 OpenAI 账号、云服务、订阅与�
 | `approval_events` | 显式决策事件与路由（第 9 轮） |
 | `diff_model` | `sandbox/isolation.py::DiffPreview`（第 8 轮） |
 | `permission_discovery` | `tools/mcp/policy.py`（第 8 轮） |
-| `security_setup` | `SECURITY_BASELINE.md` R1–R20 |
+| `security_setup` | `SECURITY_BASELINE.md` R1–R22 |
+| `vim_search` | `tui/inputkit/vim_search.py`（第 11 轮） |
+| `activation_key_guard` | `tui/inputkit/activation_key_guard.py`（第 11 轮） |
+| `copy_input_guard` | `tui/inputkit/copy_input_guard.py`（第 11 轮） |
+| `custom_terminal` | `tui/inputkit/custom_terminal.py`（第 11 轮，MIT 派生见 §8） |
+| `terminal_program_status` | `tui/inputkit/terminal_program_status.py`（第 11 轮） |
+| `terminal_hyperlinks` | `tui/inputkit/terminal_hyperlinks.py`（第 11 轮） |
+| `terminal_visualization_instructions` | `tui/inputkit/terminal_visualization_instructions.py`（第 11 轮） |
 
 ### 当前指标
 
 ```
 总模块            165
-aligned            14   (逐值对齐)
+aligned            21   (逐值对齐，第 11 轮 +7)
 localized          57   (本地化等价)
 not_applicable     63   (OpenAI 专属)
-pending            31   (待对齐)
-宽口径覆盖率      81.2%  (aligned+localized+na)
-严格对齐率        43.0%  (aligned+localized)
-逐值对齐率         8.5%  (aligned only)
+pending            24   (待对齐，第 11 轮 -7)
+宽口径覆盖率      85.5%  (aligned+localized+na)
+严格对齐率        47.3%  (aligned+localized)
+逐值对齐率        12.7%  (aligned only)
 完全相同           否    (pending != 0)
 ```
 
 三个指标刻意都列出来：**不把「不适用」包装成成果**。真正逐值对齐的
-只有 8.5%，这是后续轮次的主要工作量。
+只有 12.7%，这是后续轮次的主要工作量。
 
-### 待对齐队列（31）
+### 待对齐队列（24）
+
+> 第 11 轮已完成 `input_keymap` 组全部 7 个模块，该组 `pending = 0`。
 
 ```
 core_app          app, app_backtrack, app_command, app_event,
                   app_event_sender, app_info, chatwidget, cli,
                   resize_reflow_cap
-input_keymap      vim_search, activation_key_guard, copy_input_guard,
-                  custom_terminal, terminal_program_status,
-                  terminal_hyperlinks, terminal_visualization_instructions
 approval_perm.    auto_review_denials
 history_trans.    insert_history
 session_startup   local_settings
@@ -186,7 +211,7 @@ misc              sidebar_chooser, sidebar_tab_strip
 
 | 轮次 | 目标组 | 产出 |
 |---|---|---|
-| 11 | `input_keymap`（7） | Vim 模式、激活键守卫、复制守卫、终端能力探测的契约与实现对齐 |
+| 11 ✅ | `input_keymap`（7） | **已完成**：`tui/inputkit/` 7 个模块 + 88 例回归；Vim 搜索、激活键守卫、复制守卫、双缓冲 diff、OSC 状态、语义超链接、可视化指令 |
 | 12 | `core_app`（9） | `app_event` / `chatwidget` 状态机与事件路由对齐（**保留现有安全接线**） |
 | 13 | `config_models` + `misc`（6） | 协作模式、模型迁移、附加目录、侧栏选择器 |
 | 14 | `streaming_async` + `tools_exec`（4） | 流式渲染、异步问答、命令执行单元 |
@@ -211,6 +236,13 @@ misc              sidebar_chooser, sidebar_tab_strip
 | `Esc` | exec 里是 decline | **ABORT**（更严格的 fail-closed，上一轮契约保留） |
 | 确认通道 | ratatui 模态 | 现有 `ctx.confirm` 挂起式卡片 + headless 精确确认码 |
 | 敏感标记 | 无 | `[!敏感]` 高亮 `.env`/私钥/credentials |
+| 渲染后端（本轮） | crossterm / ratatui `Backend` | 可注入 Python `TerminalBackend` 协议，不依赖 PTY |
+| grapheme 分段 | `unicode-segmentation` 扩展簇 | stdlib `unicodedata` 的 UAX #29 **近似**实现（如实标注：不声称逐字节一致） |
+| 时间源 | `Instant` | `time.monotonic()` + 可注入时钟（确定性测试） |
+| 超链接目的地 | `web()` 不校验 | **http/https 白名单 + 控制字符拦截**（更严格） |
+| 终端状态发射 | `execute!(stdout())` | 默认 **no-op writer**，必须显式 `configure()`；detail 额外剥离 OSC/BEL 并限长 |
+| 可视化指令 | 英文常量 | 中文常量为默认，英文原文保留供核销；ASCII-only 约束不变 |
+| `custom_terminal` 图片 | kitty / sixel | 不实现（`not_applicable`），字段保留为空，不谎称支持 |
 | 遥测/更新 | OpenAI 服务 | 本地统计，不上报、不接更新通道 |
 
 **键位、布局数值、组件树、交互契约没有本地化** —— 它们就是「完全相同」
@@ -235,6 +267,10 @@ argparse 前缀歧义。
 
 - 上游 `codex-tui` 为 **Apache-2.0**。`LICENSE` 与 `NOTICE` 原文完整照抄在
   `THIRD_PARTY_LICENSES/`（上游 NOTICE 另含 Ratatui 的 MIT 声明）。
+  第 11 轮的 `inputkit/custom_terminal.py` 对齐的是上游明确标注
+  「derived from `ratatui::Terminal`」、采用 **MIT** 的
+  `custom_terminal.rs` 算法契约；MIT 全文归属于
+  `THIRD_PARTY_LICENSES/Codex-NOTICE.txt` 与 `NOTICE` 第 11 条。
 - 本仓库**未逐字复制任何 Rust 源码**。本轮新增的是可核验的功能事实
   （模块名、常量值、键位表、规范化规则）与 Python 独立实现，属于 Apache-2.0
   允许的派生设计；修改点已在 §6、模块 docstring 与 `NOTICE` 第 9 条列明。

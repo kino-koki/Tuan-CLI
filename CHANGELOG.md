@@ -189,12 +189,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   功能域等价 + 本地化实现，不是逐模块代码对齐；`not_applicable`（63）是
   OpenAI 专属能力，不计入成果。逐值对齐 8.5% 是真实工作量。
 
+### 输入/终端能力对齐层：input_keymap 组清零（2026-11-06，第 11 轮）
+- 新增 `tuan_cli/tui/inputkit/`（纯 Python，**零 Rust 源码逐字复制**），
+  7 个模块逐一对齐 `codex-rs/tui/src/` 的 `input_keymap` 组：
+  - `vim_search.py`：字面匹配（非正则）、范围覆盖完整 grapheme、
+    `Forward/Backward` + `reversed()`、空查询无匹配。grapheme 分段用
+    stdlib `unicodedata` 的 **UAX #29 近似实现**，如实标注不声称与
+    Rust `unicode-segmentation` 逐字节一致。
+  - `activation_key_guard.py`：`INITIAL_GUARD=1s` /
+    `LEGACY_REPEAT_GUARD=1s`，Press/Repeat/Release 六分支状态机，
+    物理键比较忽略 shift/大小写；`Instant` → 可注入 `time.monotonic()`。
+  - `copy_input_guard.py`：Rust `Drop` → 上下文管理器，
+    `TranscriptCopyClosed` 释放；**异常路径也必须释放**（否则排队提交
+    永久暂停），幂等，发送器失败仍标记已释放且不吞用户异常。
+  - `custom_terminal.py`：双缓冲 `diff_buffers` 的行尾单条
+    `ClearToEnd` 优化、`AlwaysUpdate` 空白不被尾部过滤、宽字符跨界
+    强制清除、`Skip` 语义、BSU/ESU 同步帧、Drop 恢复光标样式与光标。
+    上游明确标注派生自 `ratatui::Terminal`、采用 **MIT**，已在 `NOTICE`
+    第 11 条与 `TUI_PARITY.md` §8 记录双重归属。kitty/sixel 图片协议
+    不实现（`not_applicable`），字段保留为空，不谎称支持。
+  - `terminal_program_status.py`：`MIN_VTE_VERSION_WITH_SAFE_OSC=5400`、
+    OSC 7501/21337、`Idle/Working/Waiting` 与
+    `#00d75f/#ff9500/#5f87ff`、锁内原子去重缓存、`invalidate()`、
+    `;`/`\` 转义防 OSC 注入。
+  - `terminal_hyperlinks.py`：**本轮安全价值最高**。
+    `MAX_HYPERLINK_DESTINATION_BYTES=8192`、**17 项**工作区扩展名
+    白名单、`canonicalize`+`strip_prefix` 逃逸校验、symlink/隐藏目录
+    拒绝、普通文件与扩展名一致性、图片魔数探测（防 `screenshot.png`
+    其实是脚本）、OSC 8 字节不参与折行与宽度计算。
+  - `terminal_visualization_instructions.py`：feature gate、非空拼接、
+    四条约束（表格/树/时间线/**ASCII-only**）；中文常量为默认，
+    英文原文保留供核销。
+- **安全增强（比上游更严格，不是放宽）**：`web()` 增加 http/https
+  scheme 白名单 + OSC/BEL 控制字符拦截 + 超长降级为纯文本（上游
+  `web()` 不校验目的地）；终端状态默认 **no-op writer**，未显式
+  `configure(writer=...)` 绝不写任何转义序列；detail 先剥离控制字符
+  并限长再转义；工作区文件校验对 symlink 祖先 fail-closed。
+- `tuan_cli/tui/parity/matrix.py`：7 个模块从 `pending` 转 `aligned`
+  （每条都有实现与测试落点）。`parity_report()` / `parity_validate()`
+  接入 `inputkit` 自检；`tuan tui parity` 增加输入层摘要行。
+- **指标如实更新**：aligned 14→**21**、pending 31→**24**、
+  宽口径 81.2%→**85.5%**、严格 43.0%→**47.3%**、逐值对齐
+  8.5%→**12.7%**；`fully_identical` 仍为 `false`。
+  `TUI_PARITY.md` 的分组表、aligned 表、指标块、待办队列、第 11–15 轮
+  路线（第 11 轮标 ✅）、本地化清单、§8 合规声明全部同步。
+- 文档：`NOTICE` 第 11 条（含 ratatui MIT 归属与全部本地化修改点）、
+  `SECURITY.md` / `SECURITY_EN.md` 第 11 轮小节、
+  `SECURITY_BASELINE.md` R22、`TUI_PARITY.md`。
+- **边界（如实）**：`input_keymap` 组已清零，但**整体还不是
+  「完全相同」**（还剩 24 个）；grapheme 是近似实现；`custom_terminal`
+  的图片协议未实现；状态发射默认关闭，需显式启用；本轮未改任何
+  键位、布局数值或安全接线。
+
 ### 文档与回归
 - `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
 - 新增 `tests/test_e2_e5_hardening.py`（16 例）、`tests/test_e6_e8_hardening.py`（21 例）、
   `tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）、
   `tests/test_e1_e7_hardening.py`（39 例）、`tests/test_tui_approval_overlay.py`（59 例）、
-  `tests/test_tui_parity.py`（新增）；沙箱 / 权限 / 配置批次 156 例，
+  `tests/test_tui_parity.py`（新增）、`tests/test_tui_input_layer.py`（88 例）；
+  沙箱 / 权限 / 配置批次 156 例，
   安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
   审批覆盖层与 E1/E7 接线 102 例通过。
 - 本轮为普通 fast-forward 提交，未改写历史、未使用 force push。

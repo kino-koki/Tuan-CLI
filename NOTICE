@@ -187,6 +187,75 @@ THIRD-PARTY ATTRIBUTIONS
     and CHANGELOG.md; TUI_PARITY.md section 2 records the correction.
     OpenAI does not endorse or sponsor this project.
 
+11) Input / terminal capability alignment layer (tuan_cli/tui/inputkit/)
+    Location: tuan_cli/tui/inputkit/
+              {vim_search, activation_key_guard, copy_input_guard,
+               custom_terminal, terminal_program_status,
+               terminal_hyperlinks,
+               terminal_visualization_instructions}.py
+    Origin:   functional contracts extracted from the Codex TUI source:
+              `codex-rs/tui/src/vim_search.rs`,
+              `activation_key_guard.rs`, `copy_input_guard.rs`,
+              `custom_terminal.rs`, `terminal_program_status.rs`,
+              `terminal_hyperlinks.rs`,
+              `terminal_visualization_instructions.rs`
+    Upstream: https://github.com/openai/codex
+    Holder:   OpenAI (Copyright 2025 OpenAI)
+    License:  Apache License 2.0 (full text:
+              THIRD_PARTY_LICENSES/Codex-LICENSE.txt)
+
+    SPECIAL MIT ATTRIBUTION: upstream `custom_terminal.rs` begins with an
+    explicit notice stating it is derived from `ratatui::Terminal` and is
+    licensed under the MIT License, Copyright (c) 2016-2022 Florian Dehau
+    and Copyright (c) 2023-2025 The Ratatui Developers. That MIT notice is
+    reproduced in THIRD_PARTY_LICENSES/Codex-NOTICE.txt (the upstream
+    NOTICE). The Python module in this project implements the *algorithm
+    contract* (double-buffer diff, row-tail ClearToEnd optimization,
+    AlwaysUpdate prefix retention, wide-glyph tail invalidation,
+    synchronized frame wrapping, Drop cursor restoration) independently;
+    NO Rust source is copied verbatim. TUI_PARITY.md section 8 records
+    this dual attribution.
+
+    Verifiable facts aligned value-for-value:
+      - activation_key_guard: INITIAL_GUARD=1s,
+        LEGACY_REPEAT_GUARD=1s, Press/Repeat/Release state machine;
+      - terminal_program_status: MIN_VTE_VERSION_WITH_SAFE_OSC=5400,
+        OSC 7501 / 21337, Idle/Working/Waiting labels,
+        #00d75f / #ff9500 / #5f87ff indicators, mutex-guarded dedup
+        cache, invalidate(), `;` and `\` escaping;
+      - terminal_hyperlinks: MAX_HYPERLINK_DESTINATION_BYTES=8192,
+        the 17-entry SAFE_WORKSPACE_EXTENSIONS allowlist,
+        canonicalize + strip_prefix workspace containment,
+        symlink / hidden-directory rejection, image format probing;
+      - terminal_visualization_instructions: feature gate, non-empty
+        append semantics, and the four ASCII-only visual rules.
+
+    Modifications / localization (each listed, none hidden):
+      - crossterm / ratatui Backend -> injectable Python TerminalBackend;
+      - unicode-segmentation extended graphemes -> stdlib unicodedata
+        UAX #29 *approximation* (explicitly NOT claimed byte-identical);
+      - Instant -> time.monotonic() with an injectable clock;
+      - Rust Drop -> context manager with __exit__/close/__del__ that
+        ALSO releases on the exception path;
+      - crossterm execute!(stdout()) -> opt-in writer; the module emits
+        NO escape sequences unless configure(writer=...) is called;
+      - English visualization instructions -> Chinese default, with the
+        English original retained for verification and the ASCII-only
+        constraint preserved;
+      - CJK display width, pathlib.resolve() canonicalization, image
+        magic-number probing instead of the `image` crate.
+
+    Local security hardening (STRICTER than upstream, not a relaxation):
+      - TerminalHyperlink.web() adds an http/https scheme allowlist and
+        rejects control / OSC / BEL characters and oversized destinations;
+        upstream web() performs no such validation;
+      - terminal_program_status sanitizes and length-caps detail text
+        before emitting OSC sequences;
+      - workspace-file validation fails closed on symlink ancestors.
+
+    Attribution for interactive strings is unchanged (see components 9
+    and 10). OpenAI does not endorse or sponsor this project.
+
 -------------------------------------------------------------------------------
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
@@ -199,7 +268,8 @@ LICENSE TEXTS
 -------------------------------------------------------------------------------
 
 Components 1-7 are under MIT; the full text is reproduced below.
-Components 9 and 10 are under Apache License 2.0; their full license text and upstream
+Components 9, 10 and 11 are under Apache License 2.0 (with component 11
+carrying the additional ratatui MIT attribution noted above); their full license text and upstream
 NOTICE are reproduced verbatim in THIRD_PARTY_LICENSES/Codex-LICENSE.txt and
 THIRD_PARTY_LICENSES/Codex-NOTICE.txt respectively (Apache-2.0 section 4(a)/(c)
 and the upstream NOTICE requirement).
