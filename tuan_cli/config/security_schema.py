@@ -163,4 +163,18 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
     if net is not None and not isinstance(net, dict):
         errors.append(f"类型错误: security.network 应为配置字典, 实际为 {type(net).__name__}")
 
+    # E1: 显式关闭 MCP 信任分级是重大降级, 必须可见 (不是静默的逃生口)。
+    mcp = get("mcp")
+    if mcp is not None and not isinstance(mcp, dict):
+        errors.append(f"类型错误: mcp 应为配置字典, 实际为 {type(mcp).__name__}")
+        mcp = None
+    if isinstance(mcp, dict):
+        pol = mcp.get("policy")
+        if pol is not None and not isinstance(pol, dict):
+            errors.append(f"类型错误: mcp.policy 应为配置字典, 实际为 {type(pol).__name__}")
+            pol = None
+        if isinstance(pol, dict):
+            _bool_field(errors, "mcp.policy.enabled", pol.get("enabled"),
+                        dangerous_when_false="MCP 信任分级整体关闭, 未登记 server 将由外层一刀切放行")
+
     return errors, warnings

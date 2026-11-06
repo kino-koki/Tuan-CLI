@@ -130,16 +130,16 @@
 
 | # | 模块 | 增强方向 | 状态 |
 |---|------|----------|------|
-| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server 信任分级**：把每台 server 的权限域(只读/工具白名单/允许的域名)落到持久化策略；新增"调用前工具级授权 + 会话内可回撤"，取代散落的临时确认 | 待办 |
+| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server 信任分级**：把每台 server 的权限域(只读/工具白名单/允许的域名)落到持久化策略；新增"调用前工具级授权 + 会话内可回撤"，取代散落的临时确认 | ✅ 已落地 |
 | E2 | `core/workspace_trust.py` | 信任**自动衰减与重校验**：trusted 在目录变更/新敏感文件(.env/.git/config/密钥)出现时自动降级到 limited 并提示复议 | ✅ 已落地 |
 | E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object 资源配额落地**：CPU 配额、内存上限、进程树击杀超时兜底(当前仅存在性探测) | ✅ 已落地 |
 | E4 | `core/security_auditor.py` + `harden/audit_export.py` | 审计**关联合并 + 跨会话异常检测**：同源多次红线(如 MCP 反复注入)聚合告警；导出支持轮转与加密 | ✅ 部分（关联/轮转已落地，导出加密未做） |
 | E5 | `core/tool_executor.py` | **写操作风暴检测**：单会话内高频率写/删除触发节流与告警，防误删批量任务 | ✅ 已落地 |
 | E6 | `tools/permissions.py` | `permissions.rules` 增强：**负向 glob**(`!bin/**`)、MCP 工具名规则、会话内临时授权提升 | ◐ 部分（前两项已落地） |
-| E7 | `sandbox/isolation.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply | 待办 |
+| E7 | `sandbox/isolation.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply | ✅ 已落地（后端） |
 | E8 | `config` | `sandbox`/`permissions` 配置的 **schema 强校验 + fail-closed 可观测性**（开启项/降级项可视化） | ✅ 已落地 |
 
-> 判定"先做哪些"：优先级高且可独立演进 → **E2、E3、E5**（E2/E5 已落地）；依赖交互设计 → **E1、E7**；属加固打磨 → **E4、E6、E8**。
+> 判定"先做哪些"：优先级高且可独立演进 → **E2、E3、E5**（已落地）；依赖交互设计 → **E1、E7**（后端已落地，TUI 卡片待做）；属加固打磨 → **E4、E6、E8**。
 
 **E2 落地说明（2026-11-06）**：此前 `check_for_decay()` / `apply_decay()` 只有单元测试调用，
 CLI (`cli/cmd_chat.py`) 与 Web (`web/server.py::trust_status`) 都直接读 `record.level`，
@@ -218,6 +218,53 @@ Docker 守护进程重定向都会在引擎不可用时被静默放行。现改�
 - **仍待办**：导出加密。审计主日志本身已 AEAD 加密，但导出到 SIEM 的明文轮转文件
   需要独立的密钥管理方案，未擅自塞进本轮。
 - 回归：`tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）。
+
+
+
+**E1 落地说明（2026-11-06）**：新增 `tools/mcp/policy.py`。此前 `mcp/security.py` 只扫描
+工具描述/参数里的注入文本（内容层），不回答「这台 server 到底被允许做什么」——所有 MCP
+调用只能按外层 `mcp_call` 一刀切放行/拒绝。
+
+- `MCPPolicyStore` 持久化每台 server 的权限域：`tier`（`untrusted`/`limited`/`readonly`/
+  `trusted`）、`read_only`、`tool_allowlist`、`tool_denylist`、`allowed_domains`、
+  `max_calls_per_session`、`require_confirm`，原子写入 `~/.tuan/mcp_server_policy.json`（0600）。
+- **默认 untrusted**：未登记 server 一律拒绝，必须用户显式 `grant()` 后才可用；第一次见到
+  不等于临时放行。`trusted` 档强制要求显式 `tool_allowlist`，拒绝「无白名单 = 全放行」的过宽授权。
+- **deny 优先**、域名白名单（含嵌套参数里的 URL）、会话调用配额、**会话内可回撤**
+  （`revoke_session()` 后立刻重新要求确认，不需重启）。
+- **损坏即拒绝**：策略文件损坏 / 版本不认识时进入 `locked` 状态拒绝所有调用，**不重建为
+  空策略**——空策略看起来像「没有限制」，与「无法验证」的语义正好相反。
+- **接线（关键）**：由 `build_permission_policy()` 注入全局 store，主链路 `mcp_call` 真的经过
+  信任分级；单元测试直接构造 `PermissionPolicy` 时不受影响。策略层初始化失败时注入
+  `_DenyAllMCPPolicy` 而不是 `pass` 回退到裸路径。新配置键 `mcp.policy.enabled`（缺省启用）
+  已纳入 E8 强校验，显式关闭会报「安全降级」。
+- 仍待办：TUI 侧「授予信任等级」的交互卡片（`grant` 目前是 API，需接 UI）。
+
+**E7 落地说明（2026-11-06）**：本轮发现两个比"加个预览"严重得多的问题。
+
+1. **`copy_diff_apply` 是纯文档特性**：L2 滤网在高危时把 `verdict.workspace_mode` 写成
+   `copy_diff_apply` 并进审计 context，但 `SandboxManager.execute_isolated()` **从未读取该字段**，
+   `isolate_workdir` / `diff` / `apply` 在生产代码里零调用点 —— 高危命令实际仍在真实工作区裸跑。
+   现在按 `workspace_mode` 分派，高危命令真的在隔离副本里执行，经预览 + 确认后才写回。
+2. **快照漏扫隐藏目录，确认界面说谎**：`Snapshot.capture()` 用
+   `not d.startswith(".")` 跳过所有点目录，于是副本里改 `.github/workflows/ci.yml` 时
+   `diff()` 返回空 —— 用户看到「无变更」。实测确认后改为只跳过 `_IGNORED` 与隔离副本自身。
+
+- 新增 `DiffPreview` / `DiffEntry`：每条变更带 `path/status/size_before/size_after`、
+  **文本内容前 20 行预览**（用户能看见那一行是不是 `curl evil|sh`，而不只是文件名）、
+  二进制标注、`.env`/私钥/credentials 等敏感文件 `[!敏感]` 高亮；`to_text()` 纯文本渲染
+  可直接 print 或塞进 TUI 卡片。
+- `confirm_apply()` fail-closed 契约：`confirm` 为 None / 抛异常 / 返回非 True → 不写回；
+  **TOCTOU 复检** —— 确认期间副本发生变化则拒绝并要求重新预览。刻意不引入快照缓存，
+  避免「判定依赖文件系统时间点」。
+- `SandboxExecResult` 新增 `workspace_mode` / `applied` / `applied_files` / `diff_preview` /
+  `confirm_reason`；拒绝时把预览一并放进 `error`，保证用户仍能看见本来要改什么；
+  副本在 `finally` 里必定清理。
+- **边界（如实）**：TUI/交互卡片未做，`to_text()` 目前由 CLI 文本通道承载；
+  `ctx.confirm` 缺失时按 fail-closed 拒绝（可能让无确认通道的 headless 场景直接失败，
+  需上游按场景补 UI）。`copy_diff_apply` 与 OS 强后端叠加时，后端在副本 cwd 内执行，
+  未对 Windows Job Object 做真机验证（同 E3 边界）。
+- 回归：`tests/test_e1_e7_hardening.py`（39 例）。
 
 
 

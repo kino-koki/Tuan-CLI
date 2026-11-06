@@ -83,12 +83,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 顺手修复：无控制终端下 `os.getlogin()` 抛 OSError 导致审计器初始化崩溃；
   指纹格式保持不变，既有加密日志仍可解密。
 
+### E1 MCP server 信任分级（2026-11-06）
+- 新增 `tools/mcp/policy.py`：持久化每台 server 的权限域（`tier` / `read_only` /
+  `tool_allowlist` / `tool_denylist` / `allowed_domains` / `max_calls_per_session` /
+  `require_confirm`），原子写入 `~/.tuan/mcp_server_policy.json`（0600）。
+- **默认 untrusted**：未登记 server 一律拒绝，必须显式 `grant()`；`trusted` 档强制要求
+  显式白名单，拒绝「无白名单 = 全放行」。deny 优先、域名白名单（含嵌套 URL）、会话配额、
+  **会话内可回撤**（`revoke_session()` 即刻生效）。
+- **损坏即拒绝**：策略文件损坏 / 版本不符时进入 `locked` 拒绝所有调用，**不重建为空策略**。
+- **接线**：`build_permission_policy()` 注入全局 store，主链路 `mcp_call` 真的经过信任分级；
+  策略层初始化失败注入 `_DenyAllMCPPolicy`，不再 `pass` 回退到裸路径。
+  新键 `mcp.policy.enabled`（缺省启用）纳入 E8 强校验。
+- 仍待办：TUI「授予信任等级」交互卡片。
+
+### E7 副本 diff 可视化确认（2026-11-06）
+- **发现 1**：`copy_diff_apply` 是纯文档特性 —— L2 写入 `verdict.workspace_mode` 并进审计
+  context，但 `execute_isolated()` 从未读取，`isolate_workdir`/`diff`/`apply` 生产代码零调用点，
+  高危命令实际仍在真实工作区裸跑。现按 `workspace_mode` 分派，真的在副本里执行并确认后写回。
+- **发现 2**：`Snapshot.capture()` 跳过所有点目录，副本里改 `.github/workflows/ci.yml` 时
+  `diff()` 返回空，确认界面显示「无变更」。实测复现后改为只跳过 `_IGNORED` 与隔离副本自身。
+- 新增 `DiffPreview` / `DiffEntry`：内容前 20 行预览、二进制标注、`.env`/私钥/credentials
+  `[!敏感]` 高亮、`to_text()` 纯文本渲染；`confirm_apply()` fail-closed（无确认通道 / 异常 /
+  拒绝均不写回）+ **TOCTOU 指纹复检**，不引入快照缓存。
+- `SandboxExecResult` 增加 `workspace_mode` / `applied` / `applied_files` / `diff_preview` /
+  `confirm_reason`；拒绝时预览一并放进 `error`；副本在 `finally` 必定清理。
+- **边界**：TUI 卡片未做；`ctx.confirm` 缺失的 headless 场景会按 fail-closed 失败，需上游补 UI；
+  与 Windows Job Object 叠加未做真机验证（同 E3）。
+
 ### 文档与回归
 - `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
 - 新增 `tests/test_e2_e5_hardening.py`（16 例）、`tests/test_e6_e8_hardening.py`（21 例）、
-  `tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）；
-  安全 / 权限 / TUI / Web / i18n 子集 496 passed / 1 skipped，平台 / 沙箱 / 审计 /
-  导出分批回归 115 + 49 例通过。
+  `tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）、
+  `tests/test_e1_e7_hardening.py`（39 例）；沙箱 / 权限 / 配置批次 156 例，
+  安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例通过。
 - 本轮为普通 fast-forward 提交，未改写历史、未使用 force push。
 
 ## [0.3.3] - 2026-10-25 (小更新 · 体验增强)

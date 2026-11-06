@@ -67,6 +67,12 @@ class SandboxExecResult:
     backend: str = ""
     enforced: bool = False
     error: str = ""
+    # E7: copy-diff-apply 结果的可观测字段 (全部有默认值, 不破坏既有构造)
+    workspace_mode: str = "direct"
+    applied: bool = False
+    applied_files: List[str] = field(default_factory=list)
+    diff_preview: Optional[Dict[str, Any]] = None
+    confirm_reason: str = ""
 
     def as_shell_text(self) -> str:
         parts = []
@@ -261,12 +267,21 @@ class SandboxManager:
                          timeout: float = 60.0) -> SandboxExecResult:
         """当裁决要求隔离时, 用选中后端真正执行命令。
 
-        支持: jobobject(win)/landlock(bwrap) 走 OS 原语; docker/seatbelt 走 provider;
-        local 兜底(非强制隔离, enforced=False, 由调用方策略决定是否接受)。
+        E7: 此前 ``verdict.workspace_mode == "copy_diff_apply"`` 只被 L2 滤网写入
+        verdict、进审计 context, **执行层从未消费** —— 副本模式是纯文档特性,
+        高危命令实际仍在真实工作区裸跑。现在按 workspace_mode 分派, 让高危命令
+        真的在隔离副本里执行, 经过 diff 预览 + 用户确认后才写回。
         """
         if not verdict.isolate:
             return SandboxExecResult()
         cwd = getattr(ctx, "workspace", None) or "."
+        if getattr(verdict, "workspace_mode", "direct") == "copy_diff_apply":
+            return self._execute_copy_diff_apply(command, verdict, ctx, cwd, timeout)
+        return self._execute_backend(command, verdict, cwd, timeout)
+
+    def _execute_backend(self, command: str, verdict: Verdict, cwd: str,
+                         timeout: float) -> SandboxExecResult:
+        """按选中后端在指定工作目录执行 (cwd 可以是真实工作区或隔离副本)。"""
         backend = verdict.backend or pick_backend("auto")[0]
         block_net = not verdict.network
 
@@ -293,6 +308,57 @@ class SandboxManager:
         except Exception as exc:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=str(exc))
+
+    def _execute_copy_diff_apply(self, command: str, verdict: Verdict, ctx: Any,
+                                 cwd: str, timeout: float) -> SandboxExecResult:
+        """副本 -> 执行 -> diff 预览 -> 确认 -> TOCTOU 复检 -> apply。"""
+        from .isolation import isolate_workdir, confirm_apply, build_diff_preview
+
+        wd = None
+        try:
+            wd = isolate_workdir(cwd)
+            res = self._execute_backend(command, verdict, wd.path, timeout)
+            res.workspace_mode = "copy_diff_apply"
+            # 副本隔离本身已生效, 标记 enforced 让 shell.py 的路由返回结果文本,
+            # 而不是回落 None 后又把命令在真实工作区跑一遍。
+            verdict.enforced = True
+            try:
+                preview = build_diff_preview(wd)
+            except Exception as exc:  # noqa: BLE001
+                res.returncode = -1
+                res.error = (f"生成变更预览失败 (fail-closed, 不写回): "
+                             f"{type(exc).__name__}: {exc}")
+                return res
+            confirm = getattr(ctx, "confirm", None)
+            outcome = confirm_apply(wd, confirm)
+            res.diff_preview = outcome.preview.to_dict() if outcome.preview else preview.to_dict()
+            res.applied = outcome.applied
+            res.applied_files = list(outcome.files)
+            res.confirm_reason = outcome.reason
+            preview_text = (outcome.preview or preview).to_text()
+
+            if not outcome.applied:
+                res.returncode = -1
+                # 拒绝时把预览一并放进 error, 因为 shell.py 在 returncode<0 时
+                # 只展示 error —— 用户必须仍能看见"本来要改什么"。
+                res.error = f"{outcome.reason}\n{preview_text}"
+                return res
+            # 执行本身失败也不写回, 但预览/确认已完成, 如实交回上层
+            if res.returncode < 0:
+                res.applied = False
+                res.applied_files = []
+                return res
+            res.stdout = (res.stdout or "") + "\n" + preview_text + \
+                         f"\n[E7] 用户已确认, 已写回 {len(outcome.files)} 个文件"
+            return res
+        except Exception as exc:  # noqa: BLE001
+            return SandboxExecResult(
+                returncode=-1, workspace_mode="copy_diff_apply", enforced=True,
+                applied=False,
+                error=f"副本隔离执行失败 (fail-closed, 未写回): {type(exc).__name__}: {exc}")
+        finally:
+            if wd is not None:
+                wd.cleanup()
 
     def _run_syscall(self, command: str, timeout: float, block_net: bool,
                      cwd: str, backend: str) -> SandboxExecResult:
