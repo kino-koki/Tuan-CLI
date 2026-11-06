@@ -31,9 +31,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   60 秒窗口，告警态随窗口过期复位。
 - 修正告警文案把「写操作次数」误写成「秒数」的问题。
 
+### E6 权限规则：负向排除 + MCP 工具名（部分落地）
+- `tools/permissions.py::match_rule()` 支持 `exclude: "glob"` 与 `pattern: "!glob"`：
+  目标命中排除模式时该规则不生效，用于给宽泛 allow 开洞（如允许 `git *` 但排除
+  `git push --force*`），避免「永远允许」变成持久提权入口。
+- **deny 规则忽略 exclude**（fail-closed，拒绝规则不允许被放宽）；优先级仍 deny > ask > allow。
+- MCP 调用按 `mcp__<server>__<tool>` 规范化参与 tool 匹配，可对单台不可信 server 精确拒绝。
+- `inspect()` 同步支持排除语义；会话内临时授权提升仍为待办（依赖交互设计）。
+
+### E8 安全配置强校验 + 可观测性
+- 新增 `config/security_schema.py`：`sandbox` / `permissions` 的强校验。此前
+  `config/validate.py` 只校验模型 / agent / context 数值，安全段写错一个键会**静默失效**
+  （非 dict 规则被跳过、未知 action 被跳过、`sandbox.enabled=false` 短路四层滤网）。
+- 接入 `config/validate.py`（`tuan config validate`）与 `cli/cmd_harden.py`（`tuan harden status`
+  新增「安全配置 schema」段）；缺失字段不报错，只报显式写错 / 显式关闭关键防线。
+
+### R8 异常即放行修复
+- `PermissionPolicy._hardening_confirm()` 在红线引擎导入失败时 `except: pass` 后继续
+  YOLO 自动批准，导致超长命令 / FD 重定向 / PowerShell IEX / Docker 守护进程重定向
+  在引擎不可用时被静默放行。现改为返回 `confirm` 并标注 fail-closed。
+
 ### 文档与回归
 - `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
-- 新增 `tests/test_e2_e5_hardening.py`（16 例）；安全 / i18n / 文档一致性子集 273 例通过。
+- 新增 `tests/test_e2_e5_hardening.py`（16 例）、`tests/test_e6_e8_hardening.py`（21 例）；
+  安全 / 权限 / TUI / Web / i18n 子集 496 passed / 1 skipped，E6/E8/R8 子集 21 passed。
 - 本轮为普通 fast-forward 提交，未改写历史、未使用 force push。
 
 ## [0.3.3] - 2026-10-25 (小更新 · 体验增强)

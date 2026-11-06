@@ -135,9 +135,9 @@
 | E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object resource quota enforcement**: CPU quota, memory limit, process tree kill timeout fallback (currently only existence probe) | TODO |
 | E4 | `core/security_auditor.py` + `harden/audit_export.py` | Audit **correlation/consolidation + cross-session anomaly detection**: aggregate alerts for repeated same-source redlines (e.g., MCP repeated injection); export supports rotation and encryption | TODO |
 | E5 | `core/tool_executor.py` | **Write storm detection**: high-frequency write/delete in single session triggers throttling and alerts, preventing batch accidental deletion | ✅ Done |
-| E6 | `tools/permissions.py` | `permissions.rules` enhancement: **negative glob** (`!bin/**`), MCP tool name rules, in-session temporary authorization elevation | TODO |
+| E6 | `tools/permissions.py` | `permissions.rules` enhancement: **negative glob** (`!bin/**`), MCP tool name rules, in-session temporary authorization elevation | ◐ Partial (first two done) |
 | E7 | `sandbox/isolation.py` | Copy mode **diff visualization confirmation**: display changes via CLI/interactive card before applying | TODO |
-| E8 | `config` | `sandbox`/`permissions` config **schema strict validation + fail-closed observability** (enabled/degraded items visualization) | TODO |
+| E8 | `config` | `sandbox`/`permissions` config **schema strict validation + fail-closed observability** (enabled/degraded items visualization) | ✅ Done |
 
 > Priority judgment: High priority and independently evolvable → **E2, E3, E5** (E2/E5 done); depends on interaction design → **E1, E7**; polish/hardening → **E4, E6, E8**.
 
@@ -165,6 +165,32 @@ but the unique-file count accumulated over the whole session, so once 15 distinc
 were touched the alert never cleared despite the 60 s sliding window. File and count
 dimensions now share one window, the alert flag expires with it, and the message no
 longer mislabels the write count as seconds.
+
+**E6 partial implementation note (2026-11-06):** `PermissionPolicy.match_rule()`
+now supports negative exclusion (`exclude: "git push --force*"` or
+`pattern: "!git push --force*"`): a matching target disables that rule, so a
+broad allow can carve out dangerous cases instead of becoming a standing
+escalation path. **deny rules ignore `exclude`** (fail-closed — a denial must
+not be widened), and priority remains deny > ask > allow. MCP calls are
+normalized to `mcp__<server>__<tool>`, enabling per-server rules such as
+`{"tool": "mcp__untrusted__*", "action": "deny"}`. In-session temporary
+authorization elevation is still TODO. Regression: `tests/test_e6_e8_hardening.py`.
+
+**E8 implementation note:** new `config/security_schema.py` brings `sandbox` /
+`permissions` under strict validation; `config/validate.py` previously checked
+only model/agent/context fields. The dangerous failure mode is *silent*
+misconfiguration: `match_rule()` skips non-dict rules and unknown actions, and
+`sandbox.enabled=false` short-circuits all four filter layers. These now surface
+as explicit errors in `tuan config validate` and in the "security config schema"
+section of `tuan harden status`. Missing fields are quiet (DEFAULT_CONFIG supplies them).
+
+**R8 — another exception-as-allow fix:** `PermissionPolicy._hardening_confirm()`
+used `except: pass` when the safety engine failed to import, then continued to
+YOLO auto-approve. Overlong commands, FD redirects, PowerShell IEX and Docker
+daemon redirects were all silently allowed whenever the engine was unavailable.
+It now returns `confirm` with a fail-closed reason.
+
+
 
 ---
 
