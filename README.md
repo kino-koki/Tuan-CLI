@@ -85,7 +85,7 @@ class MyTool(Plugin):
 
 ---
 
-## Version number & repository history (transparent disclosure)
+## Version number
 
 **Why `0.3.4` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (58 providers + local Ollama), three main loops, plugin container architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
 
@@ -142,7 +142,7 @@ tuan --print run "Hi, describe yourself in one sentence."
 
 ---
 
-## The command surface: 49 core subcommands + slash commands
+## The command surface: 50 core subcommands + slash commands
 
 | Command | What it's for |
 |---|---|
@@ -308,8 +308,6 @@ tuan models                              # interactive setup (key written to ~/.
 ```
 
 Keys live in `~/.tuan/.env` (chmod 600, never commit); environment variables (e.g. `DEEPSEEK_API_KEY`) work too.
-
-> **Transparency**: earlier versions shipped GitHub / Apple / DeepSeek account login (including a web-session token path). It conflicted with the "fully local & offline" positioning, and the web endpoint was a private, unsupported interface that triggered risk controls — so the whole capability has been **removed**. Model calls go through official APIs with your own key.
 
 ## License & links
 

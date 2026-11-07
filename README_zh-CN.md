@@ -120,7 +120,7 @@ tuan dispatch serve --port 8788            # WebSocket 在 ws://HOST:8788/tuan/d
 
 ---
 
-## 版本号与仓库历史（透明披露）
+## 版本号说明
 
 **为什么现在是 `0.3.4`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的诚实口径：**`0.x` 阶段意味着公共 API（CLI 接口、配置 schema、工具协议、插件契约）尚未冻结**，仍可能随迭代调整。Tuan-CLI 功能面已相当完整（安全拦截/事务回滚、模型无关热切换（58 家供应商 + 本地 Ollama）、三种主循环、插件容器架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等，均配有测试），但**版本号反映的是接口稳定度，不是功能完成度**——功能齐全 ≠ API 该冻结。`1.0` 预留给公共 API 真正稳定、敢于承诺向后兼容之时。此前：破坏性变更在 `0.x` 内升 MINOR（并附迁移提示）、兼容功能升 MINOR、修复升 PATCH（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。
 
@@ -174,7 +174,7 @@ tuan --print run "你好，一句话介绍你自己"
 
 ---
 
-## 命令行面：49 个子命令（含嵌套共 192 个）+ 50 个斜杠命令
+## 命令行面：50 个子命令（含嵌套共 194 个）+ 50 个斜杠命令
 
 上手常用的几个：
 
@@ -292,10 +292,6 @@ tuan models                              # 交互式配置 (API Key 写入 ~/.tu
 
 密钥集中存放于 `~/.tuan/.env`（建议权限 600、勿入库），也可直接用环境变量（如 `DEEPSEEK_API_KEY`）。
 
-> **透明披露**：早期版本曾提供 GitHub / Apple / DeepSeek 三家账号登录（含网页会话令牌路径）。
-> 这与「完全本地离线」的定位冲突，且网页端点属私有非受支持接口、会触发风控，
-> 该能力已**整体移除**。模型调用请走官方 API + 你自己的 Key。
-
 ---
 ## License & 关联阅读
 
@@ -325,7 +321,6 @@ tuan models                              # 交互式配置 (API Key 写入 ~/.tu
 引擎统一入口：`tuan ext engines`（列表）· `tuan ext selftest`（健康检查）·
 `tuan ext call <engine> <method>`（单次调用）· `tuan ext info <engine>`（方法清单）。
 进程隔离场景下引擎经 `core/engine_isolation.py` 以真实 JSONL 子进程运行，崩溃/超时安全回落。
-
 
 ---
 

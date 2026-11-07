@@ -27,12 +27,15 @@ log = logging.getLogger(__name__)
 DEFAULT_POLICY: Dict[str, Any] = {
     "enabled": True,
     "backend": "auto",                 # auto | local | docker | landlock | seatbelt | jobobject
-    "enforce_required": False,         # 强隔离场景无强后端时是否 fail-closed 拒绝
+    "enforce_required": True,          # 无强后端时 fail-closed 拒绝; 与 config/defaults.py 一致, 禁止静默降级裸执行
     "deny_unknown_shell": False,
     "resource": {
         "deny_network_by_default": False,
         "max_memory_mb": 0,
         "max_timeout": 0,
+        "cpu_rate_pct": 50,
+        "active_process_limit": 16,
+        "kill_timeout_seconds": 5.0,
         "isolate_copy_threshold": "high",   # 高危以上走 copy-diff-apply
     },
 }
@@ -64,6 +67,12 @@ class SandboxExecResult:
     backend: str = ""
     enforced: bool = False
     error: str = ""
+    # E7: copy-diff-apply 结果的可观测字段 (全部有默认值, 不破坏既有构造)
+    workspace_mode: str = "direct"
+    applied: bool = False
+    applied_files: List[str] = field(default_factory=list)
+    diff_preview: Optional[Dict[str, Any]] = None
+    confirm_reason: str = ""
 
     def as_shell_text(self) -> str:
         parts = []
@@ -258,12 +267,21 @@ class SandboxManager:
                          timeout: float = 60.0) -> SandboxExecResult:
         """当裁决要求隔离时, 用选中后端真正执行命令。
 
-        支持: jobobject(win)/landlock(bwrap) 走 OS 原语; docker/seatbelt 走 provider;
-        local 兜底(非强制隔离, enforced=False, 由调用方策略决定是否接受)。
+        E7: 此前 ``verdict.workspace_mode == "copy_diff_apply"`` 只被 L2 滤网写入
+        verdict、进审计 context, **执行层从未消费** —— 副本模式是纯文档特性,
+        高危命令实际仍在真实工作区裸跑。现在按 workspace_mode 分派, 让高危命令
+        真的在隔离副本里执行, 经过 diff 预览 + 用户确认后才写回。
         """
         if not verdict.isolate:
             return SandboxExecResult()
         cwd = getattr(ctx, "workspace", None) or "."
+        if getattr(verdict, "workspace_mode", "direct") == "copy_diff_apply":
+            return self._execute_copy_diff_apply(command, verdict, ctx, cwd, timeout)
+        return self._execute_backend(command, verdict, cwd, timeout)
+
+    def _execute_backend(self, command: str, verdict: Verdict, cwd: str,
+                         timeout: float) -> SandboxExecResult:
+        """按选中后端在指定工作目录执行 (cwd 可以是真实工作区或隔离副本)。"""
         backend = verdict.backend or pick_backend("auto")[0]
         block_net = not verdict.network
 
@@ -291,17 +309,86 @@ class SandboxManager:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=str(exc))
 
-    @staticmethod
-    def _run_syscall(command: str, timeout: float, block_net: bool, cwd: str, backend: str) -> SandboxExecResult:
+    def _execute_copy_diff_apply(self, command: str, verdict: Verdict, ctx: Any,
+                                 cwd: str, timeout: float) -> SandboxExecResult:
+        """副本 -> 执行 -> diff 预览 -> 确认 -> TOCTOU 复检 -> apply。"""
+        from .isolation import isolate_workdir, confirm_apply, build_diff_preview
+
+        wd = None
+        try:
+            wd = isolate_workdir(cwd)
+            res = self._execute_backend(command, verdict, wd.path, timeout)
+            res.workspace_mode = "copy_diff_apply"
+            # 副本隔离本身已生效, 标记 enforced 让 shell.py 的路由返回结果文本,
+            # 而不是回落 None 后又把命令在真实工作区跑一遍。
+            verdict.enforced = True
+            try:
+                preview = build_diff_preview(wd)
+            except Exception as exc:  # noqa: BLE001
+                res.returncode = -1
+                res.error = (f"生成变更预览失败 (fail-closed, 不写回): "
+                             f"{type(exc).__name__}: {exc}")
+                return res
+            # E7-TUI: 统一走审批覆盖层 (借鉴 Codex TUI approval_overlay)。
+            # 有 ctx.confirm 时把结构化卡片交给现有 TUI 挂起式确认通道;
+            # 无通道时提供 headless 默认通道 (打印卡片 + 精确确认码 + stdin),
+            # 不再"直接失败", 但同样要求显式决策, 不放松 fail-closed。
+            from ..ui.approval_overlay import make_confirm_callable
+            card_renderer, confirm_fn = make_confirm_callable(ctx)
+            outcome = confirm_apply(wd, confirm_fn, card_renderer=card_renderer)
+            res.diff_preview = outcome.preview.to_dict() if outcome.preview else preview.to_dict()
+            res.applied = outcome.applied
+            res.applied_files = list(outcome.files)
+            res.confirm_reason = outcome.reason
+            preview_text = (outcome.preview or preview).to_text()
+
+            if not outcome.applied:
+                res.returncode = -1
+                # 拒绝时把预览一并放进 error, 因为 shell.py 在 returncode<0 时
+                # 只展示 error —— 用户必须仍能看见"本来要改什么"。
+                res.error = f"{outcome.reason}\n{preview_text}"
+                return res
+            # 执行本身失败也不写回, 但预览/确认已完成, 如实交回上层
+            if res.returncode < 0:
+                res.applied = False
+                res.applied_files = []
+                return res
+            res.stdout = (res.stdout or "") + "\n" + preview_text + \
+                         f"\n[E7] 用户已确认, 已写回 {len(outcome.files)} 个文件"
+            return res
+        except Exception as exc:  # noqa: BLE001
+            return SandboxExecResult(
+                returncode=-1, workspace_mode="copy_diff_apply", enforced=True,
+                applied=False,
+                error=f"副本隔离执行失败 (fail-closed, 未写回): {type(exc).__name__}: {exc}")
+        finally:
+            if wd is not None:
+                wd.cleanup()
+
+    def _run_syscall(self, command: str, timeout: float, block_net: bool,
+                     cwd: str, backend: str) -> SandboxExecResult:
+        """调用 OS 原语执行, 并如实汇报是否真的拿到了强制隔离。
+
+        E3: 旧实现把 ``enforced=True`` 写死 —— 只要 platform 层没抛异常,
+        即使内部已降级为普通子进程 (libseccomp 缺失 / Job Object 挂不上),
+        上层也会认为"已强隔离执行"并放行。现在以 ``SyscallResult.enforced``
+        为准; ``enforce_required=True`` 时降级由 HardIsolationFilter 拒绝。
+        """
         try:
             from ..arch.platform import run_syscall_sandboxed
+            resource = self.policy.get("resource", {}) or {}
             res = run_syscall_sandboxed(
                 ["cmd", "/c", command] if os.name == "nt" else ["/bin/sh", "-c", command],
                 timeout=timeout or 30.0, block_network=block_net, cwd=cwd or None,
+                memory_limit_mb=int(resource.get("max_memory_mb", 0) or 512),
+                cpu_rate_pct=int(resource.get("cpu_rate_pct", 50) or 50),
+                active_process_limit=int(resource.get("active_process_limit", 16) or 16),
+                kill_timeout_seconds=float(resource.get("kill_timeout_seconds", 5.0) or 5.0),
             )
+            note = res.degraded_reason or res.error or ("blocked" if res.blocked else "")
             return SandboxExecResult(stdout=res.stdout or "", stderr=res.stderr or "",
                                      returncode=res.returncode, backend=res.mechanism or backend,
-                                     enforced=True, error="blocked" if res.blocked else "")
+                                     enforced=bool(res.enforced), error=note)
         except Exception as exc:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=str(exc))

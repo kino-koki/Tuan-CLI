@@ -111,7 +111,18 @@ class AuditExporter:
         push_url: Optional[str] = None,
         push_timeout: float = 5.0,
         host: Optional[str] = None,
+        max_bytes: int = 0,
+        backup_count: int = 5,
     ) -> None:
+        """E4: ``max_bytes`` > 0 时按大小轮转导出文件, ``backup_count`` 控制保留份数。
+
+        审计导出含安全事件的完整上下文, 长期运行不轮转会无限增长; 轮转后
+        文件权限统一收紧到 0600 (POSIX), 避免 SIEM 侧明文日志被同机其他用户读取。
+        """
+        if max_bytes < 0 or backup_count < 0:
+            raise ValueError("max_bytes / backup_count 不能为负")
+        self.max_bytes = int(max_bytes)
+        self.backup_count = int(backup_count)
         for f in formats:
             if f.lower() not in _FORMATTERS:
                 raise ValueError(f"不支持的导出格式: {f}")
@@ -126,11 +137,50 @@ class AuditExporter:
             os.makedirs(out_dir, exist_ok=True)
 
     # ---------------------------------------------------------- 落盘
+    def _path(self, fmt: str, index: int = 0) -> str:
+        name = f"audit_export.{fmt}" if index == 0 else f"audit_export.{fmt}.{index}"
+        return os.path.join(self.out_dir or "", name)
+
     def _open_file(self, fmt: str) -> Any:
         if self.out_dir is None:
             return None
-        path = os.path.join(self.out_dir, f"audit_export.{fmt}")
-        return open(path, "a", encoding="utf-8")
+        path = self._path(fmt)
+        f = open(path, "a", encoding="utf-8")
+        try:
+            if os.name != "nt":
+                os.chmod(path, 0o600)
+        except OSError:  # pragma: no cover - 某些文件系统不支持 chmod
+            pass
+        return f
+
+    def _rotate(self, fmt: str) -> None:
+        """按 index 移位: .N-1 -> .N, 当前 -> .1, 超出的删除。"""
+        f = self._files.pop(fmt, None)
+        if f is not None:
+            try:
+                f.close()
+            except Exception:  # pragma: no cover
+                pass
+        oldest = self._path(fmt, self.backup_count)
+        if self.backup_count > 0 and os.path.exists(oldest):
+            try:
+                os.remove(oldest)
+            except OSError:
+                pass
+        for i in range(self.backup_count - 1, 0, -1):
+            src = self._path(fmt, i)
+            if os.path.exists(src):
+                try:
+                    os.replace(src, self._path(fmt, i + 1))
+                except OSError:
+                    pass
+        cur = self._path(fmt)
+        if self.backup_count > 0 and os.path.exists(cur):
+            try:
+                os.replace(cur, self._path(fmt, 1))
+                os.chmod(self._path(fmt, 1), 0o600)
+            except OSError:
+                pass
 
     def _write(self, fmt: str, line: str) -> None:
         if self.out_dir is None:
@@ -142,6 +192,17 @@ class AuditExporter:
             f = self._open_file(fmt)
             self._files[fmt] = f
         if f is not None:
+            # E4: 轮转检查必须在写入前; 用 tell() 而非 stat() 避免缓存句柄不一致
+            if self.max_bytes > 0:
+                try:
+                    if f.tell() + len(line.encode("utf-8")) + 1 > self.max_bytes:
+                        self._rotate(fmt)
+                        f = self._open_file(fmt)
+                        self._files[fmt] = f
+                except (OSError, ValueError):
+                    pass
+            if f is None:
+                return
             f.write(line + "\n")
             f.flush()
             try:

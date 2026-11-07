@@ -55,6 +55,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .security_utils import redact_nested, redact_sensitive
+from .audit_correlation import AuditCorrelator
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +152,9 @@ class SecurityAuditor:
         # 内存缓冲 (最近 N 条明文, 查询用)
         self._buffer: List[AuditRecord] = []
 
+        # E4: 审计关联合并 / 跨会话异常检测 (纯观测, 不参与裁决)
+        self._correlator = AuditCorrelator()
+
         # 密钥派生 (用于防篡改链的 HMAC, 与加密后端共用同一主密钥)
         self._crypto_key = self._derive_key(passphrase)
 
@@ -166,6 +170,11 @@ class SecurityAuditor:
 
         # 加载已有记录的序号和 prev_hash
         self._load_existing()
+        # E4: 历史重放 -> 跨会话检测能跨越进程重启, 而不只限于本次运行
+        try:
+            self._correlator.replay(list(self._buffer))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("审计关联历史重放失败: %s", exc)
 
     @staticmethod
     def _resolve_provider(name: str) -> Any:
@@ -203,8 +212,23 @@ class SecurityAuditor:
         if passphrase:
             salt = b"tuan-security-auditor-v1"
             return hashlib.pbkdf2_hmac("sha256", passphrase.encode(), salt, 100000)
-        # 无密码时用设备指纹 (hostname + username + home 路径)
-        fingerprint = f"{os.getlogin() if hasattr(os, 'getlogin') else 'unknown'}@{os.uname().nodename if hasattr(os, 'uname') else os.environ.get('COMPUTERNAME', 'unknown')}"
+        # 无密码时用设备指纹 (hostname + username + home 路径)。
+        # 注意: `hasattr(os, "getlogin")` 为 True 不代表能调 —— 无控制终端的
+        # CI / 容器 / systemd 服务里 os.getlogin() 会抛 OSError, 旧实现因此让
+        # 整个审计器 (含 E4 关联层) 初始化失败。这里只作为 best-effort 输入。
+        try:
+            user = os.getlogin()
+        except (OSError, AttributeError):
+            user = (os.environ.get("USER") or os.environ.get("USERNAME")
+                    or os.environ.get("LOGNAME") or "unknown")
+        try:
+            host = os.uname().nodename  # type: ignore[attr-defined]
+        except (AttributeError, OSError):
+            host = (os.environ.get("COMPUTERNAME")
+                    or os.environ.get("HOSTNAME") or "unknown")
+        # 指纹格式保持与旧实现完全一致: 若加入 home 路径, 所有此前用默认
+        # 设备指纹加密的审计日志将永久无法解密 (破坏性变更, 绝不这么做)。
+        fingerprint = f"{user}@{host}"
         return hashlib.pbkdf2_hmac("sha256", fingerprint.encode(), b"tuan-audit-device", 100000)
 
     def _load_existing(self) -> None:
@@ -276,6 +300,15 @@ class SecurityAuditor:
             # AEAD 加密落盘
             self._append_encrypted(rec)
 
+            # E4: 关联分析放在写盘之后、且整体 try/except —— 观测层绝不能
+            # 影响审计写入或上游安全裁决。告警只发到已存在的全局事件总线。
+            try:
+                alerts = self._correlator.assess(rec)
+                if alerts:
+                    self._publish_correlation_alerts(alerts)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("审计关联失败 (不影响裁决): %s", exc)
+
             return rec
 
     def _append_encrypted(self, rec: AuditRecord) -> None:
@@ -293,6 +326,34 @@ class SecurityAuditor:
                 self._chmod_600(self._log_file)
         except Exception as exc:
             log.warning("审计日志写入失败: %s", exc)
+
+    @staticmethod
+    def _publish_correlation_alerts(alerts: List[Any]) -> None:
+        """把聚合告警发到**已存在**的全局事件总线 (不主动创建, 避免副作用)。"""
+        try:
+            from . import security_bus
+            bus = getattr(security_bus, "_global_bus", None)
+            if bus is None:
+                return
+            for a in alerts:
+                bus.emit(security_bus.SecurityEvent(
+                    event_type="security.correlation",
+                    timestamp=a.last_ts,
+                    payload=a.to_dict(),
+                    source="audit_correlator",
+                    severity=a.severity,
+                ))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("关联告警推送失败 (不影响裁决): %s", exc)
+
+    # ---------------------------------------------------------- E4 关联查询
+
+    def recent_alerts(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """最近的聚合告警 (给 `tuan harden status` / SIEM 导出消费)。"""
+        return [a.to_dict() for a in self._correlator.recent_alerts(limit)]
+
+    def correlation_stats(self) -> Dict[str, Any]:
+        return self._correlator.stats()
 
     # ---------------------------------------------------------- 查询
 
@@ -348,6 +409,7 @@ class SecurityAuditor:
             "by_module": modules,
             "algorithm": self.algorithm,
             "log_file": str(self._log_file),
+            "correlation": self._correlator.stats(),
         }
 
     # ---------------------------------------------------------- 完整性验证
