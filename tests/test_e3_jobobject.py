@@ -227,6 +227,7 @@ class TestWindowsJobObjectSandbox:
 
 # ------------------------------------------------------------------ 统一入口降级标记
 class TestFallbackIsNotReportedAsEnforced:
+    @pytest.mark.skipif(sys.platform != "linux", reason="requires Linux resource module")
     def test_linux_fallback_marks_not_enforced(self, monkeypatch):
         from tuan_cli.arch import platform as plat
         monkeypatch.setattr(plat, "IS_WINDOWS", False)
