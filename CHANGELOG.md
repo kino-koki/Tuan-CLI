@@ -378,13 +378,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MAX_PENDING_TRANSCRIPT_CELLS=8`，均非逐值复制；本轮未改任何
   键位、布局数值或安全接线。
 
+### 配置/侧栏对齐层：config_models + misc 组清零（2026-11-07，第 13 轮）
+- 新增 `tuan_cli/tui/configkit/`（纯 Python，**零 Rust 源码逐字复制**），
+  5 个模块逐一对齐 `codex-rs/tui/src/`：
+  - `additional_dirs.py`：4 个早退分支、警告模板英文原文、
+    **忽略即拒绝**的 `AddDirDecision` + `enforce()`。
+  - `collaboration_modes.py`：`tui_visible` 筛选、Default 回退、
+    循环 `next_mask`、2 秒发现超时、`Some(None)` 清覆盖、
+    5 字段严格白名单、**发现失败不冒充空列表**。
+  - `model_migration.py`：三态 Outcome / 两态菜单 / 强制与可选两套
+    键位策略 / Ctrl+C·D 退出 / `AltScreenGuard` RAII /
+    **单次正则扫描替换模板**。
+  - `sidebar_chooser.py`：`WIDE_WIDTH=58`、窄屏双行分页、
+    `choice_at` 命中、footer 三项 + 可选 `hide_pane`、短提示逐字。
+  - `sidebar_tab_strip.py`：三态 `TabState`、`targets()` 几何逐值、
+    add 按钮恒留最右、hit 先查 add 再查 tab。
+- **三条实测修正**：
+  1. 上游 `fill_migration_markdown` 的链式 `.replace` 会二次替换被污染
+     模型名里的 `{model_to}`（实测 `"old-{model_to}-x"` →
+     `"old-NEW-x"`）。改为单次正则扫描，替换值不参与后续匹配。
+  2. 上游 `collaboration_modes::list()` 把超时/RPC 错误/协议错误一律压
+     成空 `Vec` + warn。`DiscoveryResult` 显式区分 5 态，`usable`
+     只允许 `ok/empty`。
+  3. 上游 `--add-dir` 被忽略时只返回一句警告字符串，调用方漏打印即
+     静默丢弃。升级为结构化拒绝 + 退路径校验；刻意不做「越出 cwd」
+     判定（与 `--add-dir` 语义冲突）。
+- **两处几何一致性**：`choice_rows`/`choice_at` 共用一份分页计算，
+  `TabStrip.hit`/`render_plan` 共用 `targets()`，各提供
+  `*_matches_render()` 自检并进回归集。
+- **一条上游语义如实挑明**：强制迁移下 Enter 与 **Esc 都接受**、事件流
+  耗尽也默认接受；这与审批覆盖层「无输入 / Esc 绝不变成同意」的
+  fail-closed 契约**相反**。原样保留上游键盘策略，但用 `policy_note()`
+  显式标注：仅适用于模型升级提示，**绝不套用到审批链路**。
+- **硬约束延续**：`configkit_validate()` 调用
+  `corekit.app.assert_wiring_intact()`，6 条既有安全接线全绿；
+  **本轮没有替换任何现有运行时对象**。
+- `parity_report()` / `parity_validate()` 接入 `configkit` 自检；
+  `tuan tui parity` 新增「配置/侧栏」一行。
+- **指标如实更新**：aligned 30→**35**、pending 15→**10**、
+  宽口径 90.9%→**93.9%**、严格 52.7%→**55.8%**、逐值对齐
+  18.2%→**21.2%**；`fully_identical` 仍为 `false`。
+  `TUI_PARITY.md` 分组表（config_models / misc pending 0）、aligned 表、
+  指标块、10 个待办队列、第 13–15 轮路线（第 13 轮标 ✅）、本地化
+  清单、§8 合规声明全部同步。
+- 文档：`NOTICE` 第 13 条（含全部本地化修改点与安全增强）、
+  `SECURITY.md` / `SECURITY_EN.md` 第 13 轮小节、
+  `SECURITY_BASELINE.md` R24、`TUI_PARITY.md`。
+- **边界（如实）**：`config_models`/`misc` 已清零，但整体**还不是
+  「完全相同」**（还剩 10 个）；CJK 显示宽度是 `east_asian_width`
+  近似，不声称逐字节一致；`tab_width=0` 显式返回空而非除零；本轮
+  未改任何键位、布局数值或安全接线。
+
 ### 文档与回归
 - `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
 - 新增 `tests/test_e2_e5_hardening.py`（16 例）、`tests/test_e6_e8_hardening.py`（21 例）、
   `tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）、
   `tests/test_e1_e7_hardening.py`（39 例）、`tests/test_tui_approval_overlay.py`（59 例）、
   `tests/test_tui_parity.py`（新增）、`tests/test_tui_input_layer.py`（88 例）、
-  `tests/test_tui_core_app_layer.py`（76 例）；沙箱 / 权限 / 配置批次 156 例，
+  `tests/test_tui_core_app_layer.py`（76 例）、
+  `tests/test_tui_config_layer.py`（106 例）；沙箱 / 权限 / 配置批次 156 例，
   安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
   审批覆盖层与 E1/E7 接线 102 例通过。
 - 本轮为普通 fast-forward 提交，未改写历史、未使用 force push。

@@ -363,6 +363,140 @@ THIRD-PARTY ATTRIBUTIONS
     NO Rust source is copied verbatim. OpenAI does not endorse or sponsor
     this project.
 
+13) Configuration / sidebar alignment layer (tuan_cli/tui/configkit/)
+    Location: tuan_cli/tui/configkit/
+              {additional_dirs, collaboration_modes, model_migration,
+               sidebar_chooser, sidebar_tab_strip}.py
+    Origin:   functional contracts extracted from the Codex TUI source:
+              `codex-rs/tui/src/additional_dirs.rs`,
+              `collaboration_modes.rs`, `model_migration.rs`,
+              `sidebar_chooser.rs`, `sidebar_tab_strip.rs`
+    Upstream: https://github.com/openai/codex
+    Holder:   OpenAI (Copyright 2025 OpenAI)
+    License:  Apache License 2.0 (full text:
+              THIRD_PARTY_LICENSES/Codex-LICENSE.txt)
+
+    Verifiable facts aligned value-for-value:
+      - additional_dirs.rs: the four early-return branches (empty dirs;
+        Disabled | External profiles; has_full_disk_write_access;
+        can_write_local_path_with_cwd(cwd, cwd)) and the warning template
+        "Ignoring --add-dir ({joined_paths}) because the effective
+        permissions do not allow additional writable roots. Switch to
+        workspace-write or danger-full-access to allow them.";
+      - collaboration_modes.rs: filtered_presets keeping only masks whose
+        mode `is_tui_visible`, default_mask preferring ModeKind::Default
+        then falling back to the first preset, mask_for_kind rejecting
+        invisible kinds BEFORE searching, next_mask cycling in list order
+        (current not found -> index 0), a 2-second discovery timeout,
+        `developer_instructions: Some(None)` clearing restored overrides
+        because "The RPC intentionally omits prompts", and the five mask
+        fields (name / mode / model / reasoning_effort /
+        developer_instructions);
+      - model_migration.rs: ModelMigrationOutcome (Accepted / Rejected /
+        Exit), MigrationMenuOption (TryNewModel / UseExistingModel) with
+        the labels "Try new model" / "Use existing model", the mandatory
+        vs opt-out keyboard policies, is_ctrl_exit_combo (Ctrl+C / Ctrl+D),
+        AltScreenGuard RAII restoring the alternate screen in Drop, the
+        heading "Codex just got an upgrade. Introducing {display}.",
+        the recommendation line, the optional opt-out line, and the two
+        markdown placeholders {model_from} / {model_to};
+      - sidebar_chooser.rs: WIDE_WIDTH = 58, body_row width
+        area.width.saturating_sub(3), resize_hint short form
+        "←/→ resize · Enter/Esc done", CHAT_TAB = " Side chat " (width 11),
+        choice_rows (height 2 when narrow else 1; visible =
+        (area.height - 5).div_ceil(height); start = (choice + 1) - visible),
+        choice_at (footer row excluded; offset = y - area.y - 4), the three
+        fixed footer hints (Enter/open, Esc/back, ↑/↓/move) plus the optional
+        hide_pane hint, and the final "+ New side chat" choice;
+      - sidebar_tab_strip.rs: TabState (Absent / Active / Inactive),
+        targets() geometry (width = area.width - 1; plus = min(width, 3);
+        available = width - plus; height = min(area.height, 1);
+        tab_width = min(available, self.tab_width);
+        count = available / tab_width; first = (selected_index + 1) - count
+        so the selected tab stays visible; the add button is ALWAYS
+        reserved at the right edge), hit() checking add BEFORE tabs, and
+        the three-state style mapping.
+
+    Modifications / localization (each listed, none hidden):
+      - Rust enums / structs / ratatui Rect+Buffer+Widget / tokio event
+        streams / clap -> Python dataclasses, pure state machines,
+        injectable sinks and render PLANS (lists of label/rect/state)
+        instead of writing a terminal Buffer. NO existing runtime object
+        was replaced by this layer.
+      - English UI strings -> Chinese defaults with English originals
+        retained as constants for verification; the short resize hint is
+        kept VERBATIM. Project 10-language i18n is unchanged.
+      - `usize` div_ceil -> explicit integer expression (a + b - 1) // b;
+        `tab_width == 0` explicitly returns empty targets instead of
+        relying on `checked_div().unwrap_or_default()`.
+      - CJK display width uses stdlib `unicodedata.east_asian_width`
+        as an APPROXIMATION (disclosed; not claimed byte-identical to
+        unicode-width, same honesty level as round 11's grapheme note).
+      - OpenAI-only server discovery / collaboration-mode catalog /
+        model-upgrade prompts are represented as injectable contracts,
+        not wired into any live server.
+
+    Local security / correctness hardening (STRICTER than upstream):
+      - CHAINED REPLACE FIX (real, measured): upstream
+        `fill_migration_markdown` does
+        `template.replace("{model_from}", current).replace("{model_to}", target)`.
+        If `current_model` contains the literal `{model_to}` (model names
+        come from server/config and can be polluted), it is replaced a
+        SECOND time by target_model. Measured: template
+        "从 {model_from} 迁移到 {model_to}" with current
+        "old-{model_to}-x" and target "NEW" produces
+        "从 old-NEW-x 迁移到 NEW" upstream. This layer uses ONE regex
+        pass so replacement values never participate in later matching;
+        unknown {…} placeholders are preserved, not swallowed.
+      - DISCOVERY FAILURE IS NOT SILENTLY EMPTY: upstream `list()`
+        collapses timeout / RPC error / protocol error into ONE empty Vec
+        plus a warn (module header: "Missing discovery adds no presets").
+        A caller cannot tell "not queried" from "queried, none", so a
+        network error silently becomes "no mode picker needed".
+        DiscoveryResult distinguishes ok / empty / unavailable / timeout /
+        protocol_error; `usable` permits ONLY ok and empty, forcing the
+        caller to handle `unavailable` explicitly.
+      - --add-dir IS NOT SILENTLY DROPPED: upstream returns only a warning
+        STRING and leaves presentation to the caller ("The caller is
+        responsible for presenting the warning"). A forgotten print means
+        the user thinks a writable root was added when it was ignored.
+        AddDirDecision + enforce() turn "ignore" into a structured REJECT
+        with an actionable hint, plus `..` / control-char / NUL / empty
+        validation. Deliberately NO "outside cwd" check: adding a root
+        outside the workspace is the whole point of --add-dir; the real
+        boundary belongs to the sandbox layer.
+      - Strict field allowlists for collaboration-mode wire data, with
+        control-character / length checks and an explicit
+        `prompts_omitted=True` audit marker (dynamic Python dicts have
+        no compile-time type protection).
+      - GEOMETRY CONSISTENCY: choice_rows (render pagination) and
+        choice_at (hit-test) share ONE computation; TabStrip.hit and
+        render_plan share ONE targets(). Both expose
+        `*_matches_render()` self-checks wired into the regression suite,
+        preventing "clicked item 3 but opened item 2" / "hit does not
+        match what is drawn" defects.
+
+    UPSTREAM KEYBOARD POLICY DISCLOSED (not silently copied into the
+    approval path): in MANDATORY model migration (can_opt_out=false),
+    Enter AND Esc BOTH accept, and an exhausted event stream also
+    defaults to accept; only Ctrl+C / Ctrl+D exits. In opt-out mode `2`
+    rejects and Esc CONFIRMS the highlighted option rather than cancelling.
+    This is the OPPOSITE of this project's approval-overlay fail-closed
+    contract ("no input / Esc can never become approval"). It is retained
+    verbatim for the migration prompt only, explicitly labelled by
+    `policy_note()` and in the docs, and NEVER applied to the approval
+    chain.
+
+    EXISTING SECURITY WIRING PROTECTION (continued hard requirement):
+    configkit_validate() calls round 12's
+    corekit.app.assert_wiring_intact(), verifying all SIX pre-existing
+    invariants (permission-policy injection, deny-all MCP policy,
+    ctx.confirm channel, approval-card wiring, copy-mode confirmation,
+    explicit ABORT). `tuan tui parity` still reports the wiring intact.
+
+    NO Rust source is copied verbatim. OpenAI does not endorse or sponsor
+    this project.
+
 -------------------------------------------------------------------------------
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
@@ -375,7 +509,7 @@ LICENSE TEXTS
 -------------------------------------------------------------------------------
 
 Components 1-7 are under MIT; the full text is reproduced below.
-Components 9, 10, 11 and 12 are under Apache License 2.0 (with component 11
+Components 9, 10, 11, 12 and 13 are under Apache License 2.0 (with component 11
 carrying the additional ratatui MIT attribution noted above); their full license text and upstream
 NOTICE are reproduced verbatim in THIRD_PARTY_LICENSES/Codex-LICENSE.txt and
 THIRD_PARTY_LICENSES/Codex-NOTICE.txt respectively (Apache-2.0 section 4(a)/(c)

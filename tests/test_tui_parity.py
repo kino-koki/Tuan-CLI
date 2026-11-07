@@ -233,14 +233,14 @@ class TestMatrix:
         assert {r.status for r in rows} <= set(mx._STATUSES)
 
     def test_summary_metrics(self):
-        """第 12 轮基线（core_app 9 个转 aligned）：pending 24 -> 15。"""
+        """第 13 轮基线（config_models + misc 5 个转 aligned）：pending 15 -> 10。"""
         s = mx.summary()
         assert s["total_modules"] == 165
-        assert s["pending"] == 15
-        assert s["by_status"]["aligned"] == 30
-        assert s["coverage_pct"] == 90.9
-        assert s["aligned_pct"] == 52.7
-        assert s["aligned_only_pct"] == 18.2
+        assert s["pending"] == 10
+        assert s["by_status"]["aligned"] == 35
+        assert s["coverage_pct"] == 93.9
+        assert s["aligned_pct"] == 55.8
+        assert s["aligned_only_pct"] == 21.2
         assert s["fully_identical"] is False   # 如实：还没完全相同
         assert s["upstream_rs_files"] == 1216
         # 派生一致性：防止以后改状态定义凑数而测试没发现
@@ -326,7 +326,7 @@ class TestParityCLI:
         args = type("A", (), {"report_json": False, "gaps": False})()
         assert cmd_tui_parity(args) == 0
         out = capsys.readouterr().out
-        assert "1216" in out and "165" in out and "90.9%" in out
+        assert "1216" in out and "165" in out and "93.9%" in out
         assert "完全相同  : 否" in out
 
     def test_json_report(self, capsys):
@@ -335,14 +335,14 @@ class TestParityCLI:
         assert cmd_tui_parity(args) == 0
         data = json.loads(capsys.readouterr().out)
         assert data["matrix"]["total_modules"] == 165
-        assert len(data["gaps"]) == 15
+        assert len(data["gaps"]) == 10
         assert data["validate"] == []
 
     def test_gaps_human(self, capsys):
         from tuan_cli.cli.cmd_tui_parity import cmd_tui_parity
         args = type("A", (), {"report_json": False, "gaps": True})()
         assert cmd_tui_parity(args) == 0
-        assert "待对齐队列 (15)" in capsys.readouterr().out
+        assert "待对齐队列 (10)" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------- 归属

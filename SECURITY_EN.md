@@ -531,6 +531,79 @@ items; see `TUI_PARITY.md` and `tuan tui parity`.
     `tools_exec` + `history_transcript` (5), **still preserving the
     existing security wiring**.
 
+  **Configuration / sidebar alignment layer (2026-11-07, round 13):**
+  all 5 pending modules in `config_models` + `misc` are cleared.
+  `tuan tui parity` metrics: aligned 35 / localized 57 / n/a 63 /
+  **pending 10**; broad 93.9%, strict 55.8%, **value-for-value 21.2%**;
+  `fully_identical` remains `false` (reported honestly).
+
+  - New `tuan_cli/tui/configkit/` (pure Python, zero Rust source) with 5
+    modules: `additional_dirs` (4 early-return branches, verbatim warning
+    template, ignore-means-reject), `collaboration_modes` (tui_visible
+    filter, 2s discovery, failure never masquerading as empty),
+    `model_migration` (three-state Outcome, mandatory vs opt-out keyboard
+    policies, single-pass template substitution), `sidebar_chooser`
+    (`WIDE_WIDTH=58`, narrow two-line layout, `choice_at` hit-test),
+    `sidebar_tab_strip` (three-state TabState, `targets()` geometry,
+    add-first hit-test).
+  - **Three highest-value fixes (all measured, none merely "alignment"):**
+    1. **Chained `replace` double substitution.** Upstream
+       `fill_migration_markdown` does
+       `.replace("{model_from}", current).replace("{model_to}", target)`.
+       If `current_model` contains the literal `{model_to}` (model names
+       come from server/config and can be polluted), it is replaced a
+       SECOND time by `target_model`. Measured: template
+       "从 {model_from} 迁移到 {model_to}" with current
+       "old-{model_to}-x" and target "NEW" yields
+       "从 old-NEW-x 迁移到 NEW" upstream. This round uses ONE regex pass
+       so replacement values never participate in later matching; unknown
+       `{...}` placeholders are preserved, not swallowed.
+    2. **Discovery failure is not silently empty.** Upstream `list()`
+       collapses timeout / RPC error / protocol error into ONE empty Vec
+       plus a warn ("Missing discovery adds no presets"). A caller cannot
+       tell "not queried" from "queried, none", so a network error silently
+       becomes "no mode picker needed". `DiscoveryResult` distinguishes
+       ok / empty / unavailable / timeout / protocol_error; `usable`
+       permits ONLY ok and empty, forcing explicit handling of failure.
+    3. **`--add-dir` is not silently dropped.** Upstream returns only a
+       warning STRING and leaves presentation to the caller; a forgotten
+       print means the user thinks a writable root was added when it was
+       ignored. `AddDirDecision` + `enforce()` turn "ignore" into a
+       structured REJECT with an actionable hint, plus `..` / control-char
+       / NUL / empty validation. Deliberately NO "outside cwd" check:
+       adding a root outside the workspace is the whole point of
+       `--add-dir`; the real boundary belongs to the sandbox layer.
+  - **Two geometry-consistency contracts:** `choice_rows` (render
+    pagination) and `choice_at` (hit-test) share ONE height/visible/start
+    computation; `TabStrip.hit` and `render_plan` share ONE `targets()`.
+    Both expose `*_matches_render()` self-checks in the regression suite,
+    preventing "clicked item 3 but opened item 2" / "hit does not match
+    what is drawn" defects. `tab_width=0` explicitly returns empty targets
+    instead of dividing by zero; CJK display width uses
+    `east_asian_width` as an APPROXIMATION (disclosed, not claimed
+    byte-identical to unicode-width).
+  - **Upstream keyboard policy disclosed (not silently copied into the
+    approval path):** in MANDATORY migration (`can_opt_out=false`), Enter
+    AND Esc BOTH accept, and an exhausted event stream also defaults to
+    accept; only Ctrl+C / Ctrl+D exits. In opt-out mode `2` rejects and
+    Esc CONFIRMS the highlighted option rather than cancelling. This is
+    the OPPOSITE of this project's approval-overlay fail-closed contract
+    ("no input / Esc can never become approval"). It is retained verbatim
+    for the migration prompt ONLY, explicitly labelled by `policy_note()`
+    and in the docs, and NEVER applied to the approval chain.
+  - **Hard requirement continued:** `configkit_validate()` calls round
+    12's `corekit.app.assert_wiring_intact()`, confirming all SIX
+    pre-existing invariants (permission-policy injection, deny-all MCP
+    policy, `ctx.confirm`, approval card, copy-mode confirmation, explicit
+    ABORT) are still green. `tuan tui parity` still reports the wiring
+    intact. **NO existing runtime object was replaced.**
+  - Regression: `tests/test_tui_config_layer.py` **106 cases** pass;
+    metric assertions in the parity / inputkit / corekit suites synced to
+    10 / 93.9% / 55.8% / 21.2% with derived-consistency checks retained.
+  - Next round: `streaming_async` + `tools_exec` +
+    `history_transcript` (5), then the final 5 to clear `pending`,
+    **still preserving the existing security wiring**.
+
 
 
 ---
