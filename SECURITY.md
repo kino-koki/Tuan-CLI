@@ -421,6 +421,61 @@ n/a 63 / **pending 24**，宽口径 85.5%、严格 47.3%、**逐值对齐 12.7%*
 - 下一轮：`config_models` + `misc`（5）与 `streaming_async` +
   `tools_exec` + `history_transcript`（5），仍**保留现有安全接线**。
 
+**配置/侧栏对齐层（2026-11-07，第 13 轮）**：`config_models` + `misc`
+组 5 个待办全部清零，`tuan tui parity` 指标更新为 aligned 35 /
+localized 57 / n/a 63 / **pending 10**，宽口径 93.9%、严格 55.8%、
+**逐值对齐 21.2%**，`fully_identical` 仍为 `false`（如实）。
+
+- 新增 `tuan_cli/tui/configkit/`（纯 Python，零 Rust 源码复制）5 个模块：
+  `additional_dirs`（4 早退分支 / 警告原文 / 忽略即拒绝）、
+  `collaboration_modes`（tui_visible 筛选 / 2s 发现 / 失败不冒充空）、
+  `model_migration`（三态 Outcome / 强制与可选键位 / 单次模板替换）、
+  `sidebar_chooser`（`WIDE_WIDTH=58` / 窄屏双行 / `choice_at` 命中）、
+  `sidebar_tab_strip`（三态 TabState / `targets()` 几何 / add 优先命中）。
+- **三条最值钱的修正**（均已实测，不是"对齐"本身）：
+  1. **链式 `replace` 二次替换**：上游 `fill_migration_markdown` 先替换
+     `{model_from}` 再替换 `{model_to}`；若 `current_model` 含字面量
+     `{model_to}`（模型名来自服务端/配置，可被污染），会被二次替换成
+     `target_model`。实测 `"从 {model_from} 迁移到 {model_to}"` +
+     current `"old-{model_to}-x"` 上游产出 `"从 old-NEW-x 迁移到 NEW"`。
+     本轮改为**单次正则扫描**，替换值不参与后续匹配；未知 `{...}`
+     原样保留，不吞不展开。
+  2. **发现失败不能静默当空**：上游 `collaboration_modes::list()` 把超时、
+     RPC 错误、协议错误一律压成空 `Vec` + warn（模块头 "Missing discovery
+     adds no presets"），调用方分不清「没查到」与「查了但没有」，一个
+     网络错误会被当成「无需展示模式选择器」。`DiscoveryResult` 显式区分
+     5 种状态，`usable` 只允许 `ok/empty`，强制调用方处理 `unavailable`。
+  3. **`--add-dir` 不能静默丢弃**：上游只返回一句警告字符串让调用方
+     "负责呈现"，忘了打印就等于静默忽略 —— 用户以为加了可写根、实际
+     操作落空或落到别处。`AddDirDecision` + `enforce()` 把「忽略」升级
+     为**结构化拒绝**，并做 `..` / 控制字符 / NUL / 空串校验。刻意**不
+     做**「越出 cwd」判定：`--add-dir` 的本意就是加工作区外的可写根，
+     把它当错误会与语义冲突，真正的边界在沙箱层。
+- **两处几何一致性契约**：`choice_rows`（渲染分页）与 `choice_at`（命中
+  测试）共用同一份 `height/visible/start` 计算；`TabStrip.hit` 与
+  `render_plan` 共用 `targets()`。二者都提供 `*_matches_render()` 自检并
+  进回归集 —— 否则会出现「点第 3 项却打开第 2 项」「点到的和看到的不
+  一致」，在带权限的侧栏里会让用户误开另一个会话。另：`tab_width=0`
+  显式返回空 targets 而非除零；CJK 显示宽度用 `east_asian_width`
+  **近似**（如实标注，不声称逐字节一致）。
+- **一条必须挑明的上游语义**：强制迁移（`can_opt_out=false`）下 Enter
+  与 **Esc 都接受**，事件流耗尽也默认接受；可选模式下 `2` 才拒绝，且
+  Esc 是「确认当前选中」而非取消。这与本项目审批覆盖层「无输入 / Esc
+  绝不变成同意」的 fail-closed 契约**相反**。本轮原样保留上游既有键盘
+  策略，但用 `policy_note()` 显式标注并写进文档：只适用于模型升级提示，
+  **绝不套用到审批链路**。
+- **硬约束延续**：`configkit_validate()` 调用第 12 轮的
+  `corekit.app.assert_wiring_intact()`，确认 6 条既有安全接线
+  （权限策略注入 / deny-all / `ctx.confirm` / 审批卡片 / 副本确认 /
+  ABORT）仍全绿；`tuan tui parity` 仍显示「既有链路完好」。
+  **本轮没有替换任何现有运行时对象**。
+- 回归：`tests/test_tui_config_layer.py` **106 例**通过；
+  `test_tui_parity.py` / `test_tui_input_layer.py` /
+  `test_tui_core_app_layer.py` 指标同步到 10 / 93.9% / 55.8% / 21.2%，
+  派生一致性校验保留。
+- 下一轮：`streaming_async` + `tools_exec` + `history_transcript`（5），
+  再往后剩余 5 个清零，仍**保留现有安全接线**。
+
 
 
 ---

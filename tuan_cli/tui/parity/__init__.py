@@ -30,6 +30,11 @@ def parity_report() -> dict:
         ck = corekit.corekit_report()
     except Exception as exc:  # noqa: BLE001
         ck = {"error": f"{type(exc).__name__}: {exc}"}
+    try:
+        from .. import configkit
+        cfk = configkit.configkit_report()
+    except Exception as exc:  # noqa: BLE001
+        cfk = {"error": f"{type(exc).__name__}: {exc}"}
     return {
         "scale": dict(upstream_spec.SCALE),
         "layout": dict(upstream_spec.LAYOUT_CONSTANTS),
@@ -39,6 +44,7 @@ def parity_report() -> dict:
                  "translated_zh_CN": i18n.translated_count("zh-CN")},
         "inputkit": ik,
         "corekit": ck,
+        "configkit": cfk,
         "matrix": matrix.summary(),
         "groups": matrix.group_summary(),
     }
@@ -64,4 +70,9 @@ def parity_validate() -> list[str]:
         problems.extend(f"corekit: {p}" for p in corekit.corekit_validate())
     except Exception as exc:  # noqa: BLE001
         problems.append(f"corekit 自检不可用: {type(exc).__name__}: {exc}")
+    try:
+        from .. import configkit
+        problems.extend(f"configkit: {p}" for p in configkit.configkit_validate())
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"configkit 自检不可用: {type(exc).__name__}: {exc}")
     return problems
