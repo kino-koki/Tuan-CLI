@@ -464,6 +464,73 @@ items; see `TUI_PARITY.md` and `tuan tui parity`.
     state machine and event routing), **preserving the existing
     permission-policy injection and sandbox wiring**.
 
+  **Application-core alignment layer (2026-11-07, round 12):** all 9
+  pending modules in the `core_app` group are cleared. `tuan tui parity`
+  metrics: aligned 30 / localized 57 / n/a 63 / **pending 15**; broad
+  90.9%, strict 52.7%, **value-for-value 18.2%**; `fully_identical`
+  remains `false` (reported honestly).
+
+  - New `tuan_cli/tui/corekit/` (pure Python, zero Rust source) with 9
+    modules: `app` (32768 channel capacity / AppRunControl / ExitReason /
+    resumability), `app_backtrack` (six-step Esc/Enter state machine +
+    base_id invalidation), `app_command` (Redacted newtype / typed
+    commands / proof excluded from recording), `app_event` (typed events /
+    Ops not double-logged / classification enums), `app_event_sender`
+    (voice_only allowlist / swallowed errors / 10 convenience methods),
+    `app_info` (explicit wire-to-domain conversion with 15/6/11/1/3
+    fields), `chatwidget` (committed + active cell / cached live tail /
+    dual-lifecycle busy), `cli` (public vs skip flags / two approval
+    conflicts), `resize_reflow_cap` (1000/9001/3500/10000 caps /
+    tri-state / VS Code probe priority).
+  - **Three highest-value security contracts:**
+    1. **Redacted newtype.** Upstream keeps ICE credentials and spoken
+       answers out of diagnostics and session recordings (Debug and
+       Serialize both emit `<redacted>`; plaintext only at the signaling
+       boundary). Localization is stricter: repr / str / f-string /
+       to_dict / equality are all redacted, and `reveal()` is the ONLY
+       exit, with an audit counter.
+    2. **Approval conflicts fail closed.** `mark_tui_args` makes
+       "dangerously_bypass_approvals_and_sandbox" AND "auto_review"
+       conflict with "approval_policy". Silent coexistence would be a
+       configuration back door: the user thinks an approval policy is
+       set while a bypass switch swallows it. This round returns
+       structured problems and refuses startup; wired into
+       `corekit_validate()`.
+    3. **Existing security wiring protection (explicit requirement).**
+       `app.assert_wiring_intact()` really imports the pre-existing
+       modules and verifies SIX invariants: `build_permission_policy`
+       injection, `_DenyAllMCPPolicy` returning deny, the `ctx.confirm`
+       channel, `make_confirm_callable` card wiring, `confirm_apply`
+       copy-mode confirmation, and `ABORT` being an explicit decision
+       (no input / Esc can never become approval). It is wired into
+       `corekit_validate()`, `parity_validate()` and the regression
+       suite. **NO existing runtime object was replaced.**
+  - Two further correctness points: `bind_thread()` invalidates stale
+    selections and `confirm_revert()` re-checks the thread, preventing
+    a revert from session A landing on session B; chatwidget derives ONE
+    busy indicator from TWO independent lifecycles
+    (`agent_turn_running` and `mcp_startup_status`) so MCP startup
+    cannot be misreported as idle and trigger duplicate submissions.
+  - **Local security hardening (STRICTER than upstream):** bounded event
+    queue (reject + count when full), unknown event names excluded from
+    inbound logging, strict `app_info` field allowlist with http/https
+    URL validation, `SubmitThreadOp` without a thread id rejected, and
+    illegal resize limits failing closed to the conservative fallback.
+  - **Boundaries disclosed:** OpenAI-only capabilities (realtime voice,
+    cloud submission, connectors, plugins, daemon, worktrees) are
+    marked `not_applicable` / not implemented, with variant names kept
+    ONLY to keep the voice_only allowlist contract verifiable;
+    `MAX_REPLAY_TRANSCRIPT_CELLS` depends on an upstream constant with
+    no local counterpart, so the fallback uses an explicit local
+    default 1000 and `MAX_PENDING_TRANSCRIPT_CELLS=8` — neither is a
+    copied value.
+  - Regression: `tests/test_tui_core_app_layer.py` **76 cases** pass;
+    `test_tui_parity.py` metrics synced to 15 / 90.9% / 52.7% / 18.2%
+    with the derived-consistency checks retained.
+  - Next round: `config_models` + `misc` (5), then `streaming_async` +
+    `tools_exec` + `history_transcript` (5), **still preserving the
+    existing security wiring**.
+
 
 
 ---

@@ -256,6 +256,113 @@ THIRD-PARTY ATTRIBUTIONS
     Attribution for interactive strings is unchanged (see components 9
     and 10). OpenAI does not endorse or sponsor this project.
 
+12) Application-core alignment layer (tuan_cli/tui/corekit/)
+    Location: tuan_cli/tui/corekit/
+              {app, app_backtrack, app_command, app_event,
+               app_event_sender, app_info, chatwidget, cli,
+               resize_reflow_cap}.py
+    Origin:   functional contracts extracted from the Codex TUI source:
+              `codex-rs/tui/src/app.rs`, `app_backtrack.rs`,
+              `app_command.rs`, `app_event.rs`, `app_event_sender.rs`,
+              `app_info.rs`, `chatwidget.rs`, `cli.rs`,
+              `resize_reflow_cap.rs`
+    Upstream: https://github.com/openai/codex
+    Holder:   OpenAI (Copyright 2025 OpenAI)
+    License:  Apache License 2.0 (full text:
+              THIRD_PARTY_LICENSES/Codex-LICENSE.txt)
+
+    Verifiable facts aligned value-for-value:
+      - app.rs: THREAD_EVENT_CHANNEL_CAPACITY = 32768,
+        EXTERNAL_EDITOR_HINT = "Save and close external editor to
+        continue.", AppRunControl (Continue / Exit), ExitReason
+        (UserRequested / TurnInterrupted / Fatal),
+        AppExitInfo::fatal() clearing all other fields, and
+        rollout_path_is_resumable (exists + regular file + len > 0);
+      - app_backtrack.rs: the six-step Esc/Enter state machine
+        (prime -> browse -> select -> Ctrl+T details -> Esc restore ->
+        Enter revert), base_id invalidation on thread change,
+        usize::MAX "no selection", and both message constants;
+      - app_command.rs: RealtimeOfferSdp / RealtimeSpeechText whose Debug
+        and Serialize both emit "<redacted>" so ICE credentials and spoken
+        answers stay out of diagnostics and session recordings, with the
+        plaintext only recovered at the app-server signaling boundary;
+        CloudSubmissionIntent (UseKnownTurn / StartOrSteer / StartIfIdle);
+        UserVerificationResponse proof carrying serde(skip_serializing);
+      - app_event.rs: typed events, CodexOp excluded from inbound session
+        logging ("Avoid double-logging Ops"), ExitMode
+        (ShutdownFirst / ShutdownAfterInterrupt / Immediate),
+        FeedbackCategory (5), RunningTaskExitAction (3), SideStartMode;
+      - app_event_sender.rs: voice_only allowlist evaluated BEFORE inbound
+        logging (dropped events are not logged), send() swallowing channel
+        errors with an error log, and the typed convenience methods;
+      - app_info.rs: explicit conversion functions (not `From`, because
+        Rust orphan rules forbid it when the crate owns neither type),
+        with 15 / 6 / 11 / 1 / 3 fields destructured one by one;
+      - chatwidget.rs: committed cells plus an in-place mutable active
+        cell, a cached render-only live tail whose key changes when the
+        active cell mutates or output is time-dependent, and ONE busy
+        indicator derived from TWO independent lifecycles
+        (agent_turn_running and mcp_startup_status) via
+        update_task_running_state;
+      - cli.rs: #[clap(skip)] internal args separated from public flags,
+        and mark_tui_args making
+        "dangerously_bypass_approvals_and_sandbox" AND "auto_review"
+        conflict with "approval_policy";
+      - resize_reflow_cap.rs: VSCODE 1000, WINDOWS_TERMINAL 9001,
+        WEZTERM 3500, ALACRITTY 10000, Auto / Disabled / Limit tri-state
+        (None = user explicitly disabled row limiting), and the VS Code
+        environment probe taking priority over terminal-name metadata.
+
+    Modifications / localization (each listed, none hidden):
+      - tokio / crossterm / ratatui -> injectable Python sinks, bounded
+        queue, pure state machines, string transcript cells;
+      - Rust enum variants -> dataclass + Enum; usize::MAX -> NO_SELECTION
+        sentinel (-1) with identical semantics;
+      - English UI strings -> Chinese defaults with the English originals
+        retained for verification (project 10-language i18n unchanged);
+      - OpenAI-only capabilities (realtime voice, cloud submission,
+        connectors, plugins, daemon, worktrees) are marked
+        not_applicable / not implemented; variant names are kept ONLY so
+        the voice_only allowlist contract remains verifiable;
+      - upstream fallback constant comes from codex_config::types; this
+        project uses an explicit default of 1000 with configure_fallback()
+        injection, disclosed as a localization value, not a copied value;
+      - MAX_REPLAY_TRANSCRIPT_CELLS = MAX_PENDING_TRANSCRIPT_CELLS + 2 is
+        documented as an expression; MAX_PENDING_TRANSCRIPT_CELLS has no
+        local counterpart so an explicit local default of 8 is used.
+
+    Local security hardening (STRICTER than upstream, NOT a relaxation):
+      - Redacted hides plaintext from repr / str / format / to_dict /
+        equality as well as Debug / Serialize, and reveal() is the ONLY
+        exit with an audit counter (upstream PartialEq compares plaintext);
+      - CLI approval conflicts are returned as structured problems and
+        is_safe_to_start() refuses startup, instead of merely letting a
+        parser error out; two bypass switches together are also refused;
+      - app_info uses a STRICT field allowlist (dynamic Python dicts have
+        no compile-time type) and http/https URL validation, so unknown
+        server fields never leak into domain objects / UI / logs;
+      - AppEventSender uses a BOUNDED queue (upstream is unbounded) and
+        refuses unknown event names in inbound logging;
+      - validate_thread_op() rejects SubmitThreadOp without a thread id;
+        BacktrackState.bind_thread() invalidates stale selections and
+        confirm_revert() re-checks the thread, preventing cross-session
+        history reverts;
+      - resize_reflow_cap fails closed to the conservative fallback for
+        illegal Limit values instead of replaying unbounded rows.
+
+    EXISTING SECURITY WIRING PROTECTION (hard requirement of this round):
+      app.assert_wiring_intact() really imports the pre-existing project
+      modules and verifies SIX invariants: build_permission_policy()
+      injection, _DenyAllMCPPolicy returning deny, the ctx.confirm
+      channel, make_confirm_callable card wiring, confirm_apply copy-mode
+      confirmation, and ABORT being an explicit decision (no input / Esc
+      can never become approval). It is wired into corekit_validate(),
+      parity_validate() and the regression suite. NO existing runtime
+      object was replaced by this alignment layer.
+
+    NO Rust source is copied verbatim. OpenAI does not endorse or sponsor
+    this project.
+
 -------------------------------------------------------------------------------
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
@@ -268,7 +375,7 @@ LICENSE TEXTS
 -------------------------------------------------------------------------------
 
 Components 1-7 are under MIT; the full text is reproduced below.
-Components 9, 10 and 11 are under Apache License 2.0 (with component 11
+Components 9, 10, 11 and 12 are under Apache License 2.0 (with component 11
 carrying the additional ratatui MIT attribution noted above); their full license text and upstream
 NOTICE are reproduced verbatim in THIRD_PARTY_LICENSES/Codex-LICENSE.txt and
 THIRD_PARTY_LICENSES/Codex-NOTICE.txt respectively (Apache-2.0 section 4(a)/(c)

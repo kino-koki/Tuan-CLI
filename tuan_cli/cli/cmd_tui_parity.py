@@ -57,6 +57,14 @@ def cmd_tui_parity(args: Any) -> int:
         print(f"  输入层    : inputkit {ik['modules']} 个模块已对齐 "
               f"(第 11 轮: vim_search / activation / copy_guard / "
               f"custom_terminal / status / hyperlinks / viz_instructions)")
+    ck = report.get("corekit", {})
+    if isinstance(ck, dict) and "modules" in ck:
+        w = ck.get("security_wiring", {})
+        flag = "完好" if w.get("intact") else "异常"
+        print(f"  应用核心  : corekit {ck['modules']} 个模块已对齐 "
+              f"(第 12 轮: app / backtrack / command / event / sender / "
+              f"info / chatwidget / cli / resize_cap)")
+        print(f"  安全接线  : 既有链路{flag} · {len(w.get('checks', {}))} 项检查")
     print(f"  完全相同  : {'是' if m['fully_identical'] else '否'} "
           f"(还有 {m['pending']} 个模块待对齐)")
     if problems:
@@ -69,8 +77,9 @@ def cmd_tui_parity(args: Any) -> int:
         print(f"\n  待对齐队列 ({len(gaps)}):")
         for g, mod in gaps:
             print(f"    - {g:22s} {mod}")
-        print("\n  下一轮优先: core_app 组 9 个 (见 TUI_PARITY.md §5)")
-    print("\n  归属: NOTICE 第 9 条 · THIRD_PARTY_LICENSES/ · TUI_PARITY.md")
+        print("\n  下一轮优先: config_models + misc / streaming_async "
+              "组 (见 TUI_PARITY.md §5)")
+    print("\n  归属: NOTICE 第 9–12 条 · THIRD_PARTY_LICENSES/ · TUI_PARITY.md")
     return 1 if problems else 0
 
 

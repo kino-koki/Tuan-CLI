@@ -42,6 +42,7 @@ Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」*
 | R20 | E1/E7 只有后端 API，没有审批卡片；`ctx.confirm` 缺失的 headless 场景直接失败 | 新增 `ui/approval_overlay.py`（借鉴 Codex TUI 交互契约，等价移植、非 Rust 源码复制）：结构化审批卡片 + 显式决策事件 + Esc=Abort；E1 `request_grant()` 呈现完整权限域，E7 `confirm_apply()` 接 `card_renderer`，无 TUI 时提供同样要求显式决策的 headless 默认通道（精确确认码 + 非 TTY 即 ABORT）。**fail-closed 未放宽** |
 | R21 | 文档把 Codex TUI 规模写成 567 个 `.rs` / 24.7 万行（来自不完整 sparse 解压）；且「与 Codex 完全相同」无度量口径 | 完整解压后更正为 165 模块 / 1216 `.rs` / 492414 行；新增 `tuan_cli/tui/parity/` 对齐层（组件树 / 键位 / 布局 / 文案 / 矩阵）、`tuan tui parity` 命令与 `TUI_PARITY.md`，把「完全相同」拆成可核销维度。**逐值对齐仅 8.5%、pending 31，如实标注 `fully_identical=false`** |
 | R22 | 终端 OSC 序列被解释执行，而上游 `terminal_hyperlinks::web()` 不校验目的地、`terminal_program_status` 直接 `execute!(stdout())`；且 `input_keymap` 组 7 个模块仍未对齐 | 新增 `tui/inputkit/` 7 模块：`web()` http/https 白名单 + OSC/BEL 拦截 + 8192 字节上限、`TrustedWorkspaceFile` canonicalize 逃逸/symlink/隐藏目录拒绝、状态发射默认 no-op writer 且 detail 先净化转义、RAII 守卫异常路径也释放、双缓冲 diff 与同步帧。指标 pending 31→24、逐值对齐 8.5%→12.7%，**如实保持 `fully_identical=false`** |
+| R23 | `core_app` 组 9 个模块未对齐；且上游诊断/录制若直接携带 SDP（含 ICE 凭据）或语音文本即泄漏，CLI 里「绕过审批」与「指定审批策略」静默共存会形成配置侧门；线程切换后旧回退选择可能跨会话生效 | 新增 `tui/corekit/` 9 模块：`Redacted` 全链路脱敏（`reveal()` 唯一出口带计数）、`UserVerificationResponse.proof` 不进录制、`cli` 两条审批冲突 fail-closed、`app_info` 严格字段白名单 + http/https 校验、有界事件队列、空 thread_id 拒绝、`bind_thread()` 失效 + revert 二次校验、双生命周期 busy。**`app.assert_wiring_intact()` 真实 import 验证 6 条既有安全接线（权限策略注入 / deny-all / ctx.confirm / 审批卡片 / 副本确认 / ABORT）并接入三层自检**，本轮未替换任何现有运行时对象。指标 pending 24→15、逐值对齐 12.7%→18.2%，**如实保持 `fully_identical=false`** |
 
 回归：`tests/test_fail_closed_regressions.py`（37 例）、`tests/test_e2_e5_hardening.py`（16 例）、
 `tests/test_e6_e8_hardening.py`（21 例）、`tests/test_e3_jobobject.py`（25 例）、
@@ -50,7 +51,9 @@ Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」*
 `bench/indep_verify.py`（29 例）；沙箱 / 权限 / 配置批次 156 例，
 安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
 审批覆盖层与 E1/E7 接线 102 例、输入层 `test_tui_input_layer.py` 88 例、
-对齐矩阵 `test_tui_parity.py` 85 例通过。
+应用核心 `test_tui_core_app_layer.py` 76 例、
+对齐矩阵 `test_tui_parity.py` 85 例通过；`tuan tui parity` 显示
+「安全接线：既有链路完好 · 6 项检查」。
 
 ```bash
 python -m pytest tests/test_fail_closed_regressions.py tests/test_e2_e5_hardening.py -q

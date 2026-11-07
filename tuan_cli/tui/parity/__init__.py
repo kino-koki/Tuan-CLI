@@ -25,6 +25,11 @@ def parity_report() -> dict:
         ik = inputkit.inputkit_report()
     except Exception as exc:  # noqa: BLE001 - 报告不能因可选层失败而崩
         ik = {"error": f"{type(exc).__name__}: {exc}"}
+    try:
+        from .. import corekit
+        ck = corekit.corekit_report()
+    except Exception as exc:  # noqa: BLE001
+        ck = {"error": f"{type(exc).__name__}: {exc}"}
     return {
         "scale": dict(upstream_spec.SCALE),
         "layout": dict(upstream_spec.LAYOUT_CONSTANTS),
@@ -33,6 +38,7 @@ def parity_report() -> dict:
                  "total_keys": i18n.total_keys(),
                  "translated_zh_CN": i18n.translated_count("zh-CN")},
         "inputkit": ik,
+        "corekit": ck,
         "matrix": matrix.summary(),
         "groups": matrix.group_summary(),
     }
@@ -53,4 +59,9 @@ def parity_validate() -> list[str]:
         problems.extend(f"inputkit: {p}" for p in inputkit.inputkit_validate())
     except Exception as exc:  # noqa: BLE001
         problems.append(f"inputkit 自检不可用: {type(exc).__name__}: {exc}")
+    try:
+        from .. import corekit
+        problems.extend(f"corekit: {p}" for p in corekit.corekit_validate())
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"corekit 自检不可用: {type(exc).__name__}: {exc}")
     return problems

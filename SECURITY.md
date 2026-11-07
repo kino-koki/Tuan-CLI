@@ -372,6 +372,55 @@ n/a 63 / **pending 24**，宽口径 85.5%、严格 47.3%、**逐值对齐 12.7%*
 - 下一轮：`core_app` 组 9 个（`app_event` / `chatwidget` 状态机与事件路由），
   **保留现有权限策略注入与沙箱接线**。
 
+**应用核心对齐层（2026-11-07，第 12 轮）**：`core_app` 组 9 个待办全部清零，
+`tuan tui parity` 指标更新为 aligned 30 / localized 57 / n/a 63 /
+**pending 15**，宽口径 90.9%、严格 52.7%、**逐值对齐 18.2%**，
+`fully_identical` 仍为 `false`（如实）。
+
+- 新增 `tuan_cli/tui/corekit/`（纯 Python，零 Rust 源码复制）9 个模块：
+  `app`（32768 通道容量 / AppRunControl / ExitReason / 可恢复判定）、
+  `app_backtrack`（六步 Esc/Enter 状态机 / `base_id` 变更失效）、
+  `app_command`（Redacted newtype / 命令类型化 / proof 不进录制）、
+  `app_event`（类型化事件 / Ops 不双记 / 分类枚举）、
+  `app_event_sender`（voice_only 白名单 / 吞错记日志 / 10 个便捷方法）、
+  `app_info`（wire→domain 显式转换 / 15·6·11·1·3 字段）、
+  `chatwidget`（committed + active cell / live tail 缓存 / 双生命周期 busy）、
+  `cli`（公开/内部 flag 分离 / 两条审批冲突）、
+  `resize_reflow_cap`（1000·9001·3500·10000 四档 / 三态 / VSCode probe 优先）。
+- **三条最值钱的安全契约**：
+  1. **脱敏 newtype**：上游把 ICE 凭据与语音文本排除在诊断/会话录制外
+     （Debug / Serialize 恒 `<redacted>`，明文只在信令边界还原）。本地化
+     更严：`repr` / `str` / f-string / `to_dict` / `==` 全脱敏，
+     `reveal()` 是唯一出口且带调用计数。
+  2. **审批冲突 fail-closed**：`mark_tui_args` 让「危险绕过审批与沙箱」
+     与 `approval_policy`、`auto_review` 与 `approval_policy` 互斥。若
+     静默共存就是「以为设了审批策略、实际被绕过开关吃掉」的配置侧门。
+     本轮做成结构化拒绝，并接入 `corekit_validate()`。
+  3. **既有安全接线保护**（用户明确要求）：`app.assert_wiring_intact()`
+     真实 import 现有模块，逐项验证 6 条 —— `build_permission_policy`
+     注入、`_DenyAllMCPPolicy` 返回 deny、`ctx.confirm` 通道、
+     `make_confirm_callable` 卡片接线、`confirm_apply` 副本确认、
+     `ABORT` 显式决策（无输入 / Esc 绝不变成同意）。它接入
+     `corekit_validate()` / `parity_validate()` / 回归集，**任何为对齐而
+     重写入口的改动会先被测试拦下**。本轮**没有替换任何现有运行时对象**。
+- 另外两条正确性修复点：`bind_thread()` 在线程变化时强制作废旧选择、
+  `confirm_revert()` 二次校验线程（防 A 会话的 revert 落到 B 会话）；
+  chatwidget 的 `agent_turn_running` 与 `mcp_startup_status` 两个独立
+  生命周期派生单一 busy 指示器（防 MCP 启动期间误报空闲导致重复提交）。
+- **本地化安全增强（比上游更严格）**：有界事件队列（满则拒绝计数）、
+  未知事件名不进 inbound 日志、`app_info` 严格字段白名单 + http/https
+  URL 校验、空 thread_id 的 `SubmitThreadOp` 直接拒绝、非法重排上限
+  fail-closed 回退保守 fallback。
+- **如实边界**：OpenAI 专属（实时语音、云提交、连接器、插件、daemon、
+  worktree）标 `not_applicable` / 未实现，仅保留变体名供白名单契约核验；
+  `MAX_REPLAY_TRANSCRIPT_CELLS` 的上游依赖常量本地不存在，fallback
+  取显式本地默认 1000、`MAX_PENDING_TRANSCRIPT_CELLS=8`，均非逐值复制。
+- 回归：`tests/test_tui_core_app_layer.py` **76 例**通过；
+  `test_tui_parity.py` 指标同步到 15 / 90.9% / 52.7% / 18.2%，派生
+  一致性校验保留。
+- 下一轮：`config_models` + `misc`（5）与 `streaming_async` +
+  `tools_exec` + `history_transcript`（5），仍**保留现有安全接线**。
+
 
 
 ---

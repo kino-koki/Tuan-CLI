@@ -53,6 +53,16 @@ EXPLICIT_ALIGNED: Dict[str, str] = {
     "terminal_hyperlinks": "tui/inputkit/terminal_hyperlinks.py — 工作区逃逸校验 / OSC8 不影响几何",
     "terminal_visualization_instructions":
         "tui/inputkit/terminal_visualization_instructions.py — feature gate / 指令拼接（中文）",
+    # ---- 第 12 轮：core_app 组 9 个待对齐模块，逐模块有实现+回归
+    "app": "tui/corekit/app.py — 32768 容量 / AppRunControl / ExitReason / 既有安全接线保护",
+    "app_backtrack": "tui/corekit/app_backtrack.py — 六步 Esc/Enter 状态机 / base_id 变更失效",
+    "app_command": "tui/corekit/app_command.py — Redacted newtype / 命令类型化 / proof 不进录制",
+    "app_event": "tui/corekit/app_event.py — 类型化事件 / Ops 不双记 / ExitMode 等分类",
+    "app_event_sender": "tui/corekit/app_event_sender.py — voice_only 白名单 / 吞错记日志 / 便捷方法",
+    "app_info": "tui/corekit/app_info.py — wire→domain 显式转换 / 15·6·11·1·3 字段白名单",
+    "chatwidget": "tui/corekit/chatwidget.py — committed+active cell / live tail / 双生命周期 busy",
+    "cli": "tui/corekit/cli.py — 公开/内部 flag 分离 / 两条审批冲突 fail-closed",
+    "resize_reflow_cap": "tui/corekit/resize_reflow_cap.py — 1000/9001/3500/10000 四档 / 三态 / VSCode probe 优先",
 }
 
 EXPLICIT_LOCALIZED: Dict[str, str] = {
