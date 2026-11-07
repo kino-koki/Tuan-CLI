@@ -177,4 +177,44 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
             _bool_field(errors, "mcp.policy.enabled", pol.get("enabled"),
                         dangerous_when_false="MCP 信任分级整体关闭, 未登记 server 将由外层一刀切放行")
 
+    # B1 / 超 Claude Code v2.1.319: hook 故障策略决定「闸门坏了是关门还是
+    # 开门」。HookManager 对未知值会回退最严格档 block，所以这里必须在
+    # 配置阶段就拦住拼写错误；显式 allow 是逃生口，必须作为安全降级可见。
+    hk = get("hooks")
+    if hk is not None and not isinstance(hk, dict):
+        errors.append(f"类型错误: hooks 应为配置字典, 实际为 {type(hk).__name__}")
+    elif isinstance(hk, dict):
+        of = hk.get("on_failure")
+        if of is not None:
+            if not isinstance(of, str) or of.strip().lower() not in (
+                    "block", "ask", "allow"):
+                errors.append(
+                    f"非法枚举: hooks.on_failure={of!r} 不在 "
+                    f"('block', 'ask', 'allow') 中 (HookManager 会回退 block, "
+                    f"但拼写错误不应静默)")
+            elif of.strip().lower() == "allow":
+                warnings.append(
+                    "安全降级: hooks.on_failure=allow 使 hook 故障静默放行; "
+                    "CC 的 onFailure:'block' 需逐条显式配置, 本项目默认闭合")
+        for evt in ("PreToolUse", "PostToolUse"):
+            specs = hk.get(evt)
+            if specs is None:
+                continue
+            if not isinstance(specs, (list, tuple)):
+                errors.append(
+                    f"类型错误: hooks.{evt} 应为 hook 列表, 实际为 "
+                    f"{type(specs).__name__}")
+                continue
+            for i, spec in enumerate(specs):
+                if not isinstance(spec, dict):
+                    errors.append(f"hooks.{evt}[{i}] 不是 dict, 该 hook 会被跳过")
+                    continue
+                p_of = spec.get("on_failure")
+                if p_of is not None and (
+                        not isinstance(p_of, str)
+                        or p_of.strip().lower() not in ("block", "ask", "allow")):
+                    errors.append(
+                        f"非法枚举: hooks.{evt}[{i}].on_failure={p_of!r} "
+                        f"(应为 block / ask / allow)")
+
     return errors, warnings

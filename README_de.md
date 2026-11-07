@@ -1,7 +1,7 @@
-﻿# Tuan-CLI
+# Tuan-CLI
 
 > **„Model + Harness = Agent."** — Trenne „wie denken" von „wie sicher ausführen" und bekomm beide Schlüssel.
-> Ein sicherheitsorientiertes, modellneutrales, rein-python Agent-Harness. `v0.3.4` · MIT · Python ≥ 3.10
+> Ein sicherheitsorientiertes, modellneutrales, rein-python Agent-Harness. `v0.3.3` · MIT · Python ≥ 3.10
 
 > ### Positionierung: ein Sicherheits-agent — ohne Entwickler-Erlebnis zu opfern
 >
@@ -28,7 +28,7 @@
 
 Die Kernidee: **das Modell denkt, der Harness lässt es sicher und kontrolliert laufen.** Tuan-CLI trennt „das Modell" von „dem Host": Hot-Swap zwischen vielen Anbietern, komplett offline laufen, zerstörerische Fehler zurückrollen und den Wirkradius *bevor* der Befehl schießt sehen. Ziel ist ein vernünftig neutraler, selbst hostbarer Terminal-Agent — kein gefangener Wrapper um einen einzelnen Anbieter.
 
-**Was es NICHT ist**: kein gefangener Wrapper um ein Modell (Hot-Swap / Self-Host / Offline, ganz wie du willst); kein Handlanger eines IDEs (es ist ein Terminal-Tool, per ACP steuerbar von VSCode/Zed/JetBrains); keine einzelne leakige Abstraktion (Plugin-Container-Architektur für Bastler, dazu ein einmaliges `setup` für alle anderen).
+**Was es NICHT ist**: kein gefangener Wrapper um ein Modell (Hot-Swap / Self-Host / Offline, ganz wie du willst); kein Handlanger eines IDEs (es ist ein Terminal-Tool, per ACP steuerbar von VSCode/Zed/JetBrains); keine einzelne leakige Abstraktion (Microkernel-Plugin-Architektur für Bastler, dazu ein einmaliges `setup` für alle anderen).
 
 ---
 
@@ -40,7 +40,7 @@ Die Kernidee: **das Modell denkt, der Harness lässt es sicher und kontrolliert 
 | 🎯 **Entwickler-Erlebnis** | Harmlose Dev-Befehle passieren ohne Bestätigung, `/undo` hat deinen Rücken, 40+ Slash-Befehle, `tuan safe allow` für explizite Opt-outs, YOLO für Wiederholungen |
 | 🔌 **Modellneutral** | 58 Anbieter + lokales Ollama + Hot-Swap zur Laufzeit + automatisches Routing (`router.*`) |
 | 🧠 **Drei Hauptschleifen** | ReAct / Planner-Execute / DevLoop — austauschbar; ein Kernel, verschiedene „Denkrhythmen" |
-| 🔧 **Plugin-Container** | Einzeiliges `@plugin`, Service-Registry, append-only Event-Bus, Hook-Middleware |
+| 🔧 **Microkernel** | Einzeiliges `@plugin`, Service-Registry, append-only Event-Bus, Hook-Middleware |
 | 🗂️ **Gedächtnis** | SQLite FTS5 + Session-Event-Stream; dreistufiger Speicher, `/undo`, Checkpoint, Replay, Trajectory-Export |
 | 🧩 **Ökosystem** | MCP + ACP + **Claude Code / Hermes Agent Interop**: Skills / benannte Agents / Memory / SOUL / MCP-Configs laufen beide Wege (`tuan ecosystem`), ab Werk |
 | 🌍 **Zehn Sprachen** | zh-CN als Default, echte Lokalisierung der ganzen Oberfläche |
@@ -86,11 +86,11 @@ class MyTool(Plugin):
 
 ## Versionsnummer
 
-**Warum `0.3.4` und nicht `1.0`?** Ehrliche [SemVer](https://semver.org/)-Semantik: **eine `0.x`-Version bedeutet, dass die öffentliche API (CLI-Oberfläche, Konfigurationsschema, Tool-Protokoll, Plugin-Vertrag) noch nicht eingefroren ist** und sich zwischen Releases noch ändern kann. Tuan-CLI bietet bereits einen breiten Funktionsumfang — Sicherheits-Gating / transaktionales Rollback, modellneutraler Hot-Swap (58 Anbieter + lokales Ollama), drei Hauptschleifen, Plugin-Container-Architektur, dreistufiger Speicher, Ökosystem-Interop (MCP / ACP / Claude Code / Hermes-Brücke), Subagents & Swarm, Cron & Hintergrundaufgaben, Goal-Modus & präzise Berechtigungen — alles durch Tests abgedeckt. Aber **die Versionsnummer spiegelt die Stabilität der Schnittstelle, nicht die Vollständigkeit der Funktionen**: ein vollständiger Funktionsumfang heißt nicht, dass die API eingefroren werden sollte. `1.0` ist für den Zeitpunkt reserviert, an dem die öffentliche API wirklich stabil ist und wir Rückwärtskompatibilität zusagen können. Bis dahin: Breaking Changes heben MINOR innerhalb von `0.x` (mit Migrationshinweisen), kompatible Funktionen MINOR, Fixes PATCH (siehe [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Warum `0.3.3` und nicht `1.0`?** Ehrliche [SemVer](https://semver.org/)-Semantik: **eine `0.x`-Version bedeutet, dass die öffentliche API (CLI-Oberfläche, Konfigurationsschema, Tool-Protokoll, Plugin-Vertrag) noch nicht eingefroren ist** und sich zwischen Releases noch ändern kann. Tuan-CLI bietet bereits einen breiten Funktionsumfang — Sicherheits-Gating / transaktionales Rollback, modellneutraler Hot-Swap (58 Anbieter + lokales Ollama), drei Hauptschleifen, Microkernel-Plugin-Architektur, dreistufiger Speicher, Ökosystem-Interop (MCP / ACP / Claude Code / Hermes-Brücke), Subagents & Swarm, Cron & Hintergrundaufgaben, Goal-Modus & präzise Berechtigungen — alles durch Tests abgedeckt. Aber **die Versionsnummer spiegelt die Stabilität der Schnittstelle, nicht die Vollständigkeit der Funktionen**: ein vollständiger Funktionsumfang heißt nicht, dass die API eingefroren werden sollte. `1.0` ist für den Zeitpunkt reserviert, an dem die öffentliche API wirklich stabil ist und wir Rückwärtskompatibilität zusagen können. Bis dahin: Breaking Changes heben MINOR innerhalb von `0.x` (mit Migrationshinweisen), kompatible Funktionen MINOR, Fixes PATCH (siehe [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Versionssemantik | Bedeutung |
 |---|---|
-| `0.3.4` (aktuell) | **API noch nicht eingefroren**: `0.x` erlaubt Breaking-Anpassungen, angekündigt mit Migrationshinweisen; keine Rückwärtskompatibilität zugesagt |
+| `0.3.3` (aktuell) | **API noch nicht eingefroren**: `0.x` erlaubt Breaking-Anpassungen, angekündigt mit Migrationshinweisen; keine Rückwärtskompatibilität zugesagt |
 | `1.0` (reserviert) | Wird aktiviert, sobald die öffentliche API eingefroren ist und Rückwärtskompatibilität zugesagt wird; erst dann heben Breaking Changes MAJOR (`2.0`) |
 
 ---
@@ -136,7 +136,7 @@ tuan --print run "Hallo, stell dich in einem Satz vor."
 
 ---
 
-## Kommandofläche: 50 Kern-Subcommands + Slash-Befehle
+## Kommandofläche: 51 Kern-Subcommands + Slash-Befehle
 
 | Befehl | Wofür |
 |---|---|
@@ -258,7 +258,7 @@ tuan --print run "Hallo. Eine Zeile." # Smoke
 ```
 
 - **i18n-Disziplin**: README_zh-CN ist die maßgebliche Master-Version; jede Sprache ist eine lebendige, driftfreie Lokalisierung — **keine maschinelle Übersetzung.**
-- **Version**: `v0.3.4` (eine `0.x`-Linie — die API ist noch nicht eingefroren); Breaking-Anpassungen mit Vorankündigung + Migrationshinweisen, `1.0` ist für den API-Freeze reserviert.
+- **Version**: `v0.3.3` (eine `0.x`-Linie — die API ist noch nicht eingefroren); Breaking-Anpassungen mit Vorankündigung + Migrationshinweisen, `1.0` ist für den API-Freeze reserviert.
 - **Tiefgang**: Engine-Signaturen und ein Schritt-für-Schritt-Tool-Walkthrough stehen im Anhang von `README_zh-CN.md`.
 
 ---

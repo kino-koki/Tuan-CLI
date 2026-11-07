@@ -2,11 +2,23 @@
 
 设计目标: 把 Agent 变成"可编排的", 同时把安全边界钉死:
 - command 必须是 list(argv), 拒绝裸字符串 (无 shell 注入面)。
-- 超时强杀 (看门狗线程 + 进程树强杀), 异常 fail-safe (不阻断、只记录)。
-  Windows 上 subprocess.run 的 timeout 杀进程并不可靠 (sleep 类子进程无法被及时回收,
-  导致 communicate() 永远阻塞); 故改用独立看门狗线程在超时后强制 taskkill /T 整棵树。
-- PreToolUse 阻断 / 改写参数 需显式声明 (blocking / allow_edit_args),
-  全局 allow_blocking / allow_edit_args 可一键关闭。
+- 超时强杀 (看门狗线程 + 进程树强杀)。Windows 上 subprocess.run 的 timeout
+  杀进程并不可靠 (sleep 类子进程无法被及时回收, 导致 communicate() 永远阻塞);
+  故改用独立看门狗线程在超时后强制 taskkill /T 整棵树。
+- **故障默认闭合 (B1 / 超 Claude Code v2.1.319)**: hook 的 spawn 失败、
+  超时、异常、无模型/无内核、非零退出全部记入 ``failures()``；对
+  ``PreToolUse`` 默认 ``on_failure="block"`` 直接阻断并给出结构化原因。
+  对标 CC 的 ``onFailure:"block"`` —— 但在 CC 里那是**用户逐条 hook
+  显式配置**的选项, 旧行为是静默 fail-open；这里把它做成出厂默认。
+  可用 ``hooks.on_failure`` (全局) 或单条 hook 的 ``on_failure`` 覆盖为
+  ``ask`` / ``allow``，未知取值一律回退最严格档并记审计。
+- **阻断默认生效**: ``blocking`` 由 False 改为 True。此前 hook 返回
+  ``{"block": true}`` 时若未显式写 ``blocking: true`` 会被吞掉只记一条
+  ``block_denied``，是第二个配置侧门。仍可显式 ``blocking: false`` 关闭。
+  注意: ``blocking`` 只管 hook **自己返回的** block 决策，**不管**
+  执行失败的 fail-closed —— 失败阻断不受该开关影响。
+- 通知类事件 (PostToolUse / Stop / Session* / UserPromptSubmit) 没有
+  action 可阻断, 失败**只留痕不卡住主回合**；``failures()`` 可查询。
 - 所有调用写入审计事件 hook.executed (供 self-improve / 观测订阅)。
 """
 
@@ -24,6 +36,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 log = logging.getLogger(__name__)
+
+# hook 故障策略 (B1)。"block" 最严格且为出厂默认；"ask" 同样阻断但标注
+# 需人工确认；"allow" 是显式逃生口, 会记 failure_allowed 审计。
+ON_FAILURE_POLICIES = ("block", "ask", "allow")
+DEFAULT_ON_FAILURE = "block"
 
 # 受支持的 hook 事件类型 (对标 Claude Code 的 hooks 事件面)
 # - PreToolUse / PostToolUse: 工具执行前后 (支持 matcher 过滤, Pre 可阻断/改参)
@@ -50,13 +67,36 @@ _NOTIFY_EVENTS = ("Stop", "SubagentStop", "PreCompact", "SessionStart", "Session
 class HookDecision:
     """PreToolUse 的返回决策。
 
-    block=True 时主流程中止执行 (仅当 hook 声明 blocking 且全局允许)。
+    block=True 时主流程中止执行 (hook 自身决策需 blocking 且全局允许；
+    **执行失败导致的 fail-closed 不受该开关影响**)。
     args 非空时改写即将执行的工具参数 (仅当允许改参)。
+    failure_kind 非空表示这次阻断来自 hook 故障而非 hook 主动 block。
     """
 
     block: bool = False
     reason: str = ""
     args: Optional[Dict[str, Any]] = None
+    failure_kind: str = ""
+
+
+@dataclass(frozen=True)
+class HookFailure:
+    """一次 hook 执行失败的结构化记录 (可查询、可审计、可回放)。"""
+
+    uid: str
+    event: str
+    hook_type: str
+    kind: str          # invalid_spec / spawn_error / timeout / error /
+                       # nonzero_rc / http_error / no_kernel / no_model
+    detail: str
+    tool_name: str = ""
+    ts: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"uid": self.uid, "event": self.event,
+                "hook_type": self.hook_type, "kind": self.kind,
+                "detail": self.detail, "tool_name": self.tool_name,
+                "ts": self.ts}
 
 
 @dataclass
@@ -82,6 +122,7 @@ class _HookSpec:
     url: str = ""  # HTTP hook URL
     prompt_text: str = ""  # Prompt hook 的模板文本
     model_override: str = ""  # Prompt/Subagent hook 可覆盖模型
+    on_failure: str = ""      # 单条覆盖全局 hooks.on_failure；空 = 用全局
 
     @property
     def uid(self) -> str:
@@ -108,6 +149,11 @@ class HookManager:
         self.allow_edit_args = False
         self.audit_log = True
         self._specs: List[_HookSpec] = []
+        # B1: 故障闭合默认策略 + 有界失败记录 + 线程局部「最近一次失败」
+        self.on_failure = DEFAULT_ON_FAILURE
+        self._failures: List[HookFailure] = []
+        self._max_failures = 200
+        self._tls = threading.local()
 
         hooks_cfg = self._read_cfg(config)
         if hooks_cfg is None:
@@ -118,6 +164,15 @@ class HookManager:
         self.allow_blocking = bool(hooks_cfg.get("allow_blocking", True))
         self.allow_edit_args = bool(hooks_cfg.get("allow_edit_args", False))
         self.audit_log = bool(hooks_cfg.get("audit_log", True))
+        raw_policy = str(hooks_cfg.get("on_failure", DEFAULT_ON_FAILURE)
+                         or DEFAULT_ON_FAILURE).strip().lower()
+        if raw_policy not in ON_FAILURE_POLICIES:
+            # 未知策略绝不静默接受 —— 回退最严格档并留痕
+            self._audit("config", {"on_failure": raw_policy},
+                        "invalid_on_failure",
+                        f"未知 on_failure={raw_policy!r}, 回退 {DEFAULT_ON_FAILURE}")
+            raw_policy = DEFAULT_ON_FAILURE
+        self.on_failure = raw_policy
 
         for evt in HOOK_EVENTS:
             for item in hooks_cfg.get(evt, []) or []:
@@ -192,12 +247,20 @@ class HookManager:
         except (TypeError, ValueError):
             timeout = self.default_timeout
 
+        # 单条 hook 可覆盖全局故障策略；未知值忽略并用全局, 不静默接受
+        per_hook = str(item.get("on_failure", "") or "").strip().lower()
+        if per_hook and per_hook not in ON_FAILURE_POLICIES:
+            self._audit(event, item, "invalid_on_failure",
+                        f"单条 hook 未知 on_failure={per_hook!r}, 忽略并用全局策略")
+            per_hook = ""
+
         return _HookSpec(
             event=event,
             matcher=str(item.get("matcher", "*") or "*"),
             command=cmd,
             timeout=max(0.1, timeout),
-            blocking=bool(item.get("blocking", False)),
+            # B1: 阻断默认生效。此前默认 False 会吞掉 hook 返回的 block。
+            blocking=bool(item.get("blocking", True)),
             allow_edit_args=bool(item.get("allow_edit_args", False)),
             description=str(item.get("description", "")),
             raw=item,
@@ -205,6 +268,7 @@ class HookManager:
             url=url,
             prompt_text=prompt_text,
             model_override=model_override,
+            on_failure=per_hook,
         )
 
     # ------------------------------------------------------------------ 匹配
@@ -260,6 +324,29 @@ class HookManager:
                 "dangerous": dangerous,
                 "impact": impact,
             })
+            failure = getattr(self._tls, "last_failure", None)
+            failed_run = (out is None or
+                          (isinstance(out, str) and not out.strip()))                 and failure is not None
+            if failed_run:
+                # B1: hook 故障默认闭合。CC 需逐条显式 onFailure:"block"。
+                # blocking 开关只影响 hook 自己返回的 block, 不影响这里。
+                policy = spec.on_failure or self.on_failure
+                reason = (
+                    f"hook 执行失败 (fail-closed, on_failure={policy}): "
+                    f"event={spec.event} hook={spec.uid} "
+                    f"kind={failure.kind} detail={failure.detail}")
+                if policy == "ask":
+                    reason += " [需人工确认]"
+                if policy in ("block", "ask"):
+                    decision.block = True
+                    decision.reason = reason
+                    decision.failure_kind = failure.kind
+                    self._audit("PreToolUse", spec.raw, "failure_blocked", reason)
+                    return decision
+                # policy == "allow": 显式逃生口, 必须留痕
+                self._audit("PreToolUse", spec.raw, "failure_allowed",
+                            f"on_failure=allow 放行 ({failure.kind})")
+                continue
             if out is None:
                 continue
             parsed = self._parse_decision(out)
@@ -345,6 +432,39 @@ class HookManager:
 
     # ------------------------------------------------------------------ 底层
 
+    def _record_failure(self, spec: _HookSpec, kind: str, detail: str,
+                        tool_name: str = "") -> None:
+        """记录一次 hook 执行失败 (线程局部 + 有界历史 + 审计)。
+
+        绝不抛异常：记录失败本身不能把 hook 流水线弄崩。
+        """
+        rec = HookFailure(
+            uid=spec.uid, event=spec.event, hook_type=spec.hook_type,
+            kind=kind, detail=str(detail)[:400], tool_name=tool_name,
+            ts=time.time(),
+        )
+        try:
+            self._tls.last_failure = rec
+        except Exception:  # noqa: BLE001
+            pass
+        self._failures.append(rec)
+        if len(self._failures) > self._max_failures:
+            self._failures = self._failures[-self._max_failures:]
+        self._audit(spec.event, spec.raw, "failed", f"{kind}: {detail}")
+
+    def failures(self) -> List[Dict[str, Any]]:
+        """返回本实例的 hook 失败记录 (只读副本)。"""
+        return [f.to_dict() for f in list(self._failures)]
+
+    def clear_failures(self) -> None:
+        """清空失败记录 (供测试/运维显式重置)。"""
+        self._failures.clear()
+        self._tls.last_failure = None
+
+    def on_failure_policy(self) -> str:
+        """当前全局故障策略 (block / ask / allow)。"""
+        return self.on_failure
+
     def _exec(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
         """执行单条 hook, 返回结果文本; 超时/异常返回 None。
 
@@ -353,7 +473,11 @@ class HookManager:
         - url: HTTP POST (发送 JSON, 读取响应)
         - prompt: LLM prompt (调用模型, 返回模型输出)
         - subagent: 子代理 (创建隔离 Agent, 返回摘要)
+
+        B1: 每次派发前清空「最近一次失败」，执行器在失败时调用
+        ``_record_failure``。调用方据此做 fail-closed 判定。
         """
+        self._tls.last_failure = None
         if spec.hook_type == "url":
             return self._exec_http(spec, payload)
         elif spec.hook_type == "prompt":
@@ -375,6 +499,7 @@ class HookManager:
         if not spec.command or not isinstance(spec.command, (list, tuple)):
             self._audit(spec.event, spec.raw, "rejected_empty_command",
                         "hook command 为空或非列表")
+            self._record_failure(spec, "invalid_spec", "hook command 为空或非列表")
             return None
 
         try:
@@ -388,15 +513,19 @@ class HookManager:
                 start_new_session=(os.name != "nt"),  # POSIX 独立会话: 强杀不波及父进程组
             )
         except FileNotFoundError:
-            self._audit(spec.event, spec.raw, "spawn_error",
-                        f"命令未找到: {spec.command[0] if spec.command else '<empty>'}")
+            d = f"命令未找到: {spec.command[0] if spec.command else '<empty>'}"
+            self._audit(spec.event, spec.raw, "spawn_error", d)
+            self._record_failure(spec, "spawn_error", d)
             return None
         except PermissionError as exc:
-            self._audit(spec.event, spec.raw, "spawn_error",
-                        f"权限不足: {exc}")
+            d = f"权限不足: {exc}"
+            self._audit(spec.event, spec.raw, "spawn_error", d)
+            self._record_failure(spec, "spawn_error", d)
             return None
         except Exception as exc:  # noqa: BLE001
-            self._audit(spec.event, spec.raw, "spawn_error", f"{type(exc).__name__}: {exc}")
+            d = f"{type(exc).__name__}: {exc}"
+            self._audit(spec.event, spec.raw, "spawn_error", d)
+            self._record_failure(spec, "spawn_error", d)
             return None
 
         killed: list[bool] = []
@@ -407,8 +536,11 @@ class HookManager:
                 return
             killed.append(True)
             self._kill_tree(proc)
-            self._audit(spec.event, spec.raw, "timeout",
-                        f"hook 超过 {spec.timeout}s 被强杀")
+            d = f"hook 超过 {spec.timeout}s 被强杀"
+            # 只在这里审计；failure 由**主线程**在 killed 分支补记。
+            # _record_failure 写的是 thread-local 的 last_failure，若在
+            # 看门狗线程里调用，run_pre 读不到，fail-closed 就会被绕过。
+            self._audit(spec.event, spec.raw, "timeout", d)
 
         watcher = threading.Thread(target=_watchdog, daemon=True)
         watcher.start()
@@ -416,17 +548,24 @@ class HookManager:
             out, err = proc.communicate(input=json.dumps(payload, ensure_ascii=False))
         except Exception as exc:  # noqa: BLE001
             self._kill_tree(proc)
-            self._audit(spec.event, spec.raw, "error", f"{type(exc).__name__}: {exc}")
+            d = f"{type(exc).__name__}: {exc}"
+            self._audit(spec.event, spec.raw, "error", d)
+            self._record_failure(spec, "error", d)
             return None
         finally:
             stop_watchdog.set()
             watcher.join(timeout=2.0)
 
         if killed:
+            self._record_failure(
+                spec, "timeout", f"hook 超过 {spec.timeout}s 被强杀")
             return None
         if proc.returncode != 0:
-            self._audit(spec.event, spec.raw, "nonzero_rc",
-                        f"rc={proc.returncode} stderr={err[:200]}")
+            d = f"rc={proc.returncode} stderr={err[:200]}"
+            self._audit(spec.event, spec.raw, "nonzero_rc", d)
+            # 仍返回 out: 若 hook 输出了合法 decision 则优先按 decision 处理
+            # (兼容既有行为)；out 为空时 run_pre 会按 on_failure 闭合。
+            self._record_failure(spec, "nonzero_rc", d)
         return out
 
     @staticmethod
@@ -475,20 +614,28 @@ class HookManager:
                 body = resp.read(50000).decode("utf-8", errors="replace")
                 return str(body)
         except urllib.error.HTTPError as exc:
-            self._audit(spec.event, spec.raw, "http_error",
-                        f"HTTP {exc.code} {exc.reason}")
+            d = f"HTTP {exc.code} {exc.reason}"
+            self._audit(spec.event, spec.raw, "http_error", d)
+            self._record_failure(spec, "http_error", d)
             return None
         except Exception as exc:  # noqa: BLE001
-            self._audit(spec.event, spec.raw, "error", f"{type(exc).__name__}: {exc}")
+            d = f"{type(exc).__name__}: {exc}"
+            self._audit(spec.event, spec.raw, "error", d)
+            self._record_failure(spec, "error", d)
             return None
 
     def _exec_prompt(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
         """执行 Prompt hook: 调用模型返回结果。"""
         if self._kernel is None:
+            d = "Prompt hook: 无内核, 模型不可用"
+            self._audit(spec.event, spec.raw, "no_kernel", d)
+            self._record_failure(spec, "no_kernel", d)
             return None
         model = self._kernel.get("model_adapter")
         if model is None:
-            self._audit(spec.event, spec.raw, "no_model", "Prompt hook: 无可用模型适配器")
+            d = "Prompt hook: 无可用模型适配器"
+            self._audit(spec.event, spec.raw, "no_model", d)
+            self._record_failure(spec, "no_model", d)
             return None
 
         # 构建 prompt: 将 payload 注入模板
@@ -505,12 +652,17 @@ class HookManager:
                 return result.content or ""
             return str(result) if result else ""
         except Exception as exc:  # noqa: BLE001
-            self._audit(spec.event, spec.raw, "error", f"Prompt hook 模型调用失败: {exc}")
+            d = f"Prompt hook 模型调用失败: {exc}"
+            self._audit(spec.event, spec.raw, "error", d)
+            self._record_failure(spec, "error", d)
             return None
 
     def _exec_subagent(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
         """执行 Subagent hook: 创建隔离 Agent 运行任务。"""
         if self._kernel is None:
+            d = "Subagent hook: 无内核, 无法创建隔离 Agent"
+            self._audit(spec.event, spec.raw, "no_kernel", d)
+            self._record_failure(spec, "no_kernel", d)
             return None
         try:
             from ..app import create_agent
@@ -521,7 +673,9 @@ class HookManager:
             result = sub.run(task, stream=False, max_iterations=5)
             return result[:3000] if result else ""
         except Exception as exc:  # noqa: BLE001
-            self._audit(spec.event, spec.raw, "error", f"Subagent hook 失败: {exc}")
+            d = f"Subagent hook 失败: {exc}"
+            self._audit(spec.event, spec.raw, "error", d)
+            self._record_failure(spec, "error", d)
             return None
 
     @staticmethod

@@ -498,6 +498,142 @@ THIRD-PARTY ATTRIBUTIONS
     this project.
 
 -------------------------------------------------------------------------------
+14) Claude Code v2.1.319 capability baseline and B1 hook hardening
+    Location: tuan_cli/parity_claude/ (catalog.py, evidence.py,
+              superiority.py, matrix.py, __init__.py)
+              CLAUDE_PARITY.md
+              tuan_cli/cli/cmd_claude_parity.py
+              tuan_cli/hooks/manager.py (fail-closed changes)
+              tuan_cli/config/security_schema.py (hooks validation)
+              tests/test_claude_parity.py, tests/test_hooks.py
+    Baseline: Claude Code v2.1.319, GitHub tag published
+              2026-11-06T17:04:01Z (non-prerelease). The official
+              changelog is organized by DATE (top entry 2026-11-04 =
+              v2.1.318); the version number comes from the GitHub release
+              archive and public release trackers. All eight sources with
+              URLs and usage notes are recorded in catalog.SOURCES.
+
+    ------------------------------------------------------------------
+    LICENSE / COMPLIANCE NOTICE (important, read before reusing):
+
+    Claude Code is Anthropic's PROPRIETARY product, governed by
+    Anthropic's Commercial Terms of Service. Unlike components 9-13
+    (derived from OpenAI Codex, Apache-2.0), NO source code, deobfuscated
+    artifact, LICENSE text, NOTICE text, trademark, ASCII art or visual
+    element of Claude Code is copied, vendored, translated or
+    redistributed here.
+
+    This component contains ONLY:
+      - verifiable capability facts taken from PUBLIC documentation,
+        the official changelog, GitHub release notes, feature catalogs
+        and the Agent SDK overview;
+      - an INDEPENDENT Python implementation of a parity/measurement
+        matrix, with runtime evidence checks and probes;
+      - behavioral contracts described in our own words.
+
+    "Surpass" means a measurable comparison of capability and security
+    posture ONLY. It does NOT mean affiliation, sponsorship, endorsement,
+    or compatibility certification by Anthropic. No Claude Code branding
+    is used in any UI, artifact or file name. The Agent SDK branding
+    guidelines explicitly disallow "Claude Code"-branded derivative
+    products; this project keeps its own name (Tuan / 青小团).
+
+    ------------------------------------------------------------------
+    What was actually built in B1:
+
+    - A machine-verifiable baseline: 14 functional domains / 99 modules,
+      five statuses (ahead / aligned / partial / gap / not_applicable).
+      Every non-not_applicable module MUST point at evidence paths that
+      really exist in this repository (evidence.verify_evidence()).
+      Every `ahead` module MUST carry an ahead_reason and belong to one
+      of six superiority dimensions. Every `gap` MUST be assigned to a
+      wave. Derived-consistency checks prevent inflating the numbers by
+      editing status definitions.
+    - Six RUNTIME probes (superiority.py) that actually call existing
+      code rather than quoting docs: injecting a non-existent hook binary,
+      tampering an HMAC record, feeding malformed config, corrupting an
+      MCP policy file to check locked state, counting real i18n/README
+      files, and validating the 165-module Codex TUI parity matrix.
+      A dimension whose probe fails is reported as UNVERIFIED and its
+      `ahead` modules are NOT counted as verified.
+    - `fully_superior` has a HARD criterion written in matrix.py:
+      gaps == 0 AND all six probes OK AND every dimension has a verified
+      ahead module AND all B-waves done AND an external adaptive red
+      team has signed off. It is currently FALSE (30 gaps, red team not
+      done) and MUST NOT be reached by relaxing the criterion.
+    - `tuan claude parity` / --gaps / --probes / --report-json.
+
+    B1 production-code changes (two real fail-open side doors):
+
+      1. `hooks/manager.py`: all four hook executors (command / http /
+         prompt / subagent) previously returned None on spawn failure,
+         timeout, communicate error, HTTP error, missing kernel/model or
+         nonzero exit; `run_pre()` treated None as "continue", i.e. a
+         broken safety hook silently ALLOWED the tool call. Now failures
+         are recorded as structured `HookFailure` entries (queryable via
+         `failures()`), and `hooks.on_failure` DEFAULTS TO "block" for
+         PreToolUse with a machine-readable `HookDecision.failure_kind`
+         and an audit trail. `ask` also blocks with a manual-confirmation
+         marker; `allow` is an explicit, audited escape hatch. Unknown
+         values fall back to the strictest policy. Watchdog-thread
+         timeouts are recorded on the MAIN thread because last_failure
+         is thread-local (otherwise fail-closed could be bypassed).
+         Notification-type events record failures but never stall the
+         turn (they have no action to block).
+      2. `hooks/manager.py`: `blocking` default changed False -> True.
+         Previously a hook returning {"block": true} was silently
+         swallowed unless the user explicitly wrote `blocking: true`.
+         `blocking` governs ONLY a hook's own block decision; it does
+         NOT govern execution-failure fail-closed.
+      3. `config/security_schema.py`: validates `hooks.on_failure`
+         enum plus per-hook overrides; explicit `allow` is surfaced as a
+         security-downgrade warning.
+
+    Behavioral change (disclosed, with migration): a hook that used to
+    "fail open" now blocks by default. `hooks.on_failure: allow`
+    (global or per hook) restores the old behavior and emits a
+    `failure_allowed` audit event. The pre-existing test
+    `test_timeout_kills_hook` (which asserted timeout must NOT block) was
+    updated to assert fail-closed, and a new
+    `test_timeout_can_be_explicitly_allowed` proves the escape hatch
+    stays reachable. We did not relax a policy merely to turn a test
+    green.
+
+    Comparison context (public facts, no source copied):
+      - Claude Code added `onFailure: "block"` for command/HTTP/Agent SDK
+        hooks in v2.1.317/319; it must be configured EXPLICITLY per
+        hook, and the old behavior was silent fail-open.
+      - v2.1.319 added `permissions.denyInsteadOfPrompting`, MCP task
+        backgrounding, stopped auto mode falling back to the built-in
+        classifier, and fixed a worktree-creation sandbox escape and a
+        Bash permission bypass.
+      - v2.1.314 added `permissions.blockWritesOutsideWorkingDirectories`
+        (off by default); v2.1.318 fixed stray keystrokes approving
+        permission prompts; v2.1.221+ added sandbox credential masking
+        (Linux/WSL only).
+
+    Honest boundaries (see CLAUDE_PARITY.md section 8): Tuan still lacks
+    an OS-enforced sandbox by default, network-default-deny,
+    credential masking on the egress path, and a proof that worktree
+    creation stays inside the isolation boundary. These are explicitly
+    listed as gaps for wave B2, NOT presented as advantages. Anthropic
+    cloud/subscription-only features are marked not_applicable, not
+    counted as lead items. No third-party adaptive red team has been
+    performed; static benchmarks and self-authored fuzz corpora are not
+    a substitute.
+
+    Existing security wiring protection (continued hard requirement):
+    matrix.validate() calls round 12's
+    `corekit.app.assert_wiring_intact()`, verifying all SIX pre-existing
+    invariants (permission-policy injection, deny-all MCP policy,
+    ctx.confirm channel, approval-card wiring, copy-mode confirmation,
+    explicit ABORT). `tuan claude parity` reports the wiring intact.
+    Line B does not modify any file under `tuan_cli/tui/parity/`;
+    line A (Codex TUI alignment) continues independently.
+
+    NO Claude Code source is copied verbatim. Anthropic does not endorse
+    or sponsor this project.
+
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
 

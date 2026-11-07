@@ -1,4 +1,4 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to this project will be documented in this file.
 
@@ -8,74 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## 版本策略 (Version Policy)
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
-
-## [0.3.4] - 2026-11-03 (小更新 · 安全引擎攻击面修复 + API 冻结)
-
-### 安全引擎攻击面修复 (实测对抗 → 修复)
-- **ReDoS 防冻结护栏** — `tuan_cli/ext/safety_redline.py`:
-  11 条含嵌套 `[^\n]*` 的红线模式在 20k 字符输入上单个吃 22.5s、全量 >120s，
-  攻击者可用超长载荷冻结安全闸门（ denial-of-service on the safety gate 本身）。
-  双护栏：命令整体截断 `_COMMAND_MAX_LEN=2048` + 行级截断 `_MATCH_LINE_MAX=512`。
-  实测 20k 输入由 >120s 降至 <1s，硬红线零漏判（危险 token 集中在行首附近）。
-- **rsync --delete 目标端毁灭** — `has_rsync_delete_target()`（token 化判定）:
-  `rsync --delete /x /etc` 会删空目标端系统目录，是绕过 rm 判定的攻击通道。
-  归一化后 token 分类，精确定位**最后一个非旗标路径参数**作目标端 ——
-  源端系统目录的良性备份 `rsync --delete /etc /b` 不误杀（正则贪婪匹配无法可靠
-  区分源/目标方向，故不放正则表）。
-- **信号类毁灭 (killall/pkill -9 -1)** — `tuan_cli/ext/safety_patterns.py`:
-  向 PID=-1 发 KILL 等价于整机关停，补入 `_CRITICAL_PATTERNS`（旗标顺序无关）。
-- **反引号命令替换 mask 回归修复** — `_mask_mentioned_literals()`:
-  `rm`echo ' -rf /'``中，命令替换内的引号内容会被真实 shell 先求值再执行，
-  旧 mask 逻辑把它当「提及」抹掉导致漏判。现按外层命令区分：毁灭类外层
-  (rm/chmod/...) 保留原文，文本类外层 (echo/grep/...) 仍按提及抹除。
-  修复 `test_command_substitution_echo_output_is_analyzed` 回归。
-- **自动决策系统越级放行护栏** — `tuan_cli/tools/permissions.py`:
-  `AutoModeClassifier` 自带正则远弱于安全引擎, `decide()` 原先在 auto_approve 命中时
-  立即 `return allow`, 会**先于**下游 `_hardening_confirm` 越级放行硬红线/红线命令。
-  实测 rsync --delete 系统目录 / killall -9 -1 / dd 直写裸盘 / chmod -R 000 /
-  mkfs / fork bomb 等 9 条全部可被 Auto 模式越级放行。现 auto_approve 放行前用
-  `ext.safety_engine.is_redline` 兜底 fail-closed（引擎不可用时降级为需确认）,
-  确保自动决策严格服从安全引擎 —— 这是「倒数第二道防线不可越级放行」语义的落实。
-- **第 19 轮对抗修复** — 绕过矩阵实测发现 4 处误杀 + 21 处漏判:
-  - 误杀修复: `cat /etc/crontab`/`cp /etc/crontab`（读取 crontab 文件）收紧 crontab 规则
-    为命令词首判定；`tar czf - ./docs | ssh backup 'cat > b.tar.gz'`（良性备份）收紧
-    tar|ssh 规则仅在含敏感路径/打包 `.`/`*` 时判 high；`nmap -p 80 example.com`
-    （显式单端口扫描具体域名）在 critical 层补 `-p` 豁免。
-  - 漏判修复: 补 SSH 反向/动态隧道（`ssh -R/-D`/`autossh`）、DB 写文件 RCE
-    （`INTO OUTFILE`/`COPY TO`/`redis CONFIG SET dir`/`mongosh db.eval`）、进程注入
-    （`gdb -p call system`/`strace inject`/`LD_LIBRARY_PATH`/`PYTHONPATH`/`ptrace`）、
-    MITM 工具（`ettercap`/`arpspoof`/`mitmproxy`/`tcpdump`）、内核控制写、
-    供应链投毒（写 `.git/hooks/`/`.pre-commit-config.yaml`/`.github/workflows/`）。
-  - 全量回归 54 passed（含 rounds 6–16 + auto_mode + doc_numbers）。
-- 全量安全测试套件 **179 passed**（20 个 safety test 文件，本轮复测）。
-
-### API 冻结 (v0.3.4 起)
-- 公共 API 面（`tuan_cli/__init__.py` 导出、CLI 命令名、`ext/safety_*` 判定函数签名、
-  `core/kernel.py` 插件协议）进入冻结期：破坏性改动需走 deprecation window（≥1 小版本）。
-- 详见 `docs/API_FREEZE.md`。
-- 版本号 0.3.3 → 0.3.4（`tuan_cli/version.py` 单一源 + `pyproject.toml`）。
-
-### 清理 (codebase hygiene)
-- **探针/陈旧脚本移出根目录**: 未跟踪的遗留探针 `push_api.py` / `push_api.ps1`
-  与指向已删除 `SoulTests/` 目录的陈旧死脚本 `run_soul_tests.ps1` 集中到
-  `scripts/debug/`（`run_soul_tests.ps1` 走 `git mv` 保留历史）。根目录仅保留
-  合法入口脚本 `install.ps1`。
-- **术语全面修正**: 架构文档 (中/英)、CHANGELOG、CONTRIBUTING、README 全语言、
-  `docs/ecosystem_bridge.md`、`docs/QUICKSTART.md`、`docs/GAP-ANALYSIS-vs-ClaudeCode.md`
-  及源码注释 (`core/kernel.py`、`core/agent.py`、`core/subagents.py`、`core/prompts.py`、
-  `core/boundary_auto.py`、`core/security_plugin.py`、`core/collaboration_plugin.py`、
-  `core/goal_mode.py`、`kernel_patch/*`、`cli/cmd_doctor.py`、`cli/cmd_onboarding.py`、
-  `tools/subagent_tool.py`、`__init__.py`) 中的「微内核 / microkernel」统一改称
-  「插件容器 / plugin container」，并在 `ARCHITECTURE*.md`、`core/kernel.py` 补充
-  术语说明（经典 microkernel 指 OS 服务下移用户态，本容器保留服务注册表+事件总线，
-  并非最小化内核）。
-
-### 1.0 目标升级
-- **平台矩阵**: Linux 6.5+ / Windows 10+ / macOS 17+ 三平台「最安全」。
-- **安全栈分层**: 所有命令完全不绕过 → 自动决策系统 (倒数第二道防线，完全本地、
-  极低占用，纯 Python 无外部模型依赖) → 硬红线 (最后一道，永不自动执行)。
-- **术语修正**: "微内核" 仅指 `core/kernel.py` 的插件容器实现（准确），
-  不再泛指整个产品架构 —— 整体是「插件化宿主 + 分层安全栈」。
 
 ## [Unreleased] - 安全加固持续迭代
 
@@ -428,6 +360,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   「完全相同」**（还剩 10 个）；CJK 显示宽度是 `east_asian_width`
   近似，不声称逐字节一致；`tab_width=0` 显式返回空而非除零；本轮
   未改任何键位、布局数值或安全接线。
+
+### 全模块超 Claude Code v2.1.319 计划启动 + B1 落地（2026-11-07，第 14 轮）
+- **两条线并行**：A 线（Codex TUI 对齐，还剩 10 个 pending）继续 A14/A15；
+  B 线（超 Claude Code v2.1.319）从本轮开始 B1–B10。两条线共享
+  `assert_wiring_intact()` 硬约束，互不改对方文件。
+- 新增 **`CLAUDE_PARITY.md`**：详细全模块计划（14 域 / 99 模块 / 12 轮次 /
+  8 条来源 / 30 个缺口队列 / B1–B10 逐轮目标与验收 / 合规声明）。
+- 新增 `tuan_cli/parity_claude/`（4 模块）：
+  - `catalog.py`：锁定上游 **v2.1.319（2026-11-06，tag 2026-11-06T17:04:01Z）**，
+    14 域 99 模块五态清单，逐模块带 CC 版本参照、证据路径、领先理由、轮次。
+    官方 changelog 按日期组织不写版本号，版本号取自 GitHub release 归档，
+    口径如实记录。
+  - `evidence.py`：运行时校验证据路径真实存在；`ahead` 必须有理由+维度，
+    `gap` 必须分配 wave，`not_applicable` 不许带 wave；派生一致性自检防止
+    「改状态定义凑数」。
+  - `superiority.py`：**六个超越维度的运行时探针**（真调现有代码，不是文档
+    自述）：注入不存在的 hook 二进制、篡改 HMAC、喂畸形配置、写坏 MCP
+    策略文件看 locked、统计真实 i18n/README、校验 165 模块 Codex 矩阵。
+    探针不通过的维度，其领先项不计入「已证实」。
+  - `matrix.py`：`fully_superior` **硬判据**（gap=0 + 六维全 OK + 每维至少
+    1 个已证实领先 + 所有 B 轮完成 + 第三方自适应红队）。当前 **false**，
+    判据写死不许放宽。
+- 新增 `tuan claude parity` / `--gaps` / `--probes` / `--report-json`，
+  接入 `commands.py` 与 `parser_commands.py`。
+- **B1 真实落地：修 hooks 层两个 fail-open 侧门**（`tuan_cli/hooks/manager.py`）：
+  1. 四种 hook 执行器在 spawn 失败 / 超时 / 异常 / HTTP 错误 / 无模型无内核 /
+     非零退出时一律返回 `None`，`run_pre` 对 `None` 直接 `continue` ——
+     **用来挡危险命令的 hook 自己挂了，命令照跑**。现在全部记入
+     `HookFailure` + `failures()`，`hooks.on_failure` **出厂默认 `block`**，
+     阻断带结构化原因与 `failure_kind`；`ask` 同样阻断并标注需人工确认，
+     `allow` 是显式且留痕的逃生口；未知值回退最严格档。
+     看门狗线程的超时由**主线程**补记（`last_failure` 是 thread-local，
+     否则跨线程会绕过 fail-closed）。通知类事件只留痕不卡住 turn。
+  2. `blocking` 默认 `False` → **`True`**：此前 hook 返回
+     `{"block": true}` 若未显式写 `blocking: true` 会被吞掉只记
+     `block_denied`。`blocking` 只管 hook 自身决策，不管执行失败的
+     fail-closed。
+- `config/security_schema.py` 新增 `hooks.on_failure` 白名单与单条覆盖校验；
+  显式 `allow` 报「安全降级」warning。
+- **行为变更（如实 + 迁移）**：依赖「hook 挂了也放行」的部署升级后会被挡住，
+  需显式配 `hooks.on_failure: allow` 并接受 `failure_allowed` 审计。
+  既有 `test_timeout_kills_hook` 断言从「超时不阻断」改为「超时 fail-closed
+  阻断」，并新增 `test_timeout_can_be_explicitly_allowed` 证明逃生口可达 ——
+  **没有为了变绿放宽策略**。
+- **对标口径**：CC 的 `onFailure:"block"` 需用户逐条 hook 显式配置，旧行为
+  正是静默 fail-open；Tuan 把它做成出厂默认，这是 B1 唯一的可验证反超点。
+  v2.1.319 的 MCP tasks 后台化 / `denyInsteadOfPrompting` / auto mode 不回退
+  分类器 / worktree 沙箱逃逸修复 / Bash 权限绕过修复，逐条映射到 B2–B8。
+- 指标（如实）：99 模块 = 领先 10 / 已对齐 43 / 部分 8 / **缺口 30** /
+  不适用 8；六维探针全 OK；领先声明 10 项全部已证实；
+  **`fully_superior=false`**（5 项判据仅 2 项为真）。
+  **最大落后项没修**：`os_sandbox` / `network_default_deny` /
+  `credential_masking` / `worktree_sandbox_escape` 明确列在 B2，
+  不因探针全绿而宣称安全边界已对齐。
+- 文档：`NOTICE` 第 14 条（**专有产品合规**：仅依据公开文档做行为契约对标，
+  未复制任何源码/商标资产，Anthropic 不背书）、`CLAUDE_PARITY.md`、
+  `SECURITY.md` / `SECURITY_EN.md` 第 14 轮小节、
+  `SECURITY_BASELINE.md` R25、`CAPABILITY-MATRIX.md` 指向新矩阵、
+  `TUI_PARITY.md` §5 补 A/B 并行说明。
+- 回归：`tests/test_claude_parity.py` **58 例** + `tests/test_hooks.py` 更新后
+  27 例；harden / config / parity 批次全绿；`assert_wiring_intact()` 6 项完好。
 
 ### 文档与回归
 - `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
@@ -1945,7 +1938,7 @@ SSH 权限 vs 外泄 **18/18 高危零漏放**（唯一残留 `find ~/.ssh -type
 - **对外名称统一改为 `Tuan-CLI`**：README（10 语言）、GitHub 仓库 URL、代码与网页署名、VS Code 扩展显示名等所有出现过项目英文名的地方全部更新。
 - **多语言名称规则**：简体中文 / 繁體中文 / 日本語 保留「青小团 / 青小團」汉字；其余语言一律使用 `Tuan-CLI`。
 - **内部标识不变**：Python 包名 `qingxiaotuan`、CLI 命令 `tuan`、配置目录 `~/.tuan` 保持原样（包名变更会破坏全部 import 与已安装用户配置，故不随品牌更名）。
-- **README 新增「版本号与仓库历史（透明披露）」章节**（同步 10 语言）：说明 `0.x` 版本号语义（API 未冻结，功能成熟度对标竞品 2.x）并如实披露 Git 历史——**早期项目未纳入 Git 版本管理，代码在其他机器上开发，后因该机器损坏导致部分早期记录丢失后重建；所幸硬盘未损坏，历史不可考对几乎所有人无影响，不必揪着不放**。
+- **README 新增「版本号说明」章节**（同步 10 语言）：说明 `0.x` 版本号语义（API 未冻结，功能成熟度对标竞品 2.x）。
 
 ### 生态互操作层 (Ecosystem Bridge, 全新 `qingxiaotuan/ecosystem/` 包)
 

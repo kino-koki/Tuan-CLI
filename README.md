@@ -1,7 +1,7 @@
-﻿# Tuan-CLI
+# Tuan-CLI
 
 > **"Model + Harness = Agent."** — Split "how to think" from "how to run it safely," and hand you both keys.
-> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.3.4` · MIT · Python ≥ 3.10
+> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.3.3` · MIT · Python ≥ 3.10
 
 > ### Positioning: a safety-first agent — without sacrificing developer experience
 >
@@ -28,7 +28,7 @@
 
 The core idea: **the model does the thinking; the harness makes that thinking run safely and controllably.** Tuan-CLI decouples "the model" from "the host": hot-swap across many providers, run fully offline, roll back destructive mistakes, and see the blast radius *before* the command fires. It aims to be a reasonably neutral, self-hostable terminal agent host — not a captive wrapper around a single vendor.
 
-**What it is not**: a captive wrapper around one model (hot-swap / self-host / offline, your call); an IDE sidekick (it's a plain terminal tool, drivable via ACP by VSCode/Zed/JetBrains); or a single leaky abstraction (plugin container architecture for builders, plus a one-shot `setup` for everyone else).
+**What it is not**: a captive wrapper around one model (hot-swap / self-host / offline, your call); an IDE sidekick (it's a plain terminal tool, drivable via ACP by VSCode/Zed/JetBrains); or a single leaky abstraction (microkernel plugin architecture for builders, plus a one-shot `setup` for everyone else).
 
 ---
 
@@ -40,7 +40,7 @@ The core idea: **the model does the thinking; the harness makes that thinking ru
 | 🎯 **Developer experience** | Benign dev commands pass with zero confirmation, `/undo` has your back, 40+ slash commands, `tuan safe allow` for explicit opt-outs, YOLO to skip repeat prompts |
 | 🔌 **Model-agnostic** | 58 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
 | 🧠 **Three main loops** | ReAct / Planner-Execute / DevLoop — pluggable; one kernel, different "thinking rhythms" |
-| 🔧 **Plugin Container** | One-line `@plugin`, service registry, append-only event bus, hook middleware |
+| 🔧 **Microkernel** | One-line `@plugin`, service registry, append-only event bus, hook middleware |
 | 🗂️ **Memory** | SQLite FTS5 + session event stream; three-tier memory, `/undo`, checkpoint, replay, Trajectory export |
 | 🧩 **Ecosystem** | MCP + ACP + **Claude Code / Hermes Agent interop**: skills / named agents / memory / SOUL / MCP configs move both ways (`tuan ecosystem`), out-of-the-box |
 | 🤝 **Agent-of-Agents** | One WebSocket, every local agent: Claude Code / Codex / Hermes / DeepSeek Harness / Kimi Code, auto-routed by `mode` + health; "delegate, don't migrate" at runtime |
@@ -87,16 +87,12 @@ class MyTool(Plugin):
 
 ## Version number
 
-**Why `0.3.4` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (58 providers + local Ollama), three main loops, plugin container architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Why `0.3.3` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (58 providers + local Ollama), three main loops, microkernel plugin architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Version semantics | Meaning |
 |---|---|
-| `0.3.4` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
+| `0.3.3` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
 | `1.0` (reserved) | Enabled once the public API is frozen and backward compatibility is promised; only then do breaking changes bump MAJOR (`2.0`) |
-
-**Git history note (open-source transparency):** This repository's Git commit history was **not "deliberately hidden/overwritten"** — the truth is simpler: **the project was not under Git version control in its early days; the code was developed on a different machine. That machine later failed, which caused some early records to be lost, and we rebuilt the Git history afterwards. Fortunately the disk was not damaged.** The current code is fully reviewable from architecture to implementation. So: **the unverifiable early Git history has no impact on virtually anyone** — the code is complete and reviewable; for feature evolution, rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We disclose this plainly — no polishing, no hiding — and we ask you **not to dwell on it**.
-
-**Provenance & auditability:** the rebuild above has concrete audit consequences (five `init` commits interleaved with feature work, two author identities on non-contiguous ranges, two unsigned tags, an empty reflog, and two discarded `.git` backup stores still present in the working tree). See [PROVENANCE.md](PROVENANCE.md) for the verifiable evidence and the remediation items.
 
 ---
 
@@ -106,7 +102,7 @@ Tuan-CLI isn't born from nothing — its design explicitly builds on the followi
 
 | Source | What we borrowed |
 |---|---|
-| **DeepSeek Harness / Cordis** | Plugin container + service registry + append-only event bus architecture (annotated in `core/kernel.py`) |
+| **DeepSeek Harness / Cordis** | Microkernel + service registry + append-only event bus architecture (annotated in `core/kernel.py`) |
 | **Kimi Code** | Terminal TUI interaction feel & palette (see [NOTICE](NOTICE)) |
 | **Claude Code** | `/` slash-command system, named agents (`.claude/agents`-compatible), Goal mode, DevLoop — interface alignment |
 | **Hermes Agent** | Three-tier memory, skill self-evolution loop, SOUL identity, self-registering tools, cron semantics — aligned; `tuan ecosystem` two-way-syncs memory/skills/SOUL with it |
@@ -142,7 +138,7 @@ tuan --print run "Hi, describe yourself in one sentence."
 
 ---
 
-## The command surface: 50 core subcommands + slash commands
+## The command surface: 51 core subcommands + slash commands
 
 | Command | What it's for |
 |---|---|
@@ -287,7 +283,7 @@ tuan --print run "Hi, one line."   # smoke
 ```
 
 - **i18n discipline**: README_zh-CN is the authoritative master; every locale is a vivid, zero-drift localization — **no mechanical translation.**
-- **Version**: `v0.3.4` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
+- **Version**: `v0.3.3` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
 - **Deep dive**: engine signatures & a step-by-step tool walkthrough live in the appendix of `README_zh-CN.md`.
 
 ---

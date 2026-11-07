@@ -604,6 +604,64 @@ items; see `TUI_PARITY.md` and `tuan tui parity`.
     `history_transcript` (5), then the final 5 to clear `pending`,
     **still preserving the existing security wiring**.
 
+  **Full-module "surpass Claude Code v2.1.319" plan + B1 (2026-11-07,
+  round 14):**
+
+  - New `CLAUDE_PARITY.md`: a detailed plan of 14 domains / 99 modules /
+    12 waves, baseline locked to **v2.1.319 (2026-11-06)**. New
+    `tuan_cli/parity_claude/` (catalog / evidence / six runtime probes /
+    matrix) and `tuan claude parity`.
+  - **"Surpass" has a HARD criterion**: `fully_superior` requires
+    gaps == 0, all six runtime probes OK, at least one verified `ahead`
+    module per dimension, all B-waves complete, AND a third-party
+    adaptive red team. It is currently **false** (30 gaps; only 2 of 5
+    criteria true) and MUST NOT be reached by relaxing the criterion.
+    The probes actually call existing code: injecting a missing hook
+    binary, tampering an HMAC record, feeding malformed config,
+    corrupting an MCP policy file to check `locked`, counting real
+    i18n/README files, validating the 165-module Codex TUI matrix.
+  - **B1 fixes two real fail-open side doors** (`hooks/manager.py`):
+    1. All four hook executors returned `None` on spawn failure,
+       timeout, communicate error, HTTP error, missing kernel/model or
+       nonzero exit; `run_pre()` treated `None` as "continue" — a broken
+       SAFETY hook silently ALLOWED the tool call. Failures are now
+       recorded as `HookFailure` (queryable via `failures()`),
+       `hooks.on_failure` DEFAULTS TO `block` for PreToolUse with a
+       structured reason and `failure_kind`; `allow` is an explicit,
+       audited escape hatch. Watchdog timeouts are recorded on the MAIN
+       thread because `last_failure` is thread-local (otherwise the
+       fail-closed check could be bypassed across threads).
+    2. `blocking` default False -> True: a hook returning
+       `{"block": true}` was silently swallowed unless `blocking: true`
+       was written explicitly. `blocking` governs ONLY a hook's own
+       decision, NOT execution-failure fail-closed.
+  - `config/security_schema.py` now validates the `hooks.on_failure`
+    enum and per-hook overrides; explicit `allow` is surfaced as a
+    security-downgrade warning.
+  - **Behavioral change disclosed**: deployments relying on "a broken
+    hook lets the call through" must set `hooks.on_failure: allow`; the
+    pre-existing timeout assertion was updated and a new escape-hatch
+    test added. NO policy was relaxed merely to turn a test green.
+  - **Honest boundary (the one that matters most)**: Tuan still lacks a
+    default OS-enforced sandbox, network-default-deny, credential
+    masking on the egress path, and a proof that worktree creation
+    stays inside the isolation boundary. All are explicitly listed as
+    B2 gaps, NOT presented as advantages just because all six probes
+    are green. Eight `not_applicable` items are reported honestly,
+    not counted as lead items.
+  - **Compliance**: Claude Code is Anthropic's PROPRIETARY product.
+    This round uses ONLY public documentation / changelog / release
+    notes for behavioral-contract comparison; **NO source code or
+    trademark asset is copied**; Anthropic does not endorse this
+    project (`NOTICE` section 14).
+  - **Hard requirement continued**: `matrix.validate()` calls
+    `corekit.app.assert_wiring_intact()`; all SIX pre-existing
+    invariants remain green. Line B does not modify any A-line file.
+  - Regression: `test_claude_parity.py` 58 cases + hooks batch 27 cases.
+    Next wave B2: OS sandbox / network default deny / credential
+    injection / worktree escape proof.
+
+
 
 
 ---
