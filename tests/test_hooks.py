@@ -137,15 +137,34 @@ def test_args_rewrite_denied_when_not_authorized():
 # ------------------------------------------------------------------ 超时
 
 def test_timeout_kills_hook():
+    # B1 行为变更（超 Claude Code v2.1.319）：hook 故障默认 fail-closed。
+    # 旧断言是「超时不转化为阻断」——那正是 CC 需要显式
+    # onFailure:"block" 才关掉的静默 fail-open 侧门。现在默认阻断，
+    # 并带结构化原因与可查询的失败记录。
     mgr = HookManager(make_cfg({
         "default_timeout": 1,
         "PreToolUse": [{"matcher": "*", "command": [PY, TIMEOUT], "timeout": 1}],
     }), workspace=os.getcwd())
     t0 = time.time()
-    d = mgr.run_pre("write_file", {})  # 应被超时强杀, 不阻断
+    d = mgr.run_pre("write_file", {})  # 超时强杀 -> fail-closed 阻断
     dt = time.time() - t0
     assert dt < 10
-    assert d.block is False  # 超时不应转化为阻断
+    assert d.block is True
+    assert d.failure_kind == "timeout"
+    assert "fail-closed" in d.reason
+    assert any(f["kind"] == "timeout" for f in mgr.failures())
+
+
+def test_timeout_can_be_explicitly_allowed():
+    """显式 on_failure=allow 仍可恢复旧行为（逃生口必须可达且留痕）。"""
+    mgr = HookManager(make_cfg({
+        "default_timeout": 1,
+        "on_failure": "allow",
+        "PreToolUse": [{"matcher": "*", "command": [PY, TIMEOUT], "timeout": 1}],
+    }), workspace=os.getcwd())
+    d = mgr.run_pre("write_file", {})
+    assert d.block is False
+    assert any(f["kind"] == "timeout" for f in mgr.failures())
 
 
 # ------------------------------------------------------------------ dispatch 集成

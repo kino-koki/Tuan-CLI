@@ -990,6 +990,16 @@ def register_subcommands(sub: Any) -> None:
     tp.add_argument("--gaps", action="store_true", help="列出待对齐模块队列")
     p.set_defaults(func="cmd_tui_parity")
 
+    # ---- claude (与 Claude Code 的全模块对照态势) ----
+    cp = sub.add_parser("claude", help="与 Claude Code 的全模块对照态势")
+    csub = cp.add_subparsers(dest="claude_cmd", required=True)
+    cpp = csub.add_parser("parity", help="展示与 Claude Code v2.1.319 的对照矩阵")
+    cpp.add_argument("--report-json", dest="report_json", action="store_true",
+                     help="输出结构化 JSON 报告")
+    cpp.add_argument("--gaps", action="store_true", help="列出待补齐模块队列")
+    cpp.add_argument("--probes", action="store_true", help="展开六维运行时探针明细")
+    cp.set_defaults(func="cmd_claude_parity")
+
     # ---- skills / craft (registry 远程技能与组件) ----
     sk = sub.add_parser(
         "skills",

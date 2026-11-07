@@ -476,6 +476,45 @@ localized 57 / n/a 63 / **pending 10**，宽口径 93.9%、严格 55.8%、
 - 下一轮：`streaming_async` + `tools_exec` + `history_transcript`（5），
   再往后剩余 5 个清零，仍**保留现有安全接线**。
 
+**全模块超 Claude Code v2.1.319 计划 + B1（2026-11-07，第 14 轮）**
+
+- 新增 `CLAUDE_PARITY.md`：14 域 / 99 模块 / 12 轮次的详细计划，
+  上游锁定 **v2.1.319（2026-11-06）**。新增 `tuan_cli/parity_claude/`
+  （目录 / 证据 / 六维探针 / 矩阵）与 `tuan claude parity`。
+- **「超」有硬判据**：`fully_superior` 需同时满足 gap=0、六维运行时探针
+  全 OK、每维至少 1 个已证实领先、所有 B 轮完成、第三方自适应红队背书。
+  当前 **false**（30 个缺口、判据 5 项仅 2 项为真），判据写死不许放宽。
+  六个探针真调现有代码：注入不存在的 hook 二进制、篡改 HMAC、
+  喂畸形配置、写坏 MCP 策略看 locked、统计真实 i18n/README、
+  校验 165 模块 Codex 矩阵。
+- **B1 修两个真实 fail-open 侧门**（`hooks/manager.py`）：
+  1. 四种 hook 执行器失败时一律 `return None`，`run_pre` 直接
+     `continue` —— **安全 hook 自己挂了，命令照跑**。现在记录
+     `HookFailure` + `failures()`，`hooks.on_failure` **默认 `block`**，
+     阻断带结构化原因与 `failure_kind`；`allow` 是显式且留痕的逃生口。
+     看门狗超时由主线程补记（thread-local 否则会被跨线程绕过）。
+  2. `blocking` 默认 False → True：此前 hook 返回 `{"block": true}`
+     若未显式声明 `blocking: true` 会被吞掉。`blocking` 只管 hook
+     自身决策，不管执行失败的 fail-closed。
+- `config/security_schema.py` 新增 `hooks.on_failure` 枚举校验，
+  显式 `allow` 报安全降级。
+- **行为变更如实标注**：依赖「hook 挂了也放行」的部署需显式配
+  `hooks.on_failure: allow`；既有超时测试断言已更新并新增逃生口用例，
+  **没有为变绿放宽策略**。
+- **如实边界（最该看的一条）**：Tuan 仍缺 OS 级默认沙箱、网络默认拒、
+  子进程凭据代理注入、worktree 创建路径的隔离证明，
+  全部**明确列为 B2 缺口**，不因六维探针全绿而宣称安全边界已对齐。
+  `not_applicable` 8 项如实标不适用，不包装成领先。
+- **合规**：Claude Code 是 Anthropic 专有产品，本轮仅依据公开文档 /
+  changelog / release notes 做行为契约对标，**未复制任何源码或商标资产**，
+  Anthropic 不背书（`NOTICE` 第 14 条）。
+- **硬约束延续**：`matrix.validate()` 调用
+  `corekit.app.assert_wiring_intact()`，6 条既有安全接线全绿；
+  B 线不碰 A 线 `tui/parity` 文件。
+- 回归：`test_claude_parity.py` 58 例 + hooks 批次 27 例；
+  下一轮 B2 处理 OS 沙箱 / 网络默认拒 / 凭据注入 / worktree 逃逸。
+
+
 
 
 ---

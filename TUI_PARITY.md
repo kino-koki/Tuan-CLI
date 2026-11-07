@@ -317,6 +317,13 @@ infra             tests
 | 14 | `streaming_async` + `tools_exec` + `history_transcript`（5） | `streaming` / `async_question_reply` / `exec_command` / `rendered_selection` / `insert_history` |
 | 15 | 剩余 5 个 | `local_settings` / `clock_format` / `external_agent_config_migration` / `tests` / `auto_review_denials`，清零 `pending` |
 
+> **A/B 双线并行（2026-11-07 起）**：本节是 **A 线**（把 TUI 对齐
+> OpenAI Codex）。同日启动的 **B 线**是「全模块超 Claude Code v2.1.319」，
+> 见 `CLAUDE_PARITY.md` 与 `tuan claude parity`。两条线共享
+> `assert_wiring_intact()` 硬约束，但**互不修改对方文件**：A 线不碰
+> `tuan_cli/parity_claude/`，B 线不碰 `tuan_cli/tui/parity/`。A 线剩余
+> 10 个 pending 仍按本节 A14/A15 清零，不因 B 线启动而重排。
+
 每轮必须同时满足：① 新增模块状态有实现与测试指向；② 既有回归全绿；
 ③ `parity_validate()` 无问题；④ 文档指标同步。**不靠改状态定义凑数。**
 
