@@ -145,6 +145,58 @@ prompt_toolkit/rich 应用骨架；不接 OpenAI 账号、云服务、订阅与�
 选择（否则 A 会话的 revert 会落到 B 会话）；chatwidget 的双生命周期
 保证 MCP 启动期间不误报空闲导致重复提交。
 
+**第 13 轮：配置/侧栏对齐层**（`tuan_cli/tui/configkit/`，5 个模块，
+纯 Python、零 Rust 源码）。本轮把 `config_models` + `misc` 两组从
+`pending 5` 清零，**同样没有替换任何现有运行时对象**：
+
+| 上游模块 | 本包落点 | 逐值/逐分支对齐点 |
+|---|---|---|
+| `additional_dirs.rs` | `additional_dirs.py` | 4 个早退分支（空目录 / Disabled·External / 全盘写 / cwd 可写）、警告模板英文原文、逗号空格拼接路径 |
+| `collaboration_modes.rs` | `collaboration_modes.py` | `filtered_presets` 只留 `is_tui_visible`、`default_mask` 先 Default 再首个、`next_mask` 循环、`mask_for_kind` 先判可见性、**2 秒**发现超时、`developer_instructions: Some(None)` 清覆盖、5 字段严格白名单 |
+| `model_migration.rs` | `model_migration.py` | `Accepted/Rejected/Exit` 三态、`TryNewModel/UseExistingModel` 两态及英文 label、强制与可选两套键位策略、`is_ctrl_exit_combo`（Ctrl+C/D）、`AltScreenGuard` RAII、标题/推荐语/可选退出行模板 |
+| `sidebar_chooser.rs` | `sidebar_chooser.py` | `WIDE_WIDTH=58`、`body_row` 宽度 `area.width-3`、窄屏双行/宽屏单行分页、`choice_at` 命中、footer 三项 + 可选 `hide_pane`、`"←/→ resize · Enter/Esc done"` 短提示逐字、`CHAT_TAB=" Side chat "` |
+| `sidebar_tab_strip.rs` | `sidebar_tab_strip.py` | `TabState` 三态、`targets()` 几何逐值（`width-1` / `plus=min(width,3)` / `available` / `(selected+1)-count`）、**add 按钮恒留最右**、hit 先查 add 再查 tab、三态样式映射 |
+
+三条最值钱的修正（都不是「对齐」本身，且均已实测）：
+
+1. **链式 `replace` 二次替换**。上游 `fill_migration_markdown` 先
+   `.replace("{model_from}", current)` 再 `.replace("{model_to}", target)`。
+   模型名来自服务端/配置，若 `current_model` 含字面量 `{model_to}`，
+   会被第二次替换成 `target_model`。实测模板
+   `"从 {model_from} 迁移到 {model_to}"` + current `"old-{model_to}-x"`
+   上游产出 `"从 old-NEW-x 迁移到 NEW"`。本包改成**单次正则扫描**
+   （一个 pass 同时替换两个占位符），替换值不参与后续匹配；
+   未知 `{...}` 原样保留，不吞不展开。
+2. **发现失败不能静默当空**。上游 `list()` 把超时、RPC 错误、协议
+   错误一律压成空 `Vec` + warn（模块头原话 "Missing discovery adds no
+   presets"）。调用方分不清「没查到」与「查了但没有」，一个网络错误
+   会被当成「无需展示模式选择器」。`DiscoveryResult` 显式区分
+   `ok / empty / unavailable / timeout / protocol_error`，`usable`
+   只允许 `ok/empty`，调用方必须显式处理 `unavailable`。
+3. **`--add-dir` 不能静默丢弃**。上游只返回一句警告字符串，让调用方
+   "负责呈现"；忘了打印就等于静默忽略，用户以为加了可写根、实际操作
+   落空或落到别处。`AddDirDecision` + `enforce()` 把「忽略」升级为
+   **结构化拒绝**，并做 `..` / 控制字符 / NUL / 空串校验。
+   刻意**不做**「越出 cwd」判定 —— `--add-dir` 的本意就是加工作区外的
+   可写根，把它当错误会与语义冲突；真正的边界在沙箱层。
+
+另外两处几何一致性契约：`choice_rows`（渲染分页）与 `choice_at`
+（命中测试）共用同一份 `height/visible/start` 计算；`TabStrip.hit`
+与 `render_plan` 共用 `targets()`。二者都提供 `*_matches_render()`
+自检并进回归集 —— 否则会出现「点第 3 项却打开第 2 项」「点到的和
+看到的不一致」这类偏差，在带权限的侧栏里会让用户误开另一个会话。
+
+**一条必须挑明的上游语义**：`model_migration` 在**强制迁移**
+（`can_opt_out=false`）下，Enter 与 **Esc 都接受**，事件流耗尽也默认
+接受；仅在可选模式下 `2` 才是拒绝，且 Esc 是「确认当前选中」而非取消。
+这与本项目审批覆盖层「无输入 / Esc 绝不变成同意」的 fail-closed 契约
+**相反**。本包原样保留上游既有键盘策略，但用 `policy_note()`
+显式标注并写进文档：它只适用于模型升级提示，**绝不套用到审批链路**。
+
+**硬约束延续**：`configkit_validate()` 调用第 12 轮的
+`corekit.app.assert_wiring_intact()`，确认本轮没破坏前 12 轮修好的
+6 条既有安全接线；`tuan tui parity` 仍显示「既有链路完好」。
+
 ---
 
 ## 4. 对齐矩阵
@@ -171,13 +223,13 @@ prompt_toolkit/rich 应用骨架；不接 OpenAI 账号、云服务、订阅与�
 | session_startup | 0 | 8 | 16 | 1 |
 | tools_exec | 2 | 3 | 10 | 2 |
 | mcp_agents | 0 | 4 | 5 | 0 |
-| config_models | 1 | 7 | 5 | 3 |
+| config_models | 4 | 7 | 5 | **0** |
 | updates_analytics | 0 | 2 | 5 | 1 |
 | streaming_async | 1 | 0 | 2 | 2 |
 | external_editor | 0 | 2 | 0 | 1 |
 | daemon | 0 | 0 | 3 | 0 |
 | infra | 2 | 0 | 2 | 1 |
-| misc | 0 | 2 | 5 | 3 |
+| misc | 2 | 2 | 5 | **0** |
 
 > 分组含少量交叠引用，故分组计数之和大于 165；权威总数为 165，由
 > `matrix.parity_status()` 按模块去重计算。
@@ -212,40 +264,43 @@ prompt_toolkit/rich 应用骨架；不接 OpenAI 账号、云服务、订阅与�
 | `chatwidget` | `tui/corekit/chatwidget.py`（第 12 轮） |
 | `cli` | `tui/corekit/cli.py`（第 12 轮） |
 | `resize_reflow_cap` | `tui/corekit/resize_reflow_cap.py`（第 12 轮） |
+| `additional_dirs` | `tui/configkit/additional_dirs.py`（第 13 轮，忽略即拒绝） |
+| `collaboration_modes` | `tui/configkit/collaboration_modes.py`（第 13 轮） |
+| `model_migration` | `tui/configkit/model_migration.py`（第 13 轮） |
+| `sidebar_chooser` | `tui/configkit/sidebar_chooser.py`（第 13 轮） |
+| `sidebar_tab_strip` | `tui/configkit/sidebar_tab_strip.py`（第 13 轮） |
 
 ### 当前指标
 
 ```
 总模块            165
-aligned            30   (逐值对齐，第 12 轮 +9)
+aligned            35   (逐值对齐，第 13 轮 +5)
 localized          57   (本地化等价)
 not_applicable     63   (OpenAI 专属)
-pending            15   (待对齐，第 12 轮 -9)
-宽口径覆盖率      90.9%  (aligned+localized+na)
-严格对齐率        52.7%  (aligned+localized)
-逐值对齐率        18.2%  (aligned only)
+pending            10   (待对齐，第 13 轮 -5)
+宽口径覆盖率      93.9%  (aligned+localized+na)
+严格对齐率        55.8%  (aligned+localized)
+逐值对齐率        21.2%  (aligned only)
 完全相同           否    (pending != 0)
 ```
 
 三个指标刻意都列出来：**不把「不适用」包装成成果**。真正逐值对齐的
-只有 18.2%，这是后续轮次的主要工作量。
+只有 21.2%，这是后续轮次的主要工作量。
 
-### 待对齐队列（15）
+### 待对齐队列（10）
 
-> 第 11 轮完成 `input_keymap` 组 7 个、第 12 轮完成 `core_app` 组 9 个，
-> 两组 `pending = 0`。
+> 第 11 轮完成 `input_keymap` 组 7 个、第 12 轮完成 `core_app` 组 9 个、
+> 第 13 轮完成 `config_models` + `misc` 组 5 个，三组 `pending = 0`。
 
 ```
 approval_perm.    auto_review_denials
 history_trans.    insert_history
 session_startup   local_settings
 tools_exec        exec_command, rendered_selection
-config_models     collaboration_modes, model_migration, additional_dirs
 updates_analytics clock_format
 streaming_async   streaming, async_question_reply
 external_editor   external_agent_config_migration
 infra             tests
-misc              sidebar_chooser, sidebar_tab_strip
 ```
 
 `tuan tui parity --gaps` 实时输出同一份清单。
@@ -258,7 +313,7 @@ misc              sidebar_chooser, sidebar_tab_strip
 |---|---|---|
 | 11 ✅ | `input_keymap`（7） | **已完成**：`tui/inputkit/` 7 个模块 + 88 例回归；Vim 搜索、激活键守卫、复制守卫、双缓冲 diff、OSC 状态、语义超链接、可视化指令 |
 | 12 ✅ | `core_app`（9） | **已完成**：`tui/corekit/` 9 个模块 + 76 例回归；类型化事件/命令、脱敏 newtype、六步回退状态机、双生命周期 busy、审批冲突 fail-closed、四档重排上限；**6 项既有安全接线校验全绿** |
-| 13 | `config_models` + `misc`（5） | `collaboration_modes` / `model_migration` / `additional_dirs` / `sidebar_chooser` / `sidebar_tab_strip` |
+| 13 ✅ | `config_models` + `misc`（5） | **已完成**：`tui/configkit/` 5 个模块 + 106 例回归；修链式 replace 二次替换、发现失败不冒充空、`--add-dir` 忽略即拒绝；两处 hit/render 几何同源自检；**6 项既有安全接线仍全绿** |
 | 14 | `streaming_async` + `tools_exec` + `history_transcript`（5） | `streaming` / `async_question_reply` / `exec_command` / `rendered_selection` / `insert_history` |
 | 15 | 剩余 5 个 | `local_settings` / `clock_format` / `external_agent_config_migration` / `tests` / `auto_review_denials`，清零 `pending` |
 
@@ -298,6 +353,13 @@ misc              sidebar_chooser, sidebar_tab_strip
 | 回退选择（本轮） | `base_id` 变更失效 | 显式 `bind_thread()` 强制失效 + `confirm_revert()` 二次校验线程 |
 | 重排上限（本轮） | 上游 config 常量 | fallback 显式默认 1000 且可注入；非法 `Limit` **fail-closed 回退**而非无限重放 |
 | 实时语音 / 云命令 | `RealtimeConversation*` | 不实现（OpenAI 专属），仅保留变体名供白名单契约核验，标未实现 |
+| 迁移模板（本轮） | 链式 `.replace(A).replace(B)` | **单次正则扫描**，替换值不参与后续匹配；未知 `{...}` 原样保留（更严格） |
+| 模式发现（本轮） | 失败一律空 `Vec` + warn | `DiscoveryResult` 区分 5 态，`usable` 只允许 ok/empty，调用方必须显式处理失败（更严格） |
+| 模式 RPC 字段（本轮） | Rust 编译期类型 | 严格 5 字段白名单 + 控制字符/长度校验；`prompts_omitted=True` 让「服务端提供当前指令」可审计 |
+| `--add-dir`（本轮） | 仅返回一句警告字符串 | `AddDirDecision` + `enforce()` **忽略即拒绝**，附退路径校验；刻意不做「越出 cwd」判定（与语义冲突） |
+| 侧栏几何（本轮） | ratatui `Rect`/`Buffer` | 纯 Python dataclass；`tab_width=0` 显式返回空而非除零；CJK 显示宽度用 `east_asian_width` **近似**（如实标注，不声称逐字节一致） |
+| 侧栏文案（本轮） | 英文 | 中文默认 + 英文原文常量保留供核销；短 resize 提示 `"←/→ resize · Enter/Esc done"` **逐字不改** |
+| 强制迁移键盘策略（本轮） | Esc 也 accept、事件耗尽默认 accept | **原样保留**（上游既有策略），但 `policy_note()` 显式标注与审批 fail-closed 相反，绝不套用到审批链路 |
 
 **键位、布局数值、组件树、交互契约没有本地化** —— 它们就是「完全相同」
 的锚点。改动集中在「给人看的字」与「后端实现」，不动行为契约。
@@ -325,9 +387,9 @@ argparse 前缀歧义。
   「derived from `ratatui::Terminal`」、采用 **MIT** 的
   `custom_terminal.rs` 算法契约；MIT 全文归属于
   `THIRD_PARTY_LICENSES/Codex-NOTICE.txt` 与 `NOTICE` 第 11 条。
-  第 12 轮的 `tui/corekit/` 9 个模块同属 `codex-rs/tui/src` 的
-  Apache-2.0 范围，归属与本地化修改点逐条记在 `NOTICE` 第 12 条；
-  同样**无 Rust 源码逐字复制**。
+  第 12 轮的 `tui/corekit/` 9 个模块与第 13 轮的 `tui/configkit/`
+  5 个模块同属 `codex-rs/tui/src` 的 Apache-2.0 范围，归属与本地化
+  修改点逐条记在 `NOTICE` 第 12、13 条；同样**无 Rust 源码逐字复制**。
 - 本仓库**未逐字复制任何 Rust 源码**。本轮新增的是可核验的功能事实
   （模块名、常量值、键位表、规范化规则）与 Python 独立实现，属于 Apache-2.0
   允许的派生设计；修改点已在 §6、模块 docstring 与 `NOTICE` 第 9 条列明。

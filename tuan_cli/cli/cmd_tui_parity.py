@@ -65,6 +65,11 @@ def cmd_tui_parity(args: Any) -> int:
               f"(第 12 轮: app / backtrack / command / event / sender / "
               f"info / chatwidget / cli / resize_cap)")
         print(f"  安全接线  : 既有链路{flag} · {len(w.get('checks', {}))} 项检查")
+    cfk = report.get("configkit", {})
+    if isinstance(cfk, dict) and "modules" in cfk:
+        print(f"  配置/侧栏 : configkit {cfk['modules']} 个模块已对齐 "
+              f"(第 13 轮: add_dirs / collaboration_modes / "
+              f"model_migration / sidebar_chooser / sidebar_tab_strip)")
     print(f"  完全相同  : {'是' if m['fully_identical'] else '否'} "
           f"(还有 {m['pending']} 个模块待对齐)")
     if problems:
@@ -77,9 +82,9 @@ def cmd_tui_parity(args: Any) -> int:
         print(f"\n  待对齐队列 ({len(gaps)}):")
         for g, mod in gaps:
             print(f"    - {g:22s} {mod}")
-        print("\n  下一轮优先: config_models + misc / streaming_async "
-              "组 (见 TUI_PARITY.md §5)")
-    print("\n  归属: NOTICE 第 9–12 条 · THIRD_PARTY_LICENSES/ · TUI_PARITY.md")
+        print("\n  下一轮优先: streaming_async + tools_exec + "
+              "history_transcript 组 (见 TUI_PARITY.md §5)")
+    print("\n  归属: NOTICE 第 9–13 条 · THIRD_PARTY_LICENSES/ · TUI_PARITY.md")
     return 1 if problems else 0
 
 
