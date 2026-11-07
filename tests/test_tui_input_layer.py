@@ -507,6 +507,10 @@ class TestInputkitPackage:
         from tuan_cli.tui.parity import parity_report, parity_validate
         r = parity_report()
         assert r["inputkit"]["modules"] == 7
-        assert r["matrix"]["pending"] == 24
-        assert r["matrix"]["by_status"]["aligned"] == 21
+        # 第 12 轮 core_app 组清零后同步（pending 24 -> 15）
+        assert r["matrix"]["pending"] == 15
+        assert r["matrix"]["by_status"]["aligned"] == 30
+        assert r["matrix"]["coverage_pct"] == 90.9
+        assert r["corekit"]["modules"] == 9
+        assert r["corekit"]["security_wiring"]["intact"] is True
         assert parity_validate() == []

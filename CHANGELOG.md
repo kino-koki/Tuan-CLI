@@ -241,13 +241,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   的图片协议未实现；状态发射默认关闭，需显式启用；本轮未改任何
   键位、布局数值或安全接线。
 
+### 应用核心对齐层：core_app 组清零（2026-11-07，第 12 轮）
+- 新增 `tuan_cli/tui/corekit/`（纯 Python，**零 Rust 源码逐字复制**），
+  9 个模块逐一对齐 `codex-rs/tui/src/` 的 `core_app` 组：
+  - `app.py`：`THREAD_EVENT_CHANNEL_CAPACITY=32768`、
+    `EXTERNAL_EDITOR_HINT` 原文、`AppRunControl` / `ExitReason` /
+    `AppExitInfo::fatal` 清空其余字段、`rollout_path_is_resumable`
+    （存在 + 普通文件 + len>0）。**`assert_wiring_intact()` 真实 import
+    验证 6 条既有安全接线**（见下）。
+  - `app_backtrack.py`：六步 Esc/Enter 状态机（prime → 浏览 → 左右选
+    → Ctrl+T 详情 → Esc 恢复 → Enter revert）、`base_id` 变更强制作废
+    旧选择、`usize::MAX` → `NO_SELECTION` 哨兵、两条提示常量中英双份。
+  - `app_command.py`：**本轮安全价值最高**。`RealtimeOfferSdp` /
+    `RealtimeSpeechText` 的 Debug 与 Serialize 恒为 `<redacted>`，
+    ICE 凭据与语音文本不进诊断/会话录制，明文只在信令边界还原。
+    本地化更严：`repr` / `str` / f-string / `to_dict` / `==` 全脱敏，
+    `reveal()` 是唯一出口且带调用计数。`UserVerificationResponse.proof`
+    对齐 `serde(skip_serializing)`，`to_dict()` 绝不含明文。
+  - `app_event.py`：类型化事件、`CodexOp` **不双记** inbound 日志、
+    `ExitMode` 三态（Immediate 明确会丢在途工作）、`FeedbackCategory`
+    / `RunningTaskExitAction` / `SideStartMode`；新增
+    `validate_thread_op()` 拒绝空 thread_id。
+  - `app_event_sender.py`：**voice_only 白名单先判定再记日志**（被丢弃
+    事件不进日志）、Ops 不双记、发送失败吞错并记 error、10 个便捷
+    方法。tokio 无界通道 → 可注入 sink + **有界队列**（满则拒绝计数）。
+  - `app_info.py`：wire→domain **显式转换函数**（对齐 Rust 孤儿规则，
+    不用 `From`），15 / 6 / 11 / 1 / 3 字段逐项解构；动态 Python 无
+    编译期类型保护，故加**严格字段白名单** + http/https URL 校验，
+    未知服务端字段绝不泄漏进领域对象 / UI / 日志。
+  - `chatwidget.py`：committed cells + 原地可变的 active cell、
+    缓存键变化才重建 live tail（时间依赖输出强制刷新）、
+    **`agent_turn_running` 与 `mcp_startup_status` 两个独立生命周期
+    派生单一 busy 指示器**（防 MCP 启动期间误报空闲导致重复提交）。
+  - `cli.py`：公开 flag 与 `#[clap(skip)]` 内部参数分离；
+    **`mark_tui_args` 两条冲突规则 fail-closed** ——
+    `dangerously_bypass_approvals_and_sandbox`（本地名 `--yolo`）与
+    `approval_policy`、`auto_review` 与 `approval_policy` 互斥；两个
+    绕过开关叠加也拒绝。返回结构化问题 + `is_safe_to_start()` 拒绝启动。
+  - `resize_reflow_cap.py`：`1000 / 9001 / 3500 / 10000` 四档、
+    Auto/Disabled/Limit 三态（`None` = 显式禁用保留全部行）、
+    **VS Code 环境探测优先于终端名**；非法 `Limit` fail-closed 回退
+    保守 fallback。
+- **既有安全接线保护（用户明确要求，本轮硬约束）**：
+  `app.assert_wiring_intact()` 真实 import 现有模块，逐项验证
+  `build_permission_policy` 注入、`_DenyAllMCPPolicy` 返回 deny、
+  `ctx.confirm` 通道、`make_confirm_callable` 卡片接线、
+  `confirm_apply` 副本确认、`ABORT` 显式决策（无输入 / Esc 绝不变成
+  同意）共 **6 项**，接入 `corekit_validate()` / `parity_validate()` /
+  回归集。**本轮没有替换任何现有运行时对象**，前 11 轮修好的侧门
+  一个都没重开。
+- `tuan_cli/tui/parity/matrix.py`：9 个模块从 `pending` 转 `aligned`
+  （每条都有实现与测试落点）。`parity_report()` / `parity_validate()`
+  接入 `corekit` 自检；`tuan tui parity` 新增「应用核心」「安全接线」两行。
+- **指标如实更新**：aligned 21→**30**、pending 24→**15**、
+  宽口径 85.5%→**90.9%**、严格 47.3%→**52.7%**、逐值对齐
+  12.7%→**18.2%**；`fully_identical` 仍为 `false`。
+  `TUI_PARITY.md` 的分组表（core_app pending 0）、aligned 表、指标块、
+  15 个待办队列、第 12–15 轮路线（第 12 轮标 ✅）、本地化清单、§8
+  合规声明全部同步。
+- 文档：`NOTICE` 第 12 条（含全部本地化修改点与安全增强）、
+  `SECURITY.md` / `SECURITY_EN.md` 第 12 轮小节、
+  `SECURITY_BASELINE.md` R23、`TUI_PARITY.md`。
+- **边界（如实）**：`core_app` 与 `input_keymap` 两组已清零，但**整体
+  还不是「完全相同」**（还剩 15 个）；OpenAI 专属（实时语音、云提交、
+  连接器、插件、daemon、worktree）标 `not_applicable` / 未实现，仅保留
+  变体名供 voice_only 白名单契约核验；`MAX_REPLAY_TRANSCRIPT_CELLS`
+  的上游依赖常量本地不存在，fallback 取显式本地默认 1000、
+  `MAX_PENDING_TRANSCRIPT_CELLS=8`，均非逐值复制；本轮未改任何
+  键位、布局数值或安全接线。
+
 ### 文档与回归
 - `SECURITY.md` / `SECURITY_EN.md` 路线图增加状态列，E2 / E5 标记为已落地并附实现说明。
 - 新增 `tests/test_e2_e5_hardening.py`（16 例）、`tests/test_e6_e8_hardening.py`（21 例）、
   `tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）、
   `tests/test_e1_e7_hardening.py`（39 例）、`tests/test_tui_approval_overlay.py`（59 例）、
-  `tests/test_tui_parity.py`（新增）、`tests/test_tui_input_layer.py`（88 例）；
-  沙箱 / 权限 / 配置批次 156 例，
+  `tests/test_tui_parity.py`（新增）、`tests/test_tui_input_layer.py`（88 例）、
+  `tests/test_tui_core_app_layer.py`（76 例）；沙箱 / 权限 / 配置批次 156 例，
   安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
   审批覆盖层与 E1/E7 接线 102 例通过。
 - 本轮为普通 fast-forward 提交，未改写历史、未使用 force push。
