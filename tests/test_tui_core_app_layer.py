@@ -532,10 +532,12 @@ class TestCorekitPackage:
         from tuan_cli.tui.parity import parity_report, parity_validate
         r = parity_report()
         assert r["corekit"]["modules"] == 9
-        assert r["matrix"]["pending"] == 15
-        assert r["matrix"]["by_status"]["aligned"] == 30
-        assert r["matrix"]["coverage_pct"] == 90.9
+        # 第 13 轮 config_models + misc 清零后同步（pending 15 -> 10）
+        assert r["matrix"]["pending"] == 10
+        assert r["matrix"]["by_status"]["aligned"] == 35
+        assert r["matrix"]["coverage_pct"] == 93.9
         assert r["matrix"]["fully_identical"] is False
+        assert r["configkit"]["modules"] == 5
         assert parity_validate() == []
 
     def test_gaps_no_longer_contain_core_app(self):
@@ -545,4 +547,4 @@ class TestCorekitPackage:
                   "app_event_sender", "app_info", "chatwidget", "cli",
                   "resize_reflow_cap"):
             assert m not in gaps
-        assert len(gaps) == 15
+        assert len(gaps) == 10

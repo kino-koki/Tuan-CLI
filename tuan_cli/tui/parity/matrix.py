@@ -63,6 +63,12 @@ EXPLICIT_ALIGNED: Dict[str, str] = {
     "chatwidget": "tui/corekit/chatwidget.py — committed+active cell / live tail / 双生命周期 busy",
     "cli": "tui/corekit/cli.py — 公开/内部 flag 分离 / 两条审批冲突 fail-closed",
     "resize_reflow_cap": "tui/corekit/resize_reflow_cap.py — 1000/9001/3500/10000 四档 / 三态 / VSCode probe 优先",
+    # ---- 第 13 轮：config_models + misc 组 5 个待对齐模块，逐模块有实现+回归
+    "additional_dirs": "tui/configkit/additional_dirs.py — 4 早退分支 / 警告原文 / 忽略即拒绝的 fail-closed 决策",
+    "collaboration_modes": "tui/configkit/collaboration_modes.py — tui_visible 筛选 / 2s 发现 / 失败不冒充空列表",
+    "model_migration": "tui/configkit/model_migration.py — 三态 Outcome / 强制与可选键位 / 单次模板替换修链式缺陷",
+    "sidebar_chooser": "tui/configkit/sidebar_chooser.py — WIDE_WIDTH=58 / 窄屏双行 / choice_at 命中 / footer 提示",
+    "sidebar_tab_strip": "tui/configkit/sidebar_tab_strip.py — 三态 TabState / targets 几何 / add 优先 / hit 与 render 同源",
 }
 
 EXPLICIT_LOCALIZED: Dict[str, str] = {
