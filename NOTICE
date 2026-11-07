@@ -104,12 +104,282 @@ THIRD-PARTY ATTRIBUTIONS
    or `ecosystem.hermes.enabled` is `True`.  Users can disable these in
    `~/.tuan/config.yaml` to prevent any access to third-party CLI data.
 
+9) Approval overlay interaction contracts (ui/approval_overlay.py)
+   Location: tuan_cli/ui/approval_overlay.py
+             (consumed by sandbox/isolation.py + sandbox/manager.py for E7,
+              and tools/mcp/policy.py for E1)
+   Origin:   interaction contracts and component layering of the Codex TUI
+             approval overlay, specifically
+             `codex-rs/tui/src/bottom_pane/approval_overlay.rs`,
+             `list_selection_view.rs`, `popup_consts.rs`
+   Upstream: https://github.com/openai/codex
+   Holder:   OpenAI (Copyright 2025 OpenAI)
+   License:  Apache License 2.0 (full text: THIRD_PARTY_LICENSES/Codex-LICENSE.txt;
+             upstream NOTICE reproduced verbatim in
+             THIRD_PARTY_LICENSES/Codex-NOTICE.txt, which additionally
+             acknowledges code derived from Ratatui under the MIT license,
+             Copyright (c) 2016-2022 Florian Dehau and
+             Copyright (c) 2023-2025 The Ratatui Developers)
+
+   Note: the upstream `codex-tui` crate is Rust + ratatui + crossterm + tokio
+   (1216 .rs files, 492414 lines; 165 top-level modules; 1491 snapshot files
+   skipped). Its source was downloaded and inspected in
+   full for this attribution. NO Rust source code is copied or ported
+   verbatim into Tuan-CLI: the project is pure Python with prompt_toolkit,
+   and replacing the TUI shell wholesale would also replace the entry point
+   that carries the permission-policy injection, the confirmation channel
+   and the sandbox routing (i.e. it would re-open the side doors fixed in
+   the E1-E8 hardening series). What is reproduced is the *interaction
+   contract* only, independently implemented in Python:
+
+     1. a selection always emits an explicit decision event (no implicit
+        "absence of input means consent");
+     2. Esc / cancel always maps to Cancel/Abort, never to "continue
+        without info" even with custom keybindings;
+     3. the UI never evaluates whether an action is safe — it presents the
+        choices and routes the decision (upstream wording: "This module
+        does not evaluate whether an action is safe to run; it only
+        presents choices and routes user decisions.");
+     4. turn-scope vs session-scope grants are distinguished.
+
+   The card layout follows Tuan-CLI's existing box renderer (the same one
+   used by `_render_confirm_card` / `_render_ask_card`), not ratatui's
+   Widget/Buffer traits. Modifications relative to upstream: the request
+   model is a Python dataclass; decision parsing is fail-closed (unknown
+   input -> RETRY, non-TTY headless -> an explicit 6-char confirmation
+   code, EOF/unavailable stdin -> ABORT); E1 adds a persistent MCP trust
+   grant flow and E7 adds a structured DiffPreview card, neither of which
+   exists upstream. OpenAI does not endorse or sponsor this project.
+
+10) TUI parity/alignment layer (tuan_cli/tui/parity/, cli/cmd_tui_parity.py)
+    Location: tuan_cli/tui/parity/{upstream_spec,keymap,i18n,matrix}.py
+              tuan_cli/cli/cmd_tui_parity.py, TUI_PARITY.md
+    Origin:   functional facts extracted from the Codex TUI source:
+              `lib.rs` (165 top-level module names),
+              `keymap.rs::built_in_defaults` (key bindings),
+              `config/src/tui_keymap.rs` (key-spec normalization rules),
+              `ui_consts.rs` / `bottom_pane/popup_consts.rs` /
+              `list_selection_view.rs` (layout constants),
+              `bottom_pane/approval_overlay.rs` / `popup_consts.rs` /
+              `ui_consts.rs` (English UI strings for localization)
+    Upstream: https://github.com/openai/codex
+    Holder:   OpenAI (Copyright 2025 OpenAI)
+    License:  Apache License 2.0 (same files as component 9)
+
+    Note: this layer records **verifiable functional facts** (module names,
+    numeric layout constants, key bindings, normalization rules) and
+    independently implements them in Python. NO Rust source is copied.
+    English UI strings are listed as source material only and are rendered
+    through Tuan-CLI's own 10-language localization; they are not shipped
+    as upstream expressive content. Modifications: component tree is
+    regrouped into Tuan functional domains; keymap resolution adds explicit
+    fail-closed behavior; `Esc` maps to ABORT (stricter than upstream's
+    exec-mode decline); `approve_for_prefix` is localized to an in-session
+    grant and flagged as such; E1 session-scope grants are persisted to
+    disk (a wider scope than upstream, disclosed on the card). See
+    TUI_PARITY.md sections 3, 6 and 8 for the full change list.
+
+    Scale correction: section 9 previously stated "567 .rs files, ~247k
+    lines", which came from an incomplete sparse extraction (1135 files).
+    A full tarball extraction yields 165 top-level modules, 1216 .rs files
+    and 492414 lines (1491 snapshot files skipped). All references to the
+    old figures have been corrected in NOTICE, SECURITY.md, SECURITY_EN.md
+    and CHANGELOG.md; TUI_PARITY.md section 2 records the correction.
+    OpenAI does not endorse or sponsor this project.
+
+11) Input / terminal capability alignment layer (tuan_cli/tui/inputkit/)
+    Location: tuan_cli/tui/inputkit/
+              {vim_search, activation_key_guard, copy_input_guard,
+               custom_terminal, terminal_program_status,
+               terminal_hyperlinks,
+               terminal_visualization_instructions}.py
+    Origin:   functional contracts extracted from the Codex TUI source:
+              `codex-rs/tui/src/vim_search.rs`,
+              `activation_key_guard.rs`, `copy_input_guard.rs`,
+              `custom_terminal.rs`, `terminal_program_status.rs`,
+              `terminal_hyperlinks.rs`,
+              `terminal_visualization_instructions.rs`
+    Upstream: https://github.com/openai/codex
+    Holder:   OpenAI (Copyright 2025 OpenAI)
+    License:  Apache License 2.0 (full text:
+              THIRD_PARTY_LICENSES/Codex-LICENSE.txt)
+
+    SPECIAL MIT ATTRIBUTION: upstream `custom_terminal.rs` begins with an
+    explicit notice stating it is derived from `ratatui::Terminal` and is
+    licensed under the MIT License, Copyright (c) 2016-2022 Florian Dehau
+    and Copyright (c) 2023-2025 The Ratatui Developers. That MIT notice is
+    reproduced in THIRD_PARTY_LICENSES/Codex-NOTICE.txt (the upstream
+    NOTICE). The Python module in this project implements the *algorithm
+    contract* (double-buffer diff, row-tail ClearToEnd optimization,
+    AlwaysUpdate prefix retention, wide-glyph tail invalidation,
+    synchronized frame wrapping, Drop cursor restoration) independently;
+    NO Rust source is copied verbatim. TUI_PARITY.md section 8 records
+    this dual attribution.
+
+    Verifiable facts aligned value-for-value:
+      - activation_key_guard: INITIAL_GUARD=1s,
+        LEGACY_REPEAT_GUARD=1s, Press/Repeat/Release state machine;
+      - terminal_program_status: MIN_VTE_VERSION_WITH_SAFE_OSC=5400,
+        OSC 7501 / 21337, Idle/Working/Waiting labels,
+        #00d75f / #ff9500 / #5f87ff indicators, mutex-guarded dedup
+        cache, invalidate(), `;` and `\` escaping;
+      - terminal_hyperlinks: MAX_HYPERLINK_DESTINATION_BYTES=8192,
+        the 17-entry SAFE_WORKSPACE_EXTENSIONS allowlist,
+        canonicalize + strip_prefix workspace containment,
+        symlink / hidden-directory rejection, image format probing;
+      - terminal_visualization_instructions: feature gate, non-empty
+        append semantics, and the four ASCII-only visual rules.
+
+    Modifications / localization (each listed, none hidden):
+      - crossterm / ratatui Backend -> injectable Python TerminalBackend;
+      - unicode-segmentation extended graphemes -> stdlib unicodedata
+        UAX #29 *approximation* (explicitly NOT claimed byte-identical);
+      - Instant -> time.monotonic() with an injectable clock;
+      - Rust Drop -> context manager with __exit__/close/__del__ that
+        ALSO releases on the exception path;
+      - crossterm execute!(stdout()) -> opt-in writer; the module emits
+        NO escape sequences unless configure(writer=...) is called;
+      - English visualization instructions -> Chinese default, with the
+        English original retained for verification and the ASCII-only
+        constraint preserved;
+      - CJK display width, pathlib.resolve() canonicalization, image
+        magic-number probing instead of the `image` crate.
+
+    Local security hardening (STRICTER than upstream, not a relaxation):
+      - TerminalHyperlink.web() adds an http/https scheme allowlist and
+        rejects control / OSC / BEL characters and oversized destinations;
+        upstream web() performs no such validation;
+      - terminal_program_status sanitizes and length-caps detail text
+        before emitting OSC sequences;
+      - workspace-file validation fails closed on symlink ancestors.
+
+    Attribution for interactive strings is unchanged (see components 9
+    and 10). OpenAI does not endorse or sponsor this project.
+
+12) Application-core alignment layer (tuan_cli/tui/corekit/)
+    Location: tuan_cli/tui/corekit/
+              {app, app_backtrack, app_command, app_event,
+               app_event_sender, app_info, chatwidget, cli,
+               resize_reflow_cap}.py
+    Origin:   functional contracts extracted from the Codex TUI source:
+              `codex-rs/tui/src/app.rs`, `app_backtrack.rs`,
+              `app_command.rs`, `app_event.rs`, `app_event_sender.rs`,
+              `app_info.rs`, `chatwidget.rs`, `cli.rs`,
+              `resize_reflow_cap.rs`
+    Upstream: https://github.com/openai/codex
+    Holder:   OpenAI (Copyright 2025 OpenAI)
+    License:  Apache License 2.0 (full text:
+              THIRD_PARTY_LICENSES/Codex-LICENSE.txt)
+
+    Verifiable facts aligned value-for-value:
+      - app.rs: THREAD_EVENT_CHANNEL_CAPACITY = 32768,
+        EXTERNAL_EDITOR_HINT = "Save and close external editor to
+        continue.", AppRunControl (Continue / Exit), ExitReason
+        (UserRequested / TurnInterrupted / Fatal),
+        AppExitInfo::fatal() clearing all other fields, and
+        rollout_path_is_resumable (exists + regular file + len > 0);
+      - app_backtrack.rs: the six-step Esc/Enter state machine
+        (prime -> browse -> select -> Ctrl+T details -> Esc restore ->
+        Enter revert), base_id invalidation on thread change,
+        usize::MAX "no selection", and both message constants;
+      - app_command.rs: RealtimeOfferSdp / RealtimeSpeechText whose Debug
+        and Serialize both emit "<redacted>" so ICE credentials and spoken
+        answers stay out of diagnostics and session recordings, with the
+        plaintext only recovered at the app-server signaling boundary;
+        CloudSubmissionIntent (UseKnownTurn / StartOrSteer / StartIfIdle);
+        UserVerificationResponse proof carrying serde(skip_serializing);
+      - app_event.rs: typed events, CodexOp excluded from inbound session
+        logging ("Avoid double-logging Ops"), ExitMode
+        (ShutdownFirst / ShutdownAfterInterrupt / Immediate),
+        FeedbackCategory (5), RunningTaskExitAction (3), SideStartMode;
+      - app_event_sender.rs: voice_only allowlist evaluated BEFORE inbound
+        logging (dropped events are not logged), send() swallowing channel
+        errors with an error log, and the typed convenience methods;
+      - app_info.rs: explicit conversion functions (not `From`, because
+        Rust orphan rules forbid it when the crate owns neither type),
+        with 15 / 6 / 11 / 1 / 3 fields destructured one by one;
+      - chatwidget.rs: committed cells plus an in-place mutable active
+        cell, a cached render-only live tail whose key changes when the
+        active cell mutates or output is time-dependent, and ONE busy
+        indicator derived from TWO independent lifecycles
+        (agent_turn_running and mcp_startup_status) via
+        update_task_running_state;
+      - cli.rs: #[clap(skip)] internal args separated from public flags,
+        and mark_tui_args making
+        "dangerously_bypass_approvals_and_sandbox" AND "auto_review"
+        conflict with "approval_policy";
+      - resize_reflow_cap.rs: VSCODE 1000, WINDOWS_TERMINAL 9001,
+        WEZTERM 3500, ALACRITTY 10000, Auto / Disabled / Limit tri-state
+        (None = user explicitly disabled row limiting), and the VS Code
+        environment probe taking priority over terminal-name metadata.
+
+    Modifications / localization (each listed, none hidden):
+      - tokio / crossterm / ratatui -> injectable Python sinks, bounded
+        queue, pure state machines, string transcript cells;
+      - Rust enum variants -> dataclass + Enum; usize::MAX -> NO_SELECTION
+        sentinel (-1) with identical semantics;
+      - English UI strings -> Chinese defaults with the English originals
+        retained for verification (project 10-language i18n unchanged);
+      - OpenAI-only capabilities (realtime voice, cloud submission,
+        connectors, plugins, daemon, worktrees) are marked
+        not_applicable / not implemented; variant names are kept ONLY so
+        the voice_only allowlist contract remains verifiable;
+      - upstream fallback constant comes from codex_config::types; this
+        project uses an explicit default of 1000 with configure_fallback()
+        injection, disclosed as a localization value, not a copied value;
+      - MAX_REPLAY_TRANSCRIPT_CELLS = MAX_PENDING_TRANSCRIPT_CELLS + 2 is
+        documented as an expression; MAX_PENDING_TRANSCRIPT_CELLS has no
+        local counterpart so an explicit local default of 8 is used.
+
+    Local security hardening (STRICTER than upstream, NOT a relaxation):
+      - Redacted hides plaintext from repr / str / format / to_dict /
+        equality as well as Debug / Serialize, and reveal() is the ONLY
+        exit with an audit counter (upstream PartialEq compares plaintext);
+      - CLI approval conflicts are returned as structured problems and
+        is_safe_to_start() refuses startup, instead of merely letting a
+        parser error out; two bypass switches together are also refused;
+      - app_info uses a STRICT field allowlist (dynamic Python dicts have
+        no compile-time type) and http/https URL validation, so unknown
+        server fields never leak into domain objects / UI / logs;
+      - AppEventSender uses a BOUNDED queue (upstream is unbounded) and
+        refuses unknown event names in inbound logging;
+      - validate_thread_op() rejects SubmitThreadOp without a thread id;
+        BacktrackState.bind_thread() invalidates stale selections and
+        confirm_revert() re-checks the thread, preventing cross-session
+        history reverts;
+      - resize_reflow_cap fails closed to the conservative fallback for
+        illegal Limit values instead of replaying unbounded rows.
+
+    EXISTING SECURITY WIRING PROTECTION (hard requirement of this round):
+      app.assert_wiring_intact() really imports the pre-existing project
+      modules and verifies SIX invariants: build_permission_policy()
+      injection, _DenyAllMCPPolicy returning deny, the ctx.confirm
+      channel, make_confirm_callable card wiring, confirm_apply copy-mode
+      confirmation, and ABORT being an explicit decision (no input / Esc
+      can never become approval). It is wired into corekit_validate(),
+      parity_validate() and the regression suite. NO existing runtime
+      object was replaced by this alignment layer.
+
+    NO Rust source is copied verbatim. OpenAI does not endorse or sponsor
+    this project.
+
 -------------------------------------------------------------------------------
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
 
 pyyaml, rich, prompt_toolkit, httpx, openai — each under its own license
 (see pyproject.toml for version constraints).
+
+-------------------------------------------------------------------------------
+LICENSE TEXTS
+-------------------------------------------------------------------------------
+
+Components 1-7 are under MIT; the full text is reproduced below.
+Components 9, 10, 11 and 12 are under Apache License 2.0 (with component 11
+carrying the additional ratatui MIT attribution noted above); their full license text and upstream
+NOTICE are reproduced verbatim in THIRD_PARTY_LICENSES/Codex-LICENSE.txt and
+THIRD_PARTY_LICENSES/Codex-NOTICE.txt respectively (Apache-2.0 section 4(a)/(c)
+and the upstream NOTICE requirement).
 
 -------------------------------------------------------------------------------
 MIT LICENSE (as required to be retained for components 1-7)

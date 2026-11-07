@@ -1,0 +1,153 @@
+# 安全基线（部署者必读）
+
+> 本文面向**要把它跑在生产/托管环境里的人**，不是功能介绍。
+> 目标是把「代码里有开关」和「部署时真的开了」分开说清楚，并明确当前设计**做不到什么**。
+> 配套：`SECURITY.md` / `SECURITY_EN.md`（子系统权威说明）、`HARDENING.md`（加固工具）。
+
+---
+
+## 1. 一句话定位
+
+Tuan-CLI 的安全模型是 **「确定性规则滤网 + 审计/回滚治理」**，边界主要落在**进程内的策略层**；
+它不是「所有命令默认跑在 OS 级沙箱里」的执行器。这个差别决定了下面的部署要求：**必须在外面再垫一层隔离**。
+
+不要只靠提示词、系统提示、模型对齐或静态红线来挡提示注入。自适应攻击下已发表的防御基本都可被绕过，
+本项目 `bench/` 里的 10k / 5k / 2497 条数字是**自建静态数据集**，只用于回归门禁，不构成对抗真实攻击者的证明。
+
+---
+
+## 2. 本次加固（可复跑验证）
+
+| 编号 | 问题 | 修复 |
+|---|---|---|
+| R1 | `SandboxManager.DEFAULT_POLICY.enforce_required=False` 与 `config/defaults.py` 的 `True` 冲突；`sandbox:` 段覆盖后漏写该键会静默降级为裸执行 | 两处统一为 `True`；新增「局部覆盖不丢失」回归用例 |
+| R2 | 显式指定的强隔离后端不可用时 `fail-soft` 回落到 auto，可能最终落到 `local` 裸执行 | 返回 `(prefer, False)`，交由 `HardIsolationFilter` 在 `enforce_required=True` 时拒绝 |
+| R3 | 6 处异常路径 `except: pass` = 静默放行（网络探测、红线引擎导入、网络红线判定、域名白名单、凭据扫描、域名解析） | 全部改为 fail-closed：拒绝或升级人工确认 |
+| R4 | `pip/npm/yarn/pnpm/poetry/uv install`、`pytest/tox/nox/go test/cargo test/mvn/gradle/make` 被判「良性零确认」，但会执行仓库内 `postinstall` / `conftest.py` / `build.rs` / `Makefile` | L0 新增确认门控（`CONFIRM`，非 `DENY`），`--help/--version` 变体不触发 |
+| R5 | 加固项只有文档、没有态势检查 | `tuan harden status` 输出 `enforce_required` / 默认禁网 / 域名白名单 / 强后端可用性，并列出待加固项 |
+| R6 | E2 信任衰减**只有测试调用**：CLI 与 Web 都直接读 `record.level`，衰减从未生效；扫描异常 `except: pass` 静默放行；`last_used` 从不更新导致活跃工作区 30 天后被误判过期 | `check_trust()` 主链路自动衰减 + 敏感面指纹基线 + 扫描失败 fail-closed + `last_used` 自动维护 + 降级原因可观测 |
+| R7 | E5 写风暴「不同文件数」按会话累计，触发后永久告警，与 60 秒滑动窗口矛盾；告警文案把次数误写成秒数 | 文件维度与次数维度共用窗口、告警态随窗口复位、修正文案 |
+| R8 | `PermissionPolicy._hardening_confirm()` 安全引擎导入失败时 `except: pass` 后 YOLO 自动批准，超长命令 / FD 重定向 / IEX / Docker 守护进程重定向全部静默放行 | 异常时返回 `confirm` 并标注 fail-closed |
+| R9 | `permissions.rules` 无法对单台 MCP server 精确管控，宽泛 allow 也没有负向排除（「永远允许」= 提权入口） | E6：`exclude` / `!glob` 负向排除（deny 忽略）、`mcp__<server>__<tool>` 规范化名 |
+| R10 | `config/validate.py` 不覆盖 `sandbox` / `permissions`；非 dict 规则、未知 action、`sandbox.enabled=false` 都会静默失效 | E8：新增 `config/security_schema.py`，接入 `tuan config validate` 与 `tuan harden status` |
+| R11 | **降级被误报为已隔离**：`SandboxManager._run_syscall()` 写死 `enforced=True`，platform 层内部退化为普通子进程时上层仍认为 OS 级强隔离生效 | E3：`SyscallResult` 带 `enforced` / `degraded_reason`，所有 fallback 置 `enforced=False`，由 `enforce_required` 决定拒绝 |
+| R12 | `AssignProcessToJobObject` 失败时 `pass` 后照跑，却仍返回 `mechanism="job-object"`；配额设置失败也照跑 | E3：杀掉子进程并返回 `blocked=True / enforced=False`；配额任一步失败即抛错 |
+| R13 | E3 名义配额：`cpu_rate_pct` 参数从未使用、`MaximumWorkingSetSize` 缺 `WORKINGSET` flag、后端探测只看 `sys.platform == "win32"` | E3：class 9 + class 15 双次 `SetInformationJobObject` 落 CPU 硬上限；真实 `CreateJobObjectW` 能力探测；三级进程树击杀兜底 |
+| R14 | 审计逐条存储，同源反复红线无聚合信号；导出文件无轮转、权限不收紧 | E4：新增 `core/audit_correlation.py`（burst / cross_session / severity_escalation），历史 AEAD 重放；导出按大小轮转 + 0600 |
+| R15 | 无控制终端（CI / 容器 / systemd）下 `os.getlogin()` 抛 OSError，整个审计器初始化失败 | 改为 best-effort 环境变量兜底；**指纹格式保持不变**，既有加密日志仍可解密 |
+| R16 | **`copy_diff_apply` 是纯文档特性**：L2 写入 `verdict.workspace_mode`，但 `execute_isolated()` 从未读取，`isolate_workdir`/`diff`/`apply` 生产代码零调用点，高危命令实际在真实工作区裸跑 | E7：按 `workspace_mode` 分派，高危命令在隔离副本内执行，预览 + 确认后才写回 |
+| R17 | `Snapshot.capture()` 跳过所有点目录，副本里改 `.github/workflows/ci.yml` 时 `diff()` 返回空 —— 确认界面显示「无变更」 | E7：只跳过 `_IGNORED` 与隔离副本自身，隐藏目录纳入快照 |
+| R18 | 旧 `diff()` 只有 `path/status`，确认时看不到改了什么内容；敏感文件无高亮；`apply()` 无确认门控、无 TOCTOU 复检 | E7：`DiffPreview` 带内容预览/敏感标记，`confirm_apply()` fail-closed + 指纹复检，不引入缓存 |
+| R19 | MCP 无「这台 server 被允许做什么」的权限域：只有内容层注入扫描，外层 `mcp_call` 一刀切；未登记 server 首次出现即按外层策略放行 | E1：`MCPPolicyStore` 持久化信任分级 + 工具级授权 + 会话内可回撤；默认 untrusted 拒绝、损坏即 locked；由 `build_permission_policy()` 接入主链路，策略层失败注入 DenyAll |
+| R20 | E1/E7 只有后端 API，没有审批卡片；`ctx.confirm` 缺失的 headless 场景直接失败 | 新增 `ui/approval_overlay.py`（借鉴 Codex TUI 交互契约，等价移植、非 Rust 源码复制）：结构化审批卡片 + 显式决策事件 + Esc=Abort；E1 `request_grant()` 呈现完整权限域，E7 `confirm_apply()` 接 `card_renderer`，无 TUI 时提供同样要求显式决策的 headless 默认通道（精确确认码 + 非 TTY 即 ABORT）。**fail-closed 未放宽** |
+| R21 | 文档把 Codex TUI 规模写成 567 个 `.rs` / 24.7 万行（来自不完整 sparse 解压）；且「与 Codex 完全相同」无度量口径 | 完整解压后更正为 165 模块 / 1216 `.rs` / 492414 行；新增 `tuan_cli/tui/parity/` 对齐层（组件树 / 键位 / 布局 / 文案 / 矩阵）、`tuan tui parity` 命令与 `TUI_PARITY.md`，把「完全相同」拆成可核销维度。**逐值对齐仅 8.5%、pending 31，如实标注 `fully_identical=false`** |
+| R22 | 终端 OSC 序列被解释执行，而上游 `terminal_hyperlinks::web()` 不校验目的地、`terminal_program_status` 直接 `execute!(stdout())`；且 `input_keymap` 组 7 个模块仍未对齐 | 新增 `tui/inputkit/` 7 模块：`web()` http/https 白名单 + OSC/BEL 拦截 + 8192 字节上限、`TrustedWorkspaceFile` canonicalize 逃逸/symlink/隐藏目录拒绝、状态发射默认 no-op writer 且 detail 先净化转义、RAII 守卫异常路径也释放、双缓冲 diff 与同步帧。指标 pending 31→24、逐值对齐 8.5%→12.7%，**如实保持 `fully_identical=false`** |
+| R23 | `core_app` 组 9 个模块未对齐；且上游诊断/录制若直接携带 SDP（含 ICE 凭据）或语音文本即泄漏，CLI 里「绕过审批」与「指定审批策略」静默共存会形成配置侧门；线程切换后旧回退选择可能跨会话生效 | 新增 `tui/corekit/` 9 模块：`Redacted` 全链路脱敏（`reveal()` 唯一出口带计数）、`UserVerificationResponse.proof` 不进录制、`cli` 两条审批冲突 fail-closed、`app_info` 严格字段白名单 + http/https 校验、有界事件队列、空 thread_id 拒绝、`bind_thread()` 失效 + revert 二次校验、双生命周期 busy。**`app.assert_wiring_intact()` 真实 import 验证 6 条既有安全接线（权限策略注入 / deny-all / ctx.confirm / 审批卡片 / 副本确认 / ABORT）并接入三层自检**，本轮未替换任何现有运行时对象。指标 pending 24→15、逐值对齐 12.7%→18.2%，**如实保持 `fully_identical=false`** |
+
+回归：`tests/test_fail_closed_regressions.py`（37 例）、`tests/test_e2_e5_hardening.py`（16 例）、
+`tests/test_e6_e8_hardening.py`（21 例）、`tests/test_e3_jobobject.py`（25 例）、
+`tests/test_e4_correlation.py`（24 例）、`tests/test_e1_e7_hardening.py`（39 例）、
+`tests/test_tui_approval_overlay.py`（59 例）、`tests/test_tui_parity.py`（新增）、
+`bench/indep_verify.py`（29 例）；沙箱 / 权限 / 配置批次 156 例，
+安全集成 / MCP / shell 守卫 / 文档一致性批次 264 例，
+审批覆盖层与 E1/E7 接线 102 例、输入层 `test_tui_input_layer.py` 88 例、
+应用核心 `test_tui_core_app_layer.py` 76 例、
+对齐矩阵 `test_tui_parity.py` 85 例通过；`tuan tui parity` 显示
+「安全接线：既有链路完好 · 6 项检查」。
+
+```bash
+python -m pytest tests/test_fail_closed_regressions.py tests/test_e2_e5_hardening.py -q
+python bench/indep_verify.py
+tuan harden status
+```
+
+---
+
+## 3. 生产部署基线（务必照做）
+
+### 3.1 外面必须垫一层
+
+把**整个 Tuan 进程**放进一次性容器或 VM，而不是指望 `--isolation`：
+
+- 只读挂载代码，工作区单独可写卷；
+- 容器以非 root 运行，禁止挂载 `/var/run/docker.sock`；
+- 出网走代理 + 域名白名单，默认拒绝；
+- 不把长期密钥、云凭据、`~/.ssh` 放进同一文件系统视图；
+- 用完即毁，不复用容器跑第二个不可信任务。
+
+`--isolation` / `--sandbox` 是 **engine/process 级**隔离，用于缩小爆炸半径和隔离失败，
+**不是完整 OS 沙箱**（README 已明确）。默认配置下，绝大多数命令**不进入** L3 强隔离。
+
+### 3.2 配置（`config.yaml`）
+
+```yaml
+sandbox:
+  enabled: true
+  backend: auto                      # 确保机器上真有 docker / bwrap / seatbelt 之一
+  enforce_required: true             # 无强后端时拒绝, 绝不裸执行 (必须保持 true)
+  deny_unknown_shell: true           # 未知信任工作区的 shell 直接拒绝
+  allowed_domains:                   # 出网域名白名单, 生产不要留空
+    - pypi.org
+    - registry.npmjs.org
+    - github.com
+  resource:
+    deny_network_by_default: true     # 默认禁网 (出厂为 false, 生产请开启)
+    max_memory_mb: 2048
+    max_timeout: 300
+    isolate_copy_threshold: high
+
+security:
+  network:
+    deny_remote_exec: true
+    deny_data_exfil: true
+    one_way_mode: true
+    egress_cidr_allow: []            # 按需收紧
+  mcp:
+    audit_enabled: true
+    block_on_injection: true
+```
+
+> 开启 `deny_network_by_default` 后，含网络特征的命令会 `network=False + isolate=True`。
+> 若机器上没有可用强后端且 `enforce_required=true`，这些命令会被**拒绝**——这是预期行为，
+> 不是 bug：先装好隔离运行时，再谈出网。
+
+### 3.3 运行态检查清单
+
+- [ ] `tuan harden status` 显示 `fail-closed=OK`、`默认禁网=OK`、强后端非空
+- [ ] `tuan harden repro-lock --verify --out requirements.lock` 通过（依赖未漂移）
+- [ ] `tuan harden sbom` 产出 SPDX，且发布件与 SBOM 对应
+- [ ] 审计日志落在进程外的追加式存储（WORM / 自签名链），不要只信工作区里的 `.git/logs`
+- [ ] 发布 tag 已签名（`git tag -s`），且能从干净 checkout 复现构建
+- [ ] 对不可信仓库跑任务时，人工审批通道可用且**审批超时按拒绝处理**
+
+---
+
+## 4. 已知局限（不回避）
+
+1. **规则层在前、内核层在后**：L3 强隔离只在 `verdict.isolate` 为真时触发，而 `isolate` 主要由「severity ≥ high」或「开启默认禁网」置位。这不是「所有命令默认在 OS 沙箱内」。要获得与内核级沙箱等价的保证，只能靠 §3.1 的外部容器/VM。
+2. **网络管控是「看命令文本」**：`NetworkGuard` 识别命令串里的域名/IP/CIDR 特征，不是出网路径上的强制拦截。绕过字符串识别的外传（如被注入的子进程自行联网）需要外部代理兜底。
+3. **静态基准 ≠ 对抗鲁棒性**：自建 10k 对抗样本、2497 条 bypass matrix 用于回归；项目未提供第三方自适应红队报告。误杀/漏拦数字请自行本地复跑后再引用。
+4. **YOLO 仍会放大风险**：`--yolo` 自动批准本需确认的操作（硬红线仍拒）。托管服务不要开；也不要把「永远允许」类持久规则交给模型提议。
+5. **发布溯源**：发布时建议为 tag 签名（`git tag -s`），并在每次发布附上提交 SHA、文件清单哈希与工具链版本，使「发布件是否等于测试件」可独立核验。
+6. **成熟度**：单人维护、无第三方安全审计、无公开 CVE/公告流程。`SECURITY_EN.md §8` 的 E1–E8 仍是未完成项，其中 E1（MCP server 信任分级 / 会话内可撤销授权）、E2（信任自动衰减）、E5（写风暴检测）与安全直接相关，优先级最高。
+
+---
+
+## 5. 不要做的事
+
+- 不要在没有外部容器/VM 的宿主机上，用长期云凭据跑不可信仓库的自主任务；
+- 不要为了「少弹窗」把 `enforce_required` 改回 `false` 或把 `deny_network_by_default` 永久关掉；
+- 不要把 `pip install` / `pytest` 的确认当成噪音批量「始终允许」；
+- 不要用 `bench/` 的数字对外宣称「100% 防提示注入」。
+
+---
+
+## 6. 复现
+
+```bash
+pip install -e ".[dev]"
+python -m pytest tests/test_fail_closed_regressions.py -q
+python -m pytest tests/test_sandbox_system.py tests/test_security_integration.py -q
+python bench/indep_verify.py
+python -m tuan_cli.cli.cmd_harden status   # 或安装后: tuan harden status
+```

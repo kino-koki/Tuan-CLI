@@ -84,7 +84,7 @@ class MyTool(Plugin):
 
 ---
 
-## Numéro de version et historique du dépôt (divulgation transparente)
+## Numéro de version
 
 **Pourquoi `0.3.4` et non `1.0` ?** Sémantique [SemVer](https://semver.org/) honnête : **une version `0.x` signifie que l'API publique (surface CLI, schéma de config, protocole d'outils, contrat de plugins) n'est pas encore gelée** et peut encore changer entre les releases. Tuan-CLI livre déjà un large ensemble de fonctionnalités — contrôle de sécurité / rollback transactionnel, hot-swap modèle-neutre (58 fournisseurs + Ollama local), trois boucles principales, architecture à conteneur de plugins, mémoire à trois niveaux, interopérabilité d'écosystèmes (MCP / ACP / pont Claude Code / Hermes), sous-agents et Swarm, cron et tâches d'arrière-plan, mode Goal et permissions précises — le tout couvert par des tests. Mais **le numéro de version reflète la stabilité de l'interface, pas l'exhaustivité des fonctionnalités** : un ensemble complet de fonctionnalités ne signifie pas que l'API doit être gelée. `1.0` est réservé au moment où l'API publique sera réellement stable et où nous pourrons promettre la rétrocompatibilité. D'ici là : les changements cassants montent MINOR dans `0.x` (avec pistes de migration), les fonctions compatibles montent MINOR, les correctifs montent PATCH (voir [VERSION_POLICY.md](VERSION_POLICY.md)).
 
@@ -92,8 +92,6 @@ class MyTool(Plugin):
 |---|---|
 | `0.3.4` (actuel) | **API pas encore gelée** : `0.x` autorise des ajustements cassants, annoncés avec des pistes de migration ; rétrocompatibilité non promise |
 | `1.0` (réservé) | Activé lorsque l'API publique sera gelée et la rétrocompatibilité promise ; c'est seulement alors que les changements cassants montent MAJOR (`2.0`) |
-
-**Note sur l'historique Git (transparence open source) :** l'historique des commits de ce dépôt a été **volontairement reconstruit le 2026-09-26 — l'historique initial des commits a été délibérément écrasé par l'auteur** ; l'évolution commit par commit antérieure à cette date n'est plus conservée. Le code actuel est entièrement revoyable, de l'architecture à l'implémentation ; pour l'évolution des fonctionnalités antérieure à 2026-09-26, fiez-vous aux enregistrements de version de [CHANGELOG.md](CHANGELOG.md) (la discipline de version n'est pas affectée). Nous choisissons de le divulguer franchement — sans fard, sans rien cacher.
 
 ---
 
@@ -138,7 +136,7 @@ tuan --print run "Salut, décris-toi en une phrase."
 
 ---
 
-## Surface de commandes : 49 sous-commandes principales + commandes slash
+## Surface de commandes : 50 sous-commandes principales + commandes slash
 
 | Commande | À quoi ça sert |
 |---|---|
@@ -281,8 +279,6 @@ tuan models                              # configuration interactive (clé dans 
 ```
 
 Les clés résident dans `~/.tuan/.env` (chmod 600, jamais commitées) ; les variables d'environnement (p. ex. `DEEPSEEK_API_KEY`) fonctionnent aussi.
-
-> **Transparence** : les versions précédentes proposaient une connexion GitHub / Apple / DeepSeek (avec une voie par jeton de session web). Cela contredisait le positionnement « entièrement local et hors ligne », et le point de terminaison web était une interface privée non prise en charge déclenchant des contrôles de risque — la capacité a donc été **entièrement retirée**. Les appels de modèle passent par les APIs officielles avec votre propre clé.
 
 ## Licence & liens
 

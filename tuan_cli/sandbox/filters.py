@@ -62,8 +62,11 @@ def _scan_embedded_secrets(texts: List[str]) -> Optional[Verdict]:
             continue
         try:
             findings.extend(scan_text(t))
-        except Exception:  # noqa: BLE001 - 单段扫描失败不拖累其它段
-            continue
+        except Exception:  # noqa: BLE001
+            # fail-closed: 单段扫描失败不能静默跳过该段, 升级为人工确认。
+            log.warning("内嵌凭据扫描异常, 升级为人工确认", exc_info=True)
+            return confirm("intent", "凭据扫描异常(fail-closed), 需人工确认", SEV["high"],
+                           ["检查命令/写入内容是否含明文密钥"])
     highs = [f for f in findings if getattr(f, "severity", "") == "high"]
     if not highs:
         return None
@@ -193,8 +196,61 @@ def _has_network_request(texts: List[str]) -> bool:
             if getattr(dec, "detected_domains", None) or getattr(dec, "risk_level", "") in ("high", "medium"):
                 return True
     except Exception:  # pragma: no cover
-        pass
+        # fail-closed: 检测本身失败时按"存在网络请求"处理,
+        # 避免异常路径静默跳过禁网/隔离判定 (原实现 pass -> return False = 放行)。
+        log.warning("网络请求检测异常, 按 fail-closed 视为存在网络请求", exc_info=True)
+        return True
     return False
+
+
+# ----------------------------------------------------------------- 仓库内代码执行面
+# 以下命令看似"例行开发操作", 实则会执行仓库内任意代码:
+#   npm/pnpm/yarn install|ci -> postinstall / lifecycle scripts
+#   pip/poetry/uv/bundle/composer install -> setup.py / PEP 517 build hooks
+#   pytest/tox/nox/go test/cargo test/mvn/gradle test -> conftest.py / build.rs / 测试代码
+#   make -> Makefile 内任意 recipe
+# 在"模型输出来自不可信上下文"的 Agent 场景里, 这是提示注入落地的经典通道,
+# 因此不能与 `git status` / `ls` 一样判为"零确认良性命令"。
+_REPO_CODE_EXEC_RE = None
+
+
+def _repo_code_execution_risk(texts: List[str]) -> bool:
+    """识别"会执行仓库内代码/安装脚本"的命令, 供 L0 升级为人工确认。
+
+    纯静态、模型无关; 任何解析异常一律按**有风险**处理(fail-closed)。
+    """
+    import re as _re
+    global _REPO_CODE_EXEC_RE
+    try:
+        if _REPO_CODE_EXEC_RE is None:
+            _REPO_CODE_EXEC_RE = _re.compile(
+                r"(?ix)"
+                r"(?:^|\s|&&|\||;)"
+                r"(?:"
+                r"(?:python3?|py)\s+-m\s+(?:pip\s+install|pytest|tox|nox)"
+                r"|pip3?\s+install|(?:poetry|uv)\s+(?:install|sync)"
+                r"|npm\s+(?:install|i\b|ci\b|run\b)"
+                r"|pnpm\s+(?:install|i\b)|yarn\s+(?:install|add|run)?"
+                r"|bundle\s+install|composer\s+install"
+                r"|pytest\b|tox\b|nox\b|go\s+test\b|cargo\s+test\b"
+                r"|mvn\s+(?:test|verify|install)\b|gradlew?\s+(?:test|build)\b"
+                r"|make\b"
+                r")"
+            )
+        for t in texts:
+            t = (t or "").strip()
+            if not t:
+                continue
+            low = t.lower()
+            # --help / --version / --dry-run 等无副作用变体不算
+            if _re.search(r"(?<!\S)--(?:help|version|dry-run|list)(?!\S)|(?:^|\s)-[vVh](?:\s|$)", low):
+                continue
+            if _REPO_CODE_EXEC_RE.search(t):
+                return True
+        return False
+    except Exception:  # pragma: no cover
+        log.warning("仓库代码执行面识别异常, 按 fail-closed 视为有风险", exc_info=True)
+        return True
 
 
 # ================================================================ L0 意图滤网
@@ -217,7 +273,10 @@ class IntentFilter:
         try:
             from ..ext.safety_engine import is_hard_redline
         except Exception:  # pragma: no cover
-            is_hard_redline = None  # type: ignore[assignment]  # 导入失败时无红线检测
+            # fail-closed: 红线引擎不可用 = 无法证明命令安全, 一律拒绝。
+            log.critical("致命红线引擎不可用, fail-closed 拒绝本次执行", exc_info=True)
+            return deny(self.name, "安全规则引擎不可用(fail-closed), 无法证明命令安全",
+                        SEV["critical"])
 
         critical = False
         if is_hard_redline is not None:
@@ -266,13 +325,30 @@ class IntentFilter:
                                 "; ".join(getattr(dec, "reasons", []) or ["命中网络外泄/远程执行红线"]),
                                 SEV["high"])
         except Exception:  # pragma: no cover
-            pass
+            # fail-closed: 判定异常不能等于"没有红线"。
+            log.warning("网络红线判定异常, fail-closed 拒绝", exc_info=True)
+            return deny(self.name, "网络红线判定异常(fail-closed), 无法证明命令安全",
+                        SEV["high"])
 
         # 内嵌凭据 (与 secret_scanner 同口径): 文本里出现 high 级明文密钥 → 需确认。
         # 放在红线/网络硬拒之后: 致命命令仍优先硬拒, 凭据泄露退到确认级。
         secret_v = _scan_embedded_secrets(texts)
         if secret_v is not None:
             return secret_v
+
+        # 会执行仓库内代码的命令: 即使静态评分判为"良性", 也需人工确认。
+        # 恶意仓库内容(conftest.py / postinstall / Makefile)借这类命令落地,
+        # 是提示注入从"文本"变成"副作用"最常见的通道。
+        if _repo_code_execution_risk(texts):
+            return confirm(
+                self.name,
+                "该命令会执行仓库内代码/安装脚本 (postinstall / conftest.py / build.rs / Makefile 等), "
+                "属提示注入高风险面, 需人工确认",
+                SEV["medium"],
+                ["确认仓库内容可信且来自可信来源",
+                 "生产/托管环境请在一次性容器或 VM 内执行",
+                 "可先运行 `tuan safe` 审阅该命令"],
+            )
 
         if _all_benign(texts):
             return Verdict(Action.ALLOW, layer=self.name, severity=SEV["low"],
@@ -331,7 +407,10 @@ class TrustFilter:
                     if domain not in allowed:
                         return deny(self.name, f"域名不在白名单: {domain}", SEV["high"])
             except Exception:  # pragma: no cover
-                pass
+                # fail-closed: 白名单校验异常时拒绝, 避免异常路径绕过出网限制。
+                log.warning("域名白名单校验异常, fail-closed 拒绝", exc_info=True)
+                return deny(self.name, "域名白名单校验异常(fail-closed), 无法证明出网合规",
+                            SEV["high"])
         return None
 
     @staticmethod
@@ -344,7 +423,8 @@ class TrustFilter:
                 dec = guard.check(t)
                 out.extend(getattr(dec, "detected_domains", None) or [])
             except Exception:  # pragma: no cover
-                pass
+                # 不再吞掉: 交由 TrustFilter.check 统一 fail-closed 拒绝。
+                raise
         return list(dict.fromkeys(out))
 
 

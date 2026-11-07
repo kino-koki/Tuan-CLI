@@ -67,11 +67,43 @@ def _engine_redline(command: str) -> bool:
         return True
 
 
+def _effective_tool_name(name: str, args: dict[str, Any]) -> str:
+    """E6: 把 MCP 调用规范化为 `mcp__<server>__<tool>` 供规则表匹配。
+
+    此前规则表只能按外层工具名 `mcp_call` 匹配, 无法对「某台不可信 server 的
+    某个工具」单独放行或拒绝 —— 只能一刀切。现在规则可写
+    `{"tool": "mcp__untrusted__*", "action": "deny"}`。
+    """
+    if name not in ("mcp_call", "mcp_tool", "mcp") or not isinstance(args, dict):
+        return name
+    server = (args.get("server") or args.get("server_name")
+              or args.get("mcp_server") or "")
+    tool = (args.get("tool") or args.get("tool_name")
+            or args.get("mcp_tool") or args.get("name") or "")
+    if not server and not tool:
+        return name
+    return f"mcp__{server}__{tool}"
+
+
+def _rule_exclude(rule: dict) -> str:
+    """E6: 取负向排除模式。支持 `exclude: "bin/**"` 与 `pattern: "!bin/**"`。"""
+    ex = rule.get("exclude")
+    if ex is not None and str(ex).strip():
+        return str(ex).strip()
+    pat = str(rule.get("pattern", "")).strip()
+    if pat.startswith("!"):
+        return pat[1:].strip()
+    return ""
+
+
 class PermissionPolicy:
     """集中处理工具权限。对标 Claude Code 2.1.214 的安全加固。"""
 
-    def __init__(self, config: Any = None) -> None:
+    def __init__(self, config: Any = None, mcp_policy_store: Any = None) -> None:
+        """E1: ``mcp_policy_store`` 由生产工厂注入; 单元测试直接构造时不启用,
+        避免影响既有权限用例, 同时保证主链路真的经过 MCP 信任分级。"""
         self.config = config
+        self.mcp_policy_store = mcp_policy_store
         self.shell_deny = tuple(self._get("permissions.shell.deny_patterns", ()))
         self.network_allow = tuple(self._get("permissions.network.allow_domains", ()))
         self.rules = tuple(self._get("permissions.rules", ()))
@@ -98,8 +130,12 @@ class PermissionPolicy:
 
             if is_redline(command):
                 return PermissionDecision("deny", f"硬红线, 不可自动批准: {reason}")
-        except Exception:  # noqa: BLE001 - 安全引擎不可用时退回常规确认
-            pass
+        except Exception:  # noqa: BLE001
+            # fail-closed: 引擎不可用 = 无法证明该命令不是红线。旧实现 `pass`
+            # 后继续往下走, YOLO 下会静默放行超长命令 / FD 重定向 / IEX /
+            # Docker 守护进程重定向 —— 属于典型「异常即放行」。
+            return PermissionDecision(
+                "confirm", f"安全规则引擎不可用(fail-closed), 需人工确认: {reason}")
         if yolo:
             return PermissionDecision("allow", f"YOLO 自动批准 (加固项: {reason})")
         return PermissionDecision("confirm", reason)
@@ -116,6 +152,28 @@ class PermissionPolicy:
           敏感/危险操作仍需确认 (对标 Claude Code Auto Mode)。
         """
         name = tool.name
+        mcp_authorized = False   # E1: 已由信任策略显式放行 (跳过末尾兜底确认)
+
+        # E1: MCP 调用前工具级授权 (在域名白名单之前, 因为策略自带 allowed_domains)。
+        # 默认 untrusted -> 未登记 server 一律拒绝; 绝不因为"第一次见"就临时放行。
+        if name in ("mcp_call", "mcp_tool", "mcp") and self.mcp_policy_store is not None:
+            server = str(args.get("server") or args.get("server_name")
+                         or args.get("mcp_server") or "")
+            mcp_tool = str(args.get("tool") or args.get("tool_name")
+                           or args.get("mcp_tool") or args.get("name") or "")
+            if not server:
+                return PermissionDecision(
+                    "deny", "MCP 调用缺少 server 标识, 无法做信任分级 (fail-closed)")
+            decision = self.mcp_policy_store.authorize(server, mcp_tool, args)
+            if decision.action == "deny":
+                return PermissionDecision("deny", f"MCP 信任策略拒绝: {decision.reason}")
+            if decision.action == "confirm":
+                return PermissionDecision(
+                    "confirm", f"MCP 信任策略要求确认: {decision.reason}")
+            # allow 不在这里直接 return: 后面还要过 permissions.rules,
+            # 用户显式配的 deny/ask 规则必须优先于策略的自动放行。
+            mcp_authorized = True
+
         if name in {"web_fetch", "mcp_call"} and self.network_allow:
             url = args.get("url", "")
             host = urlparse(url).hostname or ""
@@ -188,6 +246,8 @@ class PermissionPolicy:
             return PermissionDecision("allow", "只读或非危险工具")
         if yolo and name not in self.yolo_redline and not getattr(tool, "yolo_confirm", False):
             return PermissionDecision("allow", "YOLO 自动批准")
+        if mcp_authorized:
+            return PermissionDecision("allow", "MCP 信任策略已显式授权 (已过规则表)")
         return PermissionDecision("confirm", "危险工具需要用户确认")
 
     def match_rule(self, name: str, args: dict[str, Any]) -> str | None:
@@ -195,14 +255,27 @@ class PermissionPolicy:
 
         多条规则同时命中时按 deny > ask > allow 取最严格者;
         规则格式非法 (非 dict / action 不认识) 时静默跳过。
+
+        E6:
+        - `exclude` / `pattern: "!glob"` 为负向排除: 目标匹配排除模式时该规则
+          **不生效**, 用于给宽泛 allow 规则开洞 (如允许 `git *` 但排除
+          `git push --force*`), 避免"永远允许"变成提权入口。
+        - 为保持 fail-closed, **deny 规则忽略 exclude**: 拒绝规则不允许被
+          排除条件放宽。
+        - MCP 调用按 `mcp__<server>__<tool>` 规范化名参与 tool 匹配。
         """
         target = self._rule_target(name, args)
+        effective = _effective_tool_name(name, args)
         hits: list[str] = []
         for rule in self.rules:
             if not isinstance(rule, dict):
                 continue
             tool_pattern = str(rule.get("tool", "*"))
-            if not fnmatch.fnmatch(name.lower(), tool_pattern.lower()):
+            if not (fnmatch.fnmatch(name.lower(), tool_pattern.lower())
+                    or fnmatch.fnmatch(effective.lower(), tool_pattern.lower())):
+                continue
+            action = str(rule.get("action", "")).strip().lower()
+            if action not in ("allow", "deny", "ask"):
                 continue
             # Tool(param:value) 精确粒度 (对标 Claude Code 三层权限):
             # 规则带 param 时按参数值 glob 精确匹配, 优先于旧式 pattern。
@@ -212,12 +285,17 @@ class PermissionPolicy:
                 if actual is None or not fnmatch.fnmatch(str(actual), str(rule.get("value", "*"))):
                     continue
             else:
-                arg_pattern = rule.get("pattern")
-                if arg_pattern and not fnmatch.fnmatch(target, str(arg_pattern).lower()):
+                arg_pattern = str(rule.get("pattern", "")).strip()
+                # "!glob" 是排除模式, 不作为正向匹配条件
+                if arg_pattern and not arg_pattern.startswith("!") \
+                        and not fnmatch.fnmatch(target, arg_pattern.lower()):
                     continue
-            action = str(rule.get("action", "")).strip().lower()
-            if action in ("allow", "deny", "ask"):
-                hits.append(action)
+            exclude = _rule_exclude(rule)
+            if exclude and action != "deny":
+                if (fnmatch.fnmatch(target, exclude.lower())
+                        or fnmatch.fnmatch(effective.lower(), exclude.lower())):
+                    continue
+            hits.append(action)
         for priority in ("deny", "ask", "allow"):
             if priority in hits:
                 return priority
@@ -230,20 +308,29 @@ class PermissionPolicy:
             {"action": 最终动作 deny/ask/allow/None, "hits": [{"index", "rule"}...]}
         """
         target = self._rule_target(name, args)
+        effective = _effective_tool_name(name, args)
         hits: list[dict] = []
         for i, rule in enumerate(self.rules):
             if not isinstance(rule, dict):
                 continue
             tool_pattern = str(rule.get("tool", "*"))
-            if not fnmatch.fnmatch(name.lower(), tool_pattern.lower()):
+            if not (fnmatch.fnmatch(name.lower(), tool_pattern.lower())
+                    or fnmatch.fnmatch(effective.lower(), tool_pattern.lower())):
                 continue
             if rule.get("param"):
                 actual = _nested_get(args, str(rule["param"]))
                 matched = actual is not None and fnmatch.fnmatch(
                     str(actual), str(rule.get("value", "*")))
             else:
-                p = rule.get("pattern")
-                matched = (not p) or fnmatch.fnmatch(target, str(p).lower())
+                p = str(rule.get("pattern", "")).strip()
+                matched = (not p) or p.startswith("!") or fnmatch.fnmatch(target, p.lower())
+            if matched:
+                action = str(rule.get("action", "")).strip().lower()
+                exclude = _rule_exclude(rule)
+                if exclude and action != "deny":
+                    if (fnmatch.fnmatch(target, exclude.lower())
+                            or fnmatch.fnmatch(effective.lower(), exclude.lower())):
+                        matched = False
             if matched:
                 hits.append({"index": i, "rule": rule})
         action = None
@@ -258,6 +345,12 @@ class PermissionPolicy:
         """提取规则 pattern 的匹配文本 (小写): run_shell 用命令行, 其余优先 path/url, 兜底拼接参数值。"""
         if name == "run_shell":
             return str(args.get("command", "")).lower()
+        if name in ("mcp_call", "mcp_tool", "mcp"):
+            effective = _effective_tool_name(name, args)
+            rest = " ".join(str(v) for k, v in args.items()
+                            if k not in ("server", "server_name", "mcp_server",
+                                         "tool", "tool_name", "mcp_tool", "name"))
+            return f"{effective} {rest}".lower().strip()
         for key in ("path", "url"):
             if key in args:
                 return str(args[key]).lower()
