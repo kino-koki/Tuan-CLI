@@ -103,7 +103,13 @@ def _clusters(s: str) -> List[str]:
     return out
 
 
-def _sanitize_once(raw: str) -> str:
+def _clean_once(raw: str) -> str:
+    """**纯清理核心**：去 ANSI/OSC/CSI/ESC 序列、控制字符、bidi 覆写、
+    isolate、零宽/格式字符、私用区与未分配码点、组合标记开头。
+
+    刻意**不做任何截断** —— UI 标语与日志字段共用这一份清理真值,
+    但两者的长度约束不同 (前者按显示列宽 40, 后者按码点 120)。
+    """
     s = _OSC_RE.sub("", raw)
     s = _CSI_RE.sub("", s)
     s = _ESC_SEQ_RE.sub("", s)             # 吃完整序列，不只是 ESC 字节
@@ -116,7 +122,11 @@ def _sanitize_once(raw: str) -> str:
     i = 0
     while i < len(s) and unicodedata.category(s[i])[0] == "M":
         i += 1
-    s = s[i:].strip()
+    return s[i:].strip()
+
+
+def _sanitize_once(raw: str) -> str:
+    s = _clean_once(raw)
     if not s:
         return ""
     # 按 grapheme 簇累加，双上限都在**簇边界**上截断。
@@ -178,3 +188,44 @@ def sanitize_verb(raw: object) -> str:
     return ""   # 不收敛：拒绝，而不是把半成品送进终端
 
 
+#: 日志字段码点上限。刻意**不是**显示列宽 —— 日志不参与终端渲染,
+#: 用码点限长才能保留 ``background.progress`` 这类长事件名的可读性。
+LOG_FIELD_LIMIT = 120
+
+
+def sanitize_log_field(raw: object, limit: int = LOG_FIELD_LIMIT) -> str:
+    """把任意（可能外部可控的）字段净化成可安全写入日志的字符串。
+
+    与 ``sanitize_verb`` 共用 ``_clean_once`` 这份**唯一** Unicode 清理
+    核心，因此不产生第三套净化真值；差别只在长度约束：
+
+    - ``sanitize_verb``: 按 ``_MAX_VERB_COLS`` 显示列宽、在 grapheme
+      簇边界截断（进终端的 UI 文案）。
+    - ``sanitize_log_field``: 按码点上限 ``limit`` 截断，不做列宽计算
+      （进内存日志 / repr / 导出的字段名）。
+
+    实测复现的必要性：``record_error(event, ...)`` 的 ``event`` 是
+    public API 入参，``slogan_for(event)`` 拼错时会把整个字符串写进
+    留痕。实测注入 5030 码点含 ``ESC ]8;;`` + ``U+202E`` RLO 的串，
+    旧实现原样存下 —— 控制字符可被日志查看器/终端解释。
+
+    同样迭代到不动点；不收敛或非字符串输入返回空串（fail-closed）。
+    返回空串时调用方应记为 ``error:invalid-field``，不写原文。
+    """
+    if not isinstance(raw, str):
+        return ""
+    lim = max(8, min(4096, int(limit)))
+    s = raw[:lim * 4]          # 先粗切，避免超长输入在正则上放大
+    for _ in range(3):
+        nxt = _clean_once(s)
+        if nxt == s:
+            s = nxt
+            break
+        s = nxt
+    else:
+        return ""              # 不收敛：拒绝，不写半成品
+    if not s:
+        return ""
+    if len(s) > lim:
+        s = s[:lim].rstrip() + "…"
+    return s

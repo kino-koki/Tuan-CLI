@@ -920,3 +920,57 @@ external adaptive red team. Cold vs hot `audit()` timings are a
 measurement-scope difference, NOT a claimed performance improvement.
 Verification: 215 pytest cases + 52 pure-stdlib checks + 22/20 prior
 checks, all green.
+
+
+---
+
+## 16. Log-Field Sanitization, Self-Healing Audit, Evidence Preservation
+
+This round changes no verdict; it patches holes left in the prior three
+rounds of runtime correspondence.
+
+- **Log fields are no longer an injection channel.** `record_error()`
+  takes `event` / `kind` / `context` from a public API. Measured: a
+  5030-codepoint string carrying an `ESC ]8;;` hyperlink and `U+202E`
+  RLO was stored verbatim in BOTH log layers, and the exception message
+  reached tracebacks. `_clean.sanitize_log_field()` now sanitizes all
+  of them, sharing the `_clean_once` core with UI copy (no second
+  sanitization truth); the TUI degraded path also sanitizes before
+  writing. Measured: 5030 -> 121 codepoints, ESC/RLO/OSC8 all removed,
+  and both layers carry the identical event string.
+- **Audit self-heals without losing evidence.** `audit().ok` previously
+  depended on cumulative `_INDEX_MISSES`, so one repaired historical
+  miss reported unhealthy forever, and the only recovery
+  (`reset_runtime_counters()`) was hard-wired to
+  `reset_dispatch_log()` (measured `decisions: 21 -> 0`). Now
+  CONSECUTIVE unresolved misses are fatal (cleared by one successful
+  lookup) while CUMULATIVE history is informational and never auto-
+  cleared. `acknowledge_runtime_misses()` confirms explicitly without
+  touching logs; `reset_runtime_counters()` no longer wipes logs by
+  default (`include_dispatch_log=True` is explicit).
+- **Session-exit evidence is preserved.** `close()` recorded
+  `session.exit` then deleted the bucket, so the global log never saw
+  it. The full bucket snapshot is now sealed into the instance
+  (`slogan_closed_trace()`) before the global bucket is released; the
+  128-owner bound is unchanged.
+- **LRU reads refresh recency.** Previously only writes refreshed, so a
+  heavily-read active session was evicted as least-recently-used.
+  `dispatch_log(owner)` now refreshes; the no-arg full snapshot
+  deliberately does NOT, or one full read would refresh every bucket.
+
+Also: `clipped` (text needs sanitizing) is now informational, while
+`unrenderable` (empty/over-wide after sanitizing) and clean-text
+collisions are fatal. Distribution-side secondary codepoint truncation
+was removed so dispatch and `_BY_CLEAN` share the single
+`sanitize_verb` exit; overlong entries no longer fail with a silent
+`index-miss`.
+
+**Honest limits**: `unresolved_misses` is CONSECUTIVE -- intermittent
+misses are cleared by a later success, cumulative history is the full
+record. `slogan_closed_trace()` preserves only the `close()` snapshot.
+`sanitize_log_field` bounds codepoints, not display columns (logs do
+not render in a terminal). `index-miss` fail-closed only suppresses a
+slogan, it changes no verdict. No list corruption was reproduced under
+concurrency; no real-device soak test; fork changes still unmerged; no
+external adaptive red team. Verification: 234 pytest cases + 64
+pure-stdlib checks + 22/20 prior checks, all green.

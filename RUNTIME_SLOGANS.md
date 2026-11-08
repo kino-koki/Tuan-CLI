@@ -514,3 +514,27 @@ TUI 留痕**没有 `entry_id`**、错误被 `except Exception` 静默吞掉、
 
 验证：215 passed + 52 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 `stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。
+
+
+---
+
+## 15. 自愈 / 证据保全 / 字段净化（本引擎零改动）
+
+前三轮把对应关系做实；本轮实测发现刚修完的代码里还留着六个真实
+缺陷（累计 miss 永久污染 audit 且恢复要丢日志、`close()` 删掉
+`session.exit`、LRU 只读不刷新、日志字段未净化、`clipped` 与净化后
+索引口径冲突、分发侧二次按码点截断）。完整复现与修复见
+`SLOGAN_MAPPING.md` §13。
+
+**本引擎本轮零改动**：事件驱动、三态活性、D1 并发不变量、
+净化层 re-export（`sanitize_verb is _clean.sanitize_verb`）、
+139 例回归全部照常通过。改动集中在 `ui/slogans/_clean.py`（拆出
+`_clean_once` 并新增 `sanitize_log_field`）、`mapping.py` 与 `tui.py`。
+
+注意 `_clean.py` 的拆分**不改变 `sanitize_verb` 的行为**：它仍调用
+`_sanitize_once`（现在是 `_clean_once` + 簇边界截断），幂等与列宽
+契约不变；`sanitize_log_field` 复用 `_clean_once` 但按 120 码点限长，
+不参与宽度计算，因此不产生第三套宽度真值。
+
+验证：234 passed + 64 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+`stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。

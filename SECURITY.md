@@ -966,4 +966,48 @@ miss、触发事件组完整；`AuditReport` 新增 `clean_collisions` /
 
 验证：215 例 pytest + 52 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 
+---
+
+## 19. 日志字段净化、自愈与证据保全
+
+本轮不改任何安全裁决，只补前三轮刚修完的运行时对应关系里的漏洞。
+四点与安全直接相关：
+
+- **日志字段不再是可注入通道**：`record_error()` 的 `event` / `kind` /
+  `context` 是 public API 入参。实测注入 5030 码点含 `ESC ]8;;` 超链接
+  与 `U+202E` RLO 的串，旧实现原样写进两层日志；异常消息还会进
+  traceback。现在 `_clean.sanitize_log_field()` 统一净化，与 UI 文案
+  共用 `_clean_once` 清理核心（不产生第二套净化真值），TUI 降级路径
+  也先过 `_clean` 再写。实测 5030 → 121 码点，ESC/RLO/OSC8 全清，
+  两层留痕的 `event` 完全一致。
+- **审计自愈但不丢证据**：上一轮 `audit().ok` 依赖累计
+  `_INDEX_MISSES`，一次已修复的历史 miss 让健康状态永久报不健康；
+  而唯一恢复手段 `reset_runtime_counters()` 强绑
+  `reset_dispatch_log()`（实测 `decisions: 21 → 0`）。现在区分
+  **连续**未处置 miss（fatal，一次成功反查即归零）与**累计**历史
+  证据（信息项，永不自动清零）；`acknowledge_runtime_misses()` 显式
+  确认且不动日志；`reset_runtime_counters()` 默认不清日志，
+  需显式 `include_dispatch_log=True`。
+- **会话退出证据保全**：`close()` 先记 `session.exit` 再删桶，
+  全局日志永远缺该事件。现在先把整桶快照封存到实例
+  `slogan_closed_trace()`，再释放全局桶（128 桶上界不变），
+  两层口径一致且桶数仍有界。
+- **LRU 读刷新**：只有写入刷新 LRU 时，高频只读的活跃会话会被当
+  最久未用淘汰。现在 `dispatch_log(owner)` 指定 owner 时刷新；
+  **无参全量读刻意不刷新**，否则一次全量读会刷活所有桶、淘汰策略失效。
+
+另修两处工程正确性：`clipped`（文案需净化）降为信息项，真正 fatal
+的是 `unrenderable`（净化后为空/仍超宽）与净化撞车；分发侧去掉
+二次按码点截断，与 `_BY_CLEAN` 索引共用 `sanitize_verb` 单一出口，
+避免超长词条静默 `index-miss`。
+
+**如实边界**：`unresolved_misses` 是连续语义，间歇性 miss 会被随后
+成功归零，累计值才是完整历史；`slogan_closed_trace()` 只保全
+`close()` 那一刻的快照；`sanitize_log_field` 按码点限长而非列宽
+（日志不参与终端渲染）；`index-miss` 的 fail-closed 只抑制标语显示、
+不改裁决；并发压测仍未复现 list 撕裂；不是真机长跑；分叉改动仍未
+合并；第三方自适应红队仍未做。
+
+验证：234 例 pytest + 64 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

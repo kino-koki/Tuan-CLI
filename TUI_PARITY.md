@@ -522,3 +522,20 @@ Apache-2.0 / MIT Codex 归属混用**。
   一律未改。
 
 215 例 pytest + 52 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md` §12。
+
+
+---
+
+## 自愈与证据保全（不占任何 Codex 对齐指标）
+
+本轮只把前三轮的运行时对应关系补漏，**`pending` / `fully_identical` /
+逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- 连续 miss 自愈且累计证据/日志不丢；`close()` 封存含 `session.exit`
+  的桶快照；`dispatch_log(owner)` 读刷新 LRU；日志字段统一净化；
+  `sanitized` 与 `unrenderable` 分离；分发与索引共用单一渲染出口。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。
+
+234 例 pytest + 64 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md` §13。

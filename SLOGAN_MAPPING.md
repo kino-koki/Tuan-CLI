@@ -447,3 +447,106 @@ index_stats   registry/by_id/by_text/by_clean = 1695 / 1695 / 1695 / 1695
     下最久未用的历史仍会被淘汰，这是明确取舍，不宣称「永不丢历史」。
 20. 并发压测仍未复现 list 撕裂（同 §11 说明）；不是真机长跑；分叉改动
     仍未合并；第三方自适应红队仍未做。
+
+
+---
+
+## 13. 自愈、证据保全、日志字段净化、单一渲染出口
+
+前三轮把对应关系从静态表做到了运行时可反查、可回放、有界、
+fail-closed。本轮**先实测再修**，发现刚修完的代码里还留着六个
+真实缺陷 —— 都是「方向对了，但语义留了半截」。
+
+| # | 实测复现 | 影响 |
+|---|---|---|
+| A | 制造一次 `index-miss` 后把数据源修好、连续 20 次正常分发，`audit().ok` **仍是 False** | `_INDEX_MISSES` 是累计值，一次已修复的历史错误让健康状态永久报不健康；而唯一恢复手段 `reset_runtime_counters()` 强绑 `reset_dispatch_log()` —— 想恢复审计必须**丢掉全部运行时留痕**（实测 `decisions: 21 → 0`） |
+| B | `close()` 先记 `session.exit` 再 `release_owner()` 删桶 | 实例 `slogan_trace()` 里有 `session.exit`，全局 `dispatch_log(owner)` 为空 —— 两层口径不一致，运维永远看不到会话退出 |
+| C | 填满 128 个桶后对 `s-0` 高频只读 50 次，再触发驱逐 | `s-0` 被淘汰。上一轮只有**写入**刷新 LRU，读取不计入 recency，活跃只读会话被当成最久未用 |
+| D | `record_error()` 传入 5030 码点含 `ESC ]8;;` 超链接 + `U+202E` RLO 的串 | 原样写进两层日志。控制字符会被日志查看器 / 终端解释；`event` 是 public API 入参，`slogan_for()` 拼错时同样受影响；`UnboundSloganEvent` 的异常消息也会进 traceback |
+| E | 注入一条含 ZWSP 的词条：分发 `reason='ok'` / `entry_id` 正确 / `text='探索中'`，但 `audit().ok=False` | 净化后索引建成后「文案需净化」已不破坏反查，可 `clipped` 仍一律判 fatal —— 会阻止合法新词条加入 |
+| F | `pick_for_event` 在 `sanitize_verb(raw)` 之后又补了按码点切前 `max_cols` 个字符 | `sanitize_verb` 本身已在 grapheme **簇边界**截断并保证列宽；二次按码点截断会切断簇，且让分发文案与 `_BY_CLEAN` 的 `sanitize_verb(e.text)` key 口径不一致，超长词条静默 `index-miss` |
+
+### 修复
+
+**A · 连续 miss 自愈，累计证据与日志都保留。** 新增
+`_UNRESOLVED_MISSES`（自最近一次成功反查以来的**连续** miss）；
+成功反查一次即归零。`_INDEX_MISSES` 保留为累计历史证据，永不自动清零。
+`audit().ok` 与 `index_consistent` 改看 `unresolved_misses`，不再看累计。
+新增 `acknowledge_runtime_misses()` 显式确认（返回数量，**不动累计、
+不动日志**）。`reset_runtime_counters(include_dispatch_log=False)`
+默认**不再清日志**，需要连日志清时显式传 `True`。
+
+实测：一次 miss → `ok=False`；数据源恢复后一次成功分发 → `ok=True`，
+累计仍 1、日志仍 2 条。
+
+**B · 会话退出证据封存。** `close()` 先把含 `session.exit` 的整桶快照
+存进实例 `_slogan_sealed`，再 `release_owner()` 释放全局桶（桶数仍
+有界）。新增 `slogan_closed_trace()` 返回与 `slogan_trace()` 同结构的
+快照；`mapping.take_owner_log(owner)` 提供「取走快照 + 释放」的通用
+API。实测 `dispatch_log(owner) == ()` 仍成立，但封存快照里
+`session.exit` 可见。
+
+**C · 读也算最近使用。** `dispatch_log(owner)` 指定 owner 时
+`move_to_end`；**无参全量读刻意不刷新**（否则一次全量读把所有桶刷成
+最近使用，淘汰策略直接失效）。实测高频只读 `s-0` 存活、真·最久未用
+的 `s-1` 被淘汰；全量读场景下 `s-0` 仍按真实写入顺序淘汰。
+
+**D · 日志字段统一净化。** `_clean.py` 把 `_sanitize_once` 拆成
+`_clean_once`（纯 Unicode 清理，不截断）与截断部分；新增
+`sanitize_log_field(raw, limit=120)`：与 `sanitize_verb` **共用同一份
+`_clean_once` 清理核心**，差别只在长度约束（UI 文案按 40 显示列宽、
+grapheme 簇边界；日志字段按 120 码点，不参与宽度计算）—— 不产生
+第三套净化真值。`record_error()` 净化 `event`/`kind`/`context`，
+`UnboundSloganEvent` 消息同样净化，TUI `_slogan_error()` 改用
+`record_error()` 返回的已净化字段，标语库整体不可用时降级路径也先过
+`_clean` 再写，绝不写原始串。实测 5030 码点注入 → 121 码点、ESC/RLO/OSC8
+全部清除；两层留痕的 `event` 完全一致。
+
+**E · 信息项与 fatal 分开。** `_CLIPPED_IDS` 降为**信息项**（文案需净化
+但能正确反查）；新增 `_UNRENDERABLE_IDS`（净化后为空 / 仍超宽）与
+既有 `_CLEAN_COLLISIONS` 为 fatal。`AuditReport` 新增
+`sanitized_slogans` / `unrenderable_slogans` / `unresolved_misses`，
+`ok` 与 `as_dict()` 同步；`clipped_slogans` 保留为兼容字段但不再参与
+`ok`。实测注入 ZWSP 词条后 `ok=True`、`sanitized=1`、
+`unrenderable=()`、分发仍正确反查；注入全控制字符词条仍 `ok=False`。
+
+**F · 单一渲染出口。** 去掉分发侧二次按码点截断，分发与 `_BY_CLEAN`
+索引构建都只调 `sanitize_verb`。实测超长 (`"很长的标语"*30`) 词条
+分发 `reason='ok'`、`entry_id` 正确、`text == sanitize_verb(raw)`、
+`display_cols <= 40`；源码结构断言禁止 `[:max_cols]` 回归。
+
+### 验证
+
+```
+tests/test_slogan_mapping.py + test_runtime_slogans.py   234 passed
+tests/verify_slogan_mapping.py                           64 项纯 stdlib 全绿
+verify_deep.py / verify_deep2.py                         22 / 20 项全绿
+```
+
+### 实测数字（同机同环境）
+
+```
+index_stats  registry/by_id/by_text/by_clean = 1695 x4
+             clipped=0  unrenderable=0  clean_collisions=0
+             index_misses=0  unresolved_misses=0
+一次 miss    ok=False / unresolved=1
+恢复后       ok=True / 累计证据=1 / 日志 2 条 (都没丢)
+注入串       5030 码点 -> 121 码点, ESC/RLO/OSC8 全清
+LRU 读       高频只读 s-0 存活, s-1 被淘汰
+```
+
+### 如实边界（续 §12）
+
+21. 本轮**不改** 18 个事件、16 个上下文、1108 条词条、`fully_superior`、
+    99 模块基线、任何对齐指标、CLI 子命令数；零新增文件、零删除。
+    `runtime_slogans` 引擎本轮零改动。
+22. `unresolved_misses` 是**连续**语义：间歇性 miss 会被随后的成功
+    归零，累计 `_INDEX_MISSES` 才是完整历史。这是明确取舍，不宣称
+    「任何一次历史 miss 都永久告警」。
+23. `slogan_closed_trace()` 只保全 `close()` 那一刻的桶快照；
+    LRU 淘汰掉的**其它**会话历史仍不保留（128 桶上界不变）。
+24. `sanitize_log_field` 按码点限长 120，不按显示列宽 —— 日志不参与
+    终端渲染；但它与 UI 文案共用 `_clean_once`，**不是**第二套净化真值。
+25. `_MAX_OWNERS=128` / `_MAX_WINDOWS=384` 仍是有界折中；并发压测
+    仍未复现 list 撕裂；不是真机长跑；TUI 仍未替换任何既有 i18n
+    文案；分叉改动仍未合并；第三方自适应红队仍未做。

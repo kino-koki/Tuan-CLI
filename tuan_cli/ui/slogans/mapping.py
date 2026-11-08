@@ -59,9 +59,9 @@ __all__ = [
     "EVENT_BINDINGS", "SECURITY_EVENTS", "CONTEXT_EVENTS", "PHASE_EVENTS",
     "ALL_CONTEXTS", "build_registry", "audit", "pick_for_event",
     "verbs_for_phase", "entry_for", "entry_for_text", "entry_for_clean",
-    "dispatch_log", "reset_dispatch_log", "release_owner",
-    "record_error", "reset_runtime_counters", "dispatch_log_stats",
-    "registry", "index_stats",
+    "dispatch_log", "reset_dispatch_log", "release_owner", "take_owner_log",
+    "record_error", "reset_runtime_counters", "acknowledge_runtime_misses",
+    "dispatch_log_stats", "registry", "index_stats",
 ]
 
 
@@ -213,35 +213,39 @@ _REGISTRY: Optional[Tuple[SloganEntry, ...]] = None
 _BY_ID: Dict[str, SloganEntry] = {}
 _BY_TEXT: Dict[Tuple[str, str, str], SloganEntry] = {}   # 原始文案反查 (兼容 API)
 _BY_CLEAN: Dict[Tuple[str, str, str], SloganEntry] = {}  # 净化后文案反查 (运行时分发用)
-_CLEAN_COLLISIONS: Tuple[str, ...] = ()                 # 净化后文案撞车的注册项
-_CLIPPED_IDS: Tuple[str, ...] = ()
-_INDEX_MISSES: int = 0                                  # 运行时「显示了却查不到」次数
+_CLEAN_COLLISIONS: Tuple[str, ...] = ()                 # 净化后文案撞车的注册项 (fatal)
+_CLIPPED_IDS: Tuple[str, ...] = ()                     # 文案经净化后与原文不同 (信息项, 非 fatal)
+_UNRENDERABLE_IDS: Tuple[str, ...] = ()                # 净化后为空 / 仍超宽 (fatal)
+_INDEX_MISSES: int = 0                                  # 累计：历史 miss 证据，永不自动清零
+_UNRESOLVED_MISSES: int = 0                             # 自最近一次成功反查以来的**连续** miss
 _registry_lock = threading.RLock()
 
 
 def _ensure_index_locked() -> None:
     """调用方必须持 ``_registry_lock``。一次性建三个 O(1) 索引 +
-    一次性净化审计 / 碰撞检测。
+    一次性净化审计 / 三类词条判定。
 
-    ``audit()`` 原本每次都对 1695 条词条重跑 ``sanitize_verb``
-    (正则 + unicodedata), 实测 20 次 audit 453.9 ms。词条是静态常量,
-    构建时算一次即可, 审计只读缓存。
+    深度轮 4 修的口径冲突：上一轮把「文案需要净化」一律记进
+    ``clipped`` 并让 ``audit().ok`` 失败。但净化后索引 (``_BY_CLEAN``)
+    建成后，**需要净化的词条其实能正确反查** —— 实测注入一条含 ZWSP
+    的词条：``reason='ok'`` / ``entry_id`` 正确，而 ``audit().ok=False``。
+    现在三者分开：
 
-    **深度轮 3 修的静默漏洞**: 上一轮 ``_BY_TEXT`` 用**原始** ``e.text``
-    作 key, 而 ``pick_for_event`` 用**净化后**的 text 去反查。当前
-    ``clipped=0`` (所有词条恰好都无需净化) 让两者碰巧一致; 一旦有人加
-    一条含 ZWSP / VS16 / bidi 控制符的标语, 实测注入后
-    ``reason='ok'`` 但 ``entry_id=''`` —— 对应关系在运行时静默断裂。
-    现在建 ``_BY_CLEAN`` (净化后 key) 供分发使用, ``_BY_TEXT`` (原始
-    key) 保留给兼容 API; 并检测净化后文案撞车。
+    - ``_CLIPPED_IDS``   文案经净化后与原文不同 → **信息项**，不致命；
+    - ``_UNRENDERABLE_IDS`` 净化后为空 / 仍超宽 → **fatal**（无法渲染）；
+    - ``_CLEAN_COLLISIONS`` 两条不同词条净化后相同 → **fatal**（无法区分）。
+
+    索引 key 用与分发**完全相同**的 ``sanitize_verb`` 出口计算，
+    不再有分发侧二次按码点截断造成的簇边界破坏（深度轮 4 的 F）。
     """
-    global _REGISTRY, _CLIPPED_IDS, _CLEAN_COLLISIONS
+    global _REGISTRY, _CLIPPED_IDS, _UNRENDERABLE_IDS, _CLEAN_COLLISIONS
     if _REGISTRY is not None:
         return
     reg = build_registry()
     san = _sanitizer()
-    clipped = []
-    collisions = []
+    clipped: list[str] = []
+    unrenderable: list[str] = []
+    collisions: list[str] = []
     for e in reg:
         _BY_ID[e.id] = e
         _BY_TEXT.setdefault((e.lang, e.context, e.text), e)
@@ -249,17 +253,18 @@ def _ensure_index_locked() -> None:
             continue
         sanitize_verb, display_cols, max_cols = san
         clean = sanitize_verb(e.text)
-        if clean != e.text or display_cols(e.text) > max_cols:
+        if clean != e.text:
             clipped.append(e.id)
+        if not clean or display_cols(clean) > max_cols:
+            unrenderable.append(e.id)
         ckey = (e.lang, e.context, clean)
         prev = _BY_CLEAN.get(ckey)
         if prev is not None and prev.id != e.id:
-            # 两条不同词条净化后一模一样 -> 运行时无法区分是哪一条,
-            # 必须报出来, 不能靠 setdefault 悄悄丢一条。
             collisions.append(e.id)
         else:
             _BY_CLEAN[ckey] = e
     _CLIPPED_IDS = tuple(sorted(clipped))
+    _UNRENDERABLE_IDS = tuple(sorted(unrenderable))
     _CLEAN_COLLISIONS = tuple(sorted(collisions))
     _REGISTRY = reg
 
@@ -316,8 +321,10 @@ def index_stats() -> Dict[str, int]:
                 "by_id": len(_BY_ID), "by_text": len(_BY_TEXT),
                 "by_clean": len(_BY_CLEAN),
                 "clipped_cached": len(_CLIPPED_IDS),
+                "unrenderable": len(_UNRENDERABLE_IDS),
                 "clean_collisions": len(_CLEAN_COLLISIONS),
-                "index_misses": _INDEX_MISSES}
+                "index_misses": _INDEX_MISSES,
+                "unresolved_misses": _UNRESOLVED_MISSES}
 
 
 # ------------------------------------------------------------------ 审计
@@ -342,8 +349,11 @@ class AuditReport:
     sanitizer_source: str = "unavailable"
     sanitizer_shared: bool = False
     index_consistent: bool = False
-    clean_collisions: Tuple[str, ...] = ()   # 净化后文案撞车 -> 无法区分是哪条
-    runtime_index_misses: int = 0            # 运行时「显示了却查不到」次数
+    clean_collisions: Tuple[str, ...] = ()   # 净化后文案撞车 -> 无法区分是哪条 (fatal)
+    runtime_index_misses: int = 0            # 累计历史 miss 证据 (信息项, 不影响 ok)
+    unresolved_misses: int = 0               # 连续未处置 miss (fatal)
+    sanitized_slogans: Tuple[str, ...] = () # 文案需净化但能正确反查 (信息项, 非 fatal)
+    unrenderable_slogans: Tuple[str, ...] = ()  # 净化后为空/仍超宽 (fatal)
     dispatch_stats: Dict[str, int] = field(default_factory=dict)
 
     @property
@@ -353,10 +363,11 @@ class AuditReport:
             self.orphan_slogans, self.events_without_pool,
             self.contexts_without_event, self.events_without_context,
             self.locale_gaps, self.empty_pools, self.duplicate_ids,
-            self.unsafe_bindings, self.phase_gaps, self.clipped_slogans,
+            self.unsafe_bindings, self.phase_gaps,
         )) and self.sanitizer_shared and self.index_consistent \
             and not self.clean_collisions \
-            and self.runtime_index_misses == 0
+            and not self.unrenderable_slogans \
+            and self.unresolved_misses == 0
 
     def as_dict(self) -> Dict[str, object]:
         return {
@@ -380,6 +391,9 @@ class AuditReport:
             "index_consistent": self.index_consistent,
             "clean_collisions": len(self.clean_collisions),
             "runtime_index_misses": self.runtime_index_misses,
+            "unresolved_misses": self.unresolved_misses,
+            "sanitized_slogans": len(self.sanitized_slogans),
+            "unrenderable_slogans": len(self.unrenderable_slogans),
             "dispatch_stats": dict(self.dispatch_stats),
         }
 
@@ -398,7 +412,14 @@ def _sanitizer():
 
 
 def audit() -> AuditReport:
-    """运行时全量核验九项不变量。任何一项非零, ``ok`` 就是 False。"""
+    """运行时全量核验不变量。
+
+    ``ok`` 看的是**当前**健康度：fatal 项（孤儿、缺口、重复 id、
+    不安全绑定、净化撞车、无法渲染词条、连续未处置 miss、
+    sanitizer 未共享、索引不一致）任一非零即 False。
+    ``clipped_slogans`` / ``runtime_index_misses`` 是**历史信息项**，
+    保留证据但不参与判定 —— 深度轮 4 实测修好了这一点。
+    """
     reg = registry()
     # 上一轮 ``ids.count(i)`` 对 1695 条是 O(n^2)=287 万次比较,
     # 实测单次 audit() 38.4 ms / 20 次 763.7 ms。Counter 是 O(n)。
@@ -447,22 +468,25 @@ def audit() -> AuditReport:
     phase_gaps = tuple(sorted(ph for ph, ev in PHASE_EVENTS.items()
                               if ev not in EVENT_BINDINGS))
 
-    # 每条标语都必须能**完整**通过唯一净化出口。该检查在
-    # ``_ensure_index_locked()`` 构建索引时算一次并缓存, 审计只读结果。
+    # 三类词条判定在 ``_ensure_index_locked()`` 构建索引时算一次并缓存。
+    # 深度轮 4: ``clipped`` 降为**信息项**（净化后索引让需净化的词条
+    # 仍可正确反查）, 真正 fatal 的是 ``unrenderable``。
     with _registry_lock:
         _ensure_index_locked()
         clipped = list(_CLIPPED_IDS)
+        unrenderable = list(_UNRENDERABLE_IDS)
 
     idx = index_stats()
-    # 深度轮 3 加严: 上一轮只要求 ``by_text > 0`` (几乎恒真),
-    # 索引缺一大半也会通过。现在要求三份索引规模与注册表全等、
-    # 无净化撞车、运行时零 miss、且每个注册项声明了完整触发事件组。
+    # 深度轮 4: 不再要求 ``clipped_cached == 0``（净化后索引让需净化
+    # 的词条仍可正确反查），也不再看累计 ``index_misses``（一次已修复的
+    # 历史错误不该让健康状态永久报不健康）。改看**连续**未处置 miss 与
+    # 真正无法渲染的词条。三份索引仍必须与注册表全等。
     index_ok = (
         idx["by_id"] == idx["by_text"] == idx["by_clean"]
         == idx["registry"] == len(reg)
-        and idx["clipped_cached"] == 0
+        and idx["unrenderable"] == 0
         and idx["clean_collisions"] == 0
-        and idx["index_misses"] == 0
+        and idx["unresolved_misses"] == 0
         and all(e.events and e.event in e.events for e in reg)
     )
 
@@ -498,6 +522,9 @@ def audit() -> AuditReport:
         index_consistent=index_ok,
         clean_collisions=_CLEAN_COLLISIONS,
         runtime_index_misses=idx["index_misses"],
+        unresolved_misses=idx["unresolved_misses"],
+        sanitized_slogans=_CLIPPED_IDS,
+        unrenderable_slogans=_UNRENDERABLE_IDS,
         dispatch_stats=dispatch_log_stats(),
     )
 
@@ -540,7 +567,14 @@ def dispatch_log(owner: Optional[str] = None) -> Tuple[SloganDecision, ...]:
     """
     with _dispatch_lock:
         if owner is not None:
-            return tuple(_dispatch_log.get(owner, ()))
+            bucket = _dispatch_log.get(owner, ())
+            if owner in _dispatch_log:
+                # 深度轮 4: 读也算「最近使用」。上一轮只有写入刷新 LRU,
+                # 实测高频只读的活跃会话被当成最久未用而淘汰 —— LRU
+                # 名不副实。无参全量读**不**刷新，否则一次全量读会把
+                # 所有桶都刷成最近使用，淘汰策略直接失效。
+                _dispatch_log.move_to_end(owner)
+            return tuple(bucket)
         return tuple(d for bucket in _dispatch_log.values() for d in bucket)
 
 
@@ -576,12 +610,53 @@ def dispatch_log_stats() -> Dict[str, int]:
                 "max_owners": _MAX_OWNERS}
 
 
-def reset_runtime_counters() -> None:
-    """清运行时计数 (测试隔离用), 不影响静态索引与词条。"""
-    global _INDEX_MISSES
+def reset_runtime_counters(include_dispatch_log: bool = False) -> None:
+    """清运行时计数 (测试隔离用), 不影响静态索引与词条。
+
+    深度轮 4: 默认**不再清日志**。上一轮把「清计数」与「清全部
+    运行时留痕」绑死，导致恢复 ``audit().ok`` 必须丢掉证据。
+    需要连日志一起清时显式传 ``include_dispatch_log=True``。
+    """
+    global _INDEX_MISSES, _UNRESOLVED_MISSES
     with _registry_lock:
         _INDEX_MISSES = 0
-    reset_dispatch_log()
+        _UNRESOLVED_MISSES = 0
+    if include_dispatch_log:
+        reset_dispatch_log()
+
+
+def take_owner_log(owner: str) -> Tuple[SloganDecision, ...]:
+    """取走一个会话的完整日志快照并释放它的桶。
+
+    与 ``release_owner()`` 只返回条数不同，这里把**含会话最后一条
+    (``session.exit``)** 的决策都归还给调用方，供归档/审计。
+    深度轮 4 实测：``close()`` 先记 ``session.exit`` 再
+    ``release_owner()`` 删桶，全局日志永远看不到会话退出事件。
+    """
+    if not owner:
+        return ()
+    with _dispatch_lock:
+        bucket = _dispatch_log.pop(owner, None)
+        return tuple(bucket or ())
+
+
+def acknowledge_runtime_misses() -> int:
+    """把「连续未处置 miss」清零，**不动累计证据、不动任何日志**。
+
+    深度轮 4 修的破坏性耦合：上一轮 ``audit().ok`` 依赖累计
+    ``_INDEX_MISSES``，一次已修复的历史 miss 会让健康状态永久报
+    不健康；而唯一恢复手段 ``reset_runtime_counters()`` 又强绑
+    ``reset_dispatch_log()`` —— 想恢复审计就得丢掉全部运行时留痕。
+
+    现在 ``ok`` 看的是**连续** miss（自最近一次成功反查以来），
+    数据源恢复后一次成功分发即自动归零；本函数只是给运维一个
+    显式确认入口，累计 ``_INDEX_MISSES`` 与日志都原样保留。
+    """
+    global _UNRESOLVED_MISSES
+    with _registry_lock:
+        n = _UNRESOLVED_MISSES
+        _UNRESOLVED_MISSES = 0
+        return n
 
 
 def _record(d: SloganDecision) -> None:
@@ -611,7 +686,19 @@ def record_error(event: str, kind: str, *, owner: str = "",
     不与 ``error:*`` 混。
     """
     at = int(time.monotonic() * 1000) if at_ms is None else at_ms
-    d = SloganDecision(event, context, "", "", "error:" + kind,
+    # 深度轮 4: event / kind 是 public API 入参, 实测可注入 5030 码点
+    # 含 OSC 8 超链接 + U+202E RLO 的串并原样写进日志。统一过
+    # _clean.sanitize_log_field (与 UI 文案共用 _clean_once 清理核心)。
+    from . import _clean  # noqa: PLC0415
+    ev = _clean.sanitize_log_field(event)
+    kd = _clean.sanitize_log_field(kind, 40)
+    if not ev:
+        ev, kd = "<invalid-event>", "invalid-field"
+    if not kd:
+        kd = "invalid-field"
+    safe_ctx = (_clean.sanitize_log_field(context, 64)
+                if context is not None else None)
+    d = SloganDecision(ev, safe_ctx, "", "", "error:" + kd,
                        at, "", "", owner)
     _record(d)
     return d
@@ -635,6 +722,9 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
 
     深度轮 3: 反查改用 ``_BY_CLEAN`` (净化后文案), 未命中即
     fail-closed 返回 ``index-miss`` + 空文案并计数, 不再假装 "ok"。
+    深度轮 4: 渲染与索引共用 ``sanitize_verb`` 单一出口 (去掉会破坏
+    簇边界的二次按码点截断); miss 分「累计证据 / 连续未处置」两层,
+    成功一次即自愈, 不再让一次已修复的历史错误永久污染 ``audit().ok``。
     """
     clock = time.monotonic if now is None else (lambda: now)
     at = int(clock() * 1000)
@@ -647,8 +737,11 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
         return d
     binding = EVENT_BINDINGS.get(event)
     if binding is None or binding.context is None:
+        from . import _clean  # noqa: PLC0415
+        # 异常消息也会进 traceback / 日志, 同样不能带控制字符或超长串。
+        safe_ev = _clean.sanitize_log_field(event) or "<invalid-event>"
         raise UnboundSloganEvent(
-            f"事件 {event!r} 没有绑定标语上下文；未知事件不得静默回落 idle")
+            f"事件 {safe_ev!r} 没有绑定标语上下文；未知事件不得静默回落 idle")
 
     s = _sanitizer()
     if s is None:
@@ -659,14 +752,18 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     sanitize_verb, display_cols, max_cols = s
 
     raw, origin = picker.pick_local_first(binding.context, resolved, rng)
+    # 深度轮 4 (F): ``sanitize_verb`` 已是**唯一**出口 —— 它自己就在
+    # grapheme 簇边界按 _MAX_VERB_COLS 截断并保证 display_cols <= max_cols。
+    # 上一轮这里又补了一句「把 text 按码点切前 max_cols 个字符」：
+    # 二次截断会切断簇、且让分发文案与 _BY_CLEAN 的
+    # ``sanitize_verb(e.text)`` key 口径不一致，超长词条会静默 index-miss。
+    # 现在分发与索引构建共用同一个函数、同一份结果。
     text = sanitize_verb(raw)
-    if not text or display_cols(text) > max_cols:
-        text = sanitize_verb(text)[:max_cols] if text else ""
-        if not text:
-            d = SloganDecision(event, binding.context, resolved, "",
-                               "rejected", at, "", origin, owner)
-            _record(d)
-            return d
+    if not text:
+        d = SloganDecision(event, binding.context, resolved, "",
+                           "rejected", at, "", origin, owner)
+        _record(d)
+        return d
 
     # O(1) 反查: 上一轮这里是逐条遍历全量注册表线性扫 1695 条,
     # 实测 2000 次分发 58.9 ms。现在按 (lang, context, **净化后** text)
@@ -675,13 +772,18 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     if entry is None:
         # fail-closed: 显示一条**反查不到注册项**的标语, 等于把上一轮
         # 「每个标语都要对应的」重新打断。宁可不显示, 也不返回假的 "ok"。
-        global _INDEX_MISSES
+        global _INDEX_MISSES, _UNRESOLVED_MISSES
         with _registry_lock:
-            _INDEX_MISSES += 1
+            _INDEX_MISSES += 1          # 累计证据，永不自动清零
+            _UNRESOLVED_MISSES += 1     # 连续 miss，成功一次即归零
         d = SloganDecision(event, binding.context, resolved, "",
                            "index-miss", at, "", origin, owner)
         _record(d)
         return d
+    # 数据源恢复后一次成功反查即视为「当前健康」；历史累计证据保留。
+    # ``global`` 已在上面的 miss 分支声明，此处不可重复声明。
+    with _registry_lock:
+        _UNRESOLVED_MISSES = 0
     d = SloganDecision(event, binding.context, resolved, text, "ok",
                        at, entry.id, origin, owner)
     _record(d)

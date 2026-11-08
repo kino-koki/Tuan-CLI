@@ -252,3 +252,25 @@ TUI 未替换既有 i18n 文案；分叉改动仍未合并；第三方自适应�
 ——与上一轮 355.6 ms 是**口径差异**，不宣称性能提升。分叉改动仍未
 合并；第三方自适应红队仍未做。详见 `SLOGAN_MAPPING.md` §12。
 本轮**不改** `fully_superior`、99 模块基线与任何对齐指标。
+
+
+---
+
+## R33 · 自愈 / 证据保全 / 日志字段净化
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R33 | 累计 `_INDEX_MISSES` 让一次已修复的历史 miss 永久污染 `audit().ok`, 且 `reset_runtime_counters()` 强绑 `reset_dispatch_log()` (实测 `decisions: 21->0`); `close()` 刚记 `session.exit` 就删桶; LRU 只读不刷新致活跃会话被淘汰; `record_error` 的 event/kind 原样写日志 (实测 5030 码点含 OSC8 + RLO), 异常消息进 traceback; `clipped` 与净化后索引口径冲突; 分发侧二次按码点截断破坏簇边界 | 区分 `_UNRESOLVED_MISSES` (连续/fatal, 一次成功即归零) 与 `_INDEX_MISSES` (累计/信息项), 新增 `acknowledge_runtime_misses()`, `reset_runtime_counters(include_dispatch_log=False)` 默认不清日志; `close()` 封存整桶快照到 `slogan_closed_trace()` 再释放, 新增 `take_owner_log()`; `dispatch_log(owner)` 读刷新 LRU (全量读不刷新); `_clean` 拆出 `_clean_once` + 新增 `sanitize_log_field` 共用清理核心, `record_error`/异常消息/TUI 降级路径全净化; `clipped` 降信息项, 新增 `unrenderable`/`unresolved_misses` 为 fatal; 分发与索引共用 `sanitize_verb` 单一出口 |
+
+实测：`一次 miss 后 ok=False / unresolved=1` → `恢复后 ok=True /
+累计证据=1 / 日志 2 条`；`注入串 5030 → 121 码点, ESC/RLO/OSC8 全清`；
+`高频只读 s-0 存活, s-1 被淘汰`；
+`index_stats 1695×4 / unrenderable=0 / collisions=0`。
+
+如实边界：`unresolved_misses` 是**连续**语义, 累计值才是完整历史;
+`slogan_closed_trace()` 只保全 close 那一刻快照, 128 桶上界不变;
+`sanitize_log_field` 按码点限长不按列宽 (日志不参与渲染), 但与 UI
+共用 `_clean_once` 不是第二套净化真值; `index-miss` 只抑制标语显示
+不改裁决; 分叉改动仍未合并; 第三方自适应红队仍未做。详见
+`SLOGAN_MAPPING.md` §13。本轮**不改** `fully_superior`、99 模块
+基线与任何对齐指标。

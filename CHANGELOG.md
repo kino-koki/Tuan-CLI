@@ -9,6 +9,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 自愈、证据保全、日志字段净化、单一渲染出口
+
+> 前三轮把对应关系从静态表做到了运行时可反查、可回放、有界、
+> fail-closed。本轮**先实测再修**, 发现刚修完的代码里还留着六个
+> 真实缺陷 (完整复现见 `SLOGAN_MAPPING.md` §13)。继续「不扩广度、
+> 只挖深度」: 18 个事件、16 个上下文、1108 条词条、
+> `fully_superior`、99 模块基线、所有对齐指标与 CLI 子命令数
+> **全部不变**; 零新增文件、零删除。
+
+### 六个实测缺陷
+
+| # | 实测 | 影响 |
+|---|---|---|
+| A | 一次 `index-miss` 修好后连续 20 次正常分发, `audit().ok` 仍 False | 累计 `_INDEX_MISSES` 让健康状态永久报不健康; 唯一恢复手段 `reset_runtime_counters()` 强绑 `reset_dispatch_log()`, 实测 `decisions: 21 -> 0` |
+| B | `close()` 先记 `session.exit` 再删桶 | 实例 trace 有、全局日志空, 两层口径不一致 |
+| C | 填满 128 桶后对 `s-0` 高频只读 50 次再触发驱逐 | `s-0` 被淘汰: 只有写入刷新 LRU, 读不算 recency |
+| D | `record_error()` 传入 5030 码点含 OSC 8 + U+202E RLO 的串 | 原样写进两层日志; 异常消息也进 traceback |
+| E | 注入含 ZWSP 词条: 分发 `ok` + 正确 `entry_id`, 但 `audit().ok=False` | 净化后索引已能反查, `clipped` 仍一律判 fatal |
+| F | `sanitize_verb(raw)` 之后又按码点切前 `max_cols` 个字符 | 破坏簇边界, 且与 `_BY_CLEAN` 的 key 口径不一致 |
+
+### 修复
+
+- **连续 miss 自愈**: 新增 `_UNRESOLVED_MISSES` (自最近一次成功反查
+  以来的连续 miss), 成功一次即归零; `_INDEX_MISSES` 保留为累计证据
+  永不自动清零。`ok` / `index_consistent` 改看连续值。新增
+  `acknowledge_runtime_misses()` (不动累计与日志);
+  `reset_runtime_counters(include_dispatch_log=False)` 默认不再清日志。
+  实测: miss 后 `ok=False`; 恢复后 `ok=True`、累计仍 1、日志仍 2 条。
+- **会话退出证据封存**: `close()` 先把整桶快照存进实例
+  `_slogan_sealed` 再释放全局桶; 新增 `slogan_closed_trace()` 与
+  `mapping.take_owner_log(owner)`。实测 `dispatch_log(owner)==()`
+  仍成立但封存快照含 `session.exit`。
+- **LRU 读刷新**: `dispatch_log(owner)` 指定 owner 时 `move_to_end`;
+  **无参全量读刻意不刷新** (否则一次全量读刷活所有桶)。
+- **日志字段净化**: `_clean.py` 拆出 `_clean_once` 纯清理核心;
+  新增 `sanitize_log_field(raw, limit=120)` 与 `sanitize_verb` 共用
+  同一份清理真值 (UI 按 40 列 / 簇边界, 日志按 120 码点)。
+  `record_error()` 净化 event/kind/context, 异常消息同样净化,
+  TUI `_slogan_error()` 改用返回的已净化字段, 降级路径也先过 `_clean`。
+  实测 5030 -> 121 码点, ESC/RLO/OSC8 全清, 两层留痕一致。
+- **信息项与 fatal 分开**: `_CLIPPED_IDS` 降为信息项;
+  新增 `_UNRENDERABLE_IDS` (净化后为空/仍超宽) 与撞车为 fatal;
+  `AuditReport` 增 `sanitized_slogans` / `unrenderable_slogans` /
+  `unresolved_misses`, `clipped_slogans` 保留兼容但不参与 `ok`。
+- **单一渲染出口**: 去掉分发侧二次按码点截断, 分发与索引构建都只调
+  `sanitize_verb`; 源码结构断言禁止回归。
+
+### 验证与实测
+
+```
+234 passed (pytest) + 64 项纯 stdlib 独立验证
+verify_deep.py / verify_deep2.py   22 / 20 项全绿
+index_stats  1695 x4 / clipped=0 / unrenderable=0 / collisions=0
+             index_misses=0 / unresolved_misses=0
+一次 miss     ok=False / unresolved=1
+恢复后        ok=True / 累计证据=1 / 日志 2 条
+注入串        5030 -> 121 码点, ESC/RLO/OSC8 全清
+LRU 读        高频只读 s-0 存活, s-1 被淘汰
+```
+
+### 如实边界
+
+1. `unresolved_misses` 是**连续**语义, 间歇性 miss 会被随后成功归零;
+   累计 `_INDEX_MISSES` 才是完整历史, 不宣称「任何历史 miss 都永久告警」。
+2. `slogan_closed_trace()` 只保全 `close()` 那一刻的桶快照, LRU 淘汰的
+   其它会话历史仍不保留 (128 桶上界不变)。
+3. `sanitize_log_field` 按码点限长不按列宽 (日志不参与终端渲染),
+   但与 UI 文案共用 `_clean_once`, **不是**第二套净化真值。
+4. `_MAX_OWNERS=128` / `_MAX_WINDOWS=384` 仍是有界折中; 并发压测
+   仍未复现 list 撕裂; 不是真机长跑; TUI 仍未替换既有 i18n 文案;
+   `runtime_slogans` 引擎本轮零改动; 分叉改动仍未合并;
+   第三方自适应红队仍未做。
+
 ## [Unreleased] - 闭环补漏：静默 miss、无界桶、单层留痕、避重失效
 
 > 上一轮把「每个标语都要对应的」在运行时做实了。本轮**先实测再修**,

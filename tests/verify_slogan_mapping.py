@@ -317,7 +317,7 @@ def t_no_silent_swallow():
     src = (REPO / "tuan_cli/tui/tui.py").read_text(encoding="utf-8")
     assert "except mapping.UnboundSloganEvent:" in src
     assert "self._slogan_error(event, \"unbound-event\")" in src
-    assert '"error:" + kind' in src          # 错误前缀由拼接生成
+    assert '"error:" + kd' in src            # 降级路径的错误前缀由拼接生成
     # 旧实现是 except Exception: return None 且什么都没记
     assert "return None" in src
 
@@ -488,6 +488,7 @@ def _d3_reset():
         mapping._CLIPPED_IDS = ()
         mapping._CLEAN_COLLISIONS = ()
     mapping.reset_runtime_counters()
+    mapping.reset_dispatch_log()   # 深度轮 4: reset 计数不再强绑清日志
     picker._windows.clear()
 
 
@@ -581,7 +582,7 @@ def t_clean_collision_detected():
 def t_audit_index_consistent_is_strict():
     src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
     assert 'idx["by_clean"]' in src
-    assert 'idx["index_misses"] == 0' in src
+    assert 'idx["unresolved_misses"] == 0' in src
     assert "clean_collisions" in src
     r = mapping.audit()
     assert r.ok and r.index_consistent
@@ -684,6 +685,283 @@ def t_every_event_still_resolves_with_full_index():
     r = mapping.audit()
     assert r.ok and r.index_consistent and r.runtime_index_misses == 0
     _d3_reset()
+
+# ---------------------------------------------------------------- 深度轮 4
+
+
+def _d4_reindex():
+    with mapping._registry_lock:
+        mapping._REGISTRY = None
+        mapping._BY_ID.clear()
+        mapping._BY_TEXT.clear()
+        mapping._BY_CLEAN.clear()
+        mapping._CLIPPED_IDS = ()
+        mapping._UNRENDERABLE_IDS = ()
+        mapping._CLEAN_COLLISIONS = ()
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+class _D4Rng:
+    def choice(self, items):
+        return items[0]
+
+
+def _d4_evil():
+    return "x" * 5000 + "\x1b]8;;https://evil.example\x07" + "\u202eRLO"
+
+
+def t_d4_audit_self_heals_without_losing_evidence():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "_UNRESOLVED_MISSES" in src
+    assert "def acknowledge_runtime_misses(" in src
+    assert "include_dispatch_log: bool = False" in src
+    orig = picker.pick_local_first
+    picker.pick_local_first = lambda ctx, lang, rng=None: ("查不到的词", "locale")
+    try:
+        _d4_reindex()
+        d = mapping.pick_for_event("tool.exploring", owner="m")
+        assert d.reason == "index-miss" and mapping.audit().ok is False
+    finally:
+        picker.pick_local_first = orig
+    mapping.pick_for_event("tool.exploring", owner="healthy")
+    r = mapping.audit()
+    assert r.ok and r.index_consistent
+    assert r.unresolved_misses == 0 and r.runtime_index_misses == 1
+    assert mapping.dispatch_log_stats()["decisions"] >= 2
+    _d4_reindex()
+
+
+def t_d4_acknowledge_preserves_logs_and_cumulative():
+    _d4_reindex()
+    orig = picker.pick_local_first
+    picker.pick_local_first = lambda ctx, lang, rng=None: ("查不到的词", "locale")
+    try:
+        mapping.pick_for_event("tool.exploring", owner="m")
+        mapping.pick_for_event("tool.exploring", owner="m")
+        before = mapping.dispatch_log_stats()
+        n = mapping.acknowledge_runtime_misses()
+        assert n == 2
+        st = mapping.index_stats()
+        assert st["unresolved_misses"] == 0
+        assert st["index_misses"] == 2            # 累计证据不动
+        assert mapping.dispatch_log_stats() == before
+        assert mapping.audit().ok is True
+    finally:
+        picker.pick_local_first = orig
+        _d4_reindex()
+
+
+def t_d4_reset_counters_keeps_logs_by_default():
+    _d4_reindex()
+    mapping.pick_for_event("tool.exploring", owner="keep")
+    mapping.reset_runtime_counters()
+    assert len(mapping.dispatch_log("keep")) == 1
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    assert mapping.dispatch_log("keep") == ()
+
+
+def t_d4_close_seals_session_exit():
+    tui = (REPO / "tuan_cli/tui/tui.py").read_text(encoding="utf-8")
+    assert "self._slogan_sealed = mapping.dispatch_log(self._slogan_owner)" in tui
+    assert "mapping.release_owner(self._slogan_owner)" in tui
+    assert "def slogan_closed_trace(self)" in tui
+    from tuan_cli.tui.tui import QxtTUI
+    obj = QxtTUI(on_submit=lambda _t: "ok")
+    obj._booting = False
+    obj._boot_error = None
+    obj.begin_tool("git status")
+    owner = obj.slogan_owner()
+    obj.close()
+    assert mapping.dispatch_log(owner) == ()
+    sealed = obj.slogan_closed_trace()
+    assert sealed and "session.exit" in [r["event"] for r in sealed]
+    assert all(set(r) == {"event", "context", "reason", "origin",
+                          "entry_id", "owner", "at_ms"} for r in sealed)
+    _d4_reindex()
+
+
+def t_d4_take_owner_log_returns_and_releases():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "def take_owner_log(" in src
+    _d4_reindex()
+    mapping.pick_for_event("tool.exploring", owner="take")
+    mapping.pick_for_event("turn.completed", owner="take")
+    snap = mapping.take_owner_log("take")
+    assert len(snap) == 2 and snap[-1].event == "turn.completed"
+    assert mapping.dispatch_log("take") == ()
+    assert mapping.take_owner_log("take") == ()
+    assert mapping.take_owner_log("") == ()
+
+
+def t_d4_lru_read_refreshes_but_full_snapshot_does_not():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "_dispatch_log.move_to_end(owner)" in src
+    _d4_reindex()
+    K = mapping._MAX_OWNERS
+    for i in range(K):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+    for _ in range(50):
+        mapping.dispatch_log("s-0")
+    for i in range(K, K + 10):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+    assert len(mapping.dispatch_log("s-0")) == 1
+    assert mapping.dispatch_log("s-1") == ()
+    _d4_reindex()
+    for i in range(K):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+    mapping.dispatch_log()                  # 全量读不刷新
+    for i in range(K, K + 10):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+    assert mapping.dispatch_log("s-0") == ()
+    _d4_reindex()
+
+
+def t_d4_log_fields_are_sanitized():
+    clean = (REPO / "tuan_cli/ui/slogans/_clean.py").read_text(encoding="utf-8")
+    assert "def sanitize_log_field(" in clean
+    assert "def _clean_once(" in clean
+    mapping_src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "_clean.sanitize_log_field(event)" in mapping_src
+    tui = (REPO / "tuan_cli/tui/tui.py").read_text(encoding="utf-8")
+    assert "_clean.sanitize_log_field(event)" in tui
+    _d4_reindex()
+    d = mapping.record_error(_d4_evil(), "boom", owner="inj")
+    assert len(d.event) <= 121
+    assert "\x1b" not in d.event and "\u202e" not in d.event
+    assert "]8;;" not in d.event and d.reason == "error:boom"
+    bad = mapping.record_error("\x1b\u200b\u202e", "\x1b", at_ms=1)
+    assert bad.event == "<invalid-event>" and "\x1b" not in bad.event
+    try:
+        mapping.pick_for_event(_d4_evil())
+    except mapping.UnboundSloganEvent as exc:
+        msg = str(exc)
+        assert "\x1b" not in msg and "\u202e" not in msg and "]8;;" not in msg
+        assert len(msg) < 300
+    else:
+        raise AssertionError("unknown event must raise")
+    from tuan_cli.tui.tui import QxtTUI
+    obj = QxtTUI(on_submit=lambda _t: "ok")
+    obj._booting = False
+    obj._boot_error = None
+    obj._slogan_dispatch(_d4_evil())
+    errs = obj.slogan_errors()
+    assert len(errs) == 1 and "\x1b" not in errs[0][0]
+    rows = [d for d in mapping.dispatch_log(obj.slogan_owner())
+            if d.reason.startswith("error:")]
+    assert len(rows) == 1 and errs[0][0] == rows[0].event
+    _d4_reindex()
+
+
+def t_d4_log_field_shares_clean_core_and_is_idempotent():
+    from tuan_cli.ui.slogans import _clean
+    evil = _d4_evil()
+    log = _clean.sanitize_log_field(evil)
+    verb = _clean.sanitize_verb(evil)
+    assert "\x1b" not in log and "\x1b" not in verb
+    assert "\u202e" not in log and "\u202e" not in verb
+    assert len(log) > len(verb)     # 120 码点 vs 40 列
+    assert _clean.sanitize_log_field(log) == log
+    assert _clean.sanitize_verb("正常文案 ✓") == "正常文案 ✓"
+
+
+def t_d4_sanitized_is_informational_not_fatal():
+    orig = picker.pool_entries
+
+    def patched(ctx, lang):
+        out = list(orig(ctx, lang))
+        if ctx == "explore" and lang == "ja":
+            out.insert(0, picker.PoolEntry("探\u200b索中", "locale"))
+        return tuple(out)
+
+    picker.pool_entries = patched
+    try:
+        _d4_reindex()
+        d = mapping.pick_for_event("tool.exploring", lang="ja",
+                                   rng=_D4Rng(), owner="clip")
+        assert d.reason == "ok" and d.entry_id and d.text == "探索中"
+        r = mapping.audit()
+        assert r.ok and r.index_consistent
+        assert len(r.sanitized_slogans) == 1
+        assert r.unrenderable_slogans == ()
+        assert r.clipped_slogans == r.sanitized_slogans
+    finally:
+        picker.pool_entries = orig
+        _d4_reindex()
+
+
+def t_d4_unrenderable_and_collision_still_fatal():
+    orig = picker.pool_entries
+
+    def bad_pool(ctx, lang):
+        out = list(orig(ctx, lang))
+        if ctx == "explore" and lang == "ja":
+            out.insert(0, picker.PoolEntry("\x1b\u200b\u202e", "locale"))
+        return tuple(out)
+
+    picker.pool_entries = bad_pool
+    try:
+        _d4_reindex()
+        r = mapping.audit()
+        assert r.unrenderable_slogans and r.ok is False
+    finally:
+        picker.pool_entries = orig
+        _d4_reindex()
+
+    def colliding(ctx, lang):
+        out = list(orig(ctx, lang))
+        if ctx == "explore" and lang == "ja":
+            out.insert(0, picker.PoolEntry("撞车\u200b", "locale"))
+            out.insert(1, picker.PoolEntry("撞车", "locale"))
+        return tuple(out)
+
+    picker.pool_entries = colliding
+    try:
+        _d4_reindex()
+        r = mapping.audit()
+        assert r.clean_collisions and r.ok is False
+    finally:
+        picker.pool_entries = orig
+        _d4_reindex()
+
+
+def t_d4_single_render_exit():
+    import inspect
+    src = inspect.getsource(mapping.pick_for_event)
+    assert "[:max_cols]" not in src
+    assert "text = sanitize_verb(raw)" in src
+    long = "很长的标语" * 30
+    orig = picker.pool_entries
+
+    def patched(ctx, lang):
+        out = list(orig(ctx, lang))
+        if ctx == "explore" and lang == "ja":
+            out.insert(0, picker.PoolEntry(long, "locale"))
+        return tuple(out)
+
+    picker.pool_entries = patched
+    try:
+        _d4_reindex()
+        d = mapping.pick_for_event("tool.exploring", lang="ja",
+                                   rng=_D4Rng(), owner="long")
+        assert d.reason == "ok" and d.entry_id, d.reason
+        from tuan_cli.ui.slogans import _clean
+        assert d.text == _clean.sanitize_verb(long)
+        assert _clean.display_cols(d.text) <= _clean._MAX_VERB_COLS
+    finally:
+        picker.pool_entries = orig
+        _d4_reindex()
+
+
+def t_d4_audit_report_fields():
+    r = mapping.audit().as_dict()
+    assert r["ok"] is True
+    assert r["unresolved_misses"] == 0
+    assert r["runtime_index_misses"] == 0
+    assert r["sanitized_slogans"] == 0
+    assert r["unrenderable_slogans"] == 0
+    assert mapping.index_stats()["unresolved_misses"] == 0
+    assert mapping.index_stats()["unrenderable"] == 0
+    assert mapping.audit().ok is True
 
 
 for name, fn in sorted(globals().items()):

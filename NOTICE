@@ -715,7 +715,15 @@ THIRD-PARTY ATTRIBUTIONS
               and avoid-repeat window capacity follows the real key
               space. No new slogans, events, CLI subcommands, or
               upstream source. The Claude Code / Codex attributions in
-              sections 9-15 are unchanged. The Claude Code /
+              sections 9-15 are unchanged.
+    Self-heal / evidence-preservation pass (still NO new third-party
+              material): consecutive runtime misses are distinguished
+              from cumulative audit evidence, session-exit decisions are
+              sealed before bucket release, log fields share the single
+              Unicode-cleaning core with UI copy, and distribution and
+              indexes share one sanitize_verb exit. No new slogans,
+              events, CLI subcommands, license scope, upstream source
+              or trademark asset. Sections 9-15 remain unchanged. The Claude Code /
               Codex attributions in sections 9-15 are unchanged.
 
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):

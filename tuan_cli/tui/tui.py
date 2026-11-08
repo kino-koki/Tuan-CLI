@@ -761,6 +761,7 @@ class QxtTUI:
         self._slogan_lock = threading.RLock()
         self._slogan_owner = "tui:%x" % id(self)
         self._slogan_log = []
+        self._slogan_sealed = ()   # close() 封存的全局桶快照 (含 session.exit)
         self._slogan_last_stream_at = 0.0
 
         # 流式 / 工具状态
@@ -3812,24 +3813,31 @@ class QxtTUI:
     def _slogan_error(self, event: str, kind: str) -> None:
         """把「标语库出错/事件拼错」在**两层**都留痕, 绝不静默。
 
-        上一轮 ``except Exception: return None`` 把严格分发契约吃掉了:
-        拼错事件时 ``pick_for_event`` 明明抛 ``UnboundSloganEvent``,
-        TUI 却什么都不记、返回 None。本轮实测又发现: 上一轮的修复
-        只写了实例自己的 ``_slogan_log``, ``mapping.dispatch_log()``
-        里错误相关 0 条 —— 只看全局日志的运维会完全漏掉。
-        现在同步 ``mapping.record_error()``, 两层一致。
+        深度轮 4: ``event`` 可能来自外部可控输入 (``slogan_for`` 的
+        public 入参)。实测可注入 5030 码点含 OSC 8 超链接 + U+202E
+        RLO 的串, 旧实现原样写进两层日志 —— 控制字符会被日志查看器
+        或终端解释。现在两层都用 ``mapping.record_error()`` 返回的
+        **已净化**字段; 标语库整体不可用时也先过 ``_clean`` 再写,
+        绝不写原始串。
         """
         at = int(time.monotonic() * 1000)
-        self._slogan_record((event, None, "error:" + kind, "", "",
-                             self._slogan_owner, at))
         try:
             from ..ui.slogans import mapping  # noqa: PLC0415
-            mapping.record_error(event, kind, owner=self._slogan_owner,
-                                 at_ms=at)
+            d = mapping.record_error(event, kind, owner=self._slogan_owner,
+                                     at_ms=at)
+            safe_event, reason = d.event, d.reason
         except Exception:  # noqa: BLE001
-            # 标语库整体不可用时, TUI 层留痕仍在, 不掀 UI。
-            # 这是「降级但绝不静默」, 不是吞掉: _slogan_record 已落盘到实例日志。
-            pass
+            # 降级但绝不静默: TUI 层留痕仍在, 且字段同样净化。
+            try:
+                from ..ui.slogans import _clean  # noqa: PLC0415
+                safe_event = (_clean.sanitize_log_field(event)
+                              or "<invalid-event>")
+                kd = _clean.sanitize_log_field(kind, 40) or "invalid-field"
+            except Exception:  # noqa: BLE001
+                safe_event, kd = "<invalid-event>", "sanitizer-unavailable"
+            reason = "error:" + kd
+        self._slogan_record((safe_event, None, reason, "", "",
+                             self._slogan_owner, at))
 
     def _slogan_dispatch(self, event: str, *, strict: bool = False):
         """把真实生命周期事件分发到标语库, 记录**可反查**的决策。
@@ -3902,17 +3910,37 @@ class QxtTUI:
     def close(self) -> None:
         self._slogan_dispatch("session.exit")
         self._closed = True
-        # 深度轮 3: 上一轮按 owner 分桶却**没有释放路径** —— 实测
-        # 2000 个会话各分发一次就留下 2000 个桶, 长期运行的 REPL /
-        # 测试集会无限累积。会话结束显式释放自己的桶; 实例内的
-        # ``_slogan_log`` 仍可经 ``slogan_trace()`` 查询, 不受影响。
+        # 深度轮 4: 实测上一轮「先记 session.exit 再删桶」让**全局日志
+        # 永远看不到会话退出事件**, 而实例 ``slogan_trace()`` 里有 ——
+        # 两层口径不一致。现在先把含 session.exit 的整桶快照封存到
+        # 实例, 再释放全局桶: 桶数仍有界, 证据仍可结构化查询。
         try:
             from ..ui.slogans import mapping  # noqa: PLC0415
+            self._slogan_sealed = mapping.dispatch_log(self._slogan_owner)
             mapping.release_owner(self._slogan_owner)
         except Exception:  # noqa: BLE001
-            pass
+            self._slogan_sealed = ()
         if self._app and self._app.is_running:
             self._app.exit()
+
+    def slogan_closed_trace(self) -> tuple:
+        """``close()`` 时从全局桶封存的决策快照 (含 ``session.exit``)。
+
+        全局桶随后被释放以守住 ``_MAX_OWNERS`` 上界, 但会话最后一条
+        事件不再凭空消失。返回结构与 ``slogan_trace()`` 一致。
+        """
+        keys = ("event", "context", "reason", "origin",
+                "entry_id", "owner", "at_ms")
+        with self._slogan_lock:
+            sealed = tuple(self._slogan_sealed)
+        out = []
+        for d in sealed:
+            out.append({
+                "event": d.event, "context": d.context, "reason": d.reason,
+                "origin": d.origin, "entry_id": d.entry_id,
+                "owner": d.owner, "at_ms": d.at_ms,
+            })
+        return tuple(out)
 
     def _animate(self) -> None:
         # 深度轮硬约束：这里**只允许**推进帧号并 invalidate，
