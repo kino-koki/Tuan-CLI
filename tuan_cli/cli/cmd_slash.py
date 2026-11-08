@@ -75,7 +75,7 @@ _HELP = """
   /plan      切换 Plan 模式 (只读分析, 修改类工具被拦截)
 
 ── 专家层 (Expert, 折叠; 输入 /<首字母> 前缀或 /help 可查全部) ──
-  [...]/add-dir   把工作区外目录纳入本会话可读上下文 ( /add-dir <路径>; 无参列出 )
+  [...]/add-dir   把工作区外目录纳入本会话上下文 ( /add-dir <路径> [--writable]; 无参列出 )
   [...]/audit     审计报告 (统计/查看/导出合规报告)
   [...]/blast     Blast Radius 交互式可视化 (影响半径/安全风险/工具统计)
   [...]/budget    查看/设置成本预算上限 ( /budget <USD> )
@@ -190,7 +190,7 @@ def slash_command_tiers() -> Dict[str, str]:
 
 # 命令一句话描述 (补全菜单 display_meta / /help 用); 未收录的命令回退通用提示。
 _CMD_META: Dict[str, str] = {
-    "/add-dir": "把工作区外目录纳入本会话可读上下文 (/add-dir [路径])",
+    "/add-dir": "把工作区外目录纳入本会话上下文 (/add-dir [路径] [--writable]); 开启写边界后普通授权仅读",
     "/help": "显示帮助",
     "/tools": "列出可用工具",
     "/skills": "列出技能",
@@ -457,22 +457,39 @@ def _cmd_checkpoint(agent: Any, arg: str) -> None:
 
 
 def _cmd_add_dir(agent: Any, arg: str) -> None:
-    """/add-dir [路径] — 把工作区外目录纳入本会话可读上下文。
+    """/add-dir [路径] [--writable] — 把工作区外目录纳入本会话上下文。
 
-    无参: 列出当前已授权目录。带路径: 显式授权该目录 (仅读; 写仍走既有守卫)。
+    无参: 列出当前已授权目录。带路径: 显式授权该目录。
+    ``--writable`` 显式登记为可写根（供
+    ``permissions.blockWritesOutsideWorkingDirectories`` 开启后放行写）。
     授权为 per-session 内存态, 不落盘。
+
+    **口径纠偏**：旧帮助写「可读上下文 / 仅读; 写仍走既有守卫」，实测
+    ``/add-dir /tmp/ext`` 之后 write/edit/move/delete 全部越界放行 ——
+    「确认对话」不是路径硬边界。现在默认行为不变但文案如实；开启写边界后
+    普通授权才真正变成仅读。
     """
-    from ..tools.filesystem import authorize_extra_dir, list_extra_dirs
-    if not arg:
+    from ..tools.filesystem import (
+        authorize_extra_dir, list_extra_dirs, list_writable_dirs,
+    )
+    parts = arg.strip().split()
+    writable = "--writable" in parts
+    parts = [x for x in parts if x != "--writable"]
+    rest = " ".join(parts).strip()
+    if not rest:
         dirs = list_extra_dirs(agent.ctx)
+        wr = list_writable_dirs(agent.ctx)
         if not dirs:
-            ui.info("当前没有额外授权目录。用法: /add-dir <绝对路径>")
+            ui.info("当前没有额外授权目录。用法: /add-dir <绝对路径> [--writable]")
             return
-        ui.info("已授权的额外可读目录 (本会话, 内存态, 不落盘):")
+        ui.info("已授权的额外目录 (本会话, 内存态, 不落盘):")
+        wset = set(wr)
         for d in dirs:
-            ui.info(f"  - {d}")
+            ui.info(f"  - {d}" + ("  [可写]" if d in wset else "  [仅读/默认可写]"))
+        if wr:
+            ui.info(f"显式可写根: {len(wr)} 个 (仅在写边界开启时生效)")
         return
-    ui.success(authorize_extra_dir(agent.ctx, arg))
+    ui.success(authorize_extra_dir(agent.ctx, rest, writable=writable))
 
 
 def _cmd_web(agent: Any, arg: str) -> None:

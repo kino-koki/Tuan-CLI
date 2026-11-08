@@ -202,6 +202,19 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
             f"非法枚举: permissions.denyInsteadOfPromptingScope={dip_scope!r} "
             f"(应为 no_confirm_channel / all_confirmations)")
 
+    # 工具层写路径硬边界 (CC v2.1.314)。**默认值 false 不是安全降级** ——
+    # CC 出厂同样关闭，且 Tuan 保留既有行为；但显式写成字符串 "true" / 1
+    # 会让运行时按 fail-closed 启用边界并拒绝全部越界写，属于「配错即行为
+    # 突变」，必须在校验阶段拦住，不能靠用户运行时才发现。
+    _bool_field(errors, "permissions.blockWritesOutsideWorkingDirectories",
+                get("permissions.blockWritesOutsideWorkingDirectories"))
+    if get("permissions.blockWritesOutsideWorkingDirectories") is True:
+        warnings.append(
+            "行为变更: permissions.blockWritesOutsideWorkingDirectories=true 使"
+            "write/edit/move(dst)/delete 只能落在工作区或显式 writable 授权根内; "
+            "普通 /add-dir 变为仅读 (可用 `/add-dir <path> --writable` 放行), "
+            "命令层重定向不在此约束范围内")
+
     _validate_rules(errors, warnings, get("permissions.rules"))
     _str_list(errors, "permissions.shell.deny_patterns", get("permissions.shell.deny_patterns"))
     _str_list(errors, "permissions.network.allow_domains",

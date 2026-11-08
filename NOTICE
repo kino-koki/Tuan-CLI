@@ -922,3 +922,16 @@ SOFTWARE.
     copied. Sections 9-20 remain unchanged; the Apache-2.0 + MIT
     dual attribution for the Codex TUI parity line and all
     "no endorsement" statements still apply unchanged.
+
+
+22. Tool-layer write-path boundary (`core/write_boundary.py`), the
+    `permissions.blockWritesOutsideWorkingDirectories` configuration key,
+    the `/add-dir --writable` explicit grant, and the `edit_files`
+    transaction fix. Still NO new third-party material: only existing
+    stdlib filesystem tooling, the existing config schema / harden
+    status / slash-command modules, and one new stdlib-based regression
+    test file were changed or added. No Anthropic source, trademark
+    asset, upstream Rust source, or new third-party dependency was
+    copied. Items 9-21 remain unchanged; the Apache-2.0 + MIT dual
+    attribution for the Codex TUI parity line and all "no endorsement"
+    statements still apply unchanged.

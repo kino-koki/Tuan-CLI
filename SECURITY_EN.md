@@ -2067,3 +2067,98 @@ regression **78 passed**; sandbox/platform/proc/e1e7 per-file
 problems == []`. Batches overlap and are NOT summed. New
 `tests/test_b2se_background_side_door.py` (~24 cases) and
 `tests/test_b2su_mcp_shell_gate.py` (~25 cases).
+
+
+---
+
+## Depth Round (continued II): Tool-Layer Write Boundary, `/add-dir` Calibration, Real `edit_files` Transaction
+
+> SELF-CONTAINED heading (no new numeric section number -- this file,
+> `CLAUDE_PARITY.md`, `SECURITY_EN.md`, `SLOGAN_MAPPING.md` each have a
+> section 17 referring to four DIFFERENT topics). Full reproduction: the
+> final section of `CLAUDE_PARITY.md`. **NOT A SINGLE MATRIX STATUS
+> CHANGED**.
+
+### Measured defects
+
+| ID | Measured result |
+|---|---|
+| W1 | `permissions.blockWritesOutsideWorkingDirectories` had **ZERO hits in code** (only in the catalog comparison note). `tools/filesystem.py::_resolve` is a READ-path decision that does not distinguish read from write; CC v2.1.314 hard-refuses out-of-tree writes at the **Write/Edit/NotebookEdit tool layer** |
+| W2 | THREE places (REPL help, `authorize_extra_dir` docstring, module comment) all claimed "readable context / read-only; writes still go through existing guards". Measured: after `/add-dir /tmp/ext`, `write_file` REALLY created a file, `move_file` renamed, `delete_file` deleted -- all outside the workspace. **A confirmation dialog is NOT a path boundary**: YOLO / unattended / direct function calls never pass through it |
+| W3 | `edit_files` claimed "any failure -> whole transaction refused, no file written", but the dangerous-content scan ran in PHASE 2 WHILE WRITING. Measured: with 3 items and `rm -rf /` in the third, it returned "wholesale refused (no file written)" while `f0.txt` / `f1.txt` had ALREADY become `BBB` |
+
+W3 is a rare **correctness defect** in this repo (most prior rounds were
+security fail-opens), and the return text actively LIES, misleading the
+calling Agent into thinking a safe retry is possible.
+
+### Fix
+
+| Location | Change |
+|---|---|
+| `core/write_boundary.py` (NEW) | Single decision exit. Flag defaults to **`False`** (matches CC factory default, **NO breaking default change**); a non-bool config value -> **FAIL-CLOSED ENABLE** (avoids Python's `bool("false") == True` silent allow); when on, write targets must be inside `workspace UNION explicitly writable-granted roots`; the write point re-resolves the parent chain to catch symlink-swap TOCTOU |
+| `tools/filesystem.py` | New `_resolve_write`; ALL SIX write ops uniformly routed through it; `move_file`'s SOURCE still uses `_resolve` (read decision); one extra recheck at the write point |
+| `tools/filesystem.py` `authorize_extra_dir` | New `writable=False`; plain `/add-dir` grants READ ONLY, `--writable` explicitly registers a writable root (per-session memory state, NO Agent self-grant tool), system-critical directories still refused |
+| `tools/filesystem.py` `edit_files` | Dangerous-content scan MOVED INTO PHASE 1; a recheck over ALL targets BEFORE any disk write; PHASE 2 loop no longer contains ANY rejection branch |
+| `config/defaults.py` / `security_schema.py` / `cli/cmd_harden.py` | New flag; non-bool is a hard error (so runtime does not silently change behavior under fail-closed), enabling emits a "behavior change" warning; `harden status` shows the CURRENT effective state |
+| `cli/cmd_slash.py` | `/add-dir` help made honest, supports `--writable`, no-arg listing distinguishes writable / read-only-or-default |
+| `parity_claude/catalog.py` | `block_writes_outside_wd` note calibrated, **`status` STAYS `partial`**, `evidence` structure unchanged |
+
+### Why it stays `partial`, NOT `aligned`
+1. **Command-layer redirects are outside a tool-layer constraint**:
+   `echo x > /tmp/out` runs via shell; CC covers that with sandbox rules,
+   Tuan has no equivalent yet.
+2. **Factory default is still `false`** (same as CC, but neither is a
+   default strong boundary).
+3. **TOCTOU only does a second resolution**: a window remains between
+   the check and `os.replace`; full elimination needs `O_NOFOLLOW` +
+   `dir_fd`, which would change the existing atomic-write implementation.
+   Not claimed as covered.
+
+### Three "not changed on purpose" (each with an executable regression)
+READ paths unaffected (`read_file` / `list_dir` / `glob` / `diff_preview`
+still read `/add-dir` dirs normally); `artifact_tool.py` /
+`worktree_layer.py` write to FIXED INTERNAL paths
+`workspace/.tuan/artifacts` and `workspace/.tuan/worktrees`, not
+user-supplied arbitrary paths (locked by a source scan); `move_file`'s
+source is a READ and its destination a WRITE -- gating the source too
+would wrongly refuse "move from an authorized read-only dir into the
+workspace".
+
+### A-prime
+The first `harden status` draft gave `_CfgProbe` a `get()` method, but
+`write_boundary` reads `ctx.config()`; it also called `allowed_roots()`,
+which needs `ctx.workspace`. Self-check fixed it to `config()` and removed
+the workspace dependency. One dead test helper was cleaned up.
+
+### Matrix: NOT A SINGLE STATUS CHANGED
+`aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+`b_waves_done=["B1"]`; `matrix.validate()` and
+`evidence.verify_evidence()` both empty. New regressions pin every count
+so NO padding by editing definitions.
+
+### Honest limits
+**Default behavior UNCHANGED**: with `false`, `/add-dir` dirs remain
+writable; the docs were corrected (the old wording was WRONG). Enabling
+the flag AND the W3 fix ARE behavioral changes: deployments relying on
+"add-dir is writable" need an explicit `--writable` grant or must stay
+off; `edit_files` now writes ZERO files when dangerous content is hit
+(the old version wrote the first N), so callers relying on "partial
+success" must review -- but the old return text already claimed "no file
+written", so the fix aligns implementation with its promise. If
+`_atomic_write_text` fails mid-PHASE-2 due to an OS error (disk full /
+permissions), partial writes are still possible -- NOT introduced this
+round and NOT claimed as "fully transactional". `os_sandbox` remains a
+gap, `deny_network_by_default` remains false, `credential_masking`
+remains partial; A-line still has 10 pending modules, the local fork is
+unmerged, no third-party adaptive red team. NO real-device multi-platform
+verification; Windows paths untested. The slogan engine / cleaning layer /
+`mapping.py` / `tui.py` / `runtime_slogans.py` are byte-identical.
+
+### Verification (split batches, NOT claimed as one full-suite run)
+this round **38 passed**; path/edit/read-guard/workspace impact (6 files)
+**119 passed / 1 skipped**; config/harden/slash/parity (7 files)
+**114 passed**; `verify_doc_numbers.py problems == []`; 8 changed Python
+files `py_compile` OK. End-to-end measured: flag off preserves legacy
+add-dir writes; flag on refuses write/edit/move/delete/delete_dir with
+ZERO disk change while reads still work; `--writable` allows; the W3
+scenario leaves all three files at `AAA`. Batches overlap, NOT summed.

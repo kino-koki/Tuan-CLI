@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 深度轮（续二）：工具层写路径硬边界 / `/add-dir` 口径 / `edit_files` 真事务
+
+> **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续二）」节。沿用自足标题，不新增
+> 数字章节编号（仓库里多套 §17 指代四个不同主题）。
+
+### 三个实测缺陷
+- **W1** `permissions.blockWritesOutsideWorkingDirectories` 代码里 0 命中；
+  `filesystem._resolve` 只做读路径裁决且读写不分，CC 是在
+  Write/Edit/NotebookEdit 工具层硬拒绝。
+- **W2** `/add-dir` 三处文案写「可读上下文 / 仅读; 写仍走既有守卫」，
+  实测 `write_file` / `move_file` / `delete_file` 全部越界放行 ——
+  确认对话不是路径硬边界。
+- **W3** `edit_files` 危险内容扫描在阶段 2 边写边扫：3 项里第 3 项含
+  `rm -rf /` 时前 2 项已落盘为 `BBB`，返回文本却写「未写入任何文件」。
+
+### 修复（如实，不夸大）
+- 新增 `core/write_boundary.py`：单一裁决出口，开关默认 **`False`**
+  （与 CC 出厂一致，不做破坏性默认变更），配置值非 bool → fail-closed
+  启用；开启后写目标必须在 `工作区 ∪ 显式 writable 授权根` 内；
+  写入点重新解析父目录链抓 symlink 替换型 TOCTOU。
+- `filesystem.py`：新增 `_resolve_write`，六个写操作统一走它；
+  `authorize_extra_dir(..., writable=False)` + `--writable` 显式可写授权
+  （per-session 内存态，Agent 无自助授权工具）；`edit_files` 危险扫描
+  前移到阶段 1、写入前全体复检、阶段 2 无拒绝分支。
+- `defaults.py` / `security_schema.py` / `cmd_harden.py` 接线；
+  `/add-dir` 帮助文案改成如实并支持 `--writable`；`catalog.py` 该条
+  note 补纠偏但 `status` 仍 `partial`、`evidence` 结构不变。
+
+### 仍为 partial 的三个理由
+命令层重定向 (`echo x > /tmp/out`) 不在工具层约束内；出厂默认仍
+`false`；TOCTOU 二次解析与 `os.replace` 之间仍有窗口（彻底消除需
+`O_NOFOLLOW` + `dir_fd`，会改动既有原子写实现，本轮不做）。
+
+### 三个「不该修」（都配可执行回归）
+读路径不受影响（`read_file` / `list_dir` / `glob` / `diff_preview`）；
+`artifact_tool.py` / `worktree_layer.py` 写的是 `workspace/.tuan/...`
+固定内部路径、不走 `_resolve`，源码扫描锁住；`move_file` 源是读、
+目标是写，只给目标加边界。
+
+### A′
+`harden status` 初版给 `_CfgProbe` 写了 `get()`，但 `write_boundary`
+读的是 `ctx.config()`；且调用了依赖 `ctx.workspace` 的
+`allowed_roots()`。自查后改为 `config()` 并去掉 workspace 依赖。
+测试里一段死代码已清理。
+
+### 验证（按分批报告，批次间有重叠、不累加）
+本轮新回归 **38 passed**；路径/编辑/读守卫/工作区影响面（6 文件）
+**119 passed / 1 skipped**；config / harden / slash / parity（7 文件）
+**114 passed**；`matrix.validate() == []`、
+`evidence.verify_evidence() == []`、`verify_doc_numbers.py problems == []`、
+8 个改动 Python 文件 `py_compile` OK。端到端实测：开关关闭时既有
+`/add-dir` 写行为不变；开启后 write / edit / move / delete / delete_dir
+五类全部拒绝且磁盘零变更，读仍可读；`--writable` 放行；W3 场景
+三个文件全部保持 `AAA`。
+
+### 如实边界
+**默认不改既有行为**（文案改成如实，旧文案是错的）；开启开关与
+W3 修复都是**行为变更**；阶段 2 的 `_atomic_write_text` 若因 OS 错误
+中途失败仍可能部分落盘，这不是本轮引入也不谎称「完全事务」；
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证；标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
 ## [Unreleased] - 深度轮（续）：两条执行侧门收口（后台 `! cmd` / 对外 MCP `run_shell`）
 
 > 两轮合并推送（此前沙箱 502 中断未推）。**矩阵计数一个没动**：

@@ -438,6 +438,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "network": {
             "allow_domains": [],  # 空列表表示不限制域名
         },
+        # 工具层写路径硬边界 (对标 CC v2.1.314, 默认关闭以保持一致且不做
+        # 破坏性变更)。开启后: write/edit/move(dst)/delete 必须落在工作区或
+        # 显式 `/add-dir <path> --writable` 授权根内; 普通 /add-dir 只授读。
+        # 关闭时保留既有行为 (普通 /add-dir 授权目录也可写), 文档如实标注。
+        "blockWritesOutsideWorkingDirectories": False,
         # 用户自定义规则表 (对标 Claude Code 的 allow/deny/ask 规则):
         # 每条 {"tool": 工具名或通配符, "pattern": 可选参数通配符, "action": allow|deny|ask}
         # pattern 匹配文本: run_shell 取命令行, 其余优先 path/url, 兜底拼接参数值 (小写)。

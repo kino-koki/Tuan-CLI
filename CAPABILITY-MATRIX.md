@@ -489,3 +489,26 @@ catalog 两条 note 补**第四轮纠偏指向**，但 `status` 与 `evidence`
 上一轮后台注释引用「§17」实际指向不存在。本轮改用自足标题，不做全局
 重编号。新增 `tests/test_b2se_background_side_door.py` 与
 `tests/test_b2su_mcp_shell_gate.py`。详见 `SECURITY_BASELINE.md` R46/R47。
+
+
+---
+
+## 深度轮增量（工具层写路径硬边界，纠偏 catalog note）
+
+`CLAUDE_PARITY.md` 末尾「深度轮（续二）」是权威口径。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`。
+
+- **W1**：`permissions.blockWritesOutsideWorkingDirectories` 此前在代码里
+  0 命中；新增 `core/write_boundary.py` + `filesystem._resolve_write`，
+  六个写操作统一裁决，默认 `false` 与 CC 出厂一致。
+- **W2**：`/add-dir` 三处文案声称「仅读」，实测 write/move/delete 全越界
+  放行。改为如实文案 + `--writable` 显式可写授权；开启开关后普通授权
+  才真正仅读。
+- **W3**：`edit_files` 假事务（第 3 项危险内容时前 2 项已落盘却返回
+  「未写入任何文件」）。危险扫描前移到校验阶段，写入前全体复检，
+  阶段 2 无拒绝分支。
+
+`block_writes_outside_wd` 仍 **`partial`**：命令层重定向不覆盖、
+默认仍关闭、TOCTOU 二次解析与 `os.replace` 之间仍有窗口。详见
+`SECURITY_BASELINE.md` R48。新增 `tests/test_b2su_write_boundary.py`（38 例）。

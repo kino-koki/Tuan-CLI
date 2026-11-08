@@ -241,7 +241,42 @@ def _status(args: Any) -> int:
             print(f"  - {msg}")
     except Exception as exc:  # noqa: BLE001
         print(f"[harden] 安全配置 schema: 检查失败 ({exc})")
+
+    # ------------------------------------------------- 工具层写路径边界态势
+    # 与 schema 的「配错」校验互补：这里显示**当前生效状态**，让
+    # 「默认关闭」这件事本身可见，而不是藏在 defaults.py 里。
+    try:
+        from ..config import Config
+        from ..core.write_boundary import FLAG, boundary_enabled
+        cfg = Config()
+        raw = cfg.get(FLAG, False)
+        enabled, note = boundary_enabled(_CfgProbe(raw))
+        state = "启用" if enabled else "关闭 (出厂默认)"
+        print(f"[harden] 工具层写路径硬边界: {state} ({FLAG}={raw!r})")
+        if note:
+            print(f"         !! {note}")
+        if not enabled:
+            print("         提示: 开启后普通 /add-dir 变为仅读；"
+                  "命令层重定向 (echo > ...) 不受此约束")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[harden] 工具层写路径硬边界: 检查失败 ({exc})")
     return 0
+
+
+class _CfgProbe:
+    """极小的适配器: 提供 ``config(dotted, default)`` 供写边界裁决读取。
+
+    刻意不把整个 kernel / ToolContext 拖进 harden status —— 这里只需要
+    把 Config.get 读到的那一个布尔值交给 ``boundary_enabled`` 走同一份
+    fail-closed 判定（非法值也会在 status 里显示出来）。
+    """
+
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def config(self, dotted: str, default: Any = None) -> Any:
+        return self._value if dotted.endswith(
+            "blockWritesOutsideWorkingDirectories") else default
 
 
 def cmd_harden(args: Any) -> int:

@@ -159,8 +159,8 @@ D1 = (
                        "tuan_cli/config/security_schema.py", "tests/test_b2_boundaries.py"),
       "B2 落地：显式开关(默认关)、no_confirm_channel / all_confirmations 两种 scope、denied=True 是硬事实而 continue_turn / suppressed_prompt 结构化写入 verdict.extra 与可查询审计；已接到 assess_tool 的真实 CONFIRM 路径，配置非法 fail-closed"),
     M("block_writes_outside_wd", "security_permissions", "permissions.blockWritesOutsideWorkingDirectories (v2.1.314，默认关)",
-      STATUS_PARTIAL, ("tuan_cli/sandbox/filters.py", "tuan_cli/core/path_safety.py"),
-      "CC 在 Write/Edit/NotebookEdit 工具层硬拒绝（但默认关闭）；Tuan 是命令文本规则层，工具层硬约束待补。不标 ahead —— 两者都还不是默认强边界",
+      STATUS_PARTIAL, ("tuan_cli/core/write_boundary.py", "tuan_cli/tools/filesystem.py", "tuan_cli/config/security_schema.py"),
+      "CC 在 Write/Edit/NotebookEdit 工具层硬拒绝（但默认关闭）。**工具层硬约束本轮已补**：新增 core/write_boundary.py 单一裁决出口，write_file/edit_file/edit_files/move_file(dst)/delete_file/delete_dir 六处统一走 _resolve_write，开关开启后写目标必须在工作区或显式 writable 授权根内，并做父目录链 TOCTOU 复检；schema 强校验 + harden status 可见。同时实测纠偏了 /add-dir 的「仅读」文档谎言（旧实现 write/move/delete 全部越界放行）与 edit_files 的假事务（第 3 项危险内容时前 2 项已落盘却返回「未写入任何文件」）。**仍为 partial 不标 aligned**：(1) 命令层重定向 (echo x > /tmp/out) 不在此工具层约束内，CC 靠 sandbox 规则覆盖而 Tuan 尚无对应能力；(2) 出厂默认仍 false（与 CC 一致，但两者都还不是默认强边界）；(3) TOCTOU 只做二次解析，检查与 os.replace 之间仍有窗口，未上 O_NOFOLLOW/dir_fd",
       "B2"),
 )
 

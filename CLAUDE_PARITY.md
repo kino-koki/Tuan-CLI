@@ -1517,3 +1517,97 @@ sentinel 真实进入子进程且真实值不残留、工具默认不暴露 + �
    parent-blob baseline control 证明是既有环境行为，没为变绿改策略。
 7. A 线 10 个 pending、分叉改动未合并、第三方自适应红队未做。
    标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
+
+---
+
+## 深度轮（续二）：工具层写路径硬边界、`/add-dir` 口径纠偏、`edit_files` 真事务
+
+> 沿用上一轮的**自足标题**约定，不新增数字章节编号（仓库里存在多套
+> §17 且指代四个不同主题）。矩阵计数**一个没动**：
+> `ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8`，
+> `fully_superior=false`，`b_waves_done=["B1"]`。
+
+### 三个实测缺陷（先复现再修）
+
+| 编号 | 实测结果 |
+|---|---|
+| W1 | `permissions.blockWritesOutsideWorkingDirectories` 在**代码里 0 命中**（只在 `catalog.py` 的对标描述中出现）。`tools/filesystem.py::_resolve` 是读路径裁决且读写不分；CC v2.1.314 是在 **Write/Edit/NotebookEdit 工具层**硬拒绝越界写 |
+| W2 | `/add-dir` 的 REPL 帮助、`authorize_extra_dir` docstring、模块注释**三处**都写「可读上下文 / 仅读; 写仍走既有守卫」。实测 `/add-dir /tmp/ext` 之后 `write_file` 真的创建文件、`move_file` 改名、`delete_file` 删除，全部越界放行 —— **确认对话不是路径硬边界**，YOLO / 无人值守 / 直接函数调用都不经过它 |
+| W3 | `edit_files` docstring 声称「任一失败 → 整体拒绝, 不写任何文件」，但危险内容扫描在**阶段 2 边写边扫**。实测 3 项里第 3 项含 `rm -rf /`：返回「已整体拒绝 (未写入任何文件)」，而 `f0.txt` / `f1.txt` 已变成 `BBB`。返回文本与磁盘状态不一致 |
+
+W3 是这个仓库里少见的**正确性缺陷**（前十几轮多是安全 fail-open），
+而且返回文本主动说谎，会误导上层 Agent 以为可以安全重试。
+
+### 落地（如实，不夸大）
+
+| 位置 | 修复 |
+|---|---|
+| `core/write_boundary.py`（新增） | `recheck_write` / `decide_write` / `boundary_enabled` / `writable_roots` 单一裁决出口。开关默认 **`False`**（与 CC 出厂一致，**不做破坏性默认变更**）；配置值非 bool → **fail-closed 启用**，避免 `bool("false") == True` 的静默放行；开启后写目标必须在 `工作区 ∪ 显式 writable 授权根` 内；写入点重新解析父目录链，抓 symlink 替换型 TOCTOU |
+| `tools/filesystem.py` | 新增 `_resolve_write`，`write_file` / `edit_file` / `edit_files` / `move_file(dst)` / `delete_file` / `delete_dir` **六处**统一改走它；`move_file` 的源仍走 `_resolve`（读裁决）；写入点再复检一次 |
+| `tools/filesystem.py` `authorize_extra_dir` | 新增 `writable=False` 形参。普通 `/add-dir` 只授读；`--writable` 显式登记 `extra_writable_dirs`（per-session 内存态，Agent 无自助授权工具）；系统关键目录仍拒绝 |
+| `tools/filesystem.py` `edit_files` | 危险内容扫描**前移到阶段 1**；写入前对**全体**目标做一次复检（必须在任何落盘之前，否则中途拒绝仍会部分写入）；阶段 2 循环内不再有任何拒绝分支 |
+| `config/defaults.py` | 新增 `permissions.blockWritesOutsideWorkingDirectories: False` |
+| `config/security_schema.py` | 强校验（非 bool 直接报错，不让运行时按 fail-closed 悄悄改写行为）；开启时报「行为变更」warning |
+| `cli/cmd_harden.py` | `harden status` 显示写边界**当前生效状态**；`_CfgProbe` 复用同一份 fail-closed 判定，配错值也会在 status 里显示 |
+| `cli/cmd_slash.py` | `/add-dir` 帮助文案改成如实；支持 `/add-dir <path> --writable`；无参列表区分「可写 / 仅读或默认可写」 |
+| `parity_claude/catalog.py` | `block_writes_outside_wd` 的 note 补纠偏，**`status` 仍 `partial`**、`evidence` 结构不变 |
+
+### 为什么状态仍是 `partial`，不标 `aligned`
+
+1. **命令层重定向不在工具层约束内**：`echo x > /tmp/out` 由 shell 执行，
+   本模块管不到；CC 靠 sandbox 规则覆盖命令层，Tuan 尚无对应能力。
+2. **出厂默认仍 `false`**（与 CC 一致，但两者都还不是默认强边界）。
+3. **TOCTOU 只做二次解析**：检查与 `os.replace` 之间仍有窗口；
+   彻底消除要上 `O_NOFOLLOW` + `dir_fd` 系列，会改动既有原子写实现，
+   本轮不做也不谎称覆盖。
+
+### 三个「不该修」（都配可执行回归）
+
+- **读路径不受影响**：`read_file` / `list_dir` / `glob` / `diff_preview`
+  对 `/add-dir` 目录照常可读（这是该功能本来的承诺）。
+- **`artifact_tool.py` / `worktree_layer.py` 不走 `_resolve`**：它们写的是
+  `workspace/.tuan/artifacts` 与 `workspace/.tuan/worktrees` 固定内部路径，
+  不是用户提供的任意路径。源码扫描锁住结论；若未来改成写任意路径需重评。
+- **`move_file` 的源是读、目标是写**：源继续用 `_resolve`，只给目标加边界；
+  把源也当成写会误拒「从授权只读目录搬进工作区」的合理操作。
+
+### A′：一处接口写错、当场自查抓回
+
+`harden status` 初版给 `_CfgProbe` 写了 `get()`，但 `write_boundary` 读的是
+`ctx.config()`；且初版调用了需要 `ctx.workspace` 的 `allowed_roots()`。
+自查后改成 `config()` 并去掉 workspace 依赖，避免 status 直接抛异常。
+另有一处测试里的死代码（未调用的 `_swap_then_resolve`）已清理。
+
+### 验证（按分批报告，批次间有重叠、不累加）
+
+```
+本轮新回归 tests/test_b2su_write_boundary.py                38 passed
+路径/编辑/读守卫/工作区影响面（6 文件）            119 passed / 1 skipped
+config / harden / slash / parity（7 文件）                  114 passed
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+py_compile: 8 个改动 Python 文件 OK
+```
+
+端到端实测（非仅单测）：开关关闭时既有 `/add-dir` 写行为不变；开启后同一
+授权目录的 write / edit / move / delete / delete_dir 五类全部返回
+「写路径越出工作目录」且磁盘零变更，读仍可读；`--writable` 显式授权后写
+放行；W3 场景三个文件全部保持 `AAA`。
+
+### 如实边界
+
+- **默认不改既有行为**：`blockWritesOutsideWorkingDirectories=false` 时
+  `/add-dir` 目录仍可写，文档已改成如实（旧文案是错的）。开启才是**行为
+  变更**，依赖「/add-dir 可写」的部署需显式 `--writable` 授权或保持关闭。
+- **W3 修复是行为变更**：`edit_files` 现在危险内容命中时一个文件都不写
+  （旧版会写前 N 个）。上层若依赖「部分成功」需核对；但旧返回文本本就
+  声称「未写入任何文件」，所以修复是让实现对齐承诺。
+- **状态 2 写路径复检不是完整 TOCTOU 防护**；`edit_files` 阶段 2 的
+  `_atomic_write_text` 若因 OS 错误（磁盘满 / 权限）中途失败，仍可能部分
+  落盘 —— 这不是本轮引入，也不谎称「完全事务」。
+- `os_sandbox` 仍 **gap**、`deny_network_by_default` 仍 **false** 未翻、
+  `credential_masking` 仍 `partial`（HTTPS CONNECT 隧道内 header 不可见）；
+  A 线 10 个 pending、分叉改动未合并、第三方自适应红队未做。
+- 不是真机多平台验证；Windows 路径未实测。标语引擎 / 净化层 /
+  `mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
