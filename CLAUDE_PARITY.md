@@ -18,7 +18,7 @@
 「超 Claude Code 最新版本」不是一句口号，也不靠把状态定义改漂亮来达成。本文档把它拆成三件可核验的事：
 
 1. **锁定基线**：v2.1.319 是 2026-11-06 发布的最新稳定版，不是泛指「最新版」。它的新增与修复逐条列在 §2，来源列在 §10。
-2. **全模块盘点**：99 个模块分 14 个域，五态标注。当前 **领先 10 / 已对齐 45 / 部分 10 / 缺口 26 / 不适用 8**（B2 落地 4 项，见 §12）。`not_applicable` 如实标不适用，**不包装成领先**。
+2. **全模块盘点**：99 个模块分 14 个域，五态标注。当前 **领先 10 / 已对齐 46 / 部分 9 / 缺口 26 / 不适用 8**（B2 落地 4 项 + 收尾 1 项，见 §12/§13）。`not_applicable` 如实标不适用，**不包装成领先**。
 3. **「超」有硬判据**：六个维度各有运行时探针（真调现有代码，不靠文档自述），`fully_superior` 必须同时满足 5 个条件才算成立（§3）。当前 5 个条件里只有 2 个为真，`fully_superior = false`。
 
 **最该先看的不是领先项，是落后项**：`os_sandbox`（OS 级强制隔离）、`network_default_deny`（网络默认拒）、`credential_masking`（子进程不持密钥）、`worktree_sandbox_escape`。Claude Code 有真 OS 沙箱，Tuan 的 `--isolation` 是可选的 engine/process 级，L3 只在 `verdict.isolate` 时介入，`local` 后端 `enforced=False`。这些在第 1 轮对照 Codex 时就已如实承认，本计划不推翻、不美化，放在 **B2** 优先处理。
@@ -117,7 +117,7 @@ fully_superior = (
 
 | 功能域 | 模块 | 领先 | 已对齐 | 部分 | 缺口 | 不适用 |
 |---|---:|---:|---:|---:|---:|---:|
-| 安全与权限 `security_permissions` | 8 | 0 | 3 | 4 | 1 | 0 |
+| 安全与权限 `security_permissions` | 8 | 0 | 4 | 3 | 1 | 0 |
 | 安全扫描与审计 `safety_audit` | 7 | 4 | 2 | 0 | 1 | 0 |
 | 生命周期钩子 `hooks` | 8 | 1 | 5 | 0 | 2 | 0 |
 | 技能与记忆 `skills_memory` | 7 | 0 | 5 | 1 | 1 | 0 |
@@ -131,7 +131,7 @@ fully_superior = (
 | 代码智能 `code_intelligence` | 5 | 0 | 2 | 0 | 3 | 0 |
 | 云 / 远程 / 集成 `cloud_remote` | 6 | 0 | 0 | 1 | 0 | 5 |
 | 可观测 / 模型 / 成本 `observability_models` | 6 | 2 | 1 | 1 | 1 | 1 |
-| **合计** | **99** | **10** | **45** | **10** | **26** | **8** |
+| **合计** | **99** | **10** | **46** | **9** | **26** | **8** |
 
 状态定义即约束（`evidence.py` 运行时校验）：`ahead` 必须有 `ahead_reason` + 合法维度 + 存在的证据路径；`gap` 必须分配到某个 wave；`not_applicable` 不得带 wave 且必须写清理由；所有非 NA 模块的证据路径必须真实存在。想把缺口改成领先，就得补真实证据、写清理由、跑通探针——**改状态定义凑数会被自检拦下**。
 
@@ -143,8 +143,8 @@ fully_superior = (
 |---|---|---|---|---|
 | `os_sandbox` | **缺口** | B2 | 仍是最大落后项：CC 有 OS 级强制沙箱，Tuan 的 --isolation 是可选 engine/process 级。B2 补上 local 后端禁网裁决的 fail-closed 拒绝，但**没有**把 OS 级隔离变成默认执行边界 | `backends.py`, `manager.py`, `egress.py` |
 | `network_default_deny` | 部分 | B2 | B2 修复执行层：local+禁网 fail-closed 拒绝（旧实现 block_net 未接线而裸跑）。仍缺：出厂 `deny_network_by_default` 仍 false、逐命令 `allowed_domains` 强绑定 | `egress.py`, `test_b2_boundaries.py` |
-| `network_strict_allowlist` | 部分 | B2 | sandbox.network.strictAllowlist; per-command allowed_domains (v2.1.271) — 有域名策略与 NetworkGuard，但缺「逐命令声明所需主机、其余一律拒绝」的强绑定 | `network_policy.py`, `network_guard.py` |
-| `credential_masking` | 部分 | B2 | B2 落地 sentinel 代理：子进程敏感环境变量替换为 `tuan-egress-sentinel-v1:<fp>`，真实值只在进程内内存。仍缺：出网代理转发注入未接线（`inject_headers` 默认关闭） | `egress.py`, `test_b2_boundaries.py` |
+| `network_strict_allowlist` | 已对齐 | — | B2 收尾：逐命令 `allowed_domains` → `verdict.extra` → `SandboxProfile.allowed_domains` → **本地回环出网代理**在 CONNECT/明文 HTTP 主机层强绑定；声明外 403，检测不到域名也不静默放行（§13） | `egress_allowlist.py`, `egress_proxy.py`, `test_b2_egress_strict.py` |
+| `credential_masking` | 部分 | B2 | sentinel 代理已落地；B2 收尾把 `inject_headers()` 接成**真实调用方**（明文 HTTP 代理转发还原真实凭据，真 socket 验证）。仍为 partial：HTTPS CONNECT 隧道看不到 header，注入不可用（§13） | `egress.py`, `egress_proxy.py`, `test_b2_egress_strict.py` |
 | `permission_modes` | 已对齐 | — | default / acceptEdits / plan / bypass / auto (Shift+Tab) — 五模式注册表与切换器已在；auto 模式的确定性规则前置见 auto_mode | `registry.py`, `switcher.py`, `policy.py` |
 | `deny_rules_exclude_glob` | 已对齐 | — | permissions rules / deniedMcpServers URL (v2.1.318) — E6 负向排除 + MCP 规范化精确管控；deny 忽略 exclude，拒绝规则不允许被放宽 | `security_schema.py`, `policy.py` |
 | `deny_instead_of_prompting` | 已对齐 | — | 显式开关（默认关）+ 两种 scope + `continue_turn`/`suppressed_prompt` 结构化；真接到 `assess_tool` 的 CONFIRM 路径，配置非法 fail-closed（§12） | `unattended.py`, `manager.py`, `test_b2_boundaries.py` |
@@ -362,7 +362,7 @@ fully_superior = (
 | 轮次 | 目标 | 交付 | 主要风险 / 不做的事 |
 |---|---|---|---|
 | **B1 ✅** | 基线 + 详细计划 + **hooks 默认 fail-closed 落地** | `parity_claude/` 4 模块、`CLAUDE_PARITY.md`、`tuan claude parity`、`tests/test_claude_parity.py` 58 例、`NOTICE` 14 条 | 行为变更已如实标注；不改 OS 沙箱默认值、不碰 A 线文件 |
-| **B2 ◐ 部分** | 补齐最大落后项（原 5 个 gap） | 本轮落地 4 项：`network_default_deny`→partial、`credential_masking`→partial、`deny_instead_of_prompting`→aligned、`worktree_sandbox_escape`→aligned；新增 `egress.py` / `unattended.py` / `worktree_boundary.py` + 34 例回归，详见 §12 | **`os_sandbox` 仍为 gap**：没把 OS 级隔离变成默认执行边界，只修了 local 后端禁网裁决裸跑。出厂 `deny_network_by_default` 仍 false、未擅自翻；B2 未全清，故 `b_waves_done` 仍只有 B1 |
+| **B2 ◐ 部分（含收尾）** | 补齐最大落后项（原 5 个 gap） | 首轮 4 项（§12）+ 收尾 `network_strict_allowlist`→aligned、`credential_masking` 接真实代理（§13）；新增 5 个模块 + 77 例回归 | **`os_sandbox` 仍为 gap**：没把 OS 级隔离变成默认执行边界。出厂 `deny_network_by_default` 仍 false、未擅自翻；B2 未全清，`b_waves_done` 仍只有 B1 |
 | **B3** | 7 个扩展 hook 事件（PermissionRequest / Notification / DirectoryAdded / ConfigChange / WorktreeCreate / Elicitation / ElicitationResult）+ `updatedInput` 按工具 schema 校验 | `HOOK_EVENTS` 扩展 + 四型 hook 统一失败语义 + 回归 | 通知类事件失败**只留痕不卡 turn**；不把新事件做成新的 fail-open 侧门 |
 | **B4** | CLAUDE.md 语义等价的多层项目记忆 + `@` 文件提及 + **技能完整性签名与权限域声明** | `memory` 分层 + skill 签名校验 | 大文件不得被 Write 工具只看开头就覆盖（CC v2.1.312 刚修过）；技能不可悄悄扩权是 CC 无对等物的超越点 |
 | **B5** | `/tasks` 持久化索引（含「Earlier in this session」）+ 每 subagent 独立沙箱与权限域 + 跨会话审计关联接到代理生命周期 | 子代理任务索引 + 权限域隔离 | 关联检测**纯观测，绝不反作用于裁决**（沿用 E4 约束） |
@@ -852,3 +852,91 @@ fully_superior = false   |  criteria 2 真 3 假
    与 B 线互不替代；分叉改动仍未合并；静态基准不能当对抗证明。
 7. 本轮未新增第三方素材，`NOTICE` 第 9–15 条归属不变；标语引擎 /
    净化层 / `_clean.py` / `mapping.py` / `tui.py` 逐字节未改。
+
+
+---
+
+## 13. B2 收尾：把域名强绑定从文本层搬到出网路径
+
+B2 首轮（§12）修掉的是「已有开关在执行层没接线」。收尾这轮盯着另一个
+同类断点：**白名单只活在命令文本里，执行层和出网路径上完全没有域名概念**。
+
+### 实测缺口（先复现再修）
+
+| 复现 | 结果 |
+|---|---|
+| `SandboxProfile` 字段 | 只有 `network: bool` / `filesystem_ro` / `writable_paths` / `blocked_paths` / 内存 / CPU / `env_allowlist` —— **没有任何域名字段** |
+| `SandboxManager._run_provider` | `SandboxProfile(network=verdict.network, max_memory_mb=...)` —— 强后端拿到的是「全开 / 全关」 |
+| `assess_command('curl https://evil.example/x')` | `verdict.extra = {}` —— 裁决结果**不携带**本次允许哪些主机 |
+| `TrustFilter` 的白名单 | 用 `guard.check(text).detected_domains` 做**文本识别**；前几轮 477 条 fuzz 已证零宽字符 / ANSI-C / 注释换行 / 变量间接引用可绕过 |
+
+先纠正一处我自己的误读：首轮复现脚本里打印的是 `verdict.network` /
+`verdict.isolate` 而非 `action`，一度以为全局白名单失效。补测确认
+`TrustFilter.check` 对声明外域名确实返回 DENY —— **文本层是生效的**。
+真正的缺口是「执行层拿不到域名」和「文本识别不是出网路径上的强制」。
+
+### 落地：五个模块 / 三处真接线
+
+| 模块 | 作用 |
+|---|---|
+| `sandbox/egress_allowlist.py` | `normalize_domain`（严格归一化）、`NetworkClaim`（**逐命令**声明 + `strict`）、`claim_from_args`（工具参数优先、回落全局并如实标 `source`）、`evaluate_claim`（声明外拒绝；`strict` 且未声明任何主机时拒绝一切；检测不到域名**标记 `undetectable`** 而不是悄悄当已证明合规） |
+| `sandbox/egress_proxy.py` | **真实可运行**的 stdlib 本地回环代理：`CONNECT` 按 claim 校验主机（声明外 403、允许则建隧道）；明文 HTTP 绝对 URI 同样校验，转发时用 `CredentialBroker.inject_headers()` 把 sentinel 还原成真实值 |
+| `core/sandbox_provider.py` | `SandboxProfile` 新增 `allowed_domains` 字段。**如实说明**：bwrap / seatbelt 只有 network namespace / IP 级规则，没有域名级过滤，这个字段是给后端参考的元数据；真正的强制点在代理 |
+| `sandbox/manager.py` | `assess_tool` / `assess_command` 把 claim 写进 `verdict.extra`；`_run_provider` 传进 `SandboxProfile`；`_execute_backend` 的 local 分支用 `try/finally` 管代理生命周期，注入 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` 并清空 `NO_PROXY` |
+| `config/security_schema.py` | `sandbox.resource.egress_proxy_enabled` 校验；开启报**行为变更** warning |
+
+**关键设计**：域名的最终强制点是**出网路径**（代理的主机校验），不是文本层。
+`strict` 模式下即使命令文本里一个域名都检测不到也放行到代理，由代理在
+CONNECT / HTTP 主机层裁决 —— 这样零宽字符绕过文本识别也没用。
+
+### A′：本轮自己引入、自己抓回的静默放宽
+
+初版 `normalize_domain` 用 `str.encode("idna")` 处理大小写与尾点。实测：
+
+```
+normalize_domain("evil\u200b.example")  ->  "evil.example"     # ZWSP 被 IDNA 丢弃
+normalize_domain("api.github\u200b.com") -> "api.github.com"
+```
+
+攻击者只要在真实主机里插一个零宽字符，就能让「另一个主机」匹配上白名单
+声明 —— 这正是前几轮反复强调的「静默折叠」。已加 **ASCII 约束 + 逐字符
+白名单**先挡住，非 ASCII 一律返回 `None`；脏声明记为 `invalid_values`
+并让 `evaluate_claim` fail-closed。代价是不支持国际化域名，如实写在边界里。
+
+### 矩阵：不靠改口径凑数
+
+`aligned 45 → 46`、`partial 10 → 9`，**`gap` 仍是 26**。
+`network_strict_allowlist` 本来就是 `partial` 不是 `gap`，推进它不减少缺口；
+`credential_masking` 保持 `partial`（理由见下）。
+`fully_superior` 仍 `false`，`b_waves_done` 仍 `["B1"]`，判据一条没改。
+两条既有计数断言同步到新基线，**不是放宽**（仍要求总和 99、逐项对应）。
+
+### 如实边界
+
+1. **`credential_masking` 仍是 partial**：明文 HTTP 的 sentinel 注入已真接线
+   （真 socket 端到端验证，上游 `Authorization` 拿到真实值）；
+   但 HTTPS 走 CONNECT 隧道后代理只转发加密字节、**看不到 header**，
+   无法注入。覆盖 HTTPS 需 TLS 中间人 + 本地 CA 信任，会显著扩大攻击面，
+   本轮不做，也不谎称与 CC「sentinel + 代理注入」完整对等。
+2. **bwrap / seatbelt 没有域名级过滤**：`SandboxProfile.allowed_domains`
+   只是元数据，不假装 OS 级后端能按域名放行。
+3. `sandbox.resource.egress_proxy_enabled` **默认 false**：开启会改写所有
+   子进程代理环境变量，是行为变更；只有显式开启 + `strict` 逐命令声明
+   才构造代理。claim 的裁决层强绑定始终生效，所以「关闭」不算安全降级。
+4. `os_sandbox` 仍是 **gap**，`deny_network_by_default` 出厂仍 **false**、未翻。
+   `block_writes_outside_wd` 仍是 partial，未在本轮动。
+5. `evaluate_claim` 的 `undetectable` 是**标记**而非证明：文本层检测不到时
+   依赖代理主机校验，若调用方绕过了 `env_overrides`（例如命令显式指定
+   `--noproxy`），强绑定就失效。这是本地 CLI 的固有限制，不是漏洞伪装。
+6. 不是真机多平台验证；A 线 10 个 pending、分叉改动、第三方自适应
+   红队仍未完成。标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
+### 验证
+
+```
+tests/test_b2_egress_strict.py                    43 passed（含真实 socket 代理端到端）
+tests/test_b2_boundaries.py + parity/CLI/headless   全绿（合并批次）
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+fully_superior = false   |  gaps = 26  |  criteria 2 真 3 假
+```

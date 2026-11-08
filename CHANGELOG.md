@@ -9,6 +9,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - B2 收尾：逐命令域名强绑定 + 本地回环出网代理
+
+> 不扩广度，只把 B2 首轮留下的另一个「接线断点」挖透。
+> **gap 仍 26、fully_superior 仍 false** —— partial→aligned 不减少缺口，
+> 不靠改口径凑数。完整复现见 `CLAUDE_PARITY.md` §13。
+
+### 实测缺口
+
+`SandboxProfile` 只有布尔 `network`；`_run_provider` 构造
+`SandboxProfile(network=verdict.network, ...)`；`assess_command(...)` 的
+`verdict.extra = {}` —— **执行层和出网路径上完全没有域名概念**。
+`TrustFilter` 的全局白名单只在命令文本层生效（补测确认它确实会 DENY，
+纠正首轮复现脚本把 `network`/`isolate` 误读成 `action` 的表述），
+而文本识别可被零宽字符 / ANSI-C / 注释换行 / 变量间接引用绕过。
+
+### 新增 / 接线
+
+- `sandbox/egress_allowlist.py`：严格 `normalize_domain`、`NetworkClaim`
+  （**逐命令**声明 + `strict`）、`claim_from_args`（工具参数优先、回落全局
+  并如实标 `source`）、`evaluate_claim`（声明外拒绝；strict 未声明任何主机
+  拒绝一切；检测不到域名标记 `undetectable` 而非悄悄当已证明合规）。
+- `sandbox/egress_proxy.py`：**真实可运行**的 stdlib 本地回环代理。
+  `CONNECT` 按 claim 校验主机（声明外 403）；明文 HTTP 绝对 URI 同样校验，
+  转发时用 `CredentialBroker.inject_headers()` 把 sentinel 还原成真实值。
+  `env_overrides` 注入 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`、清空
+  `NO_PROXY`。审计只记主机/端口/决定/计数。
+- `core/sandbox_provider.py`：`SandboxProfile` 新增 `allowed_domains`。
+  **如实说明** bwrap/seatbelt 没有域名级过滤，这个字段只是元数据。
+- `sandbox/manager.py`：`assess_tool`/`assess_command` 把 claim 写进
+  `verdict.extra`；`_run_provider` 传进 `SandboxProfile`；local 分支用
+  `try/finally` 管代理生命周期（超时/异常也一定 stop）。
+- `config/security_schema.py`：`egress_proxy_enabled` 校验，开启报行为变更。
+
+### A′：自己引入、自己抓回
+
+初版 `normalize_domain` 的 `str.encode("idna")` 会吞掉 U+200B ZWSP，
+`evil\u200b.example` 归一化成 `evil.example` —— 插零宽字符的不同主机
+可能蒙混过白名单。已加 ASCII 约束 + 逐字符白名单，非 ASCII 一律 `None`；
+脏声明记 `invalid_values` 并 fail-closed。代价是不支持国际化域名。
+
+### 矩阵与配置
+
+`aligned 45 → 46`、`partial 10 → 9`、**gap 仍 26**：
+`network_strict_allowlist` partial→aligned；`credential_masking` 保持
+partial 但 note 更新（明文 HTTP 注入已真接线，HTTPS CONNECT 隧道做不到）。
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻。
+`sandbox.resource.egress_proxy_enabled` 默认 **false**（开启会改写子进程
+代理环境变量，属行为变更）；claim 的裁决层强绑定始终生效。
+
+### 验证与边界
+
+43 例新回归（含真 socket 代理端到端：允许域名 200 + 上游拿到真实凭据、
+声明外 403、CONNECT 403、审计不泄露值、finally 一定 stop）；合并批次与
+`matrix.validate()`/`verify_doc_numbers.py` 全绿。两条既有计数断言同步到
+新基线，**不是放宽**。
+
+如实边界：HTTPS 隧道内 header 注入不可用（需 TLS MITM + 本地 CA，本轮
+不做，不谎称完整对等）；bwrap/seatbelt 无域名级过滤；代理默认关；
+`undetectable` 是标记不是证明（命令显式 `--noproxy` 可绕过 env 注入）；
+不是真机多平台验证；A 线 10 个 pending、分叉改动、第三方自适应红队仍未
+完成。标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
 ## [Unreleased] - B2 落地：出网边界、凭据 sentinel、无人值守拒绝、worktree 边界
 
 > 切回 B 线第一轮。不再只挖标语引擎，而是修 B2 五个最大落后项里

@@ -128,6 +128,16 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
             _bool_field(errors, "sandbox.resource.egress_block_local_when_denied",
                         res.get("egress_block_local_when_denied"),
                         dangerous_when_false="local 后端收到禁网裁决仍会裸跑")
+            # B2 收尾: 出网代理默认关。开启是真行为变更（改写子进程代理环境变量），
+            # 必须可见；但「关闭」不是安全降级，因为逐命令 claim 的裁决层强绑定
+            # 始终生效，代理只是把强制点从文本层搬到出网路径上。
+            _bool_field(errors, "sandbox.resource.egress_proxy_enabled",
+                        res.get("egress_proxy_enabled"))
+            if res.get("egress_proxy_enabled") is True:
+                warnings.append(
+                    "行为变更: sandbox.resource.egress_proxy_enabled=true 使"
+                    "带逐命令 allowed_domains 的子进程出网改写 HTTP_PROXY/"
+                    "HTTPS_PROXY 并经过本地回环代理做主机校验与凭据注入")
             for key in ("max_memory_mb", "max_timeout"):
                 val = res.get(key)
                 if val is None:

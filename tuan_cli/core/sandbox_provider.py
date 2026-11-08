@@ -59,6 +59,11 @@ class SandboxProfile:
     max_memory_mb: int = 0        # 内存上限 (0=不限)
     max_cpu_seconds: int = 0      # CPU 时间上限 (0=不限)
     env_allowlist: List[str] = field(default_factory=list)    # 允许传递的环境变量
+    # B2 收尾: 逐命令声明的允许主机（已归一化）。**如实说明**:
+    # bwrap / seatbelt 只有 network namespace / IP 级规则，没有域名级过滤，
+    # 所以这个字段是给后端参考的元数据；域名强绑定的真正强制点在
+    # sandbox/egress_proxy.py 的本地回环出网代理（CONNECT / 明文 HTTP 主机校验）。
+    allowed_domains: List[str] = field(default_factory=list)
 
 
 class SandboxProvider(abc.ABC):

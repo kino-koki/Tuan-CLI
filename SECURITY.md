@@ -1508,3 +1508,57 @@ source，不改任何既有断言口径）；混合场景仍只保留可渲染�
 验证：34 例新回归 + 108 例 parity/CLI/headless + 353 例相关批次全绿；
 `matrix.validate() == []`、`security_wiring_intact=true`。
 两条既有计数断言同步到新基线，**不是放宽**。
+
+
+---
+
+## 28. B2 收尾：逐命令域名强绑定 + 本地回环出网代理（完整复现见 `CLAUDE_PARITY.md` §13）
+
+**实测缺口**：`SandboxProfile` 只有 `network: bool`；`_run_provider` 构造
+`SandboxProfile(network=verdict.network, ...)`；`assess_command(...)` 的
+`verdict.extra = {}` —— 执行层和出网路径上**完全没有域名概念**。
+`TrustFilter` 的全局白名单只在命令文本层生效（补测确认它确实会 DENY，
+纠正 §12 复现脚本把 `network`/`isolate` 误读成 `action` 的表述），而文本
+识别可被零宽字符 / ANSI-C / 注释换行 / 变量间接引用绕过。
+
+**修复（把强制点从文本层搬到出网路径）**：
+
+| 组件 | 作用 |
+|---|---|
+| `sandbox/egress_allowlist.py` | `normalize_domain` 严格归一化；`NetworkClaim` **逐命令**声明（工具参数 `allowed_domains` 优先、回落全局并如实标 `source`）；`evaluate_claim` 声明外拒绝、strict 未声明任何主机拒绝一切、检测不到域名标记 `undetectable` 而非悄悄当已证明合规 |
+| `sandbox/egress_proxy.py` | **真实可运行**的 stdlib 本地回环代理：`CONNECT` 按 claim 校验主机（声明外 403、允许则建隧道）；明文 HTTP 绝对 URI 同样校验，转发时 `CredentialBroker.inject_headers()` 把 sentinel 还原成真实值；`env_overrides` 注入 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`、清空 `NO_PROXY` |
+| `core/sandbox_provider.py` | `SandboxProfile` 新增 `allowed_domains`。**如实**：bwrap/seatbelt 只有 network namespace / IP 级规则，没有域名级过滤，这是元数据 |
+| `sandbox/manager.py` | claim 写进 `verdict.extra` → `SandboxProfile.allowed_domains`；local 分支 `try/finally` 管代理生命周期，超时/异常一定 `stop()` |
+| `config/security_schema.py` | `sandbox.resource.egress_proxy_enabled` 校验，开启报**行为变更** warning |
+
+**A′（本轮自己引入、自己抓回）**：初版 `normalize_domain` 用
+`str.encode("idna")`，U+200B ZWSP 被静默丢弃，
+`evil\u200b.example → evil.example` —— 插零宽字符的不同主机可能匹配上
+白名单声明。已加 ASCII 约束 + 逐字符白名单，非 ASCII 一律 `None`；脏声明
+记为 `invalid_values` 并 fail-closed。代价：不支持国际化域名。
+
+**配置**：`sandbox.resource.egress_proxy_enabled` 默认 **false**（开启会
+改写所有子进程代理环境变量，属行为变更）；只有显式开启 + `strict` 逐命令
+声明才构造代理。claim 的裁决层强绑定始终生效，所以「关闭」不算安全降级。
+**`deny_network_by_default` 仍 false，没翻**。
+
+**矩阵（不靠改口径凑数）**：`aligned 45 → 46`、`partial 10 → 9`、
+**gap 仍 26**（`network_strict_allowlist` 本来就是 partial 不是 gap）。
+`fully_superior` 仍 false，`b_waves_done` 仍 `["B1"]`。
+
+**如实边界**：
+1. `credential_masking` **仍 partial**：明文 HTTP 的 sentinel 注入已真接线
+   （真 socket 端到端验证，上游 `Authorization` 拿到真实值）；HTTPS 走
+   CONNECT 隧道后代理看不到 header，无法注入。覆盖需 TLS 中间人 +
+   本地 CA 信任，会显著扩大攻击面，本轮不做，不谎称完整对等。
+2. bwrap / seatbelt 没有域名级过滤，`allowed_domains` 只是元数据。
+3. `evaluate_claim` 的 `undetectable` 是**标记**不是证明：若命令显式
+   `--noproxy` 绕过 `env_overrides`，强绑定失效。本地 CLI 固有限制。
+4. `os_sandbox` 仍 gap、`block_writes_outside_wd` 仍 partial、未在本轮动。
+5. 不是真机多平台验证；A 线 10 个 pending、分叉改动、第三方自适应
+   红队仍未完成。标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
+验证：43 例新回归（含真 socket 代理端到端）+ 合并批次全绿；
+`matrix.validate() == []`、`evidence.verify_evidence() == []`、
+`verify_doc_numbers.py problems == []`。两条既有计数断言同步到新基线，
+**不是放宽**（仍要求总和 99、逐项对应）。

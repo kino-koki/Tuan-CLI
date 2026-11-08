@@ -523,3 +523,36 @@ P10 `sanitize_verb(123)==''`；另锁住 `liveness`/`render`/`snapshot`
 验证：34 例新回归 + 108 例 parity/CLI/headless + 353 例相关批次全绿；
 `matrix.validate() == []`、`security_wiring_intact=true`。两条既有计数
 断言同步到新基线，**不是放宽**（仍要求总和 99、逐项对应）。
+
+
+---
+
+## R42 · B2 收尾：域名强绑定的执行层接线（完整复现见 `CLAUDE_PARITY.md` §13）
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R42 | `SandboxProfile` 只有布尔 `network`、`verdict.extra={}` —— 执行层/出网路径没有域名概念；全局白名单只在可绕过的命令文本层生效 | `egress_allowlist.py`（逐命令 `NetworkClaim` / 严格归一化 / `evaluate_claim`）+ `egress_proxy.py`（**真实**本地回环代理，CONNECT/明文 HTTP 主机校验 + sentinel 注入）+ `SandboxProfile.allowed_domains` + manager 三处真接线（`try/finally` 管代理生命周期） |
+
+配置：`sandbox.resource.egress_proxy_enabled=false`（默认；开启报行为变更
+warning，会改写子进程 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`、清空
+`NO_PROXY`）。只有显式开启 + `strict` 逐命令声明才构造代理。
+**`deny_network_by_default` 仍 false，没翻**。
+
+**A′ 自引入自修复**：初版 `normalize_domain` 的 `idna` 编码吞掉 U+200B
+ZWSP，`evil\u200b.example → evil.example`，可让不同主机匹配白名单声明。
+已加 ASCII + 逐字符白名单，非 ASCII 一律拒绝；脏声明 fail-closed。
+
+矩阵：`aligned 45 → 46`、`partial 10 → 9`、**gap 仍 26**
+（partial→aligned 不减少缺口，不靠改口径凑数）；`os_sandbox` 仍 gap、
+`credential_masking` 仍 partial（明文 HTTP 注入已真接线，HTTPS CONNECT
+隧道看不到 header）、`block_writes_outside_wd` 仍 partial。
+`fully_superior` 仍 false，`b_waves_done` 仍 `["B1"]`。
+
+如实边界：HTTPS 隧道内 header 注入不可用（需 TLS MITM + 本地 CA，本轮不做）；
+bwrap/seatbelt 无域名级过滤，`allowed_domains` 只是元数据；`undetectable`
+是标记不是证明（命令显式 `--noproxy` 可绕过 env 注入）；不支持国际化域名；
+不是真机多平台验证。
+
+验证：43 例新回归（含真 socket 代理端到端）+ 合并批次全绿；
+`matrix.validate() == []`、`verify_doc_numbers.py problems == []`。
+两条既有计数断言同步到新基线，**不是放宽**。

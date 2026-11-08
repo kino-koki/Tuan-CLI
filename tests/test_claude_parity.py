@@ -65,8 +65,11 @@ class TestBaseline:
         # B2 落地后同步到新基线（**不是放宽**）：4 个 B2 模块从 gap 变为
         # 2 aligned + 2 partial，证据路径与运行时探针全部真实存在。
         # 派生一致性仍要求总和 99 且与 catalog 逐项对应。
+        # B2 收尾同步（**不是放宽**）：network_strict_allowlist 从 partial
+        # 变 aligned（逐命令域名强绑定真接到出网代理）；gap 仍 26 ——
+        # 它本来就是 partial，推进它不减少缺口，不许靠改口径凑数。
         assert s["by_status"] == {
-            "ahead": 10, "aligned": 45, "partial": 10,
+            "ahead": 10, "aligned": 46, "partial": 9,
             "gap": 26, "not_applicable": 8}
 
     def test_domain_counts_sum(self):

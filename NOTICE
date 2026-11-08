@@ -857,3 +857,15 @@ SOFTWARE.
     third-party dependency was copied. Sections 9-15 remain unchanged;
     the Apache-2.0 + MIT dual attribution for the Codex TUI parity
     line and the "no endorsement" statements still apply unchanged.
+
+
+17. B2 wrap-up egress-allowlist / loopback-proxy pass (still NO new
+    third-party material): two pure-Python stdlib modules were added
+    for per-command domain claims and a real local loopback egress
+    proxy (CONNECT host validation + plain-HTTP credential sentinel
+    injection), and wired into the existing sandbox manager,
+    SandboxProfile and config schema. No Anthropic source, trademark
+    asset, upstream Rust source, or new third-party dependency was
+    copied. Sections 9-16 remain unchanged; the Apache-2.0 + MIT dual
+    attribution for the Codex TUI parity line and all "no endorsement"
+    statements still apply unchanged.

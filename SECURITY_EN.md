@@ -1616,3 +1616,76 @@ Verification: 34 new regression cases + 108 parity/CLI/headless cases +
 353 related sandbox/worktree/hooks/config/hardening cases, all green;
 `matrix.validate() == []`, `security_wiring_intact=true`. Two pre-existing
 count assertions were SYNCHRONIZED to the new baseline, NOT relaxed.
+
+
+---
+
+## 25. B2 Wrap-up: Per-Command Domain Binding and a Real Local Egress Proxy
+
+Full reproduction in `CLAUDE_PARITY.md` section 13.
+
+**MEASURED gap**: `SandboxProfile` had only `network: bool`;
+`_run_provider` built `SandboxProfile(network=verdict.network, ...)`;
+`assess_command(...)` produced `verdict.extra = {}` -- the execution layer
+and the egress path had NO notion of domains at all. `TrustFilter`'s global
+allowlist works only at the command-TEXT layer (a follow-up measurement
+confirmed it does return DENY, correcting section 12's reproduction which
+mistook `network`/`isolate` fields for the `action`), and text detection is
+bypassable by zero-width characters, ANSI-C quoting, comment newlines and
+indirect variable references.
+
+**Fix -- move the enforcement point from text to the egress path**:
+
+| Component | Role |
+|---|---|
+| `sandbox/egress_allowlist.py` | Strict `normalize_domain`; `NetworkClaim` PER-COMMAND declaration (tool-arg `allowed_domains` wins, global fallback is honestly labelled via `source`); `evaluate_claim` rejects out-of-claim hosts, rejects everything when strict with no declared host, and MARKS `undetectable` instead of silently treating "no domain detected" as proven compliance |
+| `sandbox/egress_proxy.py` | A REAL, runnable stdlib loopback proxy: `CONNECT` validates the host against the claim (403 outside claim, tunnel otherwise); plain-HTTP absolute URIs are validated too and `CredentialBroker.inject_headers()` restores sentinels to real values while forwarding; `env_overrides` sets `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` and CLEARS `NO_PROXY` |
+| `core/sandbox_provider.py` | `SandboxProfile` gains `allowed_domains`. HONESTLY: bwrap/seatbelt only have network-namespace / IP-level rules, no domain-level filtering, so this field is metadata |
+| `sandbox/manager.py` | Claim flows into `verdict.extra` -> `SandboxProfile.allowed_domains`; the local branch manages proxy lifetime with `try/finally` (timeout/exception ALWAYS stop()) |
+| `config/security_schema.py` | `sandbox.resource.egress_proxy_enabled` validation; enabling emits a BEHAVIOR-CHANGE warning |
+
+**A-prime (self-introduced, self-caught)**: the first `normalize_domain`
+used `str.encode("idna")`, which silently DROPS U+200B ZWSP:
+`evil\u200b.example -> evil.example`. A different host with an inserted
+zero-width character could therefore match an allowlist declaration. Fixed
+with an ASCII constraint + per-character whitelist (non-ASCII -> `None`);
+dirty declarations are recorded as `invalid_values` and fail closed. Cost:
+internationalized domain names are not supported.
+
+**Configuration**: `sandbox.resource.egress_proxy_enabled` defaults to
+**false** (enabling rewrites every child process's proxy environment, a
+behavior change); a proxy is constructed only when explicitly enabled AND a
+`strict` per-command claim exists. The claim's policy-layer binding is
+always active, so "off" is NOT counted as a security downgrade.
+`deny_network_by_default` REMAINS false -- not flipped.
+
+**Matrix -- no padding by editing definitions**: `aligned 45 -> 46`,
+`partial 10 -> 9`, **gaps STILL 26** (`network_strict_allowlist` was a
+`partial`, not a `gap`; advancing it does not reduce the gap count).
+`fully_superior` still false, `b_waves_done` still `["B1"]`.
+
+**Honest limits**:
+1. `credential_masking` REMAINS `partial`: plain-HTTP sentinel injection is
+   REALLY wired (real-socket end-to-end test, upstream receives the real
+   credential), but after an HTTPS CONNECT tunnel the proxy only forwards
+   encrypted bytes and CANNOT see headers. Covering HTTPS needs TLS MITM +
+   a local CA, which significantly enlarges the attack surface; not done
+   here and NOT claimed as full parity with CC's proxy injection.
+2. bwrap/seatbelt have no domain-level filtering; `allowed_domains` is
+   metadata only.
+3. `undetectable` is a MARKER, not proof: if a command explicitly passes
+   `--noproxy` and bypasses `env_overrides`, the strong binding is lost.
+   This is an inherent limitation of a local CLI, not a disguised hole.
+4. `os_sandbox` remains a gap; `block_writes_outside_wd` remains partial.
+5. No real-device multi-platform verification; A-line still has 10
+   pending modules, the local fork remains unmerged, and no third-party
+   adaptive red team has been run. The slogan engine / cleaning layer /
+   `mapping.py` / `tui.py` are byte-identical to parent.
+
+Verification: 43 new regression cases (including real-socket proxy
+end-to-end: allowed host 200 + upstream gets the real credential,
+out-of-claim 403, CONNECT 403, audit leaks nothing, finally always stops)
+plus combined batches all green; `matrix.validate() == []`,
+`evidence.verify_evidence() == []`, `verify_doc_numbers.py problems == []`.
+Two pre-existing count assertions were SYNCHRONIZED to the new derived
+baseline, NOT relaxed.

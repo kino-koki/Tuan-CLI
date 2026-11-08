@@ -682,6 +682,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             # B2: 子进程出网边界（默认开；显式关闭会被 config validate 报安全降级）。
             "egress_credential_masking": True,       # 敏感环境变量替换为 sentinel, 子进程不持真实密钥
             "egress_block_local_when_denied": True,  # local 后端收到禁网裁决时 fail-closed 拒绝, 不裸跑
+            # B2 收尾: 逐命令域名强绑定 + 本地回环出网代理。默认关是因为它会
+            # 改变所有子进程的网络出口(HTTP_PROXY/HTTPS_PROXY)，属行为变更；
+            # 仅在调用方显式声明了 allowed_domains 时才真正启用代理。
+            "egress_proxy_enabled": False,
         },
     },
 }

@@ -21,6 +21,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from .verdict import Action, Payload, Verdict, SEV
 from .filters import SandboxFilterChain, build_chain
 from .backends import pick_backend
+from .egress_allowlist import (
+    claim_from_args, claim_from_verdict, claim_to_verdict_extra,
+    evaluate_claim, profile_domains,
+)
+from .egress_proxy import EgressProxy
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +46,7 @@ DEFAULT_POLICY: Dict[str, Any] = {
         # local 后端禁网裁决以前会裸跑、父进程真实凭据以前原样进子进程。
         "egress_credential_masking": True,
         "egress_block_local_when_denied": True,
+        "egress_proxy_enabled": False,
     },
 }
 
@@ -103,6 +109,8 @@ class SandboxManager:
         # 只存结构化结果 / 键名 / 计数，绝不存命令原文或凭据值。
         self._unattended_log: List[Dict[str, Any]] = []
         self._last_egress: Dict[str, Any] = {}
+        self._last_allowlist: Dict[str, Any] = {}
+        self._last_proxy_audit: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------ B2 可观测
     def _record_unattended(self, outcome: Any) -> None:
@@ -120,6 +128,61 @@ class SandboxManager:
     @property
     def last_egress(self) -> Dict[str, Any]:
         return dict(self._last_egress)
+
+    @property
+    def last_allowlist(self) -> Dict[str, Any]:
+        return dict(self._last_allowlist)
+
+    @property
+    def last_proxy_audit(self) -> List[Dict[str, Any]]:
+        return [dict(x) for x in self._last_proxy_audit]
+
+    def _detected_domains(self, payload: Any) -> List[str]:
+        """复用 TrustFilter 的文本检测；异常一律上抛由调用方 fail-closed。"""
+        from ..core.network_guard import get_network_guard
+        from .filters import TrustFilter
+        return TrustFilter._detected_domains(payload, get_network_guard())
+
+    def _bind_network_claim(self, verdict: Any, payload: Any,
+                            fn_args: Any = None) -> Any:
+        """把逐命令域名声明写进 verdict.extra，并在裁决层做强绑定断言。
+
+        B2 收尾实测缺口：verdict.extra 原本为空，执行层 / 强后端拿不到
+        「这次只允许哪些主机」；SandboxProfile 也只有布尔 network。
+        """
+        from .verdict import deny
+        claim = claim_from_args(
+            fn_args, fallback=payload.meta.get("allowed_domains"),
+            fallback_source="global_policy")
+        try:
+            detected = self._detected_domains(payload)
+        except Exception as exc:  # noqa: BLE001 - 检测异常必须闭合
+            detected = []
+            self._last_allowlist = {"allowed": False,
+                                    "reason": f"域名检测异常 fail-closed: {type(exc).__name__}"}
+            return verdict.merged(deny(
+                "egress_allowlist", self._last_allowlist["reason"], SEV["high"]))
+        dec = evaluate_claim(claim, detected)
+        verdict.extra.update(claim_to_verdict_extra(claim))
+        verdict.extra["allowlist"] = dec.to_audit_dict()
+        self._last_allowlist = dec.to_audit_dict()
+        if not dec.allowed:
+            return verdict.merged(deny("egress_allowlist", dec.reason, SEV["high"]))
+        return verdict
+
+    def _make_egress_proxy(self, verdict: Any, broker: Any) -> Any:
+        """仅在显式开启 + strict 逐命令声明时启用代理，默认零行为变化。
+
+        全局白名单场景不启用（避免把全部流量改道）；``claim.strict`` 且
+        ``required_domains`` 非空才说明调用方真的声明了本次出网范围。
+        """
+        res = self.policy.get("resource", {}) or {}
+        if not isinstance(res, dict) or not res.get("egress_proxy_enabled", False):
+            return None
+        claim = claim_from_verdict(verdict)
+        if not claim.strict or not claim.required_domains:
+            return None
+        return EgressProxy(claim, broker)
 
     def _unattended_policy(self, ctx: Any) -> Any:
         """从沙箱策略 + kernel 配置解析开关；配置不可用时保持默认关闭。"""
@@ -269,6 +332,7 @@ class SandboxManager:
             },
         )
         verdict = self.assess(payload)
+        verdict = self._bind_network_claim(verdict, payload, fn_args)
         if verdict.blocks:
             return True, verdict.describe()
         if verdict.action == Action.CONFIRM and not payload.yolo:
@@ -313,7 +377,8 @@ class SandboxManager:
             meta={"severity": getattr(ctx, "safety_severity", None),
                   "allowed_domains": self._allowed_domains(ctx)},
         )
-        return self.assess(payload)
+        verdict = self.assess(payload)
+        return self._bind_network_claim(verdict, payload)
 
     # ------------------------------------------------------------ 隔离执行
     def should_isolate(self, verdict: Verdict) -> bool:
@@ -358,7 +423,17 @@ class SandboxManager:
         if not decision.allowed:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=decision.reason)
+        # B2 收尾: 逐命令域名强绑定的**真正强制点**在本地回环出网代理。
+        # 只有显式开启 + strict 声明时构造；默认零行为变化。生命周期用
+        # try/finally 包住，超时/异常也一定 stop()，绝不留下后台监听。
+        proxy = None
         try:
+            proxy = self._make_egress_proxy(verdict, decision.broker)
+            if proxy is not None:
+                proxy.start()
+                decision.env.update(proxy.env_overrides)
+                self._last_egress["proxy_enabled"] = True
+                self._last_egress["proxy_claim"] = claim_from_verdict(verdict).to_dict()
             from ..core.proc import run_with_tree_kill
             proc = run_with_tree_kill(
                 command, shell=True, cwd=cwd,
@@ -374,6 +449,10 @@ class SandboxManager:
         except Exception as exc:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=str(exc))
+        finally:
+            if proxy is not None:
+                self._last_proxy_audit = proxy.audit()
+                proxy.stop()
 
     def _execute_copy_diff_apply(self, command: str, verdict: Verdict, ctx: Any,
                                  cwd: str, timeout: float) -> SandboxExecResult:
@@ -465,8 +544,10 @@ class SandboxManager:
         try:
             from ..core.sandbox_provider import SandboxProvider, SandboxProfile
             provider = SandboxProvider.create(backend)
-            profile = SandboxProfile(network=verdict.network,
-                                     max_memory_mb=verdict.memory_mb)
+            profile = SandboxProfile(
+                network=verdict.network,
+                max_memory_mb=verdict.memory_mb,
+                allowed_domains=list(profile_domains(claim_from_verdict(verdict))))
             result = provider.run(["/bin/sh", "-c", command] if os.name != "nt" else ["cmd", "/c", command],
                                   workspace=cwd, profile=profile, timeout=timeout or 60.0)
             return SandboxExecResult(stdout=result.stdout, stderr=result.stderr,

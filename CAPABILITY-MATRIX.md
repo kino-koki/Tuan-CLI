@@ -359,3 +359,24 @@
 新增实现：`tuan_cli/sandbox/egress.py`、`unattended.py`、
 `worktree_boundary.py`；新增回归 `tests/test_b2_boundaries.py`（34 例）。
 新增配置键见 `SECURITY_BASELINE.md` R41。
+
+
+---
+
+## B2 收尾增量
+
+`CLAUDE_PARITY.md` §13 是权威口径。本表只记增量：
+
+- `network_strict_allowlist`：partial → **aligned**（逐命令域名强绑定真接到
+  本地回环出网代理，声明外 403）
+- `credential_masking`：保持 **partial**，但 `inject_headers()` 从预留接口
+  接成真实调用方（明文 HTTP 代理转发还原真实凭据）；HTTPS CONNECT 隧道
+  内 header 注入不可用，如实不宣称完整对等
+- 全局：`aligned 45 → 46`、`partial 10 → 9`、**gap 仍 26**
+  （partial→aligned 不减少缺口，不靠改口径凑数）
+- `os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+  `fully_superior` 仍 false、`b_waves_done` 仍 `["B1"]`
+
+新增实现：`tuan_cli/sandbox/egress_allowlist.py`、`egress_proxy.py`；
+新增回归 `tests/test_b2_egress_strict.py`（43 例，含真 socket 代理端到端）。
+新增配置键见 `SECURITY_BASELINE.md` R42。
