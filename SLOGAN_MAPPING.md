@@ -365,3 +365,85 @@ verify_deep.py / verify_deep2.py                         22 / 20 项全绿
 15. 本轮**不改** `fully_superior`、99 模块基线、任何对齐指标，未新增
     CLI 子命令、未新增事件（18 个不变）、未新增标语词条（1108 条不变）。
     全部是「把已有对应关在运行时做实」的深度工作。
+
+
+---
+
+## 12. 闭环补漏：静默 miss、无界桶、单层错误留痕、避重失效
+
+上一轮把对应关系在运行时做实了。本轮**先实测再修**，发现刚修完的代码
+里还留着五个真实缺陷 —— 都属「上一轮修对了方向，但留了半截」。
+
+| # | 实测复现 | 影响 |
+|---|---|---|
+| A | `_BY_TEXT` 用**原始** `e.text` 建索引，`pick_for_event` 拿**净化后** text 反查 | 当前 `clipped=0`（所有词条恰好无需净化）让两者碰巧一致。注入一条含 ZWSP 的词条后实测：`reason='ok'` 但 `entry_id=''` —— 对应关系在运行时**静默断裂且不告警** |
+| B | `_dispatch_log` 按 owner 分桶但**只限每桶长度 64，不限桶数** | 2000 个会话各分发一次 → 2000 个桶长期驻留；`QxtTUI.close()` 没有释放路径 |
+| C | TUI `_slogan_error()` 只写实例 `_slogan_log` | 实测拼错事件后 `slogan_errors()` 有 1 条，而 `mapping.dispatch_log()` 里错误相关 **0 条** —— 只看全局日志的运维完全漏掉 |
+| D | `_MAX_WINDOWS = 64` 小于真实 key 空间 | 10 语种 × 16 上下文 × 2 种窗口 = **320** 个 key。实测遍历一轮后起始 key 窗口被驱逐 **3/3** 次，避重形同虚设 |
+| E | `audit().index_consistent` 只要求 `by_text > 0` | 几乎恒真，索引缺一大半也会通过 |
+
+### 修复
+
+**A · 净化后索引 + miss fail-closed.** 新增 `_BY_CLEAN`（净化后文案 → 注册项）
+供分发使用，`_BY_TEXT`（原始文案）保留给兼容 API 与上一轮的独立验证。
+`entry_for_clean()` 是运行时唯一反查出口。池里出现注册表没有的词时，
+不再返回假的 `"ok"`，而是 `reason="index-miss"` + **空文案** + `_INDEX_MISSES`
+计数 —— 宁可不显示，也不渲染一条反查不到出处的标语。
+同时检测**净化后撞车**（两条不同词条净化成同一句，运行时无法区分），
+记入 `_CLEAN_COLLISIONS`。
+
+**B · 桶数也有上界.** `_dispatch_log` 改 `OrderedDict` + `_MAX_OWNERS=128`
+LRU，`_record()` 淘汰最久未用的会话；新增 `release_owner()`、
+`dispatch_log_stats()`、`reset_runtime_counters()`。`QxtTUI.close()`
+现在显式释放自己的桶（实例内 `_slogan_log` 仍在，`slogan_trace()`
+照常可查）。实测 2000 个会话后 `owners=128 / decisions=128`。
+
+**C · 错误双层留痕.** `mapping.record_error()` 把 `error:<kind>` 同步进
+全局日志，TUI `_slogan_error()` 调它；`slogan_errors()` 与
+`dispatch_log(owner)` 现在一致。6 类安全事件仍是 `security-notice`，
+**不与 `error:*` 混**。`strict=True` 抛异常时也照样两层留痕。
+
+**D · 窗口上限按真实维度算.** `_MAX_WINDOWS` 从魔数 64 改为
+`len(LANGUAGES) * (主体 + 扩展上下文) * 2 + 64 = 384`，仍有上界不无界增长。
+实测遍历全部 320 个 key 后 `len(_windows)=320`，起始窗口存活、避重历史仍在。
+
+**E · 不变量加严.** `index_consistent` 现在要求三份索引规模与注册表
+**全等**、`clipped=0`、无净化撞车、运行时零 miss、每个注册项声明了
+完整触发事件组；`AuditReport` 新增 `clean_collisions` /
+`runtime_index_misses` / `dispatch_stats` 并纳入 `ok` 与 `as_dict()`。
+`reset_runtime_counters()` 供测试隔离。
+
+### 验证
+
+```
+tests/test_slogan_mapping.py + test_runtime_slogans.py   215 passed
+tests/verify_slogan_mapping.py                           52 项纯 stdlib 全绿
+verify_deep.py / verify_deep2.py                         22 / 20 项全绿
+```
+
+### 性能口径（不粉饰）
+
+```
+index_stats   registry/by_id/by_text/by_clean = 1695 / 1695 / 1695 / 1695
+              clipped=0  clean_collisions=0  index_misses=0
+冷启动首次 audit()       303.9 ms   (含 1695 条净化 + 三份索引构建)
+热态 20 次 audit()        37.4 ms
+含冷启动的 20 次 audit()  53.1 ms   (同进程内 _clean 的 lru_cache 已热)
+```
+
+上一轮报告写「20 次 audit 763.7 → 355.6 ms」，本轮出现 53.1 ms
+是**测量口径差异**（首次冷构建 vs 缓存热态），不是本轮做了性能优化。
+本轮反而给索引构建多加了 1695 次 dict 写入与碰撞检测，**不宣称性能提升**。
+
+### 如实边界（续 §11）
+
+16. 本轮**不改** 18 个事件、16 个上下文、1108 条词条、`fully_superior`、
+    99 模块基线、任何对齐指标、CLI 子命令数；零新增文件、零删除。
+17. `index-miss` 的 fail-closed 是「不显示标语」，不影响任何安全裁决；
+    它只保证「显示出来的每一句都能反查到出处」。
+18. `release_owner()` 释放的是 **mapping 全局桶**；实例内
+    `_slogan_log` 仍随对象生命周期驻留，长生命周期宿主需自行丢弃 TUI 对象。
+19. `_MAX_OWNERS=128` 与 `_MAX_WINDOWS=384` 是有界折中：极端多会话场景
+    下最久未用的历史仍会被淘汰，这是明确取舍，不宣称「永不丢历史」。
+20. 并发压测仍未复现 list 撕裂（同 §11 说明）；不是真机长跑；分叉改动
+    仍未合并；第三方自适应红队仍未做。

@@ -286,16 +286,20 @@ class TestPickerFixes:
 
     def test_window_eviction_is_lru_not_fifo(self):
         picker._windows.clear()
+        # 深度轮 3: 上限从固定 64 改为按真实 key 空间算 (384),
+        # 所以驱逐要用 _MAX_WINDOWS + 6 个 key 才触发, 断言也不再硬编码 64。
+        n = picker._MAX_WINDOWS + 6
         with picker._windows_lock:
-            for i in range(70):
+            for i in range(n):
                 w = picker._window_locked(("lang", f"ctx{i}"), 4)
                 w.append(f"w{i}")
-            # 反复访问最早的两个 key, 它们应当存活
+            # 反复访问最早的几个 key, 它们应当存活
             for i in (0, 1, 2):
                 picker._window_locked(("lang", f"ctx{i}"), 4)
             keys = list(picker._windows)
-            assert len(keys) == 64
+            assert len(keys) == picker._MAX_WINDOWS
             assert ("lang", "ctx0") in keys and ("lang", "ctx2") in keys
+            assert ("lang", "ctx3") not in keys
 
     def test_single_item_pool_short_circuits(self):
         calls = {"n": 0}
@@ -579,7 +583,7 @@ class TestIndexAndPerformance:
         import time as _time
         src = inspect.getsource(mapping.pick_for_event)
         assert "for e in registry()" not in src
-        assert "entry_for_text(" in src
+        assert "entry_for_clean(" in src
         t0 = _time.perf_counter()
         for _ in range(2000):
             mapping.pick_for_event("tool.exploring", lang="ja", owner="perf")
@@ -613,3 +617,298 @@ class TestDeterministicReplay:
         assert d.event == "turn.completed" and d.context == "done"
         assert d.lang == "zh-CN" and d.reason == "ok" and d.text
         assert d.at_ms == 7000 and d.owner == ""
+
+# ================================================================ 深度轮 3
+
+
+def _reset_mapping_state():
+    """把模块级索引/计数恢复到出厂态, 避免测试间互相污染。"""
+    with mapping._registry_lock:
+        mapping._REGISTRY = None
+        mapping._BY_ID.clear()
+        mapping._BY_TEXT.clear()
+        mapping._BY_CLEAN.clear()
+        mapping._CLIPPED_IDS = ()
+        mapping._CLEAN_COLLISIONS = ()
+    mapping.reset_runtime_counters()
+    picker._windows.clear()
+
+
+class _RngFirst:
+    def choice(self, items):
+        return items[0]
+
+
+@pytest.fixture
+def _clean_state():
+    _reset_mapping_state()
+    yield
+    _reset_mapping_state()
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestCleanIndex:
+    """A: 上一轮 _BY_TEXT 用原始文案, 分发用净化后文案 -> 静默 miss。"""
+
+    def test_clean_index_exists_and_matches_raw(self):
+        st = mapping.index_stats()
+        assert st["by_clean"] == st["by_text"] == st["by_id"] == 1695
+        assert st["clean_collisions"] == 0
+        assert st["index_misses"] == 0
+
+    def test_entry_for_clean_hits_sanitized_text(self):
+        reg = mapping.registry()
+        for e in (reg[0], reg[len(reg) // 2], reg[-1]):
+            from tuan_cli.ui.slogans import _clean
+            cleaned = _clean.sanitize_verb(e.text)
+            got = mapping.entry_for_clean(e.lang, e.context, cleaned)
+            assert got is not None and got.id == e.id
+        assert mapping.entry_for_clean("ja", "explore", "不存在的词") is None
+
+    def test_entry_for_text_still_resolves_raw(self):
+        """兼容 API 不受影响 (上一轮的独立验证仍按原文反查)。"""
+        e = mapping.registry()[0]
+        assert mapping.entry_for_text(e.lang, e.context, e.text).id == e.id
+
+    def test_injected_zwsp_entry_now_resolves_instead_of_fake_ok(self):
+        """实测复现场景: 注入一条含 ZWSP 的词条。
+
+        修复前: reason='ok' 但 entry_id='' (对应关系静默断裂)。
+        修复后: 净化后索引命中, 正确反查到该注册项。
+        """
+        orig = picker.pool_entries
+
+        def patched(ctx, lang):
+            out = list(orig(ctx, lang))
+            if ctx == "explore" and lang == "ja":
+                out.insert(0, picker.PoolEntry("探\u200b索中", "locale"))
+            return tuple(out)
+
+        picker.pool_entries = patched
+        try:
+            _reset_mapping_state()
+            d = mapping.pick_for_event("tool.exploring", lang="ja",
+                                       rng=_RngFirst(), owner="zwsp")
+            assert d.reason == "ok", d.reason
+            assert d.entry_id, "净化后索引未命中 -> 对应关系又断了"
+            e = mapping.entry_for(d.entry_id)
+            assert e is not None and e.text == "探\u200b索中"
+            assert d.text == "探索中"
+        finally:
+            picker.pool_entries = orig
+            _reset_mapping_state()
+
+    def test_unresolvable_text_is_fail_closed_not_fake_ok(self):
+        """池里出现注册表没有的词 -> index-miss + 空文案 + 计数, 不假装 ok。"""
+        orig = picker.pick_local_first
+        picker.pick_local_first = lambda ctx, lang, rng=None: ("凭空冒出的一句", "locale")
+        try:
+            d = mapping.pick_for_event("tool.exploring", lang="ja",
+                                       owner="miss")
+            assert d.reason == "index-miss"
+            assert d.text == "" and d.entry_id == ""
+            assert mapping.index_stats()["index_misses"] == 1
+            r = mapping.audit()
+            assert r.runtime_index_misses == 1 and r.ok is False
+        finally:
+            picker.pick_local_first = orig
+            _reset_mapping_state()
+
+    def test_clean_collision_is_detected(self):
+        """两条不同词条净化后相同 -> 运行时无法区分, 必须报出来。"""
+        orig = picker.pool_entries
+
+        def patched(ctx, lang):
+            out = list(orig(ctx, lang))
+            if ctx == "explore" and lang == "ja":
+                out.insert(0, picker.PoolEntry("撞车\u200b", "locale"))
+                out.insert(1, picker.PoolEntry("撞车", "locale"))
+            return tuple(out)
+
+        picker.pool_entries = patched
+        try:
+            _reset_mapping_state()
+            st = mapping.index_stats()
+            assert st["clean_collisions"] >= 1
+            r = mapping.audit()
+            assert r.clean_collisions and r.ok is False
+        finally:
+            picker.pool_entries = orig
+            _reset_mapping_state()
+
+    def test_index_consistent_is_now_strict(self):
+        r = mapping.audit()
+        assert r.ok and r.index_consistent
+        # 人为删掉一个净化后索引项, 加严后的断言必须抓住
+        key = next(iter(mapping._BY_CLEAN))
+        saved = mapping._BY_CLEAN.pop(key)
+        try:
+            assert mapping.audit().index_consistent is False
+        finally:
+            mapping._BY_CLEAN[key] = saved
+        assert mapping.audit().index_consistent is True
+
+    def test_reset_runtime_counters_clears_misses(self):
+        orig = picker.pick_local_first
+        picker.pick_local_first = lambda ctx, lang, rng=None: ("查不到的词", "locale")
+        try:
+            mapping.pick_for_event("tool.exploring", owner="m")
+            assert mapping.index_stats()["index_misses"] == 1
+            mapping.reset_runtime_counters()
+            assert mapping.index_stats()["index_misses"] == 0
+            assert mapping.audit().ok is True
+        finally:
+            picker.pick_local_first = orig
+            _reset_mapping_state()
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestOwnerBuckets:
+    """B: 上一轮只限每桶长度, 桶数无界 -> 内存泄漏。"""
+
+    def test_bucket_count_is_bounded_by_lru(self):
+        M = mapping._MAX_OWNERS
+        for i in range(M + 20):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        st = mapping.dispatch_log_stats()
+        assert st["owners"] == M
+        assert st["decisions"] <= M * st["cap_per_owner"]
+        assert st["max_bucket"] <= st["cap_per_owner"]
+        # 最早的桶被淘汰, 但显式访问过的不该被误删
+        assert mapping.dispatch_log("s-0") == ()
+        assert len(mapping.dispatch_log("s-%d" % (M + 19))) == 1
+
+    def test_lru_protects_recently_used_owner(self):
+        M = mapping._MAX_OWNERS
+        for i in range(M):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        mapping.pick_for_event("turn.completed", owner="keep")
+        # 触发驱逐
+        for i in range(M, M + 30):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        assert mapping.dispatch_log_stats()["owners"] == M
+        assert len(mapping.dispatch_log("keep")) == 1
+
+    def test_release_owner_removes_only_that_bucket(self):
+        mapping.pick_for_event("tool.exploring", owner="a")
+        mapping.pick_for_event("tool.exploring", owner="b")
+        n = mapping.release_owner("a")
+        assert n == 1
+        assert mapping.dispatch_log("a") == ()
+        assert len(mapping.dispatch_log("b")) == 1
+        assert mapping.release_owner("a") == 0
+        assert mapping.release_owner("") == 0
+
+    def test_tui_close_releases_its_owner_bucket(self):
+        from tuan_cli.tui.tui import QxtTUI
+        obj = QxtTUI(on_submit=lambda _t: "ok")
+        obj._booting = False
+        obj._boot_error = None
+        obj.begin_tool("git status")
+        owner = obj.slogan_owner()
+        assert len(mapping.dispatch_log(owner)) == 1
+        obj.close()
+        # session.exit 分发后, close() 释放整个桶
+        assert mapping.dispatch_log(owner) == ()
+        # 实例内留痕仍可查
+        assert len(obj.slogan_trace()) >= 2
+
+    def test_dispatch_log_stats_fields(self):
+        st = mapping.dispatch_log_stats()
+        assert set(("owners", "decisions", "max_bucket",
+                    "cap_per_owner", "max_owners")) <= set(st)
+        assert st["cap_per_owner"] == 64
+        assert st["max_owners"] == 128
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestErrorTwoLayerTrace:
+    """C: 上一轮错误只写 TUI 实例日志, 全局日志完全看不见。"""
+
+    def _tui(self):
+        from tuan_cli.tui.tui import QxtTUI
+        obj = QxtTUI(on_submit=lambda _t: "ok")
+        obj._booting = False
+        obj._boot_error = None
+        return obj
+
+    def test_error_visible_in_both_layers(self):
+        obj = self._tui()
+        obj._slogan_dispatch("totally.typo.event")
+        assert len(obj.slogan_errors()) == 1
+        rows = [d for d in mapping.dispatch_log(obj.slogan_owner())
+                if d.reason.startswith("error:")]
+        assert len(rows) == 1
+        assert rows[0].event == "totally.typo.event"
+        assert rows[0].reason == "error:unbound-event"
+        assert rows[0].text == "" and rows[0].entry_id == ""
+
+    def test_security_event_is_not_misclassified_as_error(self):
+        obj = self._tui()
+        assert obj.slogan_for("security.blocked") == ""
+        rows = mapping.dispatch_log(obj.slogan_owner())
+        assert rows[-1].reason == "security-notice"
+        assert not any(d.reason.startswith("error:") for d in rows)
+        assert obj.slogan_errors() == ()
+
+    def test_strict_mode_still_records_in_both_layers(self):
+        obj = self._tui()
+        with pytest.raises(mapping.UnboundSloganEvent):
+            obj._slogan_dispatch("typo.event", strict=True)
+        assert len(obj.slogan_errors()) == 1
+        assert len([d for d in mapping.dispatch_log(obj.slogan_owner())
+                    if d.reason.startswith("error:")]) == 1
+
+    def test_record_error_does_not_carry_text_or_lang(self):
+        d = mapping.record_error("x", "boom", owner="err", at_ms=123)
+        assert d.at_ms == 123 and d.text == "" and d.lang == ""
+        assert d.context is None and d.entry_id == ""
+        assert d.reason == "error:boom"
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestWindowCapacity:
+    """D: _MAX_WINDOWS=64 < 真实 key 空间 320 -> 避重失效。"""
+
+    def test_capacity_covers_real_key_space(self):
+        theoretical = len(L.LANGUAGES) * (
+            len(universal.CONTEXTS) + len(extra.CONTEXTS)) * 2
+        assert picker._MAX_WINDOWS > theoretical
+        assert picker._MAX_WINDOWS == 384
+        assert theoretical == 320
+
+    def test_full_key_space_sweep_keeps_windows_alive(self):
+        picker._windows.clear()
+        keys = [(l, c + suffix)
+                for l in L.LANGUAGES
+                for c in mapping.ALL_CONTEXTS
+                for suffix in ("", ":local")]
+        # 必须用生产路径 (rng=None): 注入 rng 时按设计走一次性局部
+        # 窗口, 本来就不写全局 _windows (可确定性回放的代价)。
+        for k in keys:
+            picker._choose(("a", "b", "c", "d", "e", "f", "g", "h"), k)
+        assert len(picker._windows) == len(keys)
+        first = (L.LANGUAGES[0], mapping.ALL_CONTEXTS[0])
+        win = picker._windows.get(first)
+        # 避重历史仍在 -> 下一轮取词不会立刻重复上一条
+        assert win is not None and len(win) >= 1
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestAuditReportNewFields:
+    def test_as_dict_exposes_new_invariants(self):
+        r = mapping.audit().as_dict()
+        assert r["ok"] is True
+        assert r["clean_collisions"] == 0
+        assert r["runtime_index_misses"] == 0
+        assert isinstance(r["dispatch_stats"], dict)
+        assert r["dispatch_stats"]["max_owners"] == 128
+
+    def test_every_dispatch_still_resolves_after_fix(self):
+        for lang in L.LANGUAGES:
+            for ev in mapping.EVENT_BINDINGS:
+                d = mapping.pick_for_event(ev, lang=lang, owner="final")
+                assert d.reason == "ok" and d.entry_id, (ev, lang)
+                e = mapping.entry_for(d.entry_id)
+                assert e is not None and d.event in e.events
+                assert d.text == _clean.sanitize_verb(e.text)

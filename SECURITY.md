@@ -926,4 +926,44 @@ mcp:
 
 验证：194 例 pytest + 42 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 
+---
+
+## 18. 闭环补漏：不可反查的标语不再显示，错误在两层都可见
+
+本轮不改任何安全裁决，只补上一轮刚修完的运行时对应关系里的漏洞。
+三点与安全直接相关：
+
+- **不可反查的标语 fail-closed**：上一轮 `_BY_TEXT` 用原始文案建索引、
+  分发却拿净化后文案反查。当前 `clipped=0` 让两者碰巧一致，注入一条
+  含 ZWSP 的词条后实测 `reason='ok'` 但 `entry_id=''` —— 对应关系
+  静默断裂。现在分发走 `_BY_CLEAN`（净化后索引），未命中即
+  `index-miss` + **空文案** + `_INDEX_MISSES` 计数，不渲染来源不明的
+  文案；净化后文案撞车也会被检测并记入 `_CLEAN_COLLISIONS`。
+- **错误在两层都可见**：上一轮 `_slogan_error()` 只写 TUI 实例日志，
+  实测 `mapping.dispatch_log()` 里错误相关 0 条。现在
+  `record_error()` 同步进全局日志，`slogan_errors()` 与
+  `dispatch_log(owner)` 一致。6 类 `SECURITY_EVENTS` 仍返回空 +
+  `security-notice`，`audit().unsafe_bindings` 仍为 0，**不与
+  `error:*` 混**；`strict=True` 抛异常时照样两层留痕。
+- **日志规模有界**：`_dispatch_log` 从「只限每桶长度」改为 LRU
+  `OrderedDict` + `_MAX_OWNERS=128`；`close()` 释放自己的桶；
+  `dispatch_log_stats()` 可核验桶数 / 决策总数 / 单桶峰值。
+  实测 2000 个会话后 `owners=128`。
+
+另修两处工程正确性：`_MAX_WINDOWS` 从 64 改为按真实 key 空间算的
+384（实测 64 会让 320 个 key 互相驱逐，避重失效）；
+`audit().index_consistent` 加严为三份索引全等、无撞车、运行时零
+miss、触发事件组完整；`AuditReport` 新增 `clean_collisions` /
+`runtime_index_misses` / `dispatch_stats` 并纳入 `ok`。
+
+**如实边界**：`index-miss` 的 fail-closed 只影响「显示不显示标语」，
+不改变任何裁决；`release_owner()` 只释放全局桶，实例内
+`_slogan_log` 仍随对象驻留；`_MAX_OWNERS=128` /
+`_MAX_WINDOWS=384` 是有界折中，最久未用历史仍会被淘汰；并发压测
+仍未复现 list 撕裂（同 §17）；不是真机长跑；分叉改动仍未合并；
+第三方自适应红队仍未做。冷/热态 `audit()` 的数字差异是测量口径，
+**不宣称性能提升**。
+
+验证：215 例 pytest + 52 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

@@ -9,6 +9,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 闭环补漏：静默 miss、无界桶、单层留痕、避重失效
+
+> 上一轮把「每个标语都要对应的」在运行时做实了。本轮**先实测再修**,
+> 发现刚修完的代码里还留着五个真实缺陷 (完整复现见
+> `SLOGAN_MAPPING.md` §12)。继续「不扩广度、只挖深度」:
+> 18 个事件、16 个上下文、1108 条词条、`fully_superior`、
+> 99 模块基线、所有对齐指标与 CLI 子命令数**全部不变**;
+> 零新增文件、零删除。
+
+### 五个实测缺陷
+
+| # | 实测 | 影响 |
+|---|---|---|
+| A | `_BY_TEXT` 用原始文案建索引, 分发拿**净化后**文案反查 | `clipped=0` 让两者碰巧一致; 注入一条含 ZWSP 的词条后 `reason='ok'` 但 `entry_id=''`, 对应关系**静默断裂且不告警** |
+| B | owner 分桶只限每桶长度 64, **不限桶数** | 2000 个会话各分发一次 → 2000 个桶长期驻留; `close()` 无释放路径 |
+| C | `_slogan_error()` 只写实例日志 | `slogan_errors()` 有 1 条, `mapping.dispatch_log()` 里错误相关 **0 条** |
+| D | `_MAX_WINDOWS=64` < 真实 key 空间 320 | 遍历一轮后起始窗口被驱逐 **3/3** 次, 避重失效 |
+| E | `index_consistent` 只要求 `by_text > 0` | 几乎恒真, 索引缺一大半也会通过 |
+
+### 修复
+
+- **净化后索引**: 新增 `_BY_CLEAN` (净化后文案 → 注册项) 与
+  `entry_for_clean()`; `_BY_TEXT` 原始索引保留给兼容 API。
+  池里出现注册表没有的词 → `reason="index-miss"` + **空文案** +
+  `_INDEX_MISSES` 计数, 不再返回假的 `"ok"`。新增净化后**撞车检测**
+  (`_CLEAN_COLLISIONS`)。
+- **桶数上界**: `_dispatch_log` → `OrderedDict` + `_MAX_OWNERS=128`
+  LRU; 新增 `release_owner()` / `dispatch_log_stats()` /
+  `reset_runtime_counters()`。`QxtTUI.close()` 显式释放自己的桶
+  (实例 `_slogan_log` 仍在, `slogan_trace()` 照常可查)。
+  实测 2000 会话后 `owners=128 / decisions=128`。
+- **错误双层留痕**: `mapping.record_error()` 把 `error:<kind>` 同步进
+  全局日志; 安全事件仍是 `security-notice`, **不与 `error:*` 混**;
+  `strict=True` 抛异常时照样两层留痕。
+- **窗口容量**: `_MAX_WINDOWS` 改为按真实维度算 = **384** (理论 key
+  空间 320), 仍有上界。实测遍历 320 个 key 后起始窗口存活。
+- **不变量加严**: `index_consistent` 要求三份索引与注册表**全等**、
+  无撞车、运行时零 miss、触发事件组完整; `AuditReport` 新增
+  `clean_collisions` / `runtime_index_misses` / `dispatch_stats`,
+  纳入 `ok` 与 `as_dict()`。
+
+### 验证与性能口径（不粉饰）
+
+```
+215 passed (pytest) + 52 项纯 stdlib 独立验证
+verify_deep.py / verify_deep2.py   22 / 20 项全绿
+index_stats  registry/by_id/by_text/by_clean = 1695 x4
+             clipped=0  clean_collisions=0  index_misses=0
+```
+
+冷启动首次 `audit()` **303.9 ms**、热态 20 次 **37.4 ms**、
+同进程含冷启动 20 次 **53.1 ms**。上一轮写的「763.7 → 355.6 ms」
+与本轮 53.1 ms 是**口径差异** (首次冷构建 vs `_clean` 的 lru_cache 热态),
+不是本轮做了性能优化 —— 本轮反而给索引构建多加了 1695 次 dict 写入
+与碰撞检测, **不宣称性能提升**。
+
+### 如实边界
+
+1. `index-miss` 的 fail-closed 是「不显示标语」, 不影响任何安全裁决。
+2. `release_owner()` 只释放全局桶; 实例 `_slogan_log` 仍随对象驻留。
+3. `_MAX_OWNERS=128` / `_MAX_WINDOWS=384` 是有界折中, 最久未用历史
+   仍会被淘汰, 不宣称「永不丢历史」。
+4. 并发压测仍未复现 list 撕裂 (同 §11); 不是真机长跑; TUI 仍未替换
+   既有 i18n 文案; 分叉改动仍未合并; 第三方自适应红队仍未做。
+
 ## [Unreleased] - 运行时闭环：对应关系不再只停在静态表里
 
 > 上一轮把 860 条标语接成了 18 事件 ↔ 16 上下文的静态对应表,

@@ -505,3 +505,20 @@ Apache-2.0 / MIT Codex 归属混用**。
   Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约一律未改。
 
 194 例 pytest + 42 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md` §11。
+
+
+---
+
+## 闭环补漏（不占任何 Codex 对齐指标）
+
+本轮只把上一轮的运行时对应关系补漏，**`pending` / `fully_identical` /
+逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `_BY_CLEAN` 净化后索引 + miss fail-closed；owner 桶 LRU 上界与
+  `close()` 释放；错误双层留痕；`_MAX_WINDOWS` 按真实 key 空间算；
+  `audit()` 不变量加严。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。
+
+215 例 pytest + 52 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md` §12。

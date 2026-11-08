@@ -491,3 +491,26 @@ TUI 留痕**没有 `entry_id`**、错误被 `except Exception` 静默吞掉、
 
 验证: 194 passed + 42 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 `stall` 仍是启发式可观测提示, 不是安全闸门; 本轮未改任何裁决。
+
+
+---
+
+## 14. 闭环补漏（本引擎零改动）
+
+上一轮把对应关系在运行时做实；本轮实测发现刚修完的代码里还留着五个
+真实缺陷（净化后索引 miss 假成功、owner 桶无界、错误只留一层痕、
+`_MAX_WINDOWS` 小于真实 key 空间、索引不变量形同虚设）。完整复现与
+修复见 `SLOGAN_MAPPING.md` §12。
+
+**本引擎本轮零改动**：事件驱动、三态活性、D1 并发不变量、
+净化层 re-export（`sanitize_verb is _clean.sanitize_verb`）、
+139 例回归全部照常通过。改动集中在 `ui/slogans/mapping.py`、
+`ui/slogans/picker.py` 与 `tui/tui.py` 的标语分发接线。
+
+具体：`_BY_CLEAN` 净化后索引 + `index-miss` fail-closed 计数 +
+净化撞车检测 + 不变量加严；`_dispatch_log` 改 LRU 有界桶 +
+`release_owner()` + `close()` 释放；`record_error()` 让错误在 TUI 与
+全局日志两层一致；`_MAX_WINDOWS` 按真实维度算（384 > 320）。
+
+验证：215 passed + 52 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+`stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。

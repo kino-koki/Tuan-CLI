@@ -233,14 +233,16 @@ def t_window_lru_and_history():
         assert "历史词" in list(picker._windows[("x", "k")])
         assert picker._windows[("x", "k")].maxlen == 20
     picker._windows.clear()
+    n = picker._MAX_WINDOWS + 6
     with picker._windows_lock:
-        for i in range(70):
+        for i in range(n):
             picker._window_locked(("lang", f"ctx{i}"), 4).append(f"w{i}")
         for i in (0, 1, 2):
             picker._window_locked(("lang", f"ctx{i}"), 4)
         keys = list(picker._windows)
-        assert len(keys) == 64
+        assert len(keys) == picker._MAX_WINDOWS
         assert ("lang", "ctx0") in keys and ("lang", "ctx2") in keys
+        assert ("lang", "ctx3") not in keys
 
 
 def t_single_item_short_circuit():
@@ -450,7 +452,7 @@ def t_dispatch_no_linear_scan():
     import inspect
     src = inspect.getsource(mapping.pick_for_event)
     assert "for e in registry()" not in src
-    assert "entry_for_text(" in src
+    assert "entry_for_clean(" in src
 
 
 def t_thread_safe_dispatch():
@@ -474,6 +476,214 @@ def t_thread_safe_dispatch():
     assert errors == [], errors[:3]
     for wid in range(8):
         assert len(mapping.dispatch_log("thr-%d" % wid)) == 64
+
+# ---------------------------------------------------------------- 深度轮 3
+
+def _d3_reset():
+    with mapping._registry_lock:
+        mapping._REGISTRY = None
+        mapping._BY_ID.clear()
+        mapping._BY_TEXT.clear()
+        mapping._BY_CLEAN.clear()
+        mapping._CLIPPED_IDS = ()
+        mapping._CLEAN_COLLISIONS = ()
+    mapping.reset_runtime_counters()
+    picker._windows.clear()
+
+
+def t_clean_index_source_and_stats():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "_BY_CLEAN" in src
+    assert "def entry_for_clean(" in src
+    assert "entry_for_clean(resolved" in src
+    st = mapping.index_stats()
+    assert st["by_id"] == st["by_text"] == st["by_clean"] == st["registry"] == 1695
+    assert st["clean_collisions"] == 0 and st["index_misses"] == 0
+
+
+def t_clean_index_hits_sanitized_text():
+    reg = mapping.registry()
+    for e in (reg[0], reg[len(reg) // 2], reg[-1]):
+        cleaned = _clean.sanitize_verb(e.text)
+        got = mapping.entry_for_clean(e.lang, e.context, cleaned)
+        assert got is not None and got.id == e.id
+    assert mapping.entry_for_clean("ja", "explore", "查不到的词") is None
+    # 兼容 API 仍按原始文案反查
+    assert mapping.entry_for_text(reg[0].lang, reg[0].context,
+                                  reg[0].text).id == reg[0].id
+
+
+def t_zwsp_entry_resolves_after_fix():
+    """实测复现场景: 修复前 reason='ok' 但 entry_id=''。"""
+    orig = picker.pool_entries
+
+    def patched(ctx, lang):
+        out = list(orig(ctx, lang))
+        if ctx == "explore" and lang == "ja":
+            out.insert(0, picker.PoolEntry("探\u200b索中", "locale"))
+        return tuple(out)
+
+    class R:
+        def choice(self, items):
+            return items[0]
+
+    picker.pool_entries = patched
+    try:
+        _d3_reset()
+        d = mapping.pick_for_event("tool.exploring", lang="ja",
+                                   rng=R(), owner="zwsp")
+        assert d.reason == "ok", d.reason
+        assert d.entry_id, "净化后索引未命中 -> 对应关系又断了"
+        assert mapping.entry_for(d.entry_id).text == "探\u200b索中"
+    finally:
+        picker.pool_entries = orig
+        _d3_reset()
+
+
+def t_unresolvable_text_is_fail_closed():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert '"index-miss"' in src
+    assert "_INDEX_MISSES += 1" in src
+    orig = picker.pick_local_first
+    picker.pick_local_first = lambda ctx, lang, rng=None: ("凭空冒出的一句", "locale")
+    try:
+        d = mapping.pick_for_event("tool.exploring", lang="ja", owner="miss")
+        assert d.reason == "index-miss" and d.text == "" and d.entry_id == ""
+        assert mapping.index_stats()["index_misses"] == 1
+        r = mapping.audit()
+        assert r.runtime_index_misses == 1 and r.ok is False
+    finally:
+        picker.pick_local_first = orig
+        _d3_reset()
+
+
+def t_clean_collision_detected():
+    orig = picker.pool_entries
+
+    def patched(ctx, lang):
+        out = list(orig(ctx, lang))
+        if ctx == "explore" and lang == "ja":
+            out.insert(0, picker.PoolEntry("撞车\u200b", "locale"))
+            out.insert(1, picker.PoolEntry("撞车", "locale"))
+        return tuple(out)
+
+    picker.pool_entries = patched
+    try:
+        _d3_reset()
+        assert mapping.index_stats()["clean_collisions"] >= 1
+        r = mapping.audit()
+        assert r.clean_collisions and r.ok is False
+    finally:
+        picker.pool_entries = orig
+        _d3_reset()
+
+
+def t_audit_index_consistent_is_strict():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert 'idx["by_clean"]' in src
+    assert 'idx["index_misses"] == 0' in src
+    assert "clean_collisions" in src
+    r = mapping.audit()
+    assert r.ok and r.index_consistent
+    assert r.as_dict()["runtime_index_misses"] == 0
+    key = next(iter(mapping._BY_CLEAN))
+    saved = mapping._BY_CLEAN.pop(key)
+    try:
+        assert mapping.audit().index_consistent is False
+    finally:
+        mapping._BY_CLEAN[key] = saved
+    assert mapping.audit().index_consistent is True
+
+
+def t_owner_buckets_are_bounded():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "_MAX_OWNERS = 128" in src
+    assert "popitem(last=False)" in src
+    assert "def release_owner(" in src
+    assert "def dispatch_log_stats(" in src
+    _d3_reset()
+    M = mapping._MAX_OWNERS
+    for i in range(M + 20):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+    st = mapping.dispatch_log_stats()
+    assert st["owners"] == M
+    assert st["decisions"] <= M * st["cap_per_owner"]
+    assert mapping.dispatch_log("s-0") == ()
+    assert len(mapping.dispatch_log("s-%d" % (M + 19))) == 1
+    _d3_reset()
+
+
+def t_close_releases_owner():
+    tui = (REPO / "tuan_cli/tui/tui.py").read_text(encoding="utf-8")
+    assert "mapping.release_owner(self._slogan_owner)" in tui
+    assert "def close(self) -> None:" in tui
+    from tuan_cli.tui.tui import QxtTUI
+    obj = QxtTUI(on_submit=lambda _t: "ok")
+    obj._booting = False
+    obj._boot_error = None
+    obj.begin_tool("git status")
+    owner = obj.slogan_owner()
+    assert len(mapping.dispatch_log(owner)) == 1
+    obj.close()
+    assert mapping.dispatch_log(owner) == ()
+    assert len(obj.slogan_trace()) >= 2
+    _d3_reset()
+
+
+def t_error_visible_in_two_layers():
+    tui = (REPO / "tuan_cli/tui/tui.py").read_text(encoding="utf-8")
+    assert "mapping.record_error(" in tui
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "def record_error(" in src
+    _d3_reset()
+    from tuan_cli.tui.tui import QxtTUI
+    obj = QxtTUI(on_submit=lambda _t: "ok")
+    obj._booting = False
+    obj._boot_error = None
+    obj._slogan_dispatch("totally.typo.event")
+    assert len(obj.slogan_errors()) == 1
+    rows = [d for d in mapping.dispatch_log(obj.slogan_owner())
+            if d.reason.startswith("error:")]
+    assert len(rows) == 1
+    assert rows[0].reason == "error:unbound-event"
+    assert rows[0].text == "" and rows[0].entry_id == ""
+    # 安全事件不能混成 error
+    assert obj.slogan_for("security.blocked") == ""
+    assert mapping.dispatch_log(obj.slogan_owner())[-1].reason == "security-notice"
+    _d3_reset()
+
+
+def t_window_capacity_covers_key_space():
+    src = (REPO / "tuan_cli/ui/slogans/picker.py").read_text(encoding="utf-8")
+    assert "_MAX_WINDOWS: int = (" in src
+    assert "len(LANGUAGES) * (len(universal.CONTEXTS)" in src
+    theoretical = len(L.LANGUAGES) * (
+        len(universal.CONTEXTS) + len(extra.CONTEXTS)) * 2
+    assert theoretical == 320
+    assert picker._MAX_WINDOWS == 384 > theoretical
+    _d3_reset()
+    keys = [(l, c + s) for l in L.LANGUAGES
+            for c in mapping.ALL_CONTEXTS for s in ("", ":local")]
+    for k in keys:
+        picker._choose(("a", "b", "c", "d", "e", "f", "g", "h"), k)
+    assert len(picker._windows) == len(keys) == 320
+    first = (L.LANGUAGES[0], mapping.ALL_CONTEXTS[0])
+    assert picker._windows.get(first) is not None
+    _d3_reset()
+
+
+def t_every_event_still_resolves_with_full_index():
+    _d3_reset()
+    for lang in L.LANGUAGES:
+        for ev in mapping.EVENT_BINDINGS:
+            d = mapping.pick_for_event(ev, lang=lang, owner="final")
+            assert d.reason == "ok" and d.entry_id, (ev, lang)
+            e = mapping.entry_for(d.entry_id)
+            assert e is not None and d.event in e.events
+            assert d.text == _clean.sanitize_verb(e.text)
+    r = mapping.audit()
+    assert r.ok and r.index_consistent and r.runtime_index_misses == 0
+    _d3_reset()
 
 
 for name, fn in sorted(globals().items()):

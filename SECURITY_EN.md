@@ -876,3 +876,47 @@ cache timing. `stall` is still not a security gate; TUI replaces no
 existing i18n copy; no real-device soak test; no external adaptive red
 team. Verification: 194 pytest cases + 42 pure-stdlib checks + 22/20
 prior checks, all green.
+
+
+---
+
+## 15. Closure Patch: Unresolvable Slogans Never Render, Errors Visible Twice
+
+This round changes no verdict; it patches holes left in last round's
+runtime correspondence.
+
+- **Unresolvable slogans fail closed.** Last round built `_BY_TEXT` on
+  RAW text but resolved it with SANITIZED text. `clipped=0` made them
+  coincide by luck; injecting a ZWSP entry reproduced `reason='ok'`
+  with `entry_id=''`. Dispatch now uses `_BY_CLEAN` (sanitized index);
+  a miss yields `index-miss` + EMPTY text + `_INDEX_MISSES`, never a
+  fake `"ok"`. Clean-text collisions are detected in
+  `_CLEAN_COLLISIONS`.
+- **Errors visible in both layers.** `_slogan_error()` previously wrote
+  only the TUI instance log; measured `mapping.dispatch_log()` had 0
+  error rows. `record_error()` now mirrors `error:<kind>` into the
+  global log. All 6 `SECURITY_EVENTS` still return empty +
+  `security-notice`, `audit().unsafe_bindings` stays 0, and they are
+  NEVER conflated with `error:*`. `strict=True` records both layers.
+- **Log size is bounded.** `_dispatch_log` is now an LRU `OrderedDict`
+  with `_MAX_OWNERS=128` (previously only per-bucket length was capped);
+  `close()` releases its own bucket; `dispatch_log_stats()` exposes
+  owner/decision/peak counts. 2000 sessions now leave 128 owners.
+
+Also fixed: `_MAX_WINDOWS` moved from magic 64 to 384 computed from the
+real key space (320) -- measured that 64 evicted the starting window
+3/3 sweeps, defeating avoid-repeat. `audit().index_consistent` now
+requires all three indexes to equal the registry, zero collisions, zero
+runtime misses, and complete event groups. `AuditReport` gained
+`clean_collisions` / `runtime_index_misses` / `dispatch_stats`.
+
+**Honest limits**: `index-miss` fail-closed only suppresses a slogan, it
+changes no verdict; `release_owner()` frees the global bucket but the
+instance `_slogan_log` remains with the object; `_MAX_OWNERS=128` and
+`_MAX_WINDOWS=384` are bounded tradeoffs, oldest history is still
+evicted. No list corruption was reproduced under concurrency (as in
+section 14); no real-device soak test; fork changes still unmerged; no
+external adaptive red team. Cold vs hot `audit()` timings are a
+measurement-scope difference, NOT a claimed performance improvement.
+Verification: 215 pytest cases + 52 pure-stdlib checks + 22/20 prior
+checks, all green.

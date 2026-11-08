@@ -231,3 +231,24 @@ python -m tuan_cli.cli.cmd_harden status   # 或安装后: tuan harden status
 TUI 未替换既有 i18n 文案；分叉改动仍未合并；第三方自适应红队仍未做。
 详见 `SLOGAN_MAPPING.md` §11。本轮**不改** `fully_superior`、99 模块
 基线与任何对齐指标。
+
+
+---
+
+## R32 · 运行时对应关系补漏
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R32 | `_BY_TEXT` 用原始文案、分发用净化后文案 → 注入含 ZWSP 词条后 `reason='ok'` 但 `entry_id=''` 静默断裂；owner 桶只限长度不限数量（2000 会话 = 2000 桶）且 `close()` 不释放；错误只写 TUI 实例日志、全局日志 0 条；`_MAX_WINDOWS=64` < 真实 key 空间 320 导致避重失效；`index_consistent` 只要求 `by_text > 0` | 新增 `_BY_CLEAN` 净化后索引 + `entry_for_clean()`，未命中即 `index-miss` + 空文案 + 计数，净化撞车检测；`_dispatch_log` → LRU `OrderedDict` + `_MAX_OWNERS=128`，`release_owner()` / `dispatch_log_stats()` / `reset_runtime_counters()`，`close()` 释放；`record_error()` 双层留痕（安全事件仍 `security-notice` 不混）；`_MAX_WINDOWS=384` 按真实维度算；不变量加严为三份索引全等 + 零撞车 + 零运行时 miss + 事件组完整，`AuditReport` 增 3 字段纳入 `ok`/`as_dict()` |
+
+实测：`2000 会话后 owners=128 / decisions=128`、
+`index_stats registry/by_id/by_text/by_clean = 1695×4`、
+`clipped=0 / clean_collisions=0 / index_misses=0`、
+遍历 320 key 后 `len(_windows)=320` 且起始窗口存活。
+
+如实边界：`index-miss` 只抑制标语显示、不改裁决；`release_owner()`
+只释放全局桶；128/384 是有界折中，最久未用历史仍被淘汰；冷启动首次
+`audit()` 303.9 ms、热态 20 次 37.4 ms、同进程含冷启动 20 次 53.1 ms
+——与上一轮 355.6 ms 是**口径差异**，不宣称性能提升。分叉改动仍未
+合并；第三方自适应红队仍未做。详见 `SLOGAN_MAPPING.md` §12。
+本轮**不改** `fully_superior`、99 模块基线与任何对齐指标。

@@ -756,6 +756,8 @@ class QxtTUI:
         # entry_id** —— 表上对应上了, 运行时留痕却无法反查「刚才显示了
         # 哪条标语」。同时日志是裸 list (模型/工具/UI 多线程) 且所有 TUI
         # 实例共享一个全局日志桶。现在补 entry_id、按实例分域、加锁。
+        # 深度轮 3: 错误同步到 mapping 全局日志, close() 释放 owner 桶
+        # (桶数有 LRU 上界, 不再是只限长度不限数量)。
         self._slogan_lock = threading.RLock()
         self._slogan_owner = "tui:%x" % id(self)
         self._slogan_log = []
@@ -3808,15 +3810,26 @@ class QxtTUI:
                 del self._slogan_log[:-64]
 
     def _slogan_error(self, event: str, kind: str) -> None:
-        """把「标语库出错/事件拼错」也留痕, 绝不静默。
+        """把「标语库出错/事件拼错」在**两层**都留痕, 绝不静默。
 
         上一轮 ``except Exception: return None`` 把严格分发契约吃掉了:
         拼错事件时 ``pick_for_event`` 明明抛 ``UnboundSloganEvent``,
-        TUI 却什么都不记、返回 None。现在错误进同一份日志,
-        ``slogan_errors()`` 可直接查。
+        TUI 却什么都不记、返回 None。本轮实测又发现: 上一轮的修复
+        只写了实例自己的 ``_slogan_log``, ``mapping.dispatch_log()``
+        里错误相关 0 条 —— 只看全局日志的运维会完全漏掉。
+        现在同步 ``mapping.record_error()``, 两层一致。
         """
+        at = int(time.monotonic() * 1000)
         self._slogan_record((event, None, "error:" + kind, "", "",
-                             self._slogan_owner, int(time.monotonic() * 1000)))
+                             self._slogan_owner, at))
+        try:
+            from ..ui.slogans import mapping  # noqa: PLC0415
+            mapping.record_error(event, kind, owner=self._slogan_owner,
+                                 at_ms=at)
+        except Exception:  # noqa: BLE001
+            # 标语库整体不可用时, TUI 层留痕仍在, 不掀 UI。
+            # 这是「降级但绝不静默」, 不是吞掉: _slogan_record 已落盘到实例日志。
+            pass
 
     def _slogan_dispatch(self, event: str, *, strict: bool = False):
         """把真实生命周期事件分发到标语库, 记录**可反查**的决策。
@@ -3889,6 +3902,15 @@ class QxtTUI:
     def close(self) -> None:
         self._slogan_dispatch("session.exit")
         self._closed = True
+        # 深度轮 3: 上一轮按 owner 分桶却**没有释放路径** —— 实测
+        # 2000 个会话各分发一次就留下 2000 个桶, 长期运行的 REPL /
+        # 测试集会无限累积。会话结束显式释放自己的桶; 实例内的
+        # ``_slogan_log`` 仍可经 ``slogan_trace()`` 查询, 不受影响。
+        try:
+            from ..ui.slogans import mapping  # noqa: PLC0415
+            mapping.release_owner(self._slogan_owner)
+        except Exception:  # noqa: BLE001
+            pass
         if self._app and self._app.is_running:
             self._app.exit()
 

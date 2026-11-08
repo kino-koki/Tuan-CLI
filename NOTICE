@@ -707,7 +707,15 @@ THIRD-PARTY ATTRIBUTIONS
               O(1) indexes, cached sanitizer audit and injectable
               rng/clock make dispatch auditable and replayable. No new
               slogans, events, CLI subcommands, license scope, upstream
-              source or trademark asset was introduced. The Claude Code /
+              source or trademark asset was introduced.
+    Closure-patch pass (still NO new third-party material): a
+              sanitized-text index makes unresolvable slogans fail
+              closed, owner log buckets are LRU-bounded and released on
+              close, dispatch errors are mirrored into both log layers,
+              and avoid-repeat window capacity follows the real key
+              space. No new slogans, events, CLI subcommands, or
+              upstream source. The Claude Code / Codex attributions in
+              sections 9-15 are unchanged. The Claude Code /
               Codex attributions in sections 9-15 are unchanged.
 
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):

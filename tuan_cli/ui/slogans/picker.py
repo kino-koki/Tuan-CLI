@@ -30,6 +30,8 @@
 - **可回放**: ``_choose`` 支持 ``rng`` 注入; 注入时用一次性局部避重
   窗口, 避免全局隐藏状态让「相同输入」得到不同结果 (实测第二次分发
   的 ``choice`` 调用从 1 变成 13)。生产路径 ``rng=None`` 完全不变。
+- **窗口容量**: ``_MAX_WINDOWS`` 按真实 key 空间计算 (384), 不再是
+  固定 64 —— 实测 64 会让 320 个 key 互相驱逐, 避重失效。
 
 用法::
 
@@ -88,8 +90,15 @@ STATE_MAP: Dict[str, str] = {
 # spinner 文案最短更换间隔 (秒)
 MIN_INTERVAL_S: float = 5.0
 
-# 同时挂着的状态位上限 (语种 × 上下文), 超出则清理最久未用
-_MAX_WINDOWS: int = 64
+# 同时挂着的状态位上限 (语种 × 上下文), 超出则清理最久未用。
+#
+# 深度轮 3 实测: 固定 64 **小于真实 key 空间**, 避重形同虚设 ——
+# 10 语种 x 16 上下文 x 2 种窗口 (本地池 / 兼容池) = 320 个 key。
+# 遍历一轮后起始 key 的窗口被驱逐 3/3 次, 下一次取词可能立刻重复上一条。
+# 所以上限按实际词池维度算, 而不是拍一个魔数; 仍有上界, 不会无界增长。
+_MAX_WINDOWS: int = (
+    len(LANGUAGES) * (len(universal.CONTEXTS) + len(extra.CONTEXTS)) * 2 + 64
+)  # = 10 * 16 * 2 + 64 = 384
 
 _windows: "OrderedDict[Tuple[str, str], Deque[str]]" = OrderedDict()
 _windows_lock = threading.RLock()

@@ -33,6 +33,11 @@ TUI 留痕却丢了 ``entry_id``、错误被 ``except Exception`` 静默吞掉�
 ``_BY_ID``/``_BY_TEXT`` O(1) 索引、构建时缓存净化审计、
 ``rng``/``now`` 注入可确定性回放。``SloganEntry.events`` 补齐共享
 事件的归属。``audit()`` 共 11 项不变量。
+
+深度轮 3 再补: ``_BY_CLEAN`` (净化后索引) + 运行时 miss fail-closed
+计数、净化撞车检测、owner 桶 LRU 上界与 ``release_owner()``、
+错误双层留痕 ``record_error()``、``_MAX_WINDOWS`` 按真实 key 空间算。
+``audit()`` 现在还校验三份索引全等与零运行时 miss。
 """
 
 from __future__ import annotations
@@ -40,8 +45,8 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
-from collections import Counter
-from dataclasses import dataclass
+from collections import Counter, OrderedDict
+from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, Optional, Tuple
 
 from . import picker, universal, extra, extra_locales
@@ -53,8 +58,10 @@ __all__ = [
     "UnboundSloganEvent", "UnknownSloganContext",
     "EVENT_BINDINGS", "SECURITY_EVENTS", "CONTEXT_EVENTS", "PHASE_EVENTS",
     "ALL_CONTEXTS", "build_registry", "audit", "pick_for_event",
-    "verbs_for_phase", "entry_for", "entry_for_text", "dispatch_log",
-    "reset_dispatch_log", "registry", "index_stats",
+    "verbs_for_phase", "entry_for", "entry_for_text", "entry_for_clean",
+    "dispatch_log", "reset_dispatch_log", "release_owner",
+    "record_error", "reset_runtime_counters", "dispatch_log_stats",
+    "registry", "index_stats",
 ]
 
 
@@ -204,35 +211,56 @@ def build_registry() -> Tuple[SloganEntry, ...]:
 
 _REGISTRY: Optional[Tuple[SloganEntry, ...]] = None
 _BY_ID: Dict[str, SloganEntry] = {}
-_BY_TEXT: Dict[Tuple[str, str, str], SloganEntry] = {}
+_BY_TEXT: Dict[Tuple[str, str, str], SloganEntry] = {}   # 原始文案反查 (兼容 API)
+_BY_CLEAN: Dict[Tuple[str, str, str], SloganEntry] = {}  # 净化后文案反查 (运行时分发用)
+_CLEAN_COLLISIONS: Tuple[str, ...] = ()                 # 净化后文案撞车的注册项
 _CLIPPED_IDS: Tuple[str, ...] = ()
+_INDEX_MISSES: int = 0                                  # 运行时「显示了却查不到」次数
 _registry_lock = threading.RLock()
 
 
 def _ensure_index_locked() -> None:
-    """调用方必须持 ``_registry_lock``。一次性建两个 O(1) 索引 +
-    一次性净化审计。
+    """调用方必须持 ``_registry_lock``。一次性建三个 O(1) 索引 +
+    一次性净化审计 / 碰撞检测。
 
     ``audit()`` 原本每次都对 1695 条词条重跑 ``sanitize_verb``
     (正则 + unicodedata), 实测 20 次 audit 453.9 ms。词条是静态常量,
-    构建时算一次即可, 审计只读缓存 —— 语义不变, 复杂度从
-    「每次 O(n) 净化」降到「每次 O(1) 查表」。
+    构建时算一次即可, 审计只读缓存。
+
+    **深度轮 3 修的静默漏洞**: 上一轮 ``_BY_TEXT`` 用**原始** ``e.text``
+    作 key, 而 ``pick_for_event`` 用**净化后**的 text 去反查。当前
+    ``clipped=0`` (所有词条恰好都无需净化) 让两者碰巧一致; 一旦有人加
+    一条含 ZWSP / VS16 / bidi 控制符的标语, 实测注入后
+    ``reason='ok'`` 但 ``entry_id=''`` —— 对应关系在运行时静默断裂。
+    现在建 ``_BY_CLEAN`` (净化后 key) 供分发使用, ``_BY_TEXT`` (原始
+    key) 保留给兼容 API; 并检测净化后文案撞车。
     """
-    global _REGISTRY, _CLIPPED_IDS
+    global _REGISTRY, _CLIPPED_IDS, _CLEAN_COLLISIONS
     if _REGISTRY is not None:
         return
     reg = build_registry()
     san = _sanitizer()
     clipped = []
+    collisions = []
     for e in reg:
         _BY_ID[e.id] = e
         _BY_TEXT.setdefault((e.lang, e.context, e.text), e)
-        if san is not None:
-            sanitize_verb, display_cols, max_cols = san
-            if (sanitize_verb(e.text) != e.text
-                    or display_cols(e.text) > max_cols):
-                clipped.append(e.id)
+        if san is None:
+            continue
+        sanitize_verb, display_cols, max_cols = san
+        clean = sanitize_verb(e.text)
+        if clean != e.text or display_cols(e.text) > max_cols:
+            clipped.append(e.id)
+        ckey = (e.lang, e.context, clean)
+        prev = _BY_CLEAN.get(ckey)
+        if prev is not None and prev.id != e.id:
+            # 两条不同词条净化后一模一样 -> 运行时无法区分是哪一条,
+            # 必须报出来, 不能靠 setdefault 悄悄丢一条。
+            collisions.append(e.id)
+        else:
+            _BY_CLEAN[ckey] = e
     _CLIPPED_IDS = tuple(sorted(clipped))
+    _CLEAN_COLLISIONS = tuple(sorted(collisions))
     _REGISTRY = reg
 
 
@@ -269,13 +297,27 @@ def entry_for_text(lang: str, context: str, text: str) -> Optional[SloganEntry]:
         return _BY_TEXT.get((lang, context, text))
 
 
+
+def entry_for_clean(lang: str, context: str, clean_text: str) -> Optional[SloganEntry]:
+    """按 (语种, 上下文, **净化后**文案) 反查注册项 (O(1))。
+
+    分发链路拿到的是 ``sanitize_verb()`` 的输出, 必须查净化后索引;
+    查原始索引在词条需要净化时会静默 miss (实测复现)。
+    """
+    with _registry_lock:
+        _ensure_index_locked()
+        return _BY_CLEAN.get((lang, context, clean_text))
+
 def index_stats() -> Dict[str, int]:
     """索引规模自检, 供 ``audit()`` 与独立验证脚本核验。"""
     with _registry_lock:
         _ensure_index_locked()
         return {"registry": len(_REGISTRY or ()),
                 "by_id": len(_BY_ID), "by_text": len(_BY_TEXT),
-                "clipped_cached": len(_CLIPPED_IDS)}
+                "by_clean": len(_BY_CLEAN),
+                "clipped_cached": len(_CLIPPED_IDS),
+                "clean_collisions": len(_CLEAN_COLLISIONS),
+                "index_misses": _INDEX_MISSES}
 
 
 # ------------------------------------------------------------------ 审计
@@ -300,6 +342,9 @@ class AuditReport:
     sanitizer_source: str = "unavailable"
     sanitizer_shared: bool = False
     index_consistent: bool = False
+    clean_collisions: Tuple[str, ...] = ()   # 净化后文案撞车 -> 无法区分是哪条
+    runtime_index_misses: int = 0            # 运行时「显示了却查不到」次数
+    dispatch_stats: Dict[str, int] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -309,7 +354,9 @@ class AuditReport:
             self.contexts_without_event, self.events_without_context,
             self.locale_gaps, self.empty_pools, self.duplicate_ids,
             self.unsafe_bindings, self.phase_gaps, self.clipped_slogans,
-        )) and self.sanitizer_shared and self.index_consistent
+        )) and self.sanitizer_shared and self.index_consistent \
+            and not self.clean_collisions \
+            and self.runtime_index_misses == 0
 
     def as_dict(self) -> Dict[str, object]:
         return {
@@ -331,6 +378,9 @@ class AuditReport:
             "sanitizer_source": self.sanitizer_source,
             "sanitizer_shared": self.sanitizer_shared,
             "index_consistent": self.index_consistent,
+            "clean_collisions": len(self.clean_collisions),
+            "runtime_index_misses": self.runtime_index_misses,
+            "dispatch_stats": dict(self.dispatch_stats),
         }
 
 
@@ -404,9 +454,17 @@ def audit() -> AuditReport:
         clipped = list(_CLIPPED_IDS)
 
     idx = index_stats()
-    index_ok = (idx["by_id"] == idx["registry"] == len(reg)
-                and idx["by_text"] > 0
-                and all(e.events and e.event in e.events for e in reg))
+    # 深度轮 3 加严: 上一轮只要求 ``by_text > 0`` (几乎恒真),
+    # 索引缺一大半也会通过。现在要求三份索引规模与注册表全等、
+    # 无净化撞车、运行时零 miss、且每个注册项声明了完整触发事件组。
+    index_ok = (
+        idx["by_id"] == idx["by_text"] == idx["by_clean"]
+        == idx["registry"] == len(reg)
+        and idx["clipped_cached"] == 0
+        and idx["clean_collisions"] == 0
+        and idx["index_misses"] == 0
+        and all(e.events and e.event in e.events for e in reg)
+    )
 
     s = _sanitizer()
     src = "ui.slogans._clean.sanitize_verb" if s else "unavailable"
@@ -438,6 +496,9 @@ def audit() -> AuditReport:
         sanitizer_source=src,
         sanitizer_shared=shared,
         index_consistent=index_ok,
+        clean_collisions=_CLEAN_COLLISIONS,
+        runtime_index_misses=idx["index_misses"],
+        dispatch_stats=dispatch_log_stats(),
     )
 
 
@@ -460,8 +521,14 @@ class SloganDecision:
 #: 按 owner 分桶。上一轮是**全局裸 list 单例**: 两个 TUI 实例的日志
 #: 混在一起, ``reset_dispatch_log()`` 会清掉另一个实例的记录 (实测复现)。
 #: 空 owner 保留为兼容桶, 无参 ``dispatch_log()`` 仍返回全量。
-_dispatch_log: Dict[str, list[SloganDecision]] = {}
+#:
+#: 深度轮 3: 上一轮只限制了**每桶长度** (64), 没限制**桶数量** ——
+#: 实测 2000 个会话各分发一次就留下 2000 个桶, 长期运行的 REPL /
+#: 测试集会无限累积。现在用 LRU OrderedDict + 桶数上限; ``close()``
+#: 还会显式释放自己的 owner。
+_dispatch_log: "OrderedDict[str, list[SloganDecision]]" = OrderedDict()
 _DISPATCH_CAP = 64
+_MAX_OWNERS = 128
 _dispatch_lock = threading.RLock()
 
 
@@ -469,6 +536,7 @@ def dispatch_log(owner: Optional[str] = None) -> Tuple[SloganDecision, ...]:
     """快照 (加锁, 不返回内部可变对象)。
 
     ``owner=None`` -> 全量 (兼容旧调用); 指定 owner -> 只看该会话。
+    全量在桶数有上界后也可控 (<= ``_MAX_OWNERS * _DISPATCH_CAP``)。
     """
     with _dispatch_lock:
         if owner is not None:
@@ -485,12 +553,68 @@ def reset_dispatch_log(owner: Optional[str] = None) -> None:
             _dispatch_log.pop(owner, None)
 
 
+def release_owner(owner: str) -> int:
+    """释放一个会话的日志桶 (TUI ``close()`` 调用)。
+
+    :return: 被释放的决策条数, 供运维/验证核对。
+    """
+    if not owner:
+        return 0
+    with _dispatch_lock:
+        bucket = _dispatch_log.pop(owner, None)
+        return len(bucket or ())
+
+
+def dispatch_log_stats() -> Dict[str, int]:
+    """日志规模自检: 桶数 / 决策总数 / 最大单桶长度。"""
+    with _dispatch_lock:
+        buckets = [len(b) for b in _dispatch_log.values()]
+        return {"owners": len(_dispatch_log),
+                "decisions": sum(buckets),
+                "max_bucket": max(buckets, default=0),
+                "cap_per_owner": _DISPATCH_CAP,
+                "max_owners": _MAX_OWNERS}
+
+
+def reset_runtime_counters() -> None:
+    """清运行时计数 (测试隔离用), 不影响静态索引与词条。"""
+    global _INDEX_MISSES
+    with _registry_lock:
+        _INDEX_MISSES = 0
+    reset_dispatch_log()
+
+
 def _record(d: SloganDecision) -> None:
     with _dispatch_lock:
-        bucket = _dispatch_log.setdefault(d.owner, [])
+        bucket = _dispatch_log.get(d.owner)
+        if bucket is None:
+            if len(_dispatch_log) >= _MAX_OWNERS:
+                _dispatch_log.popitem(last=False)   # 淘汰最久未用的会话
+            bucket = []
+            _dispatch_log[d.owner] = bucket
+        else:
+            _dispatch_log.move_to_end(d.owner)
         bucket.append(d)
         if len(bucket) > _DISPATCH_CAP:
             del bucket[:-_DISPATCH_CAP]
+
+
+def record_error(event: str, kind: str, *, owner: str = "",
+                 at_ms: Optional[int] = None,
+                 context: Optional[str] = None) -> SloganDecision:
+    """把分发错误也写进**全局**日志。
+
+    上一轮 TUI 的 ``_slogan_error()`` 只写实例自己的 ``_slogan_log``:
+    实测拼错事件后 ``slogan_errors()`` 有 1 条, 而
+    ``mapping.dispatch_log()`` 里错误相关 0 条 —— 只看全局日志的运维
+    会完全漏掉。现在两层留痕一致。安全事件仍走 ``security-notice``,
+    不与 ``error:*`` 混。
+    """
+    at = int(time.monotonic() * 1000) if at_ms is None else at_ms
+    d = SloganDecision(event, context, "", "", "error:" + kind,
+                       at, "", "", owner)
+    _record(d)
+    return d
 
 
 def pick_for_event(event: str, lang: Optional[str] = None, *,
@@ -508,6 +632,9 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     :param owner: 会话/实例作用域, 日志按 owner 分桶, 多 TUI 不互串;
     :param now: 可注入时钟 (原本已有, 现在贯穿到 ``at_ms`` 且可被
         ``clock`` 覆盖)。``entry_id`` 反查改走 O(1) 索引。
+
+    深度轮 3: 反查改用 ``_BY_CLEAN`` (净化后文案), 未命中即
+    fail-closed 返回 ``index-miss`` + 空文案并计数, 不再假装 "ok"。
     """
     clock = time.monotonic if now is None else (lambda: now)
     at = int(clock() * 1000)
@@ -542,11 +669,21 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
             return d
 
     # O(1) 反查: 上一轮这里是逐条遍历全量注册表线性扫 1695 条,
-    # 实测 2000 次分发 58.9 ms。现在按 (lang, context, text) 直接命中。
-    entry = entry_for_text(resolved, binding.context, text)
-    eid = entry.id if entry is not None else ""
+    # 实测 2000 次分发 58.9 ms。现在按 (lang, context, **净化后** text)
+    # 查 _BY_CLEAN —— 不能用原始文案索引, 词条需要净化时会静默 miss。
+    entry = entry_for_clean(resolved, binding.context, text)
+    if entry is None:
+        # fail-closed: 显示一条**反查不到注册项**的标语, 等于把上一轮
+        # 「每个标语都要对应的」重新打断。宁可不显示, 也不返回假的 "ok"。
+        global _INDEX_MISSES
+        with _registry_lock:
+            _INDEX_MISSES += 1
+        d = SloganDecision(event, binding.context, resolved, "",
+                           "index-miss", at, "", origin, owner)
+        _record(d)
+        return d
     d = SloganDecision(event, binding.context, resolved, text, "ok",
-                       at, eid, origin, owner)
+                       at, entry.id, origin, owner)
     _record(d)
     return d
 
