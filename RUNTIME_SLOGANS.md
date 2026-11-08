@@ -595,3 +595,26 @@ LRU 被动淘汰静默丢整桶、`close()` 与 `take_owner_log()` 两套实现�
 
 验证：276 passed + 80 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 `stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。
+
+
+---
+
+## 18. 共用净化核心的 ESC+ 引导（本引擎文件零改动）
+
+前六轮把对应关系做实；本轮实测发现上一轮 ESC_RUN 修复有覆盖缺口
+（连续 ESC 串 + 真 CSI/OSC + 尾部文本仍吞首字符）、public 时钟入参
+裸奔、owner 整串 sha1 无上界、淘汰缺累计证据。完整复现与修复见
+`SLOGAN_MAPPING.md` §16。
+
+**本引擎文件本轮零改动**，但共享的 `_clean_once` 把 OSC/CSI 正则
+引导从 `` 改成 `+`。因此 re-export 的 `sanitize_verb` 对
+「连续 ESC + 真序列」更保真：实测 `'[31mRED'` 从 `'ED'`
+变为 `'RED'`。单 ESC 序列、孤立 ESC、列宽计算、`_fit_headline`、
+`display_cols` 与幂等契约一律不变；139 例既有回归全绿。
+
+**四个候选实测不成立、未修**：3 次不动点从未误杀正常文本、开头
+组合标记已清、lone surrogate owner 不撞车、`record_error` 的 kind
+已被净化。只加回归锁住既有正确行为。
+
+验证：300 passed + 88 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+`stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。

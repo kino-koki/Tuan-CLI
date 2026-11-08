@@ -575,3 +575,20 @@ Apache-2.0 / MIT Codex 归属混用**。
 
 276 例 pytest + 80 项纯 stdlib 验证全绿。
 详见 `SLOGAN_MAPPING.md` §15。
+
+
+---
+
+## ESC+ 与时钟严格化（不占任何 Codex 对齐指标）
+
+本轮只把前六轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- OSC/CSI 允许 `ESC+` 引导；注入时钟严格类型校验且合法 0 不再被吞；
+  owner 用有界摘要；淘汰累计证据 `evicted_total`。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。`tui.py` 本轮文件零改动，**未包含在本轮推送清单**。
+
+300 例 pytest + 88 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §16。

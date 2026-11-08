@@ -325,3 +325,32 @@ TUI 仍未替换既有 i18n 文案；分叉改动仍未合并；第三方自适�
 不是真机长跑；分叉改动仍未合并；第三方自适应红队仍未做；
 **不宣称性能提升**。详见 `SLOGAN_MAPPING.md` §15。
 本轮**不改** `fully_superior`、99 模块基线与任何对齐指标。
+
+
+---
+
+## R36 · ESC+ 引导 / 时钟严格化 / 有界摘要 / 累计淘汰证据
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R36 | 上一轮 ESC_RUN 覆盖缺口: `]8;;evilOK -> 'K'`、`[31mRED -> 'ED'` (OSC/CSI 从 ESC 串最后一个 ESC 匹配, 留孤立 ESC 吞尾部首字符); public 时钟入参 `now=nan/inf/'1000'` 抛异常/产出 4000 位天文数字, `record_error(at_ms='1000')` 把字符串存进 `at_ms`; **本轮自引入** `or _fallback_ms()` 吞掉合法 0; owner 整串 sha1 无上界 (1 MiB ≈12.7 ms); 淘汰只有 `evicted_recent=64`, 无累计 | OSC/CSI 引导改 `+` 整段剥; 新增 `_coerce_ms(value, is_seconds)` 拒绝 bool/非数值/非有限/负值/超上界, 脏值回落真实单调时钟, 三入口统一; 改显式 `ms is None` 保住合法 0; `OWNER_SCAN_CAP=4096` + 头 2048/总长/尾 2048 有界摘要; `_EVICT_TOTAL` + `evicted_total()` + stats/audit 携带 (不参与 `ok`) |
+
+实测：`']8;;evilOK' -> 'OK'`（旧 `'K'`）、
+`'[31mRED' -> 'RED'`（旧 `'ED'`）、
+`now=nan/inf/'1000'/True/-1/1e300` 全部产出合法正 int；
+`now=0 -> 0`、`now=1 -> 1000`、`now=1000.0 -> 1000000`；
+100k+`A` vs 100k+`B` 不撞且幂等；64KiB→8MiB 归一均 ≈12–14 ms；
+`evicted_recent=64 / evicted_total=114 / audit ok=True`；
+`index_stats 1695×4 / index_misses=0`。
+
+如实边界：**A′ 是本轮修 B 时自己引入、再被实测抓回来的**；
+**A 是上一轮 ESC_RUN 修复的覆盖缺口**，不是全新洞；四个候选
+（3 次不收敛误杀 / 开头组合标记 / lone surrogate 撞车 / kind 净化）
+实测不成立、未修；单个 `END` 的 ECMA-48 歧义未解决（ESC 已
+清除无安全风险）；`_SCAN_CAP` 之外仍先粗切；有界摘要对「仅中间段
+不同」的超长 owner 存在碰撞面；脏时钟注入**不保证可回放**；
+`evicted_total` 不参与 `audit().ok`；`tui.py`/`runtime_slogans.py`
+文件零改动（本轮推送不含）但共享 `_clean_once` 更保真；并发压测
+仍未复现 list 撕裂；不是真机长跑；分叉改动仍未合并；第三方
+自适应红队仍未做；**不宣称性能提升**。详见 `SLOGAN_MAPPING.md` §16。
+本轮**不改** `fully_superior`、99 模块基线与任何对齐指标。

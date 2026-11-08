@@ -742,7 +742,16 @@ THIRD-PARTY ATTRIBUTIONS
               suspected defect (lone ESC) was measured FALSE and was
               deliberately NOT changed. No new slogans, events, CLI
               subcommands, license scope, upstream source or trademark
-              asset. Sections 9-15 remain unchanged. The Claude Code /
+              asset. Sections 9-15 remain unchanged.
+    ESC-plus / clock-strictness pass (still NO new third-party
+              material): OSC/CSI introducers accept one or more ESC
+              bytes, injected clock values are strictly validated with
+              a legal-zero guard, oversized owner digests are bounded,
+              and cumulative eviction counts are exposed. Four further
+              suspected defects were measured FALSE and deliberately
+              NOT changed. No new slogans, events, CLI subcommands,
+              license scope, upstream source or trademark asset.
+              Sections 9-15 remain unchanged. The Claude Code /
               Codex attributions in sections 9-15 are unchanged.
 
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):

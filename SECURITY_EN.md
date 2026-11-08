@@ -1096,3 +1096,77 @@ regressions green). No list corruption was reproduced under
 concurrency; no real-device soak test; fork changes still unmerged;
 no external adaptive red team. Verification: 276 pytest cases + 80
 pure-stdlib checks + 22/20 prior checks, all green.
+
+
+---
+
+## 19. ESC+ Introducer, Clock Strictness, Bounded Digest, Cumulative Evidence
+
+This round changes no verdict; it patches holes left in the prior six
+rounds of runtime correspondence.
+
+- **The previous round's ESC_RUN fix had a coverage gap.**
+  `]8;;evilOK` returned `'K'`, `[31mRED`
+  returned `'ED'`, `[?25lHIDE` returned `'IDE'`. The OSC/CSI
+  regex matched starting at the LAST ESC of the run, leaving a lone
+  ESC that `_ESC_SEQ_RE` then paired with the first printable trailing
+  character. The prior round only tested `[31m -> ''` (no
+  trailing text) before claiming coverage. The introducer is now
+  `+`, so a whole "ESC run + real sequence" is stripped in one
+  pass. Measured: all five cases restore full trailing text; single-ESC
+  behavior unchanged; everything idempotent. A SINGLE `END -> 'ND'`
+  ECMA-48 ambiguity is still NOT changed -- ESC is removed so no
+  control sequence is echoed (no security risk).
+- **Public clock arguments no longer run naked.** `now=nan` raised
+  ValueError, `now=inf` OverflowError, `now='1000'` produced a
+  4000-digit integer (string `*1000` amplification);
+  `record_error(at_ms='1000')` stored a STRING in
+  `SloganDecision.at_ms`, and `True` became 1. `_coerce_ms(value,
+  is_seconds)` now rejects bool / non-numeric / non-finite / negative
+  / over-cap values and falls back to the real monotonic clock. All
+  three entry points (`pick_for_event`, `record_error`, the eviction
+  stamp inside `_record`) share it. Nine dirty values measured: all
+  produce a legal positive `int`, no exception, no amplification.
+- **A defect INTRODUCED by this round's own fix and caught by
+  measurement.** The first version used
+  `_coerce_ms(...) or _fallback_ms()`, which treated legal ZERO as
+  falsy (`now=0 -> 1072138`). Switching to an explicit `ms is None`
+  check gives `now=0 -> 0`, `now=1 -> 1000`, and eviction `at_ms=0`.
+  Same lesson as the previous round's A': never use a validation
+  result directly as a boolean.
+- **Owner digest is bounded.** Previously sha1 over the FULL encoded
+  string with no cap (measured 1 MiB ~12.7 ms on every write/query).
+  `OWNER_SCAN_CAP = 4096`: oversized strings hash
+  "head 2048 + total length + tail 2048". Measured: two 100k strings
+  differing only in the tail still do not collide, output stays 22
+  codepoints and strictly idempotent, 64KiB->8MiB all cost ~12-14 ms
+  (a FIXED bound, not "only 4096 scanned" -- `_SCAN_CAP=65536`
+  still applies). Honest limit: two oversized strings sharing head,
+  tail and length but differing only in the MIDDLE collide. We do NOT
+  claim zero collisions.
+- **Cumulative eviction evidence.** `evicted_total()` and
+  `dispatch_log_stats()['evicted_total']` mirror the
+  continuous/cumulative two-layer model used for `_INDEX_MISSES`.
+  The ring buffer answers "latest 64"; the counter answers "how many
+  in total" and does not roll away. It does NOT affect `audit().ok`
+  (eviction is normal bounded behavior). Only an explicit full
+  `reset_dispatch_log()` zeroes it.
+
+**Four candidates were MEASURED FALSE and NOT changed**: three
+fixed-point iterations never murder legal text; leading combining
+marks / CGJ / ZWJ were already stripped; lone-surrogate owners do not
+collide and stay idempotent; `record_error`'s `kind` was already
+sanitized. Regressions merely lock in existing correct behavior.
+
+**Honest limits**: dirty clock injection falls back to real time and
+is NOT replay-deterministic (replay is guaranteed only for legal
+injection). Beyond `_SCAN_CAP` we still coarse-cut. The single-ESC
+ECMA-48 ambiguity remains. `evicted_total` is an observation; detail
+records are still capped at 64 and decision contents are not
+resurrected. `tui.py` / `runtime_slogans.py` files unchanged (not in
+this push), though their shared `sanitize_verb` is more faithful for
+consecutive-ESC input; 139 prior regressions green. No list
+corruption reproduced under concurrency; no real-device soak test;
+fork changes still unmerged; no external adaptive red team. NO
+performance improvement is claimed. Verification: 300 pytest cases
++ 88 pure-stdlib checks + 22/20 prior checks, all green.

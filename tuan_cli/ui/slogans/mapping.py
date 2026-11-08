@@ -51,11 +51,17 @@ LRU **被动淘汰**留脱敏痕迹 (D4 只覆盖了显式 ``close()``)、
 ``EvictionRecord.reason_counts`` 让桶内错误信号不再被
 ``last_reason`` 掩盖、``norm_owner`` 口径按实测精确化、
 ``sanitize_log_field`` 改为先清理后截断。
+
+深度轮 7 再补: OSC/CSI 允许 ``ESC+`` 引导 (补齐上一轮 ESC_RUN
+覆盖缺口)、注入时钟严格类型校验 (脏值回落真实时钟, 不抛异常/不放大)、
+``owner`` 有界摘要 (不再整串 sha1)、淘汰**累计**证据
+``evicted_total`` (与 ``_INDEX_MISSES`` 连续/累计双层口径对齐)。
 """
 
 from __future__ import annotations
 
 import hashlib
+import math
 import threading
 import time
 from collections import Counter, OrderedDict, deque
@@ -74,8 +80,8 @@ __all__ = [
     "verbs_for_phase", "entry_for", "entry_for_text", "entry_for_clean",
     "dispatch_log", "reset_dispatch_log", "release_owner", "take_owner_log",
     "record_error", "reset_runtime_counters", "acknowledge_runtime_misses",
-    "dispatch_log_stats", "evicted_owner_log", "norm_owner",
-    "registry", "index_stats",
+    "dispatch_log_stats", "evicted_owner_log", "evicted_total",
+    "norm_owner", "registry", "index_stats",
 ]
 
 
@@ -567,6 +573,48 @@ class SloganDecision:
 #: 实测 2000 个会话各分发一次就留下 2000 个桶, 长期运行的 REPL /
 #: 测试集会无限累积。现在用 LRU OrderedDict + 桶数上限; ``close()``
 #: 还会显式释放自己的 owner。
+#: 深度轮 7: 注入时钟的合法范围。``now`` 是秒，``at_ms`` 是毫秒；
+#: 超过上界（天文数字）会让 ``int(v*1000)`` 放大成超大整数。
+_MAX_NOW_S = 1e12
+_MAX_AT_MS = 1e15
+
+#: ``owner`` 参与摘要的最大码点数；超过则用「头 + 长 + 尾」有界摘要，
+#: 不再对整串做 UTF-8 编码 + sha1（实测 1 MiB ≈ 12.7 ms 且无上界）。
+OWNER_SCAN_CAP = 4096
+
+
+def _coerce_ms(value: object, *, is_seconds: bool) -> Optional[int]:
+    """把注入时钟收敛成合法非负 ``int`` 毫秒；脏值返回 ``None``。
+
+    深度轮 7 实测复现（public API 一路裸奔）:
+
+    - ``pick_for_event(now=float('nan'))`` → ``ValueError``
+    - ``now=float('inf')`` → ``OverflowError``
+    - ``now='1000'`` → ``lambda: now`` 返回字符串，``'1000'*1000``
+      被 ``int()`` 解析成 4000 位天文数字（内存/CPU 放大）；
+    - ``record_error(at_ms='1000')`` 直接把**字符串**存进
+      ``SloganDecision.at_ms``，类型契约被破坏；``True`` 被当成 1。
+
+    与 ``runtime_slogans.load_config`` / ``_clean._coerce_log_limit``
+    的严格类型口径对齐：拒绝 bool / 非数值 / 非有限 / 负值 / 超上界，
+    脏值一律返回 ``None``，由调用方回落真实单调时钟。
+    **绝不抛异常、绝不产生非 int、绝不放大**。
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    cap = _MAX_NOW_S if is_seconds else _MAX_AT_MS
+    if value < 0 or value > cap:
+        return None
+    return int(value * 1000) if is_seconds else int(value)
+
+
+def _fallback_ms() -> int:
+    """真实单调时钟毫秒（脏注入的 fail-closed 回落）。"""
+    return int(time.monotonic() * 1000)
+
+
 _dispatch_log: "OrderedDict[str, list[SloganDecision]]" = OrderedDict()
 _DISPATCH_CAP = 64
 _MAX_OWNERS = 128
@@ -580,6 +628,12 @@ _dispatch_lock = threading.RLock()
 #: 可查, 证据丢失至少**可见**。
 _EVICT_CAP = 64
 _EVICTED: "deque[EvictionRecord]" = deque(maxlen=_EVICT_CAP)
+#: 深度轮 7: **累计**被动淘汰次数（进程生命周期内）。``_EVICTED`` 只
+#: 保留最近 64 次，运维答不出「总共发生过多少次淘汰」。与
+#: ``_INDEX_MISSES`` 的「连续 / 累计」双层口径对齐：累计值是信息项，
+#: 永不自动清零、不参与 ``audit().ok``；只有显式 ``reset_dispatch_log()``
+#: 全清（测试隔离）才归零。
+_EVICT_TOTAL = 0
 
 
 @dataclass(frozen=True)
@@ -603,6 +657,7 @@ class EvictionRecord:
 
 #: ``owner`` 零改动的上限（码点）。超过即归一定长指纹, 保证桶 key 有界。
 OWNER_LIMIT = 64
+#: 深度轮 7: 摘要输入上界（见 ``OWNER_SCAN_CAP`` 声明处）。
 
 
 def norm_owner(raw: object) -> str:
@@ -636,7 +691,24 @@ def norm_owner(raw: object) -> str:
     clean = _clean.sanitize_log_field(raw, OWNER_LIMIT)
     if clean == raw:
         return raw                     # 干净输入零改动, 严格幂等
-    fp = hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16]
+    # 深度轮 7: 旧版对**整串**做 UTF-8 编码 + sha1, 无输入上界
+    # (实测 1 MiB ≈ 12.7 ms, 每次写入/查询都付一次)。超过
+    # ``OWNER_SCAN_CAP`` 改用「头 2048 + 长度 + 尾 2048」有界摘要:
+    #   * 摘要本身 O(4096) 码点; 整体还含 ``sanitize_log_field`` 的
+    #     ``_SCAN_CAP=65536`` **固定**扫描上限, 因此与输入长度无关
+    #     (实测 64KiB→8MiB 均 ~12–14 ms), 但不等于「只扫 4096」;
+    #   * 包含尾部, 实测仅尾部不同的两个 100k 串仍不撞车;
+    #   * 长度参与, 不同长度不会撞。
+    # 如实边界: 共享前 2048、后 2048 且总长相同、仅**中间**不同的
+    # 两个超长串会撞到同一 key —— 这是有界摘要的固有碰撞面,
+    # 不宣称「任意两个不同串绝不撞」。输出仍是 22 码点干净串,
+    # ``norm_owner`` 严格幂等。
+    if len(raw) > OWNER_SCAN_CAP:
+        seed = (str(len(raw)) + ":" + raw[:2048] + ":" +
+                raw[-2048:]).encode("utf-8", "replace")
+    else:
+        seed = raw.encode("utf-8", "replace")
+    fp = hashlib.sha1(seed).hexdigest()[:16]
     return f"owner:{fp}"
 
 
@@ -667,10 +739,12 @@ def reset_dispatch_log(owner: Optional[str] = None) -> None:
     释放而非被动淘汰, 不写淘汰痕、也不清已有淘汰痕。
     """
     key = norm_owner(owner) if owner is not None else None
+    global _EVICT_TOTAL
     with _dispatch_lock:
         if key is None:
             _dispatch_log.clear()
             _EVICTED.clear()
+            _EVICT_TOTAL = 0
         else:
             _dispatch_log.pop(key, None)
 
@@ -698,7 +772,8 @@ def dispatch_log_stats() -> Dict[str, int]:
                 "cap_per_owner": _DISPATCH_CAP,
                 "max_owners": _MAX_OWNERS,
                 "evicted_recent": len(_EVICTED),
-                "evicted_cap": _EVICT_CAP}
+                "evicted_cap": _EVICT_CAP,
+                "evicted_total": _EVICT_TOTAL}
 
 
 def reset_runtime_counters(include_dispatch_log: bool = False) -> None:
@@ -730,6 +805,17 @@ def take_owner_log(owner: str) -> Tuple[SloganDecision, ...]:
     with _dispatch_lock:
         bucket = _dispatch_log.pop(key, None)
         return tuple(bucket or ())
+
+
+def evicted_total() -> int:
+    """进程生命周期内**累计**的 LRU 被动淘汰次数（信息项）。
+
+    深度轮 7: ``_EVICTED`` 是 64 条有界环形缓冲，``evicted_recent``
+    只回答「最近几条」；累计值回答「总共多少次」，且**不因缓冲滚动
+    而丢失**。不参与 ``audit().ok``（淘汰是正常有界行为）。
+    """
+    with _dispatch_lock:
+        return _EVICT_TOTAL
 
 
 def evicted_owner_log() -> Tuple[EvictionRecord, ...]:
@@ -774,13 +860,16 @@ def _record(d: SloganDecision, at_ms: Optional[int] = None) -> None:
     时钟, 可回放性断了一半。现在统一。
     """
     key = norm_owner(d.owner)   # 幂等: 干净 owner 原样返回
-    stamp = int(time.monotonic() * 1000) if at_ms is None else int(at_ms)
+    ms = None if at_ms is None else _coerce_ms(at_ms, is_seconds=False)
+    stamp = _fallback_ms() if ms is None else ms
     with _dispatch_lock:
         bucket = _dispatch_log.get(key)
         if bucket is None:
             if len(_dispatch_log) >= _MAX_OWNERS:
                 ev_owner, ev_bucket = _dispatch_log.popitem(last=False)
                 # 淘汰不再静默: 记一条脱敏痕迹 (不含文案 / entry_id)。
+                global _EVICT_TOTAL
+                _EVICT_TOTAL += 1
                 _EVICTED.append(EvictionRecord(
                     owner=ev_owner,
                     dropped=len(ev_bucket),
@@ -809,7 +898,10 @@ def record_error(event: str, kind: str, *, owner: str = "",
     会完全漏掉。现在两层留痕一致。安全事件仍走 ``security-notice``,
     不与 ``error:*`` 混。
     """
-    at = int(time.monotonic() * 1000) if at_ms is None else at_ms
+    # 深度轮 7: 旧版把 ``at_ms`` 原样塞进 SloganDecision（实测
+    # at_ms='1000' 存成字符串、True 存成 bool），类型契约被破坏。
+    ms = None if at_ms is None else _coerce_ms(at_ms, is_seconds=False)
+    at = _fallback_ms() if ms is None else ms
     # 深度轮 4: event / kind 是 public API 入参, 实测可注入 5030 码点
     # 含 OSC 8 超链接 + U+202E RLO 的串并原样写进日志。统一过
     # _clean.sanitize_log_field (与 UI 文案共用 _clean_once 清理核心)。
@@ -850,8 +942,14 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     簇边界的二次按码点截断); miss 分「累计证据 / 连续未处置」两层,
     成功一次即自愈, 不再让一次已修复的历史错误永久污染 ``audit().ok``。
     """
-    clock = time.monotonic if now is None else (lambda: now)
-    at = int(clock() * 1000)
+    # 深度轮 7: 旧版 ``clock = lambda: now`` 直接把 public 入参参与
+    # ``int(clock() * 1000)``。实测 now='1000' 产生 4000 位天文数字、
+    # nan/inf 抛异常。严格收敛后脏值回落真实单调时钟。
+    # 深度轮 7 自引入又抓回: ``_coerce_ms(...) or _fallback_ms()``
+    # 会把**合法 0** 当成 falsy 回落真实时钟 (实测 now=0 -> 1e6 ms)。
+    # 必须显式判 ``is None``。
+    ms = None if now is None else _coerce_ms(now, is_seconds=True)
+    at = _fallback_ms() if ms is None else ms
     resolved = picker.resolve_lang(lang)
     owner = norm_owner(owner)   # 深度轮 5: public 入参, 与查询侧同一归一
 

@@ -32,16 +32,27 @@ from typing import List
 # 全部原样输出** —— 终端会按它们重排显示方向，用户看到的和字符串内容
 # 不一致（Trojan Source 的 UI 版）。旧 docstring 还声称「去掉组合标记开头
 # 的异常串」，实测根本没做。
-_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?")   # BEL 或 ST 终止
-_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+# 深度轮 7: 引导改成 ``\x1b+`` (一个或多个 ESC)。上一轮把
+# ``_ESC_RUN_RE`` 排在 OSC/CSI **之后**时只测了
+# ``'\x1b\x1b[31m'`` (无可打印尾巴) -> ``''``, 就宣称「真序列已
+# 先被剥掉」。实测覆盖缺口: 连续 ESC 串后跟一个**真** CSI/OSC 序列时,
+# 正则从 ESC 串的**最后一个** ESC 开始匹配, 前面的 ESC 被留下成孤立
+# ESC, 随后被 ``_ESC_SEQ_RE`` 与尾部第一个可打印字符拼成假序列吞掉:
+#   '\x1b\x1b]8;;evil\x07OK' -> 'K'      (丢了 O)
+#   '\x1b\x1b[31mRED'         -> 'ED'     (丢了 R)
+#   '\x1b\x1b[?25lHIDE'       -> 'IDE'    (丢了 H)
+# 允许 ``ESC+`` 引导后整段被一次剥掉, 实测全部恢复尾部原文。
+_OSC_RE = re.compile(r"\x1b+\][^\x07\x1b]*(?:\x07|\x1b\\)?")  # BEL 或 ST 终止
+_CSI_RE = re.compile(r"\x1b+\[[0-?]*[ -/]*[@-~]")
 # 其余 ESC 序列：ESC c (RIS)、ESC 7/8 (save/restore)、ESC ( B (charset) …
 # ``[ -/]*`` 吃中间字节，``[0-~]`` 吃终止/单字符命令。必须排在 OSC/CSI 之后。
 _ESC_SEQ_RE = re.compile(r"\x1b[ -/]*[0-~]")
-# 深度轮 6: **连续 2+ 个 ESC** 不可能是有效序列引导 (ECMA-48 序列
-# 以单个 ESC 起始)。旧版让最后一个 ESC 与后面的可打印字符拼成假序列:
+# 深度轮 6 (深度轮 7 修正注释): **连续 2+ 个 ESC** 不可能是有效
+# 序列引导。旧版让最后一个 ESC 与后面的可打印字符拼成假序列:
 # 实测 ``'\x1b'*900 + 'END'`` -> ``'ND'``, 尾部 'E' 被 ``\x1bE``
-# (NEL) 吞掉。整体删连续 ESC 串, 且排在 OSC/CSI 之后 —— 以 ``[``/``]``
-# 引导的真序列已先被剥掉, 实测 ``'\x1b\x1b[31m'`` 仍得空串。
+# (NEL) 吞掉。整体删连续 ESC 串, 排在 OSC/CSI 之后 —— OSC/CSI 现已
+# 支持 ``ESC+`` 引导 (深度轮 7), 因此「ESC 串 + 真序列」会在前两步
+# 被整段剥掉, 不会留下孤立 ESC。实测 ``'\x1b\x1b[31m'`` 仍得空串。
 _ESC_RUN_RE = re.compile(r"\x1b{2,}")
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
@@ -254,6 +265,11 @@ def sanitize_log_field(raw: object, limit: int = LOG_FIELD_LIMIT) -> str:
     深度轮 6：改为**先清理后截断**（旧版先按 ``lim*4`` 粗切，前部
     垃圾会吃掉尾部合法内容），并加 ``_SCAN_CAP`` 扫描上限防超长输入
     拖慢正则。截断结果仍是 ``[lim 码点 + '…']``，二次调用幂等。
+
+    深度轮 7：OSC/CSI 正则改为允许 ``ESC+`` 引导，补齐上一轮
+    ``_ESC_RUN_RE`` 的覆盖缺口（连续 ESC 串 + 真序列 + 尾部文本时，
+    尾部第一个字符仍被吞）。单个 ESC + 可打印字母的 ECMA-48 固有
+    歧义**仍未改**。
     """
     if not isinstance(raw, str):
         return ""

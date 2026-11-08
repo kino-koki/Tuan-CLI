@@ -1233,6 +1233,164 @@ def t_d6_full_health():
     assert mapping.audit().ok is True
     mapping.reset_runtime_counters(include_dispatch_log=True)
 
+# ---------------------------------------------------------------- 深度轮 7
+
+
+def t_d7_esc_plus_sequence():
+    clean = (REPO / "tuan_cli/ui/slogans/_clean.py").read_text(encoding="utf-8")
+    assert r"\x1b+\]" in clean and r"\x1b+\[" in clean
+    from tuan_cli.ui.slogans import _clean as C
+    cases = {
+        "\x1b\x1b]8;;https://evil.example\x07OK": "OK",
+        "\x1b\x1b\x1b]8;;evil\x07END": "END",
+        "\x1b\x1b[31mRED": "RED",
+        "\x1b\x1b[?25lHIDE": "HIDE",
+        "\x1b\x1b]0;title\x07TAIL": "TAIL",
+    }
+    for raw, expected in cases.items():
+        assert C.sanitize_log_field(raw) == expected, repr(raw)
+        assert C.sanitize_verb(raw) == expected, repr(raw)
+    # 单 ESC 引导行为不变
+    assert C.sanitize_log_field("\x1b]8;;evil\x07OK") == "OK"
+    assert C.sanitize_verb("\x1b[31mRED\x1b[0m") == "RED"
+    assert C.sanitize_log_field("\x1b\x1b[31m") == ""
+    assert C.sanitize_log_field("\x1b" * 900 + "END") == "END"
+    assert C.sanitize_log_field("abc\x1b") == "abc"
+    # 单个 ESC 的 ECMA-48 歧义仍未改
+    out = C.sanitize_log_field("\x1bEND")
+    assert "\x1b" not in out and out in ("END", "ND")
+
+
+def t_d7_clean_is_idempotent_after_regex_change():
+    from tuan_cli.ui.slogans import _clean as C
+    for raw in ("\x1b\x1b]8;;evil\x07OK", "\x1b\x1b[31mRED",
+                "\x1b]8;;evil\x07OK", "\x1b[31mRED\x1b[0m",
+                "\x00" * 1000 + "OK", "正常文案", "x" * 5000 + "\u202e"):
+        once = C.sanitize_log_field(raw)
+        assert C.sanitize_log_field(once) == once, repr(raw)[:30]
+        assert "\x1b" not in once
+    assert C.sanitize_verb("正常文案 ✓") == "正常文案 ✓"
+    assert len(C.sanitize_log_field("a" * 5000)) == 121
+    for bad in (None, float("nan"), float("inf"), "5", True, -1):
+        assert C.sanitize_log_field("abc", bad) == "abc", bad
+
+
+def t_d7_clock_coercion():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "def _coerce_ms(" in src
+    assert "import math" in src
+    assert "_MAX_NOW_S = 1e12" in src and "_MAX_AT_MS = 1e15" in src
+    assert mapping._coerce_ms(1000.0, is_seconds=True) == 1000000
+    assert mapping._coerce_ms(1000, is_seconds=False) == 1000
+    assert mapping._coerce_ms(0, is_seconds=True) == 0
+    for bad in (float("nan"), float("inf"), -float("inf"), "1000",
+                None, True, False, -1, 1e300):
+        assert mapping._coerce_ms(bad, is_seconds=True) is None, bad
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    for bad in (float("nan"), float("inf"), "1000", True, -1, 1e300):
+        d = mapping.pick_for_event("tool.exploring", now=bad, owner="x")
+        assert isinstance(d.at_ms, int) and 0 < d.at_ms < 10 ** 15, bad
+        e = mapping.record_error("e", "k", at_ms=bad, owner="x")
+        assert isinstance(e.at_ms, int) and e.at_ms > 0, bad
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d7_legal_zero_not_swallowed():
+    """A′: 本轮修 B 时自己引入、又被实测抓回的缺陷。"""
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "at = _fallback_ms() if ms is None else ms" in src
+    assert "stamp = _fallback_ms() if ms is None else ms" in src
+    assert mapping.pick_for_event("tool.exploring", now=0).at_ms == 0
+    assert mapping.pick_for_event("tool.exploring", now=1).at_ms == 1000
+    assert mapping.pick_for_event("tool.exploring", now=1000.0).at_ms == 1000000
+    assert mapping.record_error("e", "k", at_ms=0).at_ms == 0
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    K = mapping._MAX_OWNERS
+    for i in range(K + 1):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i, now=0)
+    assert mapping.evicted_owner_log()[-1].at_ms == 0
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d7_bounded_owner_digest():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "OWNER_SCAN_CAP = 4096" in src
+    assert "raw[-2048:]" in src
+    assert mapping.OWNER_SCAN_CAP == 4096
+    a = mapping.norm_owner("x" * 100000 + "A")
+    b = mapping.norm_owner("x" * 100000 + "B")
+    assert a != b and a.startswith("owner:") and len(a) == 22
+    assert mapping.norm_owner(a) == a and mapping.norm_owner(b) == b
+    raw = "o" * (2 << 20)
+    n = mapping.norm_owner(raw)
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    d = mapping.pick_for_event("tool.exploring", owner=raw)
+    assert d.owner == n and len(mapping.dispatch_log(raw)) == 1
+    assert mapping.norm_owner("s-0") == "s-0"
+    assert mapping.norm_owner("a" * 64) == "a" * 64
+    assert mapping.norm_owner("a" * 65).startswith("owner:")
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d7_cumulative_eviction_evidence():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "_EVICT_TOTAL = 0" in src and "def evicted_total(" in src
+    assert "evicted_total" in src
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    K = mapping._MAX_OWNERS
+    for i in range(K + mapping._EVICT_CAP + 50):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i, now=1000.0)
+    st = mapping.dispatch_log_stats()
+    assert st["evicted_recent"] == mapping._EVICT_CAP
+    assert st["evicted_total"] > st["evicted_recent"]
+    assert mapping.evicted_total() == st["evicted_total"]
+    assert len(mapping.evicted_owner_log()) == mapping._EVICT_CAP
+    assert mapping.audit().ok is True
+    assert mapping.audit().as_dict()["dispatch_stats"]["evicted_total"] >= 1
+    # 只有全清才归零
+    mapping.reset_runtime_counters()
+    assert mapping.evicted_total() >= 1
+    mapping.reset_dispatch_log("one-owner")
+    assert mapping.evicted_total() >= 1
+    mapping.reset_dispatch_log()
+    assert mapping.evicted_total() == 0
+
+
+def t_d7_measured_false_candidates_are_locked():
+    """C / C2 / E / G 实测不成立、本轮未改。"""
+    from tuan_cli.ui.slogans import _clean as C
+    for raw in ("正常文案", "a" + "\u0301" * 10, "❤" + "\ufe0f" * 20,
+                "\u202e\u200b" * 20 + "OK", "\u200b\x1b\u2066" * 20 + "TAIL",
+                "\u200b" * 20 + "OK"):
+        assert C.sanitize_log_field(raw), repr(raw)
+    assert C.sanitize_log_field("\u0301" * 3 + "OK") == "OK"
+    assert C.sanitize_log_field("\u034f" * 5 + "OK") == "OK"
+    assert C.sanitize_log_field("\u200d" * 3 + "OK") == "OK"
+    a, b = mapping.norm_owner("s\ud800A"), mapping.norm_owner("s\ud800B")
+    assert a != b and mapping.norm_owner(a) == a
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    d = mapping.record_error("ev", "\x1b]8;;https://evil\x07\u202eBOOM",
+                             owner="x", at_ms=1000)
+    assert d.reason == "error:BOOM"
+    assert "\x1b" not in d.reason and "\u202e" not in d.reason
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d7_full_health():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    r = mapping.audit()
+    assert r.ok and r.index_consistent
+    st = mapping.index_stats()
+    assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+    assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+    for lang in L.LANGUAGES:
+        for ev in mapping.EVENT_BINDINGS:
+            d = mapping.pick_for_event(ev, lang=lang, owner="final",
+                                       now=1000.0)
+            assert d.reason == "ok" and d.entry_id, (ev, lang)
+    assert mapping.audit().ok is True
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
 
 for name, fn in sorted(globals().items()):
     if name.startswith("t_") and callable(fn):

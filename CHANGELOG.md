@@ -9,6 +9,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - ESC+ 引导、时钟严格化、有界摘要、累计淘汰证据
+
+> 前六轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈、
+> owner 全链路归一、先清理后截断。本轮仍**先实测再修**: 四个真实缺陷、
+> 四个候选**实测不成立未修**, 外加一个**本轮自己引入又自己抓回来**
+> 的缺陷。完整复现见 `SLOGAN_MAPPING.md` §16。继续「不扩广度、只挖
+> 深度」: 18 个事件、16 个上下文、1108 条词条、`fully_superior`、
+> 99 模块基线、所有对齐指标与 CLI 子命令数**全部不变**; 零新增文件、
+> 零删除; `tui.py` 与 `runtime_slogans.py` 文件零改动。
+
+### 实测
+
+| # | 实测 | 影响 |
+|---|---|---|
+| A | `'\x1b\x1b]8;;evil\x07OK' -> 'K'`、`'\x1b\x1b[31mRED' -> 'ED'`、`'\x1b\x1b[?25lHIDE' -> 'IDE'` | **上一轮 ESC_RUN 修复的覆盖缺口**: 上轮只测 `\x1b\x1b[31m -> ''` (无尾巴) 就宣称覆盖; 实际 OSC/CSI 从 ESC 串最后一个 ESC 匹配, 前面留孤立 ESC 吞掉尾部首字符 |
+| B | `now=nan` 抛 ValueError、`inf` 抛 OverflowError、`'1000'` 产出 4000 位天文数字; `record_error(at_ms='1000')` 把字符串存进 `at_ms` | public 时钟入参裸奔, 与 `load_config` 严格类型口径不一致 |
+| D | 1 MiB owner 归一 ≈12.7 ms, 整串 sha1 无上界 | 上一轮明确留的边界 |
+| F | 淘汰缓冲滚动后只有 `evicted_recent=64`, 答不出「总共淘汰多少次」 | `_INDEX_MISSES` 有连续/累计双层, 淘汰痕没有 |
+| A′ | **本轮修 B 时自引入**: `_coerce_ms(...) or _fallback_ms()` 把合法 0 当 falsy, `now=0 -> 1e6 ms` | 与 §14 的 A′ 同类: 校验结果别直接当布尔用 |
+
+**四个候选实测不成立、未修**: C（3 次不动点从未误杀正常文本）、
+C2（开头组合标记/GCG/ZWJ 已被清）、E（lone surrogate owner 不撞车
+且幂等）、G（`record_error` 的 kind 已被 D4 净化）。只加回归锁住，
+防止以后误「修」。
+
+### 修复
+
+- **OSC/CSI 允许 `ESC+` 引导**: 开头 `\x1b` → `\x1b+`, 整段
+  「连续 ESC 串 + 真序列」一次剥掉。实测五个 case 恢复尾部原文
+  (`OK`/`END`/`RED`/`HIDE`/`TAIL`); 单 ESC 行为不变; 单个
+  `'\x1bEND' -> 'ND'` 的 ECMA-48 歧义**仍未改** (无安全风险)。
+- **`_coerce_ms(value, is_seconds)`**: 拒绝 bool / 非数值 / 非有限 /
+  负值 / 超上界 (`now`≤1e12 秒、`at_ms`≤1e15 毫秒), 脏值回落
+  **真实单调时钟**。三个入口 (`pick_for_event` / `record_error` /
+  `_record` 淘汰痕) 统一。9 种脏值全部产出合法正 int、不抛异常；
+  合法注入回放不变；**合法 0 不被吞**（A′ 已修）。
+- **owner 有界摘要**: `OWNER_SCAN_CAP = 4096`, 超长串用
+  「头 2048 + 总长 + 尾 2048」参与 sha1。实测仅尾部不同的两个
+  100k 串仍不撞、严格幂等、写入/查询命中同一桶；64KiB→8MiB
+  归一均 ≈12–14 ms（固定上限，非「只扫 4096」）。
+- **累计淘汰证据**: `_EVICT_TOTAL` + `evicted_total()` +
+  stats/audit 携带。不因缓冲滚动丢失、**不参与 `audit().ok`**；
+  只有显式 `reset_dispatch_log()` 全清才归零。
+
+### 验证与实测
+
+```
+300 passed (pytest) + 88 项纯 stdlib 独立验证
+verify_deep.py / verify_deep2.py   22 / 20 项全绿
+A    '\x1b\x1b]8;;evil\x07OK' -> 'OK'  (旧 'K')
+     '\x1b\x1b[31mRED'        -> 'RED' (旧 'ED')
+B    now=nan/inf/'1000'/True/-1/1e300 -> 合法正 int
+A'   now=0 -> 0, now=1 -> 1000, now=1000.0 -> 1000000
+D    100k+'A' vs 100k+'B' 不撞 / 幂等 / 22 码点
+F    evicted_recent=64, evicted_total=114, audit ok=True
+index_stats 1695×4 / clipped=0 / unrenderable=0 / collisions=0
+            index_misses=0 / unresolved_misses=0
+```
+
+既有静态源码断言**一条都没放宽**; 只有本轮新写的一条被注释文字
+误伤, 改成检查 `is None` 分支的实际代码。
+
+### 如实边界
+
+1. **A′ 是本轮修 B 时自己引入、再被实测抓回来的**, 不是原有缺陷。
+2. **A 是上一轮 ESC_RUN 修复的覆盖缺口**, 不是全新洞。
+3. 单个 ESC + 可打印字母的 ECMA-48 歧义仍未解决; ESC 已清除故无
+   安全风险; `_SCAN_CAP` 之外仍先粗切。
+4. D 的有界摘要对「仅中间段不同」的超长 owner 存在碰撞面,
+   不宣称零碰撞; **不宣称性能提升** (只是把无界成本改成固定上限)。
+5. 脏时钟注入回落真实时钟, **不保证这类调用可回放**; 可回放性
+   只对合法注入成立。
+6. `evicted_total` 是信息项, 不参与 `audit().ok`; 明细仍只保留
+   最近 64 条、不复活决策内容。
+7. `tui.py` / `runtime_slogans.py` 文件零改动 (本轮推送不含它们),
+   但共享 `_clean_once` 的 `sanitize_verb` 对「连续 ESC + 真序列」
+   更保真; 其余行为不变, 139 例既有回归全绿。
+8. 并发压测仍未复现 list 撕裂; 不是真机长跑; TUI 仍未替换既有
+   i18n 文案; 分叉改动仍未合并; 第三方自适应红队仍未做。
+
 ## [Unreleased] - 先清理后截断、注入时钟贯穿、淘汰痕摘要
 
 > 前五轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈、
