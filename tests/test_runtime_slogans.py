@@ -1127,3 +1127,331 @@ class TestConfigStrict:
             assert display_cols(v) <= _MAX_VERB_COLS
             assert all(unicodedata.category(ch) not in _INVISIBLE_CATS
                        for ch in v)
+
+# ================================================================ 深度轮 10
+from decimal import Decimal
+
+# 引擎本体（前九轮几乎只改 ui/slogans/mapping.py，runtime_slogans.py
+# 逐字节未动）。本轮把镜头对准**引擎侧 public 入参面**：先实测再修，
+# 六个真缺陷 + 四个「不该修」判断 + 六个自引入边界。
+
+import tuan_cli.tui.runtime_slogans as R
+
+R_STATES = (R.LivenessState.HEALTHY, R.LivenessState.SLOW,
+            R.LivenessState.STALLED, R.LivenessState.UNKNOWN)
+
+
+def _engine(clock=lambda: 1000.0, **kw):
+    return R.RuntimeSloganEngine(clock=clock, **kw)
+
+
+class TestNowTypeGuard:
+    """P1: now / clock 脏值在异常前写进状态，UI 永久崩。"""
+
+    DIRTY = ["1000", math.nan, math.inf, -math.inf, True, [],
+             {"a": 1}, b"x", 1e308, -1e308, Decimal("1.5")]
+
+    def test_dirty_now_never_raises_and_never_poisons_state(self):
+        for bad in self.DIRTY:
+            e = _engine()
+            e.note_activity("streaming", now=bad)
+            assert isinstance(e._last_event_at, float)
+            assert math.isfinite(e._last_event_at), bad
+            lv = e.liveness(now=1000.0)
+            assert lv.state in R_STATES, bad
+            assert e.snapshot()["state"] in R_STATES, bad
+
+    def test_dirty_now_falls_back_to_injected_clock(self):
+        e = _engine(clock=lambda: 1000.0)
+        e.note_activity("streaming", now=math.nan)
+        assert e._last_event_at == 1000.0
+
+    def test_dirty_clock_falls_back_to_monotonic(self):
+        for bad in (math.nan, math.inf, "x", None):
+            e = _engine(clock=lambda bad=bad: bad)
+            e.note_activity("streaming")
+            assert math.isfinite(e._last_event_at)
+            assert e._last_event_at >= 0.0
+            assert e.liveness().state in R_STATES
+
+    def test_clock_that_raises_does_not_kill_tui(self):
+        def boom():
+            raise RuntimeError("clock broken")
+        e = _engine(clock=boom)
+        e.note_activity("streaming")
+        assert math.isfinite(e._last_event_at)
+        assert e.snapshot()["state"] in R_STATES
+
+    def test_legal_zero_is_not_swallowed(self):
+        """深度轮 7 踩过 `or fallback()` 把 0 当 falsy 吞掉的坑。"""
+        assert R._coerce_now_value(0) == 0.0
+        assert R._coerce_now_value(0.0) == 0.0
+        e = _engine(clock=lambda: 5000.0)
+        e.note_activity("streaming", now=0)
+        assert e._last_event_at == 0.0
+
+    def test_large_but_finite_now_is_clamped(self):
+        """1e308 会让 int(at*1000) 溢出成 inf；夹到 _MAX_NOW_SECONDS。"""
+        assert R._coerce_now_value(1e308) is None
+        assert R._coerce_now_value(R._MAX_NOW_SECONDS) == R._MAX_NOW_SECONDS
+        e = _engine()
+        e.note_activity("streaming", now=1e308)
+        assert e._last_event_at == 1000.0
+
+    def test_no_half_updated_state_on_dirty_now(self):
+        """核心不变量: 异常路径不再留下 (seq/phase/current 已变、
+        _last_event_at=nan) 的撕裂。修复前 liveness/snapshot 都抛。"""
+        e = _engine()
+        e.note_activity("streaming", now=1000.0)
+        before = (e._last_event_at, e._seq, e._phase, e._current)
+        e.note_activity("running_tool", now=math.nan)
+        after = (e._last_event_at, e._seq, e._phase, e._current)
+        assert math.isfinite(after[0])
+        assert after[0] == before[0]          # 时钟回落，不是 nan
+        assert after[1] == before[1] + 1      # 但事件本身完整生效
+        assert after[2] == "running_tool"
+        assert after[3] and after[3] != before[3]
+        # 两个 public 出口都必须能调用
+        assert e.liveness(now=1001.0).state in R_STATES
+        assert e.render(True, now=1001.0).state in R_STATES
+        assert isinstance(e.snapshot(), dict)
+
+    def test_all_four_public_clock_paths_are_guarded(self):
+        """note_activity / note_progress / liveness / render / snapshot。"""
+        for bad in (math.nan, "1000", math.inf, 1e308):
+            e = _engine()
+            e.note_activity("streaming", now=1000.0)
+            e.note_progress("end", now=bad)
+            assert e.liveness(now=bad).state in R_STATES
+            assert e.render(True, now=bad).state in R_STATES
+            assert isinstance(e.snapshot(), dict)
+
+    def test_guard_is_before_any_state_write(self):
+        import inspect
+        src = inspect.getsource(R.RuntimeSloganEngine.note_activity)
+        assert src.index("at = self._now(now)") < src.index(
+            "self._last_event_at = at")
+        src = inspect.getsource(R.RuntimeSloganEngine.note_progress)
+        assert src.index("at = self._now(now)") < src.index(
+            "self._last_event_at = at")
+
+    def test_legal_now_still_drives_phase_budgets(self):
+        e = _engine()
+        e.note_activity("streaming", now=1000.0)
+        assert e.liveness(now=1001.0).state == R.LivenessState.HEALTHY
+        assert e.liveness(now=1010.0).state == R.LivenessState.STALLED
+
+
+class TestProgressKindSanitizing:
+    """P2: note_progress(kind) 原样进 EventRecord.kind / 诊断输出。"""
+
+    EVIL = "\x1b]8;;https://evil.example\x07\u202eRLO" + "A" * 500
+
+    def test_kind_is_sanitized_and_bounded(self):
+        e = _engine()
+        e.note_progress(kind=self.EVIL, now=1000.0)
+        k = e.liveness(now=1000.0).evidence[-1].kind
+        assert len(k) <= 41
+        assert "\x1b" not in k and "\u202e" not in k and "]8;;" not in k
+
+    def test_kind_shares_one_clean_truth(self):
+        from tuan_cli.ui.slogans import _clean as C
+        e = _engine()
+        e.note_progress(kind=self.EVIL, now=1000.0)
+        assert e.liveness(now=1000.0).evidence[-1].kind == \
+            C.sanitize_log_field(self.EVIL, 40)
+
+    def test_non_string_kind_falls_back_to_progress(self):
+        for bad in (None, 123, ["a"], {"x": 1}, b"x", True):
+            e = _engine()
+            e.note_progress(kind=bad, now=1000.0)
+            assert e.liveness(now=1000.0).evidence[-1].kind == "progress"
+
+    def test_legal_kind_unchanged(self):
+        e = _engine()
+        e.note_progress(kind="end_tool", now=1000.0)
+        assert e.liveness(now=1000.0).evidence[-1].kind == "end_tool"
+        r = e.liveness(now=1000.0).evidence[-1]
+        assert r.phase == "waiting_model" and r.seq == 0
+
+
+class TestDiagnosticSourceSanitizing:
+    """P3: str(raw_mode) / str(p) / 异常消息把配置原文带进 source。"""
+
+    def test_evil_mode_source_is_clean_and_bounded(self, tmp_path):
+        p = tmp_path / "settings.json"
+        evil = "\x1b]8;;x\x07\u202e" + "M" * 5000
+        p.write_text(json.dumps({"spinnerVerbs": {"mode": evil}}),
+                     encoding="utf-8")
+        c = R.load_config(p)
+        assert c.source.startswith("invalid:mode=")
+        assert len(c.source) <= 121
+        assert "\x1b" not in c.source and "\u202e" not in c.source
+
+    def test_non_string_mode_is_rejected_cleanly(self, tmp_path):
+        p = tmp_path / "settings.json"
+        for bad in (123, ["a"], {"x": 1}, None, True):
+            p.write_text(json.dumps({"spinnerVerbs": {"mode": bad}}),
+                         encoding="utf-8")
+            c = R.load_config(p)
+            assert "\x1b" not in c.source and len(c.source) <= 121
+
+    def test_source_is_clean_in_liveness_and_snapshot(self, tmp_path):
+        p = tmp_path / "settings.json"
+        p.write_text(json.dumps({"spinnerVerbs": {
+            "mode": "\x1b]8;;x\x07" + "M" * 5000}}), encoding="utf-8")
+        c = R.load_config(p)
+        e = _engine()
+        e.config = c
+        lv = e.liveness(now=1000.0)
+        snap = e.snapshot()
+        for s in (lv.source, snap["source"], c.source):
+            assert "\x1b" not in s and len(s) <= 121
+
+    def test_evil_budget_key_never_reaches_source(self, tmp_path):
+        """P9 候选: 已正确 —— 未知键返回固定 source，不带原文。"""
+        p = tmp_path / "settings.json"
+        p.write_text(json.dumps({"spinnerVerbs": {
+            "phase_budgets_ms": {"\x1b]8;;x\x07\u202e" + "K" * 5000: 5000}}}),
+            encoding="utf-8")
+        c = R.load_config(p)
+        assert c.source == "invalid:budget-phase"
+        assert "\x1b" not in c.source
+
+    def test_valid_config_source_unchanged(self, tmp_path):
+        p = tmp_path / "settings.json"
+        p.write_text(json.dumps({"spinnerVerbs": {
+            "interval_ms": 900, "phase_budgets_ms": {"streaming": 8000}}}),
+            encoding="utf-8")
+        assert R.load_config(p).source == str(p)
+
+    def test_path_construction_is_inside_try(self):
+        """P8: load_config(123) 旧版抛底层 TypeError 掀掉调用方。"""
+        import inspect
+        src = inspect.getsource(R.load_config)
+        body = src[src.index("try:"):]
+        assert "p = _settings_path(path)" in body
+        for bad in (123, ["a"], {"x": 1}, b"x"):
+            assert R.load_config(bad).source == "builtin"
+
+
+class TestResetClockHomogeneity:
+    """P4: reset 用真实时钟，与注入 now 混用导致证据链倒退。"""
+
+    def test_injected_clock_evidence_is_monotonic(self):
+        e = _engine()
+        e.note_activity("streaming", now=1000.0)
+        e.note_progress("end", now=1001.0)
+        e.reset()
+        stamps = [x.at_ms for x in e.liveness(now=1002.0).evidence]
+        assert stamps == [1000000, 1001000, 1001000]
+        assert stamps == sorted(stamps)
+
+    def test_real_clock_no_longer_mixes_two_time_sources(self):
+        e = R.RuntimeSloganEngine()
+        e.note_activity("streaming", now=1000.0)
+        e.reset()
+        stamps = [x.at_ms for x in e.liveness(now=1001.0).evidence]
+        assert stamps == [1000000, 1000000]
+
+    def test_reset_boundary_is_marked_by_kind_not_timestamp(self):
+        e = _engine()
+        e.note_activity("streaming", now=1000.0)
+        e.reset()
+        ev = e.liveness(now=1001.0).evidence
+        assert ev[-1].kind == "reset" and ev[-1].verb == ""
+        assert ev[-1].detail_len == 0 and ev[-1].detail_class == "empty"
+
+    def test_reset_on_fresh_engine_uses_clock(self):
+        e = _engine()
+        e.reset()
+        assert e.liveness(now=1000.0).evidence[-1].at_ms == 1000000
+
+    def test_reset_defends_against_legacy_nan_state(self):
+        """D′ 自引入边界: 旧状态万一残留 nan，不能写进 evidence。"""
+        e = _engine()
+        e.note_activity("streaming", now=1000.0)
+        e._last_event_at = math.nan
+        e.reset()
+        assert math.isfinite(e.liveness(now=1000.0).evidence[-1].at_ms / 1000.0)
+
+
+class TestDetailTypeSurface:
+    """P7: detail 非字符串让 _record_locked 的 len() 抛 TypeError。"""
+
+    def test_non_string_detail_never_raises(self):
+        for bad in (None, 123, True, ["a"], {"x": 1}, b"x", 1.5):
+            e = _engine()
+            e.note_activity("streaming", detail=bad, now=1000.0)
+            r = e.liveness(now=1000.0).evidence[-1]
+            assert r.detail_len == 0 and r.detail_class == "empty"
+
+    def test_string_detail_still_only_records_shape(self):
+        """P6 候选: D3 已正确，未修 —— 锁住「绝不记原文」。"""
+        e = _engine()
+        detail = "/secret/path?token=" + "x" * 200000
+        e.note_activity("streaming", detail=detail, now=1000.0)
+        r = e.liveness(now=1000.0).evidence[-1]
+        assert r.detail_len == len(detail)
+        assert r.detail_class == "ascii"
+        assert not hasattr(r, "detail")
+        assert "secret" not in repr(r)
+
+    def test_detail_guard_is_before_record(self):
+        import inspect
+        src = inspect.getsource(R.RuntimeSloganEngine.note_activity)
+        assert src.index("if not isinstance(detail, str)") < src.index(
+            "self._record_locked(")
+
+
+class TestMeasuredButDeliberatelyNotChangedD10:
+    """四个候选实测后判定「不该修」，锁住当前行为。"""
+
+    def test_phase_fallback_is_existing_fail_safe(self):
+        """P5: 非 str / 未知 / 不可 hash 一律兜底 waiting_model，不抛。"""
+        e = _engine()
+        for bad in (None, 123, ["a"], {"x": 1}, ("t",), b"x",
+                    float("nan"), "unknown-phase"):
+            e.note_activity(bad, now=1000.0)
+            assert e._phase == "waiting_model"
+        assert e.liveness(now=1000.0).state in R_STATES
+
+    def test_verbs_non_string_is_already_rejected(self):
+        """P10 候选: sanitize_verb 非 str 返回空串，既有 fail-closed。"""
+        assert R.sanitize_verb(123) == ""
+        c = R.load_config  # 只是确认导出未变
+        assert callable(c)
+
+    def test_unknown_budget_key_is_fixed_source(self, tmp_path):
+        p = tmp_path / "settings.json"
+        p.write_text(json.dumps({"spinnerVerbs": {
+            "phase_budgets_ms": {"stremaing": 5000}}}), encoding="utf-8")
+        assert R.load_config(p).source == "invalid:budget-phase"
+
+    def test_liveness_is_still_pure_read(self):
+        e = _engine()
+        e.note_activity("streaming", now=1000.0)
+        seq, current, ev_len = e._seq, e._current, len(e._evidence)
+        for _ in range(20):
+            e.liveness(now=1001.0)
+            e.render(True, now=1001.0)
+            e.snapshot()
+        assert (e._seq, e._current, len(e._evidence)) == (seq, current, ev_len)
+
+
+class TestFullHealthAfterD10:
+    def test_all_phases_all_languages_still_green(self):
+        for lang in R.LANGUAGES:
+            e = _engine(lang=lang)
+            for phase in R.PHASES:
+                e.note_activity(phase, now=1000.0)
+                v = e.render(True, now=1000.2)
+                assert isinstance(v, R.SloganView)
+                assert v.phase == phase
+            assert e.liveness(now=1000.2).state in R_STATES
+            e.reset()
+        # mapping 侧仍全绿
+        from tuan_cli.ui.slogans import mapping as M
+        M.reset_runtime_counters(include_dispatch_log=True)
+        assert M.audit().ok is True
+        M.reset_runtime_counters(include_dispatch_log=True)

@@ -774,7 +774,19 @@ THIRD-PARTY ATTRIBUTIONS
               cleaning layer, TUI and engine remain byte-identical.
               No new slogans, events, CLI subcommands, license scope,
               upstream source or trademark asset. Sections 9-15
-              remain unchanged. The Claude Code /
+              remain unchanged.
+    Engine public-argument pass (still NO new third-party material):
+              the runtime slogan engine now validates injected clocks
+              BEFORE any state write (eliminating an exception-path
+              half-update that could stall the TUI), sanitizes
+              progress kinds and diagnostic sources through the same
+              cleaning truth, keeps reset evidence on one clock, and
+              folds non-string detail/path values into safe fallbacks.
+              Four further candidates were measured and deliberately
+              NOT changed. The cleaning layer, mapping module, TUI and
+              package exports remain byte-identical. No new slogans,
+              events, CLI subcommands, license scope, upstream source
+              or trademark asset. Sections 9-15 remain unchanged. The Claude Code /
               Codex attributions in sections 9-15 are unchanged.
 
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):

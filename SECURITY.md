@@ -1285,4 +1285,76 @@ event/kind 已被 D4 净化、`sanitize_log_field` / `sanitize_verb`
 
 验证：343 例 pytest + 105 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 
+---
+
+## 25. 引擎本体 public 入参面：异常路径半更新与未净化诊断
+
+本轮不改任何安全裁决，也不改净化层一行（``_clean.py`` 逐字节未改）。
+前九轮几乎都在改 ``mapping.py``，本轮把「先实测再修」搬到
+**运行时标语引擎本体** ``tui/runtime_slogans.py``。
+
+**最毒的是异常路径的半更新（P1）**。D1 的 ``RLock`` 解决并发撕裂，
+防不住异常路径：``note_activity`` 先写状态、最后才在
+``_record_locked`` 里 ``int(at*1000)``。实测 ``now=math.nan`` 抛
+ValueError 之后，``_last_event_at=nan`` / ``_seq`` / ``_phase`` /
+``_current`` **全都已经写好了**，随后 ``liveness()`` 与
+``snapshot()`` 永久抛 ValueError —— 一个 public 时钟入参的脏值能让
+整个 TUI 渲染停摆。同路径还实测 ``now='1000'`` 抛底层 TypeError、
+``inf`` 抛 OverflowError、``True`` 被悄悄当成 1 秒、``1e308`` 是
+合法有限值却在 ``int(at*1000)`` 溢出成 inf、注入 ``clock`` 返回脏值
+或抛异常同样掀掉调用方。引擎侧从没做过深度轮 7 给 mapping 做过的
+严格校验。
+
+修复：新增统一时钟入口 ``_now(value)``。``_coerce_now_value`` 只
+接受有限实数秒，拒绝 ``bool`` / 非数值 / 非有限 / 负数 / 超过
+``_MAX_NOW_SECONDS=1e9``（夹上界是为 ``int(at*1000)`` 不溢出，
+不是业务上限）。优先级「合法 ``now`` > 合法注入 ``clock`` >
+``time.monotonic()``」；注入 clock 抛异常也接住。**校验在所有字段
+写入之前**完成，这是消除异常路径半更新的关键；``0`` 是合法零值，
+显式判 ``is None``（深度轮 7 踩过 ``or fallback()`` 吞零的坑）。
+``note_activity`` / ``note_progress`` / ``liveness`` / ``render`` /
+``snapshot`` 五个出口全部走它。
+
+**另外五个真缺陷**：
+
+| # | 实测 | 处置 |
+|---|---|---|
+| P2 | ``note_progress(kind=evil)`` 后 ``EventRecord.kind`` 原样保留 530 码点含 OSC 8 + U+202E RLO，经 ``Liveness.evidence`` 进诊断输出 | 过 ``sanitize_log_field(kind, 40)``，非法回落 ``"progress"``；与 ``_clean`` 同一真值，``mapping.record_error`` 早已如此 |
+| P3 | ``str(raw_mode)`` 把 settings.json 里 5000 码点含 ESC/RLO 的串原样拼进 ``source``，进 ``Liveness.source`` / ``snapshot()`` / ``render`` | 新增 ``_safe_source()`` 统一净化限长 120；``mode`` 非字符串直接拒绝、字符串净化限长 40；阶段键与 ``str(p)`` 同样净化；合法配置零变化 |
+| P4 | ``reset()`` 用真实时钟而 ``note_activity(now=..)`` 用注入时钟，证据链 ``[1000000,1001000,1000000]`` 倒退、真实 monotonic 下两套时间源 | ``reset()`` 优先沿用 ``_last_event_at``（对 nan/inf 残留做防御），**不改签名**；证据链单调同源，边界靠 ``kind="reset"`` 区分 |
+| P7 | ``detail=None/123`` 让 ``len(detail)`` 抛 TypeError；``detail=['a']`` 被 ``_detail_class`` 当字符串遍历得出误导性 ``class='ascii'`` | 非字符串收敛成 ``""``，与 D3「绝不记 detail 原文」一致 |
+| P8 | ``load_config(123)`` 直接抛底层 TypeError（``p = _settings_path(path)`` 在 ``try`` 之外），与 docstring「绝不因配置写错让 TUI 崩」矛盾 | 挪进 ``try``，脏 path 回落 ``builtin`` |
+
+**四个候选判定「不该修」**：``phase`` 为任意非 str / 未知 / 不可
+hash 一律兜底 ``waiting_model`` 且不抛（既有 fail-safe，phase 不进
+日志原文）；字符串 ``detail`` 只记长度+字符类别、不记原文（D3 脱敏
+契约，20 万码点也只留一个整数）；未知阶段键返回固定
+``invalid:budget-phase``（检查在 ``__post_init__`` 之前，原文进不了
+source）；``sanitize_verb(123)==''``（既有 fail-closed）。另把
+「``liveness`` / ``render`` / ``snapshot`` 仍是纯读」写成回归，
+防止从渲染循环记活性 —— 那正是 D4 反复反对的「定时空转装忙」。
+
+**如实边界**：行为变更**仅针对错误用法** —— 脏 ``now`` / 脏
+``clock`` / 非字符串 ``detail`` / 非字符串 ``kind`` / 脏 ``path``
+从「抛异常或带原文」变成「净化 / 回落 / 拒绝」；合法 ``now``、
+合法配置、合法 ``kind``、字符串 ``detail``、``reset()`` 签名零变化。
+``now`` 夹在 ``[0, 1e9]`` 秒，超出（含合法但极大的有限值）回落
+真实时钟，不宣称支持任意量级单调时钟。``reset()`` 与最后一条证据
+``at_ms`` 可能相同；不传 ``now`` 与注入时钟混用时保证**不倒退、
+不同源混写进同一条链**，但两套时钟的根因仍靠调用方自律。
+**本轮唯一改动的运行时代码是 ``runtime_slogans.py``**；
+``mapping.py`` / ``_clean.py`` / ``tui.py`` /
+``ui/slogans/__init__.py`` / ``test_slogan_mapping.py`` 逐字节未改，
+均不在本轮推送清单。既有断言一条未动、一条未放宽；本轮实测未发现
+需要回修的自引入缺陷（零值 / 极大有限值 / clock 抛异常 / 非 str
+kind / reset 残留 nan / ``Decimal`` 六个边界都量过），不写成
+「零缺陷」。并发压测仍未复现 list 撕裂；不是真机长跑；分叉改动
+仍未合并；第三方自适应红队仍未做；**不宣称性能提升**（入口多一次
+数值校验与净化调用，未做基准对比）。
+
+验证：376 例 pytest + 117 项纯 stdlib 独立验证 + 22/20 项上轮脚本
+全绿；独立验证脚本新增引擎检查，已实测屏蔽
+``pytest / rich / prompt_toolkit / wcwidth`` 后仍可导入（PEP 562
+惰性导出），不破坏纯 stdlib 约束。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

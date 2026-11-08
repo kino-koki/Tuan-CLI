@@ -1134,3 +1134,157 @@ verify_deep.py / verify_deep2.py                         22 / 20 项全绿
     任何既有 i18n 文案；分叉改动仍未合并；第三方自适应红队
     仍未做；**不宣称性能提升**（入口多了一次 isinstance 与有界
     Counter 更新，未做基准对比）。
+
+
+---
+
+## 19. 换镜头：引擎本体的 public 入参面（前九轮只改了 mapping.py）
+
+前九轮几乎都在改 ``ui/slogans/mapping.py``，``tuan_cli/tui/
+runtime_slogans.py`` 逐字节未动 —— 而它正是「给转圈的英文挂上中文后，
+我发现它在摸鱼」那个 B 站视频梗的本地化实现本体：事件驱动标语、
+分阶段活性预算、「疑似摸鱼」诊断。本轮把同一套「先实测再修」的方法
+搬过去，**不扩广度**（18 个事件、16 个上下文、1108 条词条、
+``fully_superior``、99 模块基线、所有对齐指标、CLI 子命令数全不变）。
+
+### 最毒的一个：异常路径的半更新（P1）
+
+D1 用 ``RLock`` 解决了**并发**撕裂，但锁防不住**异常路径**。
+``note_activity`` 的顺序是「写 ``_last_event_at`` / ``_phase`` /
+``_current`` / ``_seq`` → 最后 ``_record_locked`` 里 ``int(at*1000)``」。
+实测：
+
+```
+e.note_activity('streaming', now=1000.0)      # 健康状态
+e.note_activity('running_tool', now=math.nan) # 抛 ValueError
+before: (1000.0, 1, 'streaming', '正在边想边说')
+after : (nan,    2, 'running_tool', '正在跑命令')   ← 状态已半更新
+e.liveness()   -> ValueError   (UI 会崩)
+e.snapshot()   -> ValueError   (UI 会崩)
+```
+
+``_last_event_at=nan`` 之后，``liveness`` 的 ``int((at-nan)*1000)``
+永久抛异常。也就是说：**一个 public 时钟入参的脏值，能让整个 TUI
+渲染循环停摆**。这是本轮最值钱的发现，不是「多了个报错」。
+
+同一条路径上还实测出：``now='1000'`` 抛底层 ``TypeError``、
+``inf`` 抛 ``OverflowError``、``True`` 被悄悄当成 1 秒、
+``1e308`` 是**合法有限值**却在 ``int(at*1000)`` 处溢出成 inf、
+注入 ``clock=lambda: 'x'`` / ``clock`` 抛异常同样掀掉调用方。
+引擎侧从来没做过深度轮 7 给 mapping 做过的严格校验。
+
+### 六个真缺陷
+
+| # | 实测 | 影响 |
+|---|---|---|
+| **P1** | 见上；``now=nan`` 异常后状态半更新，``liveness`` / ``snapshot`` 永久抛 | 脏时钟入参让 UI 崩，且 D1 的锁完全没覆盖异常路径 |
+| **P2** | ``note_progress(kind=evil)`` 后 ``EventRecord.kind`` 原样保留 530 码点含 OSC 8 + RLO | ``kind`` 会经 ``Liveness.evidence`` 进诊断输出；``mapping.record_error`` 早已净化 kind，引擎这边漏了 |
+| **P3** | ``mode = str(raw_mode)`` 后 ``source=f"invalid:mode={mode}"`` 把 settings.json 里 5000 码点含 ESC/RLO 的串原样带出 | ``Liveness.source`` / ``snapshot()["source"]`` / ``render`` 全带未净化外部串 |
+| **P4** | ``reset()`` 用 ``self._clock()``，而 ``note_activity(now=...)`` 走注入时钟：``[1000000, 1001000, 1000000]`` **时间倒退**；真实 monotonic 下是「1000 秒」与「1945 秒」两套时间源 | 证据链不可回放。这是深度轮 6 在 mapping 层修过的「淘汰痕与 decision 时钟不同源」的引擎版 |
+| **P7** | ``note_activity(detail=None/123)`` → ``_record_locked`` 里 ``len(detail)`` 抛 ``TypeError``；``detail=['a']`` 则被 ``_detail_class`` 当字符串遍历、得出误导性 ``class='ascii'`` | public 入参类型面，同样会掀掉 UI |
+| **P8** | ``load_config(123)`` / ``(['a'])`` 直接抛底层 ``TypeError`` | ``p = _settings_path(path)`` 在 ``try`` **之外**，而 docstring 明确写「绝不因为配置写错就让 TUI 崩」（except 里明明有 TypeError，只是位置不对） |
+
+### 四个候选判定「不该修」
+
+| 候选 | 实测 | 结论 |
+|---|---|---|
+| **P5** | ``phase`` 为 ``None/123/list/dict/tuple/bytes/nan/未知串`` 一律兜底 ``waiting_model``，不可 hash 类型也不抛 | 既有 fail-safe 契约，phase 不进日志原文；修它要改内部状态机语义，收益低。**未修** |
+| **P6** | 字符串 ``detail`` 只记 ``len`` + 字符类别、不记原文（20 万码点也只留一个整数） | D3 已正确，是脱敏契约本身。**未修** |
+| **P9** | 未知阶段键（含 5000 码点脏串）返回固定 ``invalid:budget-phase`` | 检查在 ``__post_init__`` 之前，原文根本进不了 source。**已正确** |
+| **P10** | ``sanitize_verb(123) == ''`` | 既有 fail-closed 契约。**未修** |
+
+另外把「``liveness`` / ``render`` / ``snapshot`` 仍是纯读」也写成回归，
+防止以后为了对齐又从渲染循环里记活性 —— 那正是 D4 反复反对的
+「定时空转装忙」。
+
+### 修复（只改一个运行时文件）
+
+- **统一时钟入口 ``_now(value)``**：``_coerce_now_value`` 只接受有限
+  实数秒、拒绝 ``bool`` / 非数值 / 非有限 / 负数 / 超过
+  ``_MAX_NOW_SECONDS=1e9``（夹上界的理由是 ``int(at*1000)`` 溢出，
+  不是业务上限）。优先级：合法 ``now`` > 合法注入 ``clock`` >
+  ``time.monotonic()``；注入 clock 抛异常也接住。**校验在所有字段
+  写入之前**完成，这是消除异常路径半更新的关键。``0`` 是合法零值，
+  显式判 ``is None``（深度轮 7 踩过 ``or fallback()`` 吞零的坑）。
+  ``note_activity`` / ``note_progress`` / ``liveness`` / ``render`` /
+  ``snapshot`` 五个出口全部走它。
+- **P2**：``note_progress(kind)`` 过 ``sanitize_log_field(kind, 40)``，
+  非法回落 ``"progress"``；与 ``_clean`` 同一净化真值，不新造第二套。
+- **P3**：新增 ``_safe_source()``，所有 ``source`` 出口统一净化限长
+  120；``mode`` 非字符串直接拒绝、字符串过同一净化真值限长 40；
+  ``phase_budgets_ms`` 的键与 ``str(p)`` 同样净化。合法配置
+  ``source == str(p)`` 零变化。
+- **P4**：``reset()`` 优先沿用 ``_last_event_at`` 的时钟（并对
+  nan/inf 残留做防御），全新引擎才回落 ``_now(None)``。证据链
+  完全同源、单调，``kind="reset"`` 本身已足够标记回合边界。
+  **不改 ``reset()`` 签名**，既有调用零变化。
+- **P7**：``detail`` 非字符串收敛成 ``""``（与 D3「绝不记原文」一致）。
+- **P8**：``p = _settings_path(path)`` 挪进 ``try``。
+
+### 实测数字（同机同环境）
+
+```
+修复前  now=nan -> ValueError + 状态 (nan, 2, 'running_tool', ...)，
+        liveness/snapshot 均抛 ValueError
+修复后  now=nan -> 回落注入 clock 1000.0，事件完整生效，
+        liveness/snapshot 均 healthy，零异常
+        now=0 -> _last_event_at=0.0（合法零值不被吞）
+        now=1e308 -> 回落 1000.0（不再 int(inf) 溢出）
+        clock=lambda:'x' / clock 抛异常 -> 回落 time.monotonic()
+
+P2  kind 530 码点含 OSC8+RLO -> 41 码点、无控制字符
+P3  source 5021 码点含 ESC/RLO -> 54 码点、无控制字符
+P4  evidence [1000000,1001000,1000000]（倒退）
+        -> [1000000,1001000,1001000]（单调、同源）
+    真实时钟下 [1000000,1945418] -> [1000000,1000000]
+P7  detail=None/123/list -> 长度 0 / class empty，不再抛
+P8  load_config(123) -> 'builtin'，不再抛
+```
+
+### 验证
+
+```
+tests/test_runtime_slogans.py + test_slogan_mapping.py   376 passed
+   （172 runtime_slogans + 204 slogan_mapping）
+tests/verify_slogan_mapping.py                           117 项纯 stdlib 全绿
+verify_deep.py / verify_deep2.py                         22 / 20 项全绿
+```
+
+**既有断言一条未动、一条未放宽**。新增回归里
+``test_no_half_updated_state_on_dirty_now`` 把 P1 的「异常路径撕裂」
+变成可执行证据；``test_string_detail_still_only_records_shape`` 把
+「不该修」的 P6 锁成运行时断言。独立验证脚本新增引擎检查，已实测
+在屏蔽 ``pytest / rich / prompt_toolkit / wcwidth`` 后仍可导入
+（``tuan_cli.tui`` 用 PEP 562 惰性导出），不破坏纯 stdlib 约束。
+
+### 如实边界（续 §18）
+
+62. 本轮**不改** 18 个事件、16 个上下文、1108 条词条、
+    ``fully_superior``、99 模块基线、任何对齐指标、CLI 子命令数；
+    零新增文件、零删除。
+63. **本轮唯一改动的运行时代码是
+    ``tuan_cli/tui/runtime_slogans.py``**，与前九轮正好反过来：
+    ``mapping.py`` / ``_clean.py`` / ``tui.py`` /
+    ``ui/slogans/__init__.py`` / ``test_slogan_mapping.py``
+    逐字节未改，都不在推送清单。净化层本轮仍零改动。
+64. **行为变更仅针对错误用法**：脏 ``now`` / 脏 ``clock`` / 非字符串
+    ``detail`` / 非字符串 ``kind`` / 脏 ``path`` 从「抛异常或带原文」
+    变成「净化/回落/拒绝」；合法 ``now``、合法配置、合法 ``kind``、
+    字符串 ``detail``、``reset()`` 签名零变化。
+65. ``_coerce_now_value`` 把 ``now`` 夹在 ``[0, 1e9]`` 秒；超出
+    （含合法但极大的有限值）回落真实时钟。这是为了
+    ``int(at*1000)`` 不溢出，**不是**业务时间上限，也不宣称支持
+    任意量级的单调时钟。
+66. ``reset()`` 沿用最后事件时钟，因此 reset 与最后一条事件证据的
+    ``at_ms`` 可能相同；回合边界靠 ``kind="reset"`` 区分。不传
+    ``now`` 的调用方与注入时钟混用时，本轮保证**不倒退、不同源混写
+    进同一条链**，但「两套时钟」的根因仍靠调用方自律。
+67. P5 / P6 / P9 / P10 四个候选**确认属既有契约、判定不该修**，
+    都有回归锁住当前行为；不是遗漏。
+68. **本轮实测未发现需要回修的自引入缺陷**（连续第二次），但
+    零值、极大有限值、clock 抛异常、非 str kind、reset 残留 nan、
+    ``Decimal`` 六个边界都量过；不写成「零缺陷」，只写「实测未发现」。
+69. 并发压测仍未复现 list 撕裂；不是真机长跑；TUI 仍未替换
+    任何既有 i18n 文案；分叉改动仍未合并；第三方自适应红队
+    仍未做；**不宣称性能提升**（入口多一次数值校验与净化调用，
+    未做基准对比）。

@@ -627,3 +627,20 @@ Apache-2.0 / MIT Codex 归属混用**。
 
 343 例 pytest + 105 项纯 stdlib 验证全绿。
 详见 `SLOGAN_MAPPING.md` §18。
+
+
+---
+
+## 引擎入参面（不占任何 Codex 对齐指标）
+
+本轮只把引擎本体的 public 入参面补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `runtime_slogans.py` 加统一时钟入口、`kind` / `source` / `detail`
+  净化、`reset` 时钟同源、`path` 的 try 边界；
+  `mapping.py` / `_clean.py` / **TUI** / 生命周期事件 / i18n 文案 /
+  Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约**一律未改**。
+- **`tui.py` 本轮逐字节未改，未包含在本轮推送清单。**
+
+376 例 pytest + 117 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §19。

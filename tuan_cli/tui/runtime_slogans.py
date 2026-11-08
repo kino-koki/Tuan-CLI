@@ -352,7 +352,7 @@ from ..ui.slogans._clean import (  # noqa: F401  (re-export, 保持旧 API)
     _CSI_RE, _CTRL_RE, _DROP_CATEGORIES, _ESC_SEQ_RE,
     _MAX_VERB_CHARS, _MAX_VERB_COLS, _OSC_RE,
     _clusters, _fit_headline, _is_variation_selector, _sanitize_once,
-    display_cols, sanitize_verb,
+    display_cols, sanitize_log_field, sanitize_verb,
 )
 
 def slogan_bank(lang: str) -> Dict[str, Tuple[str, ...]]:
@@ -451,6 +451,53 @@ def _strict_ratio(value: object, default: float) -> float:
     return ratio
 
 
+# ------------------------------------------------------------------ 深度轮 10 辅助
+#
+# 前九轮把 ``ui/slogans/mapping.py`` 的 public 入参面收得很紧，引擎这边
+# 却一行没动。实测发现同一类病在这里更毒：``now=nan`` 会在**抛异常之前**
+# 先把 ``_last_event_at`` 写成 nan，之后 ``liveness()`` / ``snapshot()``
+# 永久抛 ValueError（UI 直接崩）。D1 的 RLock 只防并发撕裂，防不住
+# **异常路径的半更新**。所以校验必须在任何字段写入之前完成。
+
+#: ``now`` 是单调秒；夹到 [0, 1e9]（约 31 年）。理由不是业务上限，
+#: 而是 ``_record_locked`` 里的 ``int(at * 1000)``：实测合法但极大的
+#: 有限值 ``now=1e308`` 会让 ``at*1000`` 溢出成 inf，``int(inf)`` 抛
+#: OverflowError。1e9 秒 → 1e12 毫秒，``int()`` 安全且数值仍可读。
+_MAX_NOW_SECONDS = 1e9
+
+
+def _coerce_now_value(value: object) -> Optional[float]:
+    """把 public ``now`` / 注入 ``clock`` 的返回值收敛成有限实数秒。
+
+    深度轮 10 (P1) 实测: 旧实现 ``at = clock() if now is None else now``
+    让 ``now='1000'`` 抛底层 TypeError、``nan`` 抛 ValueError、
+    ``inf`` 抛 OverflowError、``True`` 被悄悄当成 1 秒、``1e308``
+    在 ``int()`` 处溢出。**脏值一律返回 None**，调用方回落真实时钟，
+    绝不把可疑值写进状态（这是异常路径撕裂的根因）。
+    ``0`` 是合法零值，必须显式判 ``is None`` —— 深度轮 7 踩过
+    ``_coerce_ms(...) or fallback()`` 把 0 当 falsy 吞掉的坑。
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    v = float(value)
+    if not math.isfinite(v) or v < 0.0 or v > _MAX_NOW_SECONDS:
+        return None
+    return v
+
+
+def _safe_source(raw: object) -> str:
+    """诊断 ``source`` 的统一出口：净化 + 限长，绝不把配置原文带进日志。
+
+    深度轮 10 (P3) 实测: ``mode = str(raw_mode)`` 后
+    ``source=f"invalid:mode={mode}"`` 会把 settings.json 里 5000 码点
+    含 OSC 8 / U+202E RLO 的串**原样**带进 ``Liveness.source`` /
+    ``snapshot()["source"]`` / ``render``。与 D4/d9 的日志字段净化
+    共用同一个 ``_clean`` 真值，不新造第二套。
+    """
+    text = raw if isinstance(raw, str) else str(raw)
+    return sanitize_log_field(text, 120) or "invalid:unknown"
+
+
 def _settings_path(explicit: Optional[Path] = None) -> Path:
     if explicit is not None:
         return Path(explicit)
@@ -466,19 +513,28 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
     会被拒绝而不是静默生效（``source`` 会标注 ``invalid:*`` 便于排查）。
     注意「未知阶段键」也必须整段拒绝：静默忽略会让用户以为自己收紧了
     ``stremaing``（拼错）的预算，实际仍在用默认值 —— 那是危险的假安全感。
+
+    深度轮 10: ``path`` 的构造挪进 try（脏类型不再掀掉调用方）、
+    ``mode`` / 阶段键 / 路径 / 异常消息一律经 ``_safe_source()``
+    或 ``sanitize_log_field()`` 净化限长，诊断 source 不再携带配置
+    原文里的控制字符或超长串。
     """
-    p = _settings_path(path)
+    # 深度轮 10 (P8): 旧实现把 ``p = _settings_path(path)`` 放在 try
+    # **之外**。实测 ``load_config(123)`` / ``(['a'])`` 直接抛底层
+    # TypeError 掀掉调用方 —— 与 docstring「绝不因为配置写错就让 TUI
+    # 崩」的契约矛盾（except 里明明有 TypeError，只是位置不对）。
     try:
+        p = _settings_path(path)
         if p.stat().st_size > MAX_SETTINGS_BYTES:
-            return SpinnerVerbsConfig(source="invalid:too-large")
+            return SpinnerVerbsConfig(source=_safe_source("invalid:too-large"))
         raw = json.loads(p.read_text(encoding="utf-8"))
         section = raw.get("spinnerVerbs") if isinstance(raw, dict) else None
     except (OSError, ValueError, TypeError):
-        return SpinnerVerbsConfig(source="builtin")
+        return SpinnerVerbsConfig(source=_safe_source("builtin"))
     if section is None:
-        return SpinnerVerbsConfig(source="builtin")
+        return SpinnerVerbsConfig(source=_safe_source("builtin"))
     if not isinstance(section, dict):
-        return SpinnerVerbsConfig(source="invalid:not-a-dict")
+        return SpinnerVerbsConfig(source=_safe_source("invalid:not-a-dict"))
 
     raw_verbs = section.get("verbs", [])
     # 真实缺陷修复：旧实现把「没写 mode」一律当成 append，而 append 又强制
@@ -491,21 +547,29 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
         inferred = "append" if raw_verbs else "default"
         mode = inferred
     else:
-        mode = str(raw_mode).strip().lower()
+        # 深度轮 10 (P3): 旧实现 ``str(raw_mode)`` 对任意对象取字符串，
+        # 再原样拼进 ``source`` —— 实测 5000 码点含 OSC 8 / RLO 的串
+        # 全量进入 ``Liveness.source`` / ``snapshot()`` / 诊断日志。
+        # 非字符串直接拒绝；字符串过同一个 ``_clean`` 真值并限长 40。
+        if not isinstance(raw_mode, str):
+            return SpinnerVerbsConfig(source=_safe_source("invalid:mode-type"))
+        mode = sanitize_log_field(raw_mode, 40).strip().lower()
+        if not mode:
+            mode = "<empty>"
     if mode not in _VALID_MODES:
-        return SpinnerVerbsConfig(source=f"invalid:mode={mode}")
+        return SpinnerVerbsConfig(source=_safe_source(f"invalid:mode={mode}"))
 
     if not isinstance(raw_verbs, (list, tuple)):
-        return SpinnerVerbsConfig(source="invalid:verbs-not-a-list")
+        return SpinnerVerbsConfig(source=_safe_source("invalid:verbs-not-a-list"))
     verbs = tuple(v for v in (sanitize_verb(x) for x in raw_verbs[:200]) if v)
     if mode in ("append", "replace") and not verbs:
-        return SpinnerVerbsConfig(source="invalid:empty-verbs")
+        return SpinnerVerbsConfig(source=_safe_source("invalid:empty-verbs"))
 
     try:
         interval = _strict_int(section.get("interval_ms"), _DEFAULT_INTERVAL_MS)
         stall = _strict_int(section.get("stall_ms"), _DEFAULT_STALL_MS)
     except ValueError:
-        return SpinnerVerbsConfig(source="invalid:numbers")
+        return SpinnerVerbsConfig(source=_safe_source("invalid:numbers"))
 
     # 只有显式出现 stall_ms 才算全局覆盖；缺省时走分阶段预算表。
     override: Optional[int] = stall if "stall_ms" in section else None
@@ -514,32 +578,37 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
     raw_budgets = section.get("phase_budgets_ms")
     if raw_budgets is not None:
         if not isinstance(raw_budgets, dict):
-            return SpinnerVerbsConfig(source="invalid:budgets-not-a-dict")
+            return SpinnerVerbsConfig(source=_safe_source("invalid:budgets-not-a-dict"))
         try:
             pairs = []
             for k, v in list(raw_budgets.items())[:10]:
                 if isinstance(v, bool) or not isinstance(v, int):
                     raise ValueError("expected-int")
-                pairs.append((str(k), v))
+                key = k if isinstance(k, str) else str(k)
+                # 深度轮 10 (P3): 未知阶段键会进 ``__post_init__`` 的
+                # ValueError 消息，再经 ``invalid:{exc}`` 进 source。
+                # 与 mode 同一净化真值、限长 40；合法短阶段名零变化。
+                pairs.append((sanitize_log_field(key, 40), v))
             items = tuple(pairs)
         except (TypeError, ValueError):
-            return SpinnerVerbsConfig(source="invalid:budget-values")
+            return SpinnerVerbsConfig(source=_safe_source("invalid:budget-values"))
         if any(k not in PHASES for k, _ in items):
-            return SpinnerVerbsConfig(source="invalid:budget-phase")
+            return SpinnerVerbsConfig(source=_safe_source("invalid:budget-phase"))
         budgets = items
 
     try:
         ratio = _strict_ratio(section.get("slow_ratio"), _DEFAULT_SLOW_RATIO)
     except ValueError:
-        return SpinnerVerbsConfig(source="invalid:slow_ratio")
+        return SpinnerVerbsConfig(source=_safe_source("invalid:slow_ratio"))
 
     try:
         return SpinnerVerbsConfig(mode=mode, verbs=verbs, interval_ms=interval,
                                   stall_ms=stall, phase_budgets_ms=budgets,
                                   slow_ratio=ratio,
-                                  stall_ms_override=override, source=str(p))
+                                  stall_ms_override=override,
+                                  source=_safe_source(str(p)))
     except ValueError as exc:
-        return SpinnerVerbsConfig(source=f"invalid:{exc}")
+        return SpinnerVerbsConfig(source=_safe_source(f"invalid:{exc}"))
 
 
 # ------------------------------------------------------------------ 视图
@@ -634,6 +703,25 @@ class RuntimeSloganEngine:
         self._pools: Dict[str, Tuple[str, ...]] = {}
         self._evidence: Deque[EventRecord] = deque(maxlen=_EVIDENCE_CAPACITY)
 
+    # ------------------------------------------------------------ 统一时钟
+    def _now(self, value: object) -> float:
+        """所有 public 时钟的**唯一**入口，且在写任何状态之前完成校验。
+
+        优先级：显式 ``now``（合法）> 注入 ``clock``（合法）>
+        ``time.monotonic()``。注入 clock 本身抛异常也接住 —— 实测
+        ``clock=lambda: 'x'`` 会让 ``note_activity()`` 抛 TypeError。
+        深度轮 10 (P1): 校验前置是修复「异常路径半更新」的关键。
+        """
+        if value is not None:
+            v = _coerce_now_value(value)
+            if v is not None:
+                return v
+        try:
+            v = _coerce_now_value(self._clock())
+        except Exception:  # noqa: BLE001 - 注入 clock 故障绝不能掀掉 TUI
+            v = None
+        return time.monotonic() if v is None else v
+
     # ------------------------------------------------------------ 语言 / 配置
     def _apply_language_locked(self) -> None:
         self._bank = slogan_bank(self.lang)
@@ -714,8 +802,15 @@ class RuntimeSloganEngine:
         """记录一次**真实**运行时事件（阶段可能变化，可能换词）。"""
         if phase not in PHASES:
             phase = "waiting_model"
+        # 深度轮 10 (P7): ``detail`` 是 public 入参，``_record_locked``
+        # 直接 ``len(detail)``。实测 ``detail=None`` / ``123`` 抛
+        # TypeError（掀掉 UI），``detail=['a']`` 则被 ``_detail_class``
+        # 当字符串遍历、得出误导性的 ``class='ascii'``。非 str 一律
+        # 收敛成空串 —— 与 D3「绝不记 detail 原文」的脱敏契约一致。
+        if not isinstance(detail, str):
+            detail = ""
         with self._lock:
-            at = self._clock() if now is None else now
+            at = self._now(now)
             # 单调化：乱序事件 / 时钟回拨会让 idle_ms 变负、预算错乱。
             if self._last_event_at is not None and at < self._last_event_at:
                 at = self._last_event_at
@@ -740,33 +835,51 @@ class RuntimeSloganEngine:
         「工具结束 → 下一事件」的间隙被误判为没进展。
         这不是心跳：必须由真实事件调用，不能放进动画循环。
         """
+        # 深度轮 10 (P2): ``kind`` 是 public 入参，旧实现**原样**存进
+        # EventRecord.kind，而它会经 ``Liveness.evidence`` 进诊断输出。
+        # 实测注入 530 码点含 OSC 8 + RLO 的串后全部原样保留。
+        # mapping.record_error 早已净化 kind，引擎这边漏了；用同一个
+        # ``_clean`` 真值补齐，不新造第二套净化。
+        safe_kind = sanitize_log_field(kind, 40) or "progress"
         with self._lock:
-            at = self._clock() if now is None else now
+            at = self._now(now)
             if self._last_event_at is not None and at < self._last_event_at:
                 at = self._last_event_at
             self._last_event_at = at
-            self._record_locked(kind, self._phase, at, "")
+            self._record_locked(safe_kind, self._phase, at, "")
 
     def reset(self) -> None:
         """回合结束：清空当前词，**保留证据链**供跨回合回放。
 
         上一版把 evidence 一起清了，导致「上一回合为什么卡住」不可查。
+        深度轮 10 (P4): 旧实现用 ``self._clock()`` 记 reset 时间戳，
+        而 ``note_activity(now=...)`` 走注入时钟 —— 实测
+        ``[1000000, 1001000, 1000000]``（证据链**时间倒退**），真实
+        monotonic 下更是「1000 秒」与「1945 秒」两套时间源混用。
+        这是深度轮 6 在 mapping 层修过的「淘汰痕与 decision 时钟
+        不同源」的引擎版。现在优先沿用最后事件的时钟：证据链完全
+        同源、单调，且 ``kind="reset"`` 本身已足够标记回合边界。
+        全新引擎（无事件）才回落到 ``_now(None)``。
         """
         with self._lock:
+            last = self._last_event_at
+            if last is not None and not math.isfinite(last):
+                last = None            # 防御：旧状态里万一残留 nan/inf
+            at = last if last is not None else self._now(None)
             self._current = ""
             self._last_event_at = None
             self._phase = "waiting_model"
             self._pools.clear()
             # 记一条分隔证据，回放时能区分回合边界
             self._evidence.append(EventRecord(
-                phase="waiting_model", kind="reset", at_ms=int(self._clock() * 1000),
+                phase="waiting_model", kind="reset", at_ms=int(at * 1000),
                 seq=self._seq, verb="", detail_len=0, detail_class="empty"))
 
     # ------------------------------------------------------------ 活性判定
     def liveness(self, *, now: Optional[float] = None) -> Liveness:
         """结构化活性快照（与 ``busy`` 无关，可在任意时刻查询）。"""
         with self._lock:
-            return self._liveness_locked(self._clock() if now is None else now)
+            return self._liveness_locked(self._now(now))
 
     def _liveness_locked(self, at: float) -> Liveness:
         cfg = self.config
@@ -820,7 +933,7 @@ class RuntimeSloganEngine:
         变更点：现在基于 ``liveness()`` 的分阶段预算判定，不再用单一 15s。
         """
         with self._lock:
-            at = self._clock() if now is None else now
+            at = self._now(now)
             cfg = self.config
             lv = self._liveness_locked(at)
             if cfg.mode == "off" or not busy:
@@ -863,7 +976,7 @@ class RuntimeSloganEngine:
     def snapshot(self) -> Dict[str, object]:
         """向后兼容的诊断字典（旧字段全保留），并暴露新的活性维度。"""
         with self._lock:
-            lv = self._liveness_locked(self._clock())
+            lv = self._liveness_locked(self._now(None))
             return {
                 "lang": self.lang, "mode": self.config.mode,
                 "source": self.config.source, "phase": self._phase,

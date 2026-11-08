@@ -1323,3 +1323,112 @@ self-introduced defect requiring a revert was MEASURED this round,
 but five boundary cases (A'-E') were each exercised.
 Verification: 343 pytest cases + 105 pure-stdlib checks + 22/20 prior
 checks, all green.
+
+
+---
+
+## 22. Engine Public-Argument Surface: Half-Updated State and Unsanitized Diagnostics
+
+This round changes no verdict and NOT ONE LINE of the cleaning layer
+(`_clean.py` byte-identical). Nine prior rounds almost exclusively
+edited `ui/slogans/mapping.py`; this round moves the "measure first,
+then fix" method to the **runtime slogan engine itself**
+`tui/runtime_slogans.py`.
+
+**The worst finding is a HALF-UPDATED STATE ON THE EXCEPTION PATH
+(P1).** D1's `RLock` solved CONCURRENT tearing but cannot stop an
+exception: `note_activity` writes state FIRST and only THEN calls
+`int(at*1000)` inside `_record_locked`. Measured: `now=math.nan`
+raises ValueError AFTER `_last_event_at=nan`, `_seq`, `_phase` and
+`_current` have ALL been written; subsequently `liveness()` and
+`snapshot()` raise ValueError forever -- ONE dirty public clock
+argument stalls the entire TUI render loop. On the same path:
+`now='1000'` leaked a low-level TypeError, `inf` raised
+OverflowError, `True` was silently treated as 1 second, `1e308` is a
+LEGAL finite value yet overflows to inf at `int(at*1000)`, and an
+injected `clock` returning a dirty value or raising also killed the
+caller. The engine never received the strict validation that round 7
+gave to `mapping`.
+
+Fix: a single clock entry `_now(value)`. `_coerce_now_value` accepts
+only finite real seconds, rejecting bool / non-number / non-finite /
+negative / above `_MAX_NOW_SECONDS=1e9` (the clamp exists so
+`int(at*1000)` cannot overflow, NOT as a business time limit).
+Priority: legal `now` > legal injected `clock` > `time.monotonic()`;
+a raising injected clock is also caught. Validation completes BEFORE
+ANY FIELD WRITE -- that is the key to eliminating the exception-path
+half-update. `0` is a legal zero, checked explicitly with `is None`
+(round 7 was bitten by `or fallback()` swallowing zero). All five
+public exits (`note_activity`, `note_progress`, `liveness`, `render`,
+`snapshot`) route through it.
+
+FIVE MORE REAL DEFECTS:
+
+- **P2**: `note_progress(kind=evil)` kept 530 codepoints containing
+  OSC 8 + U+202E RLO verbatim in `EventRecord.kind`, which reaches
+  diagnostic output via `Liveness.evidence`. Now passes through
+  `sanitize_log_field(kind, 40)` with a `"progress"` fallback -- the
+  SAME cleaning truth that `mapping.record_error` already used.
+- **P3**: `str(raw_mode)` spliced a 5000-codepoint ESC/RLO string from
+  settings.json straight into `source`, reaching `Liveness.source`,
+  `snapshot()` and `render`. Added `_safe_source()` (unified cleaning,
+  120-codepoint cap); non-string `mode` is rejected outright, string
+  `mode` cleaned and capped at 40; budget keys and `str(p)` likewise
+  cleaned. Valid configs keep `source == str(p)` unchanged.
+- **P4**: `reset()` used the real clock while
+  `note_activity(now=...)` used the injected one: evidence chain
+  `[1000000, 1001000, 1000000]` went BACKWARDS, and under real
+  monotonic two time sources were mixed. `reset()` now reuses
+  `_last_event_at` (with a nan/inf guard) and does NOT change its
+  signature; the chain is monotonic and homogeneous, and the boundary
+  is marked by `kind="reset"`.
+- **P7**: `detail=None/123` made `len(detail)` raise TypeError;
+  `detail=['a']` was iterated as a string by `_detail_class`,
+  yielding a misleading `class='ascii'`. Non-strings collapse to `""`,
+  consistent with D3's "never record the detail text".
+- **P8**: `load_config(123)` leaked a low-level TypeError because
+  `p = _settings_path(path)` sat OUTSIDE the `try`, contradicting the
+  docstring's "a bad config must never crash the TUI". Moved inside;
+  dirty paths now fall back to `builtin`.
+
+FOUR CANDIDATES JUDGED "DO NOT FIX": `phase` falling back to
+`waiting_model` for any non-str / unknown / unhashable value without
+raising (existing fail-safe; phase never enters logs verbatim);
+string `detail` recording only length + character class, never the
+text (D3's desensitization contract -- 200k codepoints still leave
+one integer); unknown phase keys returning the fixed
+`invalid:budget-phase` (the check precedes `__post_init__`, so the
+raw key never reaches `source`); `sanitize_verb(123)==''` (existing
+fail-closed). Also locked "`liveness`/`render`/`snapshot` remain pure
+reads" by regression, so nobody reintroduces liveness bookkeeping
+from the render loop -- the "timed idling that pretends to be busy"
+D4 repeatedly rejected.
+
+**Honest limits**: the behavior change affects ONLY erroneous usage --
+dirty `now`/`clock`, non-string `detail`/`kind`, dirty `path` go from
+"raise or carry raw text" to "clean / fall back / reject"; legal
+`now`, valid configs, legal `kind`, string `detail` and the
+`reset()` signature are unchanged. `now` is clamped to `[0, 1e9]`
+seconds; larger values (including legal but enormous finite ones)
+fall back to the real clock -- arbitrary-magnitude monotonic clocks
+are NOT claimed to be supported. `reset()` may share `at_ms` with the
+last evidence row; when a caller omits `now` while other calls inject
+it, this round guarantees NO backwards step and NO mixed-source write
+inside one chain, but the root cause of two clocks still relies on
+caller discipline. **The ONLY runtime code file changed this round is
+`runtime_slogans.py`**; `mapping.py`, `_clean.py`, `tui.py`,
+`ui/slogans/__init__.py`, `test_slogan_mapping.py` are byte-identical
+and NOT in this push. No pre-existing assertion was touched or
+relaxed. NO self-introduced defect requiring a revert was MEASURED
+this round (second time in a row), but six boundaries were exercised:
+legal zero, huge finite value, raising clock, non-str kind, legacy
+nan in reset, and `Decimal`. We do NOT claim "zero defects", only
+"none measured". No list corruption reproduced under concurrency; no
+real-device soak test; fork changes still unmerged; no external
+adaptive red team. NO performance improvement is claimed (one extra
+numeric validation and cleaning call per entry; no benchmark run).
+Verification: 376 pytest cases + 117 pure-stdlib checks + 22/20 prior
+checks, all green. The stdlib verifier's new engine checks were
+measured to import successfully with `pytest / rich /
+prompt_toolkit / wcwidth` blocked (`tuan_cli.tui` uses PEP 562 lazy
+exports), so the pure-stdlib constraint is preserved.

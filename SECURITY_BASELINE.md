@@ -419,3 +419,39 @@ dispatch_log("real")=1`；`norm_owner('owner:invalid')` 严格幂等；
 改动仍未合并；第三方自适应红队仍未做；**不宣称性能提升**。
 详见 `SLOGAN_MAPPING.md` §18。本轮**不改** `fully_superior`、
 99 模块基线与任何对齐指标。
+
+
+---
+
+## R39 · 引擎本体 public 入参面（前九轮只改了 mapping.py）
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R39 | **P1** `now=nan` 抛 ValueError 前已把 `_last_event_at=nan`/`_seq`/`_phase`/`_current` 全写好, 随后 `liveness()`/`snapshot()` 永久抛 → TUI 渲染停摆; 同路径 `'1000'` 抛 TypeError、`inf` 抛 OverflowError、`True` 当 1 秒、`1e308` 合法有限却在 `int(at*1000)` 溢出、注入 clock 脏值/抛异常同样掀 UI; **P2** `note_progress(kind)` 原样进 `EventRecord.kind` (530 码点含 OSC8+RLO); **P3** `str(raw_mode)` 把 5000 码点含 ESC/RLO 的串原样拼进 `source`; **P4** `reset()` 真实时钟 vs 注入 now → 证据链 `[1000000,1001000,1000000]` 倒退 / 两套时间源; **P7** `detail=None/123` 让 `len(detail)` 抛 TypeError, `detail=['a']` 被当字符串遍历; **P8** `load_config(123)` 抛底层 TypeError (`_settings_path` 在 try 之外) | 统一时钟入口 `_now()` + `_coerce_now_value` (有限实数秒、拒 bool/非数值/非有限/负数/>1e9, 校验在**所有字段写入之前**, `0` 显式判 `is None`), 五个 public 出口全走它; P2 `sanitize_log_field(kind,40)` + `"progress"` 回落; P3 `_safe_source()` 统一净化限长 120 + `mode`/阶段键/`str(p)` 净化; P4 `reset()` 沿用 `_last_event_at` (nan/inf 防御, 不改签名); P7 非 str `detail` → `""`; P8 `_settings_path` 挪进 try |
+
+实测：`now=nan` 从「异常 + 半更新 + liveness/snapshot 抛」变「回落
+1000.0 + 事件完整生效 + 两者 healthy」；`now=0 -> 0.0`（零值不吞）、
+`now=1e308 -> 回落`（不溢出）；`clock` 脏值/抛异常 → `time.monotonic()`；
+P2 530 → 41 码点无控制字符；P3 5021 → 54 码点无控制字符；
+P4 `[1000000,1001000,1000000] -> [1000000,1001000,1001000]`、
+真实时钟 `[1000000,1945418] -> [1000000,1000000]`；P7 非 str →
+长度 0/class empty 不抛；P8 `load_config(123) -> 'builtin'`。
+`audit ok=True / index_stats 1695×4`。
+
+如实边界：**四个候选判定不该修** —— P5 `phase` 兜底 `waiting_model`
+(含不可 hash, 既有 fail-safe)、P6 字符串 `detail` 只记长度/类别
+(D3 脱敏契约)、P9 未知阶段键固定 `invalid:budget-phase`、
+P10 `sanitize_verb(123)==''`；另锁住 `liveness`/`render`/`snapshot`
+纯读。**行为变更仅针对错误用法**，合法 `now`/配置/`kind`、字符串
+`detail`、`reset()` 签名零变化。`now` 夹 `[0,1e9]` 秒 (为
+`int(at*1000)` 不溢出, 不是业务上限)；`reset()` 与最后证据 `at_ms`
+可能相同, 边界靠 `kind="reset"`；不传 `now` 与注入时钟混用时保证
+不倒退/不同源混写, 根因仍靠调用方自律。**本轮唯一改动的运行时代码
+是 `runtime_slogans.py`**, `mapping.py`/`_clean.py`/`tui.py`/
+`ui/slogans/__init__.py`/`test_slogan_mapping.py` 逐字节未改、**不在
+本轮推送清单**；既有断言一条未动、一条未放宽；本轮实测未发现需回修
+的自引入缺陷 (零值/极大值/clock 抛异常/非 str kind/reset 残留 nan/
+`Decimal` 六个边界都量过)；并发压测仍未复现 list 撕裂；不是真机
+长跑；分叉改动仍未合并；第三方自适应红队仍未做；**不宣称性能提升**。
+详见 `SLOGAN_MAPPING.md` §19。本轮**不改** `fully_superior`、
+99 模块基线与任何对齐指标。

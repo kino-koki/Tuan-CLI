@@ -669,3 +669,77 @@ re-export 的 `sanitize_verb` 与全部 i18n 文案行为不变；139 例既有
 验证：343 passed + 105 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 `stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。
 完整复现见 `SLOGAN_MAPPING.md` §18。
+
+
+---
+
+## 21. 本轮终于改到引擎本体：public 入参面（前九轮未动此文件）
+
+前九轮几乎都在改 ``ui/slogans/mapping.py``，本引擎文件逐字节未动。
+本轮把「先实测再修」搬过来，**修的六个都是 public 入参的洞**，且
+最毒的一个不是「多了个报错」而是**异常路径的半更新**：
+
+- **P1（最值钱）**：``now=math.nan`` 在 ``_record_locked`` 的
+  ``int(at*1000)`` 抛 ValueError，但**之前已经把
+  ``_last_event_at=nan`` / ``_seq`` / ``_phase`` / ``_current``
+  全写好了**。之后 ``liveness()`` / ``snapshot()`` 永久抛
+  ValueError —— 一个脏时钟入参让整个 TUI 渲染停摆。D1 的 ``RLock``
+  防并发撕裂，防不住异常路径。
+  同路径还有 ``now='1000'`` 抛 TypeError、``inf`` 抛
+  OverflowError、``True`` 被当 1 秒、``1e308`` 合法有限却在
+  ``int(at*1000)`` 溢出、注入 ``clock`` 返回脏值/抛异常同样掀 UI。
+
+新增统一时钟入口 ``_now(value)``：``_coerce_now_value`` 只接受
+有限实数秒（拒绝 bool/非数值/非有限/负数/超过 1e9），优先级
+「合法 now > 合法注入 clock > time.monotonic()」，**校验在所有字段
+写入之前**完成；``0`` 显式判 ``is None`` 不被 falsy 吞。
+``note_activity`` / ``note_progress`` / ``liveness`` / ``render`` /
+``snapshot`` 五个出口全部走它。
+
+- **P2**：``note_progress(kind=...)`` 原样存进 ``EventRecord.kind``
+  （实测 530 码点含 OSC 8 + RLO），经 ``Liveness.evidence`` 进诊断
+  输出。现在过 ``sanitize_log_field(kind, 40)``，与 ``_clean``
+  同一真值；``mapping.record_error`` 早已净化，引擎这边补上。
+- **P3**：``str(raw_mode)`` 把 settings.json 里 5000 码点含
+  ESC/RLO 的串原样拼进 ``source``。新增 ``_safe_source()`` 统一
+  净化限长 120；``mode`` 非字符串直接拒绝、字符串净化限长 40；
+  阶段键与 ``str(p)`` 同样净化。合法配置 ``source == str(p)``
+  零变化。
+- **P4**：``reset()`` 用 ``self._clock()`` 而 ``note_activity(now=..)``
+  用注入时钟，证据链实测 ``[1000000,1001000,1000000]`` **倒退**、
+  真实 monotonic 下两套时间源。现在优先沿用 ``_last_event_at``
+  （并对 nan/inf 残留做防御），**不改 ``reset()`` 签名**，
+  证据链单调同源，边界靠 ``kind="reset"`` 区分。
+- **P7**：``detail=None/123`` 让 ``len(detail)`` 抛 TypeError；
+  ``detail=['a']`` 被 ``_detail_class`` 当字符串遍历。非 str 一律
+  收敛成 ``""``（与 D3「绝不记原文」一致）。
+- **P8**：``load_config(123)`` 直接抛底层 TypeError ——
+  ``p = _settings_path(path)`` 在 ``try`` 之外。挪进 ``try`` 后
+  脏 path 回落 ``builtin``，兑现 docstring「绝不因配置写错让 TUI 崩」。
+
+**四个候选判定「不该修」**（都有回归锁住）：``phase`` 兜底
+``waiting_model``（含不可 hash 类型，既有 fail-safe）、字符串
+``detail`` 只记长度/类别（D3 脱敏契约）、未知阶段键返回固定
+``invalid:budget-phase``（原文进不了 source）、
+``sanitize_verb(123)==''``（既有 fail-closed）。另把
+「``liveness``/``render``/``snapshot`` 仍是纯读」写成回归，
+防止从渲染循环记活性（D4 反复反对的「定时空转装忙」）。
+
+**本轮唯一改动的运行时文件就是这个引擎**；``mapping.py`` /
+``_clean.py`` / ``tui.py`` / ``ui/slogans/__init__.py`` 逐字节未改，
+净化层仍零改动。18 个事件、16 个上下文、1108 条词条、
+``fully_superior``、所有对齐指标、CLI 子命令数全部不变。
+
+验证：376 例 pytest（172 引擎 + 204 映射）+ 117 项纯 stdlib 独立
+验证 + 22/20 项上轮脚本全绿；既有断言一条未动、一条未放宽。
+独立验证脚本新增引擎检查，已实测屏蔽
+``pytest/rich/prompt_toolkit/wcwidth`` 后仍可导入（``tuan_cli.tui``
+用 PEP 562 惰性导出），不破坏纯 stdlib 约束。
+
+如实边界：行为变更仅针对错误用法；``now`` 夹在 ``[0, 1e9]`` 秒
+（为 ``int(at*1000)`` 不溢出，不是业务上限）；``reset()`` 与最后
+一条证据 ``at_ms`` 可能相同；本轮实测未发现需回修的自引入缺陷
+（零值/极大值/clock 抛异常/非 str kind/reset 残留 nan/Decimal
+六个边界都量过）；并发压测仍未复现 list 撕裂；不是真机长跑；
+分叉改动仍未合并；第三方自适应红队仍未做；不宣称性能提升。
+完整复现见 `SLOGAN_MAPPING.md` §19。

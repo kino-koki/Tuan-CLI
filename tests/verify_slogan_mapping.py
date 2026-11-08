@@ -1724,6 +1724,236 @@ def t_d9_full_health():
     assert mapping.audit().ok is True
     mapping.reset_runtime_counters(include_dispatch_log=True)
 
+# ---------------------------------------------------------------- 深度轮 10
+# 引擎本体的 public 入参面。``tuan_cli.tui`` 用 PEP 562 惰性导出，
+# ``runtime_slogans`` 只依赖标准库 + ``_clean``，实测在屏蔽 pytest /
+# rich / prompt_toolkit / wcwidth 后仍可导入，不破坏本脚本的纯 stdlib 约束。
+from decimal import Decimal  # noqa: E402
+from tuan_cli.tui import runtime_slogans as R  # noqa: E402
+
+_STATES = (R.LivenessState.HEALTHY, R.LivenessState.SLOW,
+           R.LivenessState.STALLED, R.LivenessState.UNKNOWN)
+
+
+def _eng(clock=lambda: 1000.0, **kw):
+    return R.RuntimeSloganEngine(clock=clock, **kw)
+
+
+def t_d10_now_dirty_values_never_poison_state():
+    src = (REPO / "tuan_cli/tui/runtime_slogans.py").read_text(encoding="utf-8")
+    assert "def _coerce_now_value(" in src and "def _now(" in src
+    assert "at = self._now(now)" in src
+    for bad in ("1000", math.nan, math.inf, -math.inf, True, [],
+                {"a": 1}, b"x", 1e308, -1e308, Decimal("1.5")):
+        e = _eng()
+        e.note_activity("streaming", now=bad)
+        assert math.isfinite(e._last_event_at), bad
+        assert e.liveness(now=1000.0).state in _STATES, bad
+        assert e.snapshot()["state"] in _STATES, bad
+
+
+def t_d10_dirty_clock_and_raising_clock():
+    for bad in (math.nan, math.inf, "x", None):
+        e = _eng(clock=lambda bad=bad: bad)
+        e.note_activity("streaming")
+        assert math.isfinite(e._last_event_at) and e._last_event_at >= 0.0
+        assert e.liveness().state in _STATES
+
+    def boom():
+        raise RuntimeError("clock broken")
+    e = _eng(clock=boom)
+    e.note_activity("streaming")
+    assert math.isfinite(e._last_event_at)
+    assert isinstance(e.snapshot(), dict)
+
+
+def t_d10_legal_zero_and_large_finite():
+    assert R._coerce_now_value(0) == 0.0
+    assert R._coerce_now_value(0.0) == 0.0
+    assert R._coerce_now_value(1e308) is None
+    assert R._coerce_now_value(R._MAX_NOW_SECONDS) == R._MAX_NOW_SECONDS
+    e = _eng(clock=lambda: 5000.0)
+    e.note_activity("streaming", now=0)
+    assert e._last_event_at == 0.0          # 合法零值不被 falsy 吞掉
+
+
+def t_d10_no_half_updated_state_on_dirty_now():
+    """P1 核心: 异常路径不再留下 nan 状态（修复前 liveness/snapshot 都抛）。"""
+    e = _eng()
+    e.note_activity("streaming", now=1000.0)
+    before = (e._last_event_at, e._seq, e._phase, e._current)
+    e.note_activity("running_tool", now=math.nan)
+    after = (e._last_event_at, e._seq, e._phase, e._current)
+    assert math.isfinite(after[0]) and after[0] == before[0]
+    assert after[1] == before[1] + 1 and after[2] == "running_tool"
+    assert after[3] and after[3] != before[3]
+    assert e.liveness(now=1001.0).state in _STATES
+    assert e.render(True, now=1001.0).state in _STATES
+    assert isinstance(e.snapshot(), dict)
+    # 校验必须在写状态之前（源码级，不是文档自述）
+    import inspect
+    for name in ("note_activity", "note_progress"):
+        src = inspect.getsource(getattr(R.RuntimeSloganEngine, name))
+        assert src.index("at = self._now(now)") < src.index(
+            "self._last_event_at = at")
+
+
+def t_d10_all_public_clock_paths_guarded():
+    for bad in (math.nan, "1000", math.inf, 1e308):
+        e = _eng()
+        e.note_activity("streaming", now=1000.0)
+        e.note_progress("end", now=bad)
+        assert e.liveness(now=bad).state in _STATES
+        assert e.render(True, now=bad).state in _STATES
+        assert isinstance(e.snapshot(), dict)
+    # 合法 now 仍驱动分阶段预算
+    e = _eng()
+    e.note_activity("streaming", now=1000.0)
+    assert e.liveness(now=1001.0).state == R.LivenessState.HEALTHY
+    assert e.liveness(now=1010.0).state == R.LivenessState.STALLED
+
+
+def t_d10_progress_kind_is_sanitized():
+    from tuan_cli.ui.slogans import _clean as C
+    evil = "\x1b]8;;https://evil.example\x07\u202eRLO" + "A" * 500
+    e = _eng()
+    e.note_progress(kind=evil, now=1000.0)
+    k = e.liveness(now=1000.0).evidence[-1].kind
+    assert k == C.sanitize_log_field(evil, 40)   # 同一净化真值
+    assert len(k) <= 41 and "\x1b" not in k and "\u202e" not in k
+    for bad in (None, 123, ["a"], {"x": 1}, b"x", True):
+        e = _eng()
+        e.note_progress(kind=bad, now=1000.0)
+        assert e.liveness(now=1000.0).evidence[-1].kind == "progress"
+    e = _eng()
+    e.note_progress(kind="end_tool", now=1000.0)
+    assert e.liveness(now=1000.0).evidence[-1].kind == "end_tool"
+
+
+def t_d10_diagnostic_source_is_sanitized():
+    import tempfile
+    import json
+    src = (REPO / "tuan_cli/tui/runtime_slogans.py").read_text(encoding="utf-8")
+    assert "def _safe_source(" in src
+    assert "_safe_source(f\"invalid:mode=" in src
+    p = Path(tempfile.mkdtemp()) / "settings.json"
+    evil = "\x1b]8;;x\x07\u202e" + "M" * 5000
+    p.write_text(json.dumps({"spinnerVerbs": {"mode": evil}}), encoding="utf-8")
+    c = R.load_config(p)
+    assert c.source.startswith("invalid:mode=") and len(c.source) <= 121
+    assert "\x1b" not in c.source and "\u202e" not in c.source
+    e = _eng()
+    e.config = c
+    for s in (e.liveness(now=1000.0).source, e.snapshot()["source"], c.source):
+        assert "\x1b" not in s and len(s) <= 121
+    # 合法配置 source 零变化
+    p.write_text(json.dumps({"spinnerVerbs": {"interval_ms": 900}}),
+                 encoding="utf-8")
+    assert R.load_config(p).source == str(p)
+    # 非字符串 mode 也被干净拒绝
+    for bad in (123, ["a"], {"x": 1}, None, True):
+        p.write_text(json.dumps({"spinnerVerbs": {"mode": bad}}),
+                     encoding="utf-8")
+        s = R.load_config(p).source
+        assert "\x1b" not in s and len(s) <= 121
+
+
+def t_d10_path_construction_inside_try():
+    import inspect
+    src = inspect.getsource(R.load_config)
+    body = src[src.index("try:"):]
+    assert "p = _settings_path(path)" in body
+    for bad in (123, ["a"], {"x": 1}, b"x"):
+        assert R.load_config(bad).source == "builtin"
+
+
+def t_d10_reset_clock_homogeneity():
+    e = _eng()
+    e.note_activity("streaming", now=1000.0)
+    e.note_progress("end", now=1001.0)
+    e.reset()
+    stamps = [x.at_ms for x in e.liveness(now=1002.0).evidence]
+    assert stamps == [1000000, 1001000, 1001000] and stamps == sorted(stamps)
+    ev = e.liveness(now=1002.0).evidence[-1]
+    assert ev.kind == "reset" and ev.verb == "" and ev.detail_len == 0
+    # 真实 monotonic 不再与注入时钟混成两套时间源
+    e2 = R.RuntimeSloganEngine()
+    e2.note_activity("streaming", now=1000.0)
+    e2.reset()
+    assert [x.at_ms for x in e2.liveness(now=1001.0).evidence] == \
+        [1000000, 1000000]
+    # 自引入边界：旧状态残留 nan 时也不写进证据
+    e3 = _eng()
+    e3.note_activity("streaming", now=1000.0)
+    e3._last_event_at = math.nan
+    e3.reset()
+    assert math.isfinite(e3.liveness(now=1000.0).evidence[-1].at_ms / 1000.0)
+
+
+def t_d10_detail_type_surface():
+    for bad in (None, 123, True, ["a"], {"x": 1}, b"x", 1.5):
+        e = _eng()
+        e.note_activity("streaming", detail=bad, now=1000.0)
+        r = e.liveness(now=1000.0).evidence[-1]
+        assert r.detail_len == 0 and r.detail_class == "empty"
+    # 字符串 detail 仍只记形状，绝不记原文（D3 既有契约）
+    detail = "/secret/path?token=" + "x" * 200000
+    e = _eng()
+    e.note_activity("streaming", detail=detail, now=1000.0)
+    r = e.liveness(now=1000.0).evidence[-1]
+    assert r.detail_len == len(detail) and not hasattr(r, "detail")
+    assert "secret" not in repr(r)
+
+
+def t_d10_measured_but_not_changed():
+    """四个候选实测后判定「不该修」，锁住当前行为。"""
+    import tempfile
+    import json
+    # P5: phase 兜底（含不可 hash 类型）不抛
+    e = _eng()
+    for bad in (None, 123, ["a"], {"x": 1}, ("t",), b"x",
+                float("nan"), "unknown-phase"):
+        e.note_activity(bad, now=1000.0)
+        assert e._phase == "waiting_model"
+    assert e.liveness(now=1000.0).state in _STATES
+    # P10: sanitize_verb 非 str 返回空串
+    assert R.sanitize_verb(123) == ""
+    # P9: 未知阶段键返回固定 source，不带原文
+    p = Path(tempfile.mkdtemp()) / "s.json"
+    p.write_text(json.dumps({"spinnerVerbs": {
+        "phase_budgets_ms": {"\x1b]8;;x\x07\u202e" + "K" * 5000: 5000}}}),
+        encoding="utf-8")
+    assert R.load_config(p).source == "invalid:budget-phase"
+    p.write_text(json.dumps({"spinnerVerbs": {
+        "phase_budgets_ms": {"stremaing": 5000}}}), encoding="utf-8")
+    assert R.load_config(p).source == "invalid:budget-phase"
+    # liveness / render / snapshot 仍是纯读
+    e = _eng()
+    e.note_activity("streaming", now=1000.0)
+    state = (e._seq, e._current, len(e._evidence))
+    for _ in range(20):
+        e.liveness(now=1001.0)
+        e.render(True, now=1001.0)
+        e.snapshot()
+    assert (e._seq, e._current, len(e._evidence)) == state
+
+
+def t_d10_full_health():
+    for lang in R.LANGUAGES:
+        e = _eng(lang=lang)
+        for phase in R.PHASES:
+            e.note_activity(phase, now=1000.0)
+            v = e.render(True, now=1000.2)
+            assert isinstance(v, R.SloganView) and v.phase == phase
+        assert e.liveness(now=1000.2).state in _STATES
+        e.reset()
+    r = mapping.audit()
+    assert r.ok and r.index_consistent
+    st = mapping.index_stats()
+    assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+    assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
 
 for name, fn in sorted(globals().items()):
     if name.startswith("t_") and callable(fn):
