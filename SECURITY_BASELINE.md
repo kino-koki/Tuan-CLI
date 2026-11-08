@@ -939,3 +939,59 @@ partial；A 线 10 pending、分叉改动、第三方自适应红队未做；不
 见报告；`verify_doc_numbers.py problems == []`；`py_compile` 全 OK。
 新增 `tests/test_b3v_depth.py`（真子进程 / 4 线程并发 / 决策重入
 fail-closed / 单一实现扫描 / 矩阵钉死）。
+
+
+---
+
+## R52 · B3 续轮 VI：C4 收尾（模块级入口的真正会话绑定）
+
+完整复现见 `CLAUDE_PARITY.md` 末尾「深度轮（续六）」。自足标题。
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R52-A | `HookTrigger._effective()` 每次派发才读全局 provider，A 构造的 trigger 在 B 覆盖后派到 B | **构造时冻结** + `owner=` 查 registry；`_effective()` 不再读全局；`owner` 查不到不回落 default |
+| R52-C | `SecurityAlerter` 后台线程现场 `HookTrigger()`，A 订阅 B 覆盖后派到 B | 实例级 `self.hooks`，构造时捕获 |
+| R52-D | `remote_control.notify()` 无 hooks 入参，归属取决于派发时刻 | 单例级 `_rc.hooks` + 可选关键字 `hooks`；`rc is None` 仍派发 |
+| R52-E | ACP `KernelAcpBridge.ask_user` 无绑定 | `self.hooks`；全仓无参 `HookTrigger()` 代码消费点为 0 |
+| R52-B | `get_alerter()` 单例忽略第二次 `home` | **判定不该修**，回归锁住 `x is y`；`bind_session_hooks()` 让串行切换正确 |
+
+**新增机制**：按 owner 分桶的 session registry（64 上界**拒绝**而非
+LRU 静默淘汰；`hooks=None` 合法、注销不靠 `pop` 判空）、
+`current_session_hooks()` 构造时刻快照、`bind_session_hooks()` 注册 +
+回填已存在的两个进程级单例（只改属性不改身份）。
+`security_plugin.py` 传 `config._hooks`；`app.py` 在
+`set_default_hooks_provider` **之后**调用 `bind_session_hooks`。
+
+**两个 B3 条目仍 `STATUS_GAP`**：官方事件面远大于 7 个、exit-code-2
+未实现、Elicitation 语义不等价、`ToolPipeline` 无生产构造方、
+`cmd_hooks` 取 schema 依赖 kernel 暴露 `tool_registry`。本轮修的是
+「已接线触发点的会话归属」不是覆盖面；`catalog.py` **零改动**，
+`status`/`evidence` 结构不变，**不靠改口径凑数**。
+
+**三条上轮断言同步（全部改强）**：串台断言改为「A 收到、B 零」；
+app.py 增加绑定与顺序断言；模块级 fallback 断言改名并断言全仓无参
+消费点为 0。
+
+**A′ ×1**（新写测试自身）：源码扫描把注释行里的 `HookTrigger()` 算成
+消费点，误报 2 条 → 只看非注释行。产品代码零回归。
+
+**矩阵一个状态没动**：`aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`；`matrix.validate()` 与
+`evidence.verify_evidence()` 均空。
+
+**如实边界**：`_global_alerter` / `_notify_rc` 仍是**进程级单例**，
+两个会话**并发并存**时共用同一实例 —— 未重写单例架构，串行切换已修好，
+不宣称「完全多会话隔离」。registry 上界拒绝只影响显式 `owner=` 查询，
+已绑定实例派发不受影响。**行为变更**：构造时冻结、三个构造函数新增
+`hooks`、`notify()` 新增可选关键字、`app.py` 多一次注册。
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+**验证（按分批，批次间有重叠、不累加）**：B3 续轮 VI + 上一轮 V +
+B3 两轮 + 5 个 hooks 既有文件 + mixin + config **185 passed**；
+宽合并批次见报告；`verify_doc_numbers.py problems == []`；
+`py_compile` 全 OK。新增 `tests/test_b3vi_session_binding.py`
+（后台线程 / 回填两单例 / `rc is None` 仍派发 / 64 上界拒绝 /
+全仓源码扫描 / 矩阵钉死）。

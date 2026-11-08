@@ -71,6 +71,16 @@ _PROVIDER_OWNER: Optional[str] = None
 _PROVIDER_GENERATION: int = 0
 _PROVIDER_OVERRIDES: int = 0
 
+# B3 续轮 VI: **按 owner 分桶的显式会话注册表**。上一轮的 default
+# provider 是单个变量，后建者覆盖先建者；registry 让「同一进程里多个
+# 会话」可以各自按 owner 取回自己的 hooks，而不依赖最后一次覆盖。
+#
+# 刻意**不做 LRU 静默淘汰**：安全相关绑定被悄悄挤掉会让老会话突然
+# 派发到别处（或静默 no-op），比注册失败危险。超出上界直接拒绝。
+_SESSIONS: Dict[str, Any] = {}
+_SESSION_LOCK = threading.Lock()
+_MAX_SESSIONS = 64
+
 
 def set_default_hooks_provider(
     fn: Optional[Callable[[], Any]], *, owner: Optional[str] = None,
@@ -103,6 +113,91 @@ def get_default_hooks_provider() -> Optional[Callable[[], Any]]:
     return _DEFAULT_PROVIDER
 
 
+def _resolve_default() -> Any:
+    """解析一次当前 default provider（**调用方负责冻结**）。
+
+    provider 异常一律当「没配 hooks」，绝不掀翻任何主路径。
+    """
+    prov = _DEFAULT_PROVIDER
+    if prov is None:
+        return None
+    try:
+        return prov()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def current_session_hooks() -> Any:
+    """返回**此刻**当前会话的 hooks 快照，供长生命周期实例在构造时捕获。
+
+    ``SecurityAlerter`` 的后台通知线程、``RemoteControl`` 的模块级
+    ``notify()``、ACP ``ask_user`` 都不该在**派发时刻**再去读全局
+    provider —— 实测那样会派到后来覆盖的会话（C4-A/C）。
+    """
+    return _resolve_default()
+
+
+def register_session(owner: str, hooks: Any) -> bool:
+    """按 owner 注册会话 hooks；超出上界**拒绝**而不是静默淘汰。"""
+    if not isinstance(owner, str) or not owner:
+        return False
+    with _SESSION_LOCK:
+        if owner not in _SESSIONS and len(_SESSIONS) >= _MAX_SESSIONS:
+            return False
+        _SESSIONS[owner] = hooks
+        return True
+
+
+def unregister_session(owner: str) -> bool:
+    """如实返回是否真删掉；``hooks=None`` 也是合法注册值，不能靠 pop 值判空。"""
+    with _SESSION_LOCK:
+        if owner not in _SESSIONS:
+            return False
+        del _SESSIONS[owner]
+        return True
+
+
+def resolve_session(owner: str) -> Any:
+    with _SESSION_LOCK:
+        return _SESSIONS.get(owner)
+
+
+def session_registry_diagnostics() -> Dict[str, Any]:
+    with _SESSION_LOCK:
+        return {
+            "owners": sorted(_SESSIONS),
+            "count": len(_SESSIONS),
+            "max": _MAX_SESSIONS,
+        }
+
+
+def bind_session_hooks(hooks: Any, *, owner: Optional[str] = None) -> bool:
+    """**会话级统一绑定**：注册 registry + 回填 3 个模块级单例。
+
+    B3 续轮 VI：``_global_alerter`` / ``_notify_rc`` 是进程级单例，
+    构造时刻可能早于 ``app.py`` 注入 provider（拿到 None）。本函数在
+    会话启动时把已存在的实例**显式回填**到本会话 hooks；后续新建的
+    实例由 ``current_session_hooks()`` 在构造时捕获。
+
+    回填只改 ``hooks`` 属性，不改单例对象身份 —— 既有
+    ``get_alerter()`` / ``_shared_rc()`` 调用方零感知。
+    """
+    ok = True
+    if owner:
+        ok = register_session(owner, hooks)
+    for _mod, _attr in (("security_alert", "_global_alerter"),
+                        ("remote_control", "_notify_rc")):
+        try:
+            from importlib import import_module
+            m = import_module("tuan_cli.core." + _mod)
+            inst = getattr(m, _attr, None)
+            if inst is not None:
+                inst.hooks = hooks
+        except Exception:  # noqa: BLE001 - 绑定不得掀翻会话启动
+            pass
+    return ok
+
+
 def provider_diagnostics() -> Dict[str, Any]:
     """只读诊断：让「全局 provider 被覆盖」不再静默。
 
@@ -118,6 +213,7 @@ def provider_diagnostics() -> Dict[str, Any]:
         "overrides": _PROVIDER_OVERRIDES,
         "installed": _DEFAULT_PROVIDER is not None,
         "reentry": reentry,
+        "sessions": session_registry_diagnostics(),
     }
 
 
@@ -141,22 +237,35 @@ class HookTrigger:
     两种都没取到 → 全部方法严格 no-op，既有行为零变化。
     """
 
-    __slots__ = ("_hooks",)
+    __slots__ = ("_hooks", "_owner")
 
-    def __init__(self, hooks: Any = None) -> None:
-        self._hooks = hooks
+    def __init__(self, hooks: Any = None, *, owner: Optional[str] = None) -> None:
+        """**构造时冻结**本次派发要用的 hooks。
+
+        B3 续轮 VI 实测缺陷（C4-A）：上一版 ``_effective()`` 在**每次
+        派发时**才读全局 provider，于是「A 会话构造的 trigger，在 B
+        覆盖 provider 之后派发」会静默落到 B（A 零触发、B 代收）。
+        现在构造时解析一次并冻结：现场构造的 trigger 仍绑定调用时刻
+        的当前会话，而长期持有的 trigger 不会随后续覆盖漂移。
+
+        优先级：显式 ``hooks`` > ``owner`` 查 registry > 冻结 default。
+        ``owner`` 查不到时**不回落** default（避免 owner 拼错就静默
+        派到别的会话）。
+        """
+        if hooks is not None:
+            self._hooks = hooks
+            self._owner = "explicit"
+        elif owner is not None:
+            self._hooks = resolve_session(owner)
+            self._owner = owner
+        else:
+            self._hooks = _resolve_default()
+            self._owner = None
 
     # ---------------------------------------------------------------- 内部
     def _effective(self) -> Any:
-        if self._hooks is not None:
-            return self._hooks
-        prov = _DEFAULT_PROVIDER
-        if prov is None:
-            return None
-        try:
-            return prov()
-        except Exception:  # noqa: BLE001 - provider 异常不得掀翻任何主路径
-            return None
+        """返回构造时冻结的 hooks —— 不再读全局 provider。"""
+        return self._hooks
 
     @staticmethod
     def _no_decision() -> HookDecision:

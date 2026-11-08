@@ -1940,3 +1940,110 @@ py_compile: 改动 Python 文件全部 OK
   第三方自适应红队未做；不是真机多平台验证。
 - 标语引擎 / 净化层 / `mapping.py` / `tui.py` /
   `runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## 深度轮（续六）：C4 收尾 —— 模块级入口的**真正会话绑定**
+
+> 沿用**自足标题**，不新增数字章节编号。**矩阵计数一个没动**：
+> `ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8`，
+> `gaps=26`，`fully_superior=false`，`b_waves_done=["B1"]`。两个 B3
+> 条目仍 `STATUS_GAP`，`catalog.py` **本轮零改动** —— 本轮修的是
+> 「已接线触发点的会话归属」，不是功能覆盖面，不靠改口径凑数。
+>
+> 上一轮如实留了一句边界：`remote_control.notify` / `SecurityAlerter`
+> 后台线程 / ACP `ask_user` 仍是全局 fallback，串台只是「可见」没被
+> 消除。这轮把它收尾，一点广度没扩。
+
+### 五个候选的实测判定（4 修 / 1 不该修）
+
+| 编号 | 修复前实测 | 判定 |
+|---|---|---|
+| A | `set_default_hooks_provider(A)` 后用 A 构造 `HookTrigger()`，切到 B 再派发 → **A 零触发、B 代收**。根因：`_effective()` 在**每次派发时**才读全局 provider，构造不冻结 | **修** |
+| C | A 会话订阅的 `SecurityAlerter`，B 覆盖 provider 后在后台线程 `_notify_safely` 派发 → **A 零触发、B 代收**。后台线程执行时刻与订阅时刻不同，现场 `HookTrigger()` 必然读到最新覆盖 | **修** |
+| D | `remote_control.notify()` 签名无 hooks 入参，每次现场 `HookTrigger()`；串行会话切换后单例归属完全取决于**派发时刻**而非会话 | **修** |
+| E | ACP `KernelAcpBridge.ask_user` 无 `self.hooks`，`HookTrigger()` 无参，Elicitation 事件无会话绑定 | **修** |
+| B | `get_alerter()` 是进程级单例，第二次传 `home` 被静默忽略（实测 `y._home == h1`） | **不该修**：重写单例架构超出本轮；但新增 `hooks` 属性 + `bind_session_hooks()` 回填让它在**串行**会话切换后指向正确会话。回归里明确锁住 `x is y` 这个既有事实 |
+
+### 修复（如实，不夸大）
+
+1. **`HookTrigger.__init__` 构造时冻结** hooks，支持 `owner=` 查 registry；
+   `_effective()` 不再读全局。现场构造的 trigger 仍绑定调用时刻的当前
+   会话（A2 回归验证），只有「长期持有 trigger 跨覆盖」的行为变化 ——
+   那正是要修的串台。`owner` 查不到时**不回落** default（避免拼错
+   owner 就静默派到别的会话）。
+2. **按 owner 分桶的 session registry**：`register_session` /
+   `unregister_session` / `resolve_session` /
+   `session_registry_diagnostics`。**超出 64 上界直接拒绝，不做 LRU
+   静默淘汰** —— 安全绑定被悄悄挤掉会让老会话突然派到别处或静默
+   no-op。`hooks=None` 是合法注册值，注销不靠 `pop` 值判空（与深度轮
+   5/11 的 A′ 同类）。
+3. **`bind_session_hooks(hooks, owner=...)`**：注册 registry + 回填已存在
+   的 `_global_alerter` / `_notify_rc` 两个进程级单例。顺序刻意在
+   `set_default_hooks_provider` **之后**：新建消费者靠
+   `current_session_hooks()` 捕获，已存在的靠这里显式回填。只改
+   `hooks` 属性、不改单例对象身份，既有调用方零感知。
+4. **三个模块级消费者改为实例级绑定**：
+   `RemoteControl(..., hooks=)` / `SecurityAlerter(..., hooks=)` /
+   `KernelAcpBridge(..., hooks=)`；派发时用 `self.hooks`，不再现场读
+   全局。`remote_control.notify()` 另加**可选关键字** `hooks` 入参
+   （向后兼容），给调用方显式通道。全仓无参 `HookTrigger()` **代码**
+   消费点降为 0（源码扫描排除注释行）。
+5. `security_plugin.py` 构造 alerter 时传 `config._hooks`（plugin 初始化
+   可能早于 app.py 回填，此时 `SecurityAlerter` 内部退回
+   `current_session_hooks()`）；`app.py` 调用 `bind_session_hooks`。
+
+### 三条上轮断言同步（**全部改强，不是放宽**）
+
+| 上轮断言 | 本轮同步 |
+|---|---|
+| `test_overrides_are_visible_not_silent` 锁住「串台仍存在」 | 改为「A 收到、B 零」+ `overrides` 仍可见（覆盖仍是诊断项，只是不再能改变已构造 trigger 的归属） |
+| `test_app_backfills...` 查 `owner=` 字面串 | 增加 `_session_owner`、`bind_session_hooks(...)` **及顺序**断言 |
+| `test_module_level_notify_still_uses_global_fallback` | 改名 `..._is_now_instance_bound`，断言 `HookTrigger(_h)` / `getattr(_rc, "hooks", None)` / `HookTrigger(self.hooks)`，且全仓无参消费点为 0 |
+
+### A′ ×1（自己写错自己抓回）
+新写的全仓源码扫描把**注释行**里的 `HookTrigger()` 字面串也算成消费点
+（两处行注释在描述「上一版」行为），误报 2 条。改为只看非注释行。
+是**新写测试自身**的问题，产品代码零回归。
+
+### 验证（按分批报告，批次间有重叠、不累加）
+
+```
+B3 续轮 VI + 上一轮 V + B3 两轮 + 5 个 hooks 既有文件 + mixin +
+    config                                              185 passed
+宽回归 A（parity / worktree / session / arch / 写边界 / 两条侧门
+          / B2 各轮 / slash 前半）                        （见报告）
+宽回归 B（arch_security / B2 剩余 / slash 后半）        （见报告）
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+py_compile: 改动 Python 文件全部 OK
+```
+
+`tests/test_b3vi_session_binding.py` 覆盖：构造时冻结 / 现场构造仍绑定
+调用时刻 / 显式 hooks 优先 / `owner` 查不到不回落 / 决策类重入守卫
+未破坏 / 单例架构如实锁住 / 三个构造函数默认捕获 / 后台线程派到本会话
+/ `bind_session_hooks` 回填两个单例 / 无单例时绑定不掀翻 /
+模块级 notify 用单例绑定 + 显式 `hooks` 参数 + `rc is None` 仍派发 +
+返回值语义不变 / ACP 实例绑定 + 全仓无参消费点为 0 /
+registry 注册·解析·注销·`None` 合法值·非法 owner·**64 上界拒绝而非淘汰** /
+`provider_diagnostics()` 新增 `sessions` / provider 异常 no-op /
+app.py 顺序断言 / plugin 注入 / 矩阵钉死 / `catalog.py` 零改动。
+
+### 如实边界
+- **`_global_alerter` / `_notify_rc` 仍是进程级单例**，两个会话**并发
+  并存**时会共用同一实例（后者复用前者的绑定）—— 重写单例架构超出
+  本轮，回归里明确锁住 `x is y`。**串行**会话切换已由
+  `bind_session_hooks` 回填修好，不宣称「完全多会话隔离」。
+- registry 上界拒绝只影响显式 `owner=` 查询；**已绑定实例的派发不受
+  影响**（`bind_session_hooks` 仍会回填单例）。这是「诊断 fail-open、
+  裁决 fail-closed」的刻意取舍，如实标注。
+- **行为变更**：`HookTrigger` 构造时冻结（长期持有的 trigger 不再随
+  provider 覆盖漂移）；三个构造函数新增 `hooks` 参数；`notify()` 新增
+  可选关键字参数；`app.py` 多一次 registry 注册。
+- 跨进程 command hook 仍不继承 thread-local（上一轮如实边界，未变）。
+- `os_sandbox` 仍 gap、`deny_network_by_default` 仍 `false` 未翻、
+  `credential_masking` 仍 partial；A 线 10 pending、分叉改动未合并、
+  第三方自适应红队未做；不是真机多平台验证。
+- 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
+  逐字节未改。

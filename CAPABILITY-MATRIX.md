@@ -584,3 +584,30 @@ Elicitation 语义不等价、`ToolPipeline` 无生产调用链。catalog note �
   让覆盖可见。**没宣称多会话已隔离**。
 - C5/C6 判定不该修，加回归锁住。A′ ×2 自查抓回（测试自身）。
 新增 `tests/test_b3v_depth.py`。详见 `SECURITY_BASELINE.md` R51。
+
+
+---
+
+## B3 续轮 VI 增量（C4 收尾：模块级入口的真正会话绑定）
+
+权威口径见 `CLAUDE_PARITY.md` 末尾「深度轮（续六）」。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`；两个 B3 条目仍 `STATUS_GAP`，`catalog.py` 零改动。
+
+- **A** `HookTrigger._effective()` 每次派发才读全局 provider → A 构造的
+  trigger 在 B 覆盖后派到 B。改为**构造时冻结** + `owner=` 查 registry。
+- **C** `SecurityAlerter` 后台线程现场 `HookTrigger()` → A 订阅、B 覆盖
+  后派到 B → 实例级 `self.hooks`。
+- **D** `remote_control.notify()` 无 hooks 入参 → 单例级 `_rc.hooks` +
+  可选关键字 `hooks`。
+- **E** ACP `KernelAcpBridge.ask_user` 无绑定 → `self.hooks`。
+- **B** `get_alerter()` 单例忽略第二次 `home` → **判定不该修**，如实锁住，
+  但 `bind_session_hooks()` 回填让串行切换正确。
+- 新增按 owner 分桶的 session registry（64 上界**拒绝**而非 LRU 淘汰）、
+  `current_session_hooks()`、`bind_session_hooks()`；
+  `security_plugin.py` / `app.py` 接线。
+- 三条上轮断言同步（全部改强）；A′ ×1（源码扫描误把注释算成消费点）。
+新增 `tests/test_b3vi_session_binding.py`。详见 `SECURITY_BASELINE.md` R52。
+
+**如实边界**：两个进程级单例在**并发并存**时仍共用，未重写单例架构；
+registry 上界只影响显式 owner 查询，不影响已绑定实例派发。

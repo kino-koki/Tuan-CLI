@@ -231,7 +231,12 @@ class SecurityAlerter:
         home: Optional[Path] = None,
         on_alert: Optional[Callable[[AlertRecord], None]] = None,
         enable_desktop: bool = True,
+        hooks: Any = None,
     ) -> None:
+        # B3 续轮 VI: 后台通知线程必须用**本实例构造时**捕获的 hooks。
+        # 上一版在 _notify_safely 里现场 HookTrigger()，实测 A 会话订阅、
+        # B 覆盖 provider 后，A 的告警派到 B（C4-C）。
+        self.hooks = hooks if hooks is not None else _session_hooks_snapshot()
         self._home = Path(home) if home else Path.home() / ".tuan"
         self._on_alert = on_alert
         self._enable_desktop = enable_desktop
@@ -433,7 +438,7 @@ class SecurityAlerter:
             # hook 是子进程，同步调用会阻塞 _pre_exec_guard 主路径
             # （与桌面通知本身必须异步的理由完全一致）。
             from ..hooks.triggers import HookTrigger
-            HookTrigger().notification(
+            HookTrigger(self.hooks).notification(
                 title=record.title, body=record.message or record.title,
                 kind="security", severity=record.severity,
                 source="security_alerter")
@@ -449,6 +454,15 @@ class SecurityAlerter:
 # ============================================================ 模块级便捷函数
 
 _global_alerter: Optional[SecurityAlerter] = None
+
+
+def _session_hooks_snapshot() -> Any:
+    """构造时刻捕获当前会话 hooks（延迟导入，避免 config <-> hooks 环）。"""
+    try:
+        from ..hooks.triggers import current_session_hooks
+        return current_session_hooks()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def get_alerter(home: Optional[Path] = None) -> SecurityAlerter:

@@ -362,14 +362,20 @@ class TestClassificationTruth:
 # ================================================== C4 串台可见 + 显式绑定
 class TestProviderDiagnostics:
     def test_overrides_are_visible_not_silent(self):
-        """C4：串台没被消除，但 overrides 让它可以被查出来。"""
+        """C4：**B3 续轮 VI 已修** —— 构造时冻结后 A 的 trigger 不再漂到 B。
+
+        断言同步（改强，不是放宽）：上一轮这里如实锁住「串台仍存在」；
+        本轮 HookTrigger 构造时冻结，同一场景变成 A 收到、B 零。
+        ``overrides`` 仍须可见 —— 覆盖本身仍是诊断项，只是不再能
+        改变已构造 trigger 的归属。
+        """
         a, b = Rec("A"), Rec("B")
         set_default_hooks_provider(lambda: a, owner="session-A")
         t_a = HookTrigger()
         set_default_hooks_provider(lambda: b, owner="session-B")
         HookTrigger()
         t_a.config_change(source="from-A")
-        assert a.fired == [] and len(b.fired) == 1  # 边界仍存在，如实锁住
+        assert len(a.fired) == 1 and b.fired == []
         d = provider_diagnostics()
         assert d["owner"] == "session-B"
         assert d["generation"] >= 2
@@ -392,25 +398,42 @@ class TestProviderDiagnostics:
         assert len(a.fired) == 1 and b.fired == []
 
     def test_app_backfills_config_hooks_and_passes_owner(self):
-        """源码级断言：app.py 显式回填 + owner 诊断。"""
+        """源码级断言：app.py 显式回填 + owner + **会话绑定**（B3 续轮 VI）。"""
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
         assert "config._hooks = agent.ctx.hooks" in src
-        assert 'owner="agent:%x" % id(agent)' in src
+        assert '_session_owner = "agent:%x" % id(agent)' in src
         assert "lambda: getattr(getattr(agent, \"ctx\", None), \"hooks\", None)" in src
+        assert "bind_session_hooks(agent.ctx.hooks, owner=_session_owner)" in src
+        # 顺序：先注入 provider（新建实例靠它捕获），再回填已存在单例
+        assert src.index("set_default_hooks_provider(") < src.index(
+            "bind_session_hooks(agent.ctx.hooks")
 
     def test_provider_api_is_exported(self):
         import tuan_cli.hooks as pkg
         assert hasattr(pkg, "provider_diagnostics")
         assert get_default_hooks_provider() is None
 
-    def test_module_level_notify_still_uses_global_fallback(self):
-        """如实边界：模块级通知函数没有 owner 句柄，仍是全局 fallback。"""
+    def test_module_level_notify_is_now_instance_bound(self):
+        """**B3 续轮 VI 已修**：模块级入口改用实例级绑定，不再现场读全局。
+
+        断言同步（改强）：上一轮这里断言「仍是全局 fallback」；本轮
+        ``RemoteControl`` / ``SecurityAlerter`` 构造时捕获 hooks，
+        派发时用实例属性。同时断言全仓**无参** ``HookTrigger()``
+        消费点为 0 —— 无参构造现在只用于回落，不再出现在模块级入口。
+        """
         src = Path("tuan_cli/core/remote_control.py").read_text(
             encoding="utf-8")
-        assert "HookTrigger().notification(" in src
+        assert "HookTrigger(_h).notification(" in src
+        assert 'getattr(_rc, "hooks", None)' in src
+        assert "HookTrigger().notification(" not in src
         src2 = Path("tuan_cli/core/security_alert.py").read_text(
             encoding="utf-8")
-        assert "HookTrigger().notification(" in src2
+        assert "HookTrigger(self.hooks).notification(" in src2
+        assert "HookTrigger().notification(" not in src2
+        src3 = Path("tuan_cli/runtime/acp/bridge.py").read_text(
+            encoding="utf-8")
+        assert "HookTrigger(self.hooks)" in src3
+        assert "HookTrigger()" not in src3
 
 
 # ================================================== 不该修 / 矩阵钉死

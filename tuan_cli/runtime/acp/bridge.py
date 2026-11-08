@@ -25,6 +25,15 @@ from .events_map import acp_tool_call_id
 _PERMISSION_TIMEOUT_S = 300.0
 
 
+def _session_hooks_snapshot() -> Any:
+    """构造时刻捕获当前会话 hooks（延迟导入，避免 runtime <-> hooks 环）。"""
+    try:
+        from ...hooks.triggers import current_session_hooks
+        return current_session_hooks()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class KernelAcpBridge:
     """把青小团既有 ``Agent`` 适配为 ``agent_provider``（prompt/cancel/available_commands）。
 
@@ -51,7 +60,11 @@ class KernelAcpBridge:
         workspace: str = ".",
         conn: Any = None,
         session_id: str = "",
+        hooks: Any = None,
     ) -> None:
+        # B3 续轮 VI: ask_user 的 Elicitation/ElicitationResult 必须用本
+        # 会话 hooks，而不是派发时刻的全局 provider（C4-E 实测无绑定）。
+        self.hooks = hooks if hooks is not None else _session_hooks_snapshot()
         self._make_agent = make_agent
         self._kernel = kernel
         self._workspace = workspace
@@ -163,7 +176,7 @@ class KernelAcpBridge:
         # MCP elicitation 宿主。提问前派发 Elicitation（block = 取消，
         # 不代答）；拿到真实答案后派发 ElicitationResult（block = 作废）。
         from ...hooks.triggers import HookTrigger
-        _trig = HookTrigger()
+        _trig = HookTrigger(self.hooks)
         _pre = _trig.elicitation(
             question=question, options=opts, source="acp_elicitation_create")
         if getattr(_pre, "block", False):

@@ -12,11 +12,16 @@ from .manager import (
     HOOK_EVENTS, CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS,
 )
 from .triggers import HookTrigger, set_default_hooks_provider, \
-    get_default_hooks_provider, provider_diagnostics
+    get_default_hooks_provider, provider_diagnostics, \
+    current_session_hooks, bind_session_hooks, \
+    register_session, unregister_session, resolve_session, \
+    session_registry_diagnostics
 
 __all__ = [
     "HookManager", "HookDecision", "HookFailure",
     "HOOK_EVENTS", "CORE_HOOK_EVENTS", "EXTENDED_HOOK_EVENTS",
     "HookTrigger", "set_default_hooks_provider", "get_default_hooks_provider",
-    "provider_diagnostics",
+    "provider_diagnostics", "current_session_hooks", "bind_session_hooks",
+    "register_session", "unregister_session", "resolve_session",
+    "session_registry_diagnostics",
 ]

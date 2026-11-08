@@ -266,10 +266,16 @@ def create_agent(
     except Exception:  # noqa: BLE001
         pass
     try:
-        from .hooks.triggers import set_default_hooks_provider
+        from .hooks.triggers import set_default_hooks_provider, bind_session_hooks
+        _session_owner = "agent:%x" % id(agent)
         set_default_hooks_provider(
             lambda: getattr(getattr(agent, "ctx", None), "hooks", None),
-            owner="agent:%x" % id(agent))
+            owner=_session_owner)
+        # B3 续轮 VI: 注册到按 owner 分桶的会话表，并回填已存在的
+        # _global_alerter / _notify_rc 两个进程级单例。顺序刻意在
+        # set_default_hooks_provider 之后 —— 新建消费者靠
+        # current_session_hooks() 捕获，已存在的靠这里显式回填。
+        bind_session_hooks(agent.ctx.hooks, owner=_session_owner)
     except Exception:  # noqa: BLE001
         pass
     # 自定义斜杠命令: 把 <home>/commands 与 <workspace>/.tuan/commands 挂进分发链

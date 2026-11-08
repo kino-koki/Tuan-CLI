@@ -2415,3 +2415,90 @@ longer dispatch ConfigChange, app.py backfills `config._hooks`);
 unmerged, no third-party adaptive red team; NO real-device
 multi-platform verification. The slogan engine / cleaning layer /
 `mapping.py` / `tui.py` / `runtime_slogans.py` are byte-identical.
+
+
+---
+
+## B3 Continued VI: C4 Wrap-up -- REAL Session Binding for Module-Level Entry Points
+
+> SELF-CONTAINED heading. NOT A SINGLE MATRIX STATUS CHANGED:
+> `aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+> `b_waves_done=["B1"]`. Both B3 catalog entries stay `STATUS_GAP`;
+> `catalog.py` is UNCHANGED. Full reproduction: final section of
+> `CLAUDE_PARITY.md`.
+>
+> The previous round honestly left one boundary: `remote_control.notify`,
+> the `SecurityAlerter` background thread, and ACP `ask_user` still used
+> the global fallback -- cross-wiring was only VISIBLE, not eliminated.
+> This round closes it. NO breadth added.
+
+### Five candidates (4 fixed / 1 deliberately not)
+
+| ID | Measured | Verdict |
+|---|---|---|
+| A | `HookTrigger._effective()` read the global provider on EVERY dispatch; a trigger built under A, after B overrode the provider, dispatched **0 to A / 1 to B** | FIX |
+| C | `SecurityAlerter._notify_safely` constructed `HookTrigger()` on the background thread; A subscribed, B overrode -> **0 to A / 1 to B** | FIX |
+| D | `remote_control.notify()` had NO hooks parameter; ownership depended entirely on DISPATCH time | FIX |
+| E | ACP `KernelAcpBridge.ask_user` had no `self.hooks`; Elicitation events had no session binding | FIX |
+| B | `get_alerter()` is a process singleton; the second `home` was silently ignored (`y._home == h1`) | NOT fixed -- rewriting the singleton architecture is out of scope. The regression LOCKS `x is y` as an existing fact; `bind_session_hooks()` makes SERIAL session switches correct |
+
+### Fix
+- `hooks/triggers.py`: **freeze hooks at construction** + `owner=` registry
+  lookup. `_effective()` no longer reads the global provider. Freshly
+  constructed triggers still bind to the CALL-TIME current session (A2
+  regression); an unknown `owner` does NOT fall back to default (so a
+  typo cannot silently dispatch into another session).
+- New owner-partitioned **session registry** (`register_session` /
+  `unregister_session` / `resolve_session` /
+  `session_registry_diagnostics`): **64-entry upper bound REJECTS, no
+  silent LRU eviction** -- a quietly evicted security binding would make
+  an old session suddenly dispatch elsewhere or silently no-op.
+  `hooks=None` is a valid registration value; unregister does not judge
+  emptiness by `pop` return value.
+- New `current_session_hooks()` (construction-time snapshot) and
+  `bind_session_hooks(hooks, owner=...)` (register + **backfill** the
+  already-existing `_global_alerter` / `_notify_rc` singletons -- only
+  the `hooks` attribute changes, object identity is preserved).
+- Three module-level consumers now use **instance-level binding**:
+  `RemoteControl` / `SecurityAlerter` / `KernelAcpBridge` gain a
+  `hooks` constructor argument and dispatch with `self.hooks`;
+  `remote_control.notify()` gains an optional keyword `hooks`.
+  Repo-wide no-arg `HookTrigger()` **code** consumers: 0.
+- `security_plugin.py` passes `config._hooks`; `app.py` calls
+  `bind_session_hooks` AFTER `set_default_hooks_provider`.
+
+### Three previous-round assertions synchronized (ALL STRENGTHENED)
+`test_overrides_are_visible_not_silent` now asserts A receives / B zero;
+`test_app_backfills...` adds binding + ordering assertions;
+`test_module_level_notify_still_uses_global_fallback` was renamed to
+`..._is_now_instance_bound` and asserts zero repo-wide no-arg consumers.
+
+### A-prime x1 (self-caught, in a NEWLY WRITTEN TEST)
+The repo-wide source scan counted `HookTrigger()` inside COMMENT lines
+(two line comments describing "the previous version"), producing 2 false
+positives. Switched to non-comment lines only. ZERO product-code regressions.
+
+### Verification (split batches, NOT one full-suite claim)
+B3-VI + previous B3-V + both B3 rounds + 5 existing hooks files + mixin
++ config **185 passed**; wide combined batch (see report);
+`matrix.validate()` / `evidence.verify_evidence()` / doc-number check /
+`py_compile` all clean. New `tests/test_b3vi_session_binding.py` covers
+background-thread dispatch, `bind_session_hooks` backfilling both
+singletons, `rc is None` still dispatching, 64-bound REJECT (not evict),
+repo-wide source scan, matrix pinning.
+
+### Honest limits
+`_global_alerter` / `_notify_rc` are STILL process singletons: two
+CONCURRENTLY coexisting sessions share one instance (the later reuses the
+earlier binding). The singleton architecture was NOT rewritten -- SERIAL
+session switches are fixed, but "complete multi-session isolation" is
+NOT claimed. The registry upper-bound rejection only affects explicit
+`owner=` lookups; already-bound instances still dispatch (diagnostics
+fail-open, adjudication fail-closed -- documented). BEHAVIORAL CHANGES:
+freeze-on-construct, three new `hooks` constructor arguments, new
+optional `notify()` keyword, one extra `app.py` registration.
+`os_sandbox` remains a gap, `deny_network_by_default` remains false,
+`credential_masking` remains partial; A-line 10 pending, local fork
+unmerged, no third-party adaptive red team; NO real-device
+multi-platform verification. The slogan engine / cleaning layer /
+`mapping.py` / `tui.py` / `runtime_slogans.py` are byte-identical.

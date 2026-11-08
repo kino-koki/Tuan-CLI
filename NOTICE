@@ -976,3 +976,17 @@ SOFTWARE.
     remain unchanged; the Apache-2.0 + MIT dual attribution for the
     Codex TUI parity line and all "no endorsement" statements still
     apply unchanged.
+
+
+26. B3-continued VI session-binding layer: freeze-on-construct for
+    ``HookTrigger``, an owner-partitioned session registry,
+    ``current_session_hooks`` / ``bind_session_hooks`` in
+    ``hooks/triggers.py``, instance-level ``hooks`` binding for
+    ``RemoteControl`` / ``SecurityAlerter`` / ``KernelAcpBridge``,
+    and one new stdlib-based regression file
+    (``tests/test_b3vi_session_binding.py``). Still NO new third-party
+    material: all changes are stdlib-based Python in this repository's
+    own modules, with no new dependency and no copied upstream source.
+    Items 9-25 remain unchanged; the Apache-2.0 + MIT dual attribution
+    for the Codex TUI parity line and all "no endorsement" statements
+    still apply unchanged.

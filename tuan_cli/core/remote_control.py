@@ -116,7 +116,13 @@ class RemoteControl:
         rc.send_prompt("my-session", "What files changed?")
     """
 
-    def __init__(self, home: Path, host: str = "localhost", port: int = 0) -> None:
+    def __init__(self, home: Path, host: str = "localhost", port: int = 0,
+                 hooks: Any = None) -> None:
+        # B3 续轮 VI: 实例级绑定。模块级 ``notify()`` 每次都通过这个
+        # 单例取 hooks，而不是在派发时刻读进程级 default provider ——
+        # 后者会在会话覆盖后把 A 的通知送到 B（C4-D 实测）。
+        # ``None`` 表示未绑定，由 current_session_hooks() 在构造时捕获。
+        self.hooks = hooks if hooks is not None else _session_hooks_snapshot()
         self.home = Path(home)
         self._sessions: Dict[str, RemoteSession] = {}
         self._host = host
@@ -331,6 +337,15 @@ _NOTIFY_LOCK = threading.Lock()
 _notify_rc: Optional["RemoteControl"] = None
 
 
+def _session_hooks_snapshot() -> Any:
+    """构造时刻捕获当前会话 hooks（延迟导入，避免 config <-> hooks 环）。"""
+    try:
+        from ..hooks.triggers import current_session_hooks
+        return current_session_hooks()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _shared_rc() -> Optional["RemoteControl"]:
     """懒构建一个共享 RemoteControl 实例 (配对/推送状态持久在 ~/.tuan)。"""
     global _notify_rc
@@ -338,7 +353,7 @@ def _shared_rc() -> Optional["RemoteControl"]:
         return _notify_rc
     try:
         from ..config.loader import home_dir
-        rc = RemoteControl(home_dir())
+        rc = RemoteControl(home_dir(), hooks=_session_hooks_snapshot())
         rc._load_sessions()
         _notify_rc = rc
         return rc
@@ -346,7 +361,8 @@ def _shared_rc() -> Optional["RemoteControl"]:
         return None
 
 
-def notify(title: str, body: str, kind: str = "info") -> bool:
+def notify(title: str, body: str, kind: str = "info", *,
+           hooks: Any = None) -> bool:
     """发送一条通知 (任务完成 / 失败 / 预算告警等)。
 
     参数:
@@ -364,8 +380,13 @@ def notify(title: str, body: str, kind: str = "info") -> bool:
     # 必须放在**所有**返回路径之前 —— 下方 `rc is None: return False`
     # 是提前返回，若把派发放在函数末尾，无推送对象时 hook 永远不触发。
     # 异常由 HookTrigger 吞掉，绝不改变 notify 的返回值语义。
+    # B3 续轮 VI: 优先用调用方显式 hooks，其次用**单例构造时冻结**的
+    # hooks；两者都没有才回落 HookTrigger() 的冻结 default。
+    # _shared_rc() 内部吞异常返回 None，提前调用不会掀翻主流程。
     from ..hooks.triggers import HookTrigger
-    HookTrigger().notification(
+    _rc = _shared_rc()
+    _h = hooks if hooks is not None else getattr(_rc, "hooks", None)
+    HookTrigger(_h).notification(
         title=title, body=body, kind=kind, source="remote_control")
     pushed = False
     try:

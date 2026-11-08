@@ -9,6 +9,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - B3 续轮 VI：C4 收尾（模块级入口的真正会话绑定）
+
+> **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续六）」。沿用自足标题。
+
+### 五个候选（4 修 / 1 不该修）
+- **A** `HookTrigger._effective()` 在**每次派发时**才读全局 provider：
+  A 会话构造的 trigger，B 覆盖后派发 → **A 零触发、B 代收**。
+- **C** `SecurityAlerter` 后台线程 `_notify_safely` 现场
+  `HookTrigger()`：A 订阅、B 覆盖后 → **A 零触发、B 代收**。
+- **D** `remote_control.notify()` 签名无 hooks 入参，归属取决于派发时刻。
+- **E** ACP `KernelAcpBridge.ask_user` 无 `self.hooks`，Elicitation
+  事件无会话绑定。
+- **B** `get_alerter()` 进程级单例忽略第二次 `home`（`y._home == h1`）
+  → **不该修**，重写单例架构超出本轮，回归里如实锁住 `x is y`。
+
+### 修复
+- `hooks/triggers.py`：`HookTrigger.__init__` **构造时冻结** hooks，
+  支持 `owner=` 查 registry；`_effective()` 不再读全局。现场构造仍
+  绑定调用时刻（A2 验证）；`owner` 查不到**不回落** default。
+- 新增按 owner 分桶的 **session registry**（`register_session` /
+  `unregister_session` / `resolve_session` /
+  `session_registry_diagnostics`）：**64 上界直接拒绝，不做 LRU 静默
+  淘汰**；`hooks=None` 合法、注销不靠 `pop` 值判空。
+- 新增 `current_session_hooks()`（构造时刻快照）与
+  `bind_session_hooks(hooks, owner=...)`（注册 + **回填**已存在的
+  `_global_alerter` / `_notify_rc`，只改 `hooks` 属性不改对象身份）。
+- 三个模块级消费者改为**实例级绑定**：`RemoteControl` /
+  `SecurityAlerter` / `KernelAcpBridge` 新增 `hooks` 构造参数，派发
+  用 `self.hooks`；`remote_control.notify()` 加可选关键字 `hooks`。
+  全仓无参 `HookTrigger()` **代码**消费点降为 0。
+- `security_plugin.py` 传 `config._hooks`；`app.py` 在
+  `set_default_hooks_provider` **之后**调用 `bind_session_hooks`。
+
+### 三条上轮断言同步（全部改强，不是放宽）
+`test_overrides_are_visible_not_silent` 改为「A 收到、B 零」+
+`overrides` 仍可见；`test_app_backfills...` 增加 `bind_session_hooks`
+及顺序断言；`test_module_level_notify_still_uses_global_fallback`
+改名并断言全仓无参消费点为 0。
+
+### A′ ×1（新写测试自身）
+全仓源码扫描把**注释行**里的 `HookTrigger()` 字面串算成消费点（两处
+行注释描述「上一版」行为），误报 2 条 → 改为只看非注释行。产品代码
+零回归。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3 续轮 VI + 上一轮 V + B3 两轮 + 5 个 hooks 既有文件 + mixin +
+config **185 passed**；宽合并批次见报告；`matrix.validate()` /
+`evidence.verify_evidence()` / 文档数字校验 / `py_compile` 全干净。
+新增 `tests/test_b3vi_session_binding.py` 含后台线程派发、
+`bind_session_hooks` 回填两个单例、`rc is None` 仍派发、
+64 上界拒绝而非淘汰、全仓源码扫描、矩阵钉死。
+
+### 如实边界
+`_global_alerter` / `_notify_rc` 仍是**进程级单例**，两个会话**并发
+并存**时共用同一实例（后者复用前者绑定）—— 未重写单例架构，**串行**
+切换已修好，不宣称「完全多会话隔离」。registry 上界拒绝只影响显式
+`owner=` 查询，已绑定实例派发不受影响（诊断 fail-open、裁决
+fail-closed，如实标注）。**行为变更**：构造时冻结、三个构造函数新增
+`hooks`、`notify()` 新增可选关键字、`app.py` 多一次注册。
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、第三方
+自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
 ## [Unreleased] - B3 续轮 V：接线之后的第二层（写盘成败 / 重入递归 / 分类真值 / 串台可见性）
 
 > **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、

@@ -134,6 +134,10 @@ class SecurityPlugin(Plugin):
             alerter = SecurityAlerter(
                 home=config.home,
                 enable_desktop=config.get("security.alert.desktop", _desktop_default),
+                # B3 续轮 VI: app.py 回填的会话 hooks 优先；plugin 初始化
+                # 可能早于那一步，此时 SecurityAlerter 内部会退回
+                # current_session_hooks()，bind_session_hooks() 再统一回填。
+                hooks=getattr(config, "_hooks", None),
             )
             # 订阅 SecurityEventBus, 自动将高危事件转为桌面通知
             bus_ref2 = kernel.get("security_bus")
