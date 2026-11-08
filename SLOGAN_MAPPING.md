@@ -658,3 +658,121 @@ limit 脏值    None / nan / inf / -1 / True / '5' 全返回 'abc'
 31. `_slogan_sealed` 写加锁后仍只是实例内快照；LRU 淘汰的其它会话
     历史仍不保留（128 桶上界不变）。不是真机长跑；TUI 仍未替换
     任何既有 i18n 文案；分叉改动仍未合并；第三方自适应红队仍未做。
+
+
+---
+
+## 15. 先清理后截断、注入时钟贯穿、淘汰痕摘要
+
+前五轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈、
+owner 全链路归一。本轮仍**先实测再修**，结果有一个候选**根本不成立**——
+这比修成五个更值得写下来。
+
+### 候选 A：实测不成立，**未修**
+
+怀疑 `_CTRL_RE` 不含 `0x1b`，孤立 ESC（无后续参数字节）会残留。
+实测 `sanitize_verb('abc\x1b') == 'abc'`、`'\x1b' -> ''`、
+`'ok\x1b\x1b' -> 'ok'`，全部干净。原因：`_CTRL_RE` 的字符类
+`\x0e-\x1f` 覆盖 0x1b（十进制 27），孤立 ESC 一直被删。
+**没有为它改任何一行代码**，只加了两条回归把既有正确行为锁住，
+防止以后有人误当成洞去「修」而破坏它。
+
+### 五个真实缺陷（全部先实测复现）
+
+| # | 实测 | 影响 |
+|---|---|---|
+| B | `sanitize_log_field('\x00'*1000+'OK', 120)` 返回 **空串** | 旧实现 `raw[:lim*4]` **先粗切再清理**：limit=120 只扫前 480 码点，前部垃圾吃满额度，尾部唯一合法内容 `OK` 被整段丢弃 |
+| B′ | **修 B 后暴露**：`sanitize_log_field('\x1b'*900+'END')` 返回 `'ND'` | 连续 ESC 串中最后一个与 `E` 拼成 `ESC E`（NEL）被 `_ESC_SEQ_RE` 吞掉；这是 ECMA-48 的固有歧义在垃圾串上的放大 |
+| C | 注入 `now=1000.0` 触发淘汰：`decision.at_ms=1000000`，`EvictionRecord.at_ms=76564` | 同一事件两个时间戳来自两套时钟（注入 vs `time.monotonic()`），前几轮刚建的**可确定性回放**断了一半 |
+| H | 桶内 `ok / error:boom / ok` 被淘汰，痕迹只有 `last_reason='ok'` | 运维完全看不出被丢弃的会话曾有一条错误；`dropped=3` 但错误信号被掩盖 |
+| D | `'a'*64` 原样返回，`'a'*65` → `owner:<fp16>` | `norm_owner` 旧 docstring 写「干净输入零改动」，对 >64 码点的**纯 ASCII 干净串**不精确；功能无变化，是口径问题 |
+| E | 2 MiB 干净 owner 归一耗时 1.7 ms，且每次写入/查询都全串 sha1 | 线性成本、无硬上限；**不修**，如实记录为已知边界 |
+
+### 修复
+
+**B · 先清理后截断 + 扫描上限。** 去掉 `raw[:lim*4]` 粗切，改为
+先 `_clean_once` 迭代到不动点、再按 `lim` 截断。实测
+`_clean_once` 对 64KiB ≈ 17 ms、1MiB ≈ 0.32–0.37 s、2MiB ≈ 0.66–0.68 s，
+因此加 `_SCAN_CAP = 65536`：**64KiB 以内保证先清理后截断**，
+超出才粗切再清理（DoS 防护）。截断结果仍是 `[lim 码点 + '…']`，
+二次调用严格幂等。实测 `'\x00'*1000+'OK' -> 'OK'`、
+`'\x00'*300+'A'+'\x00'*300+'B' -> 'AB'`。
+
+**B′ · 连续 ESC 串整体删。** 新增 `_ESC_RUN_RE = \x1b{2,}`，
+排在 OSC/CSI **之后**：以 `[`/`]` 引导的真序列已先被剥掉，
+剩下的连续 ESC 不可能是有效序列引导（ECMA-48 以单个 ESC 起始）。
+实测 `'\x1b'*900+'END' -> 'END'`，且
+`'\x1b\x1b[31m' -> ''`、`'\x1b\x1b\x1b[31m' -> ''`（没误伤 CSI）、
+`'\x1b]8;;evil\x07OK' -> 'OK'`。
+**单个** `\x1bEND` 仍是 `'ND'` —— 那是 ECMA-48 固有歧义，本轮**未改**；
+ESC 已清除、不会回显控制序列，因此无安全风险，只是保真度边界。
+测试只断言「无控制字符」，不把 `'ND'` 固化成期望值。
+
+**C · 注入时钟贯穿。** `_record(d, at_ms=None)` 接受调用方时钟，
+`pick_for_event` 的 5 个分支与 `record_error` 全部传 `at`；
+`EvictionRecord.at_ms` 与 `SloganDecision.at_ms` 同源。实测注入
+`now=1000.0` 时淘汰痕 `at_ms=1000000`，两次回放的
+`(owner, dropped, at_ms, reason_counts)` 完全一致；
+不注入时仍产出正的 `time.monotonic()` 毫秒值。
+
+**H · `reason_counts` 摘要。** `EvictionRecord` 新增
+`Tuple[Tuple[str,int],...]`，按 reason 计数并排序（确定性）。
+实测桶内 `ok / error:boom / ok` 淘汰后
+`reason_counts=(('error:boom',1),('ok',2))`、`last_reason` 仍是
+`'ok'`，但错误信号不再丢失；`sum(counts) == dropped`。
+摘要**不含文案与 entry_id**，`audit().ok` 不受影响
+（淘汰是正常有界行为）。
+
+**D · 口径精确化。** 新增 `OWNER_LIMIT = 64` 常量，docstring 改为
+「干净且 ≤ `OWNER_LIMIT` 码点零改动」，并写明 65 码点以上的纯
+ASCII 干净串也会归指纹。功能零变化（写入/查询仍命中同一 key），
+加 64/65 边界测试锁住。
+
+### 验证
+
+```
+tests/test_slogan_mapping.py + test_runtime_slogans.py   276 passed
+tests/verify_slogan_mapping.py                           80 项纯 stdlib 全绿
+verify_deep.py / verify_deep2.py                         22 / 20 项全绿
+```
+
+既有静态源码断言**一条都没放宽**；本轮没有因改实现去改旧断言。
+
+### 实测数字（同机同环境）
+
+```
+'\x00'*1000+'OK'    -> 'OK'      (旧: '')
+'\x1b'*900+'END'    -> 'END'     (旧: 'ND')
+'\x1b\x1b[31m'      -> ''        (未误伤 CSI)
+注入 now=1000.0     decision.at_ms = EvictionRecord.at_ms = 1000000
+reason_counts       (('error:boom', 1), ('ok', 2))
+index_stats         1695×4 / clipped=0 / unrenderable=0 / collisions=0
+                    index_misses=0 / unresolved_misses=0
+OWNER_LIMIT         64 / 64 原样 / 65 归指纹
+_clean_once         64KiB≈17ms  1MiB≈0.32–0.37s  2MiB≈0.66–0.68s
+```
+
+### 如实边界（续 §14）
+
+32. 本轮**不改** 18 个事件、16 个上下文、1108 条词条、
+    `fully_superior`、99 模块基线、任何对齐指标、CLI 子命令数；
+    零新增文件、零删除。`tui.py` 与 `runtime_slogans.py` 文件本轮
+    **零改动**；但二者 re-export 的 `_clean.sanitize_verb` 因
+    `_clean_once` 新增 ESC_RUN 而对「连续 ESC 输入」更保真，
+    其余行为不变（139 例既有回归全绿）。
+33. **候选 A 实测不成立、未修**，不包装成成果。写下来是因为
+    「先实测再修」的意义一半在于避免修不存在的问题。
+34. `_SCAN_CAP=65536` 是显式 fail-closed 边界：超过 64KiB 的输入
+    **仍先粗切**，尾部合法内容可能救不回（实测
+    `'\x00'*70000+'OK' -> ''`）。不宣称「任意长度都保真」。
+35. **单个** `ESC` + 可打印字母的 ECMA-48 歧义未解决
+    （`'\x1bEND' -> 'ND'`）；ESC 已清除故无安全风险，只是保真度边界。
+36. `E` 未修：`norm_owner` 对超长 owner 仍做全串 sha1，实测
+    2 MiB ≈ 1.7 ms；不宣称已消除该线性成本。
+37. `reason_counts` 只汇总 reason 字符串，不含文案/entry_id；
+    只保留最近 64 次淘汰、不复活决策内容；`evicted_recent`
+    仍是观测项，不参与 `audit().ok`。
+38. 并发压测仍未复现 list 撕裂；不是真机长跑；TUI 仍未替换
+    任何既有 i18n 文案；分叉改动仍未合并；第三方自适应红队
+    仍未做；**不宣称性能提升**（`_clean_once` 对超长输入反而
+    因去掉粗切多扫了字符，靠 `_SCAN_CAP` 兜住）。

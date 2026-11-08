@@ -1458,3 +1458,217 @@ class TestCloseSingleExit:
         mapping.pick_for_event("tool.exploring", owner="once")
         assert len(mapping.take_owner_log("once")) == 1
         assert mapping.take_owner_log("once") == ()
+
+# ================================================================ 深度轮 6
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestLogFieldCleanBeforeTruncate:
+    """B: 旧版先按 lim*4 粗切再清理, 前部垃圾吃掉尾部合法内容。"""
+
+    def test_leading_junk_no_longer_hides_trailing_valid_text(self):
+        from tuan_cli.ui.slogans import _clean as C
+        assert C.sanitize_log_field("\x00" * 1000 + "OK", 120) == "OK"
+        assert C.sanitize_log_field("\x1b" * 900 + "END", 120) == "END"
+        assert C.sanitize_log_field("\x00" * 300 + "A" + "\x00" * 300 + "B") == "AB"
+
+    def test_cut_esc_sequence_leaves_no_lone_esc(self):
+        """粗切点落在 ESC 序列中间时, _CTRL_RE 删掉孤立 0x1b。
+
+        注意: 孤立 ESC **本来就被** ``\\x0e-\\x1f`` 覆盖, 这一条是
+        回归保护, 不是本轮修的缺陷 (见 SLOGAN_MAPPING.md §15 候选 A)。
+        """
+        from tuan_cli.ui.slogans import _clean as C
+        raw = "x" * 479 + "\x1b]8;;https://evil.example\x07" + "b" * 200
+        out = C.sanitize_log_field(raw, 120)
+        assert "\x1b" not in out and "]8;;" not in out
+        assert len(out) <= 121
+
+    def test_esc_run_does_not_break_real_csi_sequences(self):
+        """ESC_RUN 排在 OSC/CSI 之后: 以 ``[``/``]`` 引导的真序列
+        已先剥掉, 连续 ESC 串整体删不会残留 ``[31m`` 之类文本。"""
+        from tuan_cli.ui.slogans import _clean as C
+        assert C.sanitize_log_field("\x1b\x1b[31m") == ""
+        assert C.sanitize_log_field("\x1b\x1b\x1b[31m") == ""
+        assert C.sanitize_log_field("\x1b]8;;evil\x07OK") == "OK"
+        assert C.sanitize_verb("\x1b[31mRED\x1b[0m") == "RED"
+
+    def test_single_lone_esc_ambiguity_is_documented_not_fixed(self):
+        """ECMA-48 固有歧义: 单个 ESC 后跟可打印字符既可能是
+        ``ESC E`` (NEL) 序列, 也可能是孤立控制字符 + 文本 'E'。
+
+        本轮**只修了连续 ESC 串**, 单个 ESC 的歧义未改:
+        ``sanitize_log_field('\x1bEND')`` 仍是 'ND'。但 ESC 已被
+        清除, 不会回显控制序列, 因此**无安全风险**, 只是保真度边界。
+        断言只锁定「无控制字符」, 不把 'ND' 固化成期望值。
+        """
+        from tuan_cli.ui.slogans import _clean as C
+        out = C.sanitize_log_field("\x1bEND")
+        assert "\x1b" not in out
+        assert out in ("END", "ND")
+
+    def test_clean_then_truncate_is_idempotent(self):
+        from tuan_cli.ui.slogans import _clean as C
+        for raw in ("\x00" * 1000 + "OK", "a" * 500, "abc\x1b", "正常文案",
+                    "x" * 5000 + "\u202e" + "y"):
+            once = C.sanitize_log_field(raw)
+            assert C.sanitize_log_field(once) == once
+            assert C.sanitize_log_field(raw, 20) == C.sanitize_log_field(
+                C.sanitize_log_field(raw, 20), 20)
+
+    def test_scan_cap_is_an_explicit_fail_closed_boundary(self):
+        """超过 _SCAN_CAP 的输入先粗切再清理 —— 如实锁定这个边界,
+        不宣称「任意长度都能救回尾部内容」。"""
+        from tuan_cli.ui.slogans import _clean as C
+        assert C._SCAN_CAP == 65536
+        assert C.sanitize_log_field("\x00" * 70000 + "OK") == ""
+        assert len(C.sanitize_log_field("a" * 70000)) <= 121
+        assert "\x1b" not in C.sanitize_log_field("a" * 65535 + "\x1b")
+
+    def test_verb_and_limits_unchanged(self):
+        from tuan_cli.ui.slogans import _clean as C
+        assert C.sanitize_verb("正常文案 ✓") == "正常文案 ✓"
+        assert C.sanitize_verb("abc\x1b") == "abc"
+        assert len(C.sanitize_log_field("a" * 5000)) == 121
+        for bad in (None, float("nan"), float("inf"), "5", True, -1):
+            assert C.sanitize_log_field("abc", bad) == "abc"
+
+    def test_lone_esc_was_already_handled_no_fix_made(self):
+        """候选 A 实测不成立: _CTRL_RE 的 ``\\x0e-\\x1f`` 已含 0x1b。
+
+        本轮**没有**为孤立 ESC 改任何清理逻辑; 这条测试只是防止
+        以后有人误把它当成洞去「修」而破坏既有行为。
+        """
+        from tuan_cli.ui.slogans import _clean as C
+        for raw in ("abc\x1b", "\x1b", "文案\x1b", "ok\x1b\x1b"):
+            assert "\x1b" not in C.sanitize_verb(raw)
+            assert "\x1b" not in C.sanitize_log_field(raw)
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestEvictionUsesInjectedClock:
+    """C: 旧版淘汰痕用 time.monotonic(), 与 decision 的注入时钟两套。"""
+
+    def _fill_and_evict(self, now):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        K = mapping._MAX_OWNERS
+        mapping.pick_for_event("tool.exploring", owner="s-0", now=now)
+        mapping.pick_for_event("turn.completed", owner="s-0", now=now)
+        for i in range(1, K):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i, now=now)
+        mapping.pick_for_event("tool.exploring", owner="trigger", now=now)
+        return next(r for r in mapping.evicted_owner_log()
+                    if r.owner == "s-0")
+
+    def test_eviction_at_ms_matches_injected_now(self):
+        r = self._fill_and_evict(1000.0)
+        assert r.at_ms == 1000000
+        d = mapping.pick_for_event("tool.exploring", owner="x", now=1000.0)
+        assert d.at_ms == r.at_ms
+
+    def test_eviction_is_deterministic_under_replay(self):
+        a = self._fill_and_evict(1000.0)
+        b = self._fill_and_evict(1000.0)
+        assert (a.owner, a.dropped, a.last_reason, a.at_ms, a.reason_counts) == \
+               (b.owner, b.dropped, b.last_reason, b.at_ms, b.reason_counts)
+        c = self._fill_and_evict(2000.0)
+        assert c.at_ms == 2000000 and a.at_ms != c.at_ms
+
+    def test_no_injection_still_produces_positive_ms(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        K = mapping._MAX_OWNERS
+        for i in range(K + 1):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        r = mapping.evicted_owner_log()[-1]
+        assert r.at_ms > 0
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestEvictionReasonSummary:
+    """H: last_reason 掩盖桶内错误信号。"""
+
+    def _bucket_with_error(self, now=1000.0):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        K = mapping._MAX_OWNERS
+        mapping.pick_for_event("tool.exploring", owner="s-0", now=now)
+        mapping.record_error("typo.event", "boom", owner="s-0",
+                             at_ms=int(now * 1000))
+        mapping.pick_for_event("turn.completed", owner="s-0", now=now)
+        for i in range(1, K):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i, now=now)
+        mapping.pick_for_event("tool.exploring", owner="trigger", now=now)
+        return next(r for r in mapping.evicted_owner_log()
+                    if r.owner == "s-0")
+
+    def test_error_signal_survives_eviction(self):
+        r = self._bucket_with_error()
+        assert r.last_reason == "ok"           # 旧版只看得到这个
+        assert dict(r.reason_counts)["error:boom"] == 1
+        assert dict(r.reason_counts)["ok"] == 2
+        assert sum(n for _, n in r.reason_counts) == r.dropped
+
+    def test_reason_counts_are_sorted_and_deterministic(self):
+        a = self._bucket_with_error()
+        b = self._bucket_with_error()
+        assert a.reason_counts == b.reason_counts
+        assert list(a.reason_counts) == sorted(a.reason_counts)
+        assert all(isinstance(k, str) and isinstance(v, int)
+                   for k, v in a.reason_counts)
+
+    def test_reason_summary_is_desensitized(self):
+        r = self._bucket_with_error()
+        blob = repr(r)
+        assert "text" not in blob and "entry_id" not in blob
+        assert not hasattr(r, "text") and not hasattr(r, "entry_id")
+        assert "\x1b" not in blob and "\u202e" not in blob
+
+    def test_summary_does_not_change_audit_health(self):
+        self._bucket_with_error()
+        report = mapping.audit()
+        assert report.ok is True
+        assert report.as_dict()["dispatch_stats"]["evicted_recent"] >= 1
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestOwnerLimitWording:
+    """D: 旧 docstring「干净输入零改动」对 >64 码点干净串不成立。"""
+
+    def test_owner_limit_is_explicit(self):
+        assert mapping.OWNER_LIMIT == 64
+
+    def test_boundary_64_vs_65(self):
+        assert mapping.norm_owner("a" * 64) == "a" * 64
+        assert mapping.norm_owner("a" * 65).startswith("owner:")
+        assert mapping.norm_owner("session-" + "x" * 80).startswith("owner:")
+
+    def test_long_clean_owner_still_round_trips(self):
+        raw = "session-" + "x" * 80
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        d = mapping.pick_for_event("tool.exploring", owner=raw)
+        assert d.owner == mapping.norm_owner(raw)
+        assert len(mapping.dispatch_log(raw)) == 1
+        assert mapping.norm_owner(d.owner) == d.owner
+
+    def test_docstring_no_longer_claims_unconditional_zero_change(self):
+        import inspect
+        src = inspect.getsource(mapping.norm_owner)
+        assert "≤ ``OWNER_LIMIT`` 码点零改动" in src
+        assert "65 码点以上" in src
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestFullHealthAfterD6:
+    def test_registry_and_all_events_still_green(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        r = mapping.audit()
+        assert r.ok and r.index_consistent
+        st = mapping.index_stats()
+        assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+        assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+        for lang in L.LANGUAGES:
+            for ev in mapping.EVENT_BINDINGS:
+                d = mapping.pick_for_event(ev, lang=lang,
+                                           owner="final", now=1000.0)
+                assert d.reason == "ok" and d.entry_id, (ev, lang)
+        assert mapping.audit().ok is True
+        mapping.reset_runtime_counters(include_dispatch_log=True)

@@ -1031,3 +1031,68 @@ instance-local snapshot. No list corruption was reproduced under
 concurrency; no real-device soak test; fork changes still unmerged;
 no external adaptive red team. Verification: 256 pytest cases + 73
 pure-stdlib checks + 22/20 prior checks, all green.
+
+
+---
+
+## 18. Clean-Before-Truncate, Injected Clock, Eviction Reason Summary
+
+This round changes no verdict; it patches holes left in the prior five
+rounds of runtime correspondence.
+
+- **Truncating BEFORE cleaning hid legitimate content.**
+  `sanitize_log_field` used `raw[:lim*4]`. Measured:
+  `' '*1000 + 'OK'` with limit=120 scanned only the first 480
+  codepoints; the leading junk consumed the budget, cleaning yielded
+  empty, and the ONLY valid trailing text ('OK') was dropped. Now
+  `_clean_once` is iterated to a fixed point FIRST, then truncation
+  applies. `_SCAN_CAP = 65536` bounds regex work (measured
+  `_clean_once`: 64KiB≈17ms, 1MiB≈0.32–0.37s, 2MiB≈0.66–0.68s). Within
+  64KiB semantics are exact; beyond it we coarse-cut for DoS
+  protection -- an EXPLICIT fail-closed boundary (measured
+  `' '*70000+'OK' -> ''`). We do NOT claim fidelity for arbitrary
+  input lengths. Truncation output stays strictly idempotent.
+- **A run of ESC bytes ate a trailing character.** Exposed by the
+  fix above: `''*900 + 'END' -> 'ND'` because the last ESC plus
+  'E' matched `ESC E` (NEL) in `_ESC_SEQ_RE`. Added
+  `_ESC_RUN_RE = {2,}` AFTER the OSC/CSI substitutions (real
+  `[`/`]`-introduced sequences are already stripped). Measured:
+  `-> 'END'`, while `'[31m' -> ''` (CSI not harmed).
+  A SINGLE `'END'` remains `'ND'`: an ECMA-48 ambiguity this
+  round did NOT change. The ESC is removed, so no control sequence
+  is echoed -- NO security risk, only a fidelity boundary. Tests
+  assert "no control characters" and do not freeze 'ND' as expected.
+- **The "lone ESC survives" candidate was MEASURED FALSE and NOT
+  fixed.** Suspecting `_CTRL_RE` omitted 0x1b, we measured
+  `sanitize_verb('abc') == 'abc'`, `'' -> ''`: the class
+  `-` already covers 0x1b. NOT ONE LINE was changed for it;
+  two regressions merely lock in the existing correct behavior so
+  nobody later "fixes" a non-existent hole.
+- **Eviction traces now share the injected clock.** Previously they
+  used `time.monotonic()`: with `now=1000.0`, decision.at_ms was
+  1000000 but EvictionRecord.at_ms was 76564 -- deterministic replay
+  was half broken. `_record(d, at_ms=...)` now takes the caller's
+  clock; all 5 `pick_for_event` branches and `record_error` pass
+  `at`. Two replays produce identical metadata.
+- **`reason_counts` no longer hides error signals.** A bucket with
+  `ok / error:boom / ok` evicted left only `last_reason='ok'`.
+  `EvictionRecord` now carries a sorted
+  `Tuple[Tuple[str,int],...]`: `(('error:boom',1),('ok',2))`,
+  `sum == dropped`. No text, no entry_id; `audit().ok` unaffected.
+- **Wording made exact.** Added `OWNER_LIMIT = 64`; the docstring now
+  says "clean AND <= 64 codepoints is returned unchanged". Measured:
+  `'a'*64` unchanged, `'a'*65 -> owner:<fp16>`. No functional change.
+
+**Honest limits**: beyond `_SCAN_CAP` we still coarse-cut; the single
+ESC ECMA-48 ambiguity remains (but no control character survives);
+full-string sha1 cost for oversized owners is NOT fixed (measured
+2 MiB ≈ 1.7 ms). `reason_counts` summarizes reasons only, does not
+resurrect decision contents, keeps only the latest 64 evictions, and
+`evicted_recent` does not affect `audit().ok`. `tui.py` and
+`runtime_slogans.py` files are unchanged, but their re-exported
+`sanitize_verb` is more faithful for consecutive-ESC input because
+it shares `_clean_once`; all other behavior is unchanged (139 prior
+regressions green). No list corruption was reproduced under
+concurrency; no real-device soak test; fork changes still unmerged;
+no external adaptive red team. Verification: 276 pytest cases + 80
+pure-stdlib checks + 22/20 prior checks, all green.

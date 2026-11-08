@@ -557,3 +557,21 @@ Apache-2.0 / MIT Codex 归属混用**。
 
 256 例 pytest + 73 项纯 stdlib 验证全绿。
 详见 `SLOGAN_MAPPING.md` §14。
+
+
+---
+
+## 净化顺序与淘汰痕摘要（不占任何 Codex 对齐指标）
+
+本轮只把前五轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- 日志字段改为先清理后截断（带 64KiB 扫描上限）；连续 ESC 串
+  整体删，不再吞掉尾部合法字符；淘汰痕与 decision 共用注入时钟；
+  `EvictionRecord` 增 `reason_counts`；`OWNER_LIMIT` 口径精确化。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。`tui.py` 本轮文件零改动。
+
+276 例 pytest + 80 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §15。

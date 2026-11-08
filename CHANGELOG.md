@@ -9,6 +9,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 先清理后截断、注入时钟贯穿、淘汰痕摘要
+
+> 前五轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈、
+> owner 全链路归一。本轮仍**先实测再修**: 六个候选中
+> **候选 A（孤立 ESC 残留）实测不成立、未修** —— 写下来是因为
+> 「先实测再修」一半的意义在于避免修不存在的问题。完整复现见
+> `SLOGAN_MAPPING.md` §15。继续「不扩广度、只挖深度」: 18 个事件、
+> 16 个上下文、1108 条词条、`fully_superior`、99 模块基线、所有
+> 对齐指标与 CLI 子命令数**全部不变**; 零新增文件、零删除;
+> `tui.py` 与 `runtime_slogans.py` 文件零改动。
+
+### 实测
+
+| # | 实测 | 影响 |
+|---|---|---|
+| A | `sanitize_verb('abc\x1b') == 'abc'`、`'\x1b' -> ''` | **不成立, 未修**: `_CTRL_RE` 的 `\x0e-\x1f` 已含 0x1b |
+| B | `sanitize_log_field('\x00'*1000+'OK', 120)` 返回空串 | 旧版 `raw[:lim*4]` 先粗切再清理, 前部垃圾吃掉尾部唯一合法内容 |
+| B′ | 修 B 后 `'\x1b'*900+'END' -> 'ND'` | 连续 ESC 串最后一个与 `E` 拼成 `ESC E` (NEL) 被吞 |
+| C | 注入 `now=1000.0`: `decision.at_ms=1000000` 但 `EvictionRecord.at_ms=76564` | 同一事件两套时钟, 可确定性回放断一半 |
+| H | 桶内 `ok / error:boom / ok` 淘汰后只剩 `last_reason='ok'` | 被丢弃会话的错误信号被掩盖 |
+| D | `'a'*64` 原样、`'a'*65 -> owner:<fp16>` | 旧 docstring「干净输入零改动」不精确 (功能无变化) |
+| E | 2 MiB owner 归一 1.7 ms, 每次写入/查询全串 sha1 | 线性成本无硬上限, **不修**, 如实记录 |
+
+### 修复
+
+- **先清理后截断**: 去掉 `raw[:lim*4]`, 改为先 `_clean_once` 迭代到
+  不动点再按 `lim` 截断; 加 `_SCAN_CAP = 65536` (实测 `_clean_once`
+  64KiB≈17ms / 1MiB≈0.32–0.37s / 2MiB≈0.66–0.68s), 64KiB 以内保证先清理后
+  截断, 超出才粗切兜 DoS。实测 `'\x00'*1000+'OK' -> 'OK'`、
+  `'\x00'*300+'A'+'\x00'*300+'B' -> 'AB'`, 截断结果仍幂等。
+- **连续 ESC 串整体删**: 新增 `_ESC_RUN_RE = \x1b{2,}` 排在
+  OSC/CSI 之后 (真序列已先剥掉)。实测 `'\x1b'*900+'END' -> 'END'`,
+  且 `'\x1b\x1b[31m' -> ''` 没误伤 CSI。
+  **单个** `'\x1bEND'` 仍是 `'ND'` (ECMA-48 固有歧义, 未改);
+  ESC 已清除无安全风险, 测试不把 'ND' 固化成期望值。
+- **注入时钟贯穿**: `_record(d, at_ms=None)` 接受调用方时钟,
+  `pick_for_event` 5 个分支与 `record_error` 全部传 `at`;
+  淘汰痕与 decision 同源。实测 `now=1000.0` 时
+  `EvictionRecord.at_ms=1000000`, 两次回放元数据完全一致。
+- **`reason_counts` 摘要**: `EvictionRecord` 新增排序后的
+  `Tuple[Tuple[str,int],...]`。实测桶内 `ok/error:boom/ok`
+  → `(('error:boom',1),('ok',2))`, `sum == dropped`;
+  不含文案/entry_id, 不影响 `audit().ok`。
+- **口径精确化**: 新增 `OWNER_LIMIT = 64`, docstring 改为
+  「干净且 ≤ 64 码点零改动」, 加 64/65 边界测试。
+
+### 验证与实测
+
+```
+276 passed (pytest) + 80 项纯 stdlib 独立验证
+verify_deep.py / verify_deep2.py   22 / 20 项全绿
+'\x00'*1000+'OK'  -> 'OK'   (旧: '')
+'\x1b'*900+'END'  -> 'END'  (旧: 'ND')
+注入 now=1000.0    decision.at_ms = eviction.at_ms = 1000000
+reason_counts      (('error:boom',1),('ok',2))
+index_stats        1695×4 / clipped=0 / unrenderable=0 / collisions=0
+                   index_misses=0 / unresolved_misses=0
+```
+
+既有静态源码断言**一条都没放宽**, 本轮没有因改实现去改旧断言。
+
+### 如实边界
+
+1. **候选 A 实测不成立、未修**, 不包装成成果; 只加回归锁住既有
+   正确行为, 防止以后误「修」。
+2. `_SCAN_CAP=65536` 是显式 fail-closed 边界: 超过 64KiB 仍先粗切,
+   实测 `'\x00'*70000+'OK' -> ''`, **不宣称任意长度都保真**。
+3. 单个 ESC + 可打印字母的 ECMA-48 歧义未解决; ESC 已清除故无
+   安全风险, 只是保真度边界。
+4. `E` 未修: 超长 owner 仍全串 sha1, 2 MiB ≈ 1.7 ms。
+5. `tui.py` / `runtime_slogans.py` 文件零改动, 但 re-export 的
+   `sanitize_verb` 因共享 `_clean_once` 新增 ESC_RUN 而对连续 ESC
+   输入更保真; 其余行为不变, 139 例既有回归全绿。
+6. `reason_counts` 只汇总 reason, 不复活决策内容; 只保留最近
+   64 次淘汰; `evicted_recent` 不参与 `audit().ok`。
+7. 并发压测仍未复现 list 撕裂; 不是真机长跑; TUI 仍未替换既有
+   i18n 文案; 分叉改动仍未合并; 第三方自适应红队仍未做;
+   **不宣称性能提升** (去掉粗切反而多扫字符, 靠 `_SCAN_CAP` 兜住)。
+
 ## [Unreleased] - owner 全链路归一、被动淘汰留痕、单一释放出口
 
 > 前四轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈。

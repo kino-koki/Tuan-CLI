@@ -1111,6 +1111,128 @@ def t_d5_full_health_after_all_fixes():
     assert mapping.audit().ok is True
     mapping.reset_runtime_counters(include_dispatch_log=True)
 
+# ---------------------------------------------------------------- 深度轮 6
+
+
+def t_d6_clean_before_truncate():
+    clean = (REPO / "tuan_cli/ui/slogans/_clean.py").read_text(encoding="utf-8")
+    assert "_SCAN_CAP = 65536" in clean
+    assert "raw[:lim * 4]" not in clean
+    assert "_ESC_RUN_RE" in clean
+    from tuan_cli.ui.slogans import _clean as C
+    assert C.sanitize_log_field("\x00" * 1000 + "OK", 120) == "OK"
+    assert C.sanitize_log_field("\x1b" * 900 + "END", 120) == "END"
+    assert C.sanitize_log_field("\x00" * 300 + "A" + "\x00" * 300 + "B") == "AB"
+    assert C.sanitize_log_field("\x1b\x1b[31m") == ""
+    assert C.sanitize_log_field("\x1b\x1b\x1b[31m") == ""
+    assert C.sanitize_log_field("\x1b]8;;evil\x07OK") == "OK"
+    assert C.sanitize_verb("\x1b[31mRED\x1b[0m") == "RED"
+    assert C.sanitize_verb("abc\x1b") == "abc"
+
+
+def t_d6_log_field_idempotent_and_bounded():
+    from tuan_cli.ui.slogans import _clean as C
+    for raw in ("\x00" * 1000 + "OK", "a" * 500, "abc\x1b", "正常文案",
+                "x" * 5000 + "\u202e" + "y"):
+        once = C.sanitize_log_field(raw)
+        assert C.sanitize_log_field(once) == once, raw[:20]
+        assert "\x1b" not in once and "\u202e" not in once
+    # 超过扫描上限是显式的 fail-closed 边界, 不宣称任意长度都能救回尾部
+    assert C.sanitize_log_field("\x00" * 70000 + "OK") == ""
+    assert len(C.sanitize_log_field("a" * 70000)) <= 121
+    assert len(C.sanitize_log_field("a" * 5000)) == 121
+    for bad in (None, float("nan"), float("inf"), "5", True, -1):
+        assert C.sanitize_log_field("abc", bad) == "abc", bad
+    assert C.sanitize_verb("正常文案 ✓") == "正常文案 ✓"
+
+
+def t_d6_lone_esc_was_already_handled():
+    """候选 A 实测不成立, 本轮未改孤立 ESC 逻辑。"""
+    from tuan_cli.ui.slogans import _clean as C
+    for raw in ("abc\x1b", "\x1b", "文案\x1b", "ok\x1b\x1b"):
+        assert "\x1b" not in C.sanitize_verb(raw)
+        assert "\x1b" not in C.sanitize_log_field(raw)
+    # 单个 ESC + 可打印字母的 ECMA-48 歧义如实保留, 只保证无控制字符
+    out = C.sanitize_log_field("\x1bEND")
+    assert "\x1b" not in out and out in ("END", "ND")
+
+
+def t_d6_eviction_clock_is_injected():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "def _record(d: SloganDecision, at_ms: Optional[int] = None)" in src
+    assert "at_ms=stamp" in src or "at_ms=stamp," in src
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    K = mapping._MAX_OWNERS
+    for i in range(K + 1):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i, now=1000.0)
+    recs = mapping.evicted_owner_log()
+    assert recs and all(r.at_ms == 1000000 for r in recs)
+    d = mapping.pick_for_event("tool.exploring", owner="x", now=1000.0)
+    assert d.at_ms == recs[-1].at_ms
+    # 确定性回放
+    first = tuple((r.owner, r.dropped, r.at_ms, r.reason_counts) for r in recs)
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    for i in range(K + 1):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i, now=1000.0)
+    second = tuple((r.owner, r.dropped, r.at_ms, r.reason_counts)
+                   for r in mapping.evicted_owner_log())
+    assert first == second
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d6_eviction_reason_summary():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "reason_counts: Tuple[Tuple[str, int], ...]" in src
+    assert "Counter(x.reason for x in ev_bucket)" in src
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    K = mapping._MAX_OWNERS
+    mapping.pick_for_event("tool.exploring", owner="s-0", now=1000.0)
+    mapping.record_error("typo.event", "boom", owner="s-0", at_ms=1000000)
+    mapping.pick_for_event("turn.completed", owner="s-0", now=1000.0)
+    for i in range(1, K):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i, now=1000.0)
+    mapping.pick_for_event("tool.exploring", owner="trigger", now=1000.0)
+    r = next(r for r in mapping.evicted_owner_log() if r.owner == "s-0")
+    assert r.last_reason == "ok"          # 旧版只看得到这个
+    assert dict(r.reason_counts)["error:boom"] == 1
+    assert dict(r.reason_counts)["ok"] == 2
+    assert sum(n for _, n in r.reason_counts) == r.dropped
+    assert list(r.reason_counts) == sorted(r.reason_counts)
+    assert not hasattr(r, "text") and not hasattr(r, "entry_id")
+    assert mapping.audit().ok is True
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d6_owner_limit_wording():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "OWNER_LIMIT = 64" in src
+    assert "≤ ``OWNER_LIMIT`` 码点零改动" in src
+    assert mapping.OWNER_LIMIT == 64
+    assert mapping.norm_owner("a" * 64) == "a" * 64
+    assert mapping.norm_owner("a" * 65).startswith("owner:")
+    raw = "session-" + "x" * 80
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    d = mapping.pick_for_event("tool.exploring", owner=raw)
+    assert d.owner == mapping.norm_owner(raw)
+    assert len(mapping.dispatch_log(raw)) == 1
+    assert mapping.norm_owner(d.owner) == d.owner
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d6_full_health():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    r = mapping.audit()
+    assert r.ok and r.index_consistent
+    st = mapping.index_stats()
+    assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+    assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+    for lang in L.LANGUAGES:
+        for ev in mapping.EVENT_BINDINGS:
+            d = mapping.pick_for_event(ev, lang=lang, owner="final", now=1000.0)
+            assert d.reason == "ok" and d.entry_id, (ev, lang)
+    assert mapping.audit().ok is True
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
 
 for name, fn in sorted(globals().items()):
     if name.startswith("t_") and callable(fn):

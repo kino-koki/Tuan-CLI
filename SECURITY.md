@@ -1057,4 +1057,58 @@ miss、触发事件组完整；`AuditReport` 新增 `clean_collisions` /
 
 验证：256 例 pytest + 73 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 
+---
+
+## 21. 先清理后截断、注入时钟贯穿、淘汰痕摘要
+
+本轮不改任何安全裁决，只补前五轮刚修完的运行时对应关系里的漏洞。
+
+- **先粗切导致合法内容不可达**：`sanitize_log_field` 旧实现
+  `raw[:lim*4]` 先截断再清理。实测 `' '*1000+'OK'`（limit=120）
+  只扫前 480 码点，前部垃圾吃满额度，清理后为空，尾部唯一合法
+  内容 `OK` 被整段丢弃。现在**先 `_clean_once` 迭代到不动点、再按
+  `lim` 截断**，并加 `_SCAN_CAP = 65536` 扫描上限
+  （实测 `_clean_once`：64KiB≈17ms / 1MiB≈0.32–0.37s / 2MiB≈0.66–0.68s）。
+  64KiB 以内保证语义正确；超出才粗切兜 DoS，**这是显式
+  fail-closed 边界**，实测 `' '*70000+'OK' -> ''`，不宣称
+  「任意长度都保真」。截断结果仍严格幂等。
+- **连续 ESC 串吞掉尾部字符**：修上一项后实测暴露
+  `''*900+'END' -> 'ND'`，最后一个 ESC 与 `E` 拼成 `ESC E`
+  (NEL) 被 `_ESC_SEQ_RE` 吞掉。新增 `_ESC_RUN_RE = {2,}`
+  排在 OSC/CSI **之后**（以 `[`/`]` 引导的真序列已先剥掉），
+  实测 `-> 'END'`，且 `'[31m' -> ''` 没误伤 CSI。
+  **单个** `'END'` 仍是 `'ND'`：ECMA-48 固有歧义，本轮
+  未改；ESC 已清除、不会回显控制序列，因此**无安全风险**，
+  只是保真度边界。
+- **孤立 ESC 候选实测不成立、未修**：怀疑 `_CTRL_RE` 不含
+  `0x1b`，实测 `sanitize_verb('abc') == 'abc'`、
+  `'' -> ''`。原因是字符类 `-` 覆盖 0x1b。
+  **没有为它改任何一行代码**，只加回归锁住既有正确行为。
+- **淘汰痕与 decision 共用注入时钟**：旧实现淘汰痕用
+  `time.monotonic()`，实测注入 `now=1000.0` 时
+  `decision.at_ms=1000000` 而 `EvictionRecord.at_ms=76564`，
+  可确定性回放断一半。现在 `_record(d, at_ms=...)` 接受调用方
+  时钟，`pick_for_event` 5 个分支与 `record_error` 全部传 `at`；
+  两次回放元数据完全一致。
+- **`reason_counts` 让错误信号不再被掩盖**：旧版只记
+  `last_reason`。实测桶内 `ok / error:boom / ok` 淘汰后
+  `last_reason='ok'`，运维看不出曾出错。现在
+  `EvictionRecord` 带按 reason 计数并排序的摘要
+  `('error:boom',1),('ok',2)`，`sum == dropped`；**不含文案与
+  entry_id**，不影响 `audit().ok`。
+- **口径精确化**：新增 `OWNER_LIMIT = 64`，docstring 改为
+  「干净且 ≤64 码点零改动」；实测 `'a'*64` 原样、
+  `'a'*65 -> owner:<fp16>`。功能零变化，加边界测试锁住。
+
+**如实边界**：`_SCAN_CAP` 之外仍先粗切；单个 ESC 的 ECMA-48
+歧义未解决（但无控制字符残留）；超长 owner 的全串 sha1 成本
+未修（实测 2 MiB ≈ 1.7 ms）。`reason_counts` 只汇总 reason，
+不复活决策内容；只保留最近 64 次淘汰；`evicted_recent` 不参与
+`audit().ok`。`tui.py` / `runtime_slogans.py` 文件零改动，但
+re-export 的 `sanitize_verb` 因共享 `_clean_once` 对连续 ESC
+输入更保真，其余行为不变。并发压测仍未复现 list 撕裂；不是
+真机长跑；分叉改动仍未合并；第三方自适应红队仍未做。
+
+验证：276 例 pytest + 80 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

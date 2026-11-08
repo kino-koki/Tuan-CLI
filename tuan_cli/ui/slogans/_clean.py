@@ -37,6 +37,12 @@ _CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 # 其余 ESC 序列：ESC c (RIS)、ESC 7/8 (save/restore)、ESC ( B (charset) …
 # ``[ -/]*`` 吃中间字节，``[0-~]`` 吃终止/单字符命令。必须排在 OSC/CSI 之后。
 _ESC_SEQ_RE = re.compile(r"\x1b[ -/]*[0-~]")
+# 深度轮 6: **连续 2+ 个 ESC** 不可能是有效序列引导 (ECMA-48 序列
+# 以单个 ESC 起始)。旧版让最后一个 ESC 与后面的可打印字符拼成假序列:
+# 实测 ``'\x1b'*900 + 'END'`` -> ``'ND'``, 尾部 'E' 被 ``\x1bE``
+# (NEL) 吞掉。整体删连续 ESC 串, 且排在 OSC/CSI 之后 —— 以 ``[``/``]``
+# 引导的真序列已先被剥掉, 实测 ``'\x1b\x1b[31m'`` 仍得空串。
+_ESC_RUN_RE = re.compile(r"\x1b{2,}")
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
 _MAX_VERB_CHARS = 48          # 码点上限（第二道保险）
@@ -113,6 +119,7 @@ def _clean_once(raw: str) -> str:
     """
     s = _OSC_RE.sub("", raw)
     s = _CSI_RE.sub("", s)
+    s = _ESC_RUN_RE.sub("", s)             # 连续 ESC 垃圾串整体删 (深度轮 6)
     s = _ESC_SEQ_RE.sub("", s)             # 吃完整序列，不只是 ESC 字节
     s = _CTRL_RE.sub("", s)
     # 删不可见/双向/私用/未分配；保留中间的组合标记（如 ❤️ 的 VS16）。
@@ -193,6 +200,13 @@ def sanitize_verb(raw: object) -> str:
 #: 用码点限长才能保留 ``background.progress`` 这类长事件名的可读性。
 LOG_FIELD_LIMIT = 120
 
+#: 清理前允许扫描的最大码点数（DoS 防护）。实测 ``_clean_once`` 对
+#: 64KiB ≈ 17 ms、1MiB ≈ 368 ms、2MiB ≈ 676 ms；日志字段最终只输出
+#: 120 码点，因此超过 64KiB 的输入先粗切再清理，且在粗切边界上
+#: ``_CTRL_RE`` 会删掉孤立 ESC（0x1b 落在 ``\x0e-\x1f`` 内）。
+#: 64KiB 以内**保证先清理后截断**，前部垃圾不再吃掉尾部合法内容。
+_SCAN_CAP = 65536
+
 
 def _coerce_log_limit(limit: object) -> int:
     """把 ``limit`` 收敛成合法正整数；脏值一律回落默认，绝不抛异常。
@@ -236,11 +250,21 @@ def sanitize_log_field(raw: object, limit: int = LOG_FIELD_LIMIT) -> str:
 
     ``limit`` 走 ``_coerce_log_limit`` 严格校验（深度轮 5）：脏值回落
     默认 120 而不是抛异常，public API 不会因脏配置崩。
+
+    深度轮 6：改为**先清理后截断**（旧版先按 ``lim*4`` 粗切，前部
+    垃圾会吃掉尾部合法内容），并加 ``_SCAN_CAP`` 扫描上限防超长输入
+    拖慢正则。截断结果仍是 ``[lim 码点 + '…']``，二次调用幂等。
     """
     if not isinstance(raw, str):
         return ""
     lim = _coerce_log_limit(limit)
-    s = raw[:lim * 4]          # 先粗切，避免超长输入在正则上放大
+    # 深度轮 6: 旧实现 ``raw[:lim*4]`` **先粗切再清理**。limit=120 时
+    # 只扫前 480 码点 —— 实测 ``'\x00'*1000 + 'OK'`` 前部垃圾吃满
+    # 额度，清理后为空，尾部唯一合法内容 'OK' 被整段丢弃；ESC 序列
+    # 被切断也会留下半截。现在改为**先清理后截断**，仅对超过
+    # ``_SCAN_CAP`` 的异常超长输入才粗切（DoS 防护，如实标注）。
+    scan = raw if len(raw) <= _SCAN_CAP else raw[:_SCAN_CAP]
+    s = scan
     for _ in range(3):
         nxt = _clean_once(s)
         if nxt == s:

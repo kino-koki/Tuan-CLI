@@ -297,3 +297,31 @@ last_reason='ok')`；`stats owners=128 / evicted_recent=1 / evicted_cap=64`；
 TUI 仍未替换既有 i18n 文案；分叉改动仍未合并；第三方自适应红队
 仍未做。详见 `SLOGAN_MAPPING.md` §14。本轮**不改** `fully_superior`、
 99 模块基线与任何对齐指标。
+
+
+---
+
+## R35 · 先清理后截断 / 注入时钟贯穿 / 淘汰痕摘要
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R35 | `sanitize_log_field` 先按 `lim*4` 粗切再清理, 实测 `' '*1000+'OK'` 返回空串 (尾部合法内容不可达); 修后暴露连续 ESC 串吞字符 `''*900+'END' -> 'ND'`; 淘汰痕用 `time.monotonic()` 与注入 `now` 两套时钟 (实测 1000000 vs 76564); `last_reason` 掩盖桶内 `error:boom`; `norm_owner` docstring「干净输入零改动」对 >64 码点不精确 | 改为**先 `_clean_once` 迭代到不动点再截断** + `_SCAN_CAP=65536` 扫描上限; 新增 `_ESC_RUN_RE={2,}` 排在 OSC/CSI 之后整体删连续 ESC; `_record(d, at_ms=None)` 接受注入时钟, 5 个分发分支 + `record_error` 全传 `at`; `EvictionRecord` 增排序 `reason_counts` (不含文案/entry_id); 新增 `OWNER_LIMIT=64` 并精确化 docstring |
+
+实测：`' '*1000+'OK' -> 'OK'`（旧 `''`）、
+`''*900+'END' -> 'END'`（旧 `'ND'`）、
+`'[31m' -> ''`（未误伤 CSI）、
+`now=1000.0` 时 `decision.at_ms == eviction.at_ms == 1000000`、
+`reason_counts=(('error:boom',1),('ok',2))`、
+`index_stats 1695×4 / audit ok=True`。
+
+如实边界：**候选 A（孤立 ESC 残留）实测不成立、未修**
+（`_CTRL_RE` 的 `-` 已含 0x1b），只加回归锁住既有正确行为；
+`_SCAN_CAP` 之外仍先粗切（实测 `' '*70000+'OK' -> ''`）；
+**单个** `'END' -> 'ND'` 是 ECMA-48 固有歧义，未改，ESC 已清除
+故无安全风险；超长 owner 全串 sha1 成本未修（2 MiB ≈ 1.7 ms）；
+`reason_counts` 不复活决策内容、只保留最近 64 次淘汰、
+不参与 `audit().ok`；`tui.py`/`runtime_slogans.py` 文件零改动但
+共享 `_clean_once` 对连续 ESC 更保真；并发压测仍未复现 list 撕裂；
+不是真机长跑；分叉改动仍未合并；第三方自适应红队仍未做；
+**不宣称性能提升**。详见 `SLOGAN_MAPPING.md` §15。
+本轮**不改** `fully_superior`、99 模块基线与任何对齐指标。

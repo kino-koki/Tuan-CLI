@@ -46,6 +46,11 @@ TUI 留痕却丢了 ``entry_id``、错误被 ``except Exception`` 静默吞掉�
 深度轮 5 再补: ``owner`` 全链路归一 (D4 漏掉的 public 入参)、
 LRU **被动淘汰**留脱敏痕迹 (D4 只覆盖了显式 ``close()``)、
 ``sanitize_log_field`` 的 ``limit`` 严格类型校验。
+
+深度轮 6 再补: 淘汰痕与 decision 共用注入时钟 (可回放)、
+``EvictionRecord.reason_counts`` 让桶内错误信号不再被
+``last_reason`` 掩盖、``norm_owner`` 口径按实测精确化、
+``sanitize_log_field`` 改为先清理后截断。
 """
 
 from __future__ import annotations
@@ -579,11 +584,25 @@ _EVICTED: "deque[EvictionRecord]" = deque(maxlen=_EVICT_CAP)
 
 @dataclass(frozen=True)
 class EvictionRecord:
-    """一次 LRU 被动淘汰的痕迹 (脱敏: 不含文案、不含 entry_id)。"""
+    """一次 LRU 被动淘汰的痕迹 (脱敏: 不含文案、不含 entry_id)。
+
+    深度轮 6: ``at_ms`` 改走 ``_record`` 的注入时钟 (与
+    ``SloganDecision.at_ms`` 同源, 可确定性回放); 新增
+    ``reason_counts`` —— 旧版只记 ``last_reason``, 实测桶内
+    ``ok / error:boom / ok`` 淘汰后只剩 ``last_reason='ok'``,
+    运维完全看不出被丢弃的会话曾出错。摘要按 reason 字符串计数并
+    排序 (确定性), reason 本身是内部常量或已净化的 ``error:kd``,
+    不含文案与 entry_id。
+    """
     owner: str
     dropped: int
     last_reason: str
     at_ms: int
+    reason_counts: Tuple[Tuple[str, int], ...] = ()
+
+
+#: ``owner`` 零改动的上限（码点）。超过即归一定长指纹, 保证桶 key 有界。
+OWNER_LIMIT = 64
 
 
 def norm_owner(raw: object) -> str:
@@ -596,9 +615,13 @@ def norm_owner(raw: object) -> str:
     event/kind/context, 偏偏漏了这一路。
 
     两条约束:
-    * **干净输入零改动** —— ``sanitize_log_field(raw) == raw`` 时原样
-      返回, 所以既有 ``owner='s-0'`` / ``tui:%x`` 全部不变, 查询侧
-      用同一个函数即可对上;
+    * **干净且 ≤ ``OWNER_LIMIT`` 码点零改动** —— ``sanitize_log_field``
+      返回原串时原样返回, 所以既有 ``owner='s-0'`` / ``tui:%x``
+      全部不变, 查询侧用同一个函数即可对上。深度轮 6 实测:
+      65 码点以上的**纯 ASCII 干净串**也会被归一成指纹 (实测
+      ``'a'*64`` 原样、``'a'*65`` → ``owner:<fp16>``)。旧 docstring
+      写「干净输入零改动」不精确, 已按实测修正; 功能无变化
+      (写入/查询仍命中同一 key), 只是口径如实。
     * **脏串归一定长指纹 key** —— ``owner:<sha1(raw)[:16]>`` 只有 22
       码点, 干净且远小于 limit, 因此 ``norm_owner(norm_owner(x)) ==
       norm_owner(x)`` **严格幂等**。这点是实测逼出来的: 初版把净化后
@@ -610,7 +633,7 @@ def norm_owner(raw: object) -> str:
     if not isinstance(raw, str) or not raw:
         return ""
     from . import _clean  # noqa: PLC0415
-    clean = _clean.sanitize_log_field(raw, 64)
+    clean = _clean.sanitize_log_field(raw, OWNER_LIMIT)
     if clean == raw:
         return raw                     # 干净输入零改动, 严格幂等
     fp = hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16]
@@ -741,8 +764,17 @@ def acknowledge_runtime_misses() -> int:
         return n
 
 
-def _record(d: SloganDecision) -> None:
+def _record(d: SloganDecision, at_ms: Optional[int] = None) -> None:
+    """写一条决策; ``at_ms`` 由调用方注入 (与 decision 同源时钟)。
+
+    深度轮 6: 旧实现淘汰痕用 ``time.monotonic()``, 而
+    ``pick_for_event(now=...)`` 的 decision 走注入时钟 —— 实测注入
+    ``now=1000.0`` 时 ``decision.at_ms=1000000`` 但
+    ``EvictionRecord.at_ms=76564``, 同一事件的两个时间戳来自两套
+    时钟, 可回放性断了一半。现在统一。
+    """
     key = norm_owner(d.owner)   # 幂等: 干净 owner 原样返回
+    stamp = int(time.monotonic() * 1000) if at_ms is None else int(at_ms)
     with _dispatch_lock:
         bucket = _dispatch_log.get(key)
         if bucket is None:
@@ -753,7 +785,9 @@ def _record(d: SloganDecision) -> None:
                     owner=ev_owner,
                     dropped=len(ev_bucket),
                     last_reason=(ev_bucket[-1].reason if ev_bucket else ""),
-                    at_ms=int(time.monotonic() * 1000),
+                    at_ms=stamp,
+                    reason_counts=tuple(sorted(
+                        Counter(x.reason for x in ev_bucket).items())),
                 ))
             bucket = []
             _dispatch_log[key] = bucket
@@ -790,7 +824,7 @@ def record_error(event: str, kind: str, *, owner: str = "",
                 if context is not None else None)
     d = SloganDecision(ev, safe_ctx, "", "", "error:" + kd,
                        at, "", "", norm_owner(owner))
-    _record(d)
+    _record(d, at)
     return d
 
 
@@ -824,7 +858,7 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     if event in SECURITY_EVENTS:
         d = SloganDecision(event, None, resolved, "", "security-notice",
                            at, "", "", owner)
-        _record(d)
+        _record(d, at)
         return d
     binding = EVENT_BINDINGS.get(event)
     if binding is None or binding.context is None:
@@ -838,7 +872,7 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     if s is None:
         d = SloganDecision(event, binding.context, resolved, "",
                            "sanitizer-unavailable", at, "", "", owner)
-        _record(d)
+        _record(d, at)
         return d
     sanitize_verb, display_cols, max_cols = s
 
@@ -853,7 +887,7 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     if not text:
         d = SloganDecision(event, binding.context, resolved, "",
                            "rejected", at, "", origin, owner)
-        _record(d)
+        _record(d, at)
         return d
 
     # O(1) 反查: 上一轮这里是逐条遍历全量注册表线性扫 1695 条,
@@ -869,7 +903,7 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
             _UNRESOLVED_MISSES += 1     # 连续 miss，成功一次即归零
         d = SloganDecision(event, binding.context, resolved, "",
                            "index-miss", at, "", origin, owner)
-        _record(d)
+        _record(d, at)
         return d
     # 数据源恢复后一次成功反查即视为「当前健康」；历史累计证据保留。
     # ``global`` 已在上面的 miss 分支声明，此处不可重复声明。
@@ -877,7 +911,7 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
         _UNRESOLVED_MISSES = 0
     d = SloganDecision(event, binding.context, resolved, text, "ok",
                        at, entry.id, origin, owner)
-    _record(d)
+    _record(d, at)
     return d
 
 

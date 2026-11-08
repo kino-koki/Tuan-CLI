@@ -565,3 +565,33 @@ LRU 被动淘汰静默丢整桶、`close()` 与 `take_owner_log()` 两套实现�
 
 验证：256 passed + 73 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 `stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。
+
+
+---
+
+## 17. 共用净化核心的连续 ESC 处理（本引擎文件零改动）
+
+前五轮把对应关系做实；本轮实测发现日志字段净化「先粗切再清理」
+丢尾部合法内容、连续 ESC 串吞掉尾部字符、淘汰痕与 decision
+时钟不一致、`last_reason` 掩盖桶内错误信号。完整复现与修复见
+`SLOGAN_MAPPING.md` §15。
+
+**本引擎文件本轮零改动**，但必须说明一处**行为变化**：
+`runtime_slogans` re-export 的 `_clean.sanitize_verb` 与
+`sanitize_log_field` 共用 `_clean_once`，而本轮给 `_clean_once`
+新增了 `_ESC_RUN_RE`（连续 2+ 个 ESC 整体删，排在 OSC/CSI 之后）。
+因此 `sanitize_verb` 对**连续 ESC 输入**更保真：实测
+`'\x1b'*900+'END'` 从 `'ND'` 变为 `'END'`；
+`'\x1b\x1b[31m'` 仍为 `''`（未误伤 CSI）。
+`sanitize_verb('abc\x1b') == 'abc'`、`_fit_headline`、
+`display_cols`、列宽与幂等契约一律不变；139 例既有回归全绿。
+
+另外 `sanitize_log_field` 去掉了 `raw[:lim*4]` 粗切、改为先清理后
+截断并加 `_SCAN_CAP=65536` 扫描上限 —— 这不是第三套宽度真值，
+只是同一份 `_clean_once` 的调用顺序与 DoS 边界。
+
+**候选 A（孤立 ESC 残留）实测不成立**：`_CTRL_RE` 的 `\x0e-\x1f`
+已含 0x1b，孤立 ESC 一直被删，本轮**未为它改任何代码**。
+
+验证：276 passed + 80 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+`stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。

@@ -732,6 +732,16 @@ THIRD-PARTY ATTRIBUTIONS
               desensitized bounded trace, and session release is
               collapsed to one exit. No new slogans, events, CLI
               subcommands, license scope, upstream source or trademark
+              asset. Sections 9-15 remain unchanged.
+    Clean-before-truncate / injected-clock pass (still NO new third-
+              party material): log fields are cleaned before being
+              truncated with an explicit scan bound, consecutive ESC
+              runs no longer consume trailing text, eviction traces
+              share the injected clock with decisions, and eviction
+              records carry a desensitized reason summary. One
+              suspected defect (lone ESC) was measured FALSE and was
+              deliberately NOT changed. No new slogans, events, CLI
+              subcommands, license scope, upstream source or trademark
               asset. Sections 9-15 remain unchanged. The Claude Code /
               Codex attributions in sections 9-15 are unchanged.
 
