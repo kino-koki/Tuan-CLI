@@ -64,7 +64,8 @@ def _hooks_list(workspace: str) -> int:
     mgr = HookManager(config, workspace, kernel=kernel)
     if not mgr.enabled or not mgr.list_hooks():
         console.print("未配置任何 Hooks。在配置中 hooks.<事件> 下添加命令即可 "
-                      "(事件: PreToolUse / PostToolUse / SessionStart / SessionEnd)。")
+                      f"(共 {len(HOOK_EVENTS)} 个事件: "
+                      "8 个核心 + 7 个扩展；`tuan hooks list` 列出全部)。")
         return 0
     for evt in HOOK_EVENTS:
         specs = [h for h in mgr.list_hooks() if h["event"] == evt]
@@ -101,13 +102,34 @@ def _hooks_test(workspace: str, args: Any) -> int:
         return 0
     console.print(f"触发 {event} (tool={tool}) ...")
     if event == "PreToolUse":
-        d = mgr.run_pre(tool, payload, dangerous=True)
+        # B3 续轮: 从工具注册表拿 schema，让手动测试入口也走严格
+        # updatedInput 校验。取不到时如实打印「保守子集」而不是假装
+        # 已通过 schema 校验。
+        schema = None
+        try:
+            reg = kernel.get("tool_registry") or kernel.require("tools")
+            getter = getattr(reg, "get", None)
+            obj = getter(tool) if getter else None
+            schema = getattr(obj, "parameters", None)
+        except Exception:  # noqa: BLE001
+            schema = None
+        d = mgr.run_pre(tool, payload, dangerous=True, tool_schema=schema)
         console.print(f"  block={d.block}  reason={d.reason!r}  args={d.args!r}")
+        console.print(f"  updatedInput 校验: {'schema' if schema else '无 schema → 保守子集 (enforced=False)'}")
     elif event == "PostToolUse":
         mgr.run_post(tool, payload, None)
         console.print("  PostToolUse 已触发 (见 hook 脚本输出/审计事件)。")
+    elif event in ("PermissionRequest", "WorktreeCreate", "Elicitation",
+                   "ElicitationResult"):
+        # B3 续轮 R: 旧实现把一切都塞给 run_session → run_notify，
+        # 决策类事件会被 `decision_event_misrouted` 拒绝并静默不执行。
+        # 现在走真正的裁决出口。
+        d = mgr.run_decision(event, tool_name=tool,
+                             payload={"tool": tool, **payload})
+        console.print(f"  block={d.block}  reason={d.reason!r}  "
+                      f"failure_kind={d.failure_kind!r}")
     else:
-        mgr.run_session(event, {"tool": tool, **payload})
+        mgr.run_notify(event, {"tool": tool, **payload})
         console.print(f"  {event} 已触发。")
     return 0
 

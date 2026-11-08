@@ -250,6 +250,16 @@ def create_agent(
             agent.ctx.hooks = HookManager(config, workspace, kernel=kernel)
         except Exception:  # noqa: BLE001
             agent.ctx.hooks = None
+    # B3 续轮: 注入「当前会话 hooks」取值函数。Config / WorktreeLayer /
+    # remote_control / SecurityAlerter 等没有 agent.ctx 句柄的子系统靠它
+    # 拿到 HookManager。传 lambda 而不是对象：这些模块构造早于此处，
+    # 且 hooks 可在会话内被替换/置空。异常一律当 None（严格 no-op）。
+    try:
+        from .hooks.triggers import set_default_hooks_provider
+        set_default_hooks_provider(
+            lambda: getattr(getattr(agent, "ctx", None), "hooks", None))
+    except Exception:  # noqa: BLE001
+        pass
     # 自定义斜杠命令: 把 <home>/commands 与 <workspace>/.tuan/commands 挂进分发链
     # (运行期包装 _handle_slash, 幂等; 失败不影响主流程)。延迟导入避免 cli <-> app 环。
     # bare / safe_mode 模式下不安装用户自定义命令。

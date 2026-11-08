@@ -159,9 +159,10 @@ def delete_worktree_state(session_id: str, home: Optional[str | Path] = None) ->
 class WorktreeLayer:
     """git worktree 管理层 (每个项目一份)。"""
 
-    def __init__(self, workspace: str | Path) -> None:
+    def __init__(self, workspace: str | Path, hooks: Any = None) -> None:
         self.workspace = Path(workspace).resolve()
         self.dir = self.workspace / ".tuan" / "worktrees"
+        self._hooks = hooks
 
     # ------------------------------------------------------------ 前置检查
 
@@ -211,6 +212,14 @@ class WorktreeLayer:
         """创建 worktree: git worktree add .tuan/worktrees/<name> [-b <name>]。"""
         self._require_git()
         target = self._wt_path(name)
+        # B3 续轮: WorktreeCreate 决策类事件，放在任何文件系统改动之前。
+        # hook 可拒绝创建 —— 这是 cc 该事件的实际用途，也是 B2
+        # worktree 沙箱逃逸边界之外的一道显式策略闸。
+        from ..hooks.triggers import HookTrigger
+        _d = HookTrigger(self._hooks).worktree_create(
+            name=name, path=str(target), branch=name, source="create")
+        if getattr(_d, "block", False):
+            raise WorktreeError(f"[WorktreeCreate Hook 阻断] {_d.reason}")
         # B2: 证明创建目标本身在 workspace 边界内（含 symlink 祖先解析）。
         # 放在 exists 检查之前，避免「已存在的越界路径」被直接复用。
         from ..sandbox.worktree_boundary import assert_worktree_target
@@ -317,6 +326,14 @@ class WorktreeLayer:
         self._require_git()
         name = self._agent_wt_name(spec_id, slug)
         target = self._wt_path(name)
+        # B3 续轮: 刻意放在 fast-resume 分支**之前** —— 复用一个已存在的
+        # worktree 同样值得让策略 hook 有机会拒绝。比 CC 语义更严，如实标注。
+        from ..hooks.triggers import HookTrigger
+        _d = HookTrigger(self._hooks).worktree_create(
+            name=name, path=str(target), branch=name,
+            source="create_agent_worktree", ephemeral=True)
+        if getattr(_d, "block", False):
+            raise WorktreeError(f"[WorktreeCreate Hook 阻断] {_d.reason}")
         # B2: fast-resume 分支在下方直接 return，边界断言必须放在它之前，
         # 否则已注册的越界路径会绕过校验被复用。
         from ..sandbox.worktree_boundary import assert_worktree_target

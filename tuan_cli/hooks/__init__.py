@@ -11,8 +11,11 @@ from .manager import (
     HookManager, HookDecision, HookFailure,
     HOOK_EVENTS, CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS,
 )
+from .triggers import HookTrigger, set_default_hooks_provider, \
+    get_default_hooks_provider
 
 __all__ = [
     "HookManager", "HookDecision", "HookFailure",
     "HOOK_EVENTS", "CORE_HOOK_EVENTS", "EXTENDED_HOOK_EVENTS",
+    "HookTrigger", "set_default_hooks_provider", "get_default_hooks_provider",
 ]

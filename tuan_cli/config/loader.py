@@ -315,9 +315,12 @@ class Config:
     """组合后的配置视图。"""
 
     def __init__(self, profile: str = "default", patch_file: Optional[str] = None,
-                 bare: bool = False):
+                 bare: bool = False, hooks: Any = None):
         self.profile = profile
         self.bare = bare
+        # B3 续轮: 配置写入要触发 ConfigChange。显式 hooks 优先，
+        # 未传时由 HookTrigger 回落到 app.py 注入的 default provider。
+        self._hooks = hooks
         self.home = home_dir()
         self.user_config_path = self.home / "config.yaml"
         self.profile_dir = self.home / "profiles" / profile
@@ -361,6 +364,9 @@ class Config:
         dump_yaml(cfg, self.user_config_path)
         # 同步内存视图: 用 patch_replace 整值替换目标键 (保留同级默认字段)。
         self.data = patch_replace(self.data, {dotted: value})
+        from ..hooks.triggers import HookTrigger
+        HookTrigger(self._hooks).config_change(
+            source="user_config", key=dotted, origin="set_user")
 
     def delete_user(self, dotted: str) -> bool:
         """从用户层配置删除某个点路径键 (复位到内置默认值)。返回是否真的删掉了。
@@ -386,6 +392,9 @@ class Config:
             self.data = deep_merge(self.data, PRESET_PROFILES[self.profile])
         self.data = deep_merge(self.data, cfg)
         self.data = deep_merge(self.data, _load_yaml(self.profile_dir / "config.yaml"))
+        from ..hooks.triggers import HookTrigger
+        HookTrigger(self._hooks).config_change(
+            source="user_config", key=dotted, origin="delete_user")
         return True
 
     @staticmethod

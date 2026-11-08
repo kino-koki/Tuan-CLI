@@ -353,12 +353,17 @@ class ToolPipeline:
     """
 
     def __init__(self, hooks: Any = None, bus: Optional[SemanticBus] = None,
-                 agent_id: str = "main") -> None:
+                 agent_id: str = "main",
+                 schema_resolver: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None) -> None:
         self.pre_stages: List[Callable[[ToolCall, LoopContext], ToolCall]] = []
         self.post_stages: List[Callable[[ToolCall, ToolOutcome, LoopContext], ToolOutcome]] = []
         self.hooks = hooks  # 既有 HookManager (可选)
         self.bus = bus
         self.agent_id = agent_id
+        # B3 续轮: 既有调用方未填 ToolCall.tool_schema 时，由管线按工具名
+        # 解析 schema。如实标注：ToolPipeline 当前**没有生产构造方**
+        # （全仓只有测试构造它），所以这是契约补齐，不代表实际覆盖面扩大。
+        self.schema_resolver = schema_resolver
 
     def add_pre_stage(self, fn: Callable[[ToolCall, LoopContext], ToolCall]) -> None:
         self.pre_stages.append(fn)
@@ -382,9 +387,20 @@ class ToolPipeline:
         # 既有 HookManager 的 pre execute (传入真实工具名/参数, 尊重阻断/改参决策)
         if self.hooks is not None:
             try:
-                decision = self.hooks.run_pre(
-                    call.name, call.args,
-                    tool_schema=getattr(call, "tool_schema", None))
+                if getattr(call, "tool_schema", None) is None and self.schema_resolver:
+                    try:
+                        call.tool_schema = self.schema_resolver(call.name)
+                    except Exception:  # noqa: BLE001 - 解析失败 = 无 schema 保守子集
+                        call.tool_schema = None
+                _schema = getattr(call, "tool_schema", None)
+                # B3 续轮: 老式 hook mock 的 run_pre(name, args) 不接受
+                # tool_schema 关键字。无 schema 时不传该参数，行为与旧版
+                # 完全一致（HookManager 内部走保守子集）；有 schema 才传。
+                if _schema is not None:
+                    decision = self.hooks.run_pre(
+                        call.name, call.args, tool_schema=_schema)
+                else:
+                    decision = self.hooks.run_pre(call.name, call.args)
                 if getattr(decision, "block", False):
                     outcome.error = f"hook-pre-blocked: {getattr(decision, 'reason', '')}"
                     self._audit(outcome, ctx, started)

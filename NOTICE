@@ -949,3 +949,16 @@ SOFTWARE.
     unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
     parity line and all "no endorsement" statements still apply
     unchanged.
+
+
+24. Production trigger layer for the 5 extended hook events
+    (`hooks/triggers.py`) and its wiring into config loading, worktree
+    creation, ask_user / ACP elicitation, desktop / remote notifications,
+    the hooks CLI test entry, and the arch execution pipeline. Still NO
+    new third-party material: all changes are stdlib-based Python in
+    this repository's own modules, plus one new stdlib-based regression
+    file. No Anthropic source, trademark asset, upstream Rust source,
+    or new third-party dependency was copied. Items 9-23 remain
+    unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
+    parity line and all "no endorsement" statements still apply
+    unchanged.

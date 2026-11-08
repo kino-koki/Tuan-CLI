@@ -360,6 +360,13 @@ def notify(title: str, body: str, kind: str = "info") -> bool:
     """
     # 证据 1: 日志 —— 验收时据此证明告警确实触发过
     log.warning("[通知][%s] %s — %s", kind, title, body)
+    # B3 续轮: Notification 是「尝试发通知」事件，不是「推送成功」事件。
+    # 必须放在**所有**返回路径之前 —— 下方 `rc is None: return False`
+    # 是提前返回，若把派发放在函数末尾，无推送对象时 hook 永远不触发。
+    # 异常由 HookTrigger 吞掉，绝不改变 notify 的返回值语义。
+    from ..hooks.triggers import HookTrigger
+    HookTrigger().notification(
+        title=title, body=body, kind=kind, source="remote_control")
     pushed = False
     try:
         rc = _shared_rc()

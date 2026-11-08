@@ -488,21 +488,39 @@ class TestNotChangedOnPurpose:
         src = Path("tuan_cli/hooks/manager.py").read_text(encoding="utf-8")
         assert "exit-code-2" not in src or "未实现" in src
 
-    def test_five_events_have_no_production_trigger_yet(self):
-        """如实边界：只有两个扩展事件接了生产触发点。"""
-        slash = Path("tuan_cli/cli/cmd_slash.py").read_text(encoding="utf-8")
-        tools_base = Path("tuan_cli/tools/base.py").read_text(encoding="utf-8")
-        assert '"DirectoryAdded"' in slash
-        assert '"PermissionRequest"' in tools_base
-        # 其余四个未在源码中出现为触发点（引擎常量不算）
-        for f in Path("tuan_cli").rglob("*.py"):
-            if f.name in ("manager.py", "__init__.py"):
-                continue
-            s = f.read_text(encoding="utf-8", errors="replace")
-            for ev in ("ConfigChange", "WorktreeCreate",
-                       "ElicitationResult"):
-                assert f'run_notify("{ev}"' not in s
-                assert f'run_decision("{ev}"' not in s
+    def test_five_events_have_production_triggers_now(self):
+        """B3 续轮断言同步（**更强，不是放宽**）。
+
+        上一轮这里断言「5 个事件无生产触发点」。本轮把它们接上了，
+        所以改成逐一验证：统一触发层有 5 个方法、每个子系统真的调用了
+        对应方法、default provider 在 app.py 注入、且通知类与决策类
+        的分类没有被混淆。少任何一处接线都会失败。
+        """
+        trig = Path("tuan_cli/hooks/triggers.py").read_text(encoding="utf-8")
+        for method in ("config_change", "worktree_create", "elicitation",
+                       "elicitation_result", "notification"):
+            assert f"def {method}(" in trig, method
+        checks = [
+            ("tuan_cli/config/loader.py", "config_change("),
+            ("tuan_cli/config/managed.py", "config_change("),
+            ("tuan_cli/core/worktree_layer.py", "worktree_create("),
+            ("tuan_cli/tools/session_tools.py", "elicitation("),
+            ("tuan_cli/tools/session_tools.py", "elicitation_result("),
+            ("tuan_cli/runtime/acp/bridge.py", "elicitation("),
+            ("tuan_cli/runtime/acp/bridge.py", "elicitation_result("),
+            ("tuan_cli/core/remote_control.py", "notification("),
+            ("tuan_cli/core/security_alert.py", "notification("),
+            ("tuan_cli/app.py", "set_default_hooks_provider"),
+            ("tuan_cli/cli/cmd_slash_boundary.py", "hooks="),
+        ]
+        for f, needle in checks:
+            assert needle in Path(f).read_text(encoding="utf-8"), (f, needle)
+        # 分类不能被混淆：通知类走 run_notify，决策类走 run_decision
+        assert 'self._notify("ConfigChange"' in trig
+        assert 'self._notify("Notification"' in trig
+        assert 'self._decide(' in trig
+        src = Path("tuan_cli/hooks/manager.py").read_text(encoding="utf-8")
+        assert '"Notification", "DirectoryAdded", "ConfigChange"' in src
 
 
 # ================================================== 6 矩阵自洽

@@ -835,3 +835,56 @@ A 线 10 pending、分叉改动、第三方自适应红队未做；不是真机�
 既有文件 **83 passed**；parity / 写边界 / 两条侧门 / B2 各轮 / config /
 slash **356 passed**；`verify_doc_numbers.py problems == []`；
 `py_compile` 全 OK。新增 `tests/test_b3_hooks_extended.py`。
+
+
+---
+
+## R50 · B3 续轮：5 个扩展事件生产触发点 + 旁路契约
+
+完整复现见 `CLAUDE_PARITY.md` 末尾「深度轮（续四）」。沿用自足标题。
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R50-R1 | 5 个事件配置能加载、引擎能裁决，但真实操作 hook 触发 **0 次**、源码 5 个派发点 **0 命中** | 新增 `hooks/triggers.py` 统一触发层，接上 5 个生产触发点；无 hooks 严格 no-op、裁决通道异常 fail-closed |
+| R50-R2 | `tuan hooks test --event PermissionRequest` 被 misrouted 拒绝且静默不执行 | 决策类 4 事件改走 `run_decision` |
+| R50-R3 | `cmd_hooks.run_pre` 无 schema，改参只走保守子集 | 从工具注册表取 schema，取不到如实标 `enforced=False` |
+| R50-R4 | `ToolPipeline` 无生产构造方；强传 `tool_schema=` 让老式 mock `TypeError` | 加 `schema_resolver`，只在有 schema 时传关键字（兼容老式签名） |
+
+**接线**：`Config.set_user/delete_user` + `ManagedSettings.reload` →
+`ConfigChange`；`WorktreeLayer.create/create_agent_worktree` →
+`WorktreeCreate`（**任何 FS 改动前可拒绝**，含 fast-resume）；
+`_ask_user_handler` + ACP `ask_user` → `Elicitation` /
+`ElicitationResult`（**可取消/作废，绝不代答、绝不覆盖用户答案**）；
+`remote_control.notify` 所有返回路径前 + `SecurityAlerter` 后台线程 →
+`Notification`；`app.py` 注入 `lambda: agent.ctx.hooks`。
+
+**两个 B3 条目仍 `STATUS_GAP`**：官方事件面远大于 7 个、exit-code-2
+未实现、Elicitation 语义不等价、`ToolPipeline` 无生产调用链、
+`cmd_hooks` 取 schema 依赖 kernel 暴露 `tool_registry`。catalog note 补
+纠偏但 `status`/`evidence` 结构不变，**不靠改口径凑数**。
+
+**三处断言同步（不是放宽）**：「5 事件无触发点」改为逐一验证 5 方法 +
+11 处接线 + provider + 分类（更强）；`test_arch_security_fixes.py` 既有
+`FakeHooks` 测试原样保留零修改。
+
+**A′ ×2**：`notify` 的提前返回让 Notification 永不触发（移到所有返回
+路径之前）；`ToolPipeline` 强传关键字破坏老式 mock（改为条件传）。接线
+脆弱性，不是原有代码回归。
+
+**矩阵一个状态没动**：`aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`；`matrix.validate()` 与
+`evidence.verify_evidence()` 均空。
+
+**如实边界**：7 事件有触发点 ≠ 全事件对齐；`ToolPipeline` 无生产调用链；
+**行为变更**（WorktreeCreate 真能拒绝、Elicitation 能取消/作废、
+Config/notify 会派发已配 hook）；Notification 后台线程派发；
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、第三方自适应
+红队未做；不是真机多平台验证。标语引擎 / 净化层 / `mapping.py` /
+`tui.py` / `runtime_slogans.py` 逐字节未改。
+
+**验证（按分批，批次间有重叠、不累加）**：B3 续轮 + 上一轮 B3 + 5 个
+hooks 既有文件 **97 passed**；最终合并批次见报告；
+`verify_doc_numbers.py problems == []`；`py_compile` 全 OK。新增
+`tests/test_b3s_triggers.py`（真 git init + 真 `git worktree add` 的
+5 事件端到端触发）。

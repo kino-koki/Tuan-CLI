@@ -159,6 +159,15 @@ class KernelAcpBridge:
             return ""
         opts = [o for o in (options or []) if str(o).strip()]
         payload = [{"value": str(o), "label": str(o)} for o in opts]
+        # B3 续轮: ACP 的 elicitation/create 反向 RPC 是 CC 语义上真正的
+        # MCP elicitation 宿主。提问前派发 Elicitation（block = 取消，
+        # 不代答）；拿到真实答案后派发 ElicitationResult（block = 作废）。
+        from ...hooks.triggers import HookTrigger
+        _trig = HookTrigger()
+        _pre = _trig.elicitation(
+            question=question, options=opts, source="acp_elicitation_create")
+        if getattr(_pre, "block", False):
+            return ""
         try:
             result = await conn.elicitation_create(
                 session_id=self._session_id, message=question, options=payload
@@ -177,6 +186,11 @@ class KernelAcpBridge:
         for key in ("choice", "answer"):
             val = content.get(key)
             if isinstance(val, str) and val.strip():
+                _res = _trig.elicitation_result(
+                    answer=val.strip(), action=action, question=question,
+                    source="acp_elicitation_create")
+                if getattr(_res, "block", False):
+                    return ""
                 return val.strip()
         return ""
 

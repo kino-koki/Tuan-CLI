@@ -48,9 +48,10 @@ class ManagedSettings:
         # config 包含所有层级合并后的设置
     """
 
-    def __init__(self, home: Path) -> None:
+    def __init__(self, home: Path, hooks: Any = None) -> None:
         self.home = Path(home)
         self._sources: List[SettingsSource] = []
+        self._hooks = hooks
         self._locked_fields: Set[str] = set()
         self._load_all()
 
@@ -228,3 +229,9 @@ class ManagedSettings:
     def reload(self) -> None:
         """重新加载所有设置源 (配置变更后调用)。"""
         self._load_all()
+        # B3 续轮: 重载成功才派发 ConfigChange；失败（异常）不派发，
+        # 否则外部 hook 会误以为配置已生效。
+        from ..hooks.triggers import HookTrigger
+        HookTrigger(self._hooks).config_change(
+            source="managed_settings", origin="reload",
+            key=",".join(s.name for s in self._sources))

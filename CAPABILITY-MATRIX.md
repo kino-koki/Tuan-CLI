@@ -537,3 +537,28 @@ catalog 两条 note 补**第四轮纠偏指向**，但 `status` 与 `evidence`
 结构不变。接线：`/add-dir` → `DirectoryAdded`、危险审批 →
 `PermissionRequest`（只允许收紧）。新增
 `tests/test_b3_hooks_extended.py`。详见 `SECURITY_BASELINE.md` R49。
+
+
+---
+
+## B3 续轮增量（5 个扩展事件生产触发点）
+
+`CLAUDE_PARITY.md` 末尾「深度轮（续四）」是权威口径。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`。
+
+- **R1** 5 个事件配置能加载、引擎能裁决，但真实操作 hook 触发 **0 次**、
+  源码扫描 5 个派发点 **0 命中** → 新增 `hooks/triggers.py` 统一触发层，
+  接上 `ConfigChange` / `WorktreeCreate` / `Elicitation` /
+  `ElicitationResult` / `Notification` 五个生产触发点。
+- **R2** `tuan hooks test --event PermissionRequest` 被 misrouted 拒绝 →
+  决策类改走 `run_decision`。
+- **R3** `cmd_hooks.run_pre` 无 schema → 从工具注册表取，取不到如实标
+  `enforced=False`。
+- **R4** `ToolPipeline` 无生产构造方且强传 `tool_schema` 让老式 mock
+  `TypeError` → 加 `schema_resolver`、只在有 schema 时传关键字。
+
+两个 B3 条目**仍 `STATUS_GAP`**：官方事件面远大于 7 个、exit-code-2 未实现、
+Elicitation 语义不等价、`ToolPipeline` 无生产调用链。catalog note 补纠偏但
+`status`/`evidence` 结构不变。三处断言同步（更强，不是放宽）；A′ ×2 自查抓回。
+新增 `tests/test_b3s_triggers.py`。详见 `SECURITY_BASELINE.md` R50。

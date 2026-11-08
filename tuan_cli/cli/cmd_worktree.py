@@ -25,6 +25,8 @@ def cmd_worktree(args: Any) -> int:
     from ..core.worktree_layer import WorktreeError, WorktreeLayer
 
     workspace = getattr(args, "workspace", None) or default_workspace()
+    # B3 续轮: CLI 独立入口没有 agent.ctx，靠 HookTrigger 的 default
+    # provider（app.py 启动时注入）拿到当前会话 hooks。
     layer = WorktreeLayer(workspace)
     sub = getattr(args, "worktree_cmd", None) or "list"
     name = getattr(args, "name", "") or ""

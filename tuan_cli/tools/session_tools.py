@@ -183,12 +183,31 @@ def _ask_user_handler(ctx: ToolContext, question: Any = "", options: Any = None,
         return "[错误] ask_user 需要 question 参数"
     opts = [str(o).strip() for o in (options or []) if str(o).strip()]
 
+    # B3 续轮: Elicitation 决策类事件。block = **取消这次提问**，不是代答
+    # —— CC 允许 Elicitation hook 程序化回答从而跳过对话框，Tuan 刻意不
+    # 等价：模型不能自己答自己问。取消后沿用既有「用户未回答」降级语义。
+    from ..hooks.triggers import HookTrigger
+    _trig = HookTrigger(getattr(ctx, "hooks", None))
+    _pre = _trig.elicitation(question=q, options=opts, source="ask_user")
+    if getattr(_pre, "block", False):
+        return (f"用户未回答本次提问 (Elicitation Hook 取消提问: {_pre.reason}), "
+                "请基于现有信息继续并说明你的假设。")
+
     # 扩展点: TUI 在 ctx.ui 上注入 ask_user 钩子 (QxtTUI.attach_ui -> TuiUI),
     # 提问渲染成对话区可选卡片 (↑↓/Enter), 不碰 stdout。
     ui_handle = getattr(ctx, "ui", None)
     if ui_handle is not None and hasattr(ui_handle, "ask_user"):
         try:
             ans = ui_handle.ask_user(q, opts)
+            if ans:
+                # B3 续轮: 拿到**真实**用户答案才派发 ElicitationResult；
+                # block = 作废本次回答，不把 hook 输出当新答案。
+                _res = _trig.elicitation_result(
+                    answer=str(ans), action="accept", question=q,
+                    source="ui_handle")
+                if getattr(_res, "block", False):
+                    return (f"用户未回答本次提问 (ElicitationResult Hook 作废本次回答: "
+                            f"{_res.reason}), 请基于现有信息继续并说明你的假设。")
             return f"用户回答: {ans}" if ans else "用户未回答本次提问 (已跳过), 请基于现有信息继续并说明你的假设。"
         except Exception:  # noqa: BLE001 - 钩子失效时走下面的安全分支
             pass
@@ -222,6 +241,12 @@ def _ask_user_handler(ctx: ToolContext, question: Any = "", options: Any = None,
             raw = opts[0]
         elif raw.isdigit() and opts and 1 <= int(raw) <= len(opts):
             raw = opts[int(raw) - 1]
+        # B3 续轮: CLI/TTY 宿主的真实用户答案同样派发 ElicitationResult。
+        _res = _trig.elicitation_result(
+            answer=str(raw), action="accept", question=q, source="tty")
+        if getattr(_res, "block", False):
+            return (f"用户未回答本次提问 (ElicitationResult Hook 作废本次回答: "
+                    f"{_res.reason}), 请基于现有信息继续并说明你的假设。")
         return f"用户回答: {raw or '(空)'}"
 
     # headless 降级: 无法提问, 把问题原样返回让模型自行决策并显式告知用户

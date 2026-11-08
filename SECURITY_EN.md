@@ -2241,3 +2241,74 @@ parity / write boundary / two side doors / B2 waves / config / slash
 **356 passed**; `verify_doc_numbers.py problems == []`; `py_compile`
 all OK. New `tests/test_b3_hooks_extended.py`. Batches overlap, NOT
 summed.
+
+
+---
+
+## B3 Continued: Production Triggers for 5 Extended Events + Side-Path Contracts
+
+> SELF-CONTAINED heading. Full reproduction: final section of
+> `CLAUDE_PARITY.md`. **NOT A SINGLE MATRIX STATUS CHANGED**:
+> `aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+> `b_waves_done=["B1"]`.
+
+### Four measured defects
+
+| ID | Measured result |
+|---|---|
+| R1 | All 5 extended events registered successfully, yet after running real operations (`Config.set_user` / `WorktreeLayer.create` / `_ask_user_handler` / `remote_control.notify`) hooks fired **0 times**, and a repo-wide scan found **0 dispatch sites** for the 5 events -- config loads, the engine decides, but NO production code calls them |
+| R2 | `tuan hooks test --event PermissionRequest` went through `run_session` -> `run_notify` and was refused by `decision_event_misrouted`, silently doing nothing; the CLI test entry was dead for all 4 decision-type extended events |
+| R3 | `cmd_hooks.run_pre` passed no schema, so the manual test entry only got the conservative subset |
+| R4 | `ToolPipeline` has **NO production constructor** (tests only), so the previous round's "side-path fix" did not widen real coverage; forcing `tool_schema=` also made a legacy hook mock raise `TypeError`, failing 1 existing regression |
+
+### Fix
+
+| Location | Change |
+|---|---|
+| `hooks/triggers.py` (NEW) | Single `HookTrigger` exit for 5 events: notify-type through `run_notify`, decision-type through `run_decision`; **strict no-op without hooks**, notify exceptions swallowed, and if the user DID configure hooks but the decision channel breaks -> **fail-closed**. `set_default_hooks_provider()` injects a read-only getter, not a copied HookManager |
+| `config/loader.py` / `config/managed.py` | `set_user` / `delete_user` / `reload` success -> `ConfigChange` (failures do NOT dispatch) |
+| `core/worktree_layer.py` | `create` / `create_agent_worktree` dispatch `WorktreeCreate` BEFORE ANY filesystem change; a block raises `WorktreeError`. Deliberately before the fast-resume reuse branch (stricter than CC, documented) |
+| `tools/session_tools.py` / `runtime/acp/bridge.py` | `Elicitation` / `ElicitationResult`: can CANCEL a question / VOID an answer, but **NEVER answer on the user's behalf and NEVER overwrite the user's answer** (CC allows programmatic answers; Tuan deliberately does not -- the model must not answer its own question). Headless downgrades with no real response do NOT dispatch ElicitationResult |
+| `core/remote_control.py` / `core/security_alert.py` | `Notification` before ALL return paths / inside the background thread, so hook subprocesses never block `_pre_exec_guard` |
+| `cli/cmd_hooks.py` / `arch/execution.py` | Decision events route to `run_decision`; `run_pre` takes a schema (missing -> honestly printed as `enforced=False`); `ToolPipeline` gains `schema_resolver` and only passes the keyword when a schema exists |
+| `app.py` / two worktree entries | Injects `lambda: agent.ctx.hooks`; `/worktree` passes hooks explicitly |
+
+### Why the two B3 entries STAY `STATUS_GAP`
+The official hooks reference lists far more events than these 7; CC
+exit-code-2 -> decline is NOT implemented; `Elicitation` semantics are
+deliberately NOT equivalent; `ToolPipeline` has no production call chain;
+`cmd_hooks` schema lookup depends on the kernel exposing `tool_registry`.
+Catalog notes were calibrated but `status` / `evidence` structures are
+UNCHANGED -- NO padding by editing definitions.
+
+### Three assertion synchronizations (NOT relaxed)
+The "5 events have no trigger" assertion became a per-item check of 5
+methods + 11 wiring sites + provider + classification (STRONGER); the
+existing `FakeHooks` test in `test_arch_security_fixes.py` is BYTE-IDENTICAL
+and unmodified; all other count/classification assertions untouched.
+
+### A-prime x2 (self-caught)
+1. `remote_control.notify` has an early `rc is None: return False`; the
+   first version put the Notification dispatch at the end, so it would
+   NEVER fire without a push target. Moved before all return paths.
+2. `ToolPipeline` forcing `tool_schema=` broke a legacy hook mock. Now
+   the keyword is passed only when a schema exists. Both are wiring
+   fragility, NOT pre-existing code regressions.
+
+### Verification (split batches, NOT one full-suite claim)
+B3-continued + previous B3 + 5 existing hooks files **97 passed**; final
+combined batch (see report); `matrix.validate()` /
+`evidence.verify_evidence()` / doc-number check / `py_compile` all clean.
+New `tests/test_b3s_triggers.py` includes a REAL `git init` + REAL
+`git worktree add` end-to-end firing of all 5 events.
+
+### Honest limits
+7 events having triggers != full event-surface parity; `ToolPipeline` has
+no production call chain; BEHAVIORAL CHANGES (WorktreeCreate can now really
+deny, Elicitation can cancel/void, Config/notify now dispatch configured
+hooks); Notification fires on a background thread; `os_sandbox` remains a
+gap, `deny_network_by_default` remains false, `credential_masking` remains
+partial; A-line 10 pending, local fork unmerged, no third-party adaptive
+red team; NO real-device multi-platform verification. The slogan engine /
+cleaning layer / `mapping.py` / `tui.py` / `runtime_slogans.py` are
+byte-identical.

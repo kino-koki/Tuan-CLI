@@ -1720,3 +1720,119 @@ py_compile: 改动 Python 文件全部 OK
   第三方自适应红队未做；不是真机多平台验证。
 - 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
   逐字节未改。
+
+
+---
+
+## 深度轮（续四）：5 个扩展事件的**生产触发点** + 旁路契约
+
+> 沿用**自足标题**约定，不新增数字章节编号。**矩阵计数一个没动**：
+> `ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8`，
+> `fully_superior=false`，`b_waves_done=["B1"]`。
+>
+> 这轮是上一轮「引擎层已就绪但仍是 gap」的**直接续作**：把「配置了
+> 也不触发」这个最刺眼的断点接上，不扩广度。两个 B3 条目仍
+> `STATUS_GAP`，理由见下文「为什么还不消 gap」。
+
+### 四个实测缺陷（先复现再修）
+
+| 编号 | 实测结果 |
+|---|---|
+| R1 | 上一轮 5 个扩展事件**全部注册成功**（`len(m._specs)==5`），但跑真实操作 `Config.set_user` / `WorktreeLayer.create` / `_ask_user_handler` / `remote_control.notify` 之后 hook 实际触发 **0 次**；全仓源码扫描 `run_notify("ConfigChange"...` 等 5 个派发点 **0 命中**。配置能加载、引擎能裁决，但没有任何生产代码调用它们 —— 用户以为装了拦截器，实际什么都不发生 |
+| R2 | `tuan hooks test --event PermissionRequest` 走 `run_session` → `run_notify`，被上一轮的 `decision_event_misrouted` 拒绝且**静默不执行**（实测 audit 里只有一条 misrouted）；4 个决策类扩展事件的 CLI 测试入口全部失效 |
+| R3 | `cmd_hooks.py` 的 `run_pre(tool, payload, dangerous=True)` 不传 schema，手动测试入口的改参只走保守子集 |
+| R4 | 上一轮给 `arch/execution.py::ToolCall` 加了 `tool_schema`，但全仓扫描确认 **`ToolPipeline` 没有生产构造方**（只有测试构造），所以那条「旁路补齐」其实没扩大覆盖面；而且强行传 `tool_schema=` 让老式 hook mock 的 `run_pre(name, args)` 抛 `TypeError`，实测 1 条既有回归失败 |
+
+### 落地（如实，不夸大）
+
+| 位置 | 修复 |
+|---|---|
+| `hooks/triggers.py`（新增） | 5 个事件收敛成单一 `HookTrigger` 出口：通知类走 `run_notify`、决策类走 `run_decision`（上一轮 R2 的坑）；**无 hooks 严格 no-op**、通知异常一律吞、用户显式配了 hook 但裁决通道炸了 → **fail-closed**；`set_default_hooks_provider()` 注入的是**只读取值函数**，不是把 HookManager 复制进各模块（这些模块构造早于 hooks） |
+| `config/loader.py` / `config/managed.py` | `Config.set_user` / `delete_user` 写成功后、`ManagedSettings.reload()` 重载成功后 → `ConfigChange`（失败不派发，否则 hook 误以为配置已生效） |
+| `core/worktree_layer.py` | `create()` / `create_agent_worktree()` 在**任何文件系统改动之前** → `WorktreeCreate` 决策类事件，block 即抛 `WorktreeError` 拒绝创建。刻意放在 fast-resume 复用分支之前（复用同样值得让策略拒绝），比 CC 语义更严，如实标注 |
+| `tools/session_tools.py` / `runtime/acp/bridge.py` | `_ask_user_handler`（TUI+CLI 统一入口）与 ACP `ask_user`（真正的 `elicitation/create` 反向 RPC 宿主）→ `Elicitation` / `ElicitationResult`。**block 分别是「取消提问」「作废回答」，绝不代答、绝不把 hook 输出当新答案** —— CC 允许程序化代答，Tuan 刻意不等价（模型不能自问自答）。headless / 全屏降级路径没有真实用户响应，**不派发** `ElicitationResult` |
+| `core/remote_control.py` / `core/security_alert.py` | `notify()` 所有返回路径之前、`_notify_safely()` 后台线程里 → `Notification`。放后台线程是因为 hook 是子进程，同步调用会阻塞 `_pre_exec_guard` 主路径 |
+| `cli/cmd_slash_boundary.py` / `cli/cmd_worktree.py` / `app.py` | `/worktree` 显式传 `agent.ctx.hooks`；CLI 独立入口靠 default provider；`app.py` 启动时注入 `lambda: agent.ctx.hooks`（传函数而非对象，hooks 可被会话内置空） |
+| `cli/cmd_hooks.py` | 决策类 4 事件改走 `run_decision`（修 R2）；`run_pre` 从工具注册表取 schema 并传入，取不到时**如实打印**「无 schema → 保守子集 enforced=False」（修 R3）；`hooks list` 提示从 4 个事件改为 15 个 |
+| `arch/execution.py` | `ToolPipeline` 加 `schema_resolver`，且**只在有 schema 时**传 `tool_schema` 关键字（兼容老式 mock，修 R4）；如实标注无生产构造方 |
+
+### 为什么还不消 gap（两个 B3 条目仍 `STATUS_GAP`）
+
+**硬理由缩小了，但没消失**：
+
+1. **`hook_events_extended`**：7 个事件现在都有生产触发点，但官方最新
+   hooks 参考列出的事件远多于 7 个（PermissionDenied / PostToolBatch /
+   PostToolUseFailure / TaskCompleted / TaskCreated / FileChanged /
+   CwdChanged / InstructionsLoaded / WorktreeRemove ...）；CC 的
+   exit-code-2 → decline 语义未实现；`Elicitation` 语义刻意不等价。
+2. **`hook_updated_input_validation`**：主链路 + `cmd_hooks` 手动入口 +
+   `ToolPipeline` 契约都补齐了，但 **`ToolPipeline` 没有生产构造方**，
+   `schema_resolver` 是契约补齐而非覆盖面扩大；`cmd_hooks` 取 schema
+   依赖 kernel 暴露 `tool_registry`，取不到仍回落保守子集。
+
+两个 note 都补了纠偏说明，`status` / `evidence` 结构**不变**，新增回归把
+计数逐项钉死。**不靠改口径凑数**。消 gap 需要「全事件面对齐 +
+exit-code-2 + 真实生产调用链的全路径 schema 证据」，不是补 note。
+
+### 三处断言同步（**不是放宽**）
+
+- `test_b3_hooks_extended.py::test_five_events_have_no_production_trigger_yet`
+  改成 `..._have_production_triggers_now`：逐一验证统一触发层 5 个方法、
+  **11 处**子系统接线、default provider 注入、通知类/决策类分类不混淆。
+  少任何一处接线都失败 —— 比原来的「0 命中」断言更强。
+- `tests/test_arch_security_fixes.py` 的 `FakeHooks.run_pre(name, args)`
+  不接受 `tool_schema`：`ToolPipeline` 改为无 schema 时不传该关键字，
+  既有测试**原样保留、零修改**，行为与旧版完全一致。
+- `tests/test_b3_hooks_extended.py` 其余计数/分类断言一条未动。
+
+### A′ ×2：自己挖坑自己抓回
+
+1. **`remote_control.notify` 的提前返回**：初版把 `Notification` 派发
+   放在函数末尾 `return pushed` 之前，但 `rc is None: return False` 是
+   **提前返回** —— 无推送对象时 hook 永远不触发。自查发现后移到
+   `log.warning` 之后、所有返回路径之前。
+2. **`ToolPipeline` 强传 `tool_schema=`**：上一轮的改动让老式 hook mock
+   抛 `TypeError`（实测 1 条既有回归失败）。改成只在有 schema 时传，
+   兼容且无 schema 时行为与旧版逐值一致。
+
+两处都是**接线脆弱性**，不是原有代码回归，已各自加针对性断言。
+
+### 验证（按分批报告，批次间有重叠、不累加）
+
+```
+B3 续轮新回归 + 上一轮 B3 + 5 个 hooks 既有文件        97 passed
+最终合并批次（B3 续轮 + hooks + parity + 写边界 +
+    两条侧门 + B2 各轮 + config + worktree + session +
+    arch 执行/安全）                                    （见下）
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+py_compile: 改动 Python 文件全部 OK
+```
+
+`tests/test_b3s_triggers.py` 覆盖：无 hooks 严格 no-op、显式 hooks 优先于
+default provider、provider 异常回落、通知异常不掀翻、决策通道异常
+fail-closed、老式 mock 缺 `run_decision` 也 fail-closed、**5 个事件端到
+端在真实操作上全部触发**（真 git init + 真 `git worktree add` + 真
+`Config.set_user` + 真 `ask_user` + 真 `notify`）、payload 字段抽查、
+`WorktreeCreate` deny 在任何 FS 改动前阻断、hook 二进制缺失 fail-closed、
+`Elicitation` deny 取消提问且不再问用户、`ElicitationResult` deny 作废、
+hook 的 `allow` **不能**变成用户答案、headless 不派发 Result、hook 通道
+炸了 `Config.set_user` 仍写成功、CLI 决策类路由、CLI 传 schema、
+`ToolPipeline` 老式 mock 兼容 + resolver 生效 + 无生产构造方、矩阵钉死。
+
+### 如实边界
+
+- **7 个事件有触发点 ≠ 全事件对齐**：官方事件面远大于 7 个；
+  CC exit-code-2 → decline 未实现；`Elicitation` 语义刻意不等价。
+- **`ToolPipeline` 无生产构造方**，`schema_resolver` 只是契约补齐；
+  `cmd_hooks` 取 schema 依赖 kernel 暴露 `tool_registry`。
+- **行为变更**：`WorktreeCreate` hook 现在真的能拒绝创建（此前不可能，
+  因为根本不触发）；`Elicitation` 能取消提问、`ElicitationResult` 能作废
+  回答；`Config.set_user` / `notify` 现在会派发已配置的 hook。
+- **Notification 在后台线程派发**，顺序与桌面通知本身不保证一致；
+  `remote_control.notify` 在无推送对象时也触发（按「尝试发通知」语义）。
+- `os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+  `credential_masking` 仍 partial；A 线 10 pending、分叉改动未合并、
+  第三方自适应红队未做；不是真机多平台验证。
+- 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
+  逐字节未改。

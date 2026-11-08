@@ -429,6 +429,14 @@ class SecurityAlerter:
     def _notify_safely(self, record: "AlertRecord") -> None:
         """在后台线程里跑桌面通知, 吞所有异常。"""
         try:
+            # B3 续轮: Notification 事件刻意放在**后台线程**里派发 ——
+            # hook 是子进程，同步调用会阻塞 _pre_exec_guard 主路径
+            # （与桌面通知本身必须异步的理由完全一致）。
+            from ..hooks.triggers import HookTrigger
+            HookTrigger().notification(
+                title=record.title, body=record.message or record.title,
+                kind="security", severity=record.severity,
+                source="security_alerter")
             DesktopNotifier.notify(
                 title=f"[{record.severity.upper()}] {record.title}",
                 message=record.message or record.title,
