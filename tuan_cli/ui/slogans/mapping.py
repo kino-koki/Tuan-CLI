@@ -56,6 +56,12 @@ LRU **被动淘汰**留脱敏痕迹 (D4 只覆盖了显式 ``close()``)、
 覆盖缺口)、注入时钟严格类型校验 (脏值回落真实时钟, 不抛异常/不放大)、
 ``owner`` 有界摘要 (不再整串 sha1)、淘汰**累计**证据
 ``evicted_total`` (与 ``_INDEX_MISSES`` 连续/累计双层口径对齐)。
+
+深度轮 8 再补: 桶内 ``_DISPATCH_CAP`` 裁剪留痕 (全局累计 +
+per-owner 摘要随淘汰带走)、累计决策数 ``decisions_total``。
+实测 ``error:boom`` 在**不淘汰**时也会被静默裁掉, 上一轮淘汰痕
+覆盖不到这一层。本轮**未改**净化层 —— 几个候选经实测后判定为
+「不该动」, 见 ``SLOGAN_MAPPING.md`` §17。
 """
 
 from __future__ import annotations
@@ -81,7 +87,7 @@ __all__ = [
     "dispatch_log", "reset_dispatch_log", "release_owner", "take_owner_log",
     "record_error", "reset_runtime_counters", "acknowledge_runtime_misses",
     "dispatch_log_stats", "evicted_owner_log", "evicted_total",
-    "norm_owner", "registry", "index_stats",
+    "bucket_trim_stats", "norm_owner", "registry", "index_stats",
 ]
 
 
@@ -635,6 +641,44 @@ _EVICTED: "deque[EvictionRecord]" = deque(maxlen=_EVICT_CAP)
 #: 全清（测试隔离）才归零。
 _EVICT_TOTAL = 0
 
+#: 深度轮 8: **桶内裁剪**与**累计决策**的可观测证据。
+#:
+#: 实测 C: ``_DISPATCH_CAP=64`` 的 ``del bucket[:-cap]`` 会静默丢掉
+#: 早期决策 —— 构造一条 ``error:boom`` 后灌 84 条，桶内 error 消失，
+#: 而此刻**根本没有发生淘汰** (``evicted_recent=0``)。上一轮的
+#: ``EvictionRecord.reason_counts`` 只在淘汰时汇总「当前桶」，
+#: 覆盖不到这一层。同理 ``dispatch_log_stats()['decisions']`` 只是
+#: 当前留存条数，答不出「总共分发过多少次」。
+#:
+#: 全部是**信息项**，不参与 ``audit().ok``（裁剪是正常有界行为）。
+#: 全局累计只有显式 ``reset_dispatch_log()`` 全清才归零；
+#: ``_TRIMMED_BY_OWNER`` 与桶同生命周期，释放/淘汰时带走。
+_DECISIONS_TOTAL = 0        # 累计写入决策数（含被裁/被淘汰的）
+_BUCKET_TRIMS = 0           # 累计裁剪事件数
+_TRIMMED_DECISIONS = 0      # 累计被裁掉决策数
+_TRIMMED_REASONS: "Counter[str]" = Counter()   # 全局 reason 摘要
+_TRIMMED_BY_OWNER: "Dict[str, Counter[str]]" = {}  # per-owner 摘要
+_TRIMMED_REASON_CAP = 64    # 摘要种类上界，超出归 "<other>"
+
+
+def _accumulate_trim_reasons(dropped) -> None:
+    """把被裁决策的 reason 累加进全局摘要（种类有界）。
+
+    深度轮 8 自引入又抓回 (C′): 初版写
+    ``len(_TRIMMED_REASONS) >= CAP`` 才归 ``<other>``，结果先塞满
+    64 个具体 reason、再加 ``<other>`` 变成 **65** 个键，上限失效
+    （实测 200 个不同 kind 后 ``len(rc)=65``）。现在按「具体 reason
+    种类」计数，``<other>`` 是额外的一个桶，总数恒 <= CAP + 1，
+    测试断言改为 <= CAP + 1 并锁定语义。
+    """
+    for d in dropped:
+        r = d.reason
+        if r not in _TRIMMED_REASONS:
+            concrete = sum(1 for k in _TRIMMED_REASONS if k != "<other>")
+            if concrete >= _TRIMMED_REASON_CAP:
+                r = "<other>"
+        _TRIMMED_REASONS[r] += 1
+
 
 @dataclass(frozen=True)
 class EvictionRecord:
@@ -647,12 +691,21 @@ class EvictionRecord:
     运维完全看不出被丢弃的会话曾出错。摘要按 reason 字符串计数并
     排序 (确定性), reason 本身是内部常量或已净化的 ``error:kd``,
     不含文案与 entry_id。
+
+    深度轮 8: 新增 ``trimmed_dropped`` / ``trimmed_reason_counts``，
+    把「该会话存活期间被 ``_DISPATCH_CAP`` 裁掉」的证据一并带走 ——
+    否则淘汰痕只看见最后 64 条，更早的错误信号永远丢失。
     """
     owner: str
     dropped: int
     last_reason: str
     at_ms: int
     reason_counts: Tuple[Tuple[str, int], ...] = ()
+    #: 深度轮 8: 该会话在**存活期间被桶裁剪**丢掉的决策摘要。
+    #: 旧版淘汰痕只汇总「淘汰那一刻桶里剩的 64 条」，实测更早的
+    #: ``error:boom`` 已被裁剪、完全不可见。字段带默认值，兼容既有构造。
+    trimmed_dropped: int = 0
+    trimmed_reason_counts: Tuple[Tuple[str, int], ...] = ()
 
 
 #: ``owner`` 零改动的上限（码点）。超过即归一定长指纹, 保证桶 key 有界。
@@ -739,14 +792,20 @@ def reset_dispatch_log(owner: Optional[str] = None) -> None:
     释放而非被动淘汰, 不写淘汰痕、也不清已有淘汰痕。
     """
     key = norm_owner(owner) if owner is not None else None
-    global _EVICT_TOTAL
+    global _EVICT_TOTAL, _DECISIONS_TOTAL, _BUCKET_TRIMS, _TRIMMED_DECISIONS
     with _dispatch_lock:
         if key is None:
             _dispatch_log.clear()
             _EVICTED.clear()
+            _TRIMMED_BY_OWNER.clear()
+            _TRIMMED_REASONS.clear()
             _EVICT_TOTAL = 0
+            _DECISIONS_TOTAL = 0
+            _BUCKET_TRIMS = 0
+            _TRIMMED_DECISIONS = 0
         else:
             _dispatch_log.pop(key, None)
+            _TRIMMED_BY_OWNER.pop(key, None)
 
 
 def release_owner(owner: str) -> int:
@@ -759,6 +818,7 @@ def release_owner(owner: str) -> int:
         return 0
     with _dispatch_lock:
         bucket = _dispatch_log.pop(key, None)
+        _TRIMMED_BY_OWNER.pop(key, None)
         return len(bucket or ())
 
 
@@ -773,7 +833,28 @@ def dispatch_log_stats() -> Dict[str, int]:
                 "max_owners": _MAX_OWNERS,
                 "evicted_recent": len(_EVICTED),
                 "evicted_cap": _EVICT_CAP,
-                "evicted_total": _EVICT_TOTAL}
+                "evicted_total": _EVICT_TOTAL,
+                "decisions_total": _DECISIONS_TOTAL,
+                "bucket_trims": _BUCKET_TRIMS,
+                "trimmed_decisions": _TRIMMED_DECISIONS}
+
+
+def bucket_trim_stats() -> Dict[str, object]:
+    """桶内裁剪的**全局累计**证据（脱敏、排序、加锁快照）。
+
+    深度轮 8 实测: 一条 ``error:boom`` 会被 ``_DISPATCH_CAP`` 静默裁掉，
+    而此时 ``evicted_recent=0`` —— 上一轮的淘汰痕完全覆盖不到这一层。
+    这里回答「裁过几次 / 丢了几条 / 丢的都是什么 reason」。
+
+    如实边界: 全局摘要**不归属到具体 owner**；per-owner 摘要只在
+    会话被 LRU 淘汰时随 ``EvictionRecord.trimmed_reason_counts`` 带走，
+    显式 ``release_owner()`` / ``take_owner_log()`` 释放的会话不带走
+    （但全局累计仍保留）。全部是信息项，不参与 ``audit().ok``。
+    """
+    with _dispatch_lock:
+        return {"trimmed_decisions": _TRIMMED_DECISIONS,
+                "bucket_trims": _BUCKET_TRIMS,
+                "reason_counts": tuple(sorted(_TRIMMED_REASONS.items()))}
 
 
 def reset_runtime_counters(include_dispatch_log: bool = False) -> None:
@@ -804,6 +885,7 @@ def take_owner_log(owner: str) -> Tuple[SloganDecision, ...]:
         return ()
     with _dispatch_lock:
         bucket = _dispatch_log.pop(key, None)
+        _TRIMMED_BY_OWNER.pop(key, None)
         return tuple(bucket or ())
 
 
@@ -862,14 +944,15 @@ def _record(d: SloganDecision, at_ms: Optional[int] = None) -> None:
     key = norm_owner(d.owner)   # 幂等: 干净 owner 原样返回
     ms = None if at_ms is None else _coerce_ms(at_ms, is_seconds=False)
     stamp = _fallback_ms() if ms is None else ms
+    global _DECISIONS_TOTAL, _BUCKET_TRIMS, _TRIMMED_DECISIONS, _EVICT_TOTAL
     with _dispatch_lock:
+        _DECISIONS_TOTAL += 1
         bucket = _dispatch_log.get(key)
         if bucket is None:
             if len(_dispatch_log) >= _MAX_OWNERS:
                 ev_owner, ev_bucket = _dispatch_log.popitem(last=False)
-                # 淘汰不再静默: 记一条脱敏痕迹 (不含文案 / entry_id)。
-                global _EVICT_TOTAL
                 _EVICT_TOTAL += 1
+                trimmed = _TRIMMED_BY_OWNER.pop(ev_owner, Counter())
                 _EVICTED.append(EvictionRecord(
                     owner=ev_owner,
                     dropped=len(ev_bucket),
@@ -877,6 +960,8 @@ def _record(d: SloganDecision, at_ms: Optional[int] = None) -> None:
                     at_ms=stamp,
                     reason_counts=tuple(sorted(
                         Counter(x.reason for x in ev_bucket).items())),
+                    trimmed_dropped=sum(trimmed.values()),
+                    trimmed_reason_counts=tuple(sorted(trimmed.items())),
                 ))
             bucket = []
             _dispatch_log[key] = bucket
@@ -884,7 +969,15 @@ def _record(d: SloganDecision, at_ms: Optional[int] = None) -> None:
             _dispatch_log.move_to_end(key)
         bucket.append(d)
         if len(bucket) > _DISPATCH_CAP:
+            dropped = bucket[:-_DISPATCH_CAP]
             del bucket[:-_DISPATCH_CAP]
+            # 深度轮 8: 裁剪不再静默。全局累计 + per-owner 摘要，
+            # 后者在会话被淘汰时随 EvictionRecord 一起带走。
+            _BUCKET_TRIMS += 1
+            _TRIMMED_DECISIONS += len(dropped)
+            _TRIMMED_BY_OWNER.setdefault(key, Counter()).update(
+                x.reason for x in dropped)
+            _accumulate_trim_reasons(dropped)
 
 
 def record_error(event: str, kind: str, *, owner: str = "",

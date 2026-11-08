@@ -592,3 +592,19 @@ Apache-2.0 / MIT Codex 归属混用**。
 
 300 例 pytest + 88 项纯 stdlib 验证全绿。
 详见 `SLOGAN_MAPPING.md` §16。
+
+
+---
+
+## 裁剪证据（不占任何 Codex 对齐指标）
+
+本轮只把前七轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `mapping.py` 新增桶内裁剪留痕与累计决策数；净化层、TUI、
+  生命周期事件、i18n 文案、Codex 状态行 / 键位 / 布局数值 /
+  组件树 / 交互契约**一律未改**。
+- **`tui.py` 本轮逐字节未改，未包含在本轮推送清单。**
+
+319 例 pytest + 97 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §17。

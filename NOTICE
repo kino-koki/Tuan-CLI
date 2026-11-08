@@ -751,7 +751,18 @@ THIRD-PARTY ATTRIBUTIONS
               suspected defects were measured FALSE and deliberately
               NOT changed. No new slogans, events, CLI subcommands,
               license scope, upstream source or trademark asset.
-              Sections 9-15 remain unchanged. The Claude Code /
+              Sections 9-15 remain unchanged.
+    Bucket-trim evidence pass (still NO new third-party material):
+              per-bucket cap trims now leave global and per-session
+              desensitized evidence, and cumulative decision counts
+              are exposed. The cleaning layer is byte-identical: two
+              real fidelity candidates (unterminated OSC, ZWJ emoji)
+              were measured and deliberately NOT changed because
+              fixing them would weaken sanitizing for zero real gain;
+              executable regressions record that judgment. No new
+              slogans, events, CLI subcommands, license scope,
+              upstream source or trademark asset. Sections 9-15
+              remain unchanged. The Claude Code /
               Codex attributions in sections 9-15 are unchanged.
 
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):

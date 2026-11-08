@@ -9,6 +9,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 只修证据缺口，六个候选判定「不该动」
+
+> 前七轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈、
+> owner 全链路归一、先清理后截断、ESC+ 引导、时钟严格化。本轮
+> **测了 8 个候选，真正该动的只有 2 个**。把「不该修」的判断写成
+> 可执行证据, 比多修一个洞更有价值 —— 否则每轮都能找到「看起来像
+> bug」的现象, 改着改着就把前七轮收口的安全边界重新打开。
+> 完整复现见 `SLOGAN_MAPPING.md` §17。继续「不扩广度、只挖深度」:
+> 18 个事件、16 个上下文、1108 条词条、`fully_superior`、99 模块
+> 基线、所有对齐指标与 CLI 子命令数**全部不变**; 零新增文件、零删除;
+> `_clean.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+### 两个真实缺口
+
+| # | 实测 | 影响 |
+|---|---|---|
+| C | 一条 `error:boom` + 84 条决策后, 桶内 error 消失, 而 `evicted_recent=0`、`evicted_total=0` —— **根本没发生淘汰** | `_DISPATCH_CAP=64` 的 `del bucket[:-cap]` 静默裁掉早期决策; 上一轮淘汰痕只汇总「当前桶」, 覆盖不到这一层 |
+| H | `decisions` 恒等于当前留存条数之和 | 答不出「总共分发过多少次决策」 |
+
+**C′ (本轮自引入又抓回)**: `_accumulate_trim_reasons` 初版上限判断
+让 64 个具体 reason + `<other>` 变成 **65** 个键; 改成按「具体 reason
+种类」计数, `<other>` 作为额外桶, 总数恒 ≤ CAP+1。
+
+### 六个候选判定「不该动」（全部有可执行证据）
+
+| 候选 | 实测 | 结论 |
+|---|---|---|
+| A 未终止 OSC 吞光整行 | `'\x1b]8;;https://evil.example'+'OK' -> ''` | ECMA-48 无终止符时后续字节规范上全属参数, 整段删正确。尝试修会把 4096 之后的**参数残留**放进日志 (实测残留 904 码点), 且 120 码点截断后 `END` 仍不可达 —— 收益为零、风险为正 |
+| B ZWJ emoji 拆散 | `👩\u200d💻 -> 👩💻` | 核查 1695 条词条 **ZWJ/VS16/ESC 全为 0**; 修它要放宽 Cf 清理并改 `_clusters`/`display_cols`/500 串宽度回归, 实际标语零收益 |
+| D `reason_counts` 含外部串 | 注入 OSC8+RLO → `('error:BAD',1)` | D4 已净化, **不成立** |
+| E 粗切切掉尾部 | `n=65530 -> 'OK'`, `n=65533 -> ''` | §15 已记录的 `_SCAN_CAP` 显式边界, 非新缺陷 |
+| F `sanitize_verb` 丢尾部 | `'\x00'*1000+'OK' -> 'OK'` | 列宽截断是设计, 非缺陷 |
+| G 两个出口同病 | `runtime_slogans.sanitize_verb is _clean.sanitize_verb` → True | A 的同源证据, 单一净化真值不该拆 |
+
+### 修复（不动净化层一行）
+
+- **桶裁剪留痕**: `_DECISIONS_TOTAL` / `_BUCKET_TRIMS` /
+  `_TRIMMED_DECISIONS` / `_TRIMMED_REASONS` (种类上限 64) /
+  `_TRIMMED_BY_OWNER` (与桶同生命周期)。`_record` 裁剪时先取
+  `dropped` 再累加三层证据; `EvictionRecord` 新增
+  `trimmed_dropped` / `trimmed_reason_counts` (带默认值), LRU
+  淘汰时把该 owner 的裁剪摘要一起带走。新增
+  `bucket_trim_stats()`; `dispatch_log_stats()` 增
+  `decisions_total` / `bucket_trims` / `trimmed_decisions`,
+  `audit().as_dict()` 自动携带。
+- **累计决策数**: 含被裁/被淘汰的决策, 只有显式全清才归零。
+
+实测：`decisions_total=86 / decisions=64 / bucket_trims=22 /
+trimmed_decisions=22`；`bucket_trim_stats.reason_counts=
+(('error:boom',1),('ok',21))`；淘汰后
+`EvictionRecord(... reason_counts=(('ok',64),), trimmed_dropped=22,
+trimmed_reason_counts=(('error:boom',1),('ok',21)))`；
+`audit ok=True`。全部是**信息项**, 不参与 `audit().ok`。
+
+### 验证
+
+```
+319 passed (pytest) + 97 项纯 stdlib 独立验证
+verify_deep.py / verify_deep2.py   22 / 20 项全绿
+index_stats 1695×4 / clipped=0 / unrenderable=0 / collisions=0
+            index_misses=0 / unresolved_misses=0
+```
+
+既有静态源码断言**一条都没放宽**; 新增回归
+`test_A_attempted_fix_would_leak_osc_parameters` 把「想修会放宽
+净化」变成可执行证据, `test_B_registry_contains_no_zwj...` 把
+「收益为零」变成对 1695 条词条的运行时断言。
+
+### 如实边界
+
+1. **A/B 两个保真度候选确认成立但没修**, 是明确工程取舍, 不是遗漏;
+   **C′ 是本轮自引入又抓回的 off-by-one**。
+2. 裁剪证据的 per-owner 摘要只在 **LRU 淘汰**时随
+   `EvictionRecord` 带走; 显式 `release_owner()` / `take_owner_log()`
+   释放的会话不带走 (全局累计仍保留); 全局摘要**不归属具体 owner**。
+3. 全局 reason 摘要最多 64 种具体 + 1 个 `<other>`, 后者合并尾部
+   种类、不保留原始分布。
+4. 未终止 OSC 的 ECMA-48 歧义、短 UI 文案里 ZWJ emoji 拆散、
+   `_SCAN_CAP` 之外先粗切 —— 三者**未解决**, 都有回归锁住当前行为。
+5. `_clean.py` / `tui.py` / `runtime_slogans.py` 逐字节未改,
+   **不在本轮推送清单**。
+6. 并发压测仍未复现 list 撕裂; 不是真机长跑; TUI 仍未替换既有
+   i18n 文案; 分叉改动仍未合并; 第三方自适应红队仍未做;
+   **不宣称性能提升** (裁剪路径多了有界常数开销, 未做基准对比)。
+
 ## [Unreleased] - ESC+ 引导、时钟严格化、有界摘要、累计淘汰证据
 
 > 前六轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈、

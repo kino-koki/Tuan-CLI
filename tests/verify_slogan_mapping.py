@@ -1391,6 +1391,189 @@ def t_d7_full_health():
     assert mapping.audit().ok is True
     mapping.reset_runtime_counters(include_dispatch_log=True)
 
+# ---------------------------------------------------------------- 深度轮 8
+
+
+def t_d8_bucket_trim_evidence():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "_DECISIONS_TOTAL = 0" in src
+    assert "_TRIMMED_BY_OWNER" in src
+    assert "def bucket_trim_stats(" in src
+    assert "trimmed_reason_counts" in src
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    mapping.pick_for_event("tool.exploring", owner="s0")
+    mapping.record_error("typo.event", "boom", owner="s0", at_ms=1000)
+    for i in range(mapping._DISPATCH_CAP + 20):
+        mapping.pick_for_event("tool.exploring", owner="s0", now=1000.0 + i)
+    rows = mapping.dispatch_log("s0")
+    assert len(rows) == mapping._DISPATCH_CAP
+    assert not any("error:boom" in r.reason for r in rows)
+    st = mapping.bucket_trim_stats()
+    assert st["trimmed_decisions"] >= 1 and st["bucket_trims"] >= 1
+    assert dict(st["reason_counts"]).get("error:boom") == 1
+    assert list(st["reason_counts"]) == sorted(st["reason_counts"])
+    ds = mapping.dispatch_log_stats()
+    assert ds["evicted_recent"] == 0 and ds["evicted_total"] == 0
+    assert ds["decisions_total"] > ds["decisions"]
+    assert ds["bucket_trims"] >= 1 and ds["trimmed_decisions"] >= 1
+    assert mapping.audit().ok is True
+    assert mapping.audit().as_dict()["dispatch_stats"]["trimmed_decisions"] >= 1
+
+
+def t_d8_trim_summary_travels_with_eviction():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    mapping.pick_for_event("tool.exploring", owner="s0")
+    mapping.record_error("typo.event", "boom", owner="s0", at_ms=1000)
+    for i in range(mapping._DISPATCH_CAP + 20):
+        mapping.pick_for_event("tool.exploring", owner="s0", now=1000.0 + i)
+    K = mapping._MAX_OWNERS
+    for i in range(1, K):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i, now=1000.0)
+    mapping.pick_for_event("tool.exploring", owner="trigger", now=1000.0)
+    r = next(x for x in mapping.evicted_owner_log() if x.owner == "s0")
+    assert r.trimmed_dropped >= 1
+    assert dict(r.trimmed_reason_counts).get("error:boom") == 1
+    assert r.reason_counts == (("ok", mapping._DISPATCH_CAP),)
+    assert r.last_reason == "ok"
+    assert not hasattr(r, "text") and not hasattr(r, "entry_id")
+
+
+def t_d8_release_and_reset_semantics():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    mapping.pick_for_event("tool.exploring", owner="s0")
+    mapping.record_error("typo.event", "boom", owner="s0", at_ms=1000)
+    for i in range(mapping._DISPATCH_CAP + 20):
+        mapping.pick_for_event("tool.exploring", owner="s0", now=1000.0 + i)
+    before = mapping.bucket_trim_stats()["trimmed_decisions"]
+    mapping.release_owner("s0")
+    assert mapping.bucket_trim_stats()["trimmed_decisions"] == before
+    assert mapping._TRIMMED_BY_OWNER.get("s0") is None
+    mapping.reset_runtime_counters()
+    assert mapping.bucket_trim_stats()["trimmed_decisions"] == before
+    mapping.reset_dispatch_log("s0")
+    assert mapping.bucket_trim_stats()["trimmed_decisions"] == before
+    mapping.reset_dispatch_log()
+    st = mapping.bucket_trim_stats()
+    assert st["trimmed_decisions"] == 0 and st["bucket_trims"] == 0
+    assert st["reason_counts"] == ()
+    ds = mapping.dispatch_log_stats()
+    assert ds["decisions_total"] == 0 and ds["bucket_trims"] == 0
+    assert ds["trimmed_decisions"] == 0 and ds["evicted_total"] == 0
+
+
+def t_d8_reason_cap_is_bounded():
+    """C′: 本轮自引入又抓回的 off-by-one。"""
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    for i in range(200):
+        mapping.record_error("ev", "k%03d" % i, owner="x", at_ms=1000)
+    for i in range(mapping._DISPATCH_CAP + 10):
+        mapping.pick_for_event("tool.exploring", owner="x", now=1000.0)
+    rc = mapping.bucket_trim_stats()["reason_counts"]
+    assert len(rc) <= mapping._TRIMMED_REASON_CAP + 1
+    assert sum(1 for k, _ in rc if k != "<other>") <= mapping._TRIMMED_REASON_CAP
+    assert mapping.audit().ok is True
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d8_unterminated_osc_is_unchanged_by_choice():
+    """A: 实测成立但判定「不该修」，锁住 ECMA-48 规范行为。"""
+    clean = (REPO / "tuan_cli/ui/slogans/_clean.py").read_text(encoding="utf-8")
+    # 净化层本轮零改动：终止符仍是可选的
+    assert r"\x1b+\][^\x07\x1b]*(?:\x07|\x1b\\)?" in clean
+    assert "_OSC_UNTERMINATED_RE" not in clean
+    from tuan_cli.ui.slogans import _clean as C
+    assert C.sanitize_log_field("\x1b]8;;https://evil.example" + "OK") == ""
+    assert C.sanitize_log_field("\x1b]0;title" + "TAIL") == ""
+    assert C.sanitize_verb("\x1b]8;;u" + "OK") == ""
+    assert C.sanitize_log_field("\x1b]8;;u\x07OK") == "OK"
+    assert C.sanitize_verb("\x1b]8;;u\x1b\\OK") == "OK"
+    # 两个出口共用同一净化核心
+    from tuan_cli.tui import runtime_slogans as R
+    assert R.sanitize_verb is C.sanitize_verb
+
+
+def t_d8_attempted_osc_fix_would_leak_parameters():
+    """把「不该修」的理由变成可执行证据。"""
+    import re
+    import unicodedata
+    from tuan_cli.ui.slogans import _clean as C
+    term = re.compile(r"\x1b+\][^\x07\x1b]*(?:\x07|\x1b\\)")
+    unterminated = re.compile(r"\x1b+\][^\x07\x1b]{0,4096}")
+    raw = "\x1b]8;;" + "A" * 5000 + "END"
+    s = unterminated.sub("", term.sub("", raw))
+    assert len(s) >= 900 and "END" in s
+    drop = frozenset({"Cc", "Cf", "Cs", "Co", "Cn"})
+    kept = "".join(ch for ch in s
+                   if unicodedata.category(ch) not in drop
+                   and not C._is_variation_selector(ch))
+    assert len(kept) >= 900                  # 参数残留会进日志
+    assert C.sanitize_log_field(raw) == ""  # 当前实现整段删
+    truncated = kept[:C.LOG_FIELD_LIMIT].rstrip() + "…"
+    assert "END" not in truncated          # 修了也看不到尾部
+
+
+def t_d8_zwj_registry_and_known_cost():
+    """B: 词条库零 ZWJ，修它收益为零、风险为正。"""
+    zwj = vs = esc = 0
+    for e in mapping.registry():
+        text = getattr(e, "text", "") or ""
+        zwj += "\u200d" in text
+        vs += any(0xFE00 <= ord(c) <= 0xFE0F for c in text)
+        esc += "\x1b" in text
+    assert (zwj, vs, esc) == (0, 0, 0)
+    assert len(list(mapping.registry())) == 1695
+    from tuan_cli.ui.slogans import _clean as C
+    assert C.sanitize_verb("👩\u200d💻") == "👩💻"
+    assert C.sanitize_verb("👨\u200d👩\u200d👧") == "👨👩👧"
+    assert C.sanitize_log_field("\u200d" * 3 + "OK") == "OK"
+    assert "\u202e" not in C.sanitize_log_field("\u202eRLO\u200dOK")
+    assert "\u2066" not in C.sanitize_log_field("\u2066ISO\u200dOK")
+    assert C.sanitize_log_field("\u200bZWSP\u200dOK").startswith("ZWSP")
+
+
+def t_d8_other_measured_candidates_are_locked():
+    from tuan_cli.ui.slogans import _clean as C
+    # D: 淘汰痕 reason_counts 已净化
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    K = mapping._MAX_OWNERS
+    mapping.record_error("ev", "\x1b]8;;x\x07\u202eBAD", owner="s-0",
+                         at_ms=1000)
+    for i in range(1, K):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+    mapping.pick_for_event("tool.exploring", owner="trigger")
+    r = next(x for x in mapping.evicted_owner_log() if x.owner == "s-0")
+    blob = repr(r.reason_counts)
+    assert "\x1b" not in blob and "\u202e" not in blob
+    # E: _SCAN_CAP 卡点是 d6 已记录边界
+    assert C._SCAN_CAP == 65536
+    assert C.sanitize_log_field("\x00" * 65530 + "\u0301" * 3 + "OK") == "OK"
+    assert C.sanitize_log_field("\x00" * 65533 + "\u0301" * 3 + "OK") == ""
+    assert C.sanitize_log_field("\x00" * 70000 + "OK") == ""
+    # F: 列宽截断是设计
+    assert C.sanitize_verb("\x00" * 1000 + "OK") == "OK"
+    assert len(C.sanitize_verb("a" * 500 + "END")) <= C._MAX_VERB_CHARS
+    # 合法文本不误杀
+    for raw in ("正常文案", "a" + "\u0301" * 10, "❤" + "\ufe0f" * 20,
+                "\u202e\u200b" * 20 + "OK"):
+        assert C.sanitize_log_field(raw), repr(raw)
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d8_full_health():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    r = mapping.audit()
+    assert r.ok and r.index_consistent
+    st = mapping.index_stats()
+    assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+    assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+    for lang in L.LANGUAGES:
+        for ev in mapping.EVENT_BINDINGS:
+            d = mapping.pick_for_event(ev, lang=lang, owner="final",
+                                       now=1000.0)
+            assert d.reason == "ok" and d.entry_id, (ev, lang)
+    assert mapping.audit().ok is True
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
 
 for name, fn in sorted(globals().items()):
     if name.startswith("t_") and callable(fn):

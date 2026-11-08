@@ -354,3 +354,34 @@ TUI 仍未替换既有 i18n 文案；分叉改动仍未合并；第三方自适�
 仍未复现 list 撕裂；不是真机长跑；分叉改动仍未合并；第三方
 自适应红队仍未做；**不宣称性能提升**。详见 `SLOGAN_MAPPING.md` §16。
 本轮**不改** `fully_superior`、99 模块基线与任何对齐指标。
+
+
+---
+
+## R37 · 裁剪证据与两个「不该修」的保真度候选
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R37 | `_DISPATCH_CAP=64` 的 `del bucket[:-cap]` 静默裁掉早期决策: 实测一条 `error:boom` + 84 条后桶内 error 消失, 而 `evicted_recent=0`/`evicted_total=0` (**根本没淘汰**), 上一轮淘汰痕只汇总「淘汰时当前桶」覆盖不到; `decisions` 只反映留存条数, 答不出累计分发数; **本轮自引入** reason 种类上限让 64 具体 + `<other>` = 65 键 | 裁剪前先取 `dropped`, 累加 `_DECISIONS_TOTAL`/`_BUCKET_TRIMS`/`_TRIMMED_DECISIONS`/`_TRIMMED_REASONS`(具体种类 ≤64 + `<other>`)/`_TRIMMED_BY_OWNER`; `EvictionRecord` 增 `trimmed_dropped`/`trimmed_reason_counts` 随 LRU 淘汰带走; 新增 `bucket_trim_stats()` + stats 3 字段 + audit 自动携带; cap 改为按具体种类计数 |
+
+实测：`decisions_total=86 / decisions=64 / bucket_trims=22 /
+trimmed_decisions=22`；`bucket_trim_stats.reason_counts=
+(('error:boom',1),('ok',21))`；淘汰后
+`trimmed_reason_counts=(('error:boom',1),('ok',21))`；
+`index_stats 1695×4 / audit ok=True`。全部信息项，**不参与 `audit().ok`**。
+
+如实边界：**两个候选确认成立但判定不该修** ——
+① 未终止 OSC 吞光整行属 ECMA-48 规范行为，尝试修会让 904 码点
+参数残留进入日志（放宽净化）且 120 码点截断后 `END` 仍不可达；
+② ZWJ emoji 拆散，但 1695 条词条 ZWJ/VS16/ESC 全为 0，修它要
+放宽 Cf 清理并改 `_clusters`/`display_cols`/500 串宽度回归，
+实际标语零收益。两者都有可执行回归作证据。
+**C′ 是本轮自引入又抓回的 off-by-one**。per-owner 裁剪摘要只在
+LRU 淘汰时带走，显式释放不带走（全局累计仍保留）；全局摘要不归属
+具体 owner；`<other>` 合并尾部种类。未终止 OSC 歧义、ZWJ 拆散、
+`_SCAN_CAP` 之外先粗切三者**未解决**，均有回归锁住当前行为。
+`_clean.py`/`tui.py`/`runtime_slogans.py` 逐字节未改，**不在本轮
+推送清单**；并发压测仍未复现 list 撕裂；不是真机长跑；分叉改动
+仍未合并；第三方自适应红队仍未做；**不宣称性能提升**。
+详见 `SLOGAN_MAPPING.md` §17。本轮**不改** `fully_superior`、
+99 模块基线与任何对齐指标。

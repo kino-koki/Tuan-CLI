@@ -1167,4 +1167,60 @@ re-export 的 `sanitize_verb` 因共享 `_clean_once` 对连续 ESC
 
 验证：300 例 pytest + 88 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 
+---
+
+## 23. 裁剪证据与「不该修」的两个保真度候选
+
+本轮不改任何安全裁决，也不改净化层一行，只补一处可观测性缺口。
+
+- **桶内裁剪静默丢错误信号**：实测造一条 `error:boom` 后灌 84 条
+  决策，`dispatch_log('s0')` 里 error 消失，而 `evicted_recent=0`、
+  `evicted_total=0` —— **根本没有发生淘汰**。原因是
+  `_DISPATCH_CAP=64` 的 `del bucket[:-cap]`；上一轮的
+  `EvictionRecord.reason_counts` 只在淘汰时汇总「当前桶」，
+  覆盖不到这一层。现在 ``_record`` 裁剪前先取 `dropped`，累加
+  全局累计（``bucket_trims`` / ``trimmed_decisions`` /
+  ``trimmed_reasons``）与 per-owner 摘要；后者在会话被 LRU 淘汰时
+  随 `EvictionRecord.trimmed_dropped` / `trimmed_reason_counts`
+  一起带走。实测 `(('error:boom',1),('ok',21))` 从「完全不可见」
+  变成两处可查。新增 `bucket_trim_stats()`、累计决策数
+  `decisions_total`，`audit().as_dict()` 自动携带。
+  全部是**信息项**，不参与 `audit().ok`。
+- **本轮自引入又抓回的 off-by-one**：初版 reason 种类上限判断
+  让 64 个具体 reason + `<other>` 变成 **65** 个键；改成按「具体
+  reason 种类」计数，`<other>` 作为额外桶，总数恒 ≤ 65 且具体
+  种类 ≤ 64。
+
+**两个候选确认成立但判定「不该修」**，理由都是「修了会放宽安全
+边界，而收益实际为零」：
+
+1. **未终止 OSC 吞光整行**（`']8;;https://evil.example'+'OK'
+   -> ''`，`sanitize_verb` 同源）：ECMA-48 里无终止符时后续字节
+   规范上全属参数，整段删正确。实测尝试修（终止符必需 +
+   4096 上限）会让 **904 码点的参数残留文本**进入日志，反而放宽
+   净化；且 `sanitize_log_field` 按 120 码点截断后尾部 `END`
+   仍不可达。收益为零、风险为正。
+2. **ZWJ emoji 被 Cf 清理拆散**（`👩‍💻 -> 👩💻`）：核查
+   1695 条词条 **ZWJ / VS16 / ESC 全部为 0**；修它要放宽 Cf
+   清理（保留 ZWJ）并连带改 `_clusters` / `display_cols` /
+   500 串宽度交叉回归，而 bidi isolate / RLO / ZWSP 必须继续删。
+   实际标语零收益，安全与宽度真值风险为正。
+
+`test_A_attempted_fix_would_leak_osc_parameters` 与
+`test_B_registry_contains_no_zwj_variation_or_esc` 把这两条判断
+变成**可执行证据**，不只是文档辩解。
+
+**如实边界**：裁剪证据的 per-owner 摘要只在 **LRU 淘汰**时随
+`EvictionRecord` 带走；显式 `release_owner()` / `take_owner_log()`
+释放的会话不带走（全局累计仍保留）；全局摘要不归属具体 owner。
+`<other>` 合并尾部种类、不保留原始分布。未终止 OSC 的 ECMA-48
+歧义、ZWJ emoji 拆散、`_SCAN_CAP` 之外先粗切三者**未解决**，
+都有回归把当前正确行为锁住。`_clean.py` / `tui.py` /
+`runtime_slogans.py` 逐字节未改，均不在本轮推送清单。并发压测
+仍未复现 list 撕裂；不是真机长跑；分叉改动仍未合并；第三方
+自适应红队仍未做；**不宣称性能提升**（裁剪路径多了有界常数
+开销，未做基准对比）。
+
+验证：319 例 pytest + 97 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

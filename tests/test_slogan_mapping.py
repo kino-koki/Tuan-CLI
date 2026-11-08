@@ -1928,3 +1928,244 @@ class TestFullHealthAfterD7:
                 assert d.reason == "ok" and d.entry_id, (ev, lang)
         assert mapping.audit().ok is True
         mapping.reset_runtime_counters(include_dispatch_log=True)
+
+# ================================================================ 深度轮 8
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestBucketTrimEvidence:
+    """C: 桶内 _DISPATCH_CAP 裁剪在不淘汰时也会静默丢错误信号。"""
+
+    def _trimmed_session(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner="s0")
+        mapping.record_error("typo.event", "boom", owner="s0", at_ms=1000)
+        for i in range(mapping._DISPATCH_CAP + 20):
+            mapping.pick_for_event("tool.exploring", owner="s0",
+                                   now=1000.0 + i)
+        return mapping.dispatch_log("s0")
+
+    def test_error_is_gone_from_bucket_but_not_from_evidence(self):
+        rows = self._trimmed_session()
+        assert len(rows) == mapping._DISPATCH_CAP
+        assert not any("error:boom" in r.reason for r in rows)
+        st = mapping.bucket_trim_stats()
+        assert st["trimmed_decisions"] >= 1
+        assert st["bucket_trims"] >= 1
+        assert dict(st["reason_counts"]).get("error:boom") == 1
+
+    def test_no_eviction_happened(self):
+        """与上一轮 H 的区别：这里 evicted_recent 仍是 0。"""
+        self._trimmed_session()
+        assert mapping.dispatch_log_stats()["evicted_recent"] == 0
+        assert mapping.evicted_total() == 0
+
+    def test_stats_expose_cumulative_decisions_and_trims(self):
+        self._trimmed_session()
+        st = mapping.dispatch_log_stats()
+        assert st["decisions_total"] > st["decisions"]      # 含被裁的
+        assert st["bucket_trims"] >= 1
+        assert st["trimmed_decisions"] >= 1
+        assert mapping.audit().as_dict()["dispatch_stats"][
+            "trimmed_decisions"] >= 1
+
+    def test_trim_evidence_does_not_affect_audit_health(self):
+        self._trimmed_session()
+        assert mapping.audit().ok is True
+
+    def test_reason_summary_is_desensitized_and_sorted(self):
+        st = self._trimmed_session() and mapping.bucket_trim_stats()
+        rc = st["reason_counts"]
+        assert list(rc) == sorted(rc)
+        assert all(isinstance(k, str) and isinstance(v, int) for k, v in rc)
+        blob = repr(rc)
+        assert "text" not in blob and "entry_id" not in blob
+        assert "\x1b" not in blob and "\u202e" not in blob
+
+    def test_owner_summary_travels_with_eviction_record(self):
+        self._trimmed_session()
+        K = mapping._MAX_OWNERS
+        for i in range(1, K):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i,
+                                   now=1000.0)
+        mapping.pick_for_event("tool.exploring", owner="trigger", now=1000.0)
+        r = next(x for x in mapping.evicted_owner_log() if x.owner == "s0")
+        assert r.trimmed_dropped >= 1
+        assert dict(r.trimmed_reason_counts).get("error:boom") == 1
+        # 淘汰那一刻的桶里只有 ok，错误信号全靠裁剪摘要才看得见
+        assert r.reason_counts == (("ok", mapping._DISPATCH_CAP),)
+        assert r.last_reason == "ok"
+
+    def test_explicit_release_drops_owner_summary_but_keeps_global(self):
+        self._trimmed_session()
+        global_before = mapping.bucket_trim_stats()["trimmed_decisions"]
+        mapping.release_owner("s0")
+        assert mapping.dispatch_log("s0") == ()
+        assert mapping.bucket_trim_stats()["trimmed_decisions"] == global_before
+        assert mapping._TRIMMED_BY_OWNER.get("s0") is None
+
+    def test_take_owner_log_drops_owner_summary_but_keeps_global(self):
+        self._trimmed_session()
+        global_before = mapping.bucket_trim_stats()["trimmed_decisions"]
+        mapping.take_owner_log("s0")
+        assert mapping.bucket_trim_stats()["trimmed_decisions"] == global_before
+        assert mapping._TRIMMED_BY_OWNER.get("s0") is None
+
+    def test_only_full_reset_zeroes_cumulative_evidence(self):
+        self._trimmed_session()
+        assert mapping.bucket_trim_stats()["trimmed_decisions"] >= 1
+        mapping.reset_runtime_counters()          # 默认不清
+        assert mapping.bucket_trim_stats()["trimmed_decisions"] >= 1
+        mapping.reset_dispatch_log("s0")          # 单 owner 不清
+        assert mapping.bucket_trim_stats()["trimmed_decisions"] >= 1
+        mapping.reset_dispatch_log()              # 全清才归零
+        st = mapping.bucket_trim_stats()
+        assert st["trimmed_decisions"] == 0 and st["bucket_trims"] == 0
+        assert st["reason_counts"] == ()
+        ds = mapping.dispatch_log_stats()
+        assert ds["decisions_total"] == 0 and ds["bucket_trims"] == 0
+
+    def test_reason_kind_cap_is_bounded(self):
+        """kind 虽已净化限长，种类仍可能膨胀；超出归 <other>。"""
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        for i in range(200):
+            mapping.record_error("ev", "k%03d" % i, owner="x", at_ms=1000)
+        # 单 owner 只有 64 条留存，裁剪后 reason 种类很多
+        for i in range(mapping._DISPATCH_CAP + 10):
+            mapping.pick_for_event("tool.exploring", owner="x", now=1000.0)
+        rc = mapping.bucket_trim_stats()["reason_counts"]
+        # 具体 reason 最多 CAP 种，额外的 "<other>" 是第 CAP+1 个桶
+        assert len(rc) <= mapping._TRIMMED_REASON_CAP + 1
+        assert sum(1 for k, _ in rc if k != "<other>") <= mapping._TRIMMED_REASON_CAP
+        assert mapping.audit().ok is True
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestMeasuredButDeliberatelyNotChanged:
+    """A/B/D/E/F/G: 实测后判定「不该动」，锁住当前正确行为。
+
+    本轮的核心不是修了多少，而是**判断什么不该修**。详见
+    ``SLOGAN_MAPPING.md`` §17。
+    """
+
+    def test_A_unterminated_osc_strips_whole_line_per_ecma48(self):
+        """A: 未终止 OSC 整段删是 ECMA-48 规范行为，**未修**。
+
+        尝试修（终止符必需 + 4096 上限）会把 4096 之后的**参数残留
+        文本**放进日志，反而放宽净化；且 sanitize_log_field 最终按
+        120 码点截断，尾部合法文本仍不可达。收益为零、风险为正。
+        """
+        from tuan_cli.ui.slogans import _clean as C
+        assert C.sanitize_log_field("\x1b]8;;https://evil.example" + "OK") == ""
+        assert C.sanitize_log_field("\x1b]0;title" + "TAIL") == ""
+        assert C.sanitize_verb("\x1b]8;;u" + "OK") == ""
+        # 有终止符的 OSC 行为不变
+        assert C.sanitize_log_field("\x1b]8;;u\x07OK") == "OK"
+        assert C.sanitize_verb("\x1b]8;;u\x1b\\OK") == "OK"
+
+    def test_A_attempted_fix_would_leak_osc_parameters(self):
+        """把「想修」的副作用变成可执行证据，而不是只写文档。"""
+        import re
+        import unicodedata
+        from tuan_cli.ui.slogans import _clean as C
+        term = re.compile(r"\x1b+\][^\x07\x1b]*(?:\x07|\x1b\\)")
+        unterminated = re.compile(r"\x1b+\][^\x07\x1b]{0,4096}")
+        raw = "\x1b]8;;" + "A" * 5000 + "END"
+        s = unterminated.sub("", term.sub("", raw))
+        # 4096 之后的 OSC 参数残留文本会进入后续清理/日志
+        assert len(s) >= 900 and "END" in s
+        drop = frozenset({"Cc", "Cf", "Cs", "Co", "Cn"})
+        kept = "".join(ch for ch in s
+                       if unicodedata.category(ch) not in drop
+                       and not C._is_variation_selector(ch))
+        assert len(kept) >= 900          # 参数残留确实留下了
+        # 当前实现（整段删）返回空串
+        assert C.sanitize_log_field(raw) == ""
+        # 而「修后」即便残留 900+ 参数文本，按 120 码点截断后 END 仍不可达
+        truncated = kept[:C.LOG_FIELD_LIMIT].rstrip() + "…"
+        assert len(truncated) == C.LOG_FIELD_LIMIT + 1
+        assert "END" not in truncated
+
+    def test_B_registry_contains_no_zwj_variation_or_esc(self):
+        """B 的收益核查：1695 条词条里零 ZWJ / VS16 / ESC。"""
+        zwj = vs = esc = 0
+        for e in mapping.registry():
+            text = getattr(e, "text", "") or ""
+            zwj += "\u200d" in text
+            vs += any(0xFE00 <= ord(c) <= 0xFE0F for c in text)
+            esc += "\x1b" in text
+        assert (zwj, vs, esc) == (0, 0, 0)
+        assert len(list(mapping.registry())) == 1695
+
+    def test_B_zwj_stripping_is_a_documented_known_cost(self):
+        """B: 删 Cf 会把 ZWJ emoji 拆散，是已知代价，**未修**。
+
+        修它要放宽 Cf 清理并改 _clusters / display_cols / 500 串
+        宽度回归，而标语库零 ZWJ —— 收益为零、风险为正。
+        """
+        from tuan_cli.ui.slogans import _clean as C
+        assert C.sanitize_verb("👩\u200d💻") == "👩💻"
+        assert C.sanitize_verb("👨\u200d👩\u200d👧") == "👨👩👧"
+        assert C.sanitize_log_field("\u200d" * 3 + "OK") == "OK"
+        # bidi / isolate / ZWSP 仍必须被删（Trojan Source 不回归）
+        assert "\u202e" not in C.sanitize_log_field("\u202eRLO\u200dOK")
+        assert "\u2066" not in C.sanitize_log_field("\u2066ISO\u200dOK")
+        assert C.sanitize_log_field("\u200bZWSP\u200dOK").startswith("ZWSP")
+
+    def test_D_eviction_reason_counts_are_already_sanitized(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        K = mapping._MAX_OWNERS
+        mapping.record_error("ev", "\x1b]8;;x\x07\u202eBAD",
+                             owner="s-0", at_ms=1000)
+        for i in range(1, K):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        mapping.pick_for_event("tool.exploring", owner="trigger")
+        r = next(x for x in mapping.evicted_owner_log() if x.owner == "s-0")
+        blob = repr(r.reason_counts)
+        assert "\x1b" not in blob and "\u202e" not in blob
+        assert r.reason_counts and all(isinstance(k, str)
+                                       for k, _ in r.reason_counts)
+
+    def test_E_scan_cap_boundary_is_an_already_documented_limit(self):
+        """E: 合法文本落在 65536 粗切窗口外 —— d6 已如实记录，未修。"""
+        from tuan_cli.ui.slogans import _clean as C
+        assert C._SCAN_CAP == 65536
+        assert C.sanitize_log_field("\x00" * 65530 + "\u0301" * 3 + "OK") == "OK"
+        assert C.sanitize_log_field("\x00" * 65533 + "\u0301" * 3 + "OK") == ""
+        assert C.sanitize_log_field("\x00" * 70000 + "OK") == ""
+
+    def test_F_verb_column_truncation_is_intended_not_a_defect(self):
+        """F: sanitize_verb 按显示列宽截断是设计，不是「丢尾部」。"""
+        from tuan_cli.ui.slogans import _clean as C
+        assert C.sanitize_verb("\x00" * 1000 + "OK") == "OK"
+        assert C.sanitize_verb("\x1b]8;;u\x07" + "B" * 200).startswith("B")
+        assert len(C.sanitize_verb("a" * 500 + "END")) <= C._MAX_VERB_CHARS
+
+    def test_G_both_exits_share_one_clean_core(self):
+        """G: 未终止 OSC 同时影响两个出口，因为共用 _clean_once。"""
+        import inspect
+        from tuan_cli.ui.slogans import _clean as C
+        from tuan_cli.tui import runtime_slogans as R
+        src = inspect.getsource(C._clean_once)
+        assert "_OSC_RE.sub" in src
+        assert R.sanitize_verb is C.sanitize_verb
+        assert C.sanitize_verb("\x1b]0;title" + " TAIL") == ""
+        assert C.sanitize_log_field("\x1b]0;title" + " TAIL") == ""
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestFullHealthAfterD8:
+    def test_registry_and_all_events_still_green(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        r = mapping.audit()
+        assert r.ok and r.index_consistent
+        st = mapping.index_stats()
+        assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+        assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+        for lang in L.LANGUAGES:
+            for ev in mapping.EVENT_BINDINGS:
+                d = mapping.pick_for_event(ev, lang=lang, owner="final",
+                                           now=1000.0)
+                assert d.reason == "ok" and d.entry_id, (ev, lang)
+        assert mapping.audit().ok is True
+        mapping.reset_runtime_counters(include_dispatch_log=True)

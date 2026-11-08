@@ -1170,3 +1170,74 @@ corruption reproduced under concurrency; no real-device soak test;
 fork changes still unmerged; no external adaptive red team. NO
 performance improvement is claimed. Verification: 300 pytest cases
 + 88 pure-stdlib checks + 22/20 prior checks, all green.
+
+
+---
+
+## 20. Bucket-Trim Evidence and Two Deliberately Unfixed Fidelity Candidates
+
+This round changes no verdict and NOT ONE LINE of the cleaning layer.
+It closes one observability gap and records two measured-but-rejected
+fixes.
+
+- **Bucket trimming silently dropped error signals.** Measured: one
+  `error:boom` followed by 84 decisions left no error in
+  `dispatch_log('s0')`, while `evicted_recent=0` AND
+  `evicted_total=0` -- NO eviction happened at all. The culprit is
+  `_DISPATCH_CAP=64`'s `del bucket[:-cap]`; the prior round's
+  `EvictionRecord.reason_counts` only summarizes "what is in the
+  bucket at eviction time" and cannot cover this layer. `_record` now
+  captures `dropped` before trimming and accumulates global counters
+  (`bucket_trims` / `trimmed_decisions` / bounded `reason_counts`)
+  plus a per-owner summary that travels with
+  `EvictionRecord.trimmed_dropped` / `trimmed_reason_counts` when the
+  session is LRU-evicted. Measured:
+  `(('error:boom',1),('ok',21))` went from completely invisible to
+  queryable in two places. Added `bucket_trim_stats()` and cumulative
+  `decisions_total`; `audit().as_dict()` carries them automatically.
+  ALL are observations and do NOT affect `audit().ok`.
+- **An off-by-one INTRODUCED by this round's own fix and caught by a
+  new regression**: the first reason-cap check allowed 64 concrete
+  reasons PLUS `<other>` = 65 keys. Now counting concrete reasons
+  only, with `<other>` as one extra bucket (total <= 65, concrete
+  <= 64).
+
+TWO CANDIDATES WERE MEASURED REAL BUT DELIBERATELY NOT FIXED, because
+fixing them would WEAKEN the security boundary for zero real gain:
+
+1. **Unterminated OSC swallows the whole line**
+   (`'\x1b]8;;https://evil.example'+'OK' -> ''`, and
+   `sanitize_verb` too since both share `_clean_once`). Under ECMA-48
+   an OSC must be terminated by BEL/ST; without a terminator ALL
+   following bytes are parameters, so stripping the whole run is
+   spec-correct. Measured the attempted fix (mandatory terminator +
+   4096 cap): it leaves **904 codepoints of OSC parameter residue**
+   in the log (weaker sanitizing), and `sanitize_log_field`'s
+   120-codepoint truncation still makes trailing `END` unreachable.
+   Zero benefit, positive risk.
+2. **ZWJ emoji is split by Cf removal** (`👩\u200d💻 -> 👩💻`,
+   family / rainbow-flag sequences too). Checked all 1695 entries:
+   **ZERO ZWJ, ZERO VS16, ZERO ESC**. Fixing it would relax Cf
+   cleaning (retaining ZWJ) and force changes to `_clusters`,
+   `display_cols`, a 500-string width cross-regression and the
+   idempotence contract -- while bidi isolate / RLO / ZWSP must keep
+   being deleted. Zero real-slogan benefit, positive risk.
+
+`test_A_attempted_fix_would_leak_osc_parameters` and
+`test_B_registry_contains_no_zwj_variation_or_esc` turn both
+judgments into EXECUTABLE evidence rather than prose.
+
+**Honest limits**: per-owner trim summaries travel with
+`EvictionRecord` ONLY on LRU eviction; explicitly released sessions
+(`release_owner` / `take_owner_log`) drop theirs (global cumulative
+evidence remains), and the global summary is NOT attributed to a
+specific owner. `<other>` merges tail categories. The unterminated-OSC
+ECMA-48 ambiguity, ZWJ emoji splitting and coarse-cut beyond
+`_SCAN_CAP` remain UNSOLVED, each locked by a regression.
+`_clean.py`, `tui.py` and `runtime_slogans.py` are byte-identical and
+NOT in this push. No list corruption reproduced under concurrency; no
+real-device soak test; fork changes still unmerged; no external
+adaptive red team. NO performance improvement is claimed (trimming
+gains a bounded constant Counter update; no benchmark was run).
+Verification: 319 pytest cases + 97 pure-stdlib checks + 22/20 prior
+checks, all green.
