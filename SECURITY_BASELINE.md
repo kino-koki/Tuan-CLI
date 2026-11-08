@@ -888,3 +888,54 @@ hooks 既有文件 **97 passed**；最终合并批次见报告；
 `verify_doc_numbers.py problems == []`；`py_compile` 全 OK。新增
 `tests/test_b3s_triggers.py`（真 git init + 真 `git worktree add` 的
 5 事件端到端触发）。
+
+
+---
+
+## R51 · B3 续轮 V：接线之后的第二层
+
+完整复现见 `CLAUDE_PARITY.md` 末尾「深度轮（续五）」。自足标题。
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R51-C1 | `dump_yaml` 吞掉写盘失败返回 `None`，`Config.set_user` 磁盘上**没有文件**却派发 `ConfigChange`，与上一轮 `ManagedSettings.reload` 的「失败不派发」契约矛盾 | 拆出 `_dump_yaml_impl` + `dump_yaml_checked` 如实返回成败；只在 `ok` 时派发；**`dump_yaml` 行为逐值不变**；新增 `last_write_persisted` |
+| R51-C2 | in-process hook 里再写配置递归 **247 层**，`RecursionError` 也被吞，每层仍继续派发 | thread-local 重入守卫：通知类跳过计数、决策类 **fail-closed** `reentry_suppressed`；`try/finally` 清理；跨线程并发不抑制 |
+| R51-C3 | 上一轮只查 `triggers.py` 字符串，没核对 `manager.py` 分类常量 | 补真值回归（查 `_NOTIFY_EVENTS` / `_DECISION_EVENTS`），不改产品代码 |
+| R51-C4 | 两次 `set_default_hooks_provider(A)/(B)` 后 A 零触发、B 代收 | `app.py` 显式回填 `config._hooks` 修掉主链路；`provider_diagnostics()` 让覆盖可见。**模块级入口仍可能串台，未宣称多会话已隔离** |
+| R51-C5/C6 | payload 不含配置值 / delete False 不派发 | 判定不该修，加回归锁住 |
+
+**刻意不做**：不回读比对值（序列化差异假阴性 + 避免文件系统时间点
+判定）；跨进程 command hook 不靠守卫（子进程不继承 thread-local，
+天然不递归，如实标注）；不改 5 个模块级子系统签名去接 owner。
+
+**两个 B3 条目仍 `STATUS_GAP`**：官方事件面远大于 7 个、exit-code-2
+未实现、Elicitation 语义不等价、`ToolPipeline` 无生产构造方、
+`cmd_hooks` 取 schema 依赖 kernel 暴露 `tool_registry`。本轮修的是
+「已接线触发点的正确性」不是覆盖面；`catalog.py` **零改动**，
+`status`/`evidence` 结构不变，**不靠改口径凑数**。
+
+**断言同步（不是放宽）**：`tests/test_b3s_triggers.py` 与
+`test_b3_hooks_extended.py` 一条未改；C3 升级为常量真值断言；矩阵
+计数逐项钉死。
+
+**A′ ×2**（新写测试自身）：写盘失败 delete 用例走错分支（改
+monkeypatch 写盘出口）；子进程校验用 `str` 而非 `Path` 导致
+`AttributeError`（改 `Path(...)`）。产品代码零回归。
+
+**矩阵一个状态没动**：`aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`；`matrix.validate()` 与
+`evidence.verify_evidence()` 均空。
+
+**如实边界**：C4 未完全修；写盘失败时内存视图仍更新（既有行为，
+重启后丢失）；并发外部改写不在检测范围；**行为变更**（写盘失败不再
+派发 ConfigChange、app.py 回填 `config._hooks`）；`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`credential_masking` 仍
+partial；A 线 10 pending、分叉改动、第三方自适应红队未做；不是真机
+多平台验证。标语引擎 / 净化层 / `mapping.py` / `tui.py` /
+`runtime_slogans.py` 逐字节未改。
+
+**验证（按分批，批次间有重叠、不累加）**：B3 续轮 V + 上一轮 B3 +
+5 个 hooks 既有文件 + mixin + config 系列 **182 passed**；宽合并批次
+见报告；`verify_doc_numbers.py problems == []`；`py_compile` 全 OK。
+新增 `tests/test_b3v_depth.py`（真子进程 / 4 线程并发 / 决策重入
+fail-closed / 单一实现扫描 / 矩阵钉死）。

@@ -562,3 +562,25 @@ catalog 两条 note 补**第四轮纠偏指向**，但 `status` 与 `evidence`
 Elicitation 语义不等价、`ToolPipeline` 无生产调用链。catalog note 补纠偏但
 `status`/`evidence` 结构不变。三处断言同步（更强，不是放宽）；A′ ×2 自查抓回。
 新增 `tests/test_b3s_triggers.py`。详见 `SECURITY_BASELINE.md` R50。
+
+
+---
+
+## B3 续轮 V 增量（接线之后的第二层）
+
+权威口径见 `CLAUDE_PARITY.md` 末尾「深度轮（续五）」。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`；两个 B3 条目仍 `STATUS_GAP`，`catalog.py` 零改动。
+
+- **C1** `dump_yaml` 吞掉写盘失败并返回 `None`，`Config.set_user` 磁盘上
+  没有文件却派发 `ConfigChange` → 拆出 `_dump_yaml_impl` +
+  `dump_yaml_checked`，只在落盘成功时派发（`dump_yaml` 行为逐值不变）。
+- **C2** in-process hook 里再写配置递归 247 层且 `RecursionError` 被吞
+  → thread-local 重入守卫，通知类跳过、决策类 fail-closed。
+- **C3** 上一轮只查 `triggers.py` 字符串 → 补一条核对 `manager.py`
+  `_NOTIFY_EVENTS` / `_DECISION_EVENTS` 常量的真值回归。
+- **C4** 多会话 provider 静默串台 → `app.py` 显式回填 `config._hooks`
+  修掉主链路；模块级入口仍全局 fallback，但 `provider_diagnostics()`
+  让覆盖可见。**没宣称多会话已隔离**。
+- C5/C6 判定不该修，加回归锁住。A′ ×2 自查抓回（测试自身）。
+新增 `tests/test_b3v_depth.py`。详见 `SECURITY_BASELINE.md` R51。

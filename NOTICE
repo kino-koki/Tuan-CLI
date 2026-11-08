@@ -962,3 +962,17 @@ SOFTWARE.
     unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
     parity line and all "no endorsement" statements still apply
     unchanged.
+
+
+25. B3-continued V correctness layer: honest write-persistence
+    reporting (`_dump_yaml_impl` / `dump_yaml_checked` in
+    `config/loader.py`), thread-local reentry guards and provider
+    diagnostics (`hooks/triggers.py`), explicit per-session hook
+    backfill (`app.py`), and one new stdlib-based regression file
+    (`tests/test_b3v_depth.py`). Still NO new third-party material:
+    all changes are stdlib-based Python in this repository's own
+    modules. No Anthropic source, trademark asset, upstream Rust
+    source, or new third-party dependency was copied. Items 9-24
+    remain unchanged; the Apache-2.0 + MIT dual attribution for the
+    Codex TUI parity line and all "no endorsement" statements still
+    apply unchanged.

@@ -2312,3 +2312,106 @@ partial; A-line 10 pending, local fork unmerged, no third-party adaptive
 red team; NO real-device multi-platform verification. The slogan engine /
 cleaning layer / `mapping.py` / `tui.py` / `runtime_slogans.py` are
 byte-identical.
+
+
+---
+
+## B3 Continued V: The Second Layer AFTER Wiring (Write Persistence / Reentry / Classification Truth / Cross-Session Visibility)
+
+> SELF-CONTAINED heading. NOT A SINGLE MATRIX STATUS CHANGED:
+> `aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+> `b_waves_done=["B1"]`. Both B3 catalog entries stay `STATUS_GAP`;
+> `catalog.py` is UNCHANGED this round. Full reproduction: final
+> section of `CLAUDE_PARITY.md`.
+>
+> The previous round wired 5 extended events to production triggers.
+> This round asks ONE question: "now that it is wired, can it fire at
+> the WRONG time, into the WRONG session, or FOREVER?" NO breadth added.
+
+### Six candidates (4 fixed / 2 deliberately not)
+
+| ID | Measured result | Verdict |
+|---|---|---|
+| C1 | Pointing `user_config_path` at a directory makes `dump_yaml` swallow `IsADirectoryError` and return `None`; `Config.set_user` STILL dispatches `ConfigChange` even though **NO file exists on disk** | FIX -- directly contradicts the previous round's own `ManagedSettings.reload` contract ("do not dispatch on failure") |
+| C2 | An in-process hook calling `Config.set_user` inside `run_notify` recursed **247 levels**; `dump_yaml` swallowed `RecursionError` too, so every level kept dispatching -- no error, no stop | FIX |
+| C3 | The previous round's classification test only checked strings inside `triggers.py`, NOT the real `_NOTIFY_EVENTS` / `_DECISION_EVENTS` constants in `manager.py` | NO code change; add a TRUTH regression against the constants |
+| C4 | After `set_default_hooks_provider(A)` / `(B)`, a trigger built under A dispatched **0 to A and 1 to B** -- process-level provider is a single-session assumption, silently cross-wired | PARTIAL FIX |
+| C5 | `ConfigChange` payload contains only `source/key/origin`, NOT the config value | NOT a bug; lock it with a regression |
+| C6 | `delete_user` returning False does not dispatch | NOT a bug (already correct); lock it |
+
+### Fix
+- `config/loader.py`: split out `_dump_yaml_impl`, add `dump_yaml_checked`
+  that HONESTLY reports whether the write landed. **`dump_yaml` still
+  returns `None`, still swallows exceptions, byte-for-byte unchanged in
+  behavior** (all existing callers ignore the return value). `set_user` /
+  `delete_user` dispatch only when `ok`; new `last_write_persisted` for
+  diagnostics. Deliberately NO read-back value comparison: safe_dump /
+  safe_load serialization differences cause false negatives, and a
+  read-back would introduce a "decision depends on a filesystem point
+  in time" cache -- the same reason earlier rounds rejected caching for
+  liveness decisions.
+- `hooks/triggers.py`: **thread-local reentry guard**. Same-thread,
+  same-event reentry: notify-type is skipped and counted; decision-type
+  is **fail-closed** with `failure_kind="reentry_suppressed"` (NEVER an
+  empty allow decision, otherwise recursion becomes a security bypass).
+  `try/finally` cleanup so the same event can fire again after an
+  exception; concurrent same-event dispatch from DIFFERENT threads is
+  NOT suppressed. Cross-process command hooks need NO guard: a child
+  process does not inherit the parent's thread-local, so that recursion
+  chain cannot form -- documented, NOT overstated.
+- `app.py`: explicitly backfills `config._hooks` with this session's
+  hooks. Config is constructed earliest and lives longest, so it was
+  the main C4 chain; `/worktree` and `ask_user` already passed hooks
+  explicitly in the previous round.
+- `set_default_hooks_provider(..., owner=...)` + `provider_diagnostics()`:
+  cross-wiring is **NOT eliminated, only made DIAGNOSABLE** (owner /
+  generation / overrides / reentry). Module-level `remote_control.notify`
+  / `SecurityAlerter` background thread still use the global fallback;
+  true multi-session isolation requires the upstream to pass an owner
+  to those entries. This round deliberately does NOT change 5 subsystem
+  signatures just to make wiring more brittle.
+
+### Why both B3 entries STAY `STATUS_GAP`
+The official hooks reference lists far more events than 7; CC
+exit-code-2 -> decline is NOT implemented; `Elicitation` semantics are
+deliberately NOT equivalent; `ToolPipeline` has NO production
+constructor; `cmd_hooks` schema lookup depends on the kernel exposing
+`tool_registry`. This round fixed the CORRECTNESS of already-wired
+triggers, not coverage. `catalog.py` unchanged -- NO padding by
+editing definitions.
+
+### Assertion synchronization (NOT relaxed)
+`tests/test_b3s_triggers.py` and `test_b3_hooks_extended.py` are
+BYTE-IDENTICAL and unmodified; C3 was upgraded from a string check to
+a check against `manager.py` constants; every matrix count is pinned.
+
+### A-prime x2 (self-caught, in NEWLY WRITTEN TESTS)
+1. The "failed delete" test pointed the path at a directory, but
+   `_load_yaml` then could not find the key and `delete_user` returned
+   False BEFORE reaching the write -- wrong branch. Switched to
+   monkeypatching the write exit to return False. `set_user` failure is
+   covered by the real-directory C1 case.
+2. The child-process check assigned `str` to `c.home`, so
+   `_load_yaml` calling `path.exists()` raised `AttributeError`.
+   Switched to `Path(...)`. ZERO product-code regressions.
+
+### Verification (split batches, NOT one full-suite claim)
+B3-V + previous B3 + 5 existing hooks files + mixin + config series
+**182 passed**; wide combined batch (see report); `matrix.validate()` /
+`evidence.verify_evidence()` / doc-number check / `py_compile` all clean.
+New `tests/test_b3v_depth.py` includes a REAL child process proving
+thread-local non-inheritance, 4-thread concurrent non-suppression,
+decision-reentry fail-closed, single-implementation scan, matrix pinning.
+
+### Honest limits
+C4 is NOT fully fixed (module-level entries can still cross-wire, only
+diagnosable); cross-process hooks are NOT protected by the guard;
+on a failed write the in-memory view is STILL updated (pre-existing
+behavior, lost on restart); NO read-back comparison, concurrent external
+config rewrites are out of scope; BEHAVIORAL CHANGES (failed writes no
+longer dispatch ConfigChange, app.py backfills `config._hooks`);
+`os_sandbox` remains a gap, `deny_network_by_default` remains false,
+`credential_masking` remains partial; A-line 10 pending, local fork
+unmerged, no third-party adaptive red team; NO real-device
+multi-platform verification. The slogan engine / cleaning layer /
+`mapping.py` / `tui.py` / `runtime_slogans.py` are byte-identical.

@@ -1836,3 +1836,107 @@ hook 的 `allow` **不能**变成用户答案、headless 不派发 Result、hook
   第三方自适应红队未做；不是真机多平台验证。
 - 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
   逐字节未改。
+
+
+---
+
+## 深度轮（续五）：接线**之后**的第二层 —— 写盘成败 / 重入递归 / 分类真值 / 串台可见性
+
+> 沿用**自足标题**，不新增数字章节编号。**矩阵计数一个没动**：
+> `ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8`，
+> `fully_superior=false`，`b_waves_done=["B1"]`。两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` **本轮零改动** —— 它的 note 没说错，只是
+> 没提本轮的正确性修复，不为了让文档变长去碰它。
+>
+> 上一轮把 5 个扩展事件接上了生产触发点。这轮只问一句：
+> **「接上之后，它会不会在错误的时候派发 / 派发到错误的会话 / 无限派发？」**
+> 一点广度没扩。
+
+### 六个候选的实测判定（4 修 / 2 不该修）
+
+| 编号 | 实测结果 | 判定 |
+|---|---|---|
+| C1 | 把 `user_config_path` 指向一个目录 → `dump_yaml` 内部 `os.replace` 抛 `IsADirectoryError` 并**吞掉**返回 `None`；`Config.set_user` 照旧派发 `ConfigChange`。磁盘上**没有文件**，hook 却收到「配置已变更」 | **修**。与上一轮在 `ManagedSettings.reload` 写下的「失败不派发，否则外部 hook 会误以为配置已生效」**直接矛盾** |
+| C2 | in-process hook 的 `run_notify` 里再调 `Config.set_user` → 递归 **247 层**，`dump_yaml` 连 `RecursionError` 也吞掉：stderr 出现「配置写入失败 ... maximum recursion depth exceeded」，但每一层仍继续派发，既不报错也不停止 | **修** |
+| C3 | 上一轮 `test_event_classification_not_mixed` 只检查 `triggers.py` 自己的字符串，**没有**核对 `manager.py` 的真实 `_NOTIFY_EVENTS` / `_DECISION_EVENTS` 集合 —— 若引擎把 Elicitation 归成 notify，刚接的触发点会静默失效而测试全绿 | **不该修代码**，但补一条**真值回归**（查常量），比字符串断言更强 |
+| C4 | 两次 `set_default_hooks_provider(A)/(B)` 之后，先用 A 构造的 `HookTrigger` 派发 → **A 零触发、B 收到 A 的事件**。进程级 provider 是单会话假设，多会话静默串台 | **部分修**（见下） |
+| C5 | `Notification` payload 含正文但 `ConfigChange` payload 只有 `source/key/origin`，**不含配置值**（实测 `api.key` 的值没进 hook） | **不该修**，加回归锁住 |
+| C6 | `delete_user` 返回 False 时不派发 | **不该修**（上一轮已正确），加回归锁住 |
+
+### 修复（如实，不夸大）
+
+| 位置 | 修复 |
+|---|---|
+| `config/loader.py` | `dump_yaml` 拆出单一实现 `_dump_yaml_impl`，新增 `dump_yaml_checked` **如实返回落盘成败**；**`dump_yaml` 仍返回 `None`、仍吞异常、行为逐值不变**（全仓既有调用方忽略返回值，源码级断言 `mkstemp` 只出现 1 次）。`Config.set_user` / `delete_user` 只在 `ok` 时派发，新增 `last_write_persisted` 供诊断。刻意**不回读比对值**：`safe_dump`/`safe_load` 的序列化差异会造成假阴性，且会引入「判定依赖文件系统时间点」的缓存 —— 与前几轮拒绝给活性判定加文件系统缓存是同一个理由 |
+| `hooks/triggers.py` | **thread-local 重入守卫**：同线程同事件重入，通知类跳过并计数、决策类 **fail-closed** 返回 `failure_kind="reentry_suppressed"`（绝不返回空决策放行，否则递归变成安全绕过）；`try/finally` 清理，异常后同事件仍可派发；不同线程并发同事件**不互相抑制**。跨进程 command hook **不需要**守卫：子进程不继承父进程 thread-local，天然不会形成这条递归链 —— 如实标注，不夸大覆盖面 |
+| `app.py` | 把 `config._hooks` **显式回填**为本会话 hooks。Config 构造最早、生命周期最长，此前只能靠全局 fallback，是 C4 的主链路；`/worktree` 与 `ask_user` 上一轮已显式传 hooks |
+| `hooks/triggers.py` / `hooks/__init__.py` | `set_default_hooks_provider(fn, *, owner=None)` + `provider_diagnostics()` 暴露 `owner / generation / overrides / reentry`。**串台没被消除，只变成可诊断**：模块级 `remote_control.notify` / `SecurityAlerter` 后台线程仍用全局 fallback，真正多会话隔离需上游给这些入口显式传 owner，本轮不改 5 个子系统签名以免把接线变脆 |
+
+**C4 的诚实结论**：修掉了最长的那条链（Config），但没宣称「多会话已隔离」。
+`test_overrides_are_visible_not_silent` **同时断言串台仍存在**且
+`overrides >= 1` —— 把边界写成可执行事实，而不是包装成成果。
+
+### 为什么两个 B3 条目仍 `STATUS_GAP`
+与上一轮同一组硬理由，本轮一个都没消：官方 hooks 参考的事件面远大于
+7 个、CC exit-code-2 → decline 未实现、`Elicitation` 语义刻意不等价、
+`ToolPipeline` 无生产构造方、`cmd_hooks` 取 schema 依赖 kernel 暴露
+`tool_registry`。本轮修的是「已接线触发点的正确性」，不是功能覆盖面。
+`catalog.py` 零改动，`status`/`evidence` 结构不变，**不靠改口径凑数**。
+
+### 断言同步（不是放宽）
+新增 `tests/test_b3v_depth.py`（约 30 例）：C3 从「查 `triggers.py`
+字符串」升级为「核对 `manager.py` 的 `_NOTIFY_EVENTS` /
+`_DECISION_EVENTS` 真值」；`tests/test_b3s_triggers.py` 与
+`tests/test_b3_hooks_extended.py` **一条未改**，全部通过；矩阵计数
+逐项钉死。
+
+### A′ ×2（自己写错自己抓回）
+1. **写盘失败 delete 用例走错分支**：初版把 `user_config_path` 直接
+   指向目录，结果 `_load_yaml` 先读不到 `x.y`，`delete_user` 走
+   「键不存在 → `return False`」，根本没到写盘。改成 monkeypatch
+   写盘出口返回 `False`，才真正覆盖目标分支；`set_user` 的失败由
+   C1 那个真实目录用例覆盖。
+2. **子进程校验用了 `str` 而非 `Path`**：`_load_yaml` 调
+   `path.exists()` 直接 `AttributeError` 导致子进程 rc=1。改成
+   `Path(...)` 并重跑通过。
+
+两处都是**新写测试自身**的问题，不是产品代码回归。
+
+### 验证（按分批报告，批次间有重叠、不累加）
+
+```
+B3 续轮 V + 上一轮 B3 + 5 个 hooks 既有文件 + mixin +
+    config / config_schema / config_error_fastfail /
+    api_config_fixes                                    182 passed
+宽合并批次（parity / worktree / session / arch / 写边界 /
+    两条侧门 / B2 各轮 / slash）                        （见报告）
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+py_compile: 改动 Python 文件全部 OK
+```
+
+`tests/test_b3v_depth.py` 覆盖：写盘失败不派发 / 正常写派发 /
+`last_write_persisted` / 删除命中但写失败不派发 / `dump_yaml` 行为逐值
+不变 / `checked` 出口 True+False / 单一实现无重复 / payload 不含配置值 /
+通知类重入只 1 次 / 决策类重入 fail-closed / 异常后守卫释放 /
+4 线程并发不抑制 / **真子进程验证不继承 thread-local** / 计数只是信息项 /
+分类真值 / 15 事件表 / overrides 可见 / 显式 hooks 不受覆盖 /
+`app.py` 回填 + owner 源码断言 / 模块级 fallback 如实标注 / 矩阵钉死 /
+`catalog.py` 零改动。
+
+### 如实边界
+- **C4 未完全修**：模块级通知入口仍可能串台，只是可诊断；真正隔离需
+  上游给这些入口显式传 owner。
+- **跨进程 command hook 不是靠守卫保证的**，是进程边界天然成立；
+  若未来把 hook 执行器改成 in-process 同步，守卫才开始覆盖那条链。
+- **写盘失败时内存视图仍更新**（既有行为），重启后会丢失 —— 本轮
+  只保证「不把失败伪装成 ConfigChange」，不扩大改动面去修它。
+- **不回读比对值**，依赖 `os.replace` 原子成功；并发外部改写配置
+  不在检测范围。
+- **行为变更**：`Config.set_user/delete_user` 写盘失败时不再派发
+  `ConfigChange`；`app.py` 会回填 `config._hooks`。
+- `os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+  `credential_masking` 仍 partial；A 线 10 pending、分叉改动未合并、
+  第三方自适应红队未做；不是真机多平台验证。
+- 标语引擎 / 净化层 / `mapping.py` / `tui.py` /
+  `runtime_slogans.py` 逐字节未改。

@@ -250,14 +250,26 @@ def create_agent(
             agent.ctx.hooks = HookManager(config, workspace, kernel=kernel)
         except Exception:  # noqa: BLE001
             agent.ctx.hooks = None
-    # B3 续轮: 注入「当前会话 hooks」取值函数。Config / WorktreeLayer /
-    # remote_control / SecurityAlerter 等没有 agent.ctx 句柄的子系统靠它
-    # 拿到 HookManager。传 lambda 而不是对象：这些模块构造早于此处，
-    # 且 hooks 可在会话内被替换/置空。异常一律当 None（严格 no-op）。
+    # B3 续轮: 注入「当前会话 hooks」取值函数。remote_control /
+    # SecurityAlerter 等模块级入口没有 agent.ctx 句柄，靠它拿 HookManager。
+    # 传 lambda 而不是对象：这些模块构造早于此处，且 hooks 可在会话内
+    # 被替换/置空。异常一律当 None（严格 no-op）。
+    #
+    # B3 续轮 V 实测缺陷：进程级 provider 是**单会话假设**，两次
+    # set_default_hooks_provider(A)/(B) 之后，A 会话的 Config 派发会落到
+    # B 的 hooks（A 零触发、B 代收）。Config 是构造最早、生命周期最长的
+    # 那条链，所以这里**显式回填**：此后 Config.set_user/delete_user
+    # 走 self._hooks，不再依赖全局 fallback。/worktree 与 ask_user 上一轮
+    # 已经是显式传 hooks；只有模块级通知函数仍用全局，如实标在文档里。
+    try:
+        config._hooks = agent.ctx.hooks
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from .hooks.triggers import set_default_hooks_provider
         set_default_hooks_provider(
-            lambda: getattr(getattr(agent, "ctx", None), "hooks", None))
+            lambda: getattr(getattr(agent, "ctx", None), "hooks", None),
+            owner="agent:%x" % id(agent))
     except Exception:  # noqa: BLE001
         pass
     # 自定义斜杠命令: 把 <home>/commands 与 <workspace>/.tuan/commands 挂进分发链

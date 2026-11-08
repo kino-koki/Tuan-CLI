@@ -283,8 +283,16 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def dump_yaml(data: Dict[str, Any], path: Path) -> None:
-    """写入 YAML 配置 (临时文件 + 原子替换, 崩溃不留下半截配置)。"""
+def _dump_yaml_impl(data: Dict[str, Any], path: Path) -> bool:
+    """原子写入的**单一实现**，如实返回是否落盘成功。
+
+    B3 续轮 V 实测缺陷：旧 ``dump_yaml`` 把 mkstemp / fsync / os.replace
+    的全部异常吞成一行 warning 并返回 ``None``，调用方无法区分「写成功」
+    和「磁盘没写成」。实测把 ``user_config_path`` 指向一个目录时，
+    ``Config.set_user`` 仍会派发 ``ConfigChange`` —— 等于告诉外部 hook
+    「配置已生效」，而磁盘上根本没有这个文件。这与上一轮在
+    ``ManagedSettings.reload`` 里写下的「失败不派发」契约直接矛盾。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
@@ -294,6 +302,7 @@ def dump_yaml(data: Dict[str, Any], path: Path) -> None:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temp_name, path)
+            return True
         finally:
             try:
                 Path(temp_name).unlink()
@@ -301,6 +310,27 @@ def dump_yaml(data: Dict[str, Any], path: Path) -> None:
                 pass
     except Exception as exc:
         log.warning("配置写入失败 (%s): %s", path, exc)
+        return False
+
+
+def dump_yaml(data: Dict[str, Any], path: Path) -> None:
+    """写入 YAML 配置 (临时文件 + 原子替换, 崩溃不留下半截配置)。
+
+    **返回 None，行为与旧版逐值一致**：全仓既有调用方都忽略返回值。
+    需要知道成败的调用方改用 ``dump_yaml_checked``（同一份实现）。
+    """
+    _dump_yaml_impl(data, path)
+
+
+def dump_yaml_checked(data: Dict[str, Any], path: Path) -> bool:
+    """与 ``dump_yaml`` 共用同一份实现，但如实返回是否落盘成功。
+
+    刻意**不回读比对值**：safe_dump / safe_load 对 tuple、OrderedDict、
+    非 ASCII 等存在序列化差异，回读会产生假阴性；``os.replace`` 的原子
+    成功本身就是写入完成的判据。也因此不引入「判定依赖文件系统时间点」
+    的缓存 —— 与前几轮拒绝给活性判定加文件系统缓存是同一个理由。
+    """
+    return _dump_yaml_impl(data, path)
 
 
 def to_yaml_str(data: Dict[str, Any]) -> str:
@@ -321,6 +351,8 @@ class Config:
         # B3 续轮: 配置写入要触发 ConfigChange。显式 hooks 优先，
         # 未传时由 HookTrigger 回落到 app.py 注入的 default provider。
         self._hooks = hooks
+        # B3 续轮 V: 最近一次用户层写盘成败（None = 尚未写过），供诊断。
+        self.last_write_persisted: Optional[bool] = None
         self.home = home_dir()
         self.user_config_path = self.home / "config.yaml"
         self.profile_dir = self.home / "profiles" / profile
@@ -361,12 +393,18 @@ class Config:
             node = node.setdefault(k, {})
         node[keys[-1]] = value
         self.home.mkdir(parents=True, exist_ok=True)
-        dump_yaml(cfg, self.user_config_path)
+        ok = dump_yaml_checked(cfg, self.user_config_path)
+        self.last_write_persisted = bool(ok)
         # 同步内存视图: 用 patch_replace 整值替换目标键 (保留同级默认字段)。
+        # 注意: 写盘失败时内存视图仍更新 —— 这是**既有行为**，本轮不扩大
+        # 改动面去修「重启后丢失」；只保证不把失败伪装成 ConfigChange。
         self.data = patch_replace(self.data, {dotted: value})
-        from ..hooks.triggers import HookTrigger
-        HookTrigger(self._hooks).config_change(
-            source="user_config", key=dotted, origin="set_user")
+        if ok:
+            from ..hooks.triggers import HookTrigger
+            HookTrigger(self._hooks).config_change(
+                source="user_config", key=dotted, origin="set_user")
+        else:
+            log.debug("ConfigChange 未派发: 用户层配置未落盘 (%s)", dotted)
 
     def delete_user(self, dotted: str) -> bool:
         """从用户层配置删除某个点路径键 (复位到内置默认值)。返回是否真的删掉了。
@@ -385,16 +423,20 @@ class Config:
             return False
         del node[leaf]
         self.home.mkdir(parents=True, exist_ok=True)
-        dump_yaml(cfg, self.user_config_path)
+        ok = dump_yaml_checked(cfg, self.user_config_path)
+        self.last_write_persisted = bool(ok)
         # 刷新内存视图: 重建 默认 -> 用户(已删) -> Profile。
         self.data = copy.deepcopy(DEFAULT_CONFIG)
         if self.profile in PRESET_PROFILES:
             self.data = deep_merge(self.data, PRESET_PROFILES[self.profile])
         self.data = deep_merge(self.data, cfg)
         self.data = deep_merge(self.data, _load_yaml(self.profile_dir / "config.yaml"))
-        from ..hooks.triggers import HookTrigger
-        HookTrigger(self._hooks).config_change(
-            source="user_config", key=dotted, origin="delete_user")
+        if ok:
+            from ..hooks.triggers import HookTrigger
+            HookTrigger(self._hooks).config_change(
+                source="user_config", key=dotted, origin="delete_user")
+        else:
+            log.debug("ConfigChange 未派发: 用户层配置删除未落盘 (%s)", dotted)
         return True
 
     @staticmethod

@@ -2068,3 +2068,73 @@ notify 会派发已配 hook）；Notification 后台线程派发；`os_sandbox` 
 A 线 10 pending、分叉改动、第三方自适应红队未做；不是真机多平台验证。
 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
 逐字节未改。
+
+
+---
+
+## B3 续轮 V：接线之后的第二层（写盘成败 / 重入递归 / 分类真值 / 串台可见性）
+
+> 自足标题。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续五）」。
+
+### 六个候选（4 修 / 2 不该修）
+
+| 编号 | 实测结果 | 判定 |
+|---|---|---|
+| C1 | `user_config_path` 指向目录 → `dump_yaml` 吞掉 `IsADirectoryError` 返回 `None`，`Config.set_user` 磁盘上**没有文件**却派发 `ConfigChange` | **修**。与上一轮 `ManagedSettings.reload` 的「失败不派发」契约直接矛盾 |
+| C2 | in-process hook 里再写配置 → 递归 **247 层**，`dump_yaml` 连 `RecursionError` 也吞掉，每层仍继续派发 | **修** |
+| C3 | 上一轮只查 `triggers.py` 字符串，没核对 `manager.py` 的 `_NOTIFY_EVENTS` / `_DECISION_EVENTS` 真值 | **不修代码**，补真值回归 |
+| C4 | 两次 `set_default_hooks_provider(A)/(B)` 后 A 零触发、B 代收 A 的事件 | **部分修** |
+| C5 | `ConfigChange` payload 只有 `source/key/origin`，不含配置值 | **不该修**，锁住 |
+| C6 | `delete_user` 返回 False 不派发 | **不该修**，锁住 |
+
+### 修复
+- `config/loader.py`：`dump_yaml` 拆出 `_dump_yaml_impl` + 新增
+  `dump_yaml_checked` 如实返回落盘成败；**`dump_yaml` 仍返回 `None`、
+  仍吞异常、行为逐值不变**。`set_user`/`delete_user` 只在 `ok` 时派发，
+  新增 `last_write_persisted`。刻意**不回读比对值**（序列化差异假阴性 +
+  避免文件系统时间点判定）。
+- `hooks/triggers.py`：**thread-local 重入守卫** —— 同线程同事件重入，
+  通知类跳过并计数、决策类 **fail-closed** 返回
+  `failure_kind="reentry_suppressed"`（绝不返回空决策放行）；
+  `try/finally` 清理，异常后同事件仍可派发；不同线程并发不抑制。
+  跨进程 command hook 靠进程边界天然不递归，如实标注。
+- `app.py`：显式回填 `config._hooks` 为本会话 hooks（C4 主链路）。
+- `set_default_hooks_provider(..., owner=...)` + `provider_diagnostics()`：
+  **串台没被消除，只变成可诊断**（owner / generation / overrides /
+  reentry）。模块级 `remote_control.notify` / `SecurityAlerter` 仍是全局
+  fallback；真正多会话隔离需上游显式传 owner，本轮不改 5 个子系统签名。
+
+### 为什么仍 `STATUS_GAP`
+官方事件面远大于 7 个、exit-code-2 未实现、Elicitation 语义不等价、
+`ToolPipeline` 无生产构造方、`cmd_hooks` 取 schema 依赖 kernel 暴露
+`tool_registry`。本轮修的是「已接线触发点的正确性」，不是覆盖面。
+`catalog.py` 零改动，**不靠改口径凑数**。
+
+### 断言同步（不是放宽）
+`tests/test_b3s_triggers.py` 与 `test_b3_hooks_extended.py` 一条未改；
+C3 升级为核对 `manager.py` 常量；矩阵计数逐项钉死。
+
+### A′ ×2（新写测试自身）
+1. 写盘失败 delete 用例把 path 指向目录，结果 `_load_yaml` 读不到键、
+   走 `return False` 分支根本没到写盘 → 改 monkeypatch 写盘出口。
+2. 子进程校验给 `c.home` 赋 `str`，`_load_yaml` 调 `path.exists()`
+   抛 `AttributeError` → 改 `Path(...)`。产品代码零回归。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3 续轮 V + 上一轮 B3 + 5 个 hooks 既有文件 + mixin + config 系列
+**182 passed**；宽合并批次见报告；`matrix.validate()` /
+`evidence.verify_evidence()` / 文档数字校验 / `py_compile` 全干净。
+新增 `tests/test_b3v_depth.py` 含**真子进程**验证不继承 thread-local、
+4 线程并发不抑制、决策类重入 fail-closed、单一实现扫描、矩阵钉死。
+
+### 如实边界
+C4 未完全修；跨进程 hook 不是靠守卫保证；写盘失败时内存视图仍更新
+（既有行为，重启后丢失）；不回读比对值、并发外部改写不在检测范围；
+**行为变更**（写盘失败不再派发 ConfigChange、app.py 回填
+`config._hooks`）；`os_sandbox` 仍 gap、`deny_network_by_default` 仍
+false 未翻、`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
