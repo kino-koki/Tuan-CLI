@@ -3137,6 +3137,9 @@ class QxtTUI:
         self._throttled_invalidate()
 
     def end_stream(self) -> None:
+        engine = getattr(self, "_slogans", None)
+        if engine is not None:
+            engine.note_progress("stream_end")
         if self._stream_buf:
             # 模型输出常以空行开头, 去掉前导换行, 否则 ● 指示符会单独成行、
             # 正文缩进到下一行 (消息头与正文不在同一行的 bug)。
@@ -3169,6 +3172,11 @@ class QxtTUI:
             self._app.invalidate()
 
     def end_tool(self, name: str, ok: bool = True) -> None:
+        # D4: 工具结束是一次真实进展。只刷新活性时间戳，不改阶段、不换词，
+        # 否则「工具跑完 → 等下一个模型响应」的间隙会被误判成没进展。
+        engine = getattr(self, "_slogans", None)
+        if engine is not None:
+            engine.note_progress("tool_end")
         if name in self._running:
             self._running.remove(name)
         mark = SUCCESS_MARK if ok else FAILURE_MARK
@@ -3704,7 +3712,7 @@ class QxtTUI:
             self._running.clear()
             engine = getattr(self, "_slogans", None)
             if engine is not None:
-                engine.reset()  # 下一回合重新抽词, 不沿用上一条
+                engine.reset()  # 重新抽词；证据链跨回合保留，供回放上一回合为何卡住
             # codex `FinalMessageSeparator`: 回合结束注入完成分隔线
             # `  Worked for Xs · HH:MM` (缩进 2 空格, dim), 紧贴助手回复下方。
             footer = self._completion_footer_text()
@@ -3762,12 +3770,21 @@ class QxtTUI:
         finally:
             self._closed = True
 
+    def liveness(self):
+        """运行时活性快照（调试/doctor 用）。不新增 CLI 子命令、不改裁决。"""
+        engine = getattr(self, "_slogans", None)
+        return engine.liveness() if engine is not None else None
+
     def close(self) -> None:
         self._closed = True
         if self._app and self._app.is_running:
             self._app.exit()
 
     def _animate(self) -> None:
+        # 深度轮硬约束：这里**只允许**推进帧号并 invalidate，
+        # 绝不调用 note_activity / note_progress。一旦在动画循环里刷新
+        # 活性时间戳，「疑似摸鱼」就退化成永远不报的定时空转 ——
+        # 那正是这个功能要反对的东西。
         while not self._closed:
             if self._busy or self._streaming or self._running:
                 # 模型思考/流式/工具期间: 月亮转圈, 每帧 120ms
@@ -4145,7 +4162,15 @@ class QxtTUI:
             engine = getattr(self, "_slogans", None)
             view = engine.render(busy=True) if engine is not None else None
             if view is not None and view.mode != "off" and view.text:
-                cls = ("class:warning" if view.stalled else "class:primary")
+                # 深度轮：三态视觉分级。stalled -> warning（真没进展），
+                # slow -> textdim（比预期慢但不冤枉它），healthy -> primary。
+                # 文案不变、裁决不变，只是让状态口径与真实活性一致。
+                if view.stalled:
+                    cls = "class:warning"
+                elif view.state == "slow":
+                    cls = "class:textdim"
+                else:
+                    cls = "class:primary"
                 parts.append((cls, " " + view.text))
         else:
             parts.append(("class:success", f"{SUCCESS_MARK} {t('fs.ready')}"))

@@ -221,3 +221,115 @@ stall 诊断与本地化、确定性 seed、三个 TUI 缺陷的针对性回归�
 - 远端 tree 中仍存在 `PROVENANCE.md` 与
   `GIT_HISTORY_RECONSTRUCTION_AUDIT.md`（早前清理似被 merge 回退）。本轮
   **没有删除任何文件**，是否清理需你确认后再单独提交。
+
+
+---
+
+## 10. 深度轮：把「疑似摸鱼」做成可信的活性判定
+
+> 本轮按「不再执着于广度而放弃深度」执行：**没有新增模块、没有新增
+> CLI 子命令、99 模块基线 / `fully_superior` / 任何对齐指标一律不动**。
+> 只把 §2 那条「事件驱动」往下挖。
+
+### 10.1 上版其实还是很浅
+
+上版做了「绑 3 个事件 + 一个固定 15 秒阈值」，看起来诚实，实际有四个洞：
+
+| | 上版 | 本轮 |
+|---|---|---|
+| 并发 | 5 个可变字段无锁复合读写，GIL 只保证单条赋值原子 | `RLock` 全线性化 + 单调化时钟 + `(seq, verb)` 不变量 |
+| 阈值 | 所有阶段一律 15s | 分阶段预算 + `slow_ratio` 三态 |
+| 输出 | 一句字符串 | `Liveness` 结构化快照 + 脱敏证据链 + 分类建议 |
+| 事件面 | 只接 3 处 | 补 `note_progress` 生命周期事件，`_animate` 明令禁止 |
+
+### 10.2 并发：为什么 GIL 不够
+
+`note_activity` 从 UI 线程（submit）、模型线程（流式）、工具线程
+（`begin_tool`）并发进入，`render` 从动画 invalidate 线程进入。
+`self._current = self._pick(phase)` 与 `self._seq += 1` 是两条字节码，
+中间会切线程 —— 渲染线程可能读到「新 seq + 旧文案」，或间隔判断读到
+半更新的 `_last_change_at`。这不是理论风险：8 线程 × 2400 次并发用例
+专门用证据里的 `(seq, verb)` 配对来抓撕裂。
+
+另外补了**时钟单调化**：乱序事件 / 时钟回拨会让 `idle_ms` 变负、预算错乱，
+现在把 `at` 钳到不早于 `_last_event_at`。
+
+### 10.3 分阶段预算（D2）
+
+| 阶段 | 预算 | 为什么 |
+|---|---|---|
+| `booting` | 30s | 加载内核本就要时间 |
+| `waiting_model` | 45s | 等首个 token 最慢，冷启动/排队都可能 |
+| `streaming` | 6s | 分片断了就是异常，6s 足够暴露 |
+| `running_tool` | 120s | 编译/测试/拉取本来就跑很久 |
+| `retrying` | 20s | 回炉重试的合理等待 |
+
+`healthy → slow → stalled` 三态：`slow` 发生在预算 × `slow_ratio`
+（默认 0.5）之后，**仍显示标语、不报摸鱼**，header 只用 textdim 变暗；
+只有真超预算才给 warning 诊断。这样「比预期慢」不会被冤枉成「在摸鱼」。
+
+配置优先级：**显式 `stall_ms`（全局覆盖）> `phase_budgets_ms` 逐项 >
+分阶段表 > 兜底**。显式写 `stall_ms` 的旧配置继续生效，不被新表悄悄吃掉。
+未知阶段键整段拒绝，不静默忽略。
+
+### 10.4 结构化判定与脱敏（D3）
+
+`liveness()` 返回与 `busy` 无关的快照：阶段、静默时长、预算、
+`slow_after_ms`、剩余、按阶段区分的 10 语言建议、完整诊断行、
+最近 16 条证据。文案只是它的渲染。
+
+**证据脱敏是硬要求**：`detail` 可能是 `begin_tool(name)` 乃至未来的工具
+参数（路径、命令、token）。证据只记 `detail_len` 与 `detail_class`
+（empty / ascii / cjk / mixed），绝不记原文；时间用 `time.monotonic()`
+毫秒，不含墙钟。证据只在进程内存里，不落盘、不上传、不进审计日志。
+
+`SloganView` 保留原 6 个位置字段与语义，新增字段全带默认值 ——
+旧调用方零改动。
+
+### 10.5 事件面与「不空转」硬约束（D4）
+
+`note_progress()` 只刷新活性时间戳、**不改阶段、不换词、不推进 seq**，
+给 `end_tool` / `end_stream` 用，修掉「工具结束 → 下一事件」间隙的误判。
+
+**绝不从 `_animate` 调用 `note_activity` / `note_progress`**：动画循环每
+120ms 跑一次，一旦在那里刷新时间戳，「疑似摸鱼」就永远不报，
+整个功能退回它本来要反对的定时空转。有源码级回归（剥离注释后检查
+`_animate` 函数体）守住这条线。
+
+### 10.6 顺带修的第三个真缺陷
+
+`load_config` 旧逻辑把「没写 `mode`」一律当 `append`，而 `append`
+强制 `verbs` 非空 —— 用户只想收紧 `stall_ms`、或只写
+`phase_budgets_ms`，整段配置就被判 `invalid:empty-verbs`，
+**静默回落出厂值**：以为收紧了，其实什么都没变。这种「假安全感」
+比直接报错更危险。现在：给了 `verbs` 但没写 `mode` 才推断 `append`；
+两者都没给就是 `default`（内置词库）。
+
+### 10.7 其他深化
+
+- `reset()` 跨回合**保留**证据链并记一条 `reset` 分隔，使「上一回合
+  为什么卡住」可回放；上版把证据一起清了。
+- `reload()` 显式热重载：原子切换，非法配置保留旧配置并返回原因，
+  词池变化时不沿用旧文案。**刻意不做文件监听/轮询** —— 长驻 TUI 里
+  后台轮询会引入 I/O 线程与竞态，收益却只是省一次显式调用。
+- `QxtTUI.liveness()` 透传供 doctor/调试；不新增 CLI 子命令。
+- header 三态分级：`stalled` → warning，`slow` → textdim，
+  `healthy` → primary。文案与裁决都不变。
+
+### 10.8 验证与边界
+
+```
+tests/test_runtime_slogans.py   93 例全绿
+verify_deep.py                  22 项纯 stdlib 独立验证全绿
+                                （含 8 线程 × 2400 次并发不变量）
+py_compile                     全部通过
+```
+
+- `stall` 仍是启发式可观测提示，**不是安全闸门、心跳或超时控制**，
+  不触发中断/重试，不改变任何裁决。
+- `slow` 只是视觉降级；证据链只在进程内存；`reload()` 需显式调用。
+- 验证副本骨架是本地分叉（离线跑测试用），`tui.py` 与
+  `runtime_slogans.py` 用的是**远端主线基线 + 本轮改动**；
+  不是真机 TUI 长跑，Windows / 终端能力组合仍未实测。
+- 本轮**没有**合并上轮 `local_fork_unmerged/` 里的分叉改动；
+  远端 `PROVENANCE.md`、`GIT_HISTORY_RECONSTRUCTION_AUDIT.md` 原样保留。

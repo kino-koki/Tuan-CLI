@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 深度轮：运行时标语从「一句玩笑」做成可信的活性判定器
+
+> 用户明确要求「不再执着于广度而放弃深度」。本轮**不新增任何模块、
+> 不改 99 模块基线、不改 `fully_superior`、不改任何 Codex/Claude 对齐指标、
+> 不新增 CLI 子命令**，只把上一条「运行时标语」往下挖四层。
+
+- **D1 并发正确性（真 bug）**：`note_activity` 由 UI / 模型 / 工具三类线程
+  并发进入，`render` 由动画 invalidate 线程进入；上版五个可变字段是无锁
+  复合读写，GIL 只保证单条赋值原子 —— `_current = ...` 与 `_seq += 1`
+  之间会切线程，出现「新 seq + 旧文案」撕裂与间隔判断读到半更新时间戳。
+  现在全部公开方法在 `RLock` 内线性化，并把每次转移记成不可变
+  `EventRecord`；`note_activity` 对乱序事件/时钟回拨做单调化钳制。
+- **D2 分阶段活性预算**：单一 15s 阈值把「等模型首 token」和「流式分片断了」
+  混为一谈。改为 `PHASE_BUDGET_MS`（booting 30s / waiting_model 45s /
+  streaming 6s / running_tool 120s / retrying 20s）+ `slow_ratio` 三态
+  （healthy / slow / stalled）。「比预期慢」仍显示标语、不冤枉它摸鱼，
+  只有真超预算才报诊断。`phase_budgets_ms` 可逐项覆盖；
+  **显式写 `stall_ms` 仍是全局覆盖**，旧配置照常生效。
+  「未知阶段键」整段拒绝而非静默忽略 —— 拼错 `stremaing` 却以为收紧了预算
+  是危险的假安全感。
+- **D3 结构化判定 + 脱敏证据链**：新增 `Liveness` / `LivenessState` /
+  `EventRecord` 与 `liveness()`。返回阶段、静默时长、预算、剩余、
+  `slow_after_ms`、按阶段区分的**可操作建议**（10 语言 × 3 类）、完整诊断行
+  与最近 16 条证据。证据只记阶段/类型/monotonic 时间/序号/当前文案，以及
+  detail 的**长度和字符类别，绝不记原文** —— detail 可能是工具参数或路径。
+  `SloganView` 保留原 6 个位置字段，新增字段全带默认值，旧调用零改动。
+- **D4 事件覆盖补全**：新增 `note_progress()`，只刷新活性时间戳、不改阶段、
+  不换词、不推进 seq；接到 `end_tool` / `end_stream`。修掉上版留的边界
+  「工具结束 → 下一事件」间隙被误判无进展。
+  **硬约束**：`_animate` 里绝不调用 `note_activity` / `note_progress`，
+  否则诚实诊断会退化成永远不报的定时空转；有源码级回归守住。
+- **顺带修的第三个真缺陷**：`load_config` 旧逻辑把「没写 `mode`」一律当
+  `append`，而 `append` 又强制 `verbs` 非空 —— 用户只想收紧 `stall_ms`
+  或只写 `phase_budgets_ms`，整段配置就被判 `invalid:empty-verbs` 静默
+  回落出厂值。现在「给了 verbs 但没写 mode」才推断 append，两者都没给就是
+  default。
+- **其他**：`reset()` 跨回合保留证据链（上一回合为何卡住可回放）；
+  新增 `reload()` 显式热重载（原子切换、失败保留旧配置、**不轮询文件**，
+  避免为省一次调用引入 I/O 线程与竞态）；`QxtTUI.liveness()` 透传供
+  doctor/调试用；header 按三态分级 warning / textdim / primary。
+
+### 如实边界
+
+- `stall` 仍是**启发式可观测提示**，不是安全闸门、心跳或超时控制；
+  不触发中断/重试，不改变任何裁决。
+- `slow` 只是视觉降级，不改变文案、不改变判定。
+- 证据链只存在于进程内存，不落盘、不上传、不进审计日志。
+- `reload()` 需显式调用；没有文件监听，改配置不会自动生效。
+- 验证副本的骨架是本地分叉（离线跑测试用），**`tui.py` 与
+  `runtime_slogans.py` 用的是远端主线基线 + 本轮改动**；这不是真机 TUI
+  长跑，Windows/终端能力组合仍未实测。
+- 本轮**没有**合并上轮留在 `local_fork_unmerged/` 的分叉改动，
+  远端 `PROVENANCE.md` / `GIT_HISTORY_RECONSTRUCTION_AUDIT.md` 仍原样保留。
+
+验证：`tests/test_runtime_slogans.py` **93 例全绿**；
+`verify_deep.py` **22 项纯 stdlib 独立验证全绿**（含 8 线程 × 2400 次并发
+不变量）；`py_compile` 通过。
+
 ## [Unreleased] - 运行时标语（Claude Code 同款 spinner verbs）+ TUI 状态口径修复
 
 - 灵感来自用户提供的 B 站视频标题「给 Claude Code 转圈的英文挂上中文后，

@@ -714,3 +714,38 @@ Code is a proprietary product; only publicly documented behaviour is compared,
 **NO source code is copied** (`NOTICE` section 15, Anthropic does not endorse
 this project). **No new CLI subcommand** was added, and the 99-module baseline
 / `fully_superior=false` in `CLAUDE_PARITY.md` are unchanged.
+
+
+---
+
+## 11. Deep Pass: Concurrency, Evidence Redaction, Config Semantics
+
+This round deepens the runtime-slogan feature only (section 10); no new
+capability surface. Three security-relevant points:
+
+- **Concurrency correctness.** `note_activity` is entered concurrently from
+  UI, model and tool threads; `render`/`liveness` from the animation
+  invalidate thread. The previous five mutable fields were unlocked
+  compound read/writes, allowing "new seq + old verb" tearing and
+  half-updated timestamps. All public methods are now linearised under an
+  `RLock`, with monotonic clamping for out-of-order events / clock rollback.
+  An 8-thread x 2400-op case checks the `(seq, verb)` invariant.
+- **Evidence redaction.** The new ring buffer records only phase, event kind,
+  `monotonic` time, seq, the current sanitised verb, and the **length and
+  character class** of `detail` -- never the detail text (which may be a tool
+  argument, path or token). It stays in process memory: no disk, no upload,
+  no audit-log entry.
+- **Tighter fail-safe config semantics.** Unknown phase keys (e.g. a typo
+  `stremaing`) reject the whole section instead of being silently ignored --
+  believing you tightened a budget when you did not is a dangerous false
+  sense of security. Also fixed a real defect: a missing `mode` was always
+  treated as `append`, which requires non-empty `verbs`, so a config that
+  only set `stall_ms` was rejected as `invalid:empty-verbs` and silently
+  fell back to factory defaults.
+
+**Unchanged boundaries**: `stall` is a heuristic observability hint, NOT a
+security gate, heartbeat or timeout control -- it never interrupts, retries
+or changes any verdict. `slow` is only a visual downgrade. `reload()` is
+explicit and keeps the old config on invalid input. `_animate` is explicitly
+forbidden from refreshing liveness. Verification: 93 pytest cases +
+22 pure-stdlib independent checks, all green.

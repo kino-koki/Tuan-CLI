@@ -27,6 +27,34 @@ v2.1.42 内置约 185 个，``~/.claude/settings.json`` 的
    字符** —— 标语是要渲染到终端的文本，不能变成转义序列注入口。
 
 纯标准库、无 I/O 副作用（除首次加载配置）、可注入 clock / rng 做确定性测试。
+
+**深度轮（不再扩广度）**：上版把「事件驱动」做成了「绑 3 个事件 + 一个固定
+15 秒阈值」，其实还是很浅。本轮把同一条线往下挖四层，不新增任何模块或指标：
+
+D1 **并发正确性**。`note_activity` 会从 UI 线程（submit）、模型线程（流式）、
+   工具线程（begin_tool）并发进入，`render` 从动画 invalidate 线程进入。
+   五个可变字段是无锁复合读写，GIL 只保证单条赋值原子 ——
+   ``self._current = ...`` 与 ``self._seq += 1`` 之间会切线程，
+   出现「新 seq + 旧文案」的撕裂，或间隔判断读到半更新的时间戳。
+   现在全部公开方法在 ``RLock`` 内线性化，并把每次转移记成不可变证据。
+
+D2 **分阶段活性预算**。单一 15s 阈值把「等模型首 token」和「流式分片断了」
+   混为一谈：前者 30s 正常，后者 6s 就该提示。改成
+   ``PHASE_BUDGET_MS`` 分阶段预算 + ``slow_ratio`` 三态
+   （healthy / slow / stalled），诊断才不是定时乱报。
+
+D3 **结构化判定 + 脱敏证据链**。``liveness()`` 返回可测、可回放、可接 UI 的
+   快照（阶段 / 静默时长 / 预算 / 剩余 / 建议 / 最近事件），文案只是它的渲染。
+   证据只记阶段、类型、时间、序号、当前文案与 detail 的**长度和字符类别**，
+   绝不记 detail 原文 —— 它可能含工具参数或路径。
+
+D4 **事件覆盖补全**。新增 ``note_progress()``：只刷新活性时间戳，不改阶段、
+   不换词。给 ``end_tool`` / ``end_stream`` / 中断等生命周期点用，
+   避免「工具结束到下一事件之间」被误判为无进展。
+   刻意**不**从 ``_animate`` 调用它 —— 那会把诚实诊断退回定时空转。
+
+另外补 ``reload()`` 显式热重载（失败保留旧配置、原子切换、不轮询文件），
+以及 ``reset()`` 跨回合保留证据链，使「上一回合为什么卡住」可回放。
 """
 from __future__ import annotations
 
@@ -34,14 +62,17 @@ import json
 import os
 import random
 import re
+import threading
 import time
 import unicodedata
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Sequence, Tuple
+from typing import Deque, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
-    "PHASES", "LANGUAGES", "SpinnerVerbsConfig", "SloganView",
+    "PHASES", "LANGUAGES", "PHASE_BUDGET_MS", "LivenessState",
+    "SpinnerVerbsConfig", "EventRecord", "Liveness", "SloganView",
     "RuntimeSloganEngine", "load_config", "slogan_bank", "sanitize_verb",
 ]
 
@@ -174,7 +205,11 @@ _BANK: Dict[str, Dict[str, Tuple[str, ...]]] = {
     },
 }
 
+# ------------------------------------------------------------------ 诊断文案
+
 #: 忙碌但长时间无任何真实进展时的诊断文案。{sec} 会被静默秒数替换。
+#: 刻意保持**单行短文案**：header 是 height=1 控件，_clip_parts 会硬裁，
+#: 完整阶段信息与可操作建议放在 Liveness.diagnostic / .advice 里，不塞进这行。
 _STALL_TEXT: Dict[str, str] = {
     "zh-CN": "疑似摸鱼 · 已 {sec}s 没收到模型/工具/流式的任何动静",
     "zh-TW": "疑似摸魚 · 已 {sec}s 沒收到模型/工具/串流的任何動靜",
@@ -187,6 +222,104 @@ _STALL_TEXT: Dict[str, str] = {
     "de": "Möglicherweise blau · seit {sec}s kein Modell-/Werkzeug-/Stream-Ereignis",
     "ru": "Похоже, бездельничает · {sec} с без событий модели/инструмента/потока",
 }
+
+#: 阶段 -> 诊断类别。决定该给哪一类可操作建议，而不是所有阶段都劝人查网络。
+_PHASE_KIND: Dict[str, str] = {
+    "booting": "model", "waiting_model": "model", "retrying": "model",
+    "streaming": "stream", "running_tool": "tool",
+}
+
+#: 可操作建议（10 语言 × 3 类）。只进结构化字段与诊断行，不进 header 短文案。
+_ADVICE_TEXT: Dict[str, Dict[str, str]] = {
+    "zh-CN": {"model": "等模型首个响应：检查网络/模型服务，或 Esc 中断",
+              "stream": "流式输出中断：Esc 中断后重试，或检查连接",
+              "tool": "工具执行中：长命令属正常，Esc 可中断；持续无输出再查进程"},
+    "zh-TW": {"model": "等模型首個回應：檢查網路/模型服務，或 Esc 中斷",
+              "stream": "串流輸出中斷：Esc 中斷後重試，或檢查連線",
+              "tool": "工具執行中：長指令屬正常，Esc 可中斷；持續無輸出再查行程"},
+    "en": {"model": "waiting for first token: check network/model, or press Esc",
+           "stream": "stream stalled: press Esc and retry, or check the connection",
+           "tool": "tool still running: long commands are normal; Esc interrupts"},
+    "ja": {"model": "初回トークン待ち：ネットワーク/モデルを確認、または Esc で中断",
+           "stream": "ストリーム停止：Esc で中断して再試行、または接続を確認",
+           "tool": "ツール実行中：長時間は正常、Esc で中断可"},
+    "ko": {"model": "첫 토큰 대기: 네트워크/모델 확인 또는 Esc 로 중단",
+           "stream": "스트림 중단: Esc 로 중단 후 재시도 또는 연결 확인",
+           "tool": "도구 실행 중: 긴 명령은 정상, Esc 로 중단 가능"},
+    "es": {"model": "esperando el primer token: revisa red/modelo o pulsa Esc",
+           "stream": "flujo interrumpido: pulsa Esc y reintenta, o revisa la conexión",
+           "tool": "herramienta en curso: los comandos largos son normales; Esc interrumpe"},
+    "pt-BR": {"model": "aguardando o primeiro token: verifique rede/modelo ou pressione Esc",
+              "stream": "fluxo interrompido: pressione Esc e tente de novo, ou verifique a conexão",
+              "tool": "ferramenta em execução: comandos longos são normais; Esc interrompe"},
+    "fr": {"model": "en attente du premier jeton : vérifiez réseau/modèle ou Appuyez sur Échap",
+           "stream": "flux interrompu : Échap puis réessayez, ou vérifiez la connexion",
+           "tool": "outil en cours : les commandes longues sont normales ; Échap interrompt"},
+    "de": {"model": "Warten auf erstes Token: Netzwerk/Modell prüfen oder Esc drücken",
+           "stream": "Stream unterbrochen: Esc und erneut versuchen, oder Verbindung prüfen",
+           "tool": "Werkzeug läuft: lange Befehle sind normal; Esc bricht ab"},
+    "ru": {"model": "ожидание первого токена: проверьте сеть/модель или нажмите Esc",
+           "stream": "поток прерван: Esc и повторите, или проверьте соединение",
+           "tool": "инструмент работает: долгие команды нормальны; Esc прерывает"},
+}
+
+#: 阶段 -> 「慢」的措辞（进完整诊断行，不进 header）。
+_SLOW_TEXT: Dict[str, str] = {
+    "zh-CN": "比预期慢", "zh-TW": "比預期慢", "en": "slower than expected",
+    "ja": "想定より遅い", "ko": "예상보다 느림", "es": "más lento de lo previsto",
+    "pt-BR": "mais lento que o esperado", "fr": "plus lent que prévu",
+    "de": "langsamer als erwartet", "ru": "медленнее ожидаемого",
+}
+
+# ------------------------------------------------------------------ 活性预算
+
+#: 各阶段「多久没有真实事件才算异常」。这是 D2 的核心：单一 15s 太浅。
+#: 等模型首 token 最慢，流式分片断了最快暴露，长命令工具本就该跑很久。
+PHASE_BUDGET_MS: Dict[str, int] = {
+    "booting": 30_000,
+    "waiting_model": 45_000,
+    "streaming": 6_000,
+    "running_tool": 120_000,
+    "retrying": 20_000,
+}
+_DEFAULT_SLOW_RATIO = 0.5
+_EVIDENCE_CAPACITY = 16
+
+
+class LivenessState:
+    HEALTHY = "healthy"
+    SLOW = "slow"
+    STALLED = "stalled"
+    UNKNOWN = "unknown"   # busy 但从未收到任何真实事件 —— 本身就是异常
+
+
+@dataclass(frozen=True)
+class EventRecord:
+    """一条**脱敏**证据：只记形状，绝不记 detail 原文。
+
+    ``detail`` 可能来自 ``begin_tool(name)`` 乃至未来的工具参数，
+    直接落诊断日志会泄露路径/命令。这里只保留长度与字符类别。
+    ``verb`` 是当前已净化的标语，用于核验「同一 seq 只对应一个文案」
+    （D1 的撕裂检测就靠这个不变量）。
+    """
+    phase: str
+    kind: str                 # activity | progress | reset
+    at_ms: int                # time.monotonic() 毫秒，不含墙钟时间
+    seq: int
+    verb: str
+    detail_len: int
+    detail_class: str         # empty | ascii | cjk | mixed
+
+
+def _detail_class(s: str) -> str:
+    if not s:
+        return "empty"
+    has_cjk = any(unicodedata.east_asian_width(c) in ("W", "F") for c in s)
+    has_ascii = any(ord(c) < 128 for c in s)
+    if has_cjk and has_ascii:
+        return "mixed"
+    return "cjk" if has_cjk else "ascii"
+
 
 # ------------------------------------------------------------------ 净化
 
@@ -244,12 +377,21 @@ _DEFAULT_STALL_MS = 15000
 
 @dataclass(frozen=True)
 class SpinnerVerbsConfig:
-    """与上游同款的 ``spinnerVerbs`` 配置，额外带两个本地化开关。"""
-    mode: str = "default"                       # default | append | replace | off
-    verbs: Tuple[str, ...] = ()                 # 自定义词（已净化）
-    interval_ms: int = _DEFAULT_INTERVAL_MS     # 同阶段最短换词间隔
-    stall_ms: int = _DEFAULT_STALL_MS           # 无进展判定阈值
-    source: str = "builtin"                     # 配置来源，供诊断展示
+    """与上游同款的 ``spinnerVerbs`` 配置，额外带本地化与活性预算开关。
+
+    向后兼容：只写 ``mode / verbs / interval_ms / stall_ms`` 的旧配置照常生效。
+    **显式给出 ``stall_ms`` 会被当作全局预算覆盖**（尊重用户设置）；不给时
+    才走 ``PHASE_BUDGET_MS`` 分阶段表。分阶段表可用 ``phase_budgets_ms``
+    逐项覆盖，``slow_ratio`` 控制「慢」提示的触发比例。
+    """
+    mode: str = "default"
+    verbs: Tuple[str, ...] = ()
+    interval_ms: int = _DEFAULT_INTERVAL_MS
+    stall_ms: int = _DEFAULT_STALL_MS
+    phase_budgets_ms: Tuple[Tuple[str, int], ...] = ()   # frozen 友好，不用 dict
+    slow_ratio: float = _DEFAULT_SLOW_RATIO
+    stall_ms_override: Optional[int] = None
+    source: str = "builtin"
 
     def __post_init__(self) -> None:
         if self.mode not in _VALID_MODES:
@@ -258,14 +400,39 @@ class SpinnerVerbsConfig:
             raise ValueError("interval_ms 超出 [200, 60000]")
         if not (1000 <= self.stall_ms <= 600000):
             raise ValueError("stall_ms 超出 [1000, 600000]")
+        if not (0.1 <= self.slow_ratio <= 0.9):
+            raise ValueError("slow_ratio 超出 [0.1, 0.9]")
         if any(v == "" for v in self.verbs):
             raise ValueError("净化后存在空标语")
+        for key, val in self.phase_budgets_ms:
+            if key not in PHASES:
+                raise ValueError(f"phase_budgets_ms 未知阶段: {key!r}")
+            if not (1000 <= val <= 600000):
+                raise ValueError(f"phase_budgets_ms[{key}] 超出 [1000, 600000]")
+        if self.stall_ms_override is not None and not (1000 <= self.stall_ms_override <= 600000):
+            raise ValueError("stall_ms_override 超出 [1000, 600000]")
+        # 兼容路径：直接用 dataclass 构造且显式改了 stall_ms（老测试/调用方），
+        # 等价于显式全局覆盖，不能让分阶段表把它悄悄吃掉。
+        if self.stall_ms_override is None and self.stall_ms != _DEFAULT_STALL_MS:
+            object.__setattr__(self, "stall_ms_override", self.stall_ms)
+
+    def budget_for(self, phase: str) -> int:
+        """该阶段的活性预算（毫秒）。优先级：显式全局覆盖 > 逐项覆盖 > 分阶段表 > 兜底。"""
+        if self.stall_ms_override is not None:
+            return self.stall_ms_override
+        for key, val in self.phase_budgets_ms:
+            if key == phase:
+                return val
+        return PHASE_BUDGET_MS.get(phase, self.stall_ms)
+
+    def slow_after_ms(self, phase: str) -> int:
+        return int(self.budget_for(phase) * self.slow_ratio)
 
 
 def _settings_path(explicit: Optional[Path] = None) -> Path:
     if explicit is not None:
         return Path(explicit)
-    env_home = os.environ.get("TUAN_HOME") or os.environ.get("TUAN_HOME")
+    env_home = os.environ.get("TUAN_HOME")
     base = Path(env_home) if env_home else (Path.home() / ".tuan")
     return base / "settings.json"
 
@@ -275,6 +442,8 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
 
     任何异常都回落到出厂配置，**绝不因为配置写错就让 TUI 崩**；但非法值
     会被拒绝而不是静默生效（``source`` 会标注 ``invalid:*`` 便于排查）。
+    注意「未知阶段键」也必须整段拒绝：静默忽略会让用户以为自己收紧了
+    ``stremaing``（拼错）的预算，实际仍在用默认值 —— 那是危险的假安全感。
     """
     p = _settings_path(path)
     try:
@@ -287,11 +456,21 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
     if not isinstance(section, dict):
         return SpinnerVerbsConfig(source="invalid:not-a-dict")
 
-    mode = str(section.get("mode") or "append").strip().lower()
+    raw_verbs = section.get("verbs", [])
+    # 真实缺陷修复：旧实现把「没写 mode」一律当成 append，而 append 又强制
+    # 要求 verbs 非空 —— 于是用户只想收紧 `stall_ms`、或只写
+    # `phase_budgets_ms`，整段配置就被判成 invalid:empty-verbs 静默回落出厂值。
+    # 正确语义：给了 verbs 但没写 mode 才按 append（兼容上游习惯）；
+    # 两者都没给就是 default（用内置词库）。
+    raw_mode = section.get("mode")
+    if raw_mode is None:
+        inferred = "append" if raw_verbs else "default"
+        mode = inferred
+    else:
+        mode = str(raw_mode).strip().lower()
     if mode not in _VALID_MODES:
         return SpinnerVerbsConfig(source=f"invalid:mode={mode}")
 
-    raw_verbs = section.get("verbs", [])
     if not isinstance(raw_verbs, (list, tuple)):
         return SpinnerVerbsConfig(source="invalid:verbs-not-a-list")
     verbs = tuple(v for v in (sanitize_verb(x) for x in raw_verbs[:200]) if v)
@@ -304,9 +483,32 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
     except (TypeError, ValueError):
         return SpinnerVerbsConfig(source="invalid:numbers")
 
+    # 只有显式出现 stall_ms 才算全局覆盖；缺省时走分阶段预算表。
+    override: Optional[int] = stall if "stall_ms" in section else None
+
+    budgets: Tuple[Tuple[str, int], ...] = ()
+    raw_budgets = section.get("phase_budgets_ms")
+    if raw_budgets is not None:
+        if not isinstance(raw_budgets, dict):
+            return SpinnerVerbsConfig(source="invalid:budgets-not-a-dict")
+        try:
+            items = tuple((str(k), int(v)) for k, v in list(raw_budgets.items())[:10])
+        except (TypeError, ValueError):
+            return SpinnerVerbsConfig(source="invalid:budget-values")
+        if any(k not in PHASES for k, _ in items):
+            return SpinnerVerbsConfig(source="invalid:budget-phase")
+        budgets = items
+
+    try:
+        ratio = float(section.get("slow_ratio", _DEFAULT_SLOW_RATIO))
+    except (TypeError, ValueError):
+        return SpinnerVerbsConfig(source="invalid:slow_ratio")
+
     try:
         return SpinnerVerbsConfig(mode=mode, verbs=verbs, interval_ms=interval,
-                                  stall_ms=stall, source=str(p))
+                                  stall_ms=stall, phase_budgets_ms=budgets,
+                                  slow_ratio=ratio,
+                                  stall_ms_override=override, source=str(p))
     except ValueError as exc:
         return SpinnerVerbsConfig(source=f"invalid:{exc}")
 
@@ -315,23 +517,69 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
 
 @dataclass(frozen=True)
 class SloganView:
-    """一次渲染的结果。"""
+    """一次渲染的结果。
+
+    兼容旧调用：前 6 个字段位置与语义不变，新增字段全部带默认值。
+    ``state`` / ``budget_ms`` / ``advice`` / ``diagnostic`` 让 UI 能区分
+    「健康」「比预期慢」「真的没进展」，而不只是拿到一个字符串。
+    """
     text: str                 # 可直接进终端的文案（off/空闲时为空串）
     phase: str                # 真实阶段
-    stalled: bool             # 是否触发「疑似摸鱼」诊断
-    idle_ms: int              # 距最后一次真实事件的毫秒数
+    stalled: bool             # 是否触发诊断（stalled / unknown）
+    idle_ms: int              # 距最后一次真实事件的毫秒数，-1 表示从未收到事件
     seq: int                  # 换词序号，供测试/审计核对「没有空转」
     mode: str                 # 生效的配置模式
+    state: str = LivenessState.HEALTHY
+    budget_ms: int = 0
+    remaining_ms: int = 0
+    advice: str = ""
+    diagnostic: str = ""      # 完整诊断行（给日志/调试，不进 header）
+    evidence_seq: int = 0     # 快照时的证据条数
+    slow_after_ms: int = 0    # 「比预期慢」的触发点
+
+
+@dataclass(frozen=True)
+class Liveness:
+    """结构化活性快照 —— 判定本身，文案只是它的渲染。
+
+    不依赖 ``busy``：即使当前不在渲染，也能查询「上一回合卡在哪」。
+    """
+    state: str
+    phase: str
+    idle_ms: int
+    budget_ms: int
+    slow_after_ms: int
+    remaining_ms: int
+    seq: int
+    last_event: Optional[EventRecord]
+    advice: str
+    diagnostic: str
+    evidence: Tuple[EventRecord, ...]
+    source: str
+
+    @property
+    def is_degraded(self) -> bool:
+        return self.state in (LivenessState.SLOW, LivenessState.STALLED,
+                              LivenessState.UNKNOWN)
+
+    @property
+    def needs_diagnostic(self) -> bool:
+        return self.state in (LivenessState.STALLED, LivenessState.UNKNOWN)
 
 
 # ------------------------------------------------------------------ 引擎
 
 class RuntimeSloganEngine:
-    """事件驱动的运行时标语引擎。
+    """事件驱动的运行时标语引擎 + 活性判定器。
 
-    与「定时随机换词」的关键区别：只有 ``note_activity()`` 收到真实事件，
-    或阶段切换、或超过 ``interval_ms``，才会换词。``render()`` 本身是纯读，
-    每帧重绘不会让文案自己动起来 —— 这正是避免「看起来在忙」的设计。
+    D1 并发：所有公开方法在 ``RLock`` 内线性化。``note_activity`` 由 UI /
+    模型 / 工具三类线程并发进入，``render`` / ``liveness`` 由动画重绘线程进入；
+    五个可变字段必须作为**一个状态**被读写，否则会出现「新 seq + 旧文案」
+    或间隔判断读到半更新时间戳的撕裂。
+
+    D4 事件：``note_activity`` 是完整阶段事件（可能换词），
+    ``note_progress`` 只刷新活性时间戳（不改阶段、不换词）。
+    **绝不从动画循环调用这两者** —— 那是把诚实诊断退回定时空转。
     """
 
     def __init__(
@@ -342,39 +590,77 @@ class RuntimeSloganEngine:
         rng: Optional[random.Random] = None,
         clock=time.monotonic,
     ) -> None:
+        self._lock = threading.RLock()
         self.config = config or load_config()
         self.lang = lang or _current_language()
         self._rng = rng or random.Random()
         self._clock = clock
-        self._bank = slogan_bank(self.lang)
-        self._stall_fmt = _STALL_TEXT.get(self.lang, _STALL_TEXT["en"])
+        self._apply_language_locked()
         self._phase = "waiting_model"
         self._current = ""
         self._last_event_at: Optional[float] = None
         self._last_change_at: float = 0.0
         self._seq = 0
         self._pools: Dict[str, Tuple[str, ...]] = {}
+        self._evidence: Deque[EventRecord] = deque(maxlen=_EVIDENCE_CAPACITY)
+
+    # ------------------------------------------------------------ 语言 / 配置
+    def _apply_language_locked(self) -> None:
+        self._bank = slogan_bank(self.lang)
+        self._stall_fmt = _STALL_TEXT.get(self.lang, _STALL_TEXT["en"])
+        self._slow_word = _SLOW_TEXT.get(self.lang, _SLOW_TEXT["en"])
+        self._advice = _ADVICE_TEXT.get(self.lang, _ADVICE_TEXT["en"])
+
+    def _advice_for(self, phase: str) -> str:
+        kind = _PHASE_KIND.get(phase, "model")
+        return self._advice.get(kind, self._advice["model"])
+
+    def reload(self, path: Optional[Path] = None) -> Tuple[bool, str]:
+        """显式热重载：原子切换，失败保留旧配置。
+
+        返回 ``(changed, reason)``。刻意**不做文件监听/轮询**：长驻 TUI 里
+        后台轮询会引入 I/O 线程与竞态，收益却只是省一次显式调用。
+        需要生效时由调用方（命令/信号/测试）显式触发。
+        """
+        try:
+            cfg = load_config(path)
+            lang = _current_language()
+        except Exception as exc:  # noqa: BLE001 - 重载失败绝不能掀掉 TUI
+            return False, f"reload-failed:{type(exc).__name__}"
+        if cfg.source.startswith("invalid:"):
+            return False, cfg.source          # 保留旧配置，不静默吞掉错误配置
+        with self._lock:
+            old = (self.config, self.lang)
+            self.config = cfg
+            self.lang = lang
+            self._apply_language_locked()
+            self._pools.clear()
+            self._current = ""               # 词池变了，旧文案不能沿用
+            self._last_change_at = 0.0
+            changed = old != (cfg, lang)
+        return changed, "ok" if changed else "unchanged"
 
     # ------------------------------------------------------------ 词池
     def _pool(self, phase: str) -> Tuple[str, ...]:
-        cached = self._pools.get(phase)
-        if cached is not None:
-            return cached
-        base = tuple(self._bank.get(phase) or self._bank["waiting_model"])
-        cfg = self.config
-        if cfg.mode == "replace":
-            pool = cfg.verbs
-        elif cfg.mode == "append":
-            pool = base + cfg.verbs
-        else:
-            pool = base
-        # 去重保序（保序让 seed 可复现）
-        seen = set()
-        uniq = tuple(v for v in pool if v and not (v in seen or seen.add(v)))
-        self._pools[phase] = uniq
-        return uniq
+        with self._lock:
+            cached = self._pools.get(phase)
+            if cached is not None:
+                return cached
+            base = tuple(self._bank.get(phase) or self._bank["waiting_model"])
+            cfg = self.config
+            if cfg.mode == "replace":
+                pool = cfg.verbs
+            elif cfg.mode == "append":
+                pool = base + cfg.verbs
+            else:
+                pool = base
+            seen = set()
+            uniq = tuple(v for v in pool if v and not (v in seen or seen.add(v)))
+            self._pools[phase] = uniq
+            return uniq
 
     def _pick(self, phase: str) -> str:
+        """调用方必须持锁。"""
         pool = self._pool(phase)
         if not pool:
             return ""
@@ -384,61 +670,178 @@ class RuntimeSloganEngine:
         return self._rng.choice(choices)
 
     # ------------------------------------------------------------ 事件
-    def note_activity(self, phase: str, detail: str = "", *, now: Optional[float] = None) -> None:
-        """记录一次**真实**运行时事件。``detail`` 只用于审计，不进文案。"""
+    def _record_locked(self, kind: str, phase: str, at: float,
+                       detail: str) -> None:
+        self._evidence.append(EventRecord(
+            phase=phase, kind=kind, at_ms=int(at * 1000), seq=self._seq,
+            verb=self._current, detail_len=len(detail),
+            detail_class=_detail_class(detail),
+        ))
+
+    def note_activity(self, phase: str, detail: str = "",
+                      *, now: Optional[float] = None) -> None:
+        """记录一次**真实**运行时事件（阶段可能变化，可能换词）。"""
         if phase not in PHASES:
             phase = "waiting_model"
-        at = self._clock() if now is None else now
-        interval = self.config.interval_ms / 1000.0
-        phase_changed = phase != self._phase
-        due = (at - self._last_change_at) >= interval
-        self._last_event_at = at
-        self._phase = phase
-        if self._current == "" or phase_changed or due:
-            self._current = self._pick(phase)
-            self._last_change_at = at
-            self._seq += 1
+        with self._lock:
+            at = self._clock() if now is None else now
+            # 单调化：乱序事件 / 时钟回拨会让 idle_ms 变负、预算错乱。
+            if self._last_event_at is not None and at < self._last_event_at:
+                at = self._last_event_at
+            interval = self.config.interval_ms / 1000.0
+            phase_changed = phase != self._phase
+            due = (at - self._last_change_at) >= interval
+            self._last_event_at = at
+            self._phase = phase
+            if self._current == "" or phase_changed or due:
+                # 先把 seq 与文案一起写好，再统一提交：证据里的
+                # (seq, verb) 就是撕裂检测的锚点。
+                self._current = self._pick(phase)
+                self._last_change_at = at
+                self._seq += 1
+            self._record_locked("activity", phase, at, detail)
+
+    def note_progress(self, kind: str = "progress", *,
+                      now: Optional[float] = None) -> None:
+        """D4：只刷新活性时间戳，**不改阶段、不换词、不推进 seq**。
+
+        给 ``end_tool`` / ``end_stream`` / 中断等生命周期点用，避免
+        「工具结束 → 下一事件」的间隙被误判为没进展。
+        这不是心跳：必须由真实事件调用，不能放进动画循环。
+        """
+        with self._lock:
+            at = self._clock() if now is None else now
+            if self._last_event_at is not None and at < self._last_event_at:
+                at = self._last_event_at
+            self._last_event_at = at
+            self._record_locked(kind, self._phase, at, "")
 
     def reset(self) -> None:
-        """回合结束：清空当前词，但保留配置与词池。"""
-        self._current = ""
-        self._last_event_at = None
-        self._phase = "waiting_model"
-        self._pools.clear()
+        """回合结束：清空当前词，**保留证据链**供跨回合回放。
+
+        上一版把 evidence 一起清了，导致「上一回合为什么卡住」不可查。
+        """
+        with self._lock:
+            self._current = ""
+            self._last_event_at = None
+            self._phase = "waiting_model"
+            self._pools.clear()
+            # 记一条分隔证据，回放时能区分回合边界
+            self._evidence.append(EventRecord(
+                phase="waiting_model", kind="reset", at_ms=int(self._clock() * 1000),
+                seq=self._seq, verb="", detail_len=0, detail_class="empty"))
+
+    # ------------------------------------------------------------ 活性判定
+    def liveness(self, *, now: Optional[float] = None) -> Liveness:
+        """结构化活性快照（与 ``busy`` 无关，可在任意时刻查询）。"""
+        with self._lock:
+            return self._liveness_locked(self._clock() if now is None else now)
+
+    def _liveness_locked(self, at: float) -> Liveness:
+        cfg = self.config
+        phase = self._phase
+        budget = cfg.budget_for(phase)
+        slow_after = cfg.slow_after_ms(phase)
+        advice = self._advice_for(phase)
+        evidence = tuple(self._evidence)
+        last = evidence[-1] if evidence else None
+
+        if self._last_event_at is None:
+            state = LivenessState.UNKNOWN
+            idle_ms = -1
+            remaining = budget
+        else:
+            idle_ms = max(0, int((at - self._last_event_at) * 1000))
+            remaining = max(0, budget - idle_ms)
+            if idle_ms >= budget:
+                state = LivenessState.STALLED
+            elif idle_ms >= slow_after:
+                state = LivenessState.SLOW
+            else:
+                state = LivenessState.HEALTHY
+
+        diagnostic = self._format_diagnostic(state, phase, idle_ms,
+                                             budget, advice)
+        return Liveness(
+            state=state, phase=phase, idle_ms=idle_ms, budget_ms=budget,
+            slow_after_ms=slow_after, remaining_ms=remaining, seq=self._seq,
+            last_event=last, advice=advice, diagnostic=diagnostic,
+            evidence=evidence, source=cfg.source,
+        )
+
+    def _format_diagnostic(self, state: str, phase: str, idle_ms: int,
+                           budget: int, advice: str) -> str:
+        """完整诊断行（给日志/调试）。header 只显示短文案，不塞这一整行。"""
+        if state == LivenessState.UNKNOWN:
+            return self._stall_fmt.format(sec=-1) + f" · {phase} · {advice}"
+        if state == LivenessState.STALLED:
+            return (self._stall_fmt.format(sec=idle_ms // 1000)
+                    + f" · {phase} · 预算 {budget // 1000}s · {advice}")
+        if state == LivenessState.SLOW:
+            return (f"{self._slow_word} · {phase} · 已 {idle_ms // 1000}s / "
+                    f"预算 {budget // 1000}s · {advice}")
+        return ""
 
     # ------------------------------------------------------------ 渲染
     def render(self, busy: bool, *, now: Optional[float] = None) -> SloganView:
-        """纯读渲染。不会换词、不产生副作用，可安全地被每帧调用。"""
-        at = self._clock() if now is None else now
-        cfg = self.config
-        if cfg.mode == "off" or not busy:
-            return SloganView("", self._phase, False, 0, self._seq, cfg.mode)
-        if self._last_event_at is None:
-            # busy 但从未收到事件：本身就是异常，直接给诊断而不是编一句标语
-            return SloganView(self._stall_fmt.format(sec=-1), self._phase,
-                              True, -1, self._seq, cfg.mode)
-        idle_ms = max(0, int((at - self._last_event_at) * 1000))
-        if idle_ms >= cfg.stall_ms:
-            return SloganView(self._stall_fmt.format(sec=idle_ms // 1000),
-                              self._phase, True, idle_ms, self._seq, cfg.mode)
-        if not self._current:
-            # 首次 note_activity 尚未发生时的兜底：不换词，只给阶段默认锚点
-            pool = self._pool(self._phase)
-            text = pool[0] if pool else ""
-        else:
-            text = self._current
-        return SloganView(text, self._phase, False, idle_ms, self._seq, cfg.mode)
+        """纯读渲染：不换词、不推进 seq、不写证据，可安全地被每帧调用。
+
+        变更点：现在基于 ``liveness()`` 的分阶段预算判定，不再用单一 15s。
+        """
+        with self._lock:
+            at = self._clock() if now is None else now
+            cfg = self.config
+            lv = self._liveness_locked(at)
+            if cfg.mode == "off" or not busy:
+                return SloganView("", lv.phase, False, 0, self._seq, cfg.mode,
+                                  state=lv.state, budget_ms=lv.budget_ms,
+                                  remaining_ms=lv.remaining_ms,
+                                  advice=lv.advice, diagnostic=lv.diagnostic,
+                                  evidence_seq=len(lv.evidence),
+                                  slow_after_ms=lv.slow_after_ms)
+            if lv.needs_diagnostic:
+                sec = -1 if lv.idle_ms < 0 else lv.idle_ms // 1000
+                text = self._stall_fmt.format(sec=sec)
+                return SloganView(text, lv.phase, True, lv.idle_ms, self._seq,
+                                  cfg.mode, state=lv.state,
+                                  budget_ms=lv.budget_ms,
+                                  remaining_ms=lv.remaining_ms,
+                                  advice=lv.advice, diagnostic=lv.diagnostic,
+                                  evidence_seq=len(lv.evidence),
+                                  slow_after_ms=lv.slow_after_ms)
+            if not self._current:
+                pool = self._pool(lv.phase)
+                text = pool[0] if pool else ""
+            else:
+                text = self._current
+            return SloganView(text, lv.phase, False, lv.idle_ms, self._seq,
+                              cfg.mode, state=lv.state,
+                              budget_ms=lv.budget_ms,
+                              remaining_ms=lv.remaining_ms,
+                              advice=lv.advice, diagnostic=lv.diagnostic,
+                              evidence_seq=len(lv.evidence),
+                              slow_after_ms=lv.slow_after_ms)
 
     # ------------------------------------------------------------ 诊断
     def snapshot(self) -> Dict[str, object]:
-        return {
-            "lang": self.lang, "mode": self.config.mode,
-            "source": self.config.source, "phase": self._phase,
-            "current": self._current, "seq": self._seq,
-            "interval_ms": self.config.interval_ms,
-            "stall_ms": self.config.stall_ms,
-            "pool_sizes": {p: len(self._pool(p)) for p in PHASES},
-        }
+        """向后兼容的诊断字典（旧字段全保留），并暴露新的活性维度。"""
+        with self._lock:
+            lv = self._liveness_locked(self._clock())
+            return {
+                "lang": self.lang, "mode": self.config.mode,
+                "source": self.config.source, "phase": self._phase,
+                "current": self._current, "seq": self._seq,
+                "interval_ms": self.config.interval_ms,
+                "stall_ms": self.config.stall_ms,
+                "state": lv.state,
+                "budget_ms": lv.budget_ms,
+                "slow_after_ms": lv.slow_after_ms,
+                "idle_ms": lv.idle_ms,
+                "remaining_ms": lv.remaining_ms,
+                "evidence_count": len(lv.evidence),
+                "pool_sizes": {p: len(self._pool(p)) for p in PHASES},
+                "phase_budgets_ms": {p: self.config.budget_for(p) for p in PHASES},
+            }
 
 
 def _current_language() -> str:

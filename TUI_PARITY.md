@@ -433,3 +433,22 @@ argparse 前缀歧义。
 许可口径：该能力对标的是 Claude Code 的公开 UI 行为（专有产品，仅行为契约
 对标、未复制源码），归 `NOTICE` 第 15 条；**不与本文件 §6–§8 的
 Apache-2.0 / MIT Codex 归属混用**。
+
+
+---
+
+## 深度轮（不占任何 Codex 对齐指标）
+
+本轮只深化「运行时标语」这条线，**`pending` / `fully_identical` /
+逐值对齐率 / 宽口径覆盖率全部保持原值**，不靠改状态定义凑数：
+
+- 引擎在 `RLock` 内线性化（UI / 模型 / 工具线程并发进入，动画线程渲染）；
+- 单一 15s 阈值改为分阶段活性预算 + 三态；
+- `Liveness` 结构化快照 + 脱敏证据链 + 10 语言分类建议；
+- `note_progress` 补 `end_tool` / `end_stream` 生命周期事件，
+  并从源码层禁止在 `_animate` 刷新活性（否则诊断退化成定时空转）；
+- header 三态分级 warning / textdim / primary。
+
+**Codex 的键位、布局数值、组件树、交互契约一律未动** —— 这正是
+「完全相同但有自己本地化」的 A 线约束。93 例 pytest + 22 项纯 stdlib
+独立验证全绿。详见 `RUNTIME_SLOGANS.md` §10。
