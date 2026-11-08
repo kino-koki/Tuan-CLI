@@ -342,3 +342,20 @@
 ### 最终全量测试结果（第 3 轮）
 
 `pytest tests` 全量 —— 结果待 Organizer 收尾补录。
+
+
+---
+
+## B2 增量（本轮）
+
+`CLAUDE_PARITY.md` §12 是权威口径。本表只记增量，不重复整张矩阵：
+
+- `network_default_deny`、`credential_masking`：gap → **partial**
+- `deny_instead_of_prompting`、`worktree_sandbox_escape`：gap → **aligned**
+- `os_sandbox`：**仍为 gap**
+- 全局：`gap 30 → 26`、`aligned 43 → 45`、`partial 8 → 10`，
+  `fully_superior` 仍 `false`，`b_waves_done` 仍 `["B1"]`
+
+新增实现：`tuan_cli/sandbox/egress.py`、`unattended.py`、
+`worktree_boundary.py`；新增回归 `tests/test_b2_boundaries.py`（34 例）。
+新增配置键见 `SECURITY_BASELINE.md` R41。

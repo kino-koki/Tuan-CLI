@@ -120,6 +120,14 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
                 warnings.append(
                     "sandbox.resource.deny_network_by_default=false (出厂默认值; "
                     "生产/托管部署建议开启, 见 SECURITY_BASELINE.md §3.2)")
+            # B2: 子进程出网边界的两个开关。显式关闭必须作为安全降级可见，
+            # 不能静默回到「禁网裁决裸跑 / 真实凭据进子进程」的旧行为。
+            _bool_field(errors, "sandbox.resource.egress_credential_masking",
+                        res.get("egress_credential_masking"),
+                        dangerous_when_false="父进程真实凭据原样进入子进程")
+            _bool_field(errors, "sandbox.resource.egress_block_local_when_denied",
+                        res.get("egress_block_local_when_denied"),
+                        dangerous_when_false="local 后端收到禁网裁决仍会裸跑")
             for key in ("max_memory_mb", "max_timeout"):
                 val = res.get(key)
                 if val is None:
@@ -152,6 +160,23 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
                 errors.append(
                     f"非法枚举: sandbox.resource.isolate_copy_threshold={thr!r} "
                     f"不在 {_THRESHOLDS} 中")
+
+    # B2 / 超 Claude Code v2.1.319: permissions.denyInsteadOfPrompting。
+    # 默认关闭；开启是显式行为变更（需审批的调用改为拒绝并继续 turn）。
+    _bool_field(errors, "permissions.denyInsteadOfPrompting",
+                get("permissions.denyInsteadOfPrompting"))
+    if get("permissions.denyInsteadOfPrompting") is True:
+        warnings.append(
+            "行为变更: permissions.denyInsteadOfPrompting=true 使无人值守的"
+            "需确认调用直接拒绝并继续 turn (不再挂起等待输入)")
+    dip_scope = get("permissions.denyInsteadOfPromptingScope")
+    if dip_scope is not None and (
+            not isinstance(dip_scope, str)
+            or dip_scope.strip().lower() not in (
+                "no_confirm_channel", "all_confirmations")):
+        errors.append(
+            f"非法枚举: permissions.denyInsteadOfPromptingScope={dip_scope!r} "
+            f"(应为 no_confirm_channel / all_confirmations)")
 
     _validate_rules(errors, warnings, get("permissions.rules"))
     _str_list(errors, "permissions.shell.deny_patterns", get("permissions.shell.deny_patterns"))

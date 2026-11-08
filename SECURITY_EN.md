@@ -1552,3 +1552,67 @@ pure-stdlib checks + 22/20 prior checks, all green. The stdlib
 verifier's 9 new engine checks still import with
 `pytest / rich / prompt_toolkit / wcwidth` blocked (PEP 562 lazy
 exports), preserving its pure-stdlib constraint.
+
+
+---
+
+## 24. B2: Child-Process Egress Boundary and Credential Sentinels
+
+Full reproduction in `CLAUDE_PARITY.md` section 12.
+
+**MEASURED defect**: `SandboxManager._execute_backend` computed
+`block_net = not verdict.network`, but the `local` branch passed NEITHER
+`block_net` NOR `env` to `run_with_tree_kill`. Two consequences:
+
+1. With `verdict.network=False` on the `local` backend, the command still
+   ran with the parent process's FULL `os.environ` -- a network-deny verdict
+   silently failed on the ONE backend that has no OS-level egress isolation.
+   L2's command-text detection is bypassable by zero-width characters,
+   ANSI-C quoting and comment newlines (measured in earlier fuzz rounds).
+2. Real credentials such as `GITHUB_TOKEN` / `AWS_SECRET_ACCESS_KEY`
+   entered the child process verbatim, contradicting the catalog's claim
+   that "the child holds no secrets".
+
+**Fix**: new `tuan_cli/sandbox/egress.py` puts the boundary BEFORE execution:
+
+| Component | Role |
+|---|---|
+| `CredentialBroker` | Real values live only in current-process memory; the child gets `tuan-egress-sentinel-v1:<fp>`; repr / audit / exceptions / `to_audit_dict()` never leak |
+| `build_child_env` | Keeps non-sensitive vars (PATH/HOME/LANG); replaces sensitive keys with sentinels; dirty input (non-Mapping / non-str key or value) yields an EMPTY env, never silently falls back to inheriting `os.environ` |
+| `enforce_local_egress` | local + deny -> **fail-closed REJECTION**, never pretends the deny succeeded; strong backends keep their own boundary |
+| `EgressGuard` | Composes all three; the manager's local branch really calls it and passes `env=` |
+
+Two more capabilities shipped in the same round: `unattended.py` implements
+`permissions.denyInsteadOfPrompting` (default OFF; `denied=True` remains a
+hard fact, while `continue_turn` / `suppressed_prompt` are structured into
+`verdict.extra` and queryable audit; REALLY wired into `assess_tool`);
+`worktree_boundary.py` is REALLY wired into `worktree_layer.py`'s
+`create` / `create_agent_worktree` / `_git`, asserting the resolved target
+stays inside the workspace (including symlink ancestors), stripping
+`GIT_DIR` / `GIT_WORK_TREE` / `GIT_INDEX_FILE` redirect variables, and
+rejecting out-of-bound `git -C` / `--git-dir` argv.
+
+**Configuration and behavior changes (stated honestly)**:
+`sandbox.resource.egress_credential_masking=true` and
+`egress_block_local_when_denied=true` (defaulting ON fixes a measured
+fail-open; explicitly turning either off is reported as a security
+downgrade by `config validate`); `permissions.denyInsteadOfPrompting`
+defaults to false and enabling it emits a behavior-change warning.
+`deny_network_by_default` REMAINS false -- honoring the prior 13 rounds'
+commitment not to flip a destructive default without a migration switch.
+
+**Honest limits**: `inject_headers()` is OFF by default and there is NO
+egress proxy forwarding process, so `credential_masking` moves from gap to
+**partial** only, NOT aligned; we do not claim full parity with CC's
+"sentinel + proxy injection". `os_sandbox` REMAINS a **gap** (OS-level
+isolation still is not the default execution boundary) and
+`network_default_deny` is partial (factory default not flipped, per-command
+`allowed_domains` strong binding still missing). `fully_superior` is still
+false (26 gaps, B2 not fully complete, no external adaptive red team).
+No real-device multi-platform verification: Windows Job Object / macOS
+Seatbelt were not exercised on real machines.
+
+Verification: 34 new regression cases + 108 parity/CLI/headless cases +
+353 related sandbox/worktree/hooks/config/hardening cases, all green;
+`matrix.validate() == []`, `security_wiring_intact=true`. Two pre-existing
+count assertions were SYNCHRONIZED to the new baseline, NOT relaxed.

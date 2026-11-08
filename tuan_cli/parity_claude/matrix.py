@@ -54,7 +54,7 @@ def summary(probes: Dict[str, superiority.ProbeResult] | None = None
     dims_all_ok = all(probes[d].ok for d in catalog.SUPERIORITY_DIMENSIONS)
     dims_have_ahead = all(dim_ahead[d] for d in catalog.SUPERIORITY_DIMENSIONS)
     b_waves = [w["wave"] for w in catalog.WAVES if w["wave"].startswith("B")]
-    b_waves_done: List[str] = ["B1"]  # 本轮完成；后续轮次逐步加入
+    b_waves_done: List[str] = ["B1"]  # B2 部分落地但未全清(os_sandbox 仍 gap)，如实不加入
     fully_superior = (
         by_status[catalog.STATUS_GAP] == 0
         and dims_all_ok

@@ -679,6 +679,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "active_process_limit": 16,         # E3: Job 内最大存活进程数 (防 fork 炸弹)
             "kill_timeout_seconds": 5.0,        # E3: 整树击杀兜底超时 (0.5..60)
             "isolate_copy_threshold": "high",   # 高于等于该严重度(high/critical) 的写操作走副本→diff→apply
+            # B2: 子进程出网边界（默认开；显式关闭会被 config validate 报安全降级）。
+            "egress_credential_masking": True,       # 敏感环境变量替换为 sentinel, 子进程不持真实密钥
+            "egress_block_local_when_denied": True,  # local 后端收到禁网裁决时 fail-closed 拒绝, 不裸跑
         },
     },
 }

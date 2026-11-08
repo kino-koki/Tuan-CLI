@@ -7,7 +7,7 @@
 | 计划起始 | 2026-11-07（B1） |
 | 性质 | 全模块能力对照 → 找缺口 → 分轮补齐 → 在安全维度反超 → 每轮可机器核验 |
 | 覆盖 | **14 个功能域 / 99 个模块 / 12 个轮次**（A 线 2 轮 + B 线 10 轮） |
-| 当前结论 | **尚未「完全超越」**；30 个缺口、第三方自适应红队未做。详见 §3 硬判据 |
+| 当前结论 | **尚未「完全超越」**；26 个缺口、第三方自适应红队未做。详见 §3 硬判据与 §12（B2 落地） |
 | 机器入口 | `tuan claude parity` / `--gaps` / `--probes` / `--report-json` |
 | 归属 | `NOTICE` 第 14 条（专有产品，仅做行为契约对标） |
 
@@ -18,7 +18,7 @@
 「超 Claude Code 最新版本」不是一句口号，也不靠把状态定义改漂亮来达成。本文档把它拆成三件可核验的事：
 
 1. **锁定基线**：v2.1.319 是 2026-11-06 发布的最新稳定版，不是泛指「最新版」。它的新增与修复逐条列在 §2，来源列在 §10。
-2. **全模块盘点**：99 个模块分 14 个域，五态标注。当前 **领先 10 / 已对齐 43 / 部分 8 / 缺口 30 / 不适用 8**。`not_applicable` 如实标不适用，**不包装成领先**。
+2. **全模块盘点**：99 个模块分 14 个域，五态标注。当前 **领先 10 / 已对齐 45 / 部分 10 / 缺口 26 / 不适用 8**（B2 落地 4 项，见 §12）。`not_applicable` 如实标不适用，**不包装成领先**。
 3. **「超」有硬判据**：六个维度各有运行时探针（真调现有代码，不靠文档自述），`fully_superior` 必须同时满足 5 个条件才算成立（§3）。当前 5 个条件里只有 2 个为真，`fully_superior = false`。
 
 **最该先看的不是领先项，是落后项**：`os_sandbox`（OS 级强制隔离）、`network_default_deny`（网络默认拒）、`credential_masking`（子进程不持密钥）、`worktree_sandbox_escape`。Claude Code 有真 OS 沙箱，Tuan 的 `--isolation` 是可选的 engine/process 级，L3 只在 `verdict.isolate` 时介入，`local` 后端 `enforced=False`。这些在第 1 轮对照 Codex 时就已如实承认，本计划不推翻、不美化，放在 **B2** 优先处理。
@@ -63,7 +63,7 @@
 | v2.1.317 / 319 | `onFailure: "block"`：让破损/超时/异常退出的 hook 阻断而非放行 | **CC 需要用户逐条 hook 显式配置**，旧行为是静默 fail-open。Tuan B1 把它做成出厂默认 |
 | v2.1.314 | `permissions.blockWritesOutsideWorkingDirectories`，Write/Edit/NotebookEdit 硬拒绝工作区外路径 | **默认关闭**；Tuan 是命令文本规则层，工具层硬约束仍缺，故标 `partial` 不标领先 |
 | v2.1.318 | 修复「提示框弹出前的杂散按键会静默批准危险动作」 | Tuan 第 11 轮 `activation_key_guard` 已独立修过同类问题 |
-| v2.1.221+ | Sandbox credential masking（sentinel + 出网代理注入真实密钥） | 仅 Linux/WSL；Tuan 未接到子进程出网路径，是 **B2 缺口** |
+| v2.1.221+ | Sandbox credential masking（sentinel + 出网代理注入真实密钥） | 仅 Linux/WSL；B1 时为 B2 缺口，**B2 后部分落地**（sentinel + 子进程剥离已接线，代理注入仍缺，见 §12） |
 | v2.1.307 → 310 | `claude_code.safety_event` OTel 事件加了又移除 | Tuan 的 AEAD 审计链 + 跨会话关联是不同思路，见 §3 维度 2 |
 | 2026-07-25 | `sandbox.network.strictAllowlist`、`DirectoryAdded` hook、per-command `allowed_domains` | 对应 B2 网络策略与 B3 扩展事件 |
 
@@ -117,7 +117,7 @@ fully_superior = (
 
 | 功能域 | 模块 | 领先 | 已对齐 | 部分 | 缺口 | 不适用 |
 |---|---:|---:|---:|---:|---:|---:|
-| 安全与权限 `security_permissions` | 8 | 0 | 2 | 2 | 4 | 0 |
+| 安全与权限 `security_permissions` | 8 | 0 | 3 | 4 | 1 | 0 |
 | 安全扫描与审计 `safety_audit` | 7 | 4 | 2 | 0 | 1 | 0 |
 | 生命周期钩子 `hooks` | 8 | 1 | 5 | 0 | 2 | 0 |
 | 技能与记忆 `skills_memory` | 7 | 0 | 5 | 1 | 1 | 0 |
@@ -127,11 +127,11 @@ fully_superior = (
 | 模式与上下文 `modes_context` | 7 | 0 | 4 | 0 | 1 | 2 |
 | 会话 / 无头 / SDK `session_headless` | 7 | 0 | 6 | 0 | 1 | 0 |
 | TUI 与交互 `tui_interaction` | 8 | 2 | 1 | 1 | 4 | 0 |
-| Git / 后台任务 `git_background` | 6 | 0 | 4 | 0 | 2 | 0 |
+| Git / 后台任务 `git_background` | 6 | 0 | 5 | 0 | 1 | 0 |
 | 代码智能 `code_intelligence` | 5 | 0 | 2 | 0 | 3 | 0 |
 | 云 / 远程 / 集成 `cloud_remote` | 6 | 0 | 0 | 1 | 0 | 5 |
 | 可观测 / 模型 / 成本 `observability_models` | 6 | 2 | 1 | 1 | 1 | 1 |
-| **合计** | **99** | **10** | **43** | **8** | **30** | **8** |
+| **合计** | **99** | **10** | **45** | **10** | **26** | **8** |
 
 状态定义即约束（`evidence.py` 运行时校验）：`ahead` 必须有 `ahead_reason` + 合法维度 + 存在的证据路径；`gap` 必须分配到某个 wave；`not_applicable` 不得带 wave 且必须写清理由；所有非 NA 模块的证据路径必须真实存在。想把缺口改成领先，就得补真实证据、写清理由、跑通探针——**改状态定义凑数会被自检拦下**。
 
@@ -141,13 +141,13 @@ fully_superior = (
 
 | 模块 | 状态 | 轮次 | 上游参照 / 判定依据 | 证据 |
 |---|---|---|---|---|
-| `os_sandbox` | **缺口** | B2 | Sandboxing /sandbox; v2.1.319 修复 worktree 创建沙箱逃逸 — CC 有 OS 级强制沙箱；Tuan 的 --isolation 是可选 engine/process 级，L3 仅在 verdict.isolate 时介入，local 后端 enforced=False。这是最大且必须如实承认的落后项 | `backends.py`, `manager.py` |
-| `network_default_deny` | **缺口** | B2 | sandbox.network.strictAllowlist (2026-07-25) — deny_network_by_default 出厂值仍是 false（前 13 轮如实保留、未擅自翻）；网络白名单是命令文本识别而非出网路径强制 | `defaults.py`, `filters.py` |
+| `os_sandbox` | **缺口** | B2 | 仍是最大落后项：CC 有 OS 级强制沙箱，Tuan 的 --isolation 是可选 engine/process 级。B2 补上 local 后端禁网裁决的 fail-closed 拒绝，但**没有**把 OS 级隔离变成默认执行边界 | `backends.py`, `manager.py`, `egress.py` |
+| `network_default_deny` | 部分 | B2 | B2 修复执行层：local+禁网 fail-closed 拒绝（旧实现 block_net 未接线而裸跑）。仍缺：出厂 `deny_network_by_default` 仍 false、逐命令 `allowed_domains` 强绑定 | `egress.py`, `test_b2_boundaries.py` |
 | `network_strict_allowlist` | 部分 | B2 | sandbox.network.strictAllowlist; per-command allowed_domains (v2.1.271) — 有域名策略与 NetworkGuard，但缺「逐命令声明所需主机、其余一律拒绝」的强绑定 | `network_policy.py`, `network_guard.py` |
-| `credential_masking` | **缺口** | B2 | Sandbox credential masking (v2.1.221+, Linux/WSL) — CC 用 sentinel + 出网代理注入真实密钥，子进程不持密钥；Tuan 有密钥扫描与加密原语，但未接到子进程出网路径 | `crypto_provider.py`, `secret_scanner.py` |
+| `credential_masking` | 部分 | B2 | B2 落地 sentinel 代理：子进程敏感环境变量替换为 `tuan-egress-sentinel-v1:<fp>`，真实值只在进程内内存。仍缺：出网代理转发注入未接线（`inject_headers` 默认关闭） | `egress.py`, `test_b2_boundaries.py` |
 | `permission_modes` | 已对齐 | — | default / acceptEdits / plan / bypass / auto (Shift+Tab) — 五模式注册表与切换器已在；auto 模式的确定性规则前置见 auto_mode | `registry.py`, `switcher.py`, `policy.py` |
 | `deny_rules_exclude_glob` | 已对齐 | — | permissions rules / deniedMcpServers URL (v2.1.318) — E6 负向排除 + MCP 规范化精确管控；deny 忽略 exclude，拒绝规则不允许被放宽 | `security_schema.py`, `policy.py` |
-| `deny_instead_of_prompting` | **缺口** | B2 | permissions.denyInsteadOfPrompting (v2.1.319 新增) — CC 让无人值守的 permission prompt 直接拒绝并继续 turn；Tuan 有 deny 优先但缺这个显式开关与「继续」语义 | `auto_mode.py`, `verdict.py` |
+| `deny_instead_of_prompting` | 已对齐 | — | 显式开关（默认关）+ 两种 scope + `continue_turn`/`suppressed_prompt` 结构化；真接到 `assess_tool` 的 CONFIRM 路径，配置非法 fail-closed（§12） | `unattended.py`, `manager.py`, `test_b2_boundaries.py` |
 | `block_writes_outside_wd` | 部分 | B2 | permissions.blockWritesOutsideWorkingDirectories (v2.1.314，默认关) — CC 在 Write/Edit/NotebookEdit 工具层硬拒绝（但默认关闭）；Tuan 是命令文本规则层，工具层硬约束待补。不标 ahead —— 两者都还不是默认强边界 | `filters.py`, `path_safety.py` |
 
 #### 安全扫描与审计 `safety_audit`
@@ -268,7 +268,7 @@ fully_superior = (
 | 模块 | 状态 | 轮次 | 上游参照 / 判定依据 | 证据 |
 |---|---|---|---|---|
 | `worktree` | 已对齐 | — | Git Worktrees / /worktree — 真调 git worktree add -b，create/list/remove/switch 四子命令 + 隔离证明测试 | `worktree_layer.py`, `test_worktree_layer.py` |
-| `worktree_sandbox_escape` | **缺口** | B2 | v2.1.319 修复创建 worktree 时的沙箱逃逸 — CC 刚修的是「沙箱内命令借 worktree 创建逃逸」；Tuan 需证明 worktree 创建路径本身在隔离边界内，且部分克隆按需 fetch 不越界 | `worktree_layer.py`, `manager.py` |
+| `worktree_sandbox_escape` | 已对齐 | — | B2 真接线：`create`/`create_agent_worktree` 在 fast-resume 之前断言解析后 target 在 workspace 内（含 symlink 祖先）；`_git` 剥离 git 重定向变量、拒绝越界 argv（§12） | `worktree_boundary.py`, `test_b2_boundaries.py` |
 | `diff_view` | 已对齐 | — | /diff, word-level diff — diff 渲染 + 副本 diff 预览（含点目录修复） | `diff_view.py`, `isolation.py` |
 | `background_bash` | 已对齐 | — | background Bash / long-running commands — 后台 shell 与存储已在 | `background_shell.py`, `background_store.py` |
 | `loop_cron` | 已对齐 | — | /loop, CronCreate, scheduled tasks — 零依赖 5 字段 cron 解析器 + daemon/runner/store | ``, `test_cron_schedule.py` |
@@ -308,7 +308,7 @@ fully_superior = (
 
 ---
 
-## 5. 差距队列（30 个，按轮次）
+## 5. 差距队列（26 个，按轮次）
 
 `tuan claude parity --gaps` 实时输出同一份清单；`--report-json` 供 CI 消费。
 
@@ -319,10 +319,6 @@ fully_superior = (
 | B10 | TUI 与交互 | `output_styles` |
 | B10 | TUI 与交互 | `prompt_suggestions` |
 | B10 | TUI 与交互 | `statusline` |
-| B2 | Git / 后台任务 | `worktree_sandbox_escape` |
-| B2 | 安全与权限 | `credential_masking` |
-| B2 | 安全与权限 | `deny_instead_of_prompting` |
-| B2 | 安全与权限 | `network_default_deny` |
 | B2 | 安全与权限 | `os_sandbox` |
 | B3 | 生命周期钩子 | `hook_events_extended` |
 | B3 | 生命周期钩子 | `hook_updated_input_validation` |
@@ -345,7 +341,8 @@ fully_superior = (
 | B9 | 安全扫描与审计 | `safety_event_otel` |
 | B9 | 会话 / 无头 / SDK | `agent_sdk` |
 
-按轮次：B10 6 个、B2 7 个、B3 2 个、B4 2 个、B5 1 个、B6 4 个、B7 10 个、B8 1 个、B9 5 个。
+按轮次（**上表只列 gap**）：B10 5 个、B2 1 个、B3 2 个、B4 1 个、B5 1 个、B6 4 个、B7 8 个、B8 1 个、B9 3 个。
+若按 ``wave_load``（含仍带 wave 的 ``partial`` 模块）则为：B2 5、B3 2、B4 2、B5 1、B6 4、B7 10、B8 1、B9 5、B10 6，合计 36 —— 两种口径此前被混写，这里分开列清楚。
 
 ---
 
@@ -365,7 +362,7 @@ fully_superior = (
 | 轮次 | 目标 | 交付 | 主要风险 / 不做的事 |
 |---|---|---|---|
 | **B1 ✅** | 基线 + 详细计划 + **hooks 默认 fail-closed 落地** | `parity_claude/` 4 模块、`CLAUDE_PARITY.md`、`tuan claude parity`、`tests/test_claude_parity.py` 58 例、`NOTICE` 14 条 | 行为变更已如实标注；不改 OS 沙箱默认值、不碰 A 线文件 |
-| **B2** | 补齐最大落后项：`os_sandbox` 默认化、`network_default_deny`、`credential_masking`、`deny_instead_of_prompting`、`worktree_sandbox_escape` 证明 | OS 级隔离接线 + 出网代理注入 + 无人值守拒绝开关 + worktree 创建路径隔离证明 | **破坏性行为变更**：`deny_network_by_default` 翻 true 会让无 docker/bwrap 的机器直接拒绝含网络特征命令。必须给迁移开关与真机验证；不擅自翻出厂默认值，除非逐项确认 |
+| **B2 ◐ 部分** | 补齐最大落后项（原 5 个 gap） | 本轮落地 4 项：`network_default_deny`→partial、`credential_masking`→partial、`deny_instead_of_prompting`→aligned、`worktree_sandbox_escape`→aligned；新增 `egress.py` / `unattended.py` / `worktree_boundary.py` + 34 例回归，详见 §12 | **`os_sandbox` 仍为 gap**：没把 OS 级隔离变成默认执行边界，只修了 local 后端禁网裁决裸跑。出厂 `deny_network_by_default` 仍 false、未擅自翻；B2 未全清，故 `b_waves_done` 仍只有 B1 |
 | **B3** | 7 个扩展 hook 事件（PermissionRequest / Notification / DirectoryAdded / ConfigChange / WorktreeCreate / Elicitation / ElicitationResult）+ `updatedInput` 按工具 schema 校验 | `HOOK_EVENTS` 扩展 + 四型 hook 统一失败语义 + 回归 | 通知类事件失败**只留痕不卡 turn**；不把新事件做成新的 fail-open 侧门 |
 | **B4** | CLAUDE.md 语义等价的多层项目记忆 + `@` 文件提及 + **技能完整性签名与权限域声明** | `memory` 分层 + skill 签名校验 | 大文件不得被 Write 工具只看开头就覆盖（CC v2.1.312 刚修过）；技能不可悄悄扩权是 CC 无对等物的超越点 |
 | **B5** | `/tasks` 持久化索引（含「Earlier in this session」）+ 每 subagent 独立沙箱与权限域 + 跨会话审计关联接到代理生命周期 | 子代理任务索引 + 权限域隔离 | 关联检测**纯观测，绝不反作用于裁决**（沿用 E4 约束） |
@@ -429,7 +426,7 @@ B1 不是只写计划。审计 `hooks/manager.py` 时发现两个与 CC `onFailu
 
 1. **最大落后项没修**：`os_sandbox` / `network_default_deny` / `credential_masking` / `worktree_sandbox_escape` 都在 B2。Claude Code 有 OS 级强制沙箱；Tuan 的 `--isolation` 是可选的 engine/process 级，`local` 后端 `enforced=False`。**不要因为本轮 6 个探针全绿就以为安全边界已经对齐**。
 2. **`deny_network_by_default` 出厂仍是 `false`**（前 13 轮如实保留）。翻 true 是破坏性行为变更，B2 会给迁移开关，不擅自翻。
-3. **`fully_superior=false`**：30 个缺口、B 轮只完成 B1、第三方自适应红队未做。判据 5 项里只有 2 项为真。
+3. **`fully_superior=false`**：26 个缺口、B 轮完成 B1 且 **B2 部分落地**（未全清，`b_waves_done` 仍只有 B1）、第三方自适应红队未做。判据 5 项里只有 2 项为真。
 4. **`not_applicable` 不包装成领先**：云会话 / self-hosted runner / Chrome / Channels / 语音 / 网关 / 1M 上下文 / effort / feature flags 共 8 项，如实标不适用。
 5. **版本口径**：官方 changelog 按日期组织不写版本号，版本号取自 GitHub release 归档；若后续出新版本，先更新基线再谈超越。
 6. **探针是内部证据，不是第三方证明**：六维探针真调现有代码，但仍是自测。静态基准 / 自建 fuzz / CI gate 都不能替代自适应红队。
@@ -490,7 +487,7 @@ Claude Code 是 Anthropic 的**专有产品**（Commercial Terms of Service）�
 功能域，作为 B10 `statusline` 的前置实现记录更准确；加模块会连带改
 `ahead/aligned/partial/gap` 四个计数、§4 汇总、§5 队列与多处测试断言，
 正是 §9「不靠改状态定义凑数」要防的动作。因此 **`fully_superior` 仍为
-`false`，25 个缺口不变，B3–B10 未完，第三方自适应红队未做**。
+`false`，26 个缺口，B3–B10 未完，第三方自适应红队未做**。
 
 ### 11.3 推送范围（如实）
 
@@ -516,7 +513,7 @@ Anthropic 不背书。视频正文未获取，不转述其内容。
 用户要求「不再执着于广度而放弃深度」。本轮**只深化 §11 的运行时标语**，
 因此以下关于「超 Claude Code」的判据**全部保持原值，不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域，`ahead / aligned / partial / gap / not_applicable`
   五个计数**一个都没动**；
 - 六维探针与 `superiority_criteria` 六项判据**一个都没动**；
@@ -538,7 +535,7 @@ Anthropic 不背书。视频正文未获取，不转述其内容。
 延续 §12，本轮把运行时标语的**净化边界**继续往下挖，因此
 「超 Claude Code」的所有判据**保持原值，不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -557,7 +554,7 @@ Anthropic 不背书。视频正文未获取，不转述其内容。
 能力的工程正确性**, 不是新的功能域。因此关于「超 Claude Code」的所有
 判据**保持原值, 不是成果**:
 
-- `fully_superior` 仍为 `false`; **25 个缺口不变**, B3–B10 未完;
+- `fully_superior` 仍为 `false`; **26 个缺口**, B3–B10 未完;
 - 99 模块、14 域与五个状态计数一个没动; 六维探针与
   `superiority_criteria` 六项判据一个没动;
 - 第三方自适应红队仍未做; 未新增 CLI 子命令 (51 / 含嵌套 197 不变)。
@@ -577,7 +574,7 @@ Anthropic 不背书。视频正文未获取，不转述其内容。
 正确性, 不是新的功能域。关于「超 Claude Code」的所有判据
 **保持原值, 不是成果**:
 
-- `fully_superior` 仍为 `false`; **25 个缺口不变**, B3–B10 未完;
+- `fully_superior` 仍为 `false`; **26 个缺口**, B3–B10 未完;
 - 99 模块、14 域与五个状态计数一个没动; 六维探针与
   `superiority_criteria` 六项判据一个没动;
 - 第三方自适应红队仍未做; 未新增 CLI 子命令 (51 / 含嵌套 197 不变)。
@@ -595,7 +592,7 @@ Anthropic 不背书。视频正文未获取，不转述其内容。
 留痕、避重窗口容量、不变量加严），不是新的功能域。关于「超 Claude
 Code」的所有判据**保持原值，不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -614,7 +611,7 @@ Code」的所有判据**保持原值，不是成果**：
 不是新的功能域。关于「超 Claude Code」的所有判据**保持原值，
 不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -633,7 +630,7 @@ fatal/信息项分离是另一套独立运行时自检，与「超不超」这�
 收敛单一释放出口、封存写加锁），不是新的功能域。关于「超 Claude
 Code」的所有判据**保持原值，不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -652,7 +649,7 @@ Code」的所有判据**保持原值，不是成果**：
 `reason_counts` 摘要、`OWNER_LIMIT` 口径精确化），不是新的功能域。
 关于「超 Claude Code」的所有判据**保持原值，不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -671,7 +668,7 @@ Code」的所有判据**保持原值，不是成果**：
 注入时钟严格类型校验、owner 有界摘要、累计淘汰证据），不是新的
 功能域。关于「超 Claude Code」的所有判据**保持原值，不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -689,7 +686,7 @@ Code」的所有判据**保持原值，不是成果**：
 不是新的功能域。关于「超 Claude Code」的所有判据**保持原值，
 不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -708,7 +705,7 @@ Code」的所有判据**保持原值，不是成果**：
 非字符串 owner 隔离留痕），不是新的功能域。关于「超 Claude Code」
 的所有判据**保持原值，不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -727,7 +724,7 @@ Code」的所有判据**保持原值，不是成果**：
 public 入参健壮性，不是新的功能域。关于「超 Claude Code」的所有判据
 **保持原值，不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -747,7 +744,7 @@ public 入参健壮性，不是新的功能域。关于「超 Claude Code」的�
 `reload()` 的 `(seq, verb)` 对齐），不是新的功能域。关于
 「超 Claude Code」的所有判据**保持原值，不是成果**：
 
-- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- `fully_superior` 仍为 `false`；**26 个缺口**，B3–B10 未完；
 - 99 模块、14 域与五个状态计数一个没动；六维探针与
   `superiority_criteria` 六项判据一个没动；
 - 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
@@ -756,3 +753,102 @@ public 入参健壮性，不是新的功能域。关于「超 Claude Code」的�
 `kind="reload"` 证据与 `invalid:too-many-verbs` 都是既有能力的
 健壮性补漏，**不参与** `audit().ok`，也不计入「超不超」这条线。
 详见 `SLOGAN_MAPPING.md` §20。
+
+
+---
+
+## 12. B2 落地：先修实测 fail-open，不靠改状态凑数
+
+B2 原计划列了 5 个 gap。本轮**没有**把它们一股脑改成 aligned —— 只把
+4 个有真实代码 + 真实接线 + 真实测试的能力推进，`os_sandbox` 保持 gap。
+结果：`gap 30 → 26`、`aligned 43 → 45`、`partial 8 → 10`，
+`fully_superior` 仍 `false`，`b_waves_done` 仍 `["B1"]`（B2 未全清）。
+`tuan claude parity --gaps` 与 `§5` 队列已同步到 26。
+
+### 最值钱的发现：宣称与实现之间的断层
+
+`SandboxManager._execute_backend` 算出 `block_net = not verdict.network`，
+但 `local` 分支调用 `run_with_tree_kill` 时 **既不传 block_net 也不传
+env**。实测两件事：
+
+1. 当 `verdict.network=False` 且后端落到 `local`，命令仍以父进程完整
+   `os.environ` 裸跑 —— 「默认禁网」在**唯一没有 OS 级出网隔离能力**
+   的后端上静默失效。L2 的 `_has_network_request` 只是命令文本识别，
+   前几轮 fuzz 已证明零宽字符 / ANSI-C / 注释换行都能绕过文本层。
+2. 父进程里的 `GITHUB_TOKEN` / `AWS_SECRET_ACCESS_KEY` 等真实凭据
+   原样进入子进程，与目录里「子进程不持密钥」的宣称相反。
+
+也就是说 `network_default_deny` 和 `credential_masking` 这两个最大落后项，
+不是「缺一个大功能」，而是**已有开关在执行层根本没接线**。这比新写
+一个沙箱更值得先做。
+
+### 四个模块的真实落地
+
+| 模块 | 旧 → 新 | 做了什么 |
+|---|---|---|
+| `network_default_deny` | gap → **partial** | `egress.py::enforce_local_egress`：local + 禁网 **fail-closed 拒绝**，绝不假装禁网成功；强后端仍走自身边界。出厂 `deny_network_by_default` 仍 false（未擅自翻），逐命令 `allowed_domains` 强绑定仍缺 → 只标 partial |
+| `credential_masking` | gap → **partial** | `CredentialBroker`：子进程环境里敏感键替换为 `tuan-egress-sentinel-v1:<fp>`，真实值只在进程内内存；`repr` / 审计 / 异常 / `to_audit_dict()` 均不泄露。出网代理注入 `inject_headers()` 是**默认关闭**的预留接口，没有转发进程调用它 → 只标 partial |
+| `deny_instead_of_prompting` | gap → **aligned** | `unattended.py`：显式开关（默认关）、`no_confirm_channel` / `all_confirmations` 两种 scope、`denied=True` 是硬事实而 `continue_turn` / `suppressed_prompt` 结构化写入 `verdict.extra` 与可查询审计；**真接**到 `assess_tool` 的 CONFIRM 路径，配置非法 fail-closed |
+| `worktree_sandbox_escape` | gap → **aligned** | `worktree_boundary.py` **真接线**到 `worktree_layer.py`：`create` / `create_agent_worktree` 在 fast-resume **之前**断言解析后 target 在 workspace 内（含 symlink 祖先）；`_git` 剥离 `GIT_DIR` / `GIT_WORK_TREE` / `GIT_INDEX_FILE` 等重定向变量并拒绝 `git -C` / `--git-dir` 越界 argv |
+
+**`os_sandbox` 保持 gap**：本轮只修了 local 后端的禁网裁决，没有把
+Landlock/seccomp/Seatbelt 这类 OS 级隔离变成**默认执行边界**，
+`enforce_required=True` 仍要求显式可用的强后端。这是最大落后项，
+不因为「egress 修好了」就改状态。
+
+### 新增配置与行为变更（如实）
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `sandbox.resource.egress_credential_masking` | `true` | 敏感环境变量替换为 sentinel。**行为变更**：依赖真实凭据的子进程需显式关闭；关闭时 `config validate` 报安全降级 |
+| `sandbox.resource.egress_block_local_when_denied` | `true` | local 后端收到禁网裁决时拒绝执行。显式关闭报安全降级 |
+| `permissions.denyInsteadOfPrompting` | `false` | 开启后无人值守的需确认调用直接拒绝并继续 turn；`config validate` 报**行为变更** warning |
+| `permissions.denyInsteadOfPromptingScope` | `no_confirm_channel` | 或 `all_confirmations`；非法值在配置阶段拒绝 |
+
+`deny_network_by_default` **仍是 false**，没有翻。前 13 轮明确承诺
+「翻 true 是破坏性行为变更，需给迁移开关、不擅自翻」，本轮兑现的是
+「执行层不再静默失效」，不是「默认禁网」。
+
+### 口径修正（两处历史笔误）
+
+1. 本文档 §3 / §5 / §10 曾写 **30 个缺口**，而 §11 之后十几轮追加段落
+   一直复制「**25 个缺口不变**」—— 实际 `catalog.py` 里是 30。
+   本轮把这些历史段落统一改成 **26**（B2 后的真实值），不再声称「不变」。
+   此前回复里跟着写过 25，一并更正。
+2. §5 末尾「按轮次」一行混用了两种口径：表格只列 `gap`，数字却是
+   `wave_load`（含仍带 wave 的 `partial`）。现在分开列：
+   gap 26 / wave_load 36。
+
+### 验证
+
+```
+tests/test_b2_boundaries.py                                  34 passed
+tests/test_claude_parity.py + test_cli_parity.py +
+  test_headless_parity.py                                   108 passed (合计)
+sandbox / worktree / hooks / config / hardening 相关批次     353 passed
+  + 3 项 config.schema 在完整副本补齐后全绿
+matrix.validate() == []  |  security_wiring_intact = true
+fully_superior = false   |  criteria 2 真 3 假
+```
+
+**两条既有测试断言同步到新基线，不是放宽**：
+`test_status_counts_are_derived` 的 `by_status` 与
+`test_gaps_listing` 的「待补齐队列」都改为与 `catalog` 派生一致的新数值，
+断言强度不变（仍要求总和 99、逐项对应）。
+
+### 如实边界
+
+1. `fully_superior` 仍 **false**：26 个缺口、B2 未全清（`b_waves_done`
+   仍只有 B1）、第三方自适应红队未做。判据一条没改。
+2. `os_sandbox` 仍是 gap；`network_default_deny` / `credential_masking`
+   是 partial 不是 aligned，理由写在各自的 note 里。
+3. `inject_headers()` 默认关闭、没有出网代理进程，**不宣称**「CC 的
+   sentinel + 代理注入已完整对等」。
+4. 新增两个默认 `true` 的出网开关是**修复实测 fail-open**，但确实改变
+   了「依赖真实凭据的子进程」的行为，已在上表标注逃生口。
+5. 不是真机多平台验证：Linux 本机路径与 mock 覆盖；Windows Job Object /
+   macOS Seatbelt 的强后端网络隔离未在本轮实机跑过。
+6. A 线（Codex TUI 完全相同）仍剩 10 个 pending，`fully_identical=false`，
+   与 B 线互不替代；分叉改动仍未合并；静态基准不能当对抗证明。
+7. 本轮未新增第三方素材，`NOTICE` 第 9–15 条归属不变；标语引擎 /
+   净化层 / `_clean.py` / `mapping.py` / `tui.py` 逐字节未改。

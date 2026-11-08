@@ -483,7 +483,7 @@ localized 57 / n/a 63 / **pending 10**，宽口径 93.9%、严格 55.8%、
   （目录 / 证据 / 六维探针 / 矩阵）与 `tuan claude parity`。
 - **「超」有硬判据**：`fully_superior` 需同时满足 gap=0、六维运行时探针
   全 OK、每维至少 1 个已证实领先、所有 B 轮完成、第三方自适应红队背书。
-  当前 **false**（30 个缺口、判据 5 项仅 2 项为真），判据写死不许放宽。
+  当前 **false**（26 个缺口、判据 5 项仅 2 项为真），判据写死不许放宽。
   六个探针真调现有代码：注入不存在的 hook 二进制、篡改 HMAC、
   喂畸形配置、写坏 MCP 策略看 locked、统计真实 i18n/README、
   校验 165 模块 Codex 矩阵。
@@ -1455,3 +1455,56 @@ source，不改任何既有断言口径）；混合场景仍只保留可渲染�
 惰性导出），纯 stdlib 约束不破。
 
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*
+
+---
+
+## 27. B2：子进程出网边界与凭据 sentinel（完整复现见 `CLAUDE_PARITY.md` §12）
+
+**实测缺陷**：`SandboxManager._execute_backend` 算出
+`block_net = not verdict.network`，但 `local` 分支既不传 `block_net`
+也不传 `env`。两个后果：
+
+1. `verdict.network=False` 且后端落到 `local` 时命令仍以父进程完整
+   `os.environ` 裸跑 —— 禁网裁决在**唯一没有 OS 级出网隔离能力**的
+   后端上静默失效；L2 的命令文本识别可被零宽字符 / ANSI-C / 注释
+   换行绕过。
+2. `GITHUB_TOKEN` / `AWS_SECRET_ACCESS_KEY` 等真实凭据原样进入子进程，
+   与「子进程不持密钥」的宣称相反。
+
+**修复**：新增 `tuan_cli/sandbox/egress.py`，把边界放在**执行前**：
+
+| 组件 | 作用 |
+|---|---|
+| `CredentialBroker` | 真实值只在当前进程内存；子进程拿 `tuan-egress-sentinel-v1:<fp>`；`repr` / 审计 / 异常 / `to_audit_dict()` 不泄露 |
+| `build_child_env` | 保留 `PATH`/`HOME`/`LANG` 等非敏感变量；敏感键替换为 sentinel；脏输入（非 Mapping / 非 str 键值）**空环境**，绝不回退继承父进程 |
+| `enforce_local_egress` | local + 禁网 → **fail-closed 拒绝**，不假装禁网成功；强后端走自身边界 |
+| `EgressGuard` | 三者合成一次检查，`manager` 的 local 分支真调它并传 `env=` |
+
+**同轮另外两项**：`unattended.py` 落地
+`permissions.denyInsteadOfPrompting`（默认关；`denied=True` 是硬事实，
+`continue_turn` / `suppressed_prompt` 结构化写入 `verdict.extra` 与可查询
+审计；真接到 `assess_tool`）；`worktree_boundary.py` 真接到
+`worktree_layer.py` 的 `create` / `create_agent_worktree` / `_git`，
+断言解析后 target 在 workspace 内（含 symlink 祖先）、剥离
+`GIT_DIR` / `GIT_WORK_TREE` / `GIT_INDEX_FILE` 等重定向变量、拒绝
+`git -C` / `--git-dir` 越界 argv。
+
+**配置与行为变更（如实）**：
+`sandbox.resource.egress_credential_masking=true`、
+`egress_block_local_when_denied=true`（默认开是修复 fail-open，显式关闭
+由 `config validate` 报安全降级）；`permissions.denyInsteadOfPrompting`
+默认 false，开启报行为变更 warning。
+**`deny_network_by_default` 仍 false，没有翻** —— 兑现前 13 轮
+「翻 true 是破坏性变更、不擅自翻」的承诺。
+
+**如实边界**：`inject_headers()` 默认关闭、没有出网代理转发进程，
+所以 `credential_masking` 在 `catalog` 里只从 gap 改 **partial**，
+不宣称与 CC 的「sentinel + 代理注入」完整对等；`os_sandbox` 仍是
+**gap**（没把 OS 级隔离变成默认执行边界）；`network_default_deny`
+也是 partial（出厂默认未翻、逐命令 `allowed_domains` 强绑定仍缺）。
+`fully_superior` 仍 false（26 个缺口、B2 未全清、第三方自适应红队未做）。
+不是真机多平台验证：Windows Job Object / macOS Seatbelt 未实机跑。
+
+验证：34 例新回归 + 108 例 parity/CLI/headless + 353 例相关批次全绿；
+`matrix.validate() == []`、`security_wiring_intact=true`。
+两条既有计数断言同步到新基线，**不是放宽**。

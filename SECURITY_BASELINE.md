@@ -492,3 +492,34 @@ P10 `sanitize_verb(123)==''`；另锁住 `liveness`/`render`/`snapshot`
 复现 list 撕裂；不是真机长跑；分叉改动仍未合并；第三方自适应
 红队仍未做；**不宣称性能提升**。详见 `SLOGAN_MAPPING.md` §20。
 本轮**不改** `fully_superior`、99 模块基线与任何对齐指标。
+
+
+---
+
+## R41 · B2 子进程出网边界（完整复现见 `CLAUDE_PARITY.md` §12）
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R41 | `_execute_backend` 算出 `block_net` 却不传给 `local` 分支、也不传 `env`：`verdict.network=False` 在**唯一没有 OS 级出网隔离能力**的后端上静默裸跑；父进程 `GITHUB_TOKEN` / `AWS_SECRET_ACCESS_KEY` 等真实凭据原样进子进程；`worktree_layer._git` 继承完整 `os.environ` 且 `GIT_WORK_TREE`/`GIT_DIR` 可把 git 元数据重定向到工作区外 | `egress.py`（`CredentialBroker` sentinel / `build_child_env` 脏输入空环境 / `enforce_local_egress` local+禁网 fail-closed 拒绝 / `EgressGuard`）+ manager local 分支真传 `env=`；`unattended.py` 落地 `denyInsteadOfPrompting`（默认关、`continue_turn` 结构化、真接 `assess_tool`）；`worktree_boundary.py` 真接 `create`/`create_agent_worktree`(fast-resume 之前)/`_git`，剥重定向变量、拒越界 argv、断言解析后 target 在 workspace 内 |
+
+配置：`sandbox.resource.egress_credential_masking=true`、
+`egress_block_local_when_denied=true`（显式关闭报安全降级）、
+`permissions.denyInsteadOfPrompting=false`（开启报行为变更 warning）。
+**`deny_network_by_default` 仍 false，没翻**。
+
+矩阵：`gap 30 → 26`、`aligned 43 → 45`、`partial 8 → 10`；
+`network_default_deny` / `credential_masking` → partial，
+`deny_instead_of_prompting` / `worktree_sandbox_escape` → aligned，
+**`os_sandbox` 保持 gap**。`fully_superior` 仍 false，
+`b_waves_done` 仍 `["B1"]`（B2 未全清）。
+
+如实边界：`inject_headers()` 默认关闭、无出网代理转发进程，
+不宣称与 CC「sentinel + 代理注入」完整对等；OS 级默认隔离仍未做；
+逐命令 `allowed_domains` 强绑定仍缺；不是真机多平台验证
+（Windows Job Object / macOS Seatbelt 未实机跑）；A 线 10 个 pending、
+分叉改动、第三方自适应红队仍未完成。新增两个默认 true 的出网开关
+确实改变「依赖真实凭据的子进程」行为，已给逃生口并在校验里报降级。
+
+验证：34 例新回归 + 108 例 parity/CLI/headless + 353 例相关批次全绿；
+`matrix.validate() == []`、`security_wiring_intact=true`。两条既有计数
+断言同步到新基线，**不是放宽**（仍要求总和 99、逐项对应）。

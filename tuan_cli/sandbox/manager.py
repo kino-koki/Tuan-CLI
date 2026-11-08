@@ -37,6 +37,10 @@ DEFAULT_POLICY: Dict[str, Any] = {
         "active_process_limit": 16,
         "kill_timeout_seconds": 5.0,
         "isolate_copy_threshold": "high",   # 高危以上走 copy-diff-apply
+        # B2: 子进程出网边界。两项默认开是**修复实测 fail-open**，不是放宽：
+        # local 后端禁网裁决以前会裸跑、父进程真实凭据以前原样进子进程。
+        "egress_credential_masking": True,
+        "egress_block_local_when_denied": True,
     },
 }
 
@@ -95,6 +99,44 @@ class SandboxManager:
         self._disabled = not self.policy.get("enabled", True)
         self._auditor = auditor       # SecurityAuditor (可选): 每条裁决直写审计
         self._bus = bus               # SecurityEventBus (可选): 沙箱事件汇入统一审计流
+        # B2: 无人值守决策与出网边界的**脱敏**可观测状态。
+        # 只存结构化结果 / 键名 / 计数，绝不存命令原文或凭据值。
+        self._unattended_log: List[Dict[str, Any]] = []
+        self._last_egress: Dict[str, Any] = {}
+
+    # ------------------------------------------------------------ B2 可观测
+    def _record_unattended(self, outcome: Any) -> None:
+        """成对留痕：一次决策一条，脱敏、有界、不进异常路径。"""
+        try:
+            self._unattended_log.append(outcome.to_dict())
+            if len(self._unattended_log) > 256:
+                del self._unattended_log[:-256]
+        except Exception:  # noqa: BLE001 - 审计失败绝不影响裁决
+            pass
+
+    def unattended_decisions(self) -> List[Dict[str, Any]]:
+        return [dict(x) for x in self._unattended_log]
+
+    @property
+    def last_egress(self) -> Dict[str, Any]:
+        return dict(self._last_egress)
+
+    def _unattended_policy(self, ctx: Any) -> Any:
+        """从沙箱策略 + kernel 配置解析开关；配置不可用时保持默认关闭。"""
+        from .unattended import UnattendedPolicy
+        raw: Dict[str, Any] = dict(self.policy or {})
+        try:
+            kernel = getattr(ctx, "kernel", None)
+            cfg = kernel.get("config") if kernel is not None else None
+            if cfg is not None:
+                for key in ("permissions.denyInsteadOfPrompting",
+                            "permissions.denyInsteadOfPromptingScope"):
+                    val = cfg.get(key)
+                    if val is not None:
+                        raw[key] = val
+        except Exception:  # noqa: BLE001 - 配置通道异常不能掀掉裁决
+            pass
+        return UnattendedPolicy.from_mapping(raw)
 
     # ------------------------------------------------------------ 工具参数归一化
     @staticmethod
@@ -231,6 +273,20 @@ class SandboxManager:
             return True, verdict.describe()
         if verdict.action == Action.CONFIRM and not payload.yolo:
             confirm = getattr(ctx, "confirm", None)
+            # B2: permissions.denyInsteadOfPrompting —— 无人值守时拒绝并继续
+            # turn，不挂起等待。默认关闭，开启后 denied=True 仍是硬事实，
+            # 「继续 turn」只写在 verdict.extra / 可查询审计里。
+            from .unattended import UnattendedPolicy, resolve_confirm
+            outcome = resolve_confirm(
+                verdict, has_confirm_channel=confirm is not None,
+                policy=self._unattended_policy(ctx))
+            if outcome.applied:
+                verdict.extra["unattended_deny"] = outcome.denied
+                verdict.extra["continue_turn"] = outcome.continue_turn
+                verdict.extra["suppressed_prompt"] = outcome.suppressed_prompt
+                self._record_unattended(outcome)
+                if outcome.denied:
+                    return True, outcome.reason
             if confirm is None:
                 return True, f"[沙箱信任滤网] 需要人工确认但没有确认通道: {verdict.reason}"
             try:
@@ -291,13 +347,23 @@ class SandboxManager:
             return self._run_provider("landlock", command, cwd, timeout, block_net, verdict)
         if backend == "docker":
             return self._run_provider("docker", command, cwd, timeout, block_net, verdict)
-        # local / 其它: 裸跑(非 OS 级隔离), 交由上层 enforce 决定是否接受
+        # local / 其它: 裸跑(非 OS 级隔离), 交由上层 enforce 决定是否接受。
+        # B2 实测缺陷修复: 旧实现算出 ``block_net`` 却既不传给 local 分支、
+        # 也不传 env —— 禁网裁决在唯一没有 OS 级出网隔离能力的后端上静默
+        # 失效，且父进程真实凭据原样进入子进程。现在统一走 EgressGuard。
+        from .egress import EgressGuard
+        guard = EgressGuard.from_policy(self.policy)
+        decision = guard.prepare(verdict, backend, os.environ)
+        self._last_egress = decision.to_audit_dict()
+        if not decision.allowed:
+            return SandboxExecResult(returncode=-1, backend=backend,
+                                     enforced=False, error=decision.reason)
         try:
             from ..core.proc import run_with_tree_kill
             proc = run_with_tree_kill(
                 command, shell=True, cwd=cwd,
                 capture_output=True, text=True, timeout=timeout or 60.0,
-                errors="replace",
+                errors="replace", env=decision.env,
             )
             return SandboxExecResult(stdout=proc.stdout or "", stderr=proc.stderr or "",
                                      returncode=proc.returncode or 0,

@@ -211,6 +211,13 @@ class WorktreeLayer:
         """创建 worktree: git worktree add .tuan/worktrees/<name> [-b <name>]。"""
         self._require_git()
         target = self._wt_path(name)
+        # B2: 证明创建目标本身在 workspace 边界内（含 symlink 祖先解析）。
+        # 放在 exists 检查之前，避免「已存在的越界路径」被直接复用。
+        from ..sandbox.worktree_boundary import assert_worktree_target
+        try:
+            self.last_boundary_proof = assert_worktree_target(self.workspace, target)
+        except ValueError as exc:
+            raise WorktreeError(f"worktree 边界校验失败: {exc}") from exc
         if target.exists():
             raise WorktreeError(f"worktree 已存在: {target}")
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -310,6 +317,13 @@ class WorktreeLayer:
         self._require_git()
         name = self._agent_wt_name(spec_id, slug)
         target = self._wt_path(name)
+        # B2: fast-resume 分支在下方直接 return，边界断言必须放在它之前，
+        # 否则已注册的越界路径会绕过校验被复用。
+        from ..sandbox.worktree_boundary import assert_worktree_target
+        try:
+            self.last_boundary_proof = assert_worktree_target(self.workspace, target)
+        except ValueError as exc:
+            raise WorktreeError(f"worktree 边界校验失败: {exc}") from exc
         # fast-resume: worktree 已注册 (路径存在且含 .git 指针) 直接复用
         if target.exists() and (target / ".git").exists():
             return WorktreeInfo(name=name, path=str(target), branch=name)
@@ -400,7 +414,16 @@ class WorktreeLayer:
         self, args: List[str], check: bool = True,
         cwd: Optional[str | Path] = None, timeout: int = 30,
     ) -> "subprocess.CompletedProcess":
-        env = {**os.environ, **_GIT_NO_PROMPT_ENV}
+        # B2: 拒绝可把仓库/工作树/对象库重定向到边界外的 argv 与环境变量。
+        # 真实凭据由 sandbox/egress.py 在统一执行层处理，这里只守 git 元数据边界。
+        from ..sandbox.worktree_boundary import (
+            inspect_git_command, sanitize_git_env,
+        )
+        argv_ok, argv_reason = inspect_git_command(args)
+        if not argv_ok:
+            raise WorktreeError(f"git 参数越界: {argv_reason}")
+        env, stripped = sanitize_git_env({**os.environ, **_GIT_NO_PROMPT_ENV})
+        self.last_git_stripped_env = stripped
         r = subprocess.run(
             ["git"] + args,
             cwd=str(cwd or self.workspace),

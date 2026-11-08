@@ -62,9 +62,12 @@ class TestBaseline:
     def test_status_counts_are_derived(self):
         s = pc.claude_parity_report()["matrix"]
         assert sum(s["by_status"].values()) == 99
+        # B2 落地后同步到新基线（**不是放宽**）：4 个 B2 模块从 gap 变为
+        # 2 aligned + 2 partial，证据路径与运行时探针全部真实存在。
+        # 派生一致性仍要求总和 99 且与 catalog 逐项对应。
         assert s["by_status"] == {
-            "ahead": 10, "aligned": 43, "partial": 8,
-            "gap": 30, "not_applicable": 8}
+            "ahead": 10, "aligned": 45, "partial": 10,
+            "gap": 26, "not_applicable": 8}
 
     def test_domain_counts_sum(self):
         s = pc.claude_parity_report()["matrix"]
@@ -447,5 +450,5 @@ class TestCli:
 
     def test_gaps_listing(self, capsys):
         _, out = self._run(capsys, gaps=True)
-        assert "待补齐队列 (30)" in out
+        assert "待补齐队列 (26)" in out   # B2 落地 4 项后
         assert "B2" in out and "os_sandbox" in out

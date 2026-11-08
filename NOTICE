@@ -846,3 +846,14 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+16. B2 egress / unattended / worktree boundary pass (still NO new
+    third-party material): three pure-Python local modules were added
+    for child-process egress enforcement, credential sentinels,
+    denyInsteadOfPrompting, and worktree creation boundary proofs,
+    and wired into existing sandbox manager / worktree layer. No
+    Anthropic source, trademark asset, upstream Rust source, or new
+    third-party dependency was copied. Sections 9-15 remain unchanged;
+    the Apache-2.0 + MIT dual attribution for the Codex TUI parity
+    line and the "no endorsement" statements still apply unchanged.

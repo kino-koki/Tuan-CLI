@@ -9,6 +9,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - B2 落地：出网边界、凭据 sentinel、无人值守拒绝、worktree 边界
+
+> 切回 B 线第一轮。不再只挖标语引擎，而是修 B2 五个最大落后项里
+> **已有开关在执行层根本没接线**的部分。`fully_superior` 仍 false，
+> `b_waves_done` 仍只有 B1。完整复现见 `CLAUDE_PARITY.md` §12。
+
+### 最值钱的发现（先实测再修）
+
+`SandboxManager._execute_backend` 算出 `block_net = not verdict.network`，
+但 `local` 分支调用 `run_with_tree_kill` 时**既不传 block_net 也不传 env**：
+禁网裁决在唯一没有 OS 级出网隔离能力的后端上静默失效；父进程真实凭据
+原样进入子进程。两个最大落后项不是「缺功能」，是「接线断了」。
+
+### 新增 3 个模块 + 3 处真接线
+
+- `sandbox/egress.py`：`CredentialBroker` sentinel 代理 +
+  `build_child_env`（脏输入 fail-closed 不继承）+
+  `enforce_local_egress`（local + 禁网明确拒绝，不假装生效）+
+  `EgressGuard` 组合。`manager._execute_backend` 的 local 分支现在走它，
+  并把净化后的 `env=` 真传给子进程。
+- `sandbox/unattended.py`：`permissions.denyInsteadOfPrompting` 显式开关、
+  两种 scope、`continue_turn` / `suppressed_prompt` 结构化结果；
+  **真接**到 `assess_tool` 的 CONFIRM 路径，审计可查询、默认关闭。
+- `sandbox/worktree_boundary.py`：解析后 target 边界断言（含 symlink
+  祖先）、git 重定向环境变量剥离、越界 argv 拒绝；**真接**到
+  `worktree_layer.py` 的 `create` / `create_agent_worktree`（在 fast-resume
+  **之前**）与 `_git`。
+
+### 配置与校验
+
+`sandbox.resource.egress_credential_masking=true` /
+`egress_block_local_when_denied=true`（默认开是修复 fail-open，显式关闭报
+安全降级）；`permissions.denyInsteadOfPrompting=false` 默认关，开启报行为
+变更 warning；scope 非法值在配置阶段拒绝。
+**`deny_network_by_default` 仍 false，没翻**——兑现「不擅自翻破坏性默认」。
+
+### 矩阵（不是靠改状态凑数）
+
+`gap 30 → 26`、`aligned 43 → 45`、`partial 8 → 10`：
+`network_default_deny` / `credential_masking` → partial（理由写进 note），
+`deny_instead_of_prompting` / `worktree_sandbox_escape` → aligned，
+**`os_sandbox` 保持 gap**（OS 级默认隔离仍未做）。
+`matrix.validate() == []`、`security_wiring_intact=true`、
+`fully_superior=false`、criteria 2 真 3 假。
+`CLAUDE_PARITY.md` §3/§5/§10 与十几轮追加段落的「25/30 缺口」口径统一
+到 26，§5 末尾把 gap 与 wave_load 两种口径分开列。
+
+### 验证
+
+34 例新回归 + 108 例 parity/CLI/headless + 353 例 sandbox/worktree/hooks/
+config/hardening 批次全绿；完整副本补齐后 `config.schema` 3 项全绿。
+两条既有计数断言同步到新基线，**不是放宽**（仍要求总和 99、逐项对应）。
+
+### 如实边界
+
+`inject_headers()` 默认关闭、无出网代理进程，不宣称 CC 的「代理注入」
+已完整对等；`os_sandbox` 仍是最大落后项；不是真机多平台验证
+（Windows Job Object / macOS Seatbelt 未实机跑）；A 线 10 个 pending、
+分叉改动、第三方自适应红队仍未完成。新增两个默认 true 的出网开关确实
+改变「依赖真实凭据的子进程」行为，已给逃生口并在校验里报安全降级。
+本轮标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
 ## [Unreleased] - 注入契约与配置切换锚点
 
 > 上一轮把引擎 public 入参面收口；本轮把镜头对准两件更隐蔽的事：
@@ -986,7 +1048,7 @@ verify_deep.py / verify_deep2.py  22 / 20 项全绿
 
 > 延续「不再执着于广度而放弃深度」。本轮**仍不新增模块、不新增 CLI
 > 子命令、不改 99 模块基线、不改 `fully_superior`（仍 false）、
-> 25 个缺口不变、六维判据与所有 Codex/Claude 对齐指标一律不动**。
+> 26 个缺口（B2 落地后，此前文档误写 25、实际 30）、六维判据与所有 Codex/Claude 对齐指标一律不动**。
 > 只把运行时标语这条线再往下挖，且全部缺陷都先实测复现再修。
 
 ### S1 净化层：6 类真实缺陷（含一道侧门）
