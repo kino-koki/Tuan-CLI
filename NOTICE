@@ -786,7 +786,22 @@ THIRD-PARTY ATTRIBUTIONS
               NOT changed. The cleaning layer, mapping module, TUI and
               package exports remain byte-identical. No new slogans,
               events, CLI subcommands, license scope, upstream source
-              or trademark asset. Sections 9-15 remain unchanged. The Claude Code /
+              or trademark asset. Sections 9-15 remain unchanged.
+    Injection-contract / config-switch pass (still NO new third-party
+              material): falsy but legal injected configs and random
+              sources are now preserved, over-limit custom verb lists
+              are rejected instead of silently truncated, unrenderable
+              custom verbs are rejected instead of silently ignored,
+              and a config reload is recorded as an auditable state
+              transition so one seq can no longer map to two verbs.
+              Four further candidates were measured and deliberately
+              NOT changed; one pre-existing runtime assertion and one
+              prior standalone-script assertion were synchronized to
+              the stricter new contract, not relaxed. The cleaning
+              layer, mapping module, TUI and package exports remain
+              byte-identical. No new slogans, events, CLI subcommands,
+              license scope, upstream source or trademark asset.
+              Sections 9-15 remain unchanged. The Claude Code /
               Codex attributions in sections 9-15 are unchanged.
 
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):

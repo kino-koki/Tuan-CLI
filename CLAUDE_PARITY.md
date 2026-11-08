@@ -736,3 +736,23 @@ public 入参健壮性，不是新的功能域。关于「超 Claude Code」的�
 `_now()` / `_safe_source()` / `source` 净化都是既有能力的可观测性
 与健壮性补漏，**不参与** `audit().ok`，也不计入「超不超」这条线。
 详见 `SLOGAN_MAPPING.md` §19。
+
+
+---
+
+## 24. 注入契约轮声明：指标仍一律不动
+
+本轮修的是运行时标语引擎的**注入契约与配置切换锚点**
+（`__init__` 的 falsy 注入、`load_config` 静默截断、
+`reload()` 的 `(seq, verb)` 对齐），不是新的功能域。关于
+「超 Claude Code」的所有判据**保持原值，不是成果**：
+
+- `fully_superior` 仍为 `false`；**25 个缺口不变**，B3–B10 未完；
+- 99 模块、14 域与五个状态计数一个没动；六维探针与
+  `superiority_criteria` 六项判据一个没动；
+- 第三方自适应红队仍未做；未新增 CLI 子命令（51 / 含嵌套 197 不变）。
+
+18 个事件、16 个上下文、1108 条标语词条全部不变。
+`kind="reload"` 证据与 `invalid:too-many-verbs` 都是既有能力的
+健壮性补漏，**不参与** `audit().ok`，也不计入「超不超」这条线。
+详见 `SLOGAN_MAPPING.md` §20。

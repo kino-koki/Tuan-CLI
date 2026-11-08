@@ -1954,6 +1954,238 @@ def t_d10_full_health():
     assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
     mapping.reset_runtime_counters(include_dispatch_log=True)
 
+# ---------------------------------------------------------------- 深度轮 11
+# 引擎注入契约 / 配置静默截断 / reload 锚点。``tuan_cli.tui`` 用 PEP 562
+# 惰性导出，``runtime_slogans`` 只依赖标准库 + ``_clean``，实测屏蔽
+# pytest / rich / prompt_toolkit / wcwidth 后仍可导入，纯 stdlib 约束不破。
+import json  # noqa: E402
+import tempfile  # noqa: E402
+from tuan_cli.tui import runtime_slogans as R  # noqa: E402
+
+_STATES11 = (R.LivenessState.HEALTHY, R.LivenessState.SLOW,
+             R.LivenessState.STALLED, R.LivenessState.UNKNOWN)
+
+
+class _FRng11:
+    def __init__(self):
+        self.calls = 0
+
+    def __len__(self):
+        return 0
+
+    def choice(self, items):
+        self.calls += 1
+        return items[0]
+
+
+class _FCfg11(R.SpinnerVerbsConfig):
+    def __bool__(self):
+        return False
+
+
+def _cfg11(section, name="settings.json"):
+    p = Path(tempfile.mkdtemp()) / name
+    p.write_text(json.dumps({"spinnerVerbs": section}), encoding="utf-8")
+    return p
+
+
+def _eng11(**kw):
+    kw.setdefault("clock", lambda: 1000.0)
+    return R.RuntimeSloganEngine(**kw)
+
+
+def t_d11_falsy_injection_is_preserved():
+    src = (REPO / "tuan_cli/tui/runtime_slogans.py").read_text(encoding="utf-8")
+    assert "config if config is not None else load_config()" in src
+    assert "rng if rng is not None else random.Random()" in src
+    assert "self.lang = lang or _current_language()" in src  # 刻意不改
+    cfg = _FCfg11(mode="default", source="INJECTED")
+    rng = _FRng11()
+    e = _eng11(config=cfg, rng=rng, lang="")
+    assert e.config is cfg and e.config.source == "INJECTED"
+    assert e._rng is rng
+    e.note_activity("streaming", now=1000.0)
+    assert rng.calls == 1
+    # 确定性回放
+    a = _eng11(rng=_FRng11())
+    b = _eng11(rng=_FRng11())
+    a.note_activity("streaming", now=1000.0)
+    b.note_activity("streaming", now=1000.0)
+    assert a._current == b._current
+    # None 仍回落出厂值
+    n = _eng11(config=None, rng=None)
+    assert n.config.source == "builtin" and isinstance(n._rng, __import__("random").Random)
+    # lang="" 回落到当前语言（改成 is None 反而会变英文）
+    assert e.lang == R._current_language()
+    assert R.slogan_bank("")  # 英文回落词库非空
+
+
+def t_d11_verbs_limit_is_hard_reject():
+    for n in (201, 205, 300, 1000):
+        p = _cfg11({"mode": "replace", "verbs": ["V%03d" % i for i in range(n)]},
+                   "n%d.json" % n)
+        c = R.load_config(p)
+        assert c.source == "invalid:too-many-verbs", n
+        assert c.verbs == ()
+    p = _cfg11({"mode": "replace", "verbs": ["V%03d" % i for i in range(200)]},
+               "ok200.json")
+    c = R.load_config(p)
+    assert c.source == str(p) and len(c.verbs) == 200 and "V199" in c.verbs
+
+
+def t_d11_budget_key_truncation_is_unreachable():
+    """「不该修」: 合法阶段键上限 5 < [:10]。"""
+    assert len(R.PHASES) == 5
+    p = _cfg11({"phase_budgets_ms": {ph: 5000 + i for i, ph in enumerate(R.PHASES)}},
+               "budgets.json")
+    c = R.load_config(p)
+    assert c.source == str(p) and len(c.phase_budgets_ms) == 5
+    assert c.budget_for("streaming") == 5002
+
+
+def t_d11_unrenderable_verbs_are_rejected_in_default_mode():
+    p = _cfg11({"mode": "default", "verbs": [123, None, ["a"], {}, True]})
+    assert R.load_config(p).source == "invalid:empty-verbs"
+    # 部分可渲染仍保留好词
+    p2 = _cfg11({"mode": "default", "verbs": [123, "好词", None, "\x1b]8;;x\x07"]},
+                "mix.json")
+    c2 = R.load_config(p2)
+    assert c2.source == str(p2) and c2.verbs == ("好词",)
+    # 既有 append/replace 口径零变化
+    for section in ({"mode": "replace", "verbs": []},
+                    {"mode": "append", "verbs": ["\x1b]8;;x\x07"]}):
+        p3 = _cfg11(section, "old.json")
+        assert R.load_config(p3).source == "invalid:empty-verbs"
+    # 没写 verbs 键仍正常
+    p4 = _cfg11({"interval_ms": 900}, "none.json")
+    c4 = R.load_config(p4)
+    assert c4.source == str(p4) and c4.verbs == () and c4.interval_ms == 900
+
+
+def t_d11_reload_rebinds_seq_verb_anchor():
+    src = (REPO / "tuan_cli/tui/runtime_slogans.py").read_text(encoding="utf-8")
+    assert 'self._record_locked("reload", self._phase, at, "")' in src
+    assert "if not changed:" in src and 'return False, "unchanged"' in src
+    p = _cfg11({"mode": "replace", "verbs": ["重装后的词", "第二个词"]},
+               "reload.json")
+    e = R.RuntimeSloganEngine(
+        config=R.SpinnerVerbsConfig(mode="default", source="t"),
+        lang="zh-CN", clock=lambda: 1000.0)
+    e.note_activity("streaming", now=1000.0)
+    old_seq, old_verb = e._seq, e._current
+    assert e.liveness(now=1000.0).evidence[-1].verb == old_verb
+    assert e.reload(p) == (True, "ok")
+    v = e.render(True, now=1000.2)
+    ev = e.liveness(now=1000.2).evidence[-1]
+    assert e._seq == old_seq + 1
+    assert ev.kind == "reload" and ev.seq == e._seq
+    assert ev.verb == e._current == v.text == "重装后的词"
+    assert v.text != old_verb
+    # 下一条真实事件仍保持锚点
+    e.note_activity("running_tool", now=1002.0)
+    v2 = e.render(True, now=1002.1)
+    ev2 = e.liveness(now=1002.1).evidence[-1]
+    assert ev2.kind == "activity" and ev2.seq == e._seq == v2.seq
+    assert ev2.verb == e._current == v2.text
+
+
+def t_d11_unchanged_reload_is_true_noop():
+    p = _cfg11({"mode": "replace", "verbs": ["唯一的新词"]}, "same.json")
+    e = _eng11()
+    e.note_activity("streaming", now=1000.0)
+    assert e.reload(p)[0] is True
+    before = (e._seq, e._current, len(e._evidence), len(e._pools),
+              e.config, e.lang, e._last_change_at)
+    assert e.reload(p) == (False, "unchanged")
+    after = (e._seq, e._current, len(e._evidence), len(e._pools),
+             e.config, e.lang, e._last_change_at)
+    assert before == after
+
+
+def t_d11_reload_clock_homogeneity_and_failure():
+    p = _cfg11({"mode": "replace", "verbs": ["A", "B"]}, "clock.json")
+    e = _eng11()
+    e.note_activity("streaming", now=1000.0)
+    e.note_progress("end", now=1001.0)
+    e.reload(p)
+    stamps = [x.at_ms for x in e.liveness(now=1002.0).evidence]
+    assert stamps == [1000000, 1001000, 1001000] and stamps == sorted(stamps)
+    # 真实单调时钟不与注入时钟混写
+    e2 = R.RuntimeSloganEngine()
+    e2.note_activity("streaming", now=1000.0)
+    e2.reload(p)
+    assert [x.at_ms for x in e2.liveness(now=1001.0).evidence] == \
+        [1000000, 1000000]
+    # 失败保留旧配置且不留 reload 证据
+    e3 = _eng11()
+    e3.note_activity("streaming", now=1000.0)
+    old_cfg, seq, cur = e3.config, e3._seq, e3._current
+    bad = _cfg11({"mode": "typo"}, "bad.json")
+    changed, reason = e3.reload(bad)
+    assert not changed and reason.startswith("invalid:")
+    assert e3.config is old_cfg and (e3._seq, e3._current) == (seq, cur)
+    assert all(x.kind != "reload" for x in e3.liveness(now=1000.2).evidence)
+    # 全新引擎上 reload 也安全
+    e4 = _eng11()
+    assert e4.reload(p) == (True, "ok")
+    assert e4._seq == 1 and e4._current == "A"
+    assert e4.liveness(now=1000.0).evidence[-1].kind == "reload"
+    # 确定性：不用 rng
+    got = []
+    for _ in range(5):
+        x = _eng11()
+        x.reload(p)
+        got.append(x._current)
+    assert got == ["A"] * 5
+
+
+def t_d11_measured_but_not_changed():
+    """四个候选锁住当前行为。"""
+    # snapshot 会填 5 个词池缓存，但确定/幂等/纯内存 -> 无害
+    e = _eng11()
+    assert len(e._pools) == 0
+    e.liveness(now=1000.0)
+    assert len(e._pools) == 0
+    e.render(True, now=1000.0)
+    assert len(e._pools) == 0
+    e.snapshot()
+    assert len(e._pools) == len(R.PHASES) == 5
+    first = dict(e._pools)
+    e.snapshot()
+    assert dict(e._pools) == first
+    # evidence_seq 是窗口条数，不是全局序号
+    e2 = _eng11()
+    for i in range(25):
+        e2.note_progress("tick", now=1000.0 + i * 0.1)
+    v = e2.render(True, now=1003.0)
+    assert v.evidence_seq == 16 == len(e2._evidence) <= R._EVIDENCE_CAPACITY
+    # phase 兜底 / detail 脱敏
+    e3 = _eng11()
+    for bad in (None, 123, ["a"], {"x": 1}, "unknown"):
+        e3.note_activity(bad, now=1000.0)
+        assert e3._phase == "waiting_model"
+    detail = "/secret?token=" + "x" * 50000
+    e3.note_activity("streaming", detail=detail, now=1000.0)
+    rec = e3.liveness(now=1000.0).evidence[-1]
+    assert rec.detail_len == len(detail) and not hasattr(rec, "detail")
+    assert "secret" not in repr(rec)
+
+
+def t_d11_full_health():
+    for lang in R.LANGUAGES:
+        e = _eng11(lang=lang)
+        for phase in R.PHASES:
+            e.note_activity(phase, now=1000.0)
+            v = e.render(True, now=1000.2)
+            assert isinstance(v, R.SloganView) and v.phase == phase
+        e.reset()
+    r = mapping.audit()
+    assert r.ok and r.index_consistent
+    st = mapping.index_stats()
+    assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+    assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
 
 for name, fn in sorted(globals().items()):
     if name.startswith("t_") and callable(fn):

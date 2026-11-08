@@ -1357,4 +1357,101 @@ kind / reset 残留 nan / ``Decimal`` 六个边界都量过），不写成
 ``pytest / rich / prompt_toolkit / wcwidth`` 后仍可导入（PEP 562
 惰性导出），不破坏纯 stdlib 约束。
 
+---
+
+## 26. 注入契约与配置切换锚点：同一个 seq 不能对应两个文案
+
+本轮不改任何安全裁决，也不改净化层一行（``_clean.py``
+逐字节未改）。**唯一改动的运行时代码仍是
+``tui/runtime_slogans.py``**。
+
+**D（最值钱）：`reload()` 打断 D1 的 `(seq, verb)` 撕裂检测锚点。**
+D1 用 `EventRecord` 的 `(seq, verb)` 配对当并发撕裂检测锚点：
+一个 seq 只能对应一个文案。旧 `reload()` 把 `_current = ""`
+却**不推进 seq、不记证据**，而 `render()` 在 `not _current` 时
+显示新词池首条。实测：
+
+```
+事件后    seq=1  current='正在刷屏'   evidence.verb='正在刷屏'
+reload 后 seq=1  current=''          evidence.verb='正在刷屏'
+render.text='重装后的词'   view.seq=1
+>>> 同一个 seq=1 对应两个文案
+```
+
+第二次 `reload()` 返回 `(False,"unchanged")` 却照样清空
+`current` 造成**静默换词**。现在把配置切换视作**可审计的状态
+转移**：`unchanged` 是真 no-op（不清 current / 不动 seq /
+不记证据 / 不碰缓存）；`changed` 时新文案取新词池首条
+（确定性、**不调 rng**，避免把配置重载伪装成随机 spinner
+事件）、推进 `seq`、记 `kind="reload"` 证据，其 `verb` 与屏幕
+显示严格相等；证据时间戳沿用 `_last_event_at`（与深度轮 10
+P4 的 `reset()` 同源），不混两套时间源。实测 `seq 1→2`、
+`current = evidence.verb = render.text = '重装后的词'`、连续
+5 次恒为词池首条、真实时钟下 `[1000000,1000000]`。**这不是
+D4 禁止的「从动画循环记活性」** —— reload 是显式配置事件，
+D4 反对的是定时空转装忙。
+
+**A：`__init__` 的 `or` 吞掉 falsy 但完全合法的注入对象。**
+旧 `config or load_config()` / `rng or random.Random()`。实测
+注入 `__bool__=False` 的配置子类与 `__len__=0` 的随机源：
+`config.source` 从 `INJECTED` 变 `builtin`、注入 `rng.choice`
+调用 0 次、两个同构引擎文案不同 —— 深度轮 4 的确定性回放
+契约被一个 `or` 吃掉。这是深度轮 7 A′（`or fallback()` 吞掉
+合法 `0`）的**第三次同源**。改成显式 `is None` 后注入对象原样
+保留、`rng.choice` 调用 1 次、两个同构引擎文案一致、`None`
+仍回落出厂值。**`lang` 刻意不改**：实测 `slogan_bank("")` 回落
+英文词库，改成 `is None` 会让 `lang=''` 从 zh-CN 变英文，是
+行为退化，判定「不该修」。
+
+**B：`load_config` 静默截断 205 → 200 条自定义词。** 旧
+`raw_verbs[:200]` 让第 205 条凭空消失，而 `source` 是正常路径、
+无任何提示 —— 与深度轮 10 P8「静默忽略是危险的假安全感」
+同类。200 是防 DoS 上限，但不该悄悄生效：超限**整段拒绝**
+`invalid:too-many-verbs`。200 条以内零变化。
+
+**C：`mode=default` 下自定义词全不可渲染时被静默忽略。** 实测
+`{"mode":"default","verbs":[123,None,['a'],{},True]}` 净化后
+一条不剩但 `source` 仍是正常路径 —— 用户以为自定义了标语，
+实际全用内置词库。现在「写了自定义词却一条都不可渲染」对
+**所有** mode 一律用既有 `invalid:empty-verbs` 拒绝（复用既有
+source，不改任何既有断言口径）；混合场景仍只保留可渲染的词。
+
+**四个候选判定「不该修」**（都有回归锁住）：`lang` 的 `or`
+（改它是行为退化）、`phase_budgets_ms` 的 `[:10]`（合法阶段键
+上限 5 < 10，**不可达代码**）、`snapshot()` 写 `_pools`
+（确定 / 幂等 / 纯内存的无害缓存）、`evidence_seq` 饱和语义
+（deque maxlen=16，兼容字段，名字像全局序号其实是窗口内条数）。
+**上一轮回归 `test_liveness_is_still_pure_read` 漏检了
+`_pools`**，「完全纯读」的说法其实不准确；本轮新增
+`test_snapshot_populates_pools_deterministically` 把事实锁成
+可执行断言 —— 这是补上一轮欠的口径，不是修 bug。
+
+**一条既有运行时断言 + 一条上轮独立脚本断言同步到新契约，
+不是放宽**：原 `snapshot()["current"] == ""` 改为同时要求
+`current == "新词条"`、池大小 1、`evidence[-1].kind == "reload"`、
+`verb == "新词条"`、`seq` 相等、`render(True).text == "新词条"`
+—— 断言更强。其余既有断言一条未动、一条未放宽。
+
+**如实边界**：两处行为变更都如实标注 —— (a) 超过 200 条
+`verbs` 从「静默生效前 200 条」变成整段拒绝
+`invalid:too-many-verbs`，依赖 201+ 条的部署需拆分或减词条；
+(b) `reload()` 成功后 `current` 从 `""` 变成新词池首条且
+`seq` +1、多一条 `kind="reload"` 证据，失败 / unchanged /
+合法 `now` / 正常 spinner 事件路径零变化。`mapping.py` /
+`_clean.py` / `tui.py` / `ui/slogans/__init__.py` /
+`test_slogan_mapping.py` 逐字节未改，均不在本轮推送清单；
+净化层连续两轮零改动。本轮实测未发现需回修的自引入缺陷
+（连续第三次），但 `lang=""`、200/201 边界、5 个合法 budget
+键、unchanged no-op、真实时钟 vs 注入时钟、全新引擎 reload、
+确定性首条七个边界都量过，不写成「零缺陷」。并发压测仍未
+复现 list 撕裂；不是真机长跑；TUI 仍未替换既有 i18n 文案；
+分叉改动仍未合并；第三方自适应红队仍未做；**不宣称性能
+提升**（入口多一次 `is None` 与长度检查，reload 多一次词池
+计算，未做基准对比）。
+
+验证：404 例 pytest + 126 项纯 stdlib 独立验证 + 22/20 项
+上轮脚本全绿；独立验证脚本新增 9 项引擎检查，仍保持屏蔽
+`pytest / rich / prompt_toolkit / wcwidth` 后可导入（PEP 562
+惰性导出），纯 stdlib 约束不破。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

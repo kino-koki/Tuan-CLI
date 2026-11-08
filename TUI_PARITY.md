@@ -644,3 +644,22 @@ Apache-2.0 / MIT Codex 归属混用**。
 
 376 例 pytest + 117 项纯 stdlib 验证全绿。
 详见 `SLOGAN_MAPPING.md` §19。
+
+
+---
+
+## 注入契约轮（不占任何 Codex 对齐指标）
+
+本轮只把引擎的注入契约与配置切换锚点补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `runtime_slogans.py` 修 `__init__` 的 `or`、`load_config` 的
+  静默截断、全不可渲染 verbs 的静默忽略、`reload()` 的
+  `(seq, verb)` 锚点与 unchanged no-op；
+  `mapping.py` / `_clean.py` / **TUI** / 生命周期事件 / i18n
+  文案 / Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  **一律未改**。
+- **`tui.py` 本轮逐字节未改，未包含在本轮推送清单。**
+
+404 例 pytest + 126 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §20。

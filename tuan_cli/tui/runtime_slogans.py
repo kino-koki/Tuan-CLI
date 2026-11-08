@@ -55,6 +55,17 @@ D4 **事件覆盖补全**。新增 ``note_progress()``：只刷新活性时间�
 
 另外补 ``reload()`` 显式热重载（失败保留旧配置、原子切换、不轮询文件），
 以及 ``reset()`` 跨回合保留证据链，使「上一回合为什么卡住」可回放。
+
+**深度轮 11（继续只挖深度）**：上一轮把引擎 public 入参面收口，本轮
+把镜头对准**注入契约与配置切换的锚点**：A ``__init__`` 的 ``or`` 吞掉
+falsy 但合法的 ``config`` / ``rng`` 注入；B ``load_config`` 把 205 条
+自定义词静默截成 200；C ``mode=default`` 下自定义词全不可渲染时静默
+忽略；D **最值钱** —— ``reload()`` 清 ``_current`` 却不推进 ``seq`` /
+不记证据，让同一个 seq 对应两个文案，打断 D1 的 ``(seq, verb)``
+撕裂检测锚点，且 ``unchanged`` 也静默换词。四个「不该修」候选
+（``lang`` 的 ``or``、``phase_budgets_ms`` 的 ``[:10]``、
+``snapshot()`` 写 ``_pools``、``evidence_seq`` 饱和语义）实测后锁成
+回归。详见 ``SLOGAN_MAPPING.md`` §20。
 """
 from __future__ import annotations
 
@@ -561,8 +572,23 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
 
     if not isinstance(raw_verbs, (list, tuple)):
         return SpinnerVerbsConfig(source=_safe_source("invalid:verbs-not-a-list"))
-    verbs = tuple(v for v in (sanitize_verb(x) for x in raw_verbs[:200]) if v)
-    if mode in ("append", "replace") and not verbs:
+    # 深度轮 11 (B): 旧实现 ``raw_verbs[:200]`` **静默截断**。实测写入
+    # 205 条 verbs 只生效 200 条, 第 205 条凭空消失, 而 ``source`` 是
+    # 正常路径、没有任何提示 —— 与深度轮 10 P8「静默忽略是危险的假
+    # 安全感」同类。200 是防 DoS 的上限, 但不该悄悄生效: 超限**整段
+    # 拒绝**, 让用户明确知道要减到 200 以内。
+    #: ``spinnerVerbs.verbs`` 的硬上限（防超大配置吃内存）。
+    MAX_CUSTOM_VERBS = 200
+    if len(raw_verbs) > MAX_CUSTOM_VERBS:
+        return SpinnerVerbsConfig(source=_safe_source("invalid:too-many-verbs"))
+    verbs = tuple(v for v in (sanitize_verb(x) for x in raw_verbs) if v)
+    # 深度轮 11 (C): 旧实现只在 append/replace 下检查空词池。实测
+    # ``mode=default`` + ``verbs=[123, None, ['a'], {}, True]`` 时净化
+    # 后一条不剩, 但 ``source`` 仍是**正常路径** —— 用户以为自定义了
+    # 标语, 实际全用内置词库且毫不知情。现在「写了自定义词却一条都
+    # 不可渲染」对**所有** mode 一律用既有的 ``invalid:empty-verbs``
+    # 拒绝 (复用既有 source, 不改任何既有断言的口径)。
+    if not verbs and (raw_verbs or mode in ("append", "replace")):
         return SpinnerVerbsConfig(source=_safe_source("invalid:empty-verbs"))
 
     try:
@@ -690,9 +716,21 @@ class RuntimeSloganEngine:
         clock=time.monotonic,
     ) -> None:
         self._lock = threading.RLock()
-        self.config = config or load_config()
+        # 深度轮 11 (A): 旧实现 ``config or load_config()`` /
+        # ``rng or random.Random()`` 会把 **falsy 但完全合法** 的注入对象
+        # 静默换掉。实测注入一个 ``__len__=0`` 的 FalsyConfig /
+        # FalsyRng 后: ``config.source`` 从 ``INJECTED`` 变成 ``builtin``、
+        # 注入 rng 的 ``choice`` 调用 0 次 —— 深度轮 4 刚建好的「确定性
+        # 回放」契约被一个 ``or`` 吃掉。这是深度轮 7 A′
+        # (``_coerce_ms(...) or fallback()`` 吞掉合法 0) 的**第三次同源**。
+        # 现在显式判 ``is None``，None 仍是「用出厂值」。
+        self.config = config if config is not None else load_config()
+        # ``lang`` 刻意**保持** ``lang or _current_language()``: 实测
+        # ``slogan_bank("")`` 会回落到英文词库，改成 ``is None`` 反而让
+        # ``lang=""`` 从「本机 zh-CN」变成英文 —— 空串表示「未指定」
+        # 是既有兼容契约，本轮判定「不该修」，见 SLOGAN_MAPPING.md §20。
         self.lang = lang or _current_language()
-        self._rng = rng or random.Random()
+        self._rng = rng if rng is not None else random.Random()
         self._clock = clock
         self._apply_language_locked()
         self._phase = "waiting_model"
@@ -740,6 +778,29 @@ class RuntimeSloganEngine:
         返回 ``(changed, reason)``。刻意**不做文件监听/轮询**：长驻 TUI 里
         后台轮询会引入 I/O 线程与竞态，收益却只是省一次显式调用。
         需要生效时由调用方（命令/信号/测试）显式触发。
+
+        深度轮 11 (D): 旧实现 ``self._current = ""`` 后**不推进 seq、不记
+        证据**。实测：事件后 ``seq=1 / current='正在刷屏' /
+        evidence.verb='正在刷屏'``，reload 之后 ``seq`` 仍是 1、
+        ``current=''``，而 ``render`` 走 ``not self._current`` 分支显示
+        新词池首条 ``'重装后的词'`` —— **同一个 seq 对应两个文案**，
+        D1 用来检测并发撕裂的 ``(seq, verb)`` 锚点被配置切换直接打断。
+        更隐蔽的是：第二次 reload 返回 ``unchanged``，却照样清空
+        ``_current`` 造成静默换词（实测 ``unchanged`` 时屏幕文案与
+        evidence.verb 也不同）。
+
+        现在：
+        * ``unchanged`` 是**真正的 no-op**（不清 current、不动 seq、
+          不记证据、不碰缓存）；
+        * ``changed`` 时把配置切换视作一次**可审计的状态转移**：
+          新文案取新词池首条（确定性、不用 rng，避免把配置重载伪装
+          成随机 spinner 事件）、推进 ``seq``、记一条
+          ``kind="reload"`` 证据，其 ``verb`` 与屏幕显示**严格相等**；
+        * 证据时间戳沿用 ``_last_event_at``（与深度轮 10 P4 的
+          ``reset()`` 同源），不把真实时钟与注入时钟混进同一条链。
+
+        这不是「从动画循环记活性」—— reload 是显式配置事件，D4 禁止
+        的是定时空转，两者不矛盾。
         """
         try:
             cfg = load_config(path)
@@ -750,14 +811,23 @@ class RuntimeSloganEngine:
             return False, cfg.source          # 保留旧配置，不静默吞掉错误配置
         with self._lock:
             old = (self.config, self.lang)
+            changed = old != (cfg, lang)
+            if not changed:
+                return False, "unchanged"    # 真 no-op，不再静默换词
             self.config = cfg
             self.lang = lang
             self._apply_language_locked()
             self._pools.clear()
-            self._current = ""               # 词池变了，旧文案不能沿用
             self._last_change_at = 0.0
-            changed = old != (cfg, lang)
-        return changed, "ok" if changed else "unchanged"
+            # D1 锚点：配置切换也是一次状态转移，必须与证据对齐。
+            pool = self._pool(self._phase)
+            self._current = pool[0] if pool else ""
+            self._seq += 1
+            last = self._last_event_at
+            at = (last if last is not None and math.isfinite(last)
+                  else self._now(None))
+            self._record_locked("reload", self._phase, at, "")
+        return True, "ok"
 
     # ------------------------------------------------------------ 词池
     def _pool(self, phase: str) -> Tuple[str, ...]:

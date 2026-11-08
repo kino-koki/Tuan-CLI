@@ -763,8 +763,17 @@ class TestProgressAndReload:
         changed, reason = eng.reload(p)
         assert changed and reason == "ok"
         assert eng.config.mode == "replace"
-        assert eng.snapshot()["current"] == ""      # 词池变了不能沿用旧文案
-        assert eng.snapshot()["pool_sizes"]["waiting_model"] == 1
+        # 深度轮 11 (D): 旧断言 ``snapshot()["current"] == ""``。修复后
+        # 配置切换是**可审计的状态转移**: 新文案取新词池首条、推进 seq、
+        # 记 kind="reload" 证据。断言同步到更强的新契约, **不是放宽** ——
+        # 旧文案仍被换掉, 且额外要求屏幕/证据/seq 三者严格对齐。
+        snap = eng.snapshot()
+        assert snap["current"] == "新词条"          # 旧文案不再沿用
+        assert snap["pool_sizes"]["waiting_model"] == 1
+        ev = eng.liveness().evidence[-1]
+        assert ev.kind == "reload" and ev.verb == "新词条"
+        assert ev.seq == snap["seq"]
+        assert eng.render(True).text == "新词条"    # (seq, verb) 锚点对齐
 
     def test_reload_failure_keeps_old_config(self, tmp_path):
         eng = RuntimeSloganEngine(config=_cfg(), lang="zh-CN", rng=random.Random(1))
@@ -1454,4 +1463,312 @@ class TestFullHealthAfterD10:
         from tuan_cli.ui.slogans import mapping as M
         M.reset_runtime_counters(include_dispatch_log=True)
         assert M.audit().ok is True
+        M.reset_runtime_counters(include_dispatch_log=True)
+
+# ================================================================ 深度轮 11
+# 上一轮把引擎 public 入参面收口；本轮把镜头对准「注入契约」与
+# 「配置切换的 (seq, verb) 锚点」。四个真缺陷 + 四个「不该修」候选，
+# 每个判断都有可执行回归。
+
+import tuan_cli.tui.runtime_slogans as R
+
+
+class _FalsyRng:
+    """合法但 falsy 的注入随机源（``__len__=0`` -> bool False）。"""
+    def __init__(self):
+        self.calls = 0
+
+    def __len__(self):
+        return 0
+
+    def choice(self, items):
+        self.calls += 1
+        return items[0]
+
+
+class _FalsyConfig(R.SpinnerVerbsConfig):
+    """合法但 falsy 的注入配置（``__bool__=False``）。"""
+    def __bool__(self):
+        return False
+
+
+def _write_cfg(tmp_path, section, name="settings.json"):
+    p = tmp_path / name
+    p.write_text(json.dumps({"spinnerVerbs": section}), encoding="utf-8")
+    return p
+
+
+class TestInjectionContract:
+    """A: __init__ 的 `or` 吞掉 falsy 但完全合法的注入对象。"""
+
+    def test_falsy_config_is_preserved(self):
+        cfg = _FalsyConfig(mode="default", source="INJECTED")
+        e = R.RuntimeSloganEngine(config=cfg, clock=lambda: 1000.0)
+        assert e.config is cfg and e.config.source == "INJECTED"
+
+    def test_falsy_rng_is_preserved_and_actually_used(self):
+        rng = _FalsyRng()
+        e = R.RuntimeSloganEngine(rng=rng, clock=lambda: 1000.0)
+        assert e._rng is rng
+        e.note_activity("streaming", now=1000.0)
+        assert rng.calls == 1, "注入随机源被静默换成全局 Random"
+
+    def test_falsy_rng_makes_replay_deterministic(self):
+        """深度轮 4 的确定性回放契约不再被一个 `or` 吃掉。"""
+        a = R.RuntimeSloganEngine(rng=_FalsyRng(), clock=lambda: 1000.0)
+        b = R.RuntimeSloganEngine(rng=_FalsyRng(), clock=lambda: 1000.0)
+        a.note_activity("streaming", now=1000.0)
+        b.note_activity("streaming", now=1000.0)
+        assert a._current == b._current
+
+    def test_none_still_uses_factory_defaults(self):
+        e = R.RuntimeSloganEngine(config=None, rng=None, clock=lambda: 1.0)
+        assert e.config.source == "builtin"
+        assert isinstance(e._rng, random.Random)
+
+    def test_guard_uses_is_none_not_or(self):
+        import inspect
+        src = inspect.getsource(R.RuntimeSloganEngine.__init__)
+        assert "config if config is not None else load_config()" in src
+        assert "rng if rng is not None else random.Random()" in src
+
+    def test_lang_or_is_deliberately_unchanged(self):
+        """「不该修」: 空串表示未指定，回落到本机语言。
+
+        实测 ``slogan_bank('')`` 会回落到**英文**词库；若改成
+        ``is None``，``lang=''`` 反而从 zh-CN 变英文，是行为退化。
+        """
+        import inspect
+        src = inspect.getsource(R.RuntimeSloganEngine.__init__)
+        assert "self.lang = lang or _current_language()" in src
+        e = R.RuntimeSloganEngine(lang="", clock=lambda: 1000.0)
+        assert e.lang == R._current_language()
+        assert e.snapshot()["lang"] == R._current_language()
+
+
+class TestConfigSilentTruncation:
+    """B/C: load_config 的静默截断与静默忽略。"""
+
+    def test_205_verbs_are_rejected_not_silently_truncated(self, tmp_path):
+        p = _write_cfg(tmp_path, {"mode": "replace",
+                                  "verbs": ["V%03d" % i for i in range(205)]})
+        c = R.load_config(p)
+        assert c.source == "invalid:too-many-verbs"
+        assert c.verbs == () and c.mode == "default"
+
+    def test_200_verbs_still_load_in_full(self, tmp_path):
+        p = _write_cfg(tmp_path, {"mode": "replace",
+                                  "verbs": ["V%03d" % i for i in range(200)]},
+                       "ok.json")
+        c = R.load_config(p)
+        assert c.source == str(p) and len(c.verbs) == 200
+        assert "V199" in c.verbs
+
+    def test_limit_is_a_hard_reject_with_clear_source(self, tmp_path):
+        for n in (201, 300, 1000):
+            p = _write_cfg(tmp_path, {"mode": "append",
+                                      "verbs": ["x"] * n}, "n%d.json" % n)
+            assert R.load_config(p).source == "invalid:too-many-verbs", n
+
+    def test_budget_keys_truncation_is_unreachable(self, tmp_path):
+        """「不该修」: 合法阶段键上限 5 < `[:10]`，截断不可达。"""
+        assert len(R.PHASES) == 5
+        p = _write_cfg(tmp_path, {"phase_budgets_ms": {
+            ph: 5000 + i for i, ph in enumerate(R.PHASES)}}, "budgets.json")
+        c = R.load_config(p)
+        assert c.source == str(p)
+        assert len(c.phase_budgets_ms) == 5
+        assert c.budget_for("streaming") == 5002
+
+    def test_default_mode_all_unrenderable_verbs_is_rejected(self, tmp_path):
+        """C: 修复前 source 是正常路径，用户以为自定义了标语。"""
+        p = _write_cfg(tmp_path, {"mode": "default",
+                                  "verbs": [123, None, ["a"], {}, True]})
+        c = R.load_config(p)
+        assert c.source == "invalid:empty-verbs"
+        assert c.verbs == ()
+
+    def test_partially_renderable_verbs_keep_the_good_ones(self, tmp_path):
+        p = _write_cfg(tmp_path, {"mode": "default",
+                                  "verbs": [123, "好词", None,
+                                            "\x1b]8;;x\x07"]}, "mix.json")
+        c = R.load_config(p)
+        assert c.source == str(p) and c.verbs == ("好词",)
+
+    def test_existing_append_replace_empty_verbs_contract_unchanged(self, tmp_path):
+        """既有断言口径零变化：空 list / 全脏串仍报 empty-verbs。"""
+        for section in ({"mode": "replace", "verbs": []},
+                        {"mode": "append", "verbs": ["\x1b]8;;x\x07"]}):
+            p = _write_cfg(tmp_path, section, "old%d.json" % len(section))
+            assert R.load_config(p).source == "invalid:empty-verbs"
+
+    def test_no_verbs_key_still_uses_builtin_pool(self, tmp_path):
+        p = _write_cfg(tmp_path, {"interval_ms": 900}, "no_verbs.json")
+        c = R.load_config(p)
+        assert c.source == str(p) and c.verbs == () and c.interval_ms == 900
+
+
+class TestReloadAnchor:
+    """D（最值钱）: reload 打断 D1 的 (seq, verb) 锚点。"""
+
+    def _engine(self):
+        return R.RuntimeSloganEngine(
+            config=R.SpinnerVerbsConfig(mode="default", source="t"),
+            lang="zh-CN", rng=random.Random(7), clock=lambda: 1000.0)
+
+    def _cfg_file(self, tmp_path, verbs=("重装后的词", "第二个词")):
+        return _write_cfg(tmp_path, {"mode": "replace",
+                                     "verbs": list(verbs)}, "reload.json")
+
+    def test_anchor_is_aligned_after_reload(self, tmp_path):
+        e = self._engine()
+        e.note_activity("streaming", now=1000.0)
+        old = (e._seq, e._current, e.liveness(now=1000.0).evidence[-1].verb)
+        assert old[1] == old[2] and old[0] == 1
+        assert e.reload(self._cfg_file(tmp_path)) == (True, "ok")
+        v = e.render(True, now=1000.2)
+        ev = e.liveness(now=1000.2).evidence[-1]
+        assert e._seq == old[0] + 1
+        assert ev.kind == "reload" and ev.seq == e._seq
+        assert ev.verb == e._current == v.text == "重装后的词"
+        assert v.text != old[1], "旧文案确实被换掉"
+
+    def test_unchanged_reload_is_a_true_noop(self, tmp_path):
+        """修复前 unchanged 也清空 _current 造成静默换词。"""
+        p = self._cfg_file(tmp_path)
+        e = self._engine()
+        e.note_activity("streaming", now=1000.0)
+        assert e.reload(p)[0] is True
+        before = (e._seq, e._current, len(e._evidence), len(e._pools),
+                  e.config, e.lang, e._last_change_at)
+        assert e.reload(p) == (False, "unchanged")
+        after = (e._seq, e._current, len(e._evidence), len(e._pools),
+                 e.config, e.lang, e._last_change_at)
+        assert before == after
+
+    def test_reload_evidence_uses_same_clock_as_last_event(self, tmp_path):
+        """与深度轮 10 P4 的 reset() 同源，不混两套时间源。"""
+        e = self._engine()
+        e.note_activity("streaming", now=1000.0)
+        e.note_progress("end", now=1001.0)
+        e.reload(self._cfg_file(tmp_path))
+        stamps = [x.at_ms for x in e.liveness(now=1002.0).evidence]
+        assert stamps == [1000000, 1001000, 1001000]
+        assert stamps == sorted(stamps)
+
+    def test_real_clock_does_not_mix_two_time_sources(self, tmp_path):
+        e = R.RuntimeSloganEngine()
+        e.note_activity("streaming", now=1000.0)
+        e.reload(self._cfg_file(tmp_path))
+        stamps = [x.at_ms for x in e.liveness(now=1001.0).evidence]
+        assert stamps == [1000000, 1000000]
+
+    def test_reload_is_deterministic_not_random(self, tmp_path):
+        """新文案取新词池首条，不调用 rng（不伪装成 spinner 事件）。"""
+        p = self._cfg_file(tmp_path, ("A", "B", "C"))
+        got = []
+        for _ in range(5):
+            e = self._engine()
+            e.note_activity("streaming", now=1000.0)
+            e.reload(p)
+            got.append(e._current)
+        assert got == ["A"] * 5
+
+    def test_failed_reload_still_keeps_old_config_and_no_evidence(self, tmp_path):
+        e = self._engine()
+        e.note_activity("streaming", now=1000.0)
+        old_cfg, seq, cur = e.config, e._seq, e._current
+        p = _write_cfg(tmp_path, {"mode": "typo"}, "bad.json")
+        changed, reason = e.reload(p)
+        assert not changed and reason.startswith("invalid:")
+        assert e.config is old_cfg
+        assert (e._seq, e._current) == (seq, cur)
+        assert all(x.kind != "reload" for x in e.liveness(now=1000.2).evidence)
+
+    def test_reload_on_fresh_engine_is_safe(self, tmp_path):
+        e = self._engine()
+        assert e.reload(self._cfg_file(tmp_path)) == (True, "ok")
+        assert e._seq == 1 and e._current == "重装后的词"
+        ev = e.liveness(now=1000.0).evidence[-1]
+        assert ev.kind == "reload" and ev.verb == "重装后的词"
+
+    def test_next_real_event_keeps_the_anchor(self, tmp_path):
+        e = self._engine()
+        e.note_activity("streaming", now=1000.0)
+        e.reload(self._cfg_file(tmp_path))
+        e.note_activity("running_tool", now=1002.0)
+        v = e.render(True, now=1002.1)
+        ev = e.liveness(now=1002.1).evidence[-1]
+        assert ev.kind == "activity" and ev.seq == e._seq == v.seq
+        assert ev.verb == e._current == v.text
+
+    def test_reload_source_guard_is_inside_try(self):
+        import inspect
+        src = inspect.getsource(R.RuntimeSloganEngine.reload)
+        assert src.index("if not changed:") < src.index(
+            "self.config = cfg")
+
+
+class TestMeasuredButDeliberatelyNotChangedD11:
+    """四个候选实测后判定「不该修」，锁住当前行为。"""
+
+    def test_snapshot_populates_pools_deterministically(self):
+        """上一轮 `test_liveness_is_still_pure_read` 漏检了 `_pools`。
+
+        `snapshot()` 会填 5 个词池缓存，但结果确定、幂等、纯内存，
+        是无害写；判定不该修，这里把事实锁成回归而不是继续含糊地
+        声称「完全纯读」。
+        """
+        e = R.RuntimeSloganEngine(clock=lambda: 1000.0)
+        assert len(e._pools) == 0
+        e.liveness(now=1000.0)
+        assert len(e._pools) == 0
+        e.render(True, now=1000.0)
+        assert len(e._pools) == 0
+        e.snapshot()
+        assert len(e._pools) == len(R.PHASES) == 5
+        first = dict(e._pools)
+        e.snapshot()
+        assert dict(e._pools) == first
+        assert all(e._pool(p) == first[p] for p in R.PHASES)
+
+    def test_evidence_seq_is_window_size_not_global_counter(self):
+        """兼容字段：deque(maxlen) 饱和，名字有误导性但语义不变。"""
+        e = R.RuntimeSloganEngine(clock=lambda: 1000.0)
+        for i in range(25):
+            e.note_progress("tick", now=1000.0 + i * 0.1)
+        v = e.render(True, now=1003.0)
+        assert v.evidence_seq == 16 == len(e._evidence)
+        assert v.evidence_seq <= R._EVIDENCE_CAPACITY
+
+    def test_phase_fallback_still_unchanged(self):
+        e = R.RuntimeSloganEngine(clock=lambda: 1000.0)
+        for bad in (None, 123, ["a"], {"x": 1}, "unknown"):
+            e.note_activity(bad, now=1000.0)
+            assert e._phase == "waiting_model"
+
+    def test_string_detail_still_never_recorded_verbatim(self):
+        e = R.RuntimeSloganEngine(clock=lambda: 1000.0)
+        detail = "/secret?token=" + "x" * 50000
+        e.note_activity("streaming", detail=detail, now=1000.0)
+        r = e.liveness(now=1000.0).evidence[-1]
+        assert r.detail_len == len(detail) and not hasattr(r, "detail")
+        assert "secret" not in repr(r)
+
+
+class TestFullHealthAfterD11:
+    def test_all_phases_all_languages_and_mapping_audit(self):
+        for lang in R.LANGUAGES:
+            e = R.RuntimeSloganEngine(lang=lang, clock=lambda: 1000.0)
+            for phase in R.PHASES:
+                e.note_activity(phase, now=1000.0)
+                v = e.render(True, now=1000.2)
+                assert isinstance(v, R.SloganView) and v.phase == phase
+            e.reset()
+        from tuan_cli.ui.slogans import mapping as M
+        M.reset_runtime_counters(include_dispatch_log=True)
+        assert M.audit().ok is True
+        st = M.index_stats()
+        assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+        assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
         M.reset_runtime_counters(include_dispatch_log=True)

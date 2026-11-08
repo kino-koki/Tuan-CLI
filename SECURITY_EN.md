@@ -1432,3 +1432,123 @@ checks, all green. The stdlib verifier's new engine checks were
 measured to import successfully with `pytest / rich /
 prompt_toolkit / wcwidth` blocked (`tuan_cli.tui` uses PEP 562 lazy
 exports), so the pure-stdlib constraint is preserved.
+
+
+---
+
+## 23. Injection Contracts and the Config-Switch Anchor: One Seq Cannot Map to Two Verbs
+
+This round changes no verdict and NOT ONE LINE of the cleaning layer
+(`_clean.py` byte-identical). The ONLY runtime code file changed is
+again `tui/runtime_slogans.py`.
+
+**D (most valuable): `reload()` broke D1's `(seq, verb)` tearing
+anchor.** D1 uses the `(seq, verb)` pair in `EventRecord` as the
+concurrent-tearing detection anchor: one seq maps to exactly one
+verb. The old `reload()` set `_current = ""` but did NOT advance seq
+and did NOT record evidence, while `render()` shows the first entry
+of the new pool when `_current` is empty. Measured:
+
+```
+after event    seq=1  current='正在刷屏'   evidence.verb='正在刷屏'
+after reload   seq=1  current=''          evidence.verb='正在刷屏'
+render.text='重装后的词'   view.seq=1
+>>> ONE seq maps to TWO verbs
+```
+
+Worse, a second `reload()` returned `(False, "unchanged")` yet
+STILL cleared `_current`, causing a silent verb change. A config
+switch is now treated as an AUDITABLE STATE TRANSITION:
+`unchanged` is a TRUE no-op (no current clear, no seq change, no
+evidence, no cache touch); `changed` takes the new verb from the
+first entry of the new pool (deterministic, **rng NOT called**, so a
+config reload is not disguised as a random spinner event), advances
+`seq`, and records `kind="reload"` evidence whose `verb` equals the
+screen text EXACTLY. The evidence timestamp reuses
+`_last_event_at` (homogeneous with round 10 P4's `reset()`), so the
+real monotonic clock and an injected clock are never mixed in one
+chain. Measured: `seq 1->2`,
+`current = evidence.verb = render.text = '重装后的词'`, five
+consecutive reloads always yield the first pool entry `A`, and
+under a real clock `[1000000, 1000000]` instead of two time
+sources. This is NOT D4's forbidden "bookkeeping liveness from the
+render loop" -- reload is an explicit config event; D4 objects to
+timed idling that pretends to be busy.
+
+**A: `__init__`'s `or` swallowed falsy but perfectly legal injected
+objects.** Old `config or load_config()` / `rng or random.Random()`.
+Measured with a `__bool__=False` config subclass and a `__len__=0`
+custom rng: `config.source` went from `INJECTED` to `builtin`, the
+injected `rng.choice` was called 0 times, and two identically built
+engines produced different verbs -- the deterministic-replay
+contract built in round 4 was eaten by one `or`. This is the THIRD
+occurrence of round 7's A' (`or fallback()` swallowing legal `0`).
+Both now use explicit `is None`; injected objects survive,
+`rng.choice` is called once, two engines agree, and `None` still
+uses factory defaults. **`lang` is deliberately NOT changed**:
+measured `slogan_bank("")` falls back to the ENGLISH bank, so
+switching to `is None` would turn `lang=''` from local zh-CN into
+English -- a behavioral regression. Judged "DO NOT FIX".
+
+**B: `load_config` silently truncated 205 -> 200 custom verbs.** Old
+`raw_verbs[:200]` made the 205th entry vanish while `source` stayed
+on the NORMAL path with no hint -- the same "silent ignoring is a
+dangerous false sense of safety" as round 10 P8. 200 is a DoS
+guard, but it must not take effect quietly: over-limit configs are
+now REJECTED ENTIRELY with `invalid:too-many-verbs`. <=200 is
+unchanged (`source == str(p)`, `V199` still present).
+
+**C: `mode=default` silently ignored custom verbs when none were
+renderable.** Measured
+`{"mode":"default","verbs":[123,None,['a'],{},True]}`: after
+cleaning nothing remains, yet `source` is the NORMAL path -- the
+user believes they customized slogans while the built-in bank is
+actually used. Now "custom verbs present but none renderable" is
+rejected for ALL modes with the EXISTING `invalid:empty-verbs`
+source (reused, so no pre-existing assertion semantics change); mixed
+input still keeps the renderable entries.
+
+FOUR CANDIDATES JUDGED "DO NOT FIX" (each locked by a regression):
+`lang`'s `or` (changing it is a regression),
+`phase_budgets_ms`'s `[:10]` (legal phase keys cap at 5 < 10 --
+UNREACHABLE code), `snapshot()` writing `_pools` (deterministic,
+idempotent, pure-memory harmless cache), and `evidence_seq`
+saturation (deque maxlen=16; the name suggests a global counter but
+it is the window size). **Last round's regression
+`test_liveness_is_still_pure_read` MISSED `_pools`**, so the claim
+of "fully pure read" was imprecise; this round adds
+`test_snapshot_populates_pools_deterministically` to lock the fact
+as an executable assertion (5 pools, two snapshots identical,
+`_pool()` hits agree). That is paying back last round's imprecise wording, not
+fixing a bug.
+
+ONE pre-existing runtime assertion PLUS one prior standalone-script
+assertion were SYNCHRONIZED to the new contract, NOT relaxed: the
+old `snapshot()["current"] == ""` now additionally requires the new
+verb, `kind="reload"`, and `verb`/`seq`/`render.text` alignment --
+STRICTER. All other pre-existing assertions untouched.
+
+**Honest limits**: two behavior changes are called out -- (a) >200
+`verbs` goes from silent truncation to full rejection with
+`invalid:too-many-verbs` (deployments relying on 201+ entries must
+split or trim); (b) after a successful `reload()`, `current` goes
+from `""` to the new pool's first entry, `seq` +1, plus one
+`kind="reload"` evidence row; failure / unchanged / legal `now` /
+normal spinner event paths are unchanged. `mapping.py`, `_clean.py`,
+`tui.py`, `ui/slogans/__init__.py`, `test_slogan_mapping.py` are
+byte-identical and NOT in this push; the cleaning layer is
+byte-identical for two rounds running. NO self-introduced defect
+requiring a revert was MEASURED (third time in a row), but seven
+boundaries were exercised: `lang=""`, the 200/201 edge, five legal
+budget keys, unchanged no-op, real vs injected clock, reload on a
+fresh engine, and deterministic first entry. We do NOT claim "zero
+defects", only "none measured". No list corruption reproduced under
+concurrency; no real-device soak test; TUI still replaces no
+existing i18n copy; local-fork changes still unmerged; no external
+adaptive red team. NO performance improvement is claimed (one extra
+`is None` and length check per entry, one extra pool computation per
+reload; no benchmark run). Verification: 404 pytest cases + 126
+pure-stdlib checks + 22/20 prior checks, all green. The stdlib
+verifier's 9 new engine checks still import with
+`pytest / rich / prompt_toolkit / wcwidth` blocked (PEP 562 lazy
+exports), preserving its pure-stdlib constraint.

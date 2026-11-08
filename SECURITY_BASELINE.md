@@ -455,3 +455,40 @@ P10 `sanitize_verb(123)==''`；另锁住 `liveness`/`render`/`snapshot`
 长跑；分叉改动仍未合并；第三方自适应红队仍未做；**不宣称性能提升**。
 详见 `SLOGAN_MAPPING.md` §19。本轮**不改** `fully_superior`、
 99 模块基线与任何对齐指标。
+
+
+---
+
+## R40 · 注入契约与配置切换锚点（同一个 seq 不能对应两个文案）
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R40 | **D** `reload()` 清 `_current` 却不推进 seq / 不记证据, 实测事件后 `seq=1/current='正在刷屏'/evidence.verb='正在刷屏'`, reload 后 `seq=1/current=''`, 而 `render.text='重装后的词'` → **同一 seq 对应两个文案**, 打断 D1 撕裂检测锚点; 第二次 reload 返回 `unchanged` 却照样静默换词; **A** `__init__` 的 `config or load_config()` / `rng or random.Random()` 吞掉 falsy 但合法的注入对象 (实测 `INJECTED→builtin`、注入 rng 调用 0 次、两个同构引擎文案不同, 深度轮 7 A′ 第三次同源); **B** `raw_verbs[:200]` 静默截断 205→200 条且 source 正常路径无提示; **C** `mode=default` + verbs 全不可渲染时 source 正常路径, 用户以为自定义了标语实际全用内置词库 | **D** `unchanged` 真 no-op; `changed` 时新文案取新词池首条 (确定性、不调 rng)、推进 seq、记 `kind="reload"` 证据, `verb` 与屏幕严格相等, 时间戳沿用 `_last_event_at` 与 P4 `reset()` 同源; **A** `config`/`rng` 改显式 `is None` (`lang` 刻意不改, 实测改了会让 `lang=''` 从 zh-CN 变英文); **B** 超 200 条**整段拒绝** `invalid:too-many-verbs`; **C** 全不可渲染对所有 mode 用既有 `invalid:empty-verbs` 拒绝 (复用既有 source) |
+
+实测：`reload` 后 `seq 1→2`、`current = evidence.verb = render.text
+= '重装后的词'`、连续 5 次恒为词池首条、真实时钟下
+`[1000000,1000000]`；`config/rng` 注入原样保留、`rng.choice` 调用
+1 次、两个同构引擎一致、`None` 仍回落出厂值；205 条 →
+`invalid:too-many-verbs`、200 条全生效；`default` + 全脏 verbs →
+`invalid:empty-verbs`。`audit ok=True / index_stats 1695×4`。
+
+如实边界：**四个候选判定不该修** —— `lang` 的 `or` (改它是行为
+退化)、`phase_budgets_ms` 的 `[:10]` (合法键上限 5 < 10, **不可达
+代码**)、`snapshot()` 写 `_pools` (确定/幂等/纯内存无害缓存)、
+`evidence_seq` 饱和语义 (deque maxlen=16 兼容字段)。**上一轮回归
+`test_liveness_is_still_pure_read` 漏检 `_pools`**, 本轮新增
+`test_snapshot_populates_pools_deterministically` 补严口径。
+**两处行为变更**: (a) >200 条 verbs 从静默截断变整段拒绝，依赖
+201+ 条的部署需拆分或减词条; (b) `reload()` 成功后 `current`
+从 `""` 变新词池首条且 `seq` +1、多一条 `kind="reload"` 证据
+(失败/unchanged/合法 now/正常事件路径零变化)。**一条既有运行时
+断言 + 一条上轮独立脚本断言同步到新契约，不是放宽** (原
+`current == ""` 改为同时要求新文案/kind/verb/seq/render 对齐，
+断言更强)，其余既有断言一条未动。本轮唯一改动的运行时代码是
+`runtime_slogans.py`, `mapping.py`/`_clean.py`/`tui.py`/
+`ui/slogans/__init__.py`/`test_slogan_mapping.py` 逐字节未改、
+**不在本轮推送清单**；净化层连续两轮零改动；本轮实测未发现需
+回修的自引入缺陷 (连续第三次，七个边界都量过)；并发压测仍未
+复现 list 撕裂；不是真机长跑；分叉改动仍未合并；第三方自适应
+红队仍未做；**不宣称性能提升**。详见 `SLOGAN_MAPPING.md` §20。
+本轮**不改** `fully_superior`、99 模块基线与任何对齐指标。

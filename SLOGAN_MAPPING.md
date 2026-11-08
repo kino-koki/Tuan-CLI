@@ -1288,3 +1288,157 @@ verify_deep.py / verify_deep2.py                         22 / 20 项全绿
     任何既有 i18n 文案；分叉改动仍未合并；第三方自适应红队
     仍未做；**不宣称性能提升**（入口多一次数值校验与净化调用，
     未做基准对比）。
+
+
+---
+
+## 20. 注入契约与配置切换锚点：上一轮修完入参面，这一轮修「谁被换掉了」
+
+上一轮把引擎 public 入参面收口（异常路径半更新、未净化诊断）。
+本轮把镜头对准两件更隐蔽的事：**注入对象被静默换掉**，以及
+**配置切换打断 D1 的撕裂检测锚点**。仍然只挖深度：18 个事件、
+16 个上下文、1108 条词条、`fully_superior`、99 模块基线、所有
+对齐指标、CLI 子命令数全不变；零新增文件、零删除。
+
+### D（最值钱）：`reload()` 让同一个 seq 对应两个文案
+
+D1 用 `EventRecord` 里的 `(seq, verb)` 配对当作**并发撕裂检测的锚点**：
+一个 seq 只能对应一个文案。旧 `reload()` 把 `self._current = ""`，
+却**不推进 seq、不记证据**；而 `render()` 在 `not self._current` 时
+会显示新词池首条。实测：
+
+```
+事件后    seq=1  current='正在刷屏'   evidence.verb='正在刷屏'
+reload 后 seq=1  current=''          evidence.verb='正在刷屏'
+render.text='重装后的词'   view.seq=1
+>>> 同一个 seq=1 对应两个文案，D1 锚点被配置切换直接打断
+```
+
+更隐蔽的是第二次 `reload()` 返回 `(False, "unchanged")`，却照样
+清空 `current` 造成**静默换词** —— 名字叫 unchanged，屏幕却变了。
+
+修复后把配置切换视作一次**可审计的状态转移**：
+
+- `unchanged` 是**真正的 no-op**（不清 current、不动 seq、不记证据、
+  不碰缓存）；
+- `changed` 时新文案取新词池首条（**确定性、不调 rng**，避免把
+  配置重载伪装成随机 spinner 事件），推进 `seq`、记一条
+  `kind="reload"` 证据，其 `verb` 与屏幕显示**严格相等**；
+- 证据时间戳沿用 `_last_event_at`（与深度轮 10 P4 的 `reset()`
+  同源），不把真实单调时钟和注入时钟混进同一条链。
+
+实测：`seq 1→2`、`current = evidence.verb = render.text = '重装后的词'`、
+连续 5 次 reload 的新文案恒为词池首条 `A`、真实时钟下证据
+`[1000000, 1000000]` 不再出现 `[1000000, 1945418]` 两套时间源。
+**这不是 D4 禁止的「从动画循环记活性」** —— reload 是显式配置
+事件，D4 反对的是定时空转装忙，两者不矛盾。
+
+### A：`__init__` 的 `or` 吞掉 falsy 但完全合法的注入对象
+
+旧实现 `config or load_config()` / `rng or random.Random()`。实测
+注入一个 `__bool__=False` 的 `SpinnerVerbsConfig` 子类和一个
+`__len__=0` 的自制随机源：
+
+```
+config.source  'INJECTED'  -> 'builtin'      （注入配置被换掉）
+注入 rng.choice 调用次数   0                 （确定性回放失效）
+两个同构引擎 current       不相同             （随机源被换成全局 Random）
+```
+
+这是深度轮 7 A′（`_coerce_ms(...) or fallback()` 吞掉合法 `0`）
+的**第三次同源**。改成显式 `is None` 后：注入对象原样保留、
+`rng.choice` 调用 1 次、两个同构引擎文案一致、`None` 仍回落出厂值。
+
+**`lang` 刻意不改**：实测 `slogan_bank("")` 会回落到**英文**词库，
+若把 `lang or _current_language()` 也改成 `is None`，`lang=''`
+反而从「本机 zh-CN」变成英文 —— 空串表示「未指定」是既有兼容
+契约，改它是行为退化。判定「不该修」，加回归锁住。
+
+### B：`load_config` 静默截断 205 → 200 条自定义词
+
+旧实现 `raw_verbs[:200]`。实测写入 205 条 `verbs` 只生效 200 条，
+第 205 条凭空消失，而 `source` 是**正常路径**、没有任何提示 ——
+与深度轮 10 P8「静默忽略是危险的假安全感」同类。200 是防 DoS
+上限，但不该悄悄生效：**超限整段拒绝**，返回
+`invalid:too-many-verbs`，让用户明确知道要减到 200 以内。
+200 条以内零变化（`source == str(p)`、`V199` 仍在）。
+
+### C：`mode=default` 下自定义词全不可渲染时被静默忽略
+
+旧实现只在 `append/replace` 下检查空词池。实测
+`{"mode":"default","verbs":[123,None,['a'],{},True]}` 净化后一条
+不剩，但 `source` 仍是**正常路径** —— 用户以为自定义了标语，
+实际全用内置词库且毫不知情。现在「写了自定义词却一条都不可渲染」
+对**所有** mode 一律用既有的 `invalid:empty-verbs` 拒绝（**复用
+既有 source**，不改任何既有断言口径）。混合场景
+`[123, "好词", None, "\x1b..."]` 仍只保留好词 `("好词",)`。
+
+### 四个候选判定「不该修」
+
+| 候选 | 实测 | 结论 |
+|---|---|---|
+| `lang` 的 `or` | `slogan_bank('')` 回落英文；改成 `is None` 会让 `lang=''` 从 zh-CN 变英文 | 既有兼容契约，改它是退化 → **未修** |
+| `phase_budgets_ms` 的 `[:10]` 截断 | 合法阶段键上限 `len(PHASES)=5 < 10`，截断**不可达**；5 个合法键全部生效 | 不可达代码，无实际风险 → **未修** |
+| `snapshot()` 写 `_pools` | `liveness`/`render` 不写（`_current` 非空时 `_pool` 不被调用），`snapshot()` 填 5 个；结果确定、幂等、纯内存 | 无害缓存写 → **未修**，但补严上一轮回归（见下） |
+| `evidence_seq` 饱和语义 | deque(maxlen=16)，25 条事件后恒为 16，名字像全局序号其实是窗口内条数 | 兼容字段 → **未修**，文档澄清 |
+
+**上一轮回归不够严的自我修正**：`test_liveness_is_still_pure_read`
+检查了 `seq/current/evidence` 三个字段，却**漏了 `_pools`**，
+于是「完全纯读」的说法其实不准确。本轮新增
+`test_snapshot_populates_pools_deterministically` 把这个事实锁成
+可执行断言（5 个池、两次 snapshot 结果相同、`_pool()` 命中一致），
+而不是继续含糊地宣称纯读。这不是修 bug，是补上一轮欠的口径。
+
+### 一条既有断言同步到新契约，不是放宽
+
+`test_reload_success_is_atomic_and_clears_stale_verb` 原断言
+`snapshot()["current"] == ""`；修复后配置切换会绑定新文案，
+改为同时要求 `current == "新词条"`、池大小 1、
+`evidence[-1].kind == "reload"`、`verb == "新词条"`、
+`seq` 相等、`render(True).text == "新词条"` —— **断言更强**。
+上轮独立脚本 `verify_deep.py::t_reload` 的同一条断言同步到同一
+新契约。其余既有断言一条未动、一条未放宽。
+
+### 验证
+
+```
+tests/test_runtime_slogans.py + test_slogan_mapping.py   404 passed
+   （200 runtime_slogans + 204 slogan_mapping）
+tests/verify_slogan_mapping.py                           126 项纯 stdlib 全绿
+verify_deep.py / verify_deep2.py                         22 / 20 项全绿
+```
+
+新增回归里 `test_anchor_is_aligned_after_reload` 把 D 的
+`(seq, verb)` 不变量变成可执行证据；四个「不该修」候选各有
+独立回归锁住当前行为。独立验证脚本新增 9 项引擎检查，
+仍保持屏蔽 `pytest / rich / prompt_toolkit / wcwidth` 后可导入
+（`tuan_cli.tui` 用 PEP 562 惰性导出）。
+
+### 如实边界（续 §19）
+
+70. 本轮**不改** 18 个事件、16 个上下文、1108 条词条、
+    `fully_superior`、99 模块基线、任何对齐指标、CLI 子命令数；
+    零新增文件、零删除。
+71. **本轮唯一改动的运行时代码仍是
+    `tuan_cli/tui/runtime_slogans.py`**；`mapping.py` / `_clean.py` /
+    `tui.py` / `ui/slogans/__init__.py` / `test_slogan_mapping.py`
+    逐字节未改，都不在推送清单。净化层连续两轮零改动。
+72. **两处行为变更，都如实标注**：
+    (a) 超过 200 条 `verbs` 从「静默生效前 200 条」变成
+    **整段拒绝** `invalid:too-many-verbs`；依赖 201+ 条自定义词
+    的部署需拆分或减少词条。
+    (b) `reload()` 成功后 `current` 从 `""` 变成新词池首条且
+    `seq` +1、多一条 `kind="reload"` 证据；失败 / unchanged /
+    合法 `now` / 正常 spinner 事件路径零变化。
+73. **A 只修 `config` 和 `rng` 两处 `or`**，没有顺手改 `lang` ——
+    有实测依据的行为退化风险，不是遗漏。
+74. **四个候选确认判定「不该修」**，其中 `phase_budgets_ms` 的
+    `[:10]` 是**不可达代码**（合法键上限 5），不是「暂时没修」。
+75. **本轮实测未发现需回修的自引入缺陷**（连续第三次），但
+    `lang=""`、200/201 边界、5 个合法 budget 键、
+    unchanged no-op、真实时钟 vs 注入时钟、全新引擎 reload、
+    确定性首条七个边界都量过；不写成「零缺陷」。
+76. 并发压测仍未复现 list 撕裂；不是真机长跑；TUI 仍未替换
+    任何既有 i18n 文案；分叉改动仍未合并；第三方自适应红队
+    仍未做；**不宣称性能提升**（入口多一次 `is None` 与长度
+    检查，reload 多一次词池计算，未做基准对比）。

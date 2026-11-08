@@ -743,3 +743,86 @@ re-export 的 `sanitize_verb` 与全部 i18n 文案行为不变；139 例既有
 六个边界都量过）；并发压测仍未复现 list 撕裂；不是真机长跑；
 分叉改动仍未合并；第三方自适应红队仍未做；不宣称性能提升。
 完整复现见 `SLOGAN_MAPPING.md` §19。
+
+
+---
+
+## 22. 注入契约与配置切换锚点（本轮唯一改动的运行时文件仍是引擎）
+
+上一轮把引擎 public 入参面收口；本轮把镜头对准两件更隐蔽的事：
+**注入对象被静默换掉**与**配置切换打断 D1 的撕裂检测锚点**。
+不扩广度：18 个事件、16 个上下文、1108 条词条、
+`fully_superior`、所有对齐指标与 CLI 子命令数全不变。
+
+### D（最值钱）：`reload()` 让同一个 seq 对应两个文案
+
+D1 用 `EventRecord` 的 `(seq, verb)` 配对当并发撕裂检测锚点。
+旧 `reload()` 把 `_current = ""` 却**不推进 seq、不记证据**，
+而 `render()` 在 `not _current` 时显示新词池首条。实测：
+
+```
+事件后    seq=1  current='正在刷屏'   evidence.verb='正在刷屏'
+reload 后 seq=1  current=''          evidence.verb='正在刷屏'
+render.text='重装后的词'   view.seq=1
+>>> 同一个 seq 对应两个文案，锚点被配置切换直接打断
+```
+
+第二次 `reload()` 返回 `(False,"unchanged")` 却照样清空
+`current` 造成**静默换词**。现在把配置切换视作**可审计的状态
+转移**：`unchanged` 是真 no-op；`changed` 时新文案取新词池首条
+（确定性、**不调 rng**）、推进 `seq`、记 `kind="reload"` 证据，
+其 `verb` 与屏幕显示严格相等；时间戳沿用 `_last_event_at`
+（与深度轮 10 P4 的 `reset()` 同源）。实测 `seq 1→2`、
+`current = evidence.verb = render.text = '重装后的词'`、连续 5 次
+恒为词池首条、真实时钟下 `[1000000,1000000]` 不再混两套时间源。
+**这不是 D4 禁止的「从动画循环记活性」** —— reload 是显式
+配置事件，D4 反对的是定时空转装忙。
+
+### A：`__init__` 的 `or` 吞掉 falsy 但合法的注入对象
+
+实测注入 `__bool__=False` 的配置子类与 `__len__=0` 的随机源：
+`config.source` 从 `INJECTED` 变 `builtin`、注入 `rng.choice`
+调用 0 次、两个同构引擎文案不同 —— 深度轮 4 刚建好的确定性
+回放契约被一个 `or` 吃掉。这是深度轮 7 A′ 的**第三次同源**。
+`config` / `rng` 改显式 `is None` 后全部保留、`None` 仍回落
+出厂值。**`lang` 刻意不改**：实测 `slogan_bank("")` 回落英文，
+改成 `is None` 会让 `lang=''` 从 zh-CN 变英文，是行为退化。
+
+### B / C：`load_config` 的两处静默
+
+- **B** `raw_verbs[:200]` 把 205 条静默截成 200 条且 `source`
+  是正常路径、无任何提示 → 超限**整段拒绝**
+  `invalid:too-many-verbs`；200 条以内零变化。
+- **C** `mode=default` + `verbs` 全不可渲染时 `source` 仍是正常
+  路径，用户以为自定义了标语实际全用内置词库 → 对**所有**
+  mode 一律用既有 `invalid:empty-verbs` 拒绝（复用既有 source，
+  不改既有断言口径）；混合场景仍只保留可渲染的词。
+
+### 四个候选判定「不该修」
+
+`lang` 的 `or`（改它是行为退化）、`phase_budgets_ms` 的 `[:10]`
+（合法键上限 5 < 10，**不可达**）、`snapshot()` 写 `_pools`
+（确定/幂等/纯内存的无害缓存）、`evidence_seq` 饱和语义
+（deque maxlen=16，兼容字段）。**上一轮回归
+`test_liveness_is_still_pure_read` 漏检了 `_pools`**，本轮新增
+`test_snapshot_populates_pools_deterministically` 把事实锁成
+可执行断言 —— 这是补上一轮欠的口径，不是修 bug。
+
+**一条既有运行时断言 + 一条上轮独立脚本断言同步到新契约，
+不是放宽**：原 `snapshot()["current"] == ""` 改为同时要求
+新文案、`kind="reload"`、`verb`/`seq`/`render.text` 三者对齐，
+断言更强。其余既有断言一条未动。
+
+验证：404 例 pytest（200 引擎 + 204 映射）+ 126 项纯 stdlib
+独立验证 + 22/20 项上轮脚本全绿；`index_stats 1695×4`、
+`collisions=0`、`index_misses=0`。
+
+如实边界：**两处行为变更** —— 超过 200 条 verbs 从静默截断变
+整段拒绝；`reload()` 成功后 `current` 从 `""` 变新词池首条且
+`seq` +1、多一条 `kind="reload"` 证据（失败/unchanged/正常事件
+路径零变化）。本轮唯一改动的运行时文件是 `runtime_slogans.py`，
+`mapping.py` / `_clean.py` / `tui.py` / 包导出逐字节未改，
+净化层连续两轮零改动。本轮实测未发现需回修的自引入缺陷
+（连续第三次，七个边界都量过）；并发压测仍未复现 list 撕裂；
+不是真机长跑；分叉改动仍未合并；第三方自适应红队仍未做；
+不宣称性能提升。完整复现见 `SLOGAN_MAPPING.md` §20。
