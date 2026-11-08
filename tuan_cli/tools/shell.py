@@ -644,10 +644,13 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
 
 
 def _route_sandbox_isolation(ctx: ToolContext, command: str, timeout: int) -> Any:
-    """若统一滤网裁决本命令需隔离, 用隔离后端执行并返回结果文本 (None=无需隔离)。
+    """若统一滤网裁决本命令需隔离, 用隔离后端执行并返回结果文本。
 
-    消费 ToolExecutor 在 ctx._sandbox_verdict 写下的 L3 裁决; 未裁决或后端不可用
-    (非强制) 时返回 None, 交原有本地执行路径。
+    消费 ToolExecutor 在 ctx._sandbox_verdict 写下的 L3 裁决。
+    **只有两种情况返回 None**：未裁决/不需隔离，或执行层明确声明
+    ``decided=False``（自己什么都没做）。只要 execute_isolated 真的执行过
+    （哪怕失败、超时、降级到 local），结果一律是终态，绝不回落裸跑 ——
+    否则命令会在真实工作区被再跑一遍 (§16 实测)。
     """
     verdict = getattr(ctx, "_sandbox_verdict", None)
     if verdict is None or not getattr(verdict, "isolate", False):
@@ -657,21 +660,24 @@ def _route_sandbox_isolation(ctx: ToolContext, command: str, timeout: int) -> An
         manager = SandboxManager.from_kernel(getattr(ctx, "kernel", None)) \
             if getattr(ctx, "kernel", None) is not None else SandboxManager()
         res = manager.execute_isolated(command, verdict, ctx, timeout=timeout or 60.0)
-    except Exception as exc:  # noqa: BLE001 - 隔离执行异常不外抛, 留给原有路径兜底
-        return f"[错误] 沙箱隔离执行初始化异常: {type(exc).__name__}: {exc}"
-    # 本轮: **执行前的终态拒绝优先**。plan_egress / EgressGuard 的拒绝是
-    # 终态安全裁决, 不是「隔离不可用」。旧实现只看 verdict.enforced /
-    # backend_available —— 拒绝结果天然 enforced=False, 在
-    # enforce_required=false 的部署上会返回 None, 于是 run_shell 继续在
-    # 真实工作区 subprocess.Popen 把被拒绝的命令**裸跑一遍**。
-    # 终态拒绝无条件返回错误文本, 绝不回落。
+    except Exception as exc:  # noqa: BLE001 - 隔离执行异常不外抛, 但也不回落
+        from ..core.security_utils import safe_error_text
+        return (f"[错误] 沙箱隔离执行初始化异常: {type(exc).__name__}: "
+                f"{safe_error_text(str(exc))}")
+    # §16: **是否回落由结果自身的 decided 决定，不再看裁决字段**。
+    # 实测缺口：旧实现用 verdict.enforced / backend_available 判断是否采纳
+    # 结果。降级部署（两者皆 False）里 _execute_backend 的 local 分支已经
+    # 真实执行了命令，路由却返回 None，run_shell 再用 Popen 在真实工作区
+    # 跑第二遍 —— 命令双重执行，且隔离层的脱敏 env / 出网裁决结果被整个
+    # 丢弃。执行层异常 / 超时 / 后端崩溃 / 副本创建失败也走同一条回落路径。
+    # 唯一合法回落：执行层明确声明「我什么都没做」(decided=False)。
+    if not getattr(res, "decided", True):
+        return None
+    # 执行前的终态安全拒绝优先展示真实原因，绝不回落。
     if getattr(res, "terminal_refusal", False):
         return f"[错误] {res.error or '出网/凭据合规拒绝 (未执行)'}"
-    # 强制隔离且后端可用 → 返回隔离结果。否则 (enforced=False, 回落 local):
-    # 若配置 enforce_required 则以裁决的 DENY 语义拒绝, 由调用方阅读; 这里统一落地。
-    if verdict.enforced or getattr(verdict, "backend_available", False):
-        return res.as_shell_text() if res.returncode >= 0 else f"[错误] {res.error or '隔离执行失败'}"
-    return None
+    return (res.as_shell_text() if res.returncode >= 0
+            else f"[错误] {res.error or '隔离执行失败'}")
 
 
 def run_shell(ctx: ToolContext, command: str, timeout: int = 0) -> str:

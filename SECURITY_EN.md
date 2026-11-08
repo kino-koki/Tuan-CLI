@@ -1862,3 +1862,108 @@ parity + config + security regression **170 passed**; sandbox/platform/proc
 per-file **91 passed total** (batches overlap, NOT summed);
 `matrix.validate() == []`, `evidence.verify_evidence() == []`,
 `verify_doc_numbers.py problems == []`.
+
+
+---
+
+## 28. Depth Round: Whether to Fall Back Is Decided by the RESULT (single `decided` contract)
+
+Full reproduction in `CLAUDE_PARITY.md` section 16. **FOURTH calibration
+of sections 13-15**: the previous round used `terminal_refusal` to block
+only ONE refusal branch, while the fallback switch itself still used the
+wrong field. NOT A SINGLE MATRIX STATUS CHANGED.
+
+### G (most valuable): a command was executed TWICE in degraded deployments
+
+`tools/shell.py::_route_sandbox_isolation` used
+`verdict.enforced or verdict.backend_available` to decide whether to
+accept the isolation result. But those are VERDICT fields (whether a
+strong backend was used), NOT "did `execute_isolated` actually do
+anything". With `enforce_required=false` and no strong backend, the
+`local` branch of `_execute_backend` REALLY EXECUTED the command, yet
+the route returned `None` and `run_shell` ran it a SECOND time via
+`subprocess.Popen` in the real workspace. Measured: 1 isolated execution
++ 1 bare Popen, and `run_shell` returned the SECOND result
+(`BARE_RAN`); the isolated result, sanitized env, egress verdict and
+`last_egress` were all discarded. Any command with side effects ran
+twice. **"No isolation backend available" does NOT mean "the command
+has not run yet"** -- falling back to local IS an execution.
+
+### Five more MEASURED disconnects
+
+| ID | Measured result |
+|---|---|
+| F1 | `_run_provider` strong backend throws -> caught, returns `returncode=-1, enforced=False` -> same bare fallback |
+| F2 | `subprocess.TimeoutExpired` -> same bare fallback |
+| F3 | `copy_diff_apply`'s `isolate_workdir` throws -> outer `except` returns **`enforced=True` claiming "isolated execution"** (no copy was ever created), but the route only looks at `verdict.enforced` (still False) -> same fallback; `res.enforced` was NEVER consumed by the route |
+| F4 | On `build_diff_preview` failure `error` concatenated `str(exc)` verbatim; measured `GITHUB_TOKEN=ghp_REAL_SECRET_VALUE` ECHOED BACK to the user; OSC 8 / RLO also reached the terminal |
+| F5 | `copy_diff_apply` only blocked `terminal_refusal`; an execution timeout / crash returning `-1` still ran diff -> confirm, asking the user to approve writing back a copy that NEVER SUCCESSFULLY EXECUTED |
+
+### Fix
+
+| Location | Change |
+|---|---|
+| `sandbox/manager.py` | `SandboxExecResult` gains `decided: bool = True` (**fail-closed default**); the only `decided=False` is the `not verdict.isolate` branch. All `except` / timeout / diff-failure branches now use `safe_error_text(str(exc))` and explicitly set `decided=True`; `copy_diff_apply` also returns immediately on `returncode < 0`; the outer exception honestly reports `enforced=False` |
+| `tools/shell.py` | The route no longer looks at `verdict.enforced / backend_available`, only `res.decided`; its own `except` branch is sanitized too and returns a terminal error instead of falling back |
+| `core/security_utils.py` | New `safe_error_text()`: non-str takes only the type name (never `str()` on unknown objects, avoiding repr leaks) -> strips Cc/Cf/bidi/OSC controls -> reuses the existing `redact_sensitive()` -> caps at 400; dirty `limit` falls back to default and sanitization NEVER raises |
+
+**Sanitize at the SOURCE, not at the exit**: when a user actively
+declines a write-back, `res.error` contains the diff preview body and
+the user MUST be able to see "what would have changed". A new
+source-level regression locks "the exit does not call
+`safe_error_text(res.error)`". `safe_error_text` does NOT do grapheme
+clusters or display-width computation, so it does NOT constitute a
+third width truth alongside the slogan UI cleaning layer.
+
+### A-prime (self-introduced, self-caught)
+The new `test_no_second_sanitization_at_route_exit` initially asserted
+`count("safe_error_text") == 1`; measured was **2** -- the same `except`
+branch contains both the import and one call, both inside its OWN
+exception branch, not a second sanitization at the exit. The assertion
+now checks "count == 2 + exit uses `res.error` verbatim + no
+`safe_error_text(res.error`". A test assertion was wrong, not the code.
+
+### Three "not changed on purpose" (each with an executable regression)
+Unterminated-OSC parameter residue (ESC/BEL/RLO already stripped, so
+the terminal cannot interpret it; residue only hurts readability);
+global `redact_sensitive` behavior unchanged (not widened into the
+shared primitive, to avoid affecting audit logs / MCP audit / export);
+`cmd_safe.py` / `orchestration.py` are still not execution side doors
+(section 15 source-scan regression reused).
+
+### Matrix: NOT A SINGLE STATUS CHANGED
+`aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+`b_waves_done=["B1"]`. Two catalog notes gained a FOURTH calibration
+pointer (13 -> 14 -> 15 -> 16) but `status`/`evidence` structure is
+unchanged; `matrix.validate()` and `evidence.verify_evidence()` both
+empty. A new regression pins every count so no padding by editing
+definitions.
+
+### Honest limits
+HTTPS CONNECT tunnel header injection still unavailable
+(`credential_masking` stays `partial`); bwrap/seatbelt/seccomp have no
+domain-level filtering and `allowed_domains` is still metadata;
+**`decided` defaulting to True IS a behavioral change** -- third-party
+integrations relying on the old fallback semantics must be reviewed;
+`safe_error_text` covers only execution-layer exception messages, while
+diff preview bodies are still echoed verbatim (if a preview contains a
+secret, that is workspace file content, out of scope here);
+`last_egress` is still not thread-safe; `undetectable` is a marker not
+proof; `os_sandbox` remains a gap, `deny_network_by_default` remains
+false, `block_writes_outside_wd` remains partial; no real-device
+multi-platform verification -- the long
+`test_platform_portability.py` batch reached only ~51% with zero
+failures in the section-14 round and was NOT rerun here; the 1
+`test_arch_security.py` failure was proven PRE-EXISTING by a
+parent-blob BASELINE CONTROL, with NO policy relaxation to make it
+green. A-line still has 10 pending modules, the local fork remains
+unmerged, no third-party adaptive red team. The slogan engine /
+cleaning layer / `mapping.py` / `tui.py` are byte-identical to parent.
+
+### Verification (split batches, NOT claimed as one full-suite run)
+this round + previous three + boundaries + claude_parity **227 passed**;
+shell-routing impact **99 passed**; parity + config + security
+regression **170 passed**; sandbox/platform/proc/e1e7 per-file
+**130 passed total** (batches overlap, NOT summed);
+`matrix.validate() == []`, `evidence.verify_evidence() == []`,
+`verify_doc_numbers.py problems == []`.

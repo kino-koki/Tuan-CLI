@@ -895,3 +895,17 @@ SOFTWARE.
     unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
     parity line and all "no endorsement" statements still apply
     unchanged.
+
+
+20. Depth-round `decided` result contract and execution-error text
+    sanitization (still NO new third-party material): the existing
+    sandbox manager, shell tool router and shared security primitives
+    were extended so the RESULT itself (not the verdict flags) decides
+    whether the caller may fall back, and so execution-layer exception
+    messages are redacted and stripped of terminal control sequences
+    before being echoed. A new stdlib-only regression test file was
+    added. No Anthropic source, trademark asset, upstream Rust source,
+    or new third-party dependency was copied. Sections 9-19 remain
+    unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
+    parity line and all "no endorsement" statements still apply
+    unchanged.

@@ -1703,3 +1703,84 @@ parent-blob baseline control 已证是既有环境行为，本轮复跑仍
 parity + 配置 + 安全回归 **170 passed**；sandbox/platform/proc 逐文件
 合计 **91 passed**（批次间有重叠，不累加）；`matrix.validate() == []`、
 `evidence.verify_evidence() == []`、`verify_doc_numbers.py problems == []`。
+
+
+---
+
+## 31. 深度轮：是否回落由结果自身决定（`decided` 单一契约）
+
+完整复现见 `CLAUDE_PARITY.md` §16。**§13–§15 第四轮纠偏**：上一轮用
+`terminal_refusal` 只堵了「plan 拒绝」一条分支，回落开关本身仍用错字段。
+矩阵计数一个没动。
+
+### G（最值钱）：降级部署里命令被双重执行
+
+`tools/shell.py::_route_sandbox_isolation` 用
+`verdict.enforced or verdict.backend_available` 判断是否采纳隔离结果，
+但这两个是**裁决字段**（用没用上强后端），不是「`execute_isolated`
+做没做事」。`enforce_required=false` 且无强后端时 local 分支**真实执行
+了命令**，路由却返回 `None`，`run_shell` 再 `subprocess.Popen` 跑第二遍
+—— 实测隔离层 1 次 + bare Popen 1 次，返回的是第二次的结果，隔离层的
+脱敏 env / 出网裁决 / `last_egress` 全部白做。任何有副作用的命令执行
+两次。**「隔离后端不可用」不等于「命令还没跑」**。
+
+### 另外五个实测断点
+
+| 编号 | 实测结果 |
+|---|---|
+| F1 | `_run_provider` 强后端抛异常 → 返回 `returncode=-1, enforced=False` → 同样回落裸跑 |
+| F2 | `subprocess.TimeoutExpired` → 同样回落裸跑 |
+| F3 | `copy_diff_apply` 的 `isolate_workdir` 抛异常 → 外层 `except` 返回 **`enforced=True` 宣称已隔离执行**（一个副本都没建），路由只看 `verdict.enforced`（仍 False）→ 同样回落；`res.enforced` 在路由里根本没被消费 |
+| F4 | `build_diff_preview` 失败时 `error` 直接拼 `str(exc)`，实测 `GITHUB_TOKEN=ghp_REAL_SECRET_VALUE` **原样回显**；OSC 8 / RLO 也进终端 |
+| F5 | `copy_diff_apply` 只拦 `terminal_refusal`；执行层超时 / 崩溃返回 `-1` 时仍走 diff → confirm，让用户确认写回一个根本没成功执行的副本 |
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `sandbox/manager.py` | `SandboxExecResult` 新增 `decided: bool = True`（**默认 fail-closed**）；唯一 `decided=False` 是 `not verdict.isolate` 分支。所有 `except` / 超时 / diff 失败分支改用 `safe_error_text(str(exc))` 并显式 `decided=True`；`copy_diff_apply` 对 `returncode < 0` 也立刻返回；外层异常如实 `enforced=False` |
+| `tools/shell.py` | 路由不再看 `verdict.enforced / backend_available`，只问 `res.decided`；自身 `except` 同样净化且返回终态错误文本 |
+| `core/security_utils.py` | 新增 `safe_error_text()`：非 str 只取类型名 → 剥离 Cc/Cf/bidi/OSC → 复用既有 `redact_sensitive()` 遮蔽密钥 → 限长 400；脏 `limit` 回落默认，绝不抛异常 |
+
+**净化在来源处做，出口不二次净化**：用户主动拒绝写回时 `res.error`
+含 diff 预览正文，用户必须能看见「本来要改什么」。新增源码级回归
+锁住「出口不调 `safe_error_text(res.error)`」。`safe_error_text` 不做
+grapheme 簇 / 显示宽度判定，不与标语轮 UI 净化层构成第三套宽度真值。
+
+### A′（自己引入、自己抓回）
+`test_no_second_sanitization_at_route_exit` 初版断言
+`count("safe_error_text") == 1`，实测是 **2**（同一个 except 分支里
+import + 调用）。断言改成「次数为 2 + 出口原样使用 `res.error` +
+不出现 `safe_error_text(res.error`」。测试断言写错，不是代码缺陷。
+
+### 三个「不该修」（都配可执行回归）
+未终止 OSC 参数残留（ESC/BEL/RLO 已剥离，终端不会再解释）；全局
+`redact_sensitive` 行为不变（避免影响审计日志 / MCP 审计 / 导出链路）；
+`cmd_safe.py` / `orchestration.py` 仍不是执行侧门（沿用 §15 源码扫描）。
+
+### 矩阵：一个状态没动
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`。catalog 两条 note 补第四轮纠偏指向但 `status` /
+`evidence` 结构不变，`matrix.validate()` 与 `evidence.verify_evidence()`
+均空。新增回归把计数逐项钉死，**不许靠改口径凑数**。
+
+### 如实边界
+HTTPS CONNECT 隧道内 header 注入仍不可用（`credential_masking` 仍
+partial）；bwrap/seatbelt/seccomp 无域名级过滤、`allowed_domains` 仍是
+元数据；**`decided` 默认 True 是行为变更**，依赖旧回落语义的第三方
+集成需核对；`safe_error_text` 只处理执行层异常消息，diff 预览正文仍
+原样回显；`last_egress` 仍非线程安全；`undetectable` 是标记不是证明；
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`block_writes_outside_wd` 仍 partial；不是真机多平台验证，
+`test_platform_portability.py` 长批次 §14 轮只跑到约 51% 零失败、
+本轮未重跑；`test_arch_security.py` 1 例失败已由 parent-blob baseline
+control 证明是既有环境行为，没为变绿改策略；A 线 10 pending、分叉
+改动、第三方自适应红队未做。标语引擎 / 净化层 / `mapping.py` /
+`tui.py` 逐字节未改。
+
+### 验证（按分批报告）
+本轮 + 上三轮 + boundaries + claude_parity **227 passed**；shell 路由
+影响面 **99 passed**；parity + 配置 + 安全回归 **170 passed**；
+sandbox/platform/proc/e1e7 逐文件合计 **130 passed**（批次间有重叠，
+不累加）；`matrix.validate() == []`、`evidence.verify_evidence() == []`、
+`verify_doc_numbers.py problems == []`。

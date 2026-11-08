@@ -30,6 +30,7 @@ from .egress_plan import (
     MODE_DEGRADED, MODE_PROXY, MODE_UNPROVABLE, plan_egress,
     plan_is_consistent_with_verdict,
 )
+from ..core.security_utils import safe_error_text
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +99,22 @@ class SandboxExecResult:
     # 开关, 而拒绝结果天然 enforced=False, 在 enforce_required=false 的
     # 部署上会被当成「隔离没生效」→ 命令在真实工作区重跑一遍。
     terminal_refusal: bool = False
+    # 本轮（§16）：**「这个结果必须被采纳」的单一契约**。
+    # 默认 True = fail-closed：只要 execute_isolated 真的被调用了，
+    # 它返回的任何结果（成功 / 失败 / 拒绝 / 降级 local 执行）都是
+    # 终态，调用方不得再回落到裸跑。
+    #
+    # 实测缺口（比上一轮 R1 更根本）：tools/shell.py 用
+    # ``verdict.enforced or verdict.backend_available`` 判断是否采纳结果。
+    # 在降级部署（两者皆 False）里，_execute_backend 的 local 分支
+    # **已经真实执行了命令**，路由却返回 None，于是 run_shell 再用
+    # subprocess.Popen 在真实工作区跑第二遍 —— 命令双重执行，且隔离层
+    # 的结果（含脱敏 env / 出网裁决）被整个丢弃。执行层异常 / 超时 /
+    # 后端崩溃 / isolate_workdir 失败也都走同一条回落路径。
+    #
+    # 唯一合法的回落是「执行层明确声明自己什么都没做」：
+    # execute_isolated 的 ``not verdict.isolate`` 分支会显式 decided=False。
+    decided: bool = True
 
     def as_shell_text(self) -> str:
         parts = []
@@ -406,7 +423,9 @@ class SandboxManager:
         真的在隔离副本里执行, 经过 diff 预览 + 用户确认后才写回。
         """
         if not verdict.isolate:
-            return SandboxExecResult()
+            # 唯一的「我没做任何事」信号。路由据此才可以继续原有本地路径；
+            # 除此之外一切返回值都是终态，绝不回落（见 decided 字段注释）。
+            return SandboxExecResult(decided=False)
         cwd = getattr(ctx, "workspace", None) or "."
         if getattr(verdict, "workspace_mode", "direct") == "copy_diff_apply":
             return self._execute_copy_diff_apply(command, verdict, ctx, cwd, timeout)
@@ -469,11 +488,16 @@ class SandboxManager:
                                      returncode=proc.returncode or 0,
                                      backend=backend, enforced=False)
         except subprocess.TimeoutExpired:
+            # 执行层失败也是终态：decided 默认 True，路由不得回落裸跑。
             return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error="超时")
+                                     enforced=False, error="超时", decided=True)
         except Exception as exc:
-            return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=str(exc))
+            # 实测：str(exc) 曾原样回显 GITHUB_TOKEN=ghp_... 与 OSC/RLO。
+            # 异常消息可能来自工具参数 / 路径 / 命令文本，必须净化。
+            return SandboxExecResult(
+                returncode=-1, backend=backend, enforced=False,
+                error=f"{type(exc).__name__}: {safe_error_text(str(exc))}",
+                decided=True)
         finally:
             if proxy is not None:
                 self._last_proxy_audit = proxy.audit()
@@ -499,7 +523,11 @@ class SandboxManager:
             # 终态拒绝必须立刻返回：不生成 diff、不索要确认、不宣称已执行。
             # 回落问题由 shell.py 路由检查 terminal_refusal 兜住，不再靠
             # verdict.enforced 这个语义错配的开关。
-            if res.terminal_refusal:
+            if res.terminal_refusal or res.returncode < 0:
+                # §16 扩展：上一轮只拦了「执行前合规拒绝」。但执行层超时 /
+                # 后端崩溃也返回 returncode=-1；旧实现照样往下走
+                # build_diff_preview → confirm_apply，让用户确认写回一个
+                # **根本没成功执行**的副本。执行失败同样立刻返回。
                 res.applied = False
                 res.applied_files = []
                 return res
@@ -511,7 +539,7 @@ class SandboxManager:
             except Exception as exc:  # noqa: BLE001
                 res.returncode = -1
                 res.error = (f"生成变更预览失败 (fail-closed, 不写回): "
-                             f"{type(exc).__name__}: {exc}")
+                             f"{type(exc).__name__}: {safe_error_text(str(exc))}")
                 return res
             # E7-TUI: 统一走审批覆盖层 (借鉴 Codex TUI approval_overlay)。
             # 有 ctx.confirm 时把结构化卡片交给现有 TUI 挂起式确认通道;
@@ -541,10 +569,15 @@ class SandboxManager:
                          f"\n[E7] 用户已确认, 已写回 {len(outcome.files)} 个文件"
             return res
         except Exception as exc:  # noqa: BLE001
+            # 实测：isolate_workdir 抛异常时这里旧实现仍写 enforced=True，
+            # 宣称「已隔离执行」—— 但一个副本都没建、命令根本没跑。
+            # 而且路由只看 verdict.enforced（此时仍是 False），照样回落裸跑。
+            # 现在如实 enforced=False + decided=True 保证终态不回落。
             return SandboxExecResult(
-                returncode=-1, workspace_mode="copy_diff_apply", enforced=True,
-                applied=False,
-                error=f"副本隔离执行失败 (fail-closed, 未写回): {type(exc).__name__}: {exc}")
+                returncode=-1, workspace_mode="copy_diff_apply", enforced=False,
+                applied=False, decided=True,
+                error=f"副本隔离执行失败 (fail-closed, 未写回): "
+                      f"{type(exc).__name__}: {safe_error_text(str(exc))}")
         finally:
             if wd is not None:
                 wd.cleanup()
@@ -576,8 +609,9 @@ class SandboxManager:
                                      returncode=res.returncode, backend=res.mechanism or backend,
                                      enforced=bool(res.enforced), error=note)
         except Exception as exc:
-            return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=str(exc))
+            return SandboxExecResult(
+                returncode=-1, backend=backend, enforced=False, decided=True,
+                error=f"{type(exc).__name__}: {safe_error_text(str(exc))}")
 
     @staticmethod
     def _run_provider(backend: str, command: str, cwd: str, timeout: float,
@@ -598,8 +632,9 @@ class SandboxManager:
                                      backend=backend, enforced=result.enforced,
                                      error=result.error)
         except Exception as exc:
-            return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=str(exc))
+            return SandboxExecResult(
+                returncode=-1, backend=backend, enforced=False, decided=True,
+                error=f"{type(exc).__name__}: {safe_error_text(str(exc))}")
 
     # ------------------------------------------------------------ 配置
     def _allowed_domains(self, ctx: Any) -> Optional[List[str]]:

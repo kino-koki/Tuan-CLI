@@ -1186,6 +1186,12 @@ string literal`（manager.py:496）。改成不含反斜杠的文案后恢复。
 
 ### 矩阵：一个状态没动
 
+> **§16 纠偏**：本节用 `terminal_refusal` 堵住的是「plan 拒绝」这一条
+> 分支，但**回落开关本身仍用错字段** —— 路由拿
+> `verdict.enforced / backend_available` 判断是否采纳结果。下一轮实测
+> 发现降级部署里命令被双重执行，执行异常 / 超时 / 副本创建失败也照样
+> 回落裸跑。已改为由结果自身 `decided` 单一契约决定，见 §16。
+
 `test_b2su_refusal_routing.py::TestMatrixHonesty::test_counts_unchanged`
 把 `by_status` 逐项、`gaps=26`、`fully_superior=false`、
 `b_waves_done=["B1"]`、红队判据全钉死。catalog 里
@@ -1236,3 +1242,149 @@ fully_superior = false   |  gaps = 26  |  criteria 2 真 3 假
 非拒绝路径不变、结果默认值向后兼容、copy_diff_apply 不建 diff/不确认、
 错误显示真实原因、占位符常量一致与保全、四个后端工作区指示、
 四个「不该修」判定、矩阵计数钉死。
+
+
+---
+
+## 16. 深度轮：是否回落由结果自身决定（`decided` 单一契约）
+
+不扩广度，**矩阵计数一个没动**（`ahead 10 / aligned 46 / partial 9 /
+gap 26 / not_applicable 8`，`fully_superior=false`，`b_waves_done=["B1"]`）。
+沿 §15 刚修好的 `terminal_refusal` 继续往下挖，发现它**只堵了一条拒绝
+分支**，而「是否回落」的开关本身从一开始就选错了字段。
+
+### G（最值钱）：降级部署里命令被双重执行
+
+`tools/shell.py::_route_sandbox_isolation` 的核心判定是：
+
+```python
+if verdict.enforced or getattr(verdict, "backend_available", False):
+    return res.as_shell_text() ...
+return None      # ← run_shell 继续在真实工作区 subprocess.Popen
+```
+
+§15 已经证明「plan 拒绝结果天然 `enforced=False`」会回落裸跑，于是给
+拒绝结果加了 `terminal_refusal` 特例。但**根本问题没动**：
+`verdict.enforced / backend_available` 是**裁决字段**，描述的是「这次
+隔离用没用上强后端」，不是「`execute_isolated` 到底做没做事」。
+
+在 `enforce_required=false` 且无强后端的降级部署里，
+`HardIsolationFilter` 返回 `backend=local, backend_available=False,
+enforced=False`，然后 `_execute_backend` 的 **local 分支真实执行了命令**。
+路由却因两个字段都为假而返回 `None`，`run_shell` 再用
+`subprocess.Popen` 在真实工作区跑**第二遍**：
+
+- 实测隔离层执行 1 次 + bare `Popen` 1 次，`run_shell` 返回的是
+  `BARE_RAN`（第二次的结果），隔离层的 `ISOLATED_RAN` 被整个丢弃；
+- 隔离层的脱敏 env / 出网裁决 / `last_egress` 全部白做；
+- 任何有副作用的命令（写文件、发请求、扣费）执行两次。
+
+**「隔离后端不可用」不等于「命令还没跑」** —— 回落 local 分支本身就是
+一次执行。用裁决字段当「是否采纳结果」的开关，必然推出这个错。
+
+### 另外五个实测断点
+
+| 编号 | 实测结果 |
+|---|---|
+| **F1** | `_run_provider` 强后端抛异常 → 捕获后返回 `returncode=-1, enforced=False` → 同样回落裸跑 |
+| **F2** | `subprocess.TimeoutExpired` → 同样回落裸跑 |
+| **F3** | `copy_diff_apply` 的 `isolate_workdir` 抛异常 → 外层 `except` 返回 **`enforced=True` 宣称「已隔离执行」**（一个副本都没建、命令根本没跑），但路由只看 `verdict.enforced`（仍 False）→ 同样回落裸跑。`res.enforced` 这个字段在路由里根本没被消费 |
+| **F4** | `build_diff_preview` 失败时 `error` 直接拼 `str(exc)`，实测 `GITHUB_TOKEN=ghp_REAL_SECRET_VALUE` **原样回显**给用户；OSC 8 超链接与 RLO 也进终端。异常消息可能来自工具参数 / 路径 / 命令文本 |
+| **F5** | `copy_diff_apply` 只拦了 `terminal_refusal`；执行层超时 / 崩溃返回 `returncode=-1` 时仍走 `build_diff_preview → confirm_apply`，让用户确认写回一个**根本没成功执行**的副本 |
+
+### 落地：一个字段，一处判定
+
+| 位置 | 修复 |
+|---|---|
+| `sandbox/manager.py` | `SandboxExecResult` 新增 `decided: bool = True`（**默认 fail-closed**）。只要 `execute_isolated` 真的被调用，任何结果（成功 / 失败 / 拒绝 / 降级 local 执行）都是终态。`execute_isolated` 的 `not verdict.isolate` 分支是**唯一**显式 `decided=False`（「我什么都没做」） |
+| `tools/shell.py` | 路由不再看 `verdict.enforced` / `backend_available`，只问 `res.decided`；为假才返回 `None`。`terminal_refusal` 仍优先展示真实拒绝原因 |
+| `core/security_utils.py` | 新增 `safe_error_text()`：非 str 只取类型名（不 `str()` 未知对象避免 repr 泄露）→ 剥离 Cc/Cf/bidi/OSC 控制字符 → 复用既有 `redact_sensitive()` 遮蔽密钥 → 限长 400；`limit` 脏值回落默认，净化自身绝不抛异常 |
+| `sandbox/manager.py` | 所有 `except` / 超时 / diff 失败分支改用 `safe_error_text(str(exc))` 并显式 `decided=True`；`copy_diff_apply` 对 `res.returncode < 0` 也立刻返回（不建 diff、不弹确认）；外层异常如实 `enforced=False` |
+| `tools/shell.py` | 自身 `except` 分支同样净化，且返回终态错误文本而不回落 |
+
+**净化在来源处做，出口不二次净化**：路由的 `f"[错误] {res.error}"`
+原样使用，因为 `confirm_apply` 用户主动拒绝时 `res.error` 里含
+**diff 预览正文**，用户必须能看见「本来要改什么」。二次净化会破坏它。
+新增源码级回归锁住「出口不调 `safe_error_text(res.error)`」。
+
+**用途边界**：`safe_error_text` 只保证异常消息回显到终端时不被解释成
+转义序列、不回显密钥，**不做** grapheme 簇或显示宽度判定，因此不与
+标语轮那套 UI 净化层构成第三套宽度真值。
+
+### A′：本轮自己引入、自己抓回
+
+新写的 `test_no_second_sanitization_at_route_exit` 初版断言
+`window.count("safe_error_text") == 1`，实测是 **2** —— 同一个 `except`
+分支里既有 `from ... import safe_error_text` 又有一次调用，两处都在
+自身异常分支内，不是出口二次净化。断言改成「次数为 2 + 出口原样使用
+`res.error` + 不出现 `safe_error_text(res.error`」，语义更准。
+这是测试断言写错，不是代码缺陷，如实记为 A′。
+
+### 三个「不该修」（都配可执行回归）
+
+1. **未终止 OSC 的参数残留**：`ESC ]8;;https://evil BEL END` 净化后
+   剩 `]8;;https://evilEND`。ESC / BEL / RLO 已剥离，终端不会再解释；
+   残留只是可读性略差。彻底删参数会误伤合法文本，且错误文本不参与
+   UI 布局，与 §15 那条「未终止 OSC 吞光整行」的 UI 判定不冲突。
+2. **全局 `redact_sensitive` 行为不变**：控制字符剥离是
+   `safe_error_text` 的职责，不放进共享脱敏原语，避免影响审计日志 /
+   MCP 审计 / 导出链路等其它调用点。
+3. **`cmd_safe.py` / `orchestration.py` 仍不是执行侧门**：沿用 §15 的
+   源码扫描回归，本轮未改。
+
+### 矩阵：一个状态没动
+
+`test_b2su_decided_routing.py::TestMatrixHonesty::test_counts_unchanged`
+把 `by_status` 逐项、`gaps=26`、`fully_superior=false`、
+`b_waves_done=["B1"]`、红队判据全钉死。catalog 两条 note 补了**第四轮
+纠偏指向**（§13 太满 → §14 → §15 → §16），`status` 与 `evidence`
+结构不变，`matrix.validate()` / `evidence.verify_evidence()` 均空。
+
+### 如实边界
+
+1. **HTTPS CONNECT 隧道内 header 注入仍不可用**（§13/§14/§15 边界
+   不变），`credential_masking` 仍 `partial`。
+2. bwrap / seatbelt / seccomp **没有域名级过滤**，`allowed_domains` 仍是
+   元数据；强后端 + 逐命令声明仍默认拒绝，`metadata_only` 仍是真实降级。
+3. `decided` 默认 True 是**行为变更**：任何直接构造
+   `SandboxExecResult` 并交给路由的调用方，结果都会被采纳而不是回落。
+   这正是修复目标，但依赖旧回落语义的第三方集成需核对。
+4. `safe_error_text` 只处理**执行层异常消息**；`confirm_apply` 的 diff
+   预览正文仍原样回显（用户要看），若预览内容本身含密钥，那属于
+   工作区文件内容、不在本轮范围。
+5. `last_egress` 仍非线程安全；`undetectable` 是标记不是证明；显式
+   `--noproxy` 可绕过 `env_overrides`。
+6. `os_sandbox` 仍 **gap**、`deny_network_by_default` 出厂仍 **false**
+   未翻、`block_writes_outside_wd` 仍 `partial`，本轮没碰。
+7. **不是真机多平台验证**：Windows Job Object / macOS Seatbelt 由 fake
+   覆盖；`test_platform_portability.py` 长批次在 §14 轮已多次 502/超时
+   只跑到约 51% 零失败，本轮**未重跑**，如实沿用「未完整跑完」结论。
+   `test_arch_security.py` 1 例失败（策略拒绝 `/usr/bin/python3`）
+   已由 parent-blob baseline control 证明是既有环境行为，没为变绿改策略。
+8. A 线 10 个 pending、分叉改动未合并、第三方自适应红队未做。
+   标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
+### 验证（按分批报告，不冒充全量单跑）
+
+```
+本轮 + 上三轮（decided + refusal_routing + uniform + strict）
+    + boundaries + claude_parity                          227 passed
+shell 路由影响面（run_shell_impact / shell_safety_guard /
+    security_gate_hardening）                             99 passed
+parity + 配置 + 安全回归（7 文件）                        170 passed
+sandbox/platform/proc/e1e7 逐文件（8 文件合计）            130 passed
+    test_sandbox 5 / sandbox_gaps 12 / sandbox_system 39 /
+    risk_sandbox 14 / arch_platform 10 / arch_security_fixes 6 /
+    proc 5 / e1_e7_hardening 39
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+fully_superior = false   |  gaps = 26  |  criteria 2 真 3 假
+```
+
+各批次有重叠文件（如 `test_claude_parity` / `test_b2_boundaries`），
+**不累加成总数**。新增 `tests/test_b2su_decided_routing.py`（约 30 例）：
+`decided` 契约与唯一合法回落、四种裁决标志组合都采纳结果、端到端
+`run_shell` 不 bare Popen、强后端崩溃 / 超时 / 副本创建失败 / 路由自身
+异常都不回落且不回显密钥、副本创建失败不宣称 enforced、执行失败不弹
+确认、用户主动拒绝仍显示完整 diff、`safe_error_text` 脱敏/控制字符/
+非 str/脏 limit/绝不抛异常、三个「不该修」判定、矩阵计数钉死。

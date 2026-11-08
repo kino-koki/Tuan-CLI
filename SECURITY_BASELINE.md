@@ -639,3 +639,45 @@ baseline control 已证是既有环境行为，没为变绿改策略。
 shell 路由影响面 **99 passed**；parity + 配置 + 安全回归 **170 passed**；
 sandbox/platform/proc 逐文件合计 **91 passed**；
 `verify_doc_numbers.py problems == []`。
+
+
+---
+
+## R45 · 深度轮：`decided` 单一契约 + 执行层异常文本净化（见 `CLAUDE_PARITY.md` §16）
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R45-A | 路由用 `verdict.enforced / backend_available`（裁决字段）判断是否采纳结果。降级部署里 local 分支**已真实执行命令**却返回 `None`，`run_shell` 再裸跑第二遍 —— **命令双重执行**，隔离层脱敏 env / 出网裁决全部白做 | `SandboxExecResult.decided: bool = True`（默认 fail-closed）；路由只问 `res.decided`，唯一合法回落是 `not verdict.isolate` 显式 `decided=False` |
+| R45-B | 执行层异常 / 超时 / 强后端崩溃 / `isolate_workdir` 失败都返回 `enforced=False` → 同一条回落路径 | 所有失败分支显式 `decided=True`；路由自身 `except` 也返回终态错误文本 |
+| R45-C | `copy_diff_apply` 的 `isolate_workdir` 异常时旧实现 `enforced=True` **宣称已隔离执行**（副本都没建），且 `res.enforced` 在路由里从未被消费 | 如实 `enforced=False`；对 `res.returncode < 0` 也立刻返回，不建 diff、不弹确认 |
+| R45-D | `except` 分支把 `str(exc)` 原样放进 `res.error` 并回显，实测 `GITHUB_TOKEN=ghp_...` 与 OSC 8 / RLO 进用户终端 | `core/security_utils.safe_error_text()`：非 str 只取类型名 → 剥离 Cc/Cf/bidi/OSC → 复用 `redact_sensitive()` → 限长 400；净化在**来源处**做，出口不二次净化以保留 diff 预览可读性 |
+
+**A′（自己引入自己抓回）**：`test_no_second_sanitization_at_route_exit`
+初版断言 `count("safe_error_text") == 1`，实测是 2（同一 except 分支里
+import + 调用）。断言改成「次数 2 + 出口原样使用 `res.error` + 不出现
+`safe_error_text(res.error`」。测试断言写错，不是代码缺陷。
+
+**三个「不该修」**（都配可执行回归）：未终止 OSC 参数残留（ESC/BEL/RLO
+已剥离，终端不会再解释）；全局 `redact_sensitive` 行为不变（避免影响
+审计日志 / MCP 审计 / 导出链路）；`cmd_safe.py` / `orchestration.py`
+仍不是执行侧门（沿用 §15 源码扫描）。
+
+矩阵：**一个状态没动** —— `aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`。catalog 两条 note 补第四轮
+纠偏指向但 `status`/`evidence` 结构不变，`matrix.validate()` 与
+`evidence.verify_evidence()` 均空。新增回归把计数逐项钉死。
+
+如实边界：HTTPS CONNECT 隧道内 header 注入仍不可用
+（`credential_masking` 仍 partial）；bwrap/seatbelt/seccomp 无域名级过滤、
+`allowed_domains` 仍是元数据；**`decided` 默认 True 是行为变更**，依赖
+旧回落语义的第三方集成需核对；`safe_error_text` 只处理执行层异常消息，
+diff 预览正文仍原样回显；`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`block_writes_outside_wd` 仍
+partial；不是真机多平台验证，`test_platform_portability.py` 长批次
+§14 轮只跑到约 51% 零失败、本轮未重跑；`test_arch_security.py` 1 例
+失败已由 baseline control 证明是既有环境行为，没为变绿改策略。
+
+验证（按分批报告，批次间有重叠、不累加）：本轮 + 上三轮 + boundaries
++ claude_parity **227 passed**；shell 路由影响面 **99 passed**；
+parity + 配置 + 安全回归 **170 passed**；sandbox/platform/proc/e1e7
+逐文件合计 **130 passed**；`verify_doc_numbers.py problems == []`。

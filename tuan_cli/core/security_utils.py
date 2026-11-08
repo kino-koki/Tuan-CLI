@@ -158,3 +158,44 @@ def redact_nested(data: Any) -> Any:
     if isinstance(data, str):
         return redact_sensitive(data)
     return data
+
+
+# ---------------------------------------------------------------- 错误文本净化
+
+# 终端可解释的控制字符 / bidi / 零宽 / 私用区 / 未分配码点。
+# 用途与 UI 标语的净化层不同：这里**不做** grapheme 簇或显示宽度判定，
+# 只保证「执行层异常消息被回显到终端时不会被解释成转义序列、也不会
+# 用 RLO 重排欺骗用户」，因此不构成第三套宽度真值。
+_ERROR_CTRL_RE = re.compile(
+    r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\ue000-\uf8ff]"
+)
+
+
+def safe_error_text(text: Any, limit: int = 400) -> str:
+    """把执行层异常消息安全地变成可回显文本（绝不抛异常）。
+
+    实测缺口：``_execute_backend`` / ``_run_provider`` /
+    ``_execute_copy_diff_apply`` 的 ``except`` 分支直接把 ``str(exc)``
+    放进 ``SandboxExecResult.error``，而 ``tools/shell.py`` 在
+    ``returncode < 0`` 时原样回显 ``[错误] {res.error}``。异常消息可能
+    来自工具参数、路径或命令文本，于是 ``GITHUB_TOKEN=ghp_...`` 这类
+    真实凭据会原样回显；OSC 8 超链接与 RLO 也会进终端。
+
+    处理顺序：非 str 只取类型名（不 ``str()`` 未知对象，避免 repr 泄露）
+    -> 剥离控制字符 -> ``redact_sensitive`` 遮蔽密钥 -> 限长。
+    ``limit`` 脏值一律回落默认，不抛异常。
+    """
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        text = type(text).__name__
+    try:
+        out = _ERROR_CTRL_RE.sub("", text)
+        out = redact_sensitive(out)
+        cap = limit if isinstance(limit, int) and not isinstance(limit, bool) \
+            and 0 < limit <= 4096 else 400
+        if len(out) > cap:
+            out = out[:cap] + f"…[截断 {len(out) - cap} 字符]"
+        return out
+    except Exception:  # noqa: BLE001 - 净化自身绝不能让错误路径再抛
+        return "[错误文本净化失败, 原文已丢弃]"

@@ -436,3 +436,30 @@ shell 路由优先检查它、绝不回落；copy_diff_apply 立刻返回；
 catalog 两条 note 补**第三轮纠偏说明**，但 `status` 与 `evidence`
 结构不变。新增 `tests/test_b2su_refusal_routing.py`（26 例，含四个
 「不该修」判定与矩阵计数钉死）。详见 `SECURITY_BASELINE.md` R44。
+
+
+---
+
+## 深度轮增量（`decided` 单一契约，纠偏 §13–§15）
+
+`CLAUDE_PARITY.md` §16 是权威口径。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]` —— 纯深度修复，不把修好侧门包装成进度。
+
+- **G**：路由用 `verdict.enforced / backend_available` 判断是否采纳结果，
+  降级部署里 local 分支已真实执行却返回 `None` → **命令双重执行**。
+- **F1/F2/F3**：强后端崩溃、超时、副本创建失败都走同一条回落裸跑；
+  副本创建失败还 `enforced=True` 宣称已隔离执行。
+- **F4**：`str(exc)` 原样回显，实测 `GITHUB_TOKEN=ghp_...` 与 OSC/RLO
+  进用户终端。
+- **F5**：执行失败仍走 diff → confirm，要用户确认写回没成功执行的副本。
+
+修复：`SandboxExecResult.decided` 默认 True（fail-closed），路由只问它；
+`core/security_utils.safe_error_text()` 在来源处脱敏 + 剥离控制字符 +
+限长，出口不二次净化以保留 diff 预览；`copy_diff_apply` 对
+`returncode < 0` 早返回、外层异常如实 `enforced=False`。
+
+catalog 两条 note 补**第四轮纠偏指向**，但 `status` 与 `evidence`
+结构不变。新增 `tests/test_b2su_decided_routing.py`（约 30 例，含端到端
+`run_shell` 不 bare Popen、三个「不该修」判定与矩阵计数钉死）。
+详见 `SECURITY_BASELINE.md` R45。
