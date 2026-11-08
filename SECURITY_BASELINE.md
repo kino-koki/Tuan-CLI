@@ -787,3 +787,51 @@ config / harden / slash / parity（7 文件）**114 passed**；
 开启后 write / edit / move / delete / delete_dir 五类全部拒绝且磁盘零变更，
 读仍可读；`--writable` 放行；W3 场景三个文件全部保持 `AAA`。
 新增 `tests/test_b2su_write_boundary.py`（38 例）。
+
+
+---
+
+## R49 · B3 深度轮：Hooks 扩展事件 / CC 原生协议 / `updatedInput` 校验
+
+完整复现见 `CLAUDE_PARITY.md` 末尾「深度轮（续三）」。沿用自足标题。
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R49-R1 | 扩展事件配置（含拼错事件名）被**静默丢弃**且零报错 | 事件表 8→15，未知事件键 `unknown_hook_event` 显式审计 |
+| R49-R2 | 决策类事件走通知通道时 stdout 被吞，拦截器形同虚设 | 4 个决策类事件独立 `run_decision()` 裁决出口（复用 B1 fail-closed），误路由留痕拒绝 |
+| R49-R3 | CC 原生 `hookSpecificOutput`（`permissionDecision` / `updatedInput`）被完全忽略 | `_parse_decision` 协议兼容；`ask` 无确认通道 fail-closed；advisory 无注入通道只留痕 |
+| R49-R4 | hook 改参未知键原样进 `tool.handler(ctx, **args)` → `TypeError`；且旧实现替换掉必需参数 | 新增 `hooks/input_validation.py`：有 schema 丢未知键 + required/type/enum 校验，不符即 deny；无 schema 保守子集且 `enforced=False`。`tools/base.py` 传 `tool.parameters` |
+
+**接线**：`/add-dir` 授权成功 → `DirectoryAdded`（失败不触发、
+`--writable` 透传）；危险工具审批前 → `PermissionRequest`
+（**只允许收紧**，hook 的 `allow` 不能跳过 `ctx.confirm`）；
+`arch/execution.py` 的 `ToolCall` 加可选 `tool_schema`。
+
+**两个 B3 条目仍 `STATUS_GAP`**：`ConfigChange` / `WorktreeCreate` /
+`Elicitation` / `ElicitationResult` + `Notification` **没有本地生产
+触发点**；官方事件面远大于 7 个；CC exit-code-2 → decline 未实现；
+`arch/execution.py` / `cmd_hooks.py` 两条旁路拿不到 schema。
+catalog note 补纠偏但 `status`/`evidence` 结构不变。
+
+**三处既有断言同步（不是放宽）**：事件表 8→15 且新增扩展事件逐项
+枚举；两条「hook 可注入新键」断言改为「既有键改写生效 **且** 新键被丢弃」。
+
+**A′**：`_parse_decision` 改实例方法漏删 `@staticmethod`，12 条既有测试
+`TypeError`；自查后删除装饰器。替换脆弱性，不是代码回归。
+
+**矩阵一个状态没动**：`aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`；
+`matrix.validate()` 与 `evidence.verify_evidence()` 均空。
+
+**如实边界**：5 个扩展事件只有引擎无触发点；无 schema 旁路只是保守
+子集；`PermissionRequest` 刻意比 CC 更严格；**行为变更**：hook 改参
+不再能注入新键，旧 `{"args":...}` 同样走校验；`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`credential_masking` 仍 partial；
+A 线 10 pending、分叉改动、第三方自适应红队未做；不是真机多平台验证。
+标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
+逐字节未改。
+
+**验证（按分批，批次间有重叠、不累加）**：B3 新回归 + 5 个 hooks
+既有文件 **83 passed**；parity / 写边界 / 两条侧门 / B2 各轮 / config /
+slash **356 passed**；`verify_doc_numbers.py problems == []`；
+`py_compile` 全 OK。新增 `tests/test_b3_hooks_extended.py`。

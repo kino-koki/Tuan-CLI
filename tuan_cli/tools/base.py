@@ -487,6 +487,28 @@ class ToolRegistry:
         """
         if not tool.dangerous:
             return None
+
+        # B3: PermissionRequest 决策类事件接线。
+        # **刻意只允许收紧、不允许放宽**：CC 的 PermissionRequest hook 可以
+        # 程序化代答（跳过对话框），但 Tuan 的 ctx.confirm 是安全闸门而非
+        # 纯 UX；让 hook 返回 allow 就绕过确认等于打开侧门。所以这里
+        # 只接受 deny/ask（含 hook 故障 fail-closed），allow 仅留痕、不改变流程。
+        hooks = getattr(ctx, "hooks", None)
+        if hooks is not None and hasattr(hooks, "run_decision"):
+            try:
+                pr = hooks.run_decision(
+                    "PermissionRequest", tool_name=name,
+                    payload={"tool_input": args,
+                             "decision": getattr(decision, "action", ""),
+                             "reason": getattr(decision, "reason", "")})
+                if getattr(pr, "block", False):
+                    self._emit_exec(ctx, name, "denied")
+                    return ToolResult(
+                        status="denied",
+                        content=f"[PermissionRequest Hook 阻断] {pr.reason}",
+                        tool_name=name)
+            except Exception:  # noqa: BLE001 - hook 通道异常不得掀翻审批链
+                pass
         has_learned = (
             getattr(ctx, "safety_advice", None)
             and "learned" in str(getattr(ctx, "safety_advice", ""))
@@ -532,7 +554,8 @@ class ToolRegistry:
         if hooks is None:
             return (args, json.dumps(args, ensure_ascii=False, sort_keys=True), None, impact)
         try:
-            _hd = hooks.run_pre(name, args, dangerous=tool.dangerous, impact=impact)
+            _hd = hooks.run_pre(name, args, dangerous=tool.dangerous,
+                                impact=impact, tool_schema=tool.parameters)
         except Exception:
             _hd = None
         if _hd is not None and getattr(_hd, "block", False) and not getattr(ctx, "plan_mode", False):

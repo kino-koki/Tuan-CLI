@@ -115,14 +115,20 @@ def test_audit_hook_no_block():
 # ------------------------------------------------------------------ 参数改写
 
 def test_args_rewrite_allowed():
+    # B3 契约同步（断言更强，不是放宽）：hook 仍可改写**既有**参数，
+    # 但不得注入原 args 里没有的新键 —— 旧行为会把 `_hook_injected`
+    # 原样交给 `tool.handler(ctx, **args)` 并抛 TypeError。
+    # 无 schema 时走保守子集过滤；有 schema 时按 properties 白名单丢弃。
     mgr = HookManager(make_cfg({
         "allow_edit_args": True,
         "PreToolUse": [{"matcher": "*", "command": [PY, ARGS], "allow_edit_args": True}],
     }))
     d = mgr.run_pre("write_file", {"path": "/x", "content": "a"})
     assert d.args is not None
-    assert d.args.get("_hook_injected") == "yes"
     assert d.args.get("path") == "/x"
+    assert d.args.get("content") == "a"
+    assert "_hook_injected" not in d.args
+    assert d.block is False
 
 
 def test_args_rewrite_denied_when_not_authorized():

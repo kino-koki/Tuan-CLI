@@ -2162,3 +2162,82 @@ files `py_compile` OK. End-to-end measured: flag off preserves legacy
 add-dir writes; flag on refuses write/edit/move/delete/delete_dir with
 ZERO disk change while reads still work; `--writable` allows; the W3
 scenario leaves all three files at `AAA`. Batches overlap, NOT summed.
+
+
+---
+
+## B3 Depth Round: Extended Hook Events, CC Native Protocol, `updatedInput` Schema Validation
+
+> SELF-CONTAINED heading. Full reproduction: the final section of
+> `CLAUDE_PARITY.md`. **NOT A SINGLE MATRIX STATUS CHANGED**:
+> `aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+> `b_waves_done=["B1"]`.
+
+### Measured defects
+
+| ID | Measured result |
+|---|---|
+| R1 | `HookManager.__init__` iterated only 8 `HOOK_EVENTS`; a `DirectoryAdded` block, or a typo like `PermissionReqest`, was SILENTLY DROPPED with zero error -- same class as the previously fixed "silently ineffective rules table" |
+| R2 | If decision-type events were routed through `run_notify`, their stdout was silently swallowed: the user thinks an interceptor is installed while NOTHING happens |
+| R3 | `_parse_decision` only understood `args` / `block` / `decision`. A hook written per the official Claude Code docs (`hookSpecificOutput` with `permissionDecision` / `updatedInput`) evaluated to `None` and was `continue`d -- neither blocking nor rewriting |
+| R4 | A hook returning `{"args":{"path":"ok","TOTALLY_UNKNOWN":"pwn"}}` was accepted verbatim, and `tool.handler(ctx, **args)` raised `TypeError` (unexpected keyword + missing required argument) |
+
+Official behavior: since CC v2.1.300 `updatedInput` REPLACES the whole
+`tool_input`, unknown keys are dropped, and a rewrite missing required
+params or with wrong types DENIES the call.
+
+### Fix
+
+| Location | Change |
+|---|---|
+| `hooks/manager.py` | Event table 8 -> 15; unknown event keys produce an explicit `unknown_hook_event` audit; 4 decision-type events get an independent `run_decision()` exit (reusing B1 fail-closed), misrouting to the notify channel is logged and refused; `_parse_decision` now handles CC native `hookSpecificOutput` plus legacy formats; `ask` fails closed without a confirmation channel; advisory `additionalContext` has no local injection channel so it is logged, not faked |
+| `hooks/input_validation.py` (NEW) | With a schema: drop unknown keys via the `properties` allowlist, validate `required` / `type` / `enum`; any violation -> deny (`run_pre` converts to `block=True` + `invalid_updated_input`). Without a schema: conservative subset constraint (no new keys beyond the original args), `enforced=False` -- NEVER packaged as "schema validated" |
+| `tools/base.py` | Passes `tool_schema=tool.parameters`; dispatches `PermissionRequest` before dangerous-tool approval, NARROWING ONLY (a hook's `allow` must NOT skip `ctx.confirm` -- that is a security gate, not UX) |
+| `cli/cmd_slash.py` | Dispatches `DirectoryAdded` only after a SUCCESSFUL `/add-dir` grant (failures do not trigger), forwarding `--writable` |
+| `arch/execution.py` | `ToolCall` gains an optional `tool_schema` forwarded to `run_pre`; existing callers that omit it still take the conservative subset |
+
+### Why the two B3 entries STAY `STATUS_GAP`
+`ConfigChange` / `WorktreeCreate` / `Elicitation` /
+`ElicitationResult` plus `Notification` have NO local production
+trigger (configured hooks never fire == the capability does not exist).
+The official hooks reference lists far more events than these 7.
+`arch/execution.py` / `cmd_hooks.py` side paths have no schema.
+Catalog notes were calibrated but `status` / `evidence` structures are
+UNCHANGED -- NO padding by editing definitions.
+
+### Three existing assertions synchronized (NOT relaxed)
+The event-surface assertion moved from 8 to 15 with NEW per-event
+enumeration of the 7 extended events; two "hook may inject a new key"
+assertions became "existing-key rewrite still works AND the new key is
+dropped" -- stronger and more accurate.
+
+### A-prime
+When `_parse_decision` became an instance method, the replacement did
+not include the `@staticmethod` decorator above it, so 12 existing
+hooks tests failed with `TypeError`. Self-check removed the decorator.
+Replacement fragility, NOT a code regression.
+
+### Matrix: NOT A SINGLE STATUS CHANGED
+`matrix.validate()` and `evidence.verify_evidence()` both empty; new
+regressions pin every count.
+
+### Honest limits
+5 extended events have an engine but NO production trigger; CC
+exit-code-2 -> decline is NOT implemented; schema-less side paths are
+only a conservative subset; `PermissionRequest` is deliberately
+STRICTER than CC; BEHAVIORAL CHANGE: hook rewrites can no longer inject
+new keys (previously a `TypeError`), and the legacy `{"args":...}`
+format goes through the same validation with NO side door.
+`os_sandbox` remains a gap, `deny_network_by_default` remains false,
+`credential_masking` remains partial; A-line still has 10 pending
+modules, the local fork is unmerged, no third-party adaptive red team.
+NO real-device multi-platform verification. The slogan engine /
+cleaning layer / `mapping.py` / `tui.py` / `runtime_slogans.py` are
+byte-identical.
+
+### Verification (split batches, NOT claimed as one full-suite run)
+B3 new regressions + 5 existing hooks files **83 passed**;
+parity / write boundary / two side doors / B2 waves / config / slash
+**356 passed**; `verify_doc_numbers.py problems == []`; `py_compile`
+all OK. New `tests/test_b3_hooks_extended.py`. Batches overlap, NOT
+summed.

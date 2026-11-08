@@ -7,6 +7,12 @@
 - 所有 hook 调用写入审计事件 (kernel.emit("hook.executed"))。
 """
 
-from .manager import HookManager, HookDecision, HOOK_EVENTS
+from .manager import (
+    HookManager, HookDecision, HookFailure,
+    HOOK_EVENTS, CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS,
+)
 
-__all__ = ["HookManager", "HookDecision", "HOOK_EVENTS"]
+__all__ = [
+    "HookManager", "HookDecision", "HookFailure",
+    "HOOK_EVENTS", "CORE_HOOK_EVENTS", "EXTENDED_HOOK_EVENTS",
+]

@@ -1939,3 +1939,69 @@ Windows 路径未实测。标语引擎 / 净化层 / `mapping.py` / `tui.py` /
 开启后 write / edit / move / delete / delete_dir 五类全部返回
 「写路径越出工作目录」且磁盘零变更，读仍可读；`--writable` 放行；
 W3 场景三个文件全部保持 `AAA`。批次间有重叠，不累加。
+
+
+---
+
+## B3 深度轮：Hooks 扩展事件引擎 / CC 原生协议 / `updatedInput` schema 校验
+
+> 沿用**自足标题**。完整复现见 `CLAUDE_PARITY.md` 末尾「深度轮（续三）」。
+> **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`。
+
+### 实测缺陷
+
+| 编号 | 实测结果 |
+|---|---|
+| R1 | `HookManager.__init__` 只遍历 8 个 `HOOK_EVENTS`；写 `DirectoryAdded` 或拼错 `PermissionRequest` 整段配置**静默丢弃**且零报错 |
+| R2 | 决策类事件若走 `run_notify`，stdout 被静默吞掉 —— 用户以为装了拦截器，实际什么都不做 |
+| R3 | `_parse_decision` 只认 `args`/`block`/`decision`，按 Claude Code 官方文档写的 `hookSpecificOutput` 输出被判 `None` 后 `continue`，既不阻断也不改参 |
+| R4 | hook 返回 `{"args":{"path":"ok","TOTALLY_UNKNOWN":"pwn"}}` 时旧版原样采纳，`tool.handler(ctx, **args)` 直接抛 `TypeError`（未知关键字 + 缺必需参数） |
+
+官方口径：CC v2.1.300 起 `updatedInput` **替换**整个 `tool_input`、
+未知键丢弃、缺 required / 类型不符的改参**拒绝该次调用**。
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `hooks/manager.py` | 事件表 8→15；未知事件键 `unknown_hook_event` 审计；4 个决策类事件独立 `run_decision()`（复用 B1 fail-closed），误走通知通道留痕拒绝；`_parse_decision` 支持 CC 原生 `hookSpecificOutput` + 本地旧格式，`ask` 无确认通道 fail-closed，advisory `additionalContext` 无注入通道只留痕 |
+| `hooks/input_validation.py`（新增） | 有 schema：按 `properties` 白名单丢未知键、校验 `required`/`type`/`enum`，不符 → deny（`run_pre` 转 `block=True` + `invalid_updated_input`）；无 schema：保守子集约束（不得引入原 args 新键），`enforced=False` 不包装成已校验 |
+| `tools/base.py` | 传 `tool_schema=tool.parameters`；危险审批前派发 `PermissionRequest`，**只允许收紧**（hook 的 `allow` 不能跳过 `ctx.confirm`，那是安全闸门而非 UX） |
+| `cli/cmd_slash.py` | `/add-dir` 授权**成功**后派发 `DirectoryAdded`（失败不触发），`--writable` 透传 |
+| `arch/execution.py` | `ToolCall` 加可选 `tool_schema` 并传给 `run_pre`；既有调用方不填时仍走保守子集 |
+
+### 为什么两个 B3 条目仍 `STATUS_GAP`
+`ConfigChange` / `WorktreeCreate` / `Elicitation` / `ElicitationResult`
+4 个事件 + `Notification` **没有本地生产触发点**（配置了也不触发）；
+官方 hooks 参考列出的事件远多于 7 个；`arch/execution.py` /
+`cmd_hooks.py` 两条旁路拿不到 schema。catalog note 补纠偏但
+`status`/`evidence` 结构不变，**不靠改口径凑数**。
+
+### 三处既有断言同步（不是放宽）
+事件表断言从 8 同步到 15 并新增扩展事件逐项枚举；两条「hook 可注入
+新键」断言改成「既有键改写生效 **且** 新键被丢弃」，更强更准。
+
+### A′
+`_parse_decision` 改实例方法时漏删上方 `@staticmethod`，12 条既有
+hooks 测试全部 `TypeError`；自查后删掉装饰器。替换脆弱性，不是代码回归。
+
+### 矩阵：一个状态没动
+`matrix.validate()` 与 `evidence.verify_evidence()` 均空；新增回归把
+计数逐项钉死。
+
+### 如实边界
+5 个扩展事件只有引擎无触发点；CC exit-code-2 → decline 未实现；
+无 schema 旁路只是保守子集；`PermissionRequest` 刻意比 CC 更严格；
+**行为变更**：hook 改参不再能注入原 args 没有的新键（此前会
+`TypeError`），旧 `{"args":...}` 格式同样走校验不留侧门；
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+### 验证（按分批报告）
+B3 新回归 + 5 个 hooks 既有文件 **83 passed**；parity / 写边界 /
+两条侧门 / B2 各轮 / config / slash **356 passed**；
+`verify_doc_numbers.py problems == []`；`py_compile` 全 OK。新增
+`tests/test_b3_hooks_extended.py`。批次间有重叠，不累加。

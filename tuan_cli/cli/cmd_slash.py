@@ -489,7 +489,22 @@ def _cmd_add_dir(agent: Any, arg: str) -> None:
         if wr:
             ui.info(f"显式可写根: {len(wr)} 个 (仅在写边界开启时生效)")
         return
-    ui.success(authorize_extra_dir(agent.ctx, rest, writable=writable))
+    msg = authorize_extra_dir(agent.ctx, rest, writable=writable)
+    ui.success(msg)
+    # B3: DirectoryAdded 通知 (CC 2026-07-25 新增, /add-dir 注册工作目录后触发)。
+    # 仅在授权**成功**时派发；失败信息（不存在 / 系统关键目录）不触发事件，
+    # 否则外部 hook 会误以为目录已被纳入上下文。
+    if not msg.startswith("[错误]") and "无需授权" not in msg:
+        hooks = getattr(agent.ctx, "hooks", None)
+        if hooks is not None and hasattr(hooks, "run_notify"):
+            try:
+                hooks.run_notify("DirectoryAdded", {
+                    "directory": rest,
+                    "writable": writable,
+                    "session_only": True,
+                })
+            except Exception:  # noqa: BLE001 - 通知失败不卡住 REPL
+                pass
 
 
 def _cmd_web(agent: Any, arg: str) -> None:

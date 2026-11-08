@@ -48,7 +48,7 @@ DEFAULT_ON_FAILURE = "block"
 # - Stop / SubagentStop: 主回合结束 / 子任务结束时通知
 # - PreCompact: 上下文压缩前通知
 # - SessionStart / SessionEnd: 会话级生命周期通知
-HOOK_EVENTS = (
+CORE_HOOK_EVENTS = (
     "PreToolUse",
     "PostToolUse",
     "UserPromptSubmit",
@@ -59,8 +59,39 @@ HOOK_EVENTS = (
     "SessionEnd",
 )
 
-# 仅通知类事件 (无 matcher、stdout 忽略), 由 run_notify 统一派发
-_NOTIFY_EVENTS = ("Stop", "SubagentStop", "PreCompact", "SessionStart", "SessionEnd")
+# B3: Claude Code 扩展事件面 (7 个)。官方文档还列出更多事件
+# (PermissionDenied / PostToolBatch / TaskCompleted / FileChanged ...),
+# 本轮只补 catalog.py 已登记的这 7 个，不扩广度、不假装全事件对齐。
+EXTENDED_HOOK_EVENTS = (
+    "PermissionRequest",   # 权限弹窗前，可程序化 allow/deny
+    "Notification",        # 系统通知
+    "DirectoryAdded",      # /add-dir 注册工作目录后 (CC 2026-07-25)
+    "ConfigChange",        # 配置源变更后
+    "WorktreeCreate",      # worktree 创建前，可拒绝
+    "Elicitation",         # MCP server 请求用户输入，可拦截并代答
+    "ElicitationResult",   # 用户响应 elicitation 后，可覆盖
+)
+
+HOOK_EVENTS = CORE_HOOK_EVENTS + EXTENDED_HOOK_EVENTS
+
+# 仅通知类事件 (无 matcher、stdout 忽略), 由 run_notify 统一派发。
+# B3 把三个纯通知扩展事件纳入；决策类事件**不在**这里 —— 它们必须用
+# run_decision，否则 hook 的 stdout 会被静默吞掉（见本轮 R4）。
+_NOTIFY_EVENTS = (
+    "Stop", "SubagentStop", "PreCompact", "SessionStart", "SessionEnd",
+    "Notification", "DirectoryAdded", "ConfigChange",
+)
+
+# 决策类扩展事件：hook 的输出必须被解析成裁决，不能当通知忽略。
+_DECISION_EVENTS = frozenset({
+    "PermissionRequest", "WorktreeCreate", "Elicitation", "ElicitationResult",
+})
+
+# hooks 配置块里的非事件键（用于识别未知事件名，避免静默丢弃）
+_HOOK_CONFIG_KEYS = frozenset({
+    "enabled", "default_timeout", "allow_blocking", "allow_edit_args",
+    "audit_log", "on_failure",
+})
 
 
 @dataclass
@@ -179,6 +210,17 @@ class HookManager:
                 spec = self._parse_spec(evt, item)
                 if spec is not None:
                     self._specs.append(spec)
+
+        # B3 R1: 旧实现只遍历 HOOK_EVENTS，用户写了 `DirectoryAdded` 或把
+        # `PermissionRequest` 拼错成 `PermissionReqest`，整段配置被**静默
+        # 丢弃**且无任何报错。现在把未知事件名变成显式审计事件。
+        for key, val in hooks_cfg.items():
+            if key in _HOOK_CONFIG_KEYS or key in HOOK_EVENTS:
+                continue
+            if isinstance(val, (list, tuple)):
+                self._audit(key, {"raw": str(val)[:200]}, "unknown_hook_event",
+                            f"未知 hook 事件 {key!r}：该段配置不会被加载；"
+                            f"可用事件见 HookManager.HOOK_EVENTS ({len(HOOK_EVENTS)} 个)")
 
     # ------------------------------------------------------------------ 配置
 
@@ -303,11 +345,18 @@ class HookManager:
     # ------------------------------------------------------------------ 执行
 
     def run_pre(self, tool_name: str, args: Dict[str, Any],
-                dangerous: bool = False, impact: Optional[str] = None) -> HookDecision:
+                dangerous: bool = False, impact: Optional[str] = None,
+                tool_schema: Optional[Dict[str, Any]] = None) -> HookDecision:
         """PreToolUse: 返回决策 (可阻断 / 可改写参数)。
 
         安全: 阻断仅当 hook.blocking 且全局 allow_blocking 均为 True;
               改参仅当 hook.allow_edit_args 或全局 allow_edit_args。
+
+        B3: ``tool_schema`` 传工具的 JSON Schema (``Tool.parameters``)。
+        改参按 CC v2.1.300 语义校验 —— ``updatedInput`` 是**替换**整个
+        input、未知键丢弃、缺 required / 类型不符则**拒绝该次调用**。
+        无 schema 时退化为保守子集约束并在审计里标注 ``enforced=False``，
+        绝不把「没校验过」包装成「已通过校验」。
         """
         decision = HookDecision()
         if not self.enabled:
@@ -363,10 +412,88 @@ class HookManager:
             new_args = parsed.get("args")
             if isinstance(new_args, dict) and new_args:
                 if self.allow_edit_args or spec.allow_edit_args:
-                    decision.args = new_args
+                    from .input_validation import validate_updated_input
+                    v = validate_updated_input(
+                        new_args, args, tool_schema, tool_name=tool_name)
+                    self._audit("PreToolUse", spec.raw, "updated_input_validated",
+                                f"enforced={v.enforced} dropped={v.dropped} "
+                                f"deny={v.deny} {v.reason}")
+                    if v.deny:
+                        # CC v2.1.300: 被拒绝的 input 拒绝该次调用。
+                        decision.block = True
+                        decision.reason = (
+                            f"hook 改参未通过 schema 校验 (fail-closed): {v.reason}")
+                        decision.failure_kind = "invalid_updated_input"
+                        return decision
+                    decision.args = v.sanitized
                 else:
                     self._audit("PreToolUse", spec.raw, "edit_args_denied",
                                 "hook 请求改写参数但未被授权")
+        return decision
+
+    def run_decision(self, event: str, tool_name: str = "",
+                     payload: Optional[Dict[str, Any]] = None) -> HookDecision:
+        """B3: 决策类扩展事件的**统一裁决出口**。
+
+        与 ``run_notify`` 不同，这里会解析 hook 的 stdout。支持 CC 原生
+        ``hookSpecificOutput.permissionDecision`` (deny / allow / ask)，
+        以及旧 ``decision:"block"`` / ``block:true`` 格式。沿用 B1 的
+        fail-closed：hook 执行失败时按 on_failure 策略阻断。
+
+        **刻意不做的**：决策类事件不允许改写工具参数（``args`` 一律
+        忽略并留痕）—— 它们的语义是「批准/拒绝一个动作」，不是改参。
+        Elicitation/ElicitationResult 的 exit-code-2 → decline 语义本轮
+        未实现（见如实边界）。
+        """
+        decision = HookDecision()
+        if not self.enabled:
+            return decision
+        if event not in _DECISION_EVENTS:
+            self._audit(event, {}, "unknown_decision_event",
+                        f"{event!r} 不是决策类事件，run_decision 已忽略")
+            return decision
+        pl = dict(payload or {})
+        pl["hook_event_name"] = event
+        if tool_name:
+            pl.setdefault("tool_name", tool_name)
+        for spec in self._specs:
+            if spec.event != event:
+                continue
+            if tool_name and not self._match(spec.matcher, tool_name):
+                continue
+            out = self._exec(spec, pl)
+            failure = getattr(self._tls, "last_failure", None)
+            failed_run = (out is None or
+                          (isinstance(out, str) and not out.strip()))                 and failure is not None
+            if failed_run:
+                policy = spec.on_failure or self.on_failure
+                reason = (f"hook 执行失败 (fail-closed, on_failure={policy}): "
+                          f"event={spec.event} hook={spec.uid} "
+                          f"kind={failure.kind} detail={failure.detail}")
+                if policy in ("block", "ask"):
+                    decision.block = True
+                    decision.reason = reason
+                    decision.failure_kind = failure.kind
+                    self._audit(event, spec.raw, "failure_blocked", reason)
+                    return decision
+                self._audit(event, spec.raw, "failure_allowed",
+                            f"on_failure=allow 放行 ({failure.kind})")
+                continue
+            if out is None:
+                continue
+            parsed = self._parse_decision(out)
+            if parsed is None:
+                continue
+            if parsed.get("args") is not None:
+                self._audit(event, spec.raw, "decision_args_ignored",
+                            "决策类事件不支持改参，updatedInput/args 已忽略")
+            if parsed.get("block"):
+                if self.allow_blocking and spec.blocking:
+                    decision.block = True
+                    decision.reason = str(parsed.get("reason", "hook 未提供原因"))
+                    return decision
+                self._audit(event, spec.raw, "block_denied",
+                            parsed.get("reason", ""))
         return decision
 
     def run_post(self, tool_name: str, args: Dict[str, Any],
@@ -397,7 +524,17 @@ class HookManager:
 
         只读通知: stdout 忽略、异常隔离、不阻断主流程。
         """
-        if not self.enabled or event not in _NOTIFY_EVENTS:
+        if not self.enabled:
+            return
+        if event in _DECISION_EVENTS:
+            # B3 R4：决策类事件走通知通道等于把 hook 输出吞掉，用户以为
+            # 装了拦截器、实际什么都没发生。显式留痕并拒绝静默派发。
+            self._audit(event, {}, "decision_event_misrouted",
+                        "决策类事件必须用 run_decision 派发；run_notify 会忽略 stdout")
+            return
+        if event not in _NOTIFY_EVENTS:
+            self._audit(event, {}, "unknown_notify_event",
+                        f"事件 {event!r} 不是通知类事件，run_notify 已忽略")
             return
         pl = dict(payload or {})
         pl["hook_event_name"] = event
@@ -678,12 +815,18 @@ class HookManager:
             self._record_failure(spec, "error", d)
             return None
 
-    @staticmethod
-    def _parse_decision(stdout: str) -> Optional[Dict[str, Any]]:
-        """解析 hook stdout 为决策 dict。兼容多种风格:
-        - {"decision":"block","reason":...} / {"block":true,"reason":...}
-        - {"args": {...}}
-        - 非 JSON 输出 → 忽略 (视为无决策)
+    def _parse_decision(self, stdout: str) -> Optional[Dict[str, Any]]:
+        """解析 hook stdout 为统一决策 dict。
+
+        B3 R3：旧实现只认 ``args`` / ``block`` / ``decision``，用户按
+        Claude Code 官方文档写的
+        ``{"hookSpecificOutput":{"hookEventName":"PreToolUse",
+        "permissionDecision":"deny", "updatedInput":{...}}}`` 会被判
+        ``None`` 后静默 ``continue`` —— 既不阻断也不改参。现在同时支持
+        CC 原生格式与本地旧格式，并用 ``source`` 标明走了哪条协议。
+
+        ``updatedInput`` 按 CC 语义是**替换**整个 tool_input（不是
+        merge）；替换后的校验由 ``input_validation`` 在 run_pre 里做。
         返回 None 表示无有效决策。
         """
         s = (stdout or "").strip()
@@ -695,14 +838,41 @@ class HookManager:
             return None
         if not isinstance(data, dict):
             return None
+
+        # ---- CC 原生: hookSpecificOutput (PreToolUse / ElicitationResult 等) ----
+        hso = data.get("hookSpecificOutput")
+        if isinstance(hso, dict):
+            pd = str(hso.get("permissionDecision", "") or "").strip().lower()
+            reason = str(hso.get("permissionDecisionReason", "")
+                         or data.get("reason", "") or "")
+            updated = hso.get("updatedInput")
+            if pd in ("deny", "ask", "allow") or updated is not None:
+                # "ask" 在无交互确认通道时按 fail-closed 阻断（与 Tuan 既有
+                # 审批覆盖层契约一致：没有确认通道绝不静默放行）。
+                return {"block": pd in ("deny", "ask"), "reason": reason,
+                        "args": updated, "source": "cc_native",
+                        "permission_decision": pd}
+            ctx = hso.get("additionalContext")
+            if ctx:
+                # Advisory：CC 会注入下一回合；Tuan 没有该注入通道，
+                # 只留痕不静默假装已注入。
+                self._audit("PreToolUse", {}, "additional_context_no_channel",
+                            "CC advisory additionalContext 无本地注入通道，仅留痕")
+            return {"block": False, "reason": reason, "args": None,
+                    "source": "cc_native_no_decision"}
+
+        # ---- 本地旧格式（向后兼容，不改行为）----
         if "decision" in data:
             return {"block": str(data.get("decision")).lower() == "block",
-                    "reason": str(data.get("reason", "")), "args": data.get("args")}
+                    "reason": str(data.get("reason", "")),
+                    "args": data.get("args"), "source": "legacy"}
         if "block" in data:
             return {"block": bool(data.get("block")),
-                    "reason": str(data.get("reason", "")), "args": data.get("args")}
+                    "reason": str(data.get("reason", "")),
+                    "args": data.get("args"), "source": "legacy"}
         if "args" in data:
-            return {"block": False, "reason": "", "args": data.get("args")}
+            return {"block": False, "reason": "", "args": data.get("args"),
+                    "source": "legacy"}
         return None
 
     def _audit(self, event: str, hook: Any, status: str, detail: str = "") -> None:

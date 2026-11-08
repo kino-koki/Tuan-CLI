@@ -9,6 +9,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - B3 深度轮：Hooks 扩展事件引擎 / CC 原生协议 / updatedInput 校验
+
+> **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续三）」节。沿用自足标题。
+
+### 四个实测缺陷
+- **R1** `HookManager.__init__` 只遍历 8 个事件，写 `DirectoryAdded` 或
+  拼错 `PermissionRequest` 整段配置**静默丢弃**且零报错。
+- **R2** 决策类事件若塞进 `run_notify`，stdout 被静默吞掉（装了拦截器
+  实际什么都不做）。
+- **R3** `_parse_decision` 只认 `args`/`block`/`decision`，按 CC 官方
+  文档写的 `hookSpecificOutput` 输出被完全忽略。
+- **R4** hook 返回含未知键的 args 时原样交给
+  `tool.handler(ctx, **args)` 直接抛 `TypeError`（未知关键字 + 缺必需参数）。
+
+### 修复（如实，不夸大）
+- 事件表 8→15；未知事件键显式审计；4 个决策类事件新增
+  `run_decision()` 裁决出口（复用 B1 fail-closed），误走通知通道留痕拒绝。
+- `_parse_decision` 支持 CC 原生 `hookSpecificOutput`
+  （`permissionDecision` / `updatedInput` / `additionalContext`）+ 本地旧
+  格式；`ask` 无确认通道时 fail-closed；advisory 无注入通道只留痕。
+- 新增 `hooks/input_validation.py`：有 schema 按 CC v2.1.300 语义严格
+  校验（替换语义、丢未知键、required/type/enum 不符即拒绝调用）；
+  无 schema 退化为保守子集且 `enforced=False`。
+- `tools/base.py` 传 `tool.parameters`；危险审批前派发
+  `PermissionRequest`（**只允许收紧，hook 的 allow 不能跳过人工确认**）；
+  `/add-dir` 授权成功后派发 `DirectoryAdded`；
+  `arch/execution.py` 的 `ToolCall` 加可选 `tool_schema`。
+
+### 为什么两个 B3 条目仍 `STATUS_GAP`
+`ConfigChange` / `WorktreeCreate` / `Elicitation` / `ElicitationResult`
+4 个事件 + `Notification` **没有本地生产触发点**（配置了也不触发）；
+官方事件面远大于 7 个；`arch/execution.py` / `cmd_hooks.py` 两条旁路
+拿不到 schema，改参只走保守子集。catalog note 补纠偏但
+`status`/`evidence` 结构不变，不靠改口径凑数。
+
+### 三处既有断言同步（不是放宽）
+`test_hooks_events.py` 事件表断言从 8 同步到 15 并新增扩展事件逐项枚举；
+`test_hooks.py` / `test_hooks_http.py` 的「hook 可注入新键」断言改为
+「既有键改写生效 **且** 新键被丢弃」，更强更准。
+
+### A′
+`_parse_decision` 改实例方法时漏删上方 `@staticmethod`，12 条既有
+hooks 测试全部 `TypeError`；自查后删掉装饰器。替换脆弱性，不是代码回归。
+
+### 验证（按分批报告，批次间有重叠、不累加）
+B3 新回归 + 5 个 hooks 既有文件 **83 passed**；parity / 写边界 /
+两条侧门 / B2 各轮 / config / slash **356 passed**；
+`matrix.validate() == []`、`evidence.verify_evidence() == []`、
+`verify_doc_numbers.py problems == []`、`py_compile` 全 OK。
+新增 `tests/test_b3_hooks_extended.py`。
+
+### 如实边界
+5 个扩展事件只有引擎无触发点；CC exit-code-2 → decline 未实现；
+无 schema 旁路只是保守子集；`PermissionRequest` 刻意比 CC 更严格；
+**行为变更**：hook 改参不再能注入新键；`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`credential_masking` 仍 partial；
+A 线 10 pending、分叉改动、第三方自适应红队未做；不是真机多平台验证。
+标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
+逐字节未改。
+
 ## [Unreleased] - 深度轮（续二）：工具层写路径硬边界 / `/add-dir` 口径 / `edit_files` 真事务
 
 > **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、

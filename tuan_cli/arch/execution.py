@@ -322,6 +322,10 @@ class ToolCall:
     name: str
     args: Dict[str, Any]
     call_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    # B3: 可选的工具 JSON Schema，供 PreToolUse 的 updatedInput 校验。
+    # 默认 None —— 既有调用方不填时 run_pre 会走「无 schema 保守子集」
+    # 并在审计里标 enforced=False，绝不把没校验过包装成已校验。
+    tool_schema: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -378,7 +382,9 @@ class ToolPipeline:
         # 既有 HookManager 的 pre execute (传入真实工具名/参数, 尊重阻断/改参决策)
         if self.hooks is not None:
             try:
-                decision = self.hooks.run_pre(call.name, call.args)
+                decision = self.hooks.run_pre(
+                    call.name, call.args,
+                    tool_schema=getattr(call, "tool_schema", None))
                 if getattr(decision, "block", False):
                     outcome.error = f"hook-pre-blocked: {getattr(decision, 'reason', '')}"
                     self._audit(outcome, ctx, started)

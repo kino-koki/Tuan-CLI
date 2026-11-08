@@ -512,3 +512,28 @@ catalog 两条 note 补**第四轮纠偏指向**，但 `status` 与 `evidence`
 `block_writes_outside_wd` 仍 **`partial`**：命令层重定向不覆盖、
 默认仍关闭、TOCTOU 二次解析与 `os.replace` 之间仍有窗口。详见
 `SECURITY_BASELINE.md` R48。新增 `tests/test_b2su_write_boundary.py`（38 例）。
+
+
+---
+
+## B3 深度轮增量（Hooks 引擎 / 协议 / updatedInput 校验）
+
+`CLAUDE_PARITY.md` 末尾「深度轮（续三）」是权威口径。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`。
+
+- **R1** 扩展事件配置静默丢弃 → 事件表 8→15 + 未知事件键显式审计。
+- **R2** 决策类事件若走通知通道 stdout 被吞 → 独立 `run_decision()`
+  裁决出口。
+- **R3** `_parse_decision` 不认 CC 原生 `hookSpecificOutput` → 协议兼容
+  （`permissionDecision` / `updatedInput` / `additionalContext`）。
+- **R4** hook 改参未知键直接 `tool.handler(ctx, **args)` 抛 TypeError →
+  新增 `hooks/input_validation.py`，有 schema 严格校验（丢未知键 /
+  required / type / enum，不符即 deny），无 schema 保守子集且
+  `enforced=False`。
+
+两个 B3 条目**仍 `STATUS_GAP`**：4+1 个扩展事件没有生产触发点、
+旁路调用链拿不到 schema。catalog note 补纠偏但 `status`/`evidence`
+结构不变。接线：`/add-dir` → `DirectoryAdded`、危险审批 →
+`PermissionRequest`（只允许收紧）。新增
+`tests/test_b3_hooks_extended.py`。详见 `SECURITY_BASELINE.md` R49。

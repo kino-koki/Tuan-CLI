@@ -216,8 +216,8 @@ D3 = (
       STATUS_ALIGNED, ("tuan_cli/hooks/manager.py", "tests/test_hooks_events.py"),
       "HOOK_EVENTS 8 个核心事件 + SessionStart/SessionEnd CLI 边界接线 + UserPromptSubmit 注入 additionalContext"),
     M("hook_events_extended", "hooks", "PermissionRequest / Notification / DirectoryAdded / ConfigChange / WorktreeCreate / Elicitation / ElicitationResult",
-      STATUS_GAP, ("tuan_cli/hooks/manager.py",),
-      "缺 7 个扩展事件；DirectoryAdded 是 CC 2026-07-25 新增（/add-dir 注册工作目录后触发）",
+      STATUS_GAP, ("tuan_cli/hooks/manager.py", "tuan_cli/cli/cmd_slash.py", "tuan_cli/tools/base.py"),
+      "**B3 引擎层已就绪但仍是 gap**：事件表 8→15（CORE 8 + EXTENDED 7），未知事件键不再静默丢弃而是显式审计；决策类 4 事件有独立 run_decision 裁决出口，误走 run_notify 会留痕拒绝（否则 hook stdout 被吞）；接了 2 个真实生产触发点（/add-dir 成功→DirectoryAdded、危险工具审批前→PermissionRequest，且只允许收紧不允许 hook 代答跳过确认）。**仍标 GAP 的硬理由**：ConfigChange / WorktreeCreate / Elicitation / ElicitationResult **4 个事件没有本地生产触发点**（配置了也不会触发，等于没有该能力）；Notification 同样未接；官方最新 hooks 参考列出的事件远多于这 7 个（PermissionDenied / PostToolBatch / TaskCompleted / FileChanged ...），不假装全事件对齐；CC 的 exit-code-2 → decline 语义未实现。DirectoryAdded 是 CC 2026-07-25 新增",
       "B3"),
     M("hook_on_failure", "hooks", "onFailure: \"block\" (v2.1.317/319；CC 需显式配置，默认 fail-open)",
       STATUS_AHEAD, ("tuan_cli/hooks/manager.py", "tests/test_claude_parity.py"),
@@ -225,8 +225,8 @@ D3 = (
       ahead_reason="故障闭合是出厂默认且逐失败类型可审计，CC 需要用户逐条 hook 显式写 onFailure:\"block\"",
       ahead_dim="fail_closed_default"),
     M("hook_updated_input_validation", "hooks", "updatedInput unknown keys dropped / rejected input denies the call",
-      STATUS_GAP, ("tuan_cli/hooks/manager.py",),
-      "改参目前直接接受 dict，未按工具 schema 校验未知键",
+      STATUS_GAP, ("tuan_cli/hooks/input_validation.py", "tuan_cli/hooks/manager.py", "tuan_cli/tools/base.py"),
+      "**B3 主链路已补齐但仍是 gap**：新增 input_validation.validate_updated_input —— 有工具 JSON Schema 时按 CC v2.1.300 语义校验（updatedInput 是替换整个 input、按 properties 白名单丢未知键、required/type/enum 不符即拒绝该次调用）；无 schema 时退化为保守子集约束并标 enforced=False，绝不包装成已校验。同时 _parse_decision 补上 CC 原生 hookSpecificOutput 协议（旧版按官方文档写的 hook 输出被完全忽略）。实测修复的缺陷：hook 返回含未知键的 args 时旧版原样交给 tool.handler(ctx, **args) 直接抛 TypeError。**仍标 GAP 的硬理由**：arch/execution.py 的 ToolPipeline 虽加了可选 tool_schema 字段，但既有调用方不填，两条旁路仍走保守子集；cmd_hooks.py 手动测试入口同样无 schema；CC 的 schema 拒绝覆盖所有工具调用路径，Tuan 只覆盖主链路，不标 partial/aligned 以免夸大",
       "B3"),
 )
 

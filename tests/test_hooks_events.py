@@ -32,12 +32,21 @@ def make_cfg(block: dict) -> dict:
 # ------------------------------------------------------------------ 事件表
 
 def test_hook_events_surface():
-    # 对标 Claude Code 的 8 事件面
-    assert set(HOOK_EVENTS) == {
+    # B3 同步到新契约：8 个核心 + 7 个扩展事件。
+    # 这是**把断言同步到新的事件表**（并新增扩展事件逐项断言），
+    # 不是放宽检查 —— 事件表仍被完整枚举、多一个少一个都会失败。
+    from tuan_cli.hooks import CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS
+    assert set(CORE_HOOK_EVENTS) == {
         "PreToolUse", "PostToolUse", "UserPromptSubmit",
         "Stop", "SubagentStop", "PreCompact",
         "SessionStart", "SessionEnd",
     }
+    assert set(EXTENDED_HOOK_EVENTS) == {
+        "PermissionRequest", "Notification", "DirectoryAdded",
+        "ConfigChange", "WorktreeCreate", "Elicitation", "ElicitationResult",
+    }
+    assert set(HOOK_EVENTS) == set(CORE_HOOK_EVENTS) | set(EXTENDED_HOOK_EVENTS)
+    assert len(HOOK_EVENTS) == 15
 
 
 def test_run_notify_dispatches(tmp_path):

@@ -101,8 +101,9 @@ def test_http_hook_pre_modify_args(http_endpoint):
         d = mgr.run_pre("write_file", {"path": "/x"})
         assert d.block is False
         assert d.args is not None
-        assert d.args.get("_hook_injected") == "yes"
+        # B3 契约同步：既有键 path 的改写仍生效，注入的新键被丢弃。
         assert d.args.get("path") == "/safe"
+        assert "_hook_injected" not in d.args
     finally:
         srv.shutdown()
         srv.server_close()
