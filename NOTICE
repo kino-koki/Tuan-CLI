@@ -688,6 +688,18 @@ THIRD-PARTY ATTRIBUTIONS
               or parity-matrix status change accompanies this pass. The
               ten short diagnostic phrases are original translations.
 
+    Slogan correspondence pass (user-supplied 15-file slogan library):
+              the 860 supplied slogans plus 240 original localised
+              additions, 5 empty-pool entries and 3 short replacements
+              are original/derived project content. NO new third-party
+              source, word list, trademark asset or license scope was
+              introduced; the Claude Code / Codex attributions in
+              sections 9-15 are unchanged and are NOT mixed with this
+              text bank. No new CLI subcommand or parity-matrix status
+              change accompanies this pass. The historical root-level
+              `slogans/` package was converted to thin re-export shims
+              (no files deleted) so the word bank exists only once.
+
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
 

@@ -748,6 +748,11 @@ class QxtTUI:
         # 分片 / 工具开始这些真实事件才会推进文案；忙碌中长时间无进展会如实
         # 显示「疑似摸鱼」诊断。配置读 ~/.tuan/settings.json 的 spinnerVerbs。
         self._slogans = RuntimeSloganEngine()
+        # 标语库事件分发日志 (有界、脱敏)。每个真实生命周期事件都会
+        # 触发一次 pick_for_event, 让 "每个标语都要对应的" 是活的对应关系,
+        # 而不是一张静态表。安全事件在这里一律返回空, 告警不降级。
+        self._slogan_log = []
+        self._slogan_last_stream_at = 0.0
 
         # 流式 / 工具状态
         self._stream_buf = ""
@@ -3101,6 +3106,12 @@ class QxtTUI:
     def stream_assistant(self, delta: str) -> None:
         if not delta:
             return
+        # 流式分片高频到达; 1s 节流只是为了不刷屏分发日志,
+        # 活性引擎的 note_activity 仍按每个真实分片记账 (不节流)。
+        now = time.monotonic()
+        if now - self._slogan_last_stream_at >= 1.0:
+            self._slogan_dispatch("model.streaming")
+            self._slogan_last_stream_at = now
         self._streaming = True
         self._streamed = True
         # 每个分片都是一次真实进展：刷新「最后事件时间」，换词仍由引擎按
@@ -3163,6 +3174,7 @@ class QxtTUI:
             self._app.invalidate()
 
     def begin_tool(self, name: str) -> None:
+        self._slogan_dispatch("tool.exploring")
         self._running.append(name)
         self._busy = True
         self._slogans.note_activity("running_tool", detail=name)
@@ -3715,6 +3727,7 @@ class QxtTUI:
                 engine.reset()  # 重新抽词；证据链跨回合保留，供回放上一回合为何卡住
             # codex `FinalMessageSeparator`: 回合结束注入完成分隔线
             # `  Worked for Xs · HH:MM` (缩进 2 空格, dim), 紧贴助手回复下方。
+            self._slogan_dispatch("turn.completed")
             footer = self._completion_footer_text()
             if footer:
                 self._events.append(("class:textdim", "  " + footer))
@@ -3770,12 +3783,44 @@ class QxtTUI:
         finally:
             self._closed = True
 
+    def _slogan_dispatch(self, event: str):
+        """把真实生命周期事件分发到标语库, 记录脱敏决策。
+
+        刻意**不替换**任何既有 i18n 文案: 前几轮刚修好的状态口径与
+        139 例回归不该为了显示一句俏皮话被掀掉。这里建立的是可验证的
+        「事件 -> 标语」对应关系与留痕; 需要渲染时由调用方显式用
+        ``slogan_for(event)``。
+        """
+        try:
+            from ..ui.slogans import mapping  # noqa: PLC0415
+            d = mapping.pick_for_event(event)
+        except Exception:  # noqa: BLE001 - 标语库不可用绝不能掀掉 TUI
+            return None
+        # 只记事件/上下文/原因/来源/序号, 不记文案原文以外的任何上下文
+        self._slogan_log.append((d.event, d.context, d.reason, d.origin))
+        if len(self._slogan_log) > 64:
+            del self._slogan_log[:-64]
+        return d
+
+    def slogan_for(self, event: str) -> str:
+        """显式取一条事件标语供 UI 渲染 (空串表示该事件不应显示标语)。
+
+        安全事件 (``mapping.SECURITY_EVENTS``) 永远返回空 —— 结构化告警
+        不得被俏皮话替换或稀释。
+        """
+        try:
+            from ..ui.slogans import mapping  # noqa: PLC0415
+            return mapping.pick_for_event(event).text
+        except Exception:  # noqa: BLE001
+            return ""
+
     def liveness(self):
         """运行时活性快照（调试/doctor 用）。不新增 CLI 子命令、不改裁决。"""
         engine = getattr(self, "_slogans", None)
         return engine.liveness() if engine is not None else None
 
     def close(self) -> None:
+        self._slogan_dispatch("session.exit")
         self._closed = True
         if self._app and self._app.is_running:
             self._app.exit()

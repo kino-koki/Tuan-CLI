@@ -423,3 +423,47 @@ verify_deep2.py                 20 项纯 stdlib 独立验证全绿
 - `stall` 仍是启发式可观测提示，不是安全闸门/心跳/超时控制。
 - 上轮分叉改动仍未合并；远端 `PROVENANCE.md` 等原样保留；
   第三方自适应红队仍未做。
+
+
+---
+
+## 12. 与 1108 条标语库的对应（「每个标语都要对应的」）
+
+用户给了一套 15 文件的标语库 (860 条), 实测它**零真实接入点**:
+包在根目录 `slogans/` 而 docstring 写 `tuan_cli.ui.slogans`,
+13 处「接入」全是 docstring 示例, `pick("totally.unknown")` 静默飘
+`'Here.'`, 日语 `bg.progress` 拿到英文。本轮把它接进同一套体系,
+完整对应表见 `SLOGAN_MAPPING.md`。
+
+### 净化层抽取（本引擎的唯一改动）
+
+前两轮 (§10 / §11) 做成的净化层抽到
+`tuan_cli/ui/slogans/_clean.py`, 本模块改为 **re-export 同一批函数
+对象**:
+
+```
+runtime_slogans.sanitize_verb is _clean.sanitize_verb   → True
+runtime_slogans.display_cols  is _clean.display_cols    → True
+runtime_slogans._fit_headline is _clean._fit_headline   → True
+```
+
+原因: 新标语库 1108 条词条也要进终端, 再写一套净化就是**第三套宽度/净化
+真值** —— 正是 §11.3 刚消灭的东西。`mapping.audit().sanitizer_shared`
+把「同一出口」变成运行时断言。**139 例回归全部照常通过**,
+公共 API 一个没少, 事件驱动 / 三态活性 / 并发不变量全部不变。
+
+### 阶段纳入对应表
+
+`mapping.PHASE_EVENTS` 给本引擎的 5 个 PHASE 各绑定一个真实事件
+(`booting→session.start` / `waiting_model→model.waiting` /
+`streaming→model.streaming` / `running_tool→tool.exploring` /
+`retrying→turn.retry`)。`verbs_for_phase()` 提供桥, 但**刻意不改写
+`_pool()`**: 换词池会破坏既有 139 例回归。
+
+### 安全边界不变
+
+`stall` 仍是启发式可观测提示, 不是安全闸门; `SECURITY_EVENTS` 里的
+6 类结构化告警 `pick_for_event` 一律返回空, 不会被俏皮话降级。
+
+验证: `tests/test_slogan_mapping.py` 36 例 + 本文件 139 例 =
+175 passed; `verify_mapping.py` 26 项纯 stdlib 独立验证全绿。

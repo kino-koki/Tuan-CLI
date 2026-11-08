@@ -9,6 +9,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 每个标语都要对应的：860 条标语从零接入到一一对应
+
+> 用户给了 15 个标语库文件并要求「每个标语都要对应的」。实测发现原库
+> **零真实接入点**：文件在仓库根目录 `slogans/`, docstring 却全写
+> `from tuan_cli.ui.slogans import ...`（该路径当时不存在）; 全仓 13 处
+> 「接入」全是 docstring 示例; `pick("totally.unknown")` 静默飘出
+> `'Here.'`; 日语 `bg.progress` 拿到英文 `'Still at it.'`。
+> 完整复现证据与对应表见 `SLOGAN_MAPPING.md`。
+
+### 一一对应（不是口号, 是运行时计算的不变量）
+
+- 新增 `tuan_cli/ui/slogans/mapping.py`：**18 事件 ↔ 16 上下文**双向表,
+  16 个上下文各有唯一主事件; `runtime_slogans` 的 5 个 PHASE 也纳入
+  同一张表 (`PHASE_EVENTS`), 两套系统不再互不知情。
+- 新增 `SloganEntry` 全量注册表 (1695 条注册项), 每条带稳定 id
+  (`lang:context:index:sha8`) 与 `event`; `entry_for()` 可反查。
+- `audit()` 计算 **10 项不变量**：`orphan_slogans` / `events_without_pool` /
+  `contexts_without_event` / `events_without_context` / `locale_gaps` /
+  `empty_pools` / `duplicate_ids` / `unsafe_bindings` / `phase_gaps` /
+  `clipped_slogans` 全为 0, `sanitizer_shared=True`, `ok=True`。
+- **严格分发**: `pick_for_event` 对未知事件抛 `UnboundSloganEvent`,
+  绝不静默回落 `idle`; `pick_strict()` 对未知上下文抛异常;
+  旧 `pick()` 兼容行为保留但文档标注为非生产接线。
+- **安全告警不降级**: 用户库设计稿原文「不要动: 安全拦截的结构化告警
+  (那是降级, 不是优化)」变成 `SECURITY_EVENTS` 的 fail-closed 契约,
+  6 类安全事件一律返回空文案 + `security-notice`。
+
+### 补齐与本地优先
+
+- `extra_locales.py`: 8 语种 × 6 场景 × 5 条 = **240 条**, 补掉
+  48 个「非英语语种 + 扩展场景」全英文的组合。
+- `locales/patches.py`: 5 条补 `de:together` 唯一空主体池;
+  3 条把超长内置文案换成**语义完整**的短版 —— 实测原句
+  `No por mucho madrugar amanece más temprano.` 等 3 条超过 40 列,
+  走净化出口会被截成半句 (`…más tempra` / `…até`)。
+- `pick_local_first()`: 本地组单独成池优先取, `SloganDecision.origin`
+  如实标注来源。实测 9 语种 × 6 事件 × 100 轮 = **5400 次分发,
+  `locale` 5400 / 英文兜底 0**。
+- `stats()` 现为 `300 + 60 + 500 + 240 + 8 = 1108` 条源词条;
+  刻意不改 10 个语种文件与 `universal.py` / `extra.py` 的分布统计。
+
+### 净化层只有一份（不是第三套真值）
+
+前两轮把 `runtime_slogans` 的净化层做成了 bidi / 零宽 / ESC / 变体
+选择符 / grapheme / 幂等 的完整边界。抽到
+`tuan_cli/ui/slogans/_clean.py`, 活性引擎只 re-export 同一批函数对象:
+`runtime_slogans.sanitize_verb is _clean.sanitize_verb` → **True**,
+`audit().sanitizer_shared` 把这条变成可断言的不变量。
+
+### picker 六个真实缺陷
+
+`_windows` / `SloganPicker._last` 裸 dict → `RLock`; FIFO 冒充 LRU →
+`OrderedDict` + `move_to_end`; 尺寸变化整窗重建 → 保留历史; 小池白抽
+12 次 → ≤2 条短路; `min_interval` 接受 `-1/NaN/Inf/"5"/True` →
+严格类型 + `isfinite` + 可注入 `clock`; 未知上下文静默回落 →
+`pick_strict()` 抛异常。
+
+### 包位置与真实接入
+
+- 包落到**正确路径** `tuan_cli/ui/slogans/`; 根目录 `slogans/` 的
+  15 个文件改成薄兼容垫片 (re-export), **未删除任何文件**, 旧引用不崩
+  且词库只有一份。
+- `QxtTUI` 新增 `_slogan_dispatch()` / `slogan_for()`, 在
+  `begin_tool` / `stream_assistant`(1s 节流) / `_run_submit` 结束 /
+  `close` 四个真实生命周期点分发; 日志有界 64 条、脱敏。
+- **刻意不替换任何既有 i18n 文案**: 前几轮修好的状态口径与 139 例
+  回归不该为一句俏皮话被掀掉; 渲染由调用方显式 `slogan_for()`。
+
+### 验证与如实边界
+
+```
+tests/test_slogan_mapping.py   36 例全绿
+tests/test_runtime_slogans.py  139 例全绿（净化抽取后零回归）
+合计                           175 passed
+verify_mapping.py              26 项纯 stdlib 独立验证全绿
+verify_deep.py / verify_deep2.py  22 / 20 项全绿
+```
+
+- 共享映射是显式语义, 不是遗漏; 10 个 `thin_pools` 如实披露未硬凑;
+  英文兜底词条仍在注册表 (各有 event), 但 5400 次分发 0 次落到兜底。
+- TUI 只建立分发与留痕, **未替换既有欢迎横幅 / 完成行文案**。
+- 不是真机长跑; 本地副本与远端主线的分叉仍在;
+  `local_fork_unmerged/` 改动仍未合并; 第三方自适应红队仍未做。
+- 240 条补池与短诊断文案为原创, 无新增第三方素材。
+
 ## [Unreleased] - 深度轮 2：净化侧门、宽度真值收口、短版诊断落地
 
 > 延续「不再执着于广度而放弃深度」。本轮**仍不新增模块、不新增 CLI

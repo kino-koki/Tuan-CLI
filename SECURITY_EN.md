@@ -790,3 +790,42 @@ or changes any verdict. Evidence stays redacted in process memory.
 degrades emoji presentation to text style -- a deliberate trade for
 predictable width. Verification: 139 pytest cases + 20 pure-stdlib
 independent checks, all green.
+
+
+---
+
+## 13. Every Slogan Has a Counterpart: Strict Dispatch and No Alert Downgrade
+
+This round wires the user-supplied 860-slogan library to real runtime
+events. Three security-relevant points:
+
+- **Unknown events fail closed.** The old
+  `pick("totally.unknown")` silently returned `"Here."` -- a slogan with
+  no corresponding event was rendered. `pick_for_event` now raises
+  `UnboundSloganEvent`; `pick_strict` raises on unknown contexts;
+  `audit()` verifies `orphan_slogans=0`, `contexts_without_event=0`,
+  `events_without_pool=0` entry by entry.
+- **Structured alerts are never downgraded.** The library design note
+  said "do NOT touch structured security-blocking alerts (that is a
+  downgrade, not an optimisation)". This is now an executable contract:
+  `SECURITY_EVENTS` always returns empty text + `security-notice`,
+  and `audit().unsafe_bindings` asserts none is bound to a slogan.
+- **One sanitizer, not a third source of truth.** The sanitizer from
+  sections 10-12 was extracted to `tuan_cli/ui/slogans/_clean.py`;
+  the liveness engine re-exports the **same function objects**
+  (`sanitize_verb is _clean.sanitize_verb` -> True). All 1108 bank
+  verbs pass that single exit; `audit().clipped_slogans=0` and
+  `sanitizer_shared=True`. Three overlong built-in verbs (which would
+  be clipped mid-sentence) were replaced with complete short forms.
+
+Also fixed: unlocked module-level dicts -> `RLock` linearisation;
+`min_interval` rejecting `-1/NaN/Inf/"5"/True` (old `Inf` froze the
+spinner forever); real LRU windows that preserve history on resize.
+The dispatch log is bounded to 64 entries and desensitised (event,
+context, reason, origin, sequence only).
+
+**Unchanged boundaries**: `stall` is a heuristic observability hint,
+not a security gate; the TUI only dispatches and records, it does NOT
+replace existing i18n copy; no real-device soak test; no external
+adaptive red team. Verification: 175 pytest cases + 26 pure-stdlib
+independent checks, all green.

@@ -857,4 +857,36 @@ mcp:
 是「宽度可预测」的刻意取舍。验证：139 例 pytest + 20 项纯 stdlib
 独立验证全绿。
 
+---
+
+## 16. 每个标语都要对应的：严格分发与告警不降级
+
+本轮把用户提供的 860 条标语库接到真实运行时事件上。三点与安全直接相关:
+
+- **未知事件 fail-closed**: 旧 `pick("totally.unknown")` 静默返回
+  `'Here.'` —— 一条没有任何对应事件的标语被渲染。现在
+  `pick_for_event` 抛 `UnboundSloganEvent`, `pick_strict` 对未知上下文
+  抛异常; `audit()` 逐条核验 `orphan_slogans=0` /
+  `contexts_without_event=0` / `events_without_pool=0`。
+- **结构化告警不降级**: 用户库设计稿原文「不要动: 安全拦截的结构化
+  告警 (那是降级, 不是优化)」变成 `SECURITY_EVENTS` 的运行时契约 ——
+  6 类安全事件一律返回空文案 + `security-notice`,
+  `audit().unsafe_bindings` 断言它们绝不被绑上标语。
+  这是把一句注释变成了可执行边界。
+- **净化只有一份**: 前两轮 (§13–§15) 做成的净化层抽到
+  `tuan_cli/ui/slogans/_clean.py`, 活性引擎 re-export **同一函数对象**
+  (`sanitize_verb is _clean.sanitize_verb` → True)。1108 条词条全部
+  过同一出口, `audit().clipped_slogans=0` 且 `sanitizer_shared=True`;
+  不产生第三套宽度/净化真值。3 条超长内置文案 (会被截成半句)
+  显式换成语义完整的短版并留痕。
+
+另修 picker 的并发与配置缺陷: 裸 `dict` → `RLock` 线性化;
+`min_interval` 拒绝 `-1/NaN/Inf/"5"/True` (旧版 `Inf` 让 spinner 永不
+换词); 窗口改真 LRU 且尺寸变化保留历史。分发日志有界 64 条且脱敏,
+只记事件 / 上下文 / 原因 / 来源 / 序号。
+
+**边界不变**: `stall` 仍是启发式可观测提示, 不是安全闸门; TUI 只建立
+分发与留痕, 未替换既有 i18n 文案; 不是真机长跑; 第三方自适应红队仍未做。
+验证: 175 例 pytest + 26 项纯 stdlib 独立验证全绿。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

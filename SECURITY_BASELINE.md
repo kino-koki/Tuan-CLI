@@ -196,3 +196,18 @@ python -m tuan_cli.cli.cmd_harden status   # 或安装后: tuan harden status
 `stall` 仍是启发式可观测提示，非安全闸门/心跳/超时控制；不是真机 TUI
 长跑；分叉改动仍未合并。详见 `RUNTIME_SLOGANS.md` §11。本轮**不改**
 `fully_superior`、99 模块基线与任何对齐指标。
+
+
+---
+
+## R30 · 标语一一对应与严格分发
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R30 | 860 条标语零真实接入点（包路径与 docstring 不符、13 处「接入」全是示例）；未知上下文静默飘出无对应事件的标语；8 语种 × 6 场景跨语种英文泄漏；3 条超长内置文案被净化出口截成半句；`_windows`/`_last` 裸 dict 并发复合读写；`min_interval` 接受 `Inf`/`NaN`/字符串；安全告警可能被俏皮话降级 | 包落 `tuan_cli/ui/slogans/` + 根目录 15 个薄垫片；`mapping.py` 18 事件 ↔ 16 上下文 + 1695 条注册表 + 10 项 `audit()` 不变量；`pick_for_event` 未知事件抛异常、`SECURITY_EVENTS` 返回空；240 条补池 + 5 条空组 + 3 条完整短句替换；`pick_local_first` 5400 次分发 0 兜底；净化层抽到 `_clean.py` 并断言同一函数对象；`RLock` / 真 LRU / 严格 `min_interval` |
+
+如实边界：TUI 只建立分发与留痕，**未替换既有 i18n 文案**；英文兜底
+词条仍在注册表（各有 event）但本地优先；10 个 `thin_pools` 如实披露未硬凑；
+`stall` 仍是启发式可观测提示，非安全闸门；分叉改动仍未合并；第三方
+自适应红队仍未做。详见 `SLOGAN_MAPPING.md`。本轮**不改**
+`fully_superior`、99 模块基线与任何对齐指标。
