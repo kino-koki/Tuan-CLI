@@ -368,17 +368,22 @@ class TestNotChangedOnPurpose:
     def test_no_second_sanitization_at_route_exit(self):
         """出口不二次净化：diff 预览必须原样可读（见 test_user_decline）。
 
-        A′：初版断言写成 ``count == 1``，实测是 2 —— 因为同一个 except
-        分支里既有 ``from ... import safe_error_text`` 又有一次调用。
-        两处都在**自身异常分支**内，不是出口二次净化。断言改成检查
-        结果的返回语句原样使用 ``res.error``，并锁定出现次数。
+        A′（初版）：断言写成 ``count == 1``，实测是 2 —— 同一个 except
+        分支里既有 import 又有一次调用。
+        A′（本轮）：初版还用了固定 2600 字符窗口切片，注释改成自足描述
+        后 docstring 变长，把 except 分支挤出了窗口，count 变 0。改为用
+        ``inspect.getsource`` 取完整函数体，不依赖字符偏移。
+        口径纠偏：路由自身 except 实际用的是**顶层导入的**
+        ``safe_exception_text``（它内部复用 ``safe_error_text``，并把
+        ``str(exc)`` 包进 try 防损坏对象掀翻错误路径），不是函数内
+        ``safe_error_text(str(exc))``。断言按真实代码形态锁定。
         """
-        src = Path(SH.__file__).read_text(encoding="utf-8")
-        i = src.index("def _route_sandbox_isolation")
-        window = src[i:i + 2600]
-        assert window.count("safe_error_text") == 2  # import + 自身 except 调用
+        import inspect
+        window = inspect.getsource(SH._route_sandbox_isolation)
+        assert window.count("safe_exception_text") == 1  # 自身 except 调用
         assert 'f"[错误] {res.error or' in window  # 出口原样使用 res.error
         assert "safe_error_text(res.error" not in window
+        assert "safe_exception_text(res.error" not in window
 
     def test_no_direct_provider_run_outside_manager(self):
         """沿用上一轮源码扫描：没有绕过 plan_egress 的执行侧门。"""

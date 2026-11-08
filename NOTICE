@@ -909,3 +909,16 @@ SOFTWARE.
     unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
     parity line and all "no endorsement" statements still apply
     unchanged.
+
+
+21. Depth-round closure of two execution side doors (background `! cmd`
+    and the outbound MCP `run_shell` tool), plus the
+    `safe_exception_text` helper for all exception-message exits.
+    Still NO new third-party material: only the existing shell tool,
+    background-shell manager, shared security primitives and the
+    existing stdlib MCP server were extended, and two stdlib-based
+    regression test files were added. No Anthropic source, trademark
+    asset, upstream Rust source, or new third-party dependency was
+    copied. Sections 9-20 remain unchanged; the Apache-2.0 + MIT
+    dual attribution for the Codex TUI parity line and all
+    "no endorsement" statements still apply unchanged.

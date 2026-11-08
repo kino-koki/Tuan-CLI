@@ -463,3 +463,29 @@ catalog 两条 note 补**第四轮纠偏指向**，但 `status` 与 `evidence`
 结构不变。新增 `tests/test_b2su_decided_routing.py`（约 30 例，含端到端
 `run_shell` 不 bare Popen、三个「不该修」判定与矩阵计数钉死）。
 详见 `SECURITY_BASELINE.md` R45。
+
+
+---
+
+## 深度轮增量（两条执行侧门收口，纠偏 §16）
+
+`CLAUDE_PARITY.md` 末尾「深度轮（续）」是权威口径。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]` —— 纯深度修复。
+
+- **后台 `! cmd`**：`run_shell` 里它位于 guard / 隔离路由之前就 return，
+  实测带 `isolate=True` 裁决时隔离层调用 0 次、bare Popen 1 次；且后台
+  子进程不传 env、继承父进程真实密钥。现在需隔离一律 fail-closed 拒绝，
+  其余显式传脱敏 env。
+- **对外 MCP `run_shell`**：全仓唯一「外部 Agent 直接给 command +
+  shell=True」入口，只做文本红线、不传 env、`str(exc)` 原样回显。现在接
+  四层滤网裁决（DENY / CONFIRM / isolate 全拒绝）+ `plan_egress` 脱敏 env，
+  工具描述如实标注「没有 OS 级隔离」。
+- **`safe_exception_text()`**：`str(exc)` 在调用方先执行，损坏对象会掀翻
+  `except`；全部 12 处错误出口统一收口。
+
+**章节编号纠偏**：仓库里 `CLAUDE_PARITY.md` / `SECURITY.md` /
+`SECURITY_EN.md` / `SLOGAN_MAPPING.md` 各有 §17 且指代四个不同主题，
+上一轮后台注释引用「§17」实际指向不存在。本轮改用自足标题，不做全局
+重编号。新增 `tests/test_b2se_background_side_door.py` 与
+`tests/test_b2su_mcp_shell_gate.py`。详见 `SECURITY_BASELINE.md` R46/R47。

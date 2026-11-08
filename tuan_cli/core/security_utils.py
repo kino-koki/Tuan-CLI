@@ -199,3 +199,24 @@ def safe_error_text(text: Any, limit: int = 400) -> str:
         return out
     except Exception:  # noqa: BLE001 - 净化自身绝不能让错误路径再抛
         return "[错误文本净化失败, 原文已丢弃]"
+
+
+
+def safe_exception_text(exc: BaseException) -> str:
+    """把异常对象安全地变成 ``TypeName: 已净化的消息``（绝不抛异常）。
+
+    实测缺口：上一轮所有错误路径写成
+    ``f"{type(exc).__name__}: {safe_error_text(str(exc))}"``，但 ``str(exc)``
+    在**调用方**就执行了。若异常对象的 ``__str__`` 自己抛错（损坏对象 /
+    恶意工具注入），整个 ``except`` 分支会被掀翻，安全错误路径反而变成
+    未捕获异常。实测 ``__str__`` 抛 RuntimeError 时确实冒泡。
+
+    这里把 ``str(exc)`` 包进 try，异常时丢弃原文只留类型名；正常时复用
+    ``safe_error_text`` 做脱敏 / 控制字符剥离 / 限长。
+    """
+    name = type(exc).__name__
+    try:
+        raw = str(exc)
+    except Exception:  # noqa: BLE001 - 损坏的 __str__ 不许掀翻错误路径
+        return f"{name}: [异常消息不可用: __str__ 自身抛出, 原文已丢弃]"
+    return f"{name}: {safe_error_text(raw)}"

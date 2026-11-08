@@ -26,6 +26,7 @@ import time
 from typing import Any
 
 from ..core.proc import normalize_shell_command
+from ..core.security_utils import safe_exception_text, sanitize_env
 
 from ..core.kernel import Kernel, Plugin
 from ..core.whitelist import WhitelistManager, get_warning_level, MultiStageConfirm
@@ -268,7 +269,8 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
             from ..core.workspace_trust import consult_for_shell
             taction, treason = consult_for_shell(trust_level, command)
         except Exception as exc:  # noqa: BLE001
-            taction, treason = "deny", f"信任级别裁决异常, 保守拒绝: {exc}"
+            taction, treason = ("deny",
+                               f"信任级别裁决异常, 保守拒绝: {safe_exception_text(exc)}")
         if taction == "deny":
             ctx.safety_severity = "high"
             return f"[已拦截] {treason}: {command}"
@@ -661,9 +663,7 @@ def _route_sandbox_isolation(ctx: ToolContext, command: str, timeout: int) -> An
             if getattr(ctx, "kernel", None) is not None else SandboxManager()
         res = manager.execute_isolated(command, verdict, ctx, timeout=timeout or 60.0)
     except Exception as exc:  # noqa: BLE001 - 隔离执行异常不外抛, 但也不回落
-        from ..core.security_utils import safe_error_text
-        return (f"[错误] 沙箱隔离执行初始化异常: {type(exc).__name__}: "
-                f"{safe_error_text(str(exc))}")
+        return f"[错误] 沙箱隔离执行初始化异常: {safe_exception_text(exc)}"
     # §16: **是否回落由结果自身的 decided 决定，不再看裁决字段**。
     # 实测缺口：旧实现用 verdict.enforced / backend_available 判断是否采纳
     # 结果。降级部署（两者皆 False）里 _execute_backend 的 local 分支已经
@@ -733,13 +733,25 @@ def run_shell(ctx: ToolContext, command: str, timeout: int = 0) -> str:
             out = out[:MAX_OUTPUT] + f"\n...[截断, 原始输出 {_orig_len} 字符]"
         return f"exit={proc.returncode}\n{out.strip()}"
     except Exception as exc:  # noqa: BLE001
-        return f"[错误] shell 执行异常: {type(exc).__name__}: {exc}"
+        return f"[错误] shell 执行异常: {safe_exception_text(exc)}"
 
 
 def _start_background(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     """后台 `! cmd`: 异步启动并立即返回 job 摘要文本。
 
     后台命令同样经过执行前安全护栏: 命中红线/非良性命令仍被拦截 (后台不等于豁免)。
+
+    后台分支实测缺口（原注释曾引用一个章节编号，但仓库里存在多套
+    编号体系、那一节讲的是标语线而非本修复，故改为自足描述）：
+    ``run_shell`` 的
+    ``is_bg_command`` 分支在 ``_pre_exec_guard`` 和
+    ``_route_sandbox_isolation`` **之前**就 return，因此 ``! cmd`` 完全
+    绕过系统级沙箱 / plan_egress 出网合规裁决 / 凭据脱敏；且
+    ``BackgroundShellManager.start`` 的 Popen 不传 env，后台子进程继承
+    父进程完整环境（真实 GITHUB_TOKEN 原样进入）。
+    现在：需隔离的后台命令 **fail-closed 拒绝**（异步路径无法套用同步
+    隔离执行器与 copy-diff-apply 确认，绝不假装隔离生效）；其余后台命令
+    显式传脱敏 env。
     """
     body = strip_bg_prefix(command).strip()
     if not body:
@@ -752,13 +764,28 @@ def _start_background(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     guard = _pre_exec_guard(ctx, body)
     if guard:
         return guard
+    # 后台分支修复: 裁决要求隔离 → 后台路径做不到，fail-closed 拒绝而非裸跑。
+    # 不调用 _route_sandbox_isolation（它用带 `!` 的原始 command，且同步
+    # 执行会破坏后台语义）；直接读 ToolExecutor 写下的裁决对象。
+    verdict = getattr(ctx, "_sandbox_verdict", None)
+    if verdict is not None and getattr(verdict, "isolate", False):
+        return ("[错误] 后台命令 (`! cmd`) 不支持隔离执行: 该命令已被裁决要求系统级"
+                "强隔离，但后台分支会绕过沙箱后端 / 出网合规裁决 / 凭据脱敏链路。"
+                "请去掉 `!` 前缀以前台方式执行（会走 plan_egress 与隔离后端）；"
+                "或改用受管异步任务能力，不要用裸后台 shell 绕过闸门。")
+    # 后台分支修复: 后台子进程此前继承完整父环境。显式传脱敏 env；TUAN_WORKSPACE
+    # 被 SECRET_HINTS 的 "TUAN_" 抹掉，按 workspace 参数补回（同 §15 provider）。
+    ws = getattr(ctx, "workspace", None) or None
+    child_env = sanitize_env()
+    if ws:
+        child_env["TUAN_WORKSPACE"] = str(ws)
     try:
-        job = run_in_background(body, cwd=getattr(ctx, "workspace", None) or None,
-                                timeout=timeout or None)
+        job = run_in_background(body, cwd=ws, timeout=timeout or None,
+                                env=child_env)
     except ValueError as exc:
-        return f"[错误] {exc}"
+        return f"[错误] {safe_exception_text(exc)}"
     except Exception as exc:  # noqa: BLE001
-        return f"[错误] 后台命令启动失败: {type(exc).__name__}: {exc}"
+        return f"[错误] 后台命令启动失败: {safe_exception_text(exc)}"
     return (f"[后台已启动] job={job.job_id} (pid={job.pid}) status=running\n"
             f"命令: {body}\n"
             f"该命令在后台执行, 不阻塞当前回合。用 bg_shell 工具 (action=status) "
@@ -838,7 +865,7 @@ def run_bg_shell(ctx: ToolContext, action: str = "status", job_id: str = "",
             return f"[已终止] {job_id}" if ok else f"[错误] job={job_id} 不存在或已结束"
         return f"[错误] 未知 action: {action}"
     except Exception as exc:  # noqa: BLE001
-        return f"[错误] bg_shell 执行异常: {type(exc).__name__}: {exc}"
+        return f"[错误] bg_shell 执行异常: {safe_exception_text(exc)}"
 
 
 class ShellPlugin(Plugin):

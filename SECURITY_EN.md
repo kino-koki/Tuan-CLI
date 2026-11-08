@@ -1967,3 +1967,103 @@ regression **170 passed**; sandbox/platform/proc/e1e7 per-file
 **130 passed total** (batches overlap, NOT summed);
 `matrix.validate() == []`, `evidence.verify_evidence() == []`,
 `verify_doc_numbers.py problems == []`.
+
+
+---
+
+## Depth Round (continued): Two Execution Side Doors Closed -- Background `! cmd` and Outbound MCP `run_shell`
+
+> **Section-number calibration**: section 17 of THIS file is "Runtime
+> Closed-Loop"; section 17 of `CLAUDE_PARITY.md` is "Self-Healing /
+> Evidence Preservation"; section 17 of `SECURITY_EN.md` history is
+> "Owner Normalization"; `SLOGAN_MAPPING.md` has yet another section 17.
+> The previous round's background-branch comment cited "this round's
+> section 17" and pointed at NOTHING. This round uses SELF-CONTAINED
+> headings and rewrites the code comment accordingly; no global
+> renumbering (that would churn many existing cross-references and turn
+> a wording problem into a new one). Full reproduction: the final
+> section of `CLAUDE_PARITY.md`.
+
+Two rounds pushed together. **NOT A SINGLE MATRIX STATUS CHANGED**:
+`aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+`b_waves_done=["B1"]`.
+
+### Measured gaps
+
+| Location | Measured result |
+|---|---|
+| Background `! cmd` | In `run_shell`, the `is_bg_command` branch returns BEFORE both `_pre_exec_guard` and `_route_sandbox_isolation`. With an `isolate=True` verdict: isolation layer called **0 times**, bare `Popen` **1 time**, returned "background started". The `decided` contract governs only the main-route return value and CANNOT reach here |
+| Background env | `BackgroundShellManager.start`'s `Popen` passed NO `env`; the child inherited the full parent environment. Measured: a real `GITHUB_TOKEN` entered an async process subject to no egress control whatsoever |
+| MCP M1 | `ecosystem/mcp_server.py::_h_run_shell` is the ONLY entry where an EXTERNAL AGENT supplies `command` and it runs with `shell=True`; it did only `is_hard_redline` / `is_redline` TEXT checks, never `SandboxManager.assess_command` / `plan_egress`. Fuzzing already proved zero-width chars / ANSI-C / comment-newline bypass text-layer detection |
+| MCP M2 | `subprocess.run` passed no `env`; measured `GITHUB_TOKEN=ghp_REAL_SECRET_VALUE` entered the child verbatim, directly contradicting sections 13/15 ("child processes never hold real secrets") |
+| MCP M3 | `str(exc)` echoed verbatim to the external Agent: real key strings, OSC 8 / RLO leaked (both execution-failure and safety-decision-failure branches) |
+| Global | In `f"{type(exc).__name__}: {safe_error_text(str(exc))}"`, `str(exc)` executes in the CALLER. Measured: an exception whose `__str__` raises topples the entire `except` branch, turning a safety error path into an uncaught exception. 5 more bare `{exc}` echoes in `shell.py`, 1 in `background_shell.py`, 3 in MCP |
+
+### Fix
+
+| Location | Change |
+|---|---|
+| `core/security_utils.py` | New `safe_exception_text(exc)`: wraps `str(exc)` in try; on failure discards the text and keeps only the type name; otherwise reuses `safe_error_text`. ALL 12 error exits now go through it |
+| `tools/shell.py::_start_background` | `isolate=True` -> **FAIL-CLOSED REFUSAL** (an async path cannot use the synchronous isolation executor / copy-diff-apply confirmation; NEVER pretend isolation happened). Other background commands explicitly receive a `sanitize_env()` sanitized environment plus restored `TUAN_WORKSPACE` |
+| `core/background_shell.py` | `start` / `run_in_background` gain an `env` parameter (`None` preserves legacy inheritance for backward compatibility), forwarded to `Popen`; background-thread terminal failure sanitized |
+| `ecosystem/mcp_server.py` | Wired to `SandboxManager.assess_command` (DENY / CONFIRM / `isolate=True` ALL fail-closed) + `plan_egress(verdict, "local", ...)` (`allowed=False` refused, `plan.env` sanitized values explicitly passed to `subprocess.run`); all exception exits sanitized; tool description honestly states "NO OS-level isolation / per-command domain binding / copy confirmation" |
+| `sandbox/manager.py` | 5 `safe_error_text(str(exc))` -> `safe_exception_text(exc)` |
+
+**backend is fixed to `local`**: MCP is a synchronous bare subprocess;
+we NEVER take a strong-backend name from the verdict and pretend
+isolation happened. Default `allow_dangerous_tools=false` behavior
+unchanged.
+
+### Three "not changed on purpose" (each with an executable regression)
+`ignored` is a dead field (ZERO constructor sites repo-wide) and does
+NOT conflict with `decided=True`; kept for compatibility, locked by a
+source scan. `verdict.enforced` now has NO consumer repo-wide but is
+NOT deleted (deleting changes verdict object state that external
+integrations may read). `artifact_tool.py` / `code.py` `Popen` calls
+open editors/files, do NOT execute user-supplied shell commands, and
+are recorded honestly but untouched.
+
+### A-prime x2 (self-introduced, self-caught)
+The bulk replacement broke TWO multi-line f-string concatenations ->
+`py_compile` SyntaxError; fixed with string `+`. The previous round's
+`test_no_second_sanitization_at_route_exit` used a fixed 2600-character
+window slice; a lengthened comment pushed the `except` branch out of
+the window, and the real code uses `safe_exception_text` anyway. The
+assertion now uses `inspect.getsource` for the full function body.
+Both were test/replacement fragility, NOT code regressions.
+
+### Matrix: NOT A SINGLE STATUS CHANGED
+`status` / `evidence` structure unchanged; two catalog notes gained
+fifth/sixth calibration pointers; `matrix.validate()` and
+`evidence.verify_evidence()` both empty. New regressions pin every
+count so no padding by editing definitions.
+
+### Honest limits
+The MCP channel STILL has NO OS-level isolation / per-command domain
+binding / copy confirmation -- this round does fail-closed refusal +
+sanitized env, NOT those capabilities. `credential_masking` stays
+`partial` (headers invisible inside an HTTPS CONNECT tunnel). Both
+background and MCP ARE behavioral changes. When `ctx` has no
+`_sandbox_verdict` the background path does not block (an UPSTREAM
+verdict-chain boundary; this round does NOT fabricate a verdict or
+guess risk from text, which would reintroduce the "look at the string"
+bypass surface). `safe_exception_text` covers only exception messages;
+diff preview bodies are still echoed verbatim. `os_sandbox` remains a
+gap, `deny_network_by_default` remains false,
+`block_writes_outside_wd` remains partial. NO real-device multi-platform
+verification; long batches hit repeated 502/timeouts so split batches
+are reported as such, NOT claimed as one full-suite run. The 1
+`test_arch_security.py` failure was proven PRE-EXISTING by a
+parent-blob BASELINE CONTROL; NO policy relaxation to make it green.
+A-line still has 10 pending modules, the local fork remains unmerged,
+no third-party adaptive red team. The slogan engine / cleaning layer /
+`mapping.py` / `tui.py` are byte-identical to parent.
+
+### Verification (split batches, NOT claimed as one full-suite run)
+this round + parallel line + previous four **276 passed**;
+shell/background impact **82 passed**; parity + config + security
+regression **78 passed**; sandbox/platform/proc/e1e7 per-file
+**130 passed** (carried from section 16); `verify_doc_numbers.py
+problems == []`. Batches overlap and are NOT summed. New
+`tests/test_b2se_background_side_door.py` (~24 cases) and
+`tests/test_b2su_mcp_shell_gate.py` (~25 cases).

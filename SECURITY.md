@@ -1784,3 +1784,80 @@ control 证明是既有环境行为，没为变绿改策略；A 线 10 pending�
 sandbox/platform/proc/e1e7 逐文件合计 **130 passed**（批次间有重叠，
 不累加）；`matrix.validate() == []`、`evidence.verify_evidence() == []`、
 `verify_doc_numbers.py problems == []`。
+
+
+---
+
+## 深度轮（续）：两条执行侧门收口 —— 后台 `! cmd` 与对外 MCP `run_shell`
+
+> **章节编号纠偏**：本文件 §17 是「运行时闭环」，`CLAUDE_PARITY.md` §17
+> 是「自愈/证据保全」，`SECURITY_EN.md` §17 是「Owner Normalization」，
+> `SLOGAN_MAPPING.md` 另有一套 §17。上一轮后台分支代码注释引用的
+> 「本轮 §17」实际指向不存在。本轮改用**自足标题**，代码注释同步改自足
+> 描述，不做全局重编号。完整复现见 `CLAUDE_PARITY.md` 末尾。
+
+两轮合并推送。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`。
+
+### 实测缺口
+
+| 位置 | 实测结果 |
+|---|---|
+| 后台 `! cmd` | `run_shell` 里 `is_bg_command` 分支在 `_pre_exec_guard` **和** `_route_sandbox_isolation` 之前就 return。带 `isolate=True` 裁决时隔离层调用 **0 次**、bare `Popen` **1 次**、返回「后台已启动」。`decided` 契约只管主链路路由返回值，覆盖不到这里 |
+| 后台 env | `BackgroundShellManager.start` 的 Popen **不传 env**，子进程继承父进程完整环境，实测真实 `GITHUB_TOKEN` 原样进入不受出网管控的异步进程 |
+| MCP M1 | `ecosystem/mcp_server.py::_h_run_shell` 是全仓唯一「外部 Agent 直接给 `command` + `shell=True`」入口，只做 `is_hard_redline`/`is_redline` **文本判定**，不经过四层滤网 / `plan_egress`。fuzz 已证零宽字符 / ANSI-C / 注释换行可绕过 |
+| MCP M2 | `subprocess.run` 不传 env，实测 `GITHUB_TOKEN=ghp_REAL_SECRET_VALUE` 原样进子进程，与 §13/§15「子进程不持密钥」直接矛盾 |
+| MCP M3 | `str(exc)` 原样回显给外部 Agent：真实密钥串、OSC 8 / RLO 外泄（执行失败 + 安全判定失败两处） |
+| 全局 | 上一轮 `f"{type(exc).__name__}: {safe_error_text(str(exc))}"` 中 `str(exc)` 在**调用方**先执行；实测异常对象 `__str__` 抛错会掀翻整个 `except` 分支。`shell.py` 另有 5 处、`background_shell.py` 1 处、MCP 3 处裸 `{exc}` 回显 |
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `core/security_utils.py` | 新增 `safe_exception_text(exc)`：`str(exc)` 包进 try，异常时丢弃原文只留类型名；正常时复用 `safe_error_text`。**全部 12 处**错误出口统一走它 |
+| `tools/shell.py::_start_background` | 裁决 `isolate=True` → **fail-closed 拒绝**（异步路径套不上同步隔离执行器 / copy-diff-apply 确认，绝不假装隔离生效）；其余后台命令显式传 `sanitize_env()` 脱敏环境并补 `TUAN_WORKSPACE` |
+| `core/background_shell.py` | `start` / `run_in_background` 增加 `env` 形参（`None` 保持继承语义向后兼容），Popen 透传；后台线程异常终态净化 |
+| `ecosystem/mcp_server.py` | 接 `SandboxManager.assess_command`（DENY / CONFIRM / `isolate=True` 一律 fail-closed 拒绝）+ `plan_egress(verdict, "local", ...)`（`allowed=False` 拒绝，`plan.env` 脱敏值显式传给 `subprocess.run`）；所有异常出口净化；工具描述如实标注「没有 OS 级隔离 / 逐命令域名强绑定 / 副本确认」 |
+| `sandbox/manager.py` | 5 处 `safe_error_text(str(exc))` → `safe_exception_text(exc)` |
+
+**backend 固定 `local`**：MCP 本来就是同步裸 subprocess，绝不拿 verdict
+里的强后端名假装已隔离。默认 `allow_dangerous_tools=false` 行为不变。
+
+### 三个「不该修」（都配可执行回归）
+`ignored` 死字段与 `decided` 不冲突（全仓零构造点，保留做兼容）；
+`verdict.enforced` 全仓无消费点但**不删**（删除会改变 verdict 状态）；
+`artifact_tool.py` / `code.py` 的 Popen 打开编辑器/文件、不执行用户
+shell 命令，如实记录不动。
+
+### A′ ×2
+批量替换破坏两处多行 f-string 拼接 → `py_compile` SyntaxError，已改
+字符串 `+` 拼接；上一轮测试用固定 2600 字符窗口切片，注释变长后把
+except 分支挤出窗口，且实际代码是 `safe_exception_text` → 断言改用
+`inspect.getsource`。两处都是测试/替换脆弱性，不是代码回归。
+
+### 矩阵：一个状态没动
+`status` / `evidence` 结构不变，catalog 两条 note 补第五/六轮纠偏指向，
+`matrix.validate()` 与 `evidence.verify_evidence()` 均空。新增回归把计数
+逐项钉死，**不靠改口径凑数**。
+
+### 如实边界
+**MCP 通道仍没有 OS 级隔离 / 域名强绑定 / 副本确认**，本轮做的是
+fail-closed 拒绝 + 脱敏 env，**不是**把这些能力补上；`credential_masking`
+仍 `partial`（HTTPS CONNECT 隧道内 header 不可见）。后台/MCP 都是
+**行为变更**。`ctx` 无 `_sandbox_verdict` 时后台不拦（裁决链上游边界，
+本轮不伪造裁决、不靠文本猜高危）。`safe_exception_text` 只覆盖异常
+消息，diff 预览正文仍原样回显。`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`block_writes_outside_wd` 仍
+partial。不是真机多平台验证；长批次多次 502/超时按分批如实报告、
+不冒充全量单跑；`test_arch_security.py` 1 例失败已由 parent-blob
+baseline control 证明是既有环境行为，没为变绿改策略。A 线 10 pending、
+分叉改动、第三方自适应红队未做。标语引擎 / 净化层 / `mapping.py` /
+`tui.py` 逐字节未改。
+
+### 验证（按分批报告）
+本轮 + 并行线 + 上四轮 **276 passed**；shell/后台影响面 **82 passed**；
+parity + 配置 + 安全回归 **78 passed**；sandbox/platform/proc/e1e7
+逐文件 **130 passed**（沿用 §16 分批结果）；`verify_doc_numbers.py
+problems == []`。批次间有重叠，不累加。新增
+`tests/test_b2se_background_side_door.py`（约 24 例）与
+`tests/test_b2su_mcp_shell_gate.py`（约 25 例）。

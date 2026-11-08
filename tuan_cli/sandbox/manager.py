@@ -30,7 +30,7 @@ from .egress_plan import (
     MODE_DEGRADED, MODE_PROXY, MODE_UNPROVABLE, plan_egress,
     plan_is_consistent_with_verdict,
 )
-from ..core.security_utils import safe_error_text
+from ..core.security_utils import safe_exception_text
 
 log = logging.getLogger(__name__)
 
@@ -496,7 +496,7 @@ class SandboxManager:
             # 异常消息可能来自工具参数 / 路径 / 命令文本，必须净化。
             return SandboxExecResult(
                 returncode=-1, backend=backend, enforced=False,
-                error=f"{type(exc).__name__}: {safe_error_text(str(exc))}",
+                error=safe_exception_text(exc),
                 decided=True)
         finally:
             if proxy is not None:
@@ -538,8 +538,8 @@ class SandboxManager:
                 preview = build_diff_preview(wd)
             except Exception as exc:  # noqa: BLE001
                 res.returncode = -1
-                res.error = (f"生成变更预览失败 (fail-closed, 不写回): "
-                             f"{type(exc).__name__}: {safe_error_text(str(exc))}")
+                res.error = ("生成变更预览失败 (fail-closed, 不写回): "
+                             + safe_exception_text(exc))
                 return res
             # E7-TUI: 统一走审批覆盖层 (借鉴 Codex TUI approval_overlay)。
             # 有 ctx.confirm 时把结构化卡片交给现有 TUI 挂起式确认通道;
@@ -576,8 +576,8 @@ class SandboxManager:
             return SandboxExecResult(
                 returncode=-1, workspace_mode="copy_diff_apply", enforced=False,
                 applied=False, decided=True,
-                error=f"副本隔离执行失败 (fail-closed, 未写回): "
-                      f"{type(exc).__name__}: {safe_error_text(str(exc))}")
+                error="副本隔离执行失败 (fail-closed, 未写回): "
+                      + safe_exception_text(exc))
         finally:
             if wd is not None:
                 wd.cleanup()
@@ -611,7 +611,7 @@ class SandboxManager:
         except Exception as exc:
             return SandboxExecResult(
                 returncode=-1, backend=backend, enforced=False, decided=True,
-                error=f"{type(exc).__name__}: {safe_error_text(str(exc))}")
+                error=safe_exception_text(exc))
 
     @staticmethod
     def _run_provider(backend: str, command: str, cwd: str, timeout: float,
@@ -634,7 +634,7 @@ class SandboxManager:
         except Exception as exc:
             return SandboxExecResult(
                 returncode=-1, backend=backend, enforced=False, decided=True,
-                error=f"{type(exc).__name__}: {safe_error_text(str(exc))}")
+                error=safe_exception_text(exc))
 
     # ------------------------------------------------------------ 配置
     def _allowed_domains(self, ctx: Any) -> Optional[List[str]]:
