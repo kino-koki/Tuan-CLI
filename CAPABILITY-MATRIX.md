@@ -408,3 +408,31 @@
 新增实现/回归：`tuan_cli/sandbox/egress_plan.py`、
 `tests/test_b2s_egress_uniform.py`（37 例，含真实 `Popen` 看到 sentinel、
 四条分支 env 真透传、强后端默认拒绝、矩阵计数钉死）。
+
+
+---
+
+## 深度轮增量（终态拒绝 / 占位符保全，纠偏 §13/§14）
+
+`CLAUDE_PARITY.md` §15 是权威口径。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]` —— 纯深度修复，不把修好侧门包装成进度。
+
+- **R1**：`tools/shell.py` 路由用 `verdict.enforced` 判断是否采纳结果，
+  plan 拒绝天然 `enforced=False` → `enforce_required=false` 部署上
+  **被拒命令回落真实工作区裸跑**。
+- **R2**：`copy_diff_apply` 拒绝后仍走 diff/确认，把合规拒绝伪装成用户
+  主动拒绝并宣称已隔离执行。
+- **R3**：`_sanitize_env` 按键名把 `plan_egress` 注入的 sentinel 占位符
+  也抹空（§14 只验了传给 `provider.run` 的参数，没验子进程实收值）。
+- **R4**：`TUAN_WORKSPACE` 在三个强后端被 `TUAN_` hint 抹空且没补回。
+
+修复：`SandboxExecResult.terminal_refusal` 解耦终态拒绝与隔离生效；
+shell 路由优先检查它、绝不回落；copy_diff_apply 立刻返回；
+`core/security_utils.py` 新增 `is_masked_placeholder()`（不改全局
+`sanitize_env` 语义）；provider 按值保留占位符、四个后端统一补
+`TUAN_WORKSPACE`。
+
+catalog 两条 note 补**第三轮纠偏说明**，但 `status` 与 `evidence`
+结构不变。新增 `tests/test_b2su_refusal_routing.py`（26 例，含四个
+「不该修」判定与矩阵计数钉死）。详见 `SECURITY_BASELINE.md` R44。

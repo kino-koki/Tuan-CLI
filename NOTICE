@@ -881,3 +881,17 @@ SOFTWARE.
     unchanged; the Apache-2.0 + MIT dual attribution for the Codex
     TUI parity line and all "no endorsement" statements still apply
     unchanged.
+
+
+19. Depth-round terminal-refusal routing and placeholder preservation
+    (still NO new third-party material): the existing sandbox manager,
+    shell tool router, shared security primitives and sandbox provider
+    were extended so a pre-execution security refusal is treated as a
+    terminal result (never falling back to bare execution), and so
+    already-masked credential placeholders survive the provider's inner
+    environment sanitization. A new stdlib-only regression test file was
+    added. No Anthropic source, trademark asset, upstream Rust source,
+    or new third-party dependency was copied. Sections 9-18 remain
+    unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
+    parity line and all "no endorsement" statements still apply
+    unchanged.

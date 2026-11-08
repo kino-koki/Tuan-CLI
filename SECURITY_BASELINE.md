@@ -595,3 +595,47 @@ control 已证是既有环境行为，没为变绿改策略。
 验证：`test_b2s_egress_uniform.py` + `test_b2_egress_strict.py` **80 passed**；
 合并批次 A **341 passed**；逐文件 arch_platform 10 / arch_security_fixes 6 /
 proc 5 / risk_sandbox 14 passed；`verify_doc_numbers.py problems == []`。
+
+
+---
+
+## R44 · 深度轮：终态拒绝不回落 + 内层占位符保全（见 `CLAUDE_PARITY.md` §15）
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R44-A | `tools/shell.py::_route_sandbox_isolation` 用 `verdict.enforced / backend_available` 判断是否采纳隔离结果；plan 拒绝结果天然 `enforced=False`，`enforce_required=false` 且无强后端时返回 `None` → **被拒命令在真实工作区裸跑一遍** | `SandboxExecResult.terminal_refusal` 把「终态安全拒绝」与「隔离是否生效」解耦；路由**优先**检查它并无条件返回 `[错误] <拒绝原因>`，绝不回落 |
+| R44-B | `copy_diff_apply` 在拒绝后仍走 diff/确认流程，把合规拒绝伪装成用户主动拒绝，还无条件 `verdict.enforced=True` 宣称已隔离执行 | 检测到 `terminal_refusal` 立刻返回：不建 diff、不要确认、不设 `enforced=True`、展示真实拒绝原因 |
+| R44-C | `SandboxProvider._sanitize_env` 按键名把 `tuan-egress-sentinel-v1:<fp>` 占位符也抹成空串（§14 只验了传给 `provider.run` 的参数，没验子进程实收值） | `core/security_utils.py` 新增 `is_masked_placeholder()`；provider 按**值**保留占位符，真实值仍按键名抹空；全局 `sanitize_env` 语义不变 |
+| R44-D | `SECRET_HINTS` 含 `"TUAN_"`，三个强后端的 `TUAN_WORKSPACE` 被抹空且没补回 | 四个后端统一以 `workspace` 参数为准补回，不信任外部 env 假路径 |
+
+**两处必须配合**：先堵回落才能去掉 `verdict.enforced=True`，否则修语义
+谎言会变成放开裸跑。
+
+**A′（自己引入自己抓回）**：注释里带 `\n` 的文案示例被 Python 三引号
+解释成真实换行，`py_compile` 报 `SyntaxError`（manager.py:496），改成
+不含反斜杠的文案后恢复。
+
+**四个「不该修」**（都配可执行回归）：`last_egress` 并发撕裂未复现
+（双线程 × 200 次 0 撕裂，GIL 兜住，本轮不加锁、不宣称线程安全）；
+`cmd_safe.py` 只查可用性；`orchestration.py` 只挂 ctx、全仓无 `.run()`
+调用点（新增源码扫描，并标注未来若下游自己调 `ctx.sandbox_provider.run()`
+会绕过整套 `plan_egress`）；全局 `sanitize_env` 行为不变。
+
+矩阵：**一个状态没动** —— `aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`。catalog 两条 note 补第三轮
+纠偏说明但 `status`/`evidence` 结构不变，`matrix.validate()` 与
+`evidence.verify_evidence()` 均空。新增回归把计数逐项钉死。
+
+如实边界：HTTPS CONNECT 隧道内 header 注入仍不可用（`credential_masking`
+仍 partial）；bwrap/seatbelt/seccomp 无域名级过滤、`allowed_domains` 仍是
+元数据；R44-C 当前默认配置下**不产生已观测危害**（强后端被拒绝、不启
+代理），修的是接线一致性，不夸大；`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`block_writes_outside_wd` 仍
+partial；不是真机多平台验证，`test_platform_portability.py` 长批次上一轮
+只跑到约 51% 零失败、本轮未重跑；`test_arch_security.py` 1 例失败上一轮
+baseline control 已证是既有环境行为，没为变绿改策略。
+
+验证（按分批报告，批次间有重叠、不累加）：本轮 + 上两轮 **106 passed**；
+shell 路由影响面 **99 passed**；parity + 配置 + 安全回归 **170 passed**；
+sandbox/platform/proc 逐文件合计 **91 passed**；
+`verify_doc_numbers.py problems == []`。

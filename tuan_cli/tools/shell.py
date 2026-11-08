@@ -659,6 +659,14 @@ def _route_sandbox_isolation(ctx: ToolContext, command: str, timeout: int) -> An
         res = manager.execute_isolated(command, verdict, ctx, timeout=timeout or 60.0)
     except Exception as exc:  # noqa: BLE001 - 隔离执行异常不外抛, 留给原有路径兜底
         return f"[错误] 沙箱隔离执行初始化异常: {type(exc).__name__}: {exc}"
+    # 本轮: **执行前的终态拒绝优先**。plan_egress / EgressGuard 的拒绝是
+    # 终态安全裁决, 不是「隔离不可用」。旧实现只看 verdict.enforced /
+    # backend_available —— 拒绝结果天然 enforced=False, 在
+    # enforce_required=false 的部署上会返回 None, 于是 run_shell 继续在
+    # 真实工作区 subprocess.Popen 把被拒绝的命令**裸跑一遍**。
+    # 终态拒绝无条件返回错误文本, 绝不回落。
+    if getattr(res, "terminal_refusal", False):
+        return f"[错误] {res.error or '出网/凭据合规拒绝 (未执行)'}"
     # 强制隔离且后端可用 → 返回隔离结果。否则 (enforced=False, 回落 local):
     # 若配置 enforce_required 则以裁决的 DENY 语义拒绝, 由调用方阅读; 这里统一落地。
     if verdict.enforced or getattr(verdict, "backend_available", False):

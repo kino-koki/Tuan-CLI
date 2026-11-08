@@ -91,6 +91,13 @@ class SandboxExecResult:
     applied_files: List[str] = field(default_factory=list)
     diff_preview: Optional[Dict[str, Any]] = None
     confirm_reason: str = ""
+    # 本轮: **执行前的终态拒绝**（plan_egress / EgressGuard 拒绝）。
+    # 它既不是「隔离执行成功」(enforced=False), 也不是「隔离不可用,
+    # 请回落本地」—— 调用方必须把它当终态错误文本, 绝不能回落裸跑。
+    # 旧实现用 verdict.enforced / backend_available 当「是否采纳结果」的
+    # 开关, 而拒绝结果天然 enforced=False, 在 enforce_required=false 的
+    # 部署上会被当成「隔离没生效」→ 命令在真实工作区重跑一遍。
+    terminal_refusal: bool = False
 
     def as_shell_text(self) -> str:
         parts = []
@@ -429,7 +436,8 @@ class SandboxManager:
             plan_is_consistent_with_verdict(plan, verdict)
         if not plan.allowed:
             return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=plan.reason)
+                                     enforced=False, error=plan.reason,
+                                     terminal_refusal=True)
 
         # 代理只有本地后端能可靠连到（netns / seatbelt 隔离下宿主回环不可达）。
         # 生命周期 try/finally 覆盖所有分支：超时/异常也一定 stop()。
@@ -481,6 +489,20 @@ class SandboxManager:
             wd = isolate_workdir(cwd)
             res = self._execute_backend(command, verdict, wd.path, timeout)
             res.workspace_mode = "copy_diff_apply"
+            # 本轮实测缺口：plan_egress 在**执行前**就拒绝时（例如逐命令域名
+            # 声明 + 强后端无法证明合规），旧实现仍往下走完整流程：
+            #   build_diff_preview → make_confirm_callable → confirm_apply
+            # 把「出网合规拒绝」伪装成「用户主动拒绝」(error 里拼了
+            # outcome.reason 与 preview_text)，
+            # 还无条件 verdict.enforced=True 宣称「已隔离执行」。副本其实是空的
+            # （根本没执行命令），却弹给用户确认写回。
+            # 终态拒绝必须立刻返回：不生成 diff、不索要确认、不宣称已执行。
+            # 回落问题由 shell.py 路由检查 terminal_refusal 兜住，不再靠
+            # verdict.enforced 这个语义错配的开关。
+            if res.terminal_refusal:
+                res.applied = False
+                res.applied_files = []
+                return res
             # 副本隔离本身已生效, 标记 enforced 让 shell.py 的路由返回结果文本,
             # 而不是回落 None 后又把命令在真实工作区跑一遍。
             verdict.enforced = True

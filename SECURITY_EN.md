@@ -1777,3 +1777,88 @@ combined batch A **341 passed**; per-file arch_platform 10 /
 arch_security_fixes 6 / proc 5 / risk_sandbox 14 passed;
 `matrix.validate() == []`, `evidence.verify_evidence() == []`,
 `verify_doc_numbers.py problems == []`.
+
+
+---
+
+## 27. Depth Round: Terminal Refusals Never Fall Back, Inner Layer No Longer Eats Placeholders
+
+Full reproduction in `CLAUDE_PARITY.md` section 15. **Calibration of
+sections 13/14**: the binding was wired layer by layer, but the REFUSAL
+result itself was never wired correctly, and an inner layer ate the
+placeholder again. NOT A SINGLE MATRIX STATUS CHANGED.
+
+### Four MEASURED disconnects
+
+| ID | Measured result |
+|---|---|
+| **R1** | `tools/shell.py::_route_sandbox_isolation` uses only `verdict.enforced / backend_available` to decide whether to accept the isolation result. A `plan_egress` REFUSAL is naturally `enforced=False` (nothing executed). With `enforce_required=false` and no strong backend the route returns `None`, so `run_shell` runs the JUST-REFUSED command **bare in the real workspace** via `subprocess.Popen`. Confirmed by measuring three verdict configurations. |
+| **R2** | `copy_diff_apply` still ran `build_diff_preview -> make_confirm_callable -> confirm_apply` after a pre-execution refusal. The copy is EMPTY (nothing ran): `error` became "denied + preview" disguising a compliance refusal as a user decline, `verdict.enforced=True` unconditionally claimed "isolated execution", and a confirmation card asked the user to approve writing back a change that never happened. |
+| **R3** | `SandboxProvider._sanitize_env` blanks `OPENAI_API_KEY` by KEY NAME, which also wiped the `tuan-egress-sentinel-v1:<fp>` placeholder injected by `plan_egress` into `''`. Section 14 had verified the **env argument passed to `provider.run`**, NOT the value the child actually received. Strong-backend children got no recoverable marker and the `inject_headers()` chain silently broke. |
+| **R4** | `SECRET_HINTS` contains `"TUAN_"`, so `TUAN_WORKSPACE` was blanked; only `LocalSandbox` restored it, the other three strong backends did not. |
+
+**R3 stated honestly**: under current defaults a strong backend with a true
+per-command declaration is refused by section 14 and no proxy is started, so
+this break has NO observed real-world impact yet. The fix restores wiring
+consistency so a future relaxation (e.g. `metadata_only` + host-network
+proxy) cannot fail silently. Not overstated.
+
+### Fix
+
+| Location | Change |
+|---|---|
+| `sandbox/manager.py` | `SandboxExecResult` gains `terminal_refusal: bool = False`, DECOUPLING "terminal security refusal" from "isolation actually took effect"; `_execute_backend` sets it on `not plan.allowed`; `_execute_copy_diff_apply` returns immediately on it (no diff, no confirmation, no `verdict.enforced=True`) |
+| `tools/shell.py` | The route checks `res.terminal_refusal` FIRST and unconditionally returns `[error] <reason>` -- NEVER falls back. Normal-execution routing is unchanged. |
+| `core/security_utils.py` | New `MASKED_PLACEHOLDER_PREFIX` / `is_masked_placeholder()` in the shared-primitives layer (avoids a `core -> sandbox` reverse import cycle); global `sanitize_env` semantics UNCHANGED |
+| `core/sandbox_provider.py` | `_sanitize_env` preserves placeholders BY VALUE (real values still blanked by key name); all four backends restore `TUAN_WORKSPACE` from the `workspace` parameter, not from untrusted env |
+
+**Critical**: the two changes must land together -- the fallback must be
+blocked BEFORE removing `verdict.enforced=True`, otherwise "fixing a
+semantic lie" directly becomes "allowing bare execution".
+`terminal_refusal` is the single shared contract.
+
+### A-prime (self-introduced, self-caught)
+A comment used an error-text example containing `\n`; Python's triple-quoted
+string turned it into a REAL newline, producing a standalone `preview"),`
+line in source and a `py_compile` `SyntaxError` (manager.py:496). Reworded
+without the backslash. A comment broke compilability, not a runtime defect,
+but recorded honestly.
+
+### Four "not changed on purpose" (each with an executable regression)
+`last_egress` concurrent tearing NOT reproduced (2 threads x 200 writes, 0
+tears, GIL happens to cover it) -- NO lock added, no thread-safety claim;
+`cmd_safe.py` only probes `is_available()/.name`; `orchestration.py` only
+attaches the instance to `agent.ctx.sandbox_provider` with no `.run()` call
+anywhere (new source-scan regression, plus an honest note that a future
+downstream `ctx.sandbox_provider.run()` would bypass the whole
+`plan_egress`); global `sanitize_env` behavior unchanged.
+
+### Matrix: NOT A SINGLE STATUS CHANGED
+`aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+`b_waves_done=["B1"]`. Two catalog notes gained a THIRD calibration
+(section 13 overstated -> 14 -> 15) but `status`/`evidence` structure is
+unchanged; `matrix.validate()` and `evidence.verify_evidence()` both empty.
+A new regression pins every count so no padding by editing definitions.
+
+### Honest limits
+HTTPS CONNECT tunnel header injection still unavailable
+(`credential_masking` stays `partial`); bwrap/seatbelt/seccomp have no
+domain-level filtering and `allowed_domains` is still metadata;
+`last_egress` is still not thread-safe; `undetectable` is a marker not proof;
+`os_sandbox` remains a gap, `deny_network_by_default` remains false,
+`block_writes_outside_wd` remains partial; no real-device multi-platform
+verification -- the long `test_platform_portability.py` batch reached only
+~51% with zero failures in the previous round and was NOT rerun here, so
+"incomplete" is carried forward honestly; the 1 `test_arch_security.py`
+failure was proven pre-existing by a parent-blob BASELINE CONTROL and still
+reports 1 failed / 6 passed, with NO policy relaxation to make it green.
+A-line still has 10 pending modules, the local fork remains unmerged, no
+third-party adaptive red team. The slogan engine / cleaning layer /
+`mapping.py` / `tui.py` are byte-identical to parent.
+
+### Verification (split batches, NOT claimed as one full-suite run)
+This round + previous two **106 passed**; shell-routing impact **99 passed**;
+parity + config + security regression **170 passed**; sandbox/platform/proc
+per-file **91 passed total** (batches overlap, NOT summed);
+`matrix.validate() == []`, `evidence.verify_evidence() == []`,
+`verify_doc_numbers.py problems == []`.

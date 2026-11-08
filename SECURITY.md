@@ -1632,3 +1632,74 @@ baseline control 已证是既有环境行为，没为变绿改策略；A 线 10 
 合并批次 A **341 passed**；逐文件 arch_platform 10 / arch_security_fixes 6 /
 proc 5 / risk_sandbox 14 passed；`matrix.validate() == []`、
 `evidence.verify_evidence() == []`、`verify_doc_numbers.py problems == []`。
+
+
+---
+
+## 30. 深度轮：终态拒绝不回落、内层不吃掉占位符（完整复现见 `CLAUDE_PARITY.md` §15）
+
+**§13/§14 纠偏**：前两轮把强绑定逐层接好，但这轮发现**拒绝结果本身
+没接好**，且内层又把占位符吃掉了。矩阵计数一个没动。
+
+### 四个实测断点
+
+| 编号 | 实测结果 |
+|---|---|
+| **R1** | `tools/shell.py::_route_sandbox_isolation` 只用 `verdict.enforced / backend_available` 判断是否采纳隔离结果；plan 拒绝结果**天然 `enforced=False`**，`enforce_required=false` 且无强后端时路由返回 `None` → `run_shell` 把**被拒命令在真实工作区裸跑一遍**。实测三种 verdict 配置之一确实回落 |
+| **R2** | `copy_diff_apply` 在拒绝后仍走 `build_diff_preview → make_confirm_callable → confirm_apply`：副本其实是空的，`error` 变成「denied + 预览」把合规拒绝伪装成用户主动拒绝，还无条件 `verdict.enforced=True` 宣称已隔离执行，并弹确认卡片要用户确认写回没发生的变更 |
+| **R3** | `SandboxProvider._sanitize_env` 按**键名**把 `OPENAI_API_KEY` 置空，把 `plan_egress` 注入的 `tuan-egress-sentinel-v1:<fp>` 也在接线内层抹成 `''` —— §14 验证的是**传给 provider.run 的参数**，不是子进程实际拿到的值。强后端拿不到可还原标记，`inject_headers()` 链路静默断裂 |
+| **R4** | `SECRET_HINTS` 含 `"TUAN_"`，`TUAN_WORKSPACE` 被抹空；只有 `LocalSandbox` 补回，另外三个强后端此前都没补 |
+
+**R3 如实说明**：当前默认配置下强后端 + 真正逐命令声明会被 §14 拒绝、
+不启代理，所以该断裂**不产生已观测的实际危害**；修的是接线一致性，
+防止未来放宽（如 `metadata_only` + host 网络代理）时静默失效，不夸大。
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `sandbox/manager.py` | `SandboxExecResult` 新增 `terminal_refusal: bool = False`，把「终态安全拒绝」与「隔离是否生效」**解耦**；`_execute_backend` 在 `not plan.allowed` 时置 True；`_execute_copy_diff_apply` 检测到它立刻返回（不建 diff、不要确认、不设 `verdict.enforced=True`） |
+| `tools/shell.py` | 路由**优先**检查 `res.terminal_refusal` → 无条件返回 `[错误] <拒绝原因>`，绝不回落；正常执行路径逻辑原样不动 |
+| `core/security_utils.py` | 新增 `MASKED_PLACEHOLDER_PREFIX` / `is_masked_placeholder()`（共享原语层，避免 `core → sandbox` 反向循环导入）；**不改** `sanitize_env` 全局语义 |
+| `core/sandbox_provider.py` | `_sanitize_env` 按**值**保留占位符（真实值仍按键名抹空）；四个后端统一以 `workspace` 参数为准补 `TUAN_WORKSPACE`，不信任外部 env 假路径 |
+
+**关键**：两处必须配合 —— 先堵回落才能去掉 `verdict.enforced=True`，
+否则「修语义谎言」会直接变成「放开裸跑」。`terminal_refusal` 是共享的
+单一契约。
+
+### A′（自己引入、自己抓回）
+写注释时用了带 `\n` 的错误文案示例，Python 三引号字符串把它解释成真实
+换行，写入源码后变成独立一行 `preview"),`，`py_compile` 直接
+`SyntaxError`（manager.py:496）。改成不含反斜杠的文案后恢复。
+
+### 四个「不该修」（都配可执行回归）
+`last_egress` 并发撕裂未复现（双线程 × 200 次 0 撕裂，GIL 兜住，本轮
+**不加锁**、不宣称线程安全）；`cmd_safe.py` 只查 `is_available()/.name`；
+`orchestration.py` 只挂 `agent.ctx.sandbox_provider`、全仓无 `.run()` 调用点
+（新增源码扫描回归，并标注未来若下游自己调 `ctx.sandbox_provider.run()`
+会绕过整套 `plan_egress`）；全局 `sanitize_env` 行为不变。
+
+### 矩阵：一个状态没动
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`。catalog 两条 note 补第三轮纠偏说明但 `status` /
+`evidence` 结构不变，`matrix.validate()` 与 `evidence.verify_evidence()`
+均空。新增回归把计数逐项钉死，**不许靠改口径凑数**。
+
+### 如实边界
+HTTPS CONNECT 隧道内 header 注入仍不可用（`credential_masking` 仍 partial）；
+bwrap/seatbelt/seccomp 无域名级过滤、`allowed_domains` 仍是元数据；
+`last_egress` 仍非线程安全；`undetectable` 是标记不是证明；`os_sandbox`
+仍 gap、`deny_network_by_default` 仍 false 未翻、
+`block_writes_outside_wd` 仍 partial；不是真机多平台验证，
+`test_platform_portability.py` 长批次上一轮只跑到约 51% 零失败、本轮
+未重跑，如实沿用「未完整跑完」；`test_arch_security.py` 1 例失败上一轮
+parent-blob baseline control 已证是既有环境行为，本轮复跑仍
+1 failed/6 passed，没为变绿改策略；A 线 10 pending、分叉改动、
+第三方自适应红队未做。标语引擎 / 净化层 / `mapping.py` / `tui.py`
+逐字节未改。
+
+### 验证（按分批报告）
+本轮 + 上两轮 **106 passed**；shell 路由影响面 **99 passed**；
+parity + 配置 + 安全回归 **170 passed**；sandbox/platform/proc 逐文件
+合计 **91 passed**（批次间有重叠，不累加）；`matrix.validate() == []`、
+`evidence.verify_evidence() == []`、`verify_doc_numbers.py problems == []`。

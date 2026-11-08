@@ -11,6 +11,19 @@ import os
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 
+# 出网凭据脱敏占位符前缀。与 sandbox/egress.py::SENTINEL_PREFIX 同值；
+# 放在共享原语层避免 core -> sandbox 的反向导入（循环），并有回归断言
+# 两边常量恒等。占位符**不是**真实密钥，脱敏链路上必须原样保留，
+# 否则下游出网代理拿不到可用于 inject_headers() 还原的标记。
+MASKED_PLACEHOLDER_PREFIX: str = "tuan-egress-sentinel-v1:"
+
+
+def is_masked_placeholder(value: Any) -> bool:
+    """判断一个环境变量值是否已是脱敏占位符（而非真实凭据）。"""
+    return (isinstance(value, str)
+            and value.startswith(MASKED_PLACEHOLDER_PREFIX))
+
+
 # 敏感环境变量名片段 (统一来源, 所有沙箱/安全模块从此处导入)
 SECRET_HINTS: tuple = (
     "API_KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "PRIVATE_KEY",

@@ -1021,6 +1021,12 @@ gap 26 / not_applicable 8`，`fully_superior=false`，`b_waves_done=["B1"]`）�
 
 ### 矩阵：一个状态都没动
 
+> **§15 纠偏**：本节「四条路径统一拿 `plan.env`」描述的是执行层内部，
+> 但**路由层没接好** —— `tools/shell.py` 仍用 `verdict.enforced` 判断
+> 是否采纳结果，plan 的拒绝结果天然 `enforced=False`，会在
+> `enforce_required=false` 的部署上回落裸跑；`copy_diff_apply` 分支还会
+> 把合规拒绝伪装成用户主动拒绝。下一轮实测发现并修复，见 §15。
+
 本轮是纯深度修复，**不把修好侧门包装成 aligned 增加或 gap 减少**。
 `test_b2s_egress_uniform.py::TestMatrixHonesty::test_counts_unchanged`
 把 `by_status` 逐项、`gaps=26`、`fully_superior=false`、
@@ -1072,3 +1078,161 @@ fully_superior = false   |  gaps = 26  |  criteria 2 真 3 假
 `source` 消费验证、四条分支 env 真透传、强后端默认拒绝、显式降级可见、
 全局白名单部署不破坏、platform 签名/`env=None` 兼容/真实 `Popen` 看到
 sentinel、配置枚举与告警、`last_egress` 每分支必写、矩阵计数钉死。
+
+
+---
+
+## 15. 深度轮：终态拒绝不回落、内层不吃掉占位符（纠偏 §13/§14）
+
+不扩广度，**矩阵计数一个没动**（`ahead 10 / aligned 46 / partial 9 /
+gap 26 / not_applicable 8`，`fully_superior=false`，`b_waves_done=["B1"]`）。
+沿 §14 刚统一的 `plan_egress` 链路**往上走一层（路由消费）**、
+**往下走一层（provider 内层）**，找到四个断点。
+
+### R1（最值钱）：被拒绝的命令会在真实工作区裸跑一遍
+
+`tools/shell.py::_route_sandbox_isolation` 用
+
+```python
+if verdict.enforced or getattr(verdict, "backend_available", False):
+    return res.as_shell_text() ...
+return None      # ← run_shell 继续 subprocess.Popen 在真实工作区执行
+```
+
+判断是否采纳隔离结果。但 **`plan_egress` 的拒绝结果天然 `enforced=False`**
+（它根本没执行，何来「隔离生效」）。用 `enforced` 当「是否采纳结果」的
+开关是语义错配：`HardIsolationFilter` 在 `enforce_required=false` 且无强
+后端时返回 `backend_available=False, enforced=False`，于是路由返回
+`None` —— **`run_shell` 把刚被出网合规拒绝的命令在真实工作区裸跑一遍**。
+
+实测三种 verdict 配置，`(enforced=False, backend_available=False)` 确实
+回落；另外两种因 `backend_available` / `enforced` 为真而正确返回错误文本。
+也就是说：**越是需要 fail-closed 的降级部署，越保不住拒绝裁决**。
+
+### R2：copy_diff_apply 把「合规拒绝」伪装成「用户主动拒绝」
+
+`plan_egress` 在**执行前**就拒绝时，`_execute_copy_diff_apply` 仍走完整
+流程：`build_diff_preview → make_confirm_callable → confirm_apply`。
+实测 `calls=['isolate','build_diff_preview','make_confirm_callable',
+'confirm_apply','cleanup']`，而副本其实是**空的**（根本没执行命令）：
+
+- `error` 变成「denied + 预览文本」，用户看到的是「自己点了拒绝」，看不到
+  真正的出网合规拒绝原因；
+- 无条件 `verdict.enforced = True` **宣称「已隔离执行」** —— 这行原本是
+  为了防止路由回落裸跑（见 §14 注释），却在拒绝路径上变成语义谎言；
+- 还弹确认卡片要用户确认写回一个根本没发生的变更。
+
+### R3：内层 `_sanitize_env` 把刚接好的 sentinel 又抹掉了
+
+§14 验证「四条分支都拿到 sentinel」时，测的是**传给 `provider.run` 的
+`env` 参数**，不是子进程实际拿到的值。`SandboxProvider._sanitize_env`
+→ `sanitize_env` 按**键名**把 `OPENAI_API_KEY` 等置空串，于是
+`tuan-egress-sentinel-v1:<fp>` 占位符也在接线内层被抹成 `''`：
+
+```
+输入 OPENAI_API_KEY = tuan-egress-sentinel-v1:deadbeef
+输出 OPENAI_API_KEY = ''
+```
+
+强后端子进程拿不到可还原标记，出网代理 `inject_headers()` 链路静默断裂。
+**又是「上层接好了、内层吃掉」**，与前几轮抓的同类缺陷一致。
+如实说明：当前默认配置下强后端 + 真正逐命令声明会被 §14 拒绝、不启代理，
+所以这个断裂**不产生已观测的实际危害**；修的是接线一致性，防止未来
+放宽（例如 `metadata_only` + host 网络代理）时静默失效。
+
+### R4：`TUAN_WORKSPACE` 在三个强后端被抹空
+
+`SECRET_HINTS` 含 `"TUAN_"`，`TUAN_WORKSPACE` 被 `sanitize_env` 置空；
+只有 `LocalSandbox` 在之后补回，另外三个强后端此前都没补，子进程拿不到
+工作区指示。实测 `sanitize_env({'TUAN_WORKSPACE':'/tmp/w'})` → `''`。
+
+### 落地
+
+| 位置 | 修复 |
+|---|---|
+| `sandbox/manager.py` | `SandboxExecResult` 新增 `terminal_refusal: bool = False`，把「终态安全拒绝」与「隔离是否生效」**解耦**；`_execute_backend` 在 `not plan.allowed` 时置 True；`_execute_copy_diff_apply` 检测到它立刻返回（不建 diff、不要确认、不设 `verdict.enforced=True`） |
+| `tools/shell.py` | `_route_sandbox_isolation` **优先**检查 `res.terminal_refusal` → 无条件返回 `[错误] <拒绝原因>`，绝不回落。正常执行路径逻辑原样不动 |
+| `core/security_utils.py` | 新增 `MASKED_PLACEHOLDER_PREFIX` 与 `is_masked_placeholder()`（放共享原语层，避免 `core → sandbox` 反向循环导入）；**不改** `sanitize_env` 全局语义 |
+| `core/sandbox_provider.py` | `_sanitize_env` 按**值**原样保留占位符（真实值仍按键名抹空）；四个后端统一以 `workspace` 参数为准补 `TUAN_WORKSPACE`（不信任外部 env 里的假路径） |
+
+两处配合是关键：去掉 `verdict.enforced=True` 之前必须先在路由层堵住回落，
+否则「修语义谎言」会直接变成「放开裸跑」。`terminal_refusal` 是这两处
+共享的单一契约。
+
+### A′：本轮自己引入、自己抓回
+
+写 `_execute_copy_diff_apply` 的注释时用了带 `\n` 的错误文案示例，
+在 Python 三引号字符串里 `\n` 被解释成**真实换行**，写入源码后变成
+独立一行 `preview"),`，`py_compile` 直接 `SyntaxError: unterminated
+string literal`（manager.py:496）。改成不含反斜杠的文案后恢复。
+这是文档注释破坏可编译性，不是运行时缺陷，但如实记为本轮 A′。
+
+### 四个「不该修」（都配了可执行回归）
+
+1. **`last_egress` 并发撕裂未复现**：双线程 × 200 次写，0 次撕裂
+   （GIL 兜住）。延续前几轮立场 —— 加锁是消除对 CPython 实现细节的
+   依赖，不是修已观测故障，本轮**不加锁**，只锁住「不抛异常、结构完整」，
+   不宣称线程安全。
+2. **`cmd_safe.py` 不是执行侧门**：`SandboxProvider.create("local")` 只调
+   `is_available()` / `.name`，不执行命令。
+3. **`orchestration.py` 不是执行侧门**：只把实例挂到 `agent.ctx.
+   sandbox_provider`，全仓没有 `.run()` 调用点。新增源码扫描回归：
+   除 `manager.py` 外，`SandboxProvider.create` 之后 12 行窗口内不得出现
+   `.run(`。**如实标注**：若未来下游工具自己调
+   `ctx.sandbox_provider.run()`，就会绕过整套 `plan_egress`，目前没有。
+4. **全局 `sanitize_env` 行为不变**：只在 provider 层按值保留占位符，
+   不放宽共享脱敏原语，避免影响 `core/sandbox.py` / `arch/security.py` /
+   `tools/mcp/sandbox.py` 等其它调用点。
+
+### 矩阵：一个状态没动
+
+`test_b2su_refusal_routing.py::TestMatrixHonesty::test_counts_unchanged`
+把 `by_status` 逐项、`gaps=26`、`fully_superior=false`、
+`b_waves_done=["B1"]`、红队判据全钉死。catalog 里
+`network_strict_allowlist` / `credential_masking` 的 note 补了**第三轮
+纠偏说明**（§13 说得太满 → §14 纠偏 → §15 再纠偏），`status` 与
+`evidence` 结构不变，`matrix.validate()` / `evidence.verify_evidence()`
+均返回空。
+
+### 如实边界
+
+1. **HTTPS CONNECT 隧道内 header 注入仍不可用**（§13/§14 边界不变），
+   `credential_masking` 仍 `partial`。
+2. bwrap / seatbelt / seccomp **没有域名级过滤**，`allowed_domains` 仍是
+   元数据；强后端 + 逐命令声明仍默认拒绝，`metadata_only` 仍是真实降级。
+3. R3 在当前默认配置下**不产生已观测危害**（强后端被拒绝、不启代理），
+   修的是接线一致性，不是已发生的安全事故 —— 不夸大。
+4. `last_egress` 仍非线程安全（见「不该修」1）；`undetectable` 仍是标记
+   不是证明；显式 `--noproxy` 可绕过 `env_overrides`。
+5. `os_sandbox` 仍 **gap**、`deny_network_by_default` 出厂仍 **false**
+   未翻、`block_writes_outside_wd` 仍 `partial`，本轮没碰。
+6. **不是真机多平台验证**：Windows Job Object / macOS Seatbelt 由 fake
+   覆盖；`test_platform_portability.py` 长批次在上一轮已多次 502/超时
+   只跑到约 51% 零失败，本轮**未重跑**，如实沿用「未完整跑完」结论。
+   `test_arch_security.py` 1 例失败（策略拒绝 `/usr/bin/python3`）
+   上一轮 parent-blob baseline control 已证是既有环境行为，本轮复跑仍
+   1 failed / 6 passed，**没为变绿改策略**。
+7. A 线 10 个 pending、分叉改动未合并、第三方自适应红队未做。
+   标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
+### 验证（按分批报告，不冒充全量单跑）
+
+```
+本轮 + 上两轮（refusal_routing + uniform + egress_strict）   106 passed
+shell 路由影响面（run_shell_impact / shell_safety_guard /
+    security_gate_hardening）                                 99 passed
+parity + 配置 + 安全回归（7 文件）                            170 passed
+sandbox/platform/proc 逐文件（7 文件合计）                     91 passed
+    test_sandbox 5 / sandbox_gaps 12 / sandbox_system 39 /
+    risk_sandbox 14 / arch_platform 10 / arch_security_fixes 6 / proc 5
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+fully_superior = false   |  gaps = 26  |  criteria 2 真 3 假
+```
+
+各批次有重叠文件（如 `test_b2_boundaries`），**不累加成总数**。
+新增 `tests/test_b2su_refusal_routing.py`（26 例）：四种 verdict 配置下
+终态拒绝不回落、真实 manager 不 patch 的拒绝、EgressGuard 拒绝、
+非拒绝路径不变、结果默认值向后兼容、copy_diff_apply 不建 diff/不确认、
+错误显示真实原因、占位符常量一致与保全、四个后端工作区指示、
+四个「不该修」判定、矩阵计数钉死。
