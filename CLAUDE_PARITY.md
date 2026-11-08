@@ -905,6 +905,11 @@ normalize_domain("api.github\u200b.com") -> "api.github.com"
 
 ### 矩阵：不靠改口径凑数
 
+> **§14 纠偏**：本节写「claim 的裁决层强绑定始终生效」时说得太满。
+> 下一轮实测发现它只在 `_execute_backend` 的 **local 分支**生效，
+> 强后端三条路径完全没有防护，`aligned` 的边界因此比本节写的窄得多。
+> 状态未回退（能力已落地且缺口被如实拒绝，不是静默放行），但口径以 §14 为准。
+
 `aligned 45 → 46`、`partial 10 → 9`，**`gap` 仍是 26**。
 `network_strict_allowlist` 本来就是 `partial` 不是 `gap`，推进它不减少缺口；
 `credential_masking` 保持 `partial`（理由见下）。
@@ -922,7 +927,9 @@ normalize_domain("api.github\u200b.com") -> "api.github.com"
    只是元数据，不假装 OS 级后端能按域名放行。
 3. `sandbox.resource.egress_proxy_enabled` **默认 false**：开启会改写所有
    子进程代理环境变量，是行为变更；只有显式开启 + `strict` 逐命令声明
-   才构造代理。claim 的裁决层强绑定始终生效，所以「关闭」不算安全降级。
+   才构造代理。**§14 纠偏**：「claim 的裁决层强绑定始终生效」仅对 local
+   分支成立；强后端没有接到 claim，且 `run_syscall_sandboxed` 连 env 都
+   没有，父进程真实密钥原样进子进程。本轮已统一修复，见 §14。
 4. `os_sandbox` 仍是 **gap**，`deny_network_by_default` 出厂仍 **false**、未翻。
    `block_writes_outside_wd` 仍是 partial，未在本轮动。
 5. `evaluate_claim` 的 `undetectable` 是**标记**而非证明：文本层检测不到时
@@ -940,3 +947,128 @@ matrix.validate() == []  |  evidence.verify_evidence() == []
 verify_doc_numbers.py problems == []
 fully_superior = false   |  gaps = 26  |  criteria 2 真 3 假
 ```
+
+
+---
+
+## 14. 深度轮：所有执行分支共用一个出网/凭据出口（纠偏 §13）
+
+不扩广度，**矩阵计数一个没动**（`ahead 10 / aligned 46 / partial 9 /
+gap 26 / not_applicable 8`，`fully_superior=false`，`b_waves_done=["B1"]`）。
+这轮只做一件事：把上一轮自己接的链路逐分支实测一遍。
+
+### 最值钱的发现：安全等级更高的路径反而没有刚补的防护
+
+§13 把逐命令域名强绑定接到了 ``_execute_backend`` 的 **local 分支**。
+逐分支核对 ``SandboxManager`` 源码后，实际覆盖是这样：
+
+| 分支 | EgressGuard（凭据脱敏） | claim 检查 | 代理 env 注入 | `last_egress` |
+|---|---|---|---|---|
+| `local` | 有 | 有（裁决层） | 有 | 有 |
+| `landlock` / `docker` / `seatbelt` / `bwrap` | **无** | 只传元数据 | **无** | **无** |
+| `jobobject`（`_run_syscall`） | **无** | **无** | **无** | **无** |
+| `copy_diff_apply` | 随下游 | 随下游 | 随下游 | 随下游 |
+
+三处具体断点，都是**实测**不是推断：
+
+1. ``SandboxProfile.allowed_domains`` 在整个 ``sandbox_provider.py`` 里
+   **只出现 1 次** —— 就是 dataclass 字段定义，**没有任何后端消费它**。
+   §13 写「只是元数据」属实，但没说**因此 strict claim 在强后端下
+   完全失效**：把缺口当边界写，口径偏乐观。
+2. ``_run_provider`` 调 ``provider.run(...)`` 不传 ``env``，走的是
+   ``sanitize_env``（敏感键置空串），**不是** EgressGuard 的 sentinel +
+   ``CredentialBroker`` 链路。
+3. **最严重**：``_run_syscall`` 调 ``run_syscall_sandboxed``，该函数
+   **根本没有 ``env`` 参数**。所有 ``Popen`` / ``run_with_tree_kill`` /
+   ``os.execvp`` 一律继承父进程完整环境 —— Windows Job Object / Linux
+   seccomp / 各 fallback 路径上，**真实密钥原样进入子进程，连置空都没有**。
+   安全等级最高的路径，凭据保护反而是零。
+
+### 落地：`plan_egress` 单一出口 + platform 层 env 全透传
+
+| 模块 | 作用 |
+|---|---|
+| `sandbox/egress_plan.py`（新） | ``plan_egress(verdict, backend, policy, base_env)`` 在**分支之前**统一裁决，产出 `EgressPlan`（mode / env / claim / broker / 审计）。`plan_is_consistent_with_verdict()` 校验审计里的 claim 真的来自本次 verdict，防「说一套做一套」 |
+| `sandbox/manager.py` | `_execute_backend` 删掉 local 分支里重复的 EgressGuard + 代理判断，四条路径统一拿 `plan.env` 并统一写 `last_egress`（含 `enforcement` / `claim_consistent` / `proxy_enabled`）；`_run_provider` / `_run_syscall` 新增 `env` 参数；`_make_egress_proxy(plan)` 只认 `plan.wants_proxy`，不再自己重复判断 |
+| `arch/platform.py` | `run_syscall_sandboxed` / `_linux_seccomp_sandbox` / `_windows_job_object_sandbox` 全部新增 `env` 参数，透传到 Windows Job Object `Popen`、Linux seccomp `os.execvpe`、`unshare -n` 分支、Linux fallback `Popen`、其它平台 `run_with_tree_kill`。`env=None` 保持原继承语义，**旧调用点行为不变** |
+| `config/defaults.py` + `security_schema.py` + `cli/cmd_harden.py` | 新键 `sandbox.resource.strict_claim_strong_backend`（`deny` 默认 / `metadata_only` 降级）。schema 只认两个枚举值，拼错**阻断**不是静默回落；`metadata_only` 报安全降级 warning；`tuan harden status` 打印当前策略并列入待加固项 |
+
+**两条可执行契约**：
+
+- **凭据**：任何后端都拿 `plan.env`（EgressGuard 脱敏 / sentinel），强后端
+  不再继承父进程裸环境。真 socket / 真 `Popen` 回归验证子进程看到的是
+  sentinel、看不到 `REAL_SECRET_VALUE`。
+- **逐命令域名**：若 `claim.strict` 且 `claim.source == "tool_args"`
+  （真正逐命令声明，而非全局白名单回落），则**必须**有出网代理能力。
+  强后端没有域名级过滤、且 netns / seatbelt 隔离下宿主机回环代理不可达，
+  **默认 fail-closed 拒绝**，不假装强绑定生效。
+
+`source` 这个字段是 §13 在 `claim_from_args` 里刻意标注、但当时**没被
+消费**的；它在这轮第一次真正决定行为。精确区分的意义：配了全局白名单
+（`global_policy`）+ 强后端的既有部署**不被打断**，沿用既有文本层语义；
+只有真正逐命令声明才触发新拒绝。
+
+### A′：自己引入、自己抓回（本轮两次）
+
+1. 统一 `to_audit_dict()` 时漏了 ``allowed`` 字段 —— 那是 B2 首轮
+   `EgressDecision` 的既有可观测契约，`test_b2_boundaries` 直接 `KeyError`。
+   **闸门锁紧了、监控却看不到 `allowed=false`**，比漏字段本身更危险。
+   批次 A 回归抓回，已补回并加注释锁住。
+2. 改 `_run_provider` 签名后，§13 的
+   `test_profile_carries_allowed_domains` 里 FakeProvider 少了 `env` 参数。
+   同步到新契约时**把断言改强**（不仅要求带域名元数据，还要求真拿到
+   脱敏 env），不是放宽。共 3 条既有断言同步，全部更严。
+
+### 矩阵：一个状态都没动
+
+本轮是纯深度修复，**不把修好侧门包装成 aligned 增加或 gap 减少**。
+`test_b2s_egress_uniform.py::TestMatrixHonesty::test_counts_unchanged`
+把 `by_status` 逐项、`gaps=26`、`fully_superior=false`、
+`b_waves_done=["B1"]`、红队判据全钉死。
+catalog 里 `network_strict_allowlist` / `credential_masking` 的 **note 补了
+纠偏说明**（承认上一轮标 aligned 的边界比文档写的窄），但 `status` 与
+`evidence` 结构不变，`matrix.validate()` 与 `evidence.verify_evidence()`
+均返回空。
+
+### 如实边界
+
+1. **HTTPS CONNECT 隧道内 header 注入仍不可用**（§13 边界不变）：
+   需 TLS 中间人 + 本地 CA，会显著扩大攻击面，不做也不谎称完整对等。
+   `credential_masking` 仍 `partial`。
+2. **bwrap / seatbelt / seccomp 没有域名级过滤**：`SandboxProfile.
+   allowed_domains` 仍是元数据，不假装 OS 级后端能按域名放行。
+   本轮的立场是「做不到就拒绝」，不是「做到了」。
+3. `metadata_only` 是**真实降级**：逐命令声明在强后端只剩文本层判定，
+   绕过文本识别即可出网到声明外主机。schema warning + harden status
+   待加固项都明示，不藏。
+4. `undetectable` 仍是**标记不是证明**；显式 `--noproxy` 可绕过
+   `env_overrides`。本地 CLI 固有限制。
+5. `os_sandbox` 仍 **gap**、`deny_network_by_default` 出厂仍 **false**
+   未翻、`block_writes_outside_wd` 仍 `partial`。本轮没碰这些。
+6. **不是真机多平台验证**：Windows Job Object / macOS Seatbelt 路径
+   由 fake kernel32 / fake Popen 覆盖；Linux fallback `Popen` 是真实进程。
+   `test_platform_portability.py` 长批次在本沙箱多次 502 / 超时，
+   只跑到约 51% 且零失败，**如实按「未完整跑完」报告**，不冒充全通过。
+7. `test_arch_security.py` 的 1 例失败（策略拒绝 `/usr/bin/python3`）
+   上一轮已做 **baseline control**：把改动文件全部还原到 parent blob
+   后同样失败，是既有环境行为，没为变绿改策略。
+8. A 线 10 个 pending、分叉改动未合并、第三方自适应红队未做。
+   标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
+### 验证
+
+```
+tests/test_b2s_egress_uniform.py + test_b2_egress_strict.py     80 passed
+合并批次 A（B2 + boundaries + parity/CLI/headless + sandbox/schema/
+            hardening/network/security + arch_platform + proc + risk）341 passed
+逐文件：arch_platform 10 / arch_security_fixes 6 / proc 5 /
+        risk_sandbox 14 passed；arch_security 1 failed（既有，见上）
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+fully_superior = false   |  gaps = 26  |  criteria 2 真 3 假
+```
+
+新增 `tests/test_b2s_egress_uniform.py`（37 例）：plan 模式矩阵、
+`source` 消费验证、四条分支 env 真透传、强后端默认拒绝、显式降级可见、
+全局白名单部署不破坏、platform 签名/`env=None` 兼容/真实 `Popen` 看到
+sentinel、配置枚举与告警、`last_egress` 每分支必写、矩阵计数钉死。

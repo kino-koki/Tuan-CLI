@@ -138,6 +138,20 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
                     "行为变更: sandbox.resource.egress_proxy_enabled=true 使"
                     "带逐命令 allowed_domains 的子进程出网改写 HTTP_PROXY/"
                     "HTTPS_PROXY 并经过本地回环代理做主机校验与凭据注入")
+            # 本轮: 逐命令域名声明在强后端的处置策略。只允许两个枚举值,
+            # 拼错不能静默当成 deny 或当成 metadata_only —— 必须阻断。
+            strong_mode = res.get("strict_claim_strong_backend")
+            if strong_mode is not None:
+                if not isinstance(strong_mode, str) or strong_mode not in ("deny", "metadata_only"):
+                    errors.append(
+                        "非法枚举: sandbox.resource.strict_claim_strong_backend="
+                        f"{strong_mode!r} 不在 ('deny', 'metadata_only') 中")
+                elif strong_mode == "metadata_only":
+                    warnings.append(
+                        "安全降级: sandbox.resource.strict_claim_strong_backend="
+                        "metadata_only 使逐命令域名声明在 landlock/docker/seatbelt/"
+                        "jobobject 上仅作元数据与文本层判定; 强后端无域名级过滤, "
+                        "绕过文本识别即可出网到声明外主机 (见 CLAUDE_PARITY.md §14)")
             for key in ("max_memory_mb", "max_timeout"):
                 val = res.get(key)
                 if val is None:

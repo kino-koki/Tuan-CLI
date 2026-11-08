@@ -686,6 +686,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             # 改变所有子进程的网络出口(HTTP_PROXY/HTTPS_PROXY)，属行为变更；
             # 仅在调用方显式声明了 allowed_domains 时才真正启用代理。
             "egress_proxy_enabled": False,
+            # 本轮: 真正逐命令域名声明 + 强后端(无域名级过滤、回环代理不可达)
+            # 默认拒绝执行, 不假装强绑定生效。metadata_only 是显式降级逃生口,
+            # config validate / harden status 会报安全降级。
+            "strict_claim_strong_backend": "deny",
         },
     },
 }

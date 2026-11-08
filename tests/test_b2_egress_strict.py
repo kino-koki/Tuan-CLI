@@ -301,7 +301,12 @@ class TestManagerWiring:
             m._execute_backend("echo hi", v, "/tmp", 5.0)
         env = fake.call_args.kwargs["env"]
         assert "HTTP_PROXY" not in env
-        assert m.last_egress.get("proxy_enabled") is None
+        # 本轮同步到统一 plan 契约（**不是放宽**）：旧实现根本不写
+        # last_egress.proxy_enabled（get 返回 None）；现在统一出口显式写
+        # False，并额外要求 enforcement 与 claim 一致性可核验。
+        assert m.last_egress.get("proxy_enabled") is False
+        assert m.last_egress.get("enforcement") == "text-layer-only"
+        assert m.last_egress.get("claim_consistent") is True
 
     def test_proxy_enabled_injects_env_and_always_stops(self):
         m = SandboxManager({"resource": {"egress_proxy_enabled": True}})
@@ -338,9 +343,14 @@ class TestManagerWiring:
             def create(_backend):
                 return FakeProvider()
 
-            def run(self, _cmd, *, workspace=None, profile=None, timeout=None):
+            def run(self, _cmd, *, workspace=None, profile=None,
+                    env=None, timeout=None):
                 captured["domains"] = list(profile.allowed_domains)
                 captured["network"] = profile.network
+                # 本轮新增：强后端也必须拿到脱敏后的 env（旧实现不传）。
+                captured["env_key"] = (env or {}).get(
+                    "OPENAI_API_KEY", "<absent>")
+                captured["has_env"] = env is not None
 
                 class R:
                     stdout = ""
@@ -350,10 +360,16 @@ class TestManagerWiring:
                     error = ""
                 return R()
 
+        # 本轮同步（**不是放宽**）：走 manager 统一出口时 env 由
+        # plan_egress 注入；直接调底层静态方法时显式传入脱敏 env，
+        # 验证它确实透传到 provider.run（旧实现连参数都没有）。
         with patch("tuan_cli.core.sandbox_provider.SandboxProvider.create",
                    FakeProvider.create):
-            m._run_provider("landlock", "echo hi", "/tmp", 5.0, False, v)
+            m._run_provider("landlock", "echo hi", "/tmp", 5.0, False, v,
+                            env={"OPENAI_API_KEY": "tuan-egress-sentinel-v1:fp"})
         assert captured["domains"] == ["api.github.com"]
+        assert captured["has_env"] is True
+        assert captured["env_key"].startswith("tuan-egress-sentinel-v1:")
         assert isinstance(SandboxProfile().allowed_domains, list)
 
     def test_schema_new_switch(self):

@@ -380,3 +380,31 @@
 新增实现：`tuan_cli/sandbox/egress_allowlist.py`、`egress_proxy.py`；
 新增回归 `tests/test_b2_egress_strict.py`（43 例，含真 socket 代理端到端）。
 新增配置键见 `SECURITY_BASELINE.md` R42。
+
+
+---
+
+## 深度轮增量（纠偏 B2 收尾）
+
+`CLAUDE_PARITY.md` §14 是权威口径。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]` —— 纯深度修复，不把修好侧门包装成进度。
+
+- 实测 §13 的强绑定只接在 `_execute_backend` 的 **local 分支**；
+  强后端三条路径完全没有 EgressGuard / claim 检查 / 代理 env /
+  `last_egress`；`run_syscall_sandboxed` 连 `env` 参数都没有，
+  Job Object / seccomp 路径真实密钥原样进子进程。
+- 新增 `egress_plan.py`（`plan_egress` 单一出口 + 派生一致性校验）；
+  `manager.py` 四分支统一 `plan.env`；`arch/platform.py` 全路径
+  `env` 透传（含 `os.execvpe`），`env=None` 向后兼容。
+- 真正逐命令声明（`source=tool_args`）+ 强后端**默认 fail-closed 拒绝**；
+  全局白名单回落（`global_policy`）沿用既有文本层语义，不破坏既有部署。
+- 新键 `sandbox.resource.strict_claim_strong_backend`（`deny` 默认 /
+  `metadata_only` 降级）：schema 枚举阻断 + 降级 warning +
+  `harden status` 待加固项。详见 `SECURITY_BASELINE.md` R43。
+- catalog 两条 note 补纠偏说明（承认 §13 标 aligned 的边界比文档写的
+  窄），但 `status` 与 `evidence` 结构不变。
+
+新增实现/回归：`tuan_cli/sandbox/egress_plan.py`、
+`tests/test_b2s_egress_uniform.py`（37 例，含真实 `Popen` 看到 sentinel、
+四条分支 env 真透传、强后端默认拒绝、矩阵计数钉死）。

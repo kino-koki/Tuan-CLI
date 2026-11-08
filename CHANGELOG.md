@@ -9,6 +9,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 深度轮：所有执行分支共用一个出网/凭据出口（纠偏 B2 收尾）
+
+> **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`。纯深度修复，
+> 不把修好侧门包装成进度。完整复现见 `CLAUDE_PARITY.md` §14。
+
+### 实测缺口：安全等级更高的路径反而没有刚补的防护
+
+上一轮把逐命令域名强绑定接到了 `_execute_backend` 的 **local 分支**。
+逐分支实测：
+
+| 分支 | EgressGuard | claim 检查 | 代理 env | `last_egress` |
+|---|---|---|---|---|
+| `local` | 有 | 有 | 有 | 有 |
+| `landlock`/`docker`/`seatbelt`/`bwrap` | **无** | 只传元数据 | **无** | **无** |
+| `jobobject` (`_run_syscall`) | **无** | **无** | **无** | **无** |
+
+三处具体断点：
+1. `SandboxProfile.allowed_domains` 在整个 `sandbox_provider.py` 里**只出现
+   1 次**（字段定义），没有任何后端消费它 —— strict claim 在强后端下完全失效。
+   §13 写「只是元数据」属实却没说后果，口径偏乐观。
+2. `_run_provider` 不传 `env`，走 `sanitize_env`（置空）而非 sentinel 链路。
+3. **最严重**：`run_syscall_sandboxed` 根本没有 `env` 参数，所有 `Popen` /
+   `run_with_tree_kill` / `os.execvp` 继承父进程完整环境 —— Job Object /
+   seccomp / fallback 路径上真实密钥原样进子进程，连置空都没有。
+
+### 修复
+
+- **新** `sandbox/egress_plan.py`：`plan_egress()` 在分支之前统一裁决，
+  产出 `EgressPlan`（mode / env / claim / broker / 审计）；
+  `plan_is_consistent_with_verdict()` 防「审计说一套、执行做一套」。
+- `sandbox/manager.py`：四条路径统一拿 `plan.env`、统一写 `last_egress`
+  （`enforcement` / `claim_consistent` / `proxy_enabled`）；`_run_provider` /
+  `_run_syscall` 新增 `env`；`_make_egress_proxy(plan)` 只认
+  `plan.wants_proxy`，不再重复判断。
+- `arch/platform.py`：`run_syscall_sandboxed` / `_linux_seccomp_sandbox` /
+  `_windows_job_object_sandbox` 全加 `env`，透传到 Job Object `Popen`、
+  `os.execvpe`、`unshare -n`、Linux fallback `Popen`、其它平台 fallback。
+  `env=None` 保持继承语义，旧调用点行为不变。
+- `config/defaults.py` / `security_schema.py` / `cli/cmd_harden.py`：新键
+  `sandbox.resource.strict_claim_strong_backend`（`deny` 默认 /
+  `metadata_only` 降级）。schema 只认两枚举，拼错阻断；`metadata_only`
+  报安全降级 warning；`harden status` 打印并列入待加固项。
+
+**两条契约**：任何后端都拿 EgressGuard 脱敏 env；真正逐命令声明
+（`source=tool_args`）+ 强后端因无域名级过滤、回环代理在 netns/seatbelt
+下不可达而**默认 fail-closed 拒绝**。`source` 是 §13 埋了却没被消费的
+字段，本轮第一次真正决定行为 —— 全局白名单回落（`global_policy`）沿用
+既有文本层语义，**不破坏既有部署**。
+
+### A′：自己引入、自己抓回
+1. 统一 `to_audit_dict()` 漏了 `allowed` 字段（B2 首轮既有可观测契约），
+   `test_b2_boundaries` 直接 `KeyError` —— 闸门锁紧了监控却看不到
+   `allowed=false`。批次 A 抓回，已补回并注释锁住。
+2. 改 `_run_provider` 签名后，§13 的 FakeProvider 少了 `env` 参数。
+   共 **3 条既有断言同步且全部改强**（要求真拿到脱敏 env），不是放宽。
+
+### 边界（如实）
+HTTPS CONNECT 隧道内 header 注入仍不可用（需 TLS MITM + 本地 CA，不做，
+`credential_masking` 仍 partial）；bwrap/seatbelt/seccomp 无域名级过滤，
+`allowed_domains` 仍是元数据（立场是「做不到就拒绝」不是「做到了」）；
+`metadata_only` 是真实降级，schema warning + harden status 明示；
+`undetectable` 是标记不是证明；`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`block_writes_outside_wd` 仍 partial；
+不是真机多平台验证（Windows/macOS 由 fake 覆盖，Linux fallback 是真进程）；
+`test_platform_portability.py` 长批次在本沙箱多次 502/超时，只跑到约
+51% 且零失败，**如实按未完整跑完报告**；`test_arch_security.py` 1 例失败
+上一轮已做 baseline control 证明是既有环境行为，没为变绿改策略；
+A 线 10 个 pending、分叉改动、第三方自适应红队仍未做。
+标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
+### 验证
+`test_b2s_egress_uniform.py` + `test_b2_egress_strict.py` **80 passed**；
+合并批次 A **341 passed**；逐文件 arch_platform 10 / arch_security_fixes 6 /
+proc 5 / risk_sandbox 14 passed；`matrix.validate() == []`、
+`evidence.verify_evidence() == []`、`verify_doc_numbers.py problems == []`。
+新增 37 例回归把 `by_status` 逐项、`gaps=26`、`fully_superior=false` 钉死，
+**不许靠改口径凑数**。
+
 ## [Unreleased] - B2 收尾：逐命令域名强绑定 + 本地回环出网代理
 
 > 不扩广度，只把 B2 首轮留下的另一个「接线断点」挖透。

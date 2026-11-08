@@ -200,6 +200,10 @@ def _status(args: Any) -> int:
         print(f"  - 默认禁网               : {'OK 开启' if deny_net else '!! 关闭 (生产环境建议开启)'}")
         print(f"  - 出网域名白名单         : {allowed or '未配置 (不限制)'}")
         print(f"  - 可用强隔离后端         : {', '.join(strong) if strong else '无 (需隔离的执行将被拒绝)'}")
+        sb_res = sb.get("resource", {}) or {}
+        strong_mode = sb_res.get("strict_claim_strong_backend", "deny")
+        print(f"  - 逐命令域名@强后端      : {strong_mode} "
+              f"({'OK 无法证明合规即拒绝' if strong_mode == 'deny' else '!! 显式降级, 仅文本层判定'})")
         issues = []
         if not enforce:
             issues.append("sandbox.enforce_required=false")
@@ -207,6 +211,10 @@ def _status(args: Any) -> int:
             issues.append("sandbox.resource.deny_network_by_default=false")
         if not strong:
             issues.append("无 docker/bwrap/seatbelt 等强隔离后端")
+        if strong_mode not in ("deny", "metadata_only"):
+            issues.append(f"strict_claim_strong_backend={strong_mode!r} 非法枚举")
+        elif strong_mode == "metadata_only":
+            issues.append("strict_claim_strong_backend=metadata_only (逐命令域名在强后端仅文本层)")
         if issues:
             print("[harden] 基线待加固: " + "; ".join(issues))
             print("         生产/托管部署请在 config.yaml 的 sandbox: 段开启上述项, 并把整个")

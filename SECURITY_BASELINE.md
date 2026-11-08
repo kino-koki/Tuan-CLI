@@ -556,3 +556,42 @@ bwrap/seatbelt 无域名级过滤，`allowed_domains` 只是元数据；`undetec
 验证：43 例新回归（含真 socket 代理端到端）+ 合并批次全绿；
 `matrix.validate() == []`、`verify_doc_numbers.py problems == []`。
 两条既有计数断言同步到新基线，**不是放宽**。
+
+
+---
+
+## R43 · 深度轮：四条执行分支共用同一个出网/凭据出口（见 `CLAUDE_PARITY.md` §14）
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R43-A | §13 的强绑定只接在 `_execute_backend` 的 **local 分支**；强后端三条路径完全没有 EgressGuard / claim 检查 / 代理 env / `last_egress` | `egress_plan.py`（`plan_egress` 单一出口 + `plan_is_consistent_with_verdict` 派生一致性）+ manager 四分支统一 `plan.env` 与 `last_egress` |
+| R43-B | `SandboxProfile.allowed_domains` 在整个 provider 文件里只出现 1 次（字段定义），**无后端消费** → strict claim 在强后端完全失效 | 不假装后端能按域名放行：真正逐命令声明（`source=tool_args`）+ 强后端 **默认 fail-closed 拒绝**；全局回落（`global_policy`）沿用文本层语义，既有部署不破坏 |
+| R43-C | **`run_syscall_sandboxed` 根本没有 `env` 参数**，Job Object / seccomp / 所有 fallback 的 `Popen` 继承父进程完整环境，真实密钥原样进子进程 | `arch/platform.py` 三入口全加 `env` 并透传 `Popen` / `os.execvpe` / `unshare -n` / fallback；`env=None` 保持继承语义向后兼容 |
+
+配置：`sandbox.resource.strict_claim_strong_backend` = `deny`（默认）|
+`metadata_only`（显式降级）。schema 只认两枚举、拼错阻断；`metadata_only`
+报安全降级 warning；`tuan harden status` 打印策略并列入待加固项。
+**`deny_network_by_default` 仍 false，没翻。**
+
+**A′（自己引入自己抓回）**：统一 `to_audit_dict()` 漏了 `allowed` 字段
+（B2 首轮既有可观测契约），`test_b2_boundaries` 直接 `KeyError` ——
+闸门锁紧了监控却看不到 `allowed=false`，批次 A 抓回已补。另 3 条既有断言
+因签名变更同步且**全部改强**（要求真拿到脱敏 env），不是放宽。
+
+矩阵：**一个状态没动** —— `aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`。catalog 两条 note 补纠偏说明
+但 `status`/`evidence` 结构不变，`matrix.validate()` 与
+`evidence.verify_evidence()` 均空。新增回归把计数逐项钉死。
+
+如实边界：HTTPS CONNECT 隧道内 header 注入仍不可用（需 TLS MITM +
+本地 CA，`credential_masking` 仍 partial）；bwrap/seatbelt/seccomp 无域名级
+过滤，`allowed_domains` 仍是元数据；`metadata_only` 是真实降级；
+`undetectable` 是标记不是证明；`os_sandbox` 仍 gap、
+`block_writes_outside_wd` 仍 partial；不是真机多平台验证；
+`test_platform_portability.py` 长批次多次 502/超时只跑到约 51% 且零失败，
+按未完整跑完如实报告；`test_arch_security.py` 1 例失败上一轮 baseline
+control 已证是既有环境行为，没为变绿改策略。
+
+验证：`test_b2s_egress_uniform.py` + `test_b2_egress_strict.py` **80 passed**；
+合并批次 A **341 passed**；逐文件 arch_platform 10 / arch_security_fixes 6 /
+proc 5 / risk_sandbox 14 passed；`verify_doc_numbers.py problems == []`。

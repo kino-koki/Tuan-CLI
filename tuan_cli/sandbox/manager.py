@@ -26,6 +26,10 @@ from .egress_allowlist import (
     evaluate_claim, profile_domains,
 )
 from .egress_proxy import EgressProxy
+from .egress_plan import (
+    MODE_DEGRADED, MODE_PROXY, MODE_UNPROVABLE, plan_egress,
+    plan_is_consistent_with_verdict,
+)
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +51,10 @@ DEFAULT_POLICY: Dict[str, Any] = {
         "egress_credential_masking": True,
         "egress_block_local_when_denied": True,
         "egress_proxy_enabled": False,
+        # 本轮: 真正逐命令域名声明 + 强后端（无域名级过滤、回环代理不可达）
+        # 默认拒绝执行，不假装强绑定生效。metadata_only 是显式降级逃生口，
+        # harden status 会报安全降级。
+        "strict_claim_strong_backend": "deny",
     },
 }
 
@@ -170,19 +178,16 @@ class SandboxManager:
             return verdict.merged(deny("egress_allowlist", dec.reason, SEV["high"]))
         return verdict
 
-    def _make_egress_proxy(self, verdict: Any, broker: Any) -> Any:
-        """仅在显式开启 + strict 逐命令声明时启用代理，默认零行为变化。
+    def _make_egress_proxy(self, plan: Any) -> Any:
+        """只依据 ``plan.wants_proxy`` 构造代理 —— 单一真相，不重复判断。
 
-        全局白名单场景不启用（避免把全部流量改道）；``claim.strict`` 且
-        ``required_domains`` 非空才说明调用方真的声明了本次出网范围。
+        上一轮这里自己又判了一遍 ``egress_proxy_enabled + strict +
+        required_domains``，与裁决层容易漂移。现在全部由
+        :func:`plan_egress` 决定。
         """
-        res = self.policy.get("resource", {}) or {}
-        if not isinstance(res, dict) or not res.get("egress_proxy_enabled", False):
+        if not getattr(plan, "wants_proxy", False):
             return None
-        claim = claim_from_verdict(verdict)
-        if not claim.strict or not claim.required_domains:
-            return None
-        return EgressProxy(claim, broker)
+        return EgressProxy(plan.claim, plan.broker)
 
     def _unattended_policy(self, ctx: Any) -> Any:
         """从沙箱策略 + kernel 配置解析开关；配置不可用时保持默认关闭。"""
@@ -402,43 +407,55 @@ class SandboxManager:
 
     def _execute_backend(self, command: str, verdict: Verdict, cwd: str,
                          timeout: float) -> SandboxExecResult:
-        """按选中后端在指定工作目录执行 (cwd 可以是真实工作区或隔离副本)。"""
+        """按选中后端执行。**所有分支共用一个出网/凭据准备出口**。
+
+        本轮实测缺口：上一轮只把 EgressGuard + 逐命令域名强绑定接到了
+        local 分支；landlock/docker/seatbelt (``_run_provider``) 只把
+        allowed_domains 当元数据传进去（后端根本不读），jobobject
+        (``_run_syscall``) 连 env 参数都没有、子进程继承父进程全部真实
+        环境变量。**安全等级更高的路径反而没有刚补的防护**。
+
+        现在 ``plan_egress`` 在分支之前统一裁决，三条路径都拿 ``plan.env``
+        （EgressGuard 脱敏 / sentinel），并统一写 ``last_egress``。
+        """
         backend = verdict.backend or pick_backend("auto")[0]
         block_net = not verdict.network
 
-        if backend in ("jobobject",) and os.name == "nt":
-            return self._run_syscall(command, timeout, block_net, cwd, backend)
-        if backend == "landlock":
-            return self._run_provider("landlock", command, cwd, timeout, block_net, verdict)
-        if backend == "docker":
-            return self._run_provider("docker", command, cwd, timeout, block_net, verdict)
-        # local / 其它: 裸跑(非 OS 级隔离), 交由上层 enforce 决定是否接受。
-        # B2 实测缺陷修复: 旧实现算出 ``block_net`` 却既不传给 local 分支、
-        # 也不传 env —— 禁网裁决在唯一没有 OS 级出网隔离能力的后端上静默
-        # 失效，且父进程真实凭据原样进入子进程。现在统一走 EgressGuard。
-        from .egress import EgressGuard
-        guard = EgressGuard.from_policy(self.policy)
-        decision = guard.prepare(verdict, backend, os.environ)
-        self._last_egress = decision.to_audit_dict()
-        if not decision.allowed:
+        plan = plan_egress(verdict, backend, self.policy, os.environ)
+        self._last_egress = plan.to_audit_dict()
+        # 派生一致性：审计里的 claim 必须真的来自本次 verdict，
+        # 不许「说一套做一套」（前几轮反复抓的撕裂类缺陷）。
+        self._last_egress["claim_consistent"] = \
+            plan_is_consistent_with_verdict(plan, verdict)
+        if not plan.allowed:
             return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=decision.reason)
-        # B2 收尾: 逐命令域名强绑定的**真正强制点**在本地回环出网代理。
-        # 只有显式开启 + strict 声明时构造；默认零行为变化。生命周期用
-        # try/finally 包住，超时/异常也一定 stop()，绝不留下后台监听。
+                                     enforced=False, error=plan.reason)
+
+        # 代理只有本地后端能可靠连到（netns / seatbelt 隔离下宿主回环不可达）。
+        # 生命周期 try/finally 覆盖所有分支：超时/异常也一定 stop()。
         proxy = None
         try:
-            proxy = self._make_egress_proxy(verdict, decision.broker)
+            proxy = self._make_egress_proxy(plan)
             if proxy is not None:
                 proxy.start()
-                decision.env.update(proxy.env_overrides)
+                plan.env.update(proxy.env_overrides)
                 self._last_egress["proxy_enabled"] = True
-                self._last_egress["proxy_claim"] = claim_from_verdict(verdict).to_dict()
+                self._last_egress["proxy_url"] = proxy.url
+                self._last_egress["proxy_claim"] = plan.claim.to_dict()
+
+            if backend in ("jobobject",) and os.name == "nt":
+                return self._run_syscall(command, timeout, block_net, cwd,
+                                         backend, env=plan.env)
+            if backend in ("landlock", "docker", "seatbelt", "bwrap"):
+                return self._run_provider(backend, command, cwd, timeout,
+                                          block_net, verdict, env=plan.env)
+
+            # local / 其它: 裸跑 (非 OS 级隔离), 交由上层 enforce 决定。
             from ..core.proc import run_with_tree_kill
             proc = run_with_tree_kill(
                 command, shell=True, cwd=cwd,
                 capture_output=True, text=True, timeout=timeout or 60.0,
-                errors="replace", env=decision.env,
+                errors="replace", env=plan.env,
             )
             return SandboxExecResult(stdout=proc.stdout or "", stderr=proc.stderr or "",
                                      returncode=proc.returncode or 0,
@@ -511,7 +528,8 @@ class SandboxManager:
                 wd.cleanup()
 
     def _run_syscall(self, command: str, timeout: float, block_net: bool,
-                     cwd: str, backend: str) -> SandboxExecResult:
+                     cwd: str, backend: str,
+                     env: Optional[Dict[str, str]] = None) -> SandboxExecResult:
         """调用 OS 原语执行, 并如实汇报是否真的拿到了强制隔离。
 
         E3: 旧实现把 ``enforced=True`` 写死 —— 只要 platform 层没抛异常,
@@ -529,6 +547,7 @@ class SandboxManager:
                 cpu_rate_pct=int(resource.get("cpu_rate_pct", 50) or 50),
                 active_process_limit=int(resource.get("active_process_limit", 16) or 16),
                 kill_timeout_seconds=float(resource.get("kill_timeout_seconds", 5.0) or 5.0),
+                env=env,
             )
             note = res.degraded_reason or res.error or ("blocked" if res.blocked else "")
             return SandboxExecResult(stdout=res.stdout or "", stderr=res.stderr or "",
@@ -540,7 +559,8 @@ class SandboxManager:
 
     @staticmethod
     def _run_provider(backend: str, command: str, cwd: str, timeout: float,
-                      block_net: bool, verdict: Verdict) -> SandboxExecResult:
+                      block_net: bool, verdict: Verdict,
+                      env: Optional[Dict[str, str]] = None) -> SandboxExecResult:
         try:
             from ..core.sandbox_provider import SandboxProvider, SandboxProfile
             provider = SandboxProvider.create(backend)
@@ -549,7 +569,8 @@ class SandboxManager:
                 max_memory_mb=verdict.memory_mb,
                 allowed_domains=list(profile_domains(claim_from_verdict(verdict))))
             result = provider.run(["/bin/sh", "-c", command] if os.name != "nt" else ["cmd", "/c", command],
-                                  workspace=cwd, profile=profile, timeout=timeout or 60.0)
+                                  workspace=cwd, profile=profile,
+                                  env=env, timeout=timeout or 60.0)
             return SandboxExecResult(stdout=result.stdout, stderr=result.stderr,
                                      returncode=result.returncode,
                                      backend=backend, enforced=result.enforced,

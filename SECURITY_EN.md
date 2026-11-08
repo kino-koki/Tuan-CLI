@@ -1689,3 +1689,91 @@ plus combined batches all green; `matrix.validate() == []`,
 `evidence.verify_evidence() == []`, `verify_doc_numbers.py problems == []`.
 Two pre-existing count assertions were SYNCHRONIZED to the new derived
 baseline, NOT relaxed.
+
+
+---
+
+## 26. Depth Round: One Egress/Credential Exit for Every Execution Branch
+
+Full reproduction in `CLAUDE_PARITY.md` section 14. **Calibration of
+section 13**: marking `network_strict_allowlist` as `aligned` was too
+generous -- the binding was wired ONLY into the `local` branch of
+`_execute_backend`.
+
+### MEASURED gap
+
+| Branch | EgressGuard | claim check | proxy env | `last_egress` |
+|---|---|---|---|---|
+| `local` | yes | yes | yes | yes |
+| `landlock`/`docker`/`seatbelt`/`bwrap` | **no** | metadata only | **no** | **no** |
+| `jobobject` (`_run_syscall`) | **no** | **no** | **no** | **no** |
+
+- `SandboxProfile.allowed_domains` appears **exactly once** in the whole
+  `sandbox_provider.py` (the dataclass field); **no backend consumes it**,
+  so a strict claim is entirely ineffective on strong backends.
+- `_run_provider` never passes `env`, so it uses `sanitize_env` (blanking)
+  instead of the EgressGuard sentinel + `CredentialBroker` chain.
+- **WORST**: `run_syscall_sandboxed` had **no `env` parameter at all**.
+  Every `Popen` / `run_with_tree_kill` / `os.execvp` inherited the parent's
+  full environment -- on Job Object / seccomp / fallback paths the REAL
+  secrets entered the child process, not even blanked. **The highest-
+  assurance paths had zero credential protection.**
+
+### Fix
+
+| Module | Role |
+|---|---|
+| `sandbox/egress_plan.py` (new) | `plan_egress()` decides ONCE before branching; `plan_is_consistent_with_verdict()` prevents audit/execution divergence |
+| `sandbox/manager.py` | All four branches take `plan.env` and write `last_egress`; `_run_provider`/`_run_syscall` gain `env`; `_make_egress_proxy(plan)` only reads `plan.wants_proxy` |
+| `arch/platform.py` | All three entry points gain `env`, threaded to Job Object `Popen`, `os.execvpe`, `unshare -n`, Linux fallback `Popen` and other-platform fallback. `env=None` preserves inheritance for existing callers |
+| config (3 files) | New key `sandbox.resource.strict_claim_strong_backend` (`deny` default / `metadata_only` downgrade): schema enum rejection + downgrade warning + `harden status` item |
+
+**Contracts**: every backend receives EgressGuard-sanitized env; a TRUE
+per-command declaration (`source=tool_args`) on a strong backend is
+**refused fail-closed by default** because no domain-level filtering exists
+and the loopback proxy is unreachable under netns/seatbelt isolation.
+`source` -- deliberately recorded but unused in section 13 -- now actually
+determines behavior for the first time: global-allowlist fallback
+(`global_policy`) keeps the existing text-layer semantics so **existing
+deployments are not broken**.
+
+### A-prime (self-introduced, self-caught)
+1. The unified `to_audit_dict()` dropped `allowed` (a B2-first-round
+   observability contract); `test_b2_boundaries` raised `KeyError` --
+   the gate was locked but monitoring could not see `allowed=false`.
+   Caught by batch A, restored with a locking comment.
+2. After changing `_run_provider`'s signature, **3 pre-existing assertions
+   were SYNCHRONIZED AND MADE STRICTER** (they now require a real sanitized
+   env), NOT relaxed.
+
+### Matrix: NOT A SINGLE STATUS CHANGED
+`aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+`b_waves_done=["B1"]`. Two catalog notes gained calibration text but
+`status`/`evidence` structure is unchanged; `matrix.validate()` and
+`evidence.verify_evidence()` both return empty. A new regression pins every
+count so **no padding by editing definitions**.
+
+### Honest limits
+HTTPS CONNECT tunnel header injection remains unavailable (needs TLS MITM
++ local CA; `credential_masking` stays `partial`); bwrap/seatbelt/seccomp
+have no domain-level filtering and `allowed_domains` is still metadata
+(the stance is "refuse when unprovable", not "we did it"); `metadata_only`
+is a REAL downgrade, explicitly surfaced by schema warning + harden status;
+`undetectable` is a marker not proof; `os_sandbox` remains a gap,
+`deny_network_by_default` remains false, `block_writes_outside_wd` remains
+partial; no real-device multi-platform verification; the long
+`test_platform_portability.py` batch hit repeated 502/timeouts in this
+sandbox and reached only ~51% with zero failures -- **reported as
+incomplete, not as a pass**; the 1 `test_arch_security.py` failure was
+proven pre-existing by a parent-blob BASELINE CONTROL in the previous
+round and the policy was NOT relaxed to make it green. A-line still has
+10 pending modules, the local fork remains unmerged, no third-party
+adaptive red team. The slogan engine / cleaning layer / `mapping.py` /
+`tui.py` are byte-identical to parent.
+
+### Verification
+`test_b2s_egress_uniform.py` + `test_b2_egress_strict.py` **80 passed**;
+combined batch A **341 passed**; per-file arch_platform 10 /
+arch_security_fixes 6 / proc 5 / risk_sandbox 14 passed;
+`matrix.validate() == []`, `evidence.verify_evidence() == []`,
+`verify_doc_numbers.py problems == []`.

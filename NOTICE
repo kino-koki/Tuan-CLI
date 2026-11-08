@@ -869,3 +869,15 @@ SOFTWARE.
     copied. Sections 9-16 remain unchanged; the Apache-2.0 + MIT dual
     attribution for the Codex TUI parity line and all "no endorsement"
     statements still apply unchanged.
+
+
+18. Depth-round egress uniformization (still NO new third-party
+    material): one pure-Python stdlib module (`egress_plan.py`) was
+    added and the existing sandbox manager, platform syscall layer,
+    config defaults/schema and `harden status` were extended to
+    thread a sanitized environment through EVERY execution branch.
+    No Anthropic source, trademark asset, upstream Rust source, or
+    new third-party dependency was copied. Sections 9-17 remain
+    unchanged; the Apache-2.0 + MIT dual attribution for the Codex
+    TUI parity line and all "no endorsement" statements still apply
+    unchanged.

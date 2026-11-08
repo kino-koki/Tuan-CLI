@@ -1562,3 +1562,73 @@ source，不改任何既有断言口径）；混合场景仍只保留可渲染�
 `matrix.validate() == []`、`evidence.verify_evidence() == []`、
 `verify_doc_numbers.py problems == []`。两条既有计数断言同步到新基线，
 **不是放宽**（仍要求总和 99、逐项对应）。
+
+
+---
+
+## 29. 深度轮：所有执行分支共用一个出网/凭据出口（完整复现见 `CLAUDE_PARITY.md` §14）
+
+**§13 纠偏**：上一轮标 `network_strict_allowlist` 为 aligned 时说得太满，
+那套强绑定只接在 `_execute_backend` 的 **local 分支**。
+
+### 实测缺口
+
+| 分支 | EgressGuard | claim 检查 | 代理 env | `last_egress` |
+|---|---|---|---|---|
+| `local` | 有 | 有 | 有 | 有 |
+| `landlock`/`docker`/`seatbelt`/`bwrap` | **无** | 只传元数据 | **无** | **无** |
+| `jobobject` (`_run_syscall`) | **无** | **无** | **无** | **无** |
+
+- `SandboxProfile.allowed_domains` 在整个 `sandbox_provider.py` 里**只出现
+  1 次**（字段定义），**没有任何后端消费** → strict claim 在强后端完全失效。
+- `_run_provider` 不传 `env`，走 `sanitize_env`（置空）而非 sentinel 链路。
+- **最严重**：`run_syscall_sandboxed` **根本没有 `env` 参数**，所有
+  `Popen` / `run_with_tree_kill` / `os.execvp` 继承父进程完整环境 ——
+  Job Object / seccomp / fallback 路径真实密钥原样进子进程，连置空都没有。
+  **安全等级最高的路径，凭据保护反而是零。**
+
+### 修复
+
+| 模块 | 作用 |
+|---|---|
+| `sandbox/egress_plan.py`（新） | `plan_egress()` 分支前统一裁决；`plan_is_consistent_with_verdict()` 防审计/执行撕裂 |
+| `sandbox/manager.py` | 四条路径统一拿 `plan.env`、统一写 `last_egress`；`_run_provider`/`_run_syscall` 加 `env`；`_make_egress_proxy(plan)` 只认 `plan.wants_proxy` |
+| `arch/platform.py` | 三个入口全加 `env`，透传 Job Object `Popen`、`os.execvpe`、`unshare -n`、Linux fallback `Popen`、其它平台 fallback；`env=None` 保持继承语义 |
+| 配置三处 | 新键 `sandbox.resource.strict_claim_strong_backend`（`deny` 默认 / `metadata_only` 降级），schema 枚举阻断 + 降级 warning + `harden status` 待加固项 |
+
+**契约**：任何后端都拿 EgressGuard 脱敏 env；真正逐命令声明
+（`source=tool_args`）+ 强后端因无域名级过滤、回环代理在 netns/seatbelt
+下不可达而**默认 fail-closed 拒绝**。`source` 本轮第一次真正决定行为 ——
+全局白名单回落（`global_policy`）沿用既有文本层语义，既有部署不被打断。
+
+### A′（自己引入、自己抓回）
+1. 统一 `to_audit_dict()` 漏了 `allowed` 字段（B2 首轮既有可观测契约），
+   `test_b2_boundaries` 直接 `KeyError` —— 闸门锁紧了监控却看不到
+   `allowed=false`。批次 A 抓回，已补回。
+2. `_run_provider` 改签名后，**3 条既有断言同步且全部改强**（要求真拿到
+   脱敏 env），不是放宽。
+
+### 矩阵：一个状态没动
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`。catalog 两条 note 补了纠偏说明但 `status` /
+`evidence` 结构不变，`matrix.validate()` 与 `evidence.verify_evidence()`
+均空。新增回归把计数逐项钉死，**不许靠改口径凑数**。
+
+### 如实边界
+HTTPS CONNECT 隧道内 header 注入仍不可用（需 TLS MITM + 本地 CA，
+`credential_masking` 仍 partial）；bwrap/seatbelt/seccomp 无域名级过滤，
+`allowed_domains` 仍是元数据（立场是「做不到就拒绝」）；`metadata_only`
+是真实降级，schema warning + harden status 明示；`undetectable` 是标记
+不是证明；`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`block_writes_outside_wd` 仍 partial；不是真机多平台验证；
+`test_platform_portability.py` 长批次多次 502/超时只跑到约 51% 且零失败，
+**按未完整跑完如实报告**；`test_arch_security.py` 1 例失败上一轮
+baseline control 已证是既有环境行为，没为变绿改策略；A 线 10 pending、
+分叉改动、第三方自适应红队未做。标语引擎 / 净化层 / `mapping.py` /
+`tui.py` 逐字节未改。
+
+### 验证
+`test_b2s_egress_uniform.py` + `test_b2_egress_strict.py` **80 passed**；
+合并批次 A **341 passed**；逐文件 arch_platform 10 / arch_security_fixes 6 /
+proc 5 / risk_sandbox 14 passed；`matrix.validate() == []`、
+`evidence.verify_evidence() == []`、`verify_doc_numbers.py problems == []`。
