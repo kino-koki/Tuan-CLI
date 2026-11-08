@@ -62,6 +62,14 @@ per-owner 摘要随淘汰带走)、累计决策数 ``decisions_total``。
 实测 ``error:boom`` 在**不淘汰**时也会被静默裁掉, 上一轮淘汰痕
 覆盖不到这一层。本轮**未改**净化层 —— 几个候选经实测后判定为
 「不该动」, 见 ``SLOGAN_MAPPING.md`` §17。
+
+深度轮 9 再补: ``event`` 查表前的类型守卫 (非 str 统一走
+``UnboundSloganEvent``, 不再漏底层 ``TypeError``)、非字符串
+``owner`` 从「静默折叠成空 key」改为固定隔离桶 + 入口计数留痕
+(``invalid_owner_calls`` / ``invalid_owner_types``)。
+实测七个不同脏 owner 曾共用一个桶并污染默认桶, 且
+``dispatch_log(None)`` 与 ``dispatch_log(123)`` 返回不同集合。
+净化层 / TUI / runtime_slogans 文件仍逐字节未改。
 """
 
 from __future__ import annotations
@@ -641,6 +649,54 @@ _EVICTED: "deque[EvictionRecord]" = deque(maxlen=_EVICT_CAP)
 #: 全清（测试隔离）才归零。
 _EVICT_TOTAL = 0
 
+#: 深度轮 9: 非字符串 ``owner`` 的固定隔离桶。
+#: 实测 N2: ``norm_owner`` 旧实现 ``if not isinstance(raw, str) or not
+#: raw: return ""`` 把 None / 123 / True / b'bytes' / list / dict / float
+#: **全部静默折叠成空 key**。结果七个不同脏 owner 共用同一个桶，
+#: 且污染了「不传 owner」调用方共用的默认桶；更糟的是
+#: ``dispatch_log(None)`` 是「全量」语义而 ``dispatch_log(123)`` 查的是
+#: 空桶，实测同一次运行分别返回 9 条和 8 条 —— 调用方一个笔误就
+#: 拿到完全错误的日志集合，却没有任何报错或留痕。
+#:
+#: 固定键干净、13 码点、远小于 ``OWNER_LIMIT``，因此
+#: ``norm_owner(_INVALID_OWNER_KEY) == _INVALID_OWNER_KEY`` 严格幂等，
+#: 写入侧与查询侧自动对上；脏值日志不再串进默认桶。
+#: 如实边界: 若调用方真的把字符串 ``"owner:invalid"`` 当 owner 用，
+#: 会与脏值桶撞 —— 这是有界固定键的固有碰撞面，不宣称零碰撞。
+_INVALID_OWNER_KEY = "owner:invalid"
+_INVALID_OWNER_CALLS = 0
+_INVALID_OWNER_TYPES: "Counter[str]" = Counter()
+_INVALID_OWNER_TYPE_CAP = 32     # 类型名种类上界，超出归 "<other>"
+
+
+def _note_invalid_owner(raw: object) -> None:
+    """只在**入口**（pick_for_event / record_error）调用，查询侧不重复计。
+
+    类型名来自 ``type(raw).__name__``，是 public 可控字符串（自定义类
+    名可含 ESC / RLO / 超长），必须过同一份净化核心并限长；种类有界，
+    超出归 ``<other>``。全部是信息项，不参与 ``audit().ok``。
+    """
+    global _INVALID_OWNER_CALLS
+    from . import _clean  # noqa: PLC0415
+    name = _clean.sanitize_log_field(type(raw).__name__, 32) or "?"
+    if name not in _INVALID_OWNER_TYPES and len(_INVALID_OWNER_TYPES) >= _INVALID_OWNER_TYPE_CAP:
+        name = "<other>"
+    with _dispatch_lock:
+        _INVALID_OWNER_CALLS += 1
+        _INVALID_OWNER_TYPES[name] += 1
+
+
+def _coerce_owner(raw: object) -> str:
+    """public ``owner`` 入参：``None`` 视为「无 owner」，非 str 隔离+留痕。
+
+    ``None`` 与 ``''`` 仍同默认桶（都表示无 owner，既有契约不变）；
+    其余非字符串值不再静默折叠，而是归到 ``_INVALID_OWNER_KEY``。
+    """
+    if raw is not None and not isinstance(raw, str):
+        _note_invalid_owner(raw)
+    return norm_owner(raw)
+
+
 #: 深度轮 8: **桶内裁剪**与**累计决策**的可观测证据。
 #:
 #: 实测 C: ``_DISPATCH_CAP=64`` 的 ``del bucket[:-cap]`` 会静默丢掉
@@ -737,8 +793,23 @@ def norm_owner(raw: object) -> str:
       上限截断并**重新算指纹**, 结果 ``_record`` 存的 key 与查询侧
       算出的 key 对不上 (实测 ``dispatch_log(evil)` 返回 0)。
       代价是脏 owner 原串不进日志 —— 这正是净化的目的。
+
+    深度轮 9: **非字符串入参不再静默折叠成空 key**。``None`` 仍表示
+    「无 owner」(与 ``''`` 同默认桶), 其余非字符串归到
+    ``_INVALID_OWNER_KEY`` 固定隔离桶, 并由入口 ``_coerce_owner()``
+    留痕计数。旧版实测七个不同脏 owner 共用一个桶、污染默认桶,
+    且 ``dispatch_log(None)`` 与 ``dispatch_log(123)`` 返回 9 / 8 条。
+    固定键干净短串, 严格幂等, 写入/查询自动对上。
     """
-    if not isinstance(raw, str) or not raw:
+    # 深度轮 9: 旧实现把**所有**非字符串静默折叠成 ""。现在
+    # ``None`` 仍表示「无 owner」，其余非字符串归到固定隔离桶。
+    # 查询侧（dispatch_log / release_owner / take_owner_log）复用同一
+    # 函数，因此脏值写入后仍可用 ``dispatch_log(d.owner)`` 查到。
+    if raw is None:
+        return ""
+    if not isinstance(raw, str):
+        return _INVALID_OWNER_KEY
+    if not raw:
         return ""
     from . import _clean  # noqa: PLC0415
     clean = _clean.sanitize_log_field(raw, OWNER_LIMIT)
@@ -793,16 +864,19 @@ def reset_dispatch_log(owner: Optional[str] = None) -> None:
     """
     key = norm_owner(owner) if owner is not None else None
     global _EVICT_TOTAL, _DECISIONS_TOTAL, _BUCKET_TRIMS, _TRIMMED_DECISIONS
+    global _INVALID_OWNER_CALLS
     with _dispatch_lock:
         if key is None:
             _dispatch_log.clear()
             _EVICTED.clear()
             _TRIMMED_BY_OWNER.clear()
             _TRIMMED_REASONS.clear()
+            _INVALID_OWNER_TYPES.clear()
             _EVICT_TOTAL = 0
             _DECISIONS_TOTAL = 0
             _BUCKET_TRIMS = 0
             _TRIMMED_DECISIONS = 0
+            _INVALID_OWNER_CALLS = 0
         else:
             _dispatch_log.pop(key, None)
             _TRIMMED_BY_OWNER.pop(key, None)
@@ -822,8 +896,8 @@ def release_owner(owner: str) -> int:
         return len(bucket or ())
 
 
-def dispatch_log_stats() -> Dict[str, int]:
-    """日志规模自检: 桶数 / 决策总数 / 最大单桶长度。"""
+def dispatch_log_stats() -> Dict[str, object]:
+    """日志规模自检: 桶数 / 决策总数 / 最大单桶长度 / 各层累计证据。"""
     with _dispatch_lock:
         buckets = [len(b) for b in _dispatch_log.values()]
         return {"owners": len(_dispatch_log),
@@ -836,7 +910,10 @@ def dispatch_log_stats() -> Dict[str, int]:
                 "evicted_total": _EVICT_TOTAL,
                 "decisions_total": _DECISIONS_TOTAL,
                 "bucket_trims": _BUCKET_TRIMS,
-                "trimmed_decisions": _TRIMMED_DECISIONS}
+                "trimmed_decisions": _TRIMMED_DECISIONS,
+                "invalid_owner_calls": _INVALID_OWNER_CALLS,
+                "invalid_owner_types": tuple(sorted(
+                    _INVALID_OWNER_TYPES.items()))}
 
 
 def bucket_trim_stats() -> Dict[str, object]:
@@ -1008,7 +1085,7 @@ def record_error(event: str, kind: str, *, owner: str = "",
     safe_ctx = (_clean.sanitize_log_field(context, 64)
                 if context is not None else None)
     d = SloganDecision(ev, safe_ctx, "", "", "error:" + kd,
-                       at, "", "", norm_owner(owner))
+                       at, "", "", _coerce_owner(owner))
     _record(d, at)
     return d
 
@@ -1035,6 +1112,19 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     簇边界的二次按码点截断); miss 分「累计证据 / 连续未处置」两层,
     成功一次即自愈, 不再让一次已修复的历史错误永久污染 ``audit().ok``。
     """
+    # 深度轮 9 (N1): ``event`` 在查 ``SECURITY_EVENTS`` / ``EVENT_BINDINGS``
+    # **之前**没有任何类型守卫。实测 ``pick_for_event(['a'])`` 抛底层
+    # ``TypeError: unhashable type: 'list'`` —— 与 ``record_error`` 先净化
+    # 再结构化拒绝的口径不一致, 且 TUI ``_slogan_dispatch`` 的
+    # ``except UnboundSloganEvent`` 接不住它, ``strict=True`` 开发模式
+    # 期望的严格契约被绕过。非 str 一律走同一个结构化异常, 消息用
+    # 固定占位 (不调用 ``str(raw)``, 避免把超长/带控制字符的外部串
+    # 带进 traceback)。
+    if not isinstance(event, str):
+        raise UnboundSloganEvent(
+            "事件 '<invalid-event>' 没有绑定标语上下文；"
+            "未知事件不得静默回落 idle")
+
     # 深度轮 7: 旧版 ``clock = lambda: now`` 直接把 public 入参参与
     # ``int(clock() * 1000)``。实测 now='1000' 产生 4000 位天文数字、
     # nan/inf 抛异常。严格收敛后脏值回落真实单调时钟。
@@ -1044,7 +1134,7 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     ms = None if now is None else _coerce_ms(now, is_seconds=True)
     at = _fallback_ms() if ms is None else ms
     resolved = picker.resolve_lang(lang)
-    owner = norm_owner(owner)   # 深度轮 5: public 入参, 与查询侧同一归一
+    owner = _coerce_owner(owner)   # 深度轮 9: 非 str 隔离+留痕
 
     if event in SECURITY_EVENTS:
         d = SloganDecision(event, None, resolved, "", "security-notice",

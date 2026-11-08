@@ -608,3 +608,22 @@ Apache-2.0 / MIT Codex 归属混用**。
 
 319 例 pytest + 97 项纯 stdlib 验证全绿。
 详见 `SLOGAN_MAPPING.md` §17。
+
+
+---
+
+## public 入参类型面（不占任何 Codex 对齐指标）
+
+本轮只把前八轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `mapping.py` 加 event 类型守卫与非字符串 owner 隔离留痕；
+  净化层、TUI、生命周期事件、i18n 文案、Codex 状态行 / 键位 /
+  布局数值 / 组件树 / 交互契约**一律未改**。
+- **`tui.py` 本轮逐字节未改，未包含在本轮推送清单。**
+  但 `_slogan_dispatch` 的 `except UnboundSloganEvent` 现在真的能
+  接住不可 hash 的 event（`strict=True` 契约不再被底层
+  `TypeError` 绕过），这是行为修复而非对齐改动。
+
+343 例 pytest + 105 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §18。

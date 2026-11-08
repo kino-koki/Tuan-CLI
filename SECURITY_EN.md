@@ -1241,3 +1241,85 @@ adaptive red team. NO performance improvement is claimed (trimming
 gains a bounded constant Counter update; no benchmark was run).
 Verification: 319 pytest cases + 97 pure-stdlib checks + 22/20 prior
 checks, all green.
+
+
+---
+
+## 21. Public Argument Type Surface: Event Guard and Dirty-Owner Isolation
+
+This round changes no verdict and NOT ONE LINE of the cleaning layer.
+It closes the last two unguarded public-argument paths left by eight
+prior rounds.
+
+- **N1: no type guard before table lookup.** Measured
+  `pick_for_event(['a'])` raised the LEAKED low-level
+  `TypeError: unhashable type: 'list'` (same for a dict), inconsistent
+  with `record_error` which sanitizes first and rejects structurally.
+  TUI `_slogan_dispatch`'s `except UnboundSloganEvent` could not catch
+  it, so it fell through to `except Exception` and only recorded
+  `error:TypeError` -- bypassing the strict contract expected by
+  `strict=True` dev mode. `pick_for_event` now guards with
+  `isinstance` at the very top; every non-str value raises the SAME
+  `UnboundSloganEvent` with a FIXED `<invalid-event>` placeholder.
+  Deliberately NOT calling `str(raw)`, otherwise oversized or
+  control-character-laden external strings enter tracebacks. Nine
+  non-string inputs (including unhashable list / dict / tuple /
+  frozenset) are handled uniformly; all 18 legal events unchanged.
+- **N2: non-string `owner` silently folded into the empty key.** The
+  old `norm_owner` collapsed `None / 123 / True / bytes / list / dict
+  / float` all into `''`. Measured: seven distinct dirty owners shared
+  ONE bucket and polluted the default bucket used by callers that
+  omit `owner`; worse, `dispatch_log(None)` means "full snapshot"
+  while `dispatch_log(123)` queried the empty bucket -- the SAME run
+  returned 9 and 8 rows respectively. One typo yields a completely
+  wrong log set with no error and no trace. `None` still means "no
+  owner"; every other non-string now maps to the fixed isolation
+  bucket `owner:invalid` (clean, 13 codepoints, strictly idempotent,
+  write/query sides align automatically -- `dispatch_log(d.owner)`
+  now finds the dirty entries). The entry-point `_coerce_owner()`
+  calls `_note_invalid_owner()`; type names come from the publicly
+  controllable `type(raw).__name__`, so they pass through the SAME
+  cleaning core, are length-capped at 32, and the kind set is capped
+  at 32 with overflow folded into `<other>`. Measured: a custom class
+  name containing OSC8 + RLO + 500 A's becomes 33 clean codepoints.
+  `dispatch_log_stats()` gains `invalid_owner_calls` /
+  `invalid_owner_types`; `audit().as_dict()` carries them
+  automatically. Counting happens ONLY at the two entry points --
+  after 20 rounds of queries the counter is still 1. All are
+  information items and do NOT affect `audit().ok`.
+
+FOUR CANDIDATES JUDGED "DO NOT FIX": non-string `lang` silently falls
+back to the default locale (affects only wording, not bucketing or
+verdicts); `record_error`'s event/kind were already sanitized by D4;
+`sanitize_log_field` / `sanitize_verb` return empty for non-strings
+(existing fail-closed contract); `owner=None` sharing the default
+bucket with `''` and `dispatch_log(None)` being a full snapshot are
+explicit documented compatibility contracts. This round ONLY
+separates "non-string dirty value" from "no owner".
+
+ONE pre-existing SOURCE-LEVEL assertion was SYNCHRONIZED to the new
+contract, NOT relaxed: `t_d5_owner_normalization` asserted
+`owner = norm_owner(owner)` in source; after the entry point moved to
+`_coerce_owner`, it now checks `def norm_owner`, `def _coerce_owner`,
+`owner = _coerce_owner(owner)` and both call sites, while keeping ALL
+runtime assertions. No other pre-existing assertion was touched.
+
+**Honest limits**: the behavior change affects ONLY erroneous usage --
+non-string owners move from the default bucket to the isolation
+bucket; normal strings / `None` / `''` are unchanged. Callers relying
+on "passing a number still lands in the default bucket" must pass a
+string. A caller genuinely using the STRING `"owner:invalid"` as an
+owner collides with the dirty bucket (inherent collision surface of a
+fixed key; locked by a regression, zero collisions NOT claimed). Type
+distribution is at most 32 concrete kinds + 1 `<other>`; oversized
+class names keep only the first 32 codepoints plus an ellipsis.
+`_clean.py`, `tui.py`, `runtime_slogans.py` and
+`test_runtime_slogans.py` are byte-identical and NOT in this push.
+No list corruption reproduced under concurrency; no real-device soak
+test; fork changes still unmerged; no external adaptive red team. NO
+performance improvement is claimed (one extra isinstance plus a
+bounded Counter update per entry; no benchmark was run). No
+self-introduced defect requiring a revert was MEASURED this round,
+but five boundary cases (A'-E') were each exercised.
+Verification: 343 pytest cases + 105 pure-stdlib checks + 22/20 prior
+checks, all green.

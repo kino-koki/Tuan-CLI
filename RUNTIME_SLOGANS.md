@@ -646,3 +646,26 @@ LRU 被动淘汰静默丢整桶、`close()` 与 `take_owner_log()` 两套实现�
 裁剪留痕与累计决策数（见 `SLOGAN_MAPPING.md` §17）。
 验证：319 passed + 97 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 `stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。
+
+
+---
+
+## 20. 本轮引擎零改动：public 入参类型面
+
+前八轮把对应关系做实；本轮把镜头对准**前八轮一直没扫到的 public
+入参类型面**，修的是 `ui/slogans/mapping.py` 的两处静默折叠：
+
+- `pick_for_event(['a'])` 曾抛底层 `TypeError`，现在统一走
+  `UnboundSloganEvent`（结构化、消息固定占位）。
+- 非字符串 `owner` 曾全部折叠成空 key、串桶并污染默认桶，现在归到
+  `owner:invalid` 固定隔离桶并留痕计数。
+
+**本引擎文件、`_clean.py`、`tui.py` 本轮逐字节未改**，
+re-export 的 `sanitize_verb` 与全部 i18n 文案行为不变；139 例既有
+回归全绿。四个候选（`lang` 非 str 回落、`record_error` 已净化、
+`sanitize_*` 非 str 返回空、`owner=None` 同默认桶）实测后判定
+「不该修」，只加回归锁住。
+
+验证：343 passed + 105 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+`stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。
+完整复现见 `SLOGAN_MAPPING.md` §18。

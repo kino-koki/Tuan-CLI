@@ -762,6 +762,18 @@ THIRD-PARTY ATTRIBUTIONS
               executable regressions record that judgment. No new
               slogans, events, CLI subcommands, license scope,
               upstream source or trademark asset. Sections 9-15
+              remain unchanged.
+    Public-argument type-surface pass (still NO new third-party
+              material): non-string events now raise the structured
+              unbound-event exception instead of leaking a low-level
+              TypeError, and non-string owners are isolated into a
+              fixed bucket with desensitized, bounded type evidence.
+              Four further candidates were measured and deliberately
+              NOT changed; one pre-existing source assertion was
+              synchronized to the new contract, not relaxed. The
+              cleaning layer, TUI and engine remain byte-identical.
+              No new slogans, events, CLI subcommands, license scope,
+              upstream source or trademark asset. Sections 9-15
               remain unchanged. The Claude Code /
               Codex attributions in sections 9-15 are unchanged.
 

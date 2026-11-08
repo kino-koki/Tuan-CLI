@@ -973,7 +973,12 @@ def _d5_evil_owner():
 def t_d5_owner_normalization():
     src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
     assert "def norm_owner(" in src
-    assert "owner = norm_owner(owner)" in src
+    # 深度轮 9: 入口改走 _coerce_owner (非 str 隔离+留痕)，
+    # 断言同步到新契约，不是放宽：仍要求 norm_owner 存在且被入口调用。
+    assert "def norm_owner(" in src
+    assert "def _coerce_owner(" in src
+    assert "owner = _coerce_owner(owner)" in src
+    assert "_coerce_owner(owner)" in src
     raw = _d5_evil_owner()
     n = mapping.norm_owner(raw)
     assert len(n) <= 30 and n.startswith("owner:")
@@ -1560,6 +1565,151 @@ def t_d8_other_measured_candidates_are_locked():
 
 
 def t_d8_full_health():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    r = mapping.audit()
+    assert r.ok and r.index_consistent
+    st = mapping.index_stats()
+    assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+    assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+    for lang in L.LANGUAGES:
+        for ev in mapping.EVENT_BINDINGS:
+            d = mapping.pick_for_event(ev, lang=lang, owner="final",
+                                       now=1000.0)
+            assert d.reason == "ok" and d.entry_id, (ev, lang)
+    assert mapping.audit().ok is True
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+# ---------------------------------------------------------------- 深度轮 9
+
+
+def t_d9_event_type_guard():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "if not isinstance(event, str):" in src
+    assert src.index("if not isinstance(event, str)") < src.index(
+        "if event in SECURITY_EVENTS")
+    for bad in (None, 123, True, b"x", ["a"], {"a": 1}, 1.5, ("t",)):
+        try:
+            mapping.pick_for_event(bad, owner="t")
+            raise AssertionError("应抛 UnboundSloganEvent: %r" % (bad,))
+        except mapping.UnboundSloganEvent as e:
+            assert "<invalid-event>" in str(e), bad
+            assert "\x1b" not in str(e) and "\u202e" not in str(e)
+    # 合法事件行为不变
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    for ev in mapping.EVENT_BINDINGS:
+        d = mapping.pick_for_event(ev, owner="legal", now=1000.0)
+        assert d.reason in ("ok", "security-notice"), ev
+    assert mapping.audit().ok is True
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d9_invalid_owner_isolation():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert '_INVALID_OWNER_KEY = "owner:invalid"' in src
+    assert "def _coerce_owner(" in src and "def _note_invalid_owner(" in src
+    assert "owner = _coerce_owner(owner)" in src
+    dirty = [123, True, b"bytes", ["a"], {"x": 1}, 1.5, 0, False,
+             0.0, [], {}, ()]
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    mapping.pick_for_event("tool.exploring", owner="")
+    for bad in dirty:
+        d = mapping.pick_for_event("tool.exploring", owner=bad)
+        assert d.owner == mapping._INVALID_OWNER_KEY, bad
+    assert len(mapping.dispatch_log("")) == 1
+    assert len(mapping.dispatch_log(mapping._INVALID_OWNER_KEY)) == len(dirty)
+    st = mapping.dispatch_log_stats()
+    assert st["owners"] == 2
+    assert st["invalid_owner_calls"] == len(dirty)
+    assert sum(v for _, v in st["invalid_owner_types"]) == len(dirty)
+    assert mapping.norm_owner(mapping._INVALID_OWNER_KEY) == mapping._INVALID_OWNER_KEY
+    assert mapping.norm_owner(mapping.norm_owner(123)) == mapping._INVALID_OWNER_KEY
+    assert mapping.audit().as_dict()["dispatch_stats"]["invalid_owner_calls"] == len(dirty)
+    assert mapping.audit().ok is True
+
+
+def t_d9_counter_counts_entries_not_queries():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    d = mapping.pick_for_event("tool.exploring", owner=999)
+    assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+    for _ in range(20):
+        mapping.dispatch_log(999)
+        mapping.dispatch_log(d.owner)
+        mapping.dispatch_log(None)
+        mapping.dispatch_log_stats()
+    assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+    assert len(mapping.dispatch_log(d.owner)) == 1
+
+
+def t_d9_type_distribution_is_desensitized_and_bounded():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    cls = type("Evil", (), {})
+    cls.__name__ = "\x1b]8;;x\x07\u202e" + "A" * 500
+    mapping.pick_for_event("tool.exploring", owner=cls())
+    types = mapping.dispatch_log_stats()["invalid_owner_types"]
+    assert len(types) == 1 and len(types[0][0]) <= 33
+    assert "\x1b" not in repr(types) and "\u202e" not in repr(types)
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    for i in range(60):
+        c = type("T%02d" % i, (), {})
+        mapping.pick_for_event("tool.exploring", owner=c())
+    types = mapping.dispatch_log_stats()["invalid_owner_types"]
+    assert sum(1 for k, _ in types if k != "<other>") <= mapping._INVALID_OWNER_TYPE_CAP
+    assert len(types) <= mapping._INVALID_OWNER_TYPE_CAP + 1
+    assert any(k == "<other>" for k, _ in types)
+    assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 60
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d9_none_and_full_snapshot_contracts_unchanged():
+    """不修的两个既有契约。"""
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    mapping.pick_for_event("tool.exploring", owner=None)
+    mapping.pick_for_event("tool.exploring", owner="")
+    mapping.pick_for_event("tool.exploring", owner="a")
+    mapping.pick_for_event("tool.exploring", owner=123)
+    assert mapping.dispatch_log_stats()["owners"] == 3
+    assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+    assert len(mapping.dispatch_log("")) == 2       # None + ''
+    assert len(mapping.dispatch_log(None)) == 4     # 全量
+    assert len(mapping.dispatch_log(123)) == 1      # 脏值桶
+
+
+def t_d9_reset_semantics_and_record_error():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    d = mapping.record_error("e", "k", owner={"bad": 1})
+    assert d.owner == mapping._INVALID_OWNER_KEY
+    assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+    mapping.reset_runtime_counters()
+    assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+    mapping.reset_dispatch_log("one")
+    assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+    mapping.reset_dispatch_log()
+    st = mapping.dispatch_log_stats()
+    assert st["invalid_owner_calls"] == 0 and st["invalid_owner_types"] == ()
+
+
+def t_d9_measured_but_not_changed():
+    """四个候选判定「不该修」，锁住当前行为。"""
+    from tuan_cli.ui.slogans import _clean as C
+    # lang 非 str 静默回落默认语种
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    for bad in (123, True, b"x", ["a"], 1.5):
+        d = mapping.pick_for_event("tool.exploring", lang=bad, owner="t")
+        assert d.reason == "ok" and d.entry_id
+    # record_error 的 event / kind 已净化
+    for bad in (None, 123, True, b"x", ["a"], 1.5):
+        d = mapping.record_error(bad, bad, owner="t")
+        assert d.reason.startswith("error:")
+        assert "\x1b" not in d.event and "\u202e" not in d.event
+    # sanitize_log_field / sanitize_verb 非 str 返回空串
+    for bad in (None, 123, True, b"x", ["a"], 1.5):
+        assert C.sanitize_log_field(bad) == ""
+    assert C.sanitize_verb(123) == ""
+    assert mapping.audit().ok is True
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d9_full_health():
     mapping.reset_runtime_counters(include_dispatch_log=True)
     r = mapping.audit()
     assert r.ok and r.index_consistent

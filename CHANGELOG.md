@@ -9,6 +9,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - public 入参最后两块裸地：event 类型守卫与脏 owner 隔离
+
+> 前八轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈、
+> owner 全链路归一、裁剪留痕、累计证据。本轮把镜头对准**前八轮一直
+> 没扫到的 public 入参类型面**: 不是找新的净化洞, 而是找「调用方
+> 一个笔误就能拿到错误结果、却没有任何报错」的静默折叠。完整复现见
+> `SLOGAN_MAPPING.md` §18。继续「不扩广度、只挖深度」: 18 个事件、
+> 16 个上下文、1108 条词条、`fully_superior`、99 模块基线、所有
+> 对齐指标与 CLI 子命令数**全部不变**; 零新增文件、零删除;
+> `_clean.py` / `tui.py` / `runtime_slogans.py` /
+> `test_runtime_slogans.py` 逐字节未改。
+
+### 两个真缺陷
+
+| # | 实测 | 影响 |
+|---|---|---|
+| N1 | `pick_for_event(['a'])` → `TypeError: unhashable type: 'list'`; `{'x':1}` 同理 | `event` 查表前无类型守卫, 与 `record_error` 先净化再结构化拒绝口径不一致; TUI `except UnboundSloganEvent` 接不住它, `strict=True` 契约被绕过 |
+| N2 | `norm_owner` 把 `None/123/True/bytes/list/dict/float` **全部静默折叠成空 key** | 七个不同脏 owner 共用一个桶并污染默认桶; `dispatch_log(None)` 全量 vs `dispatch_log(123)` 空桶, 实测同一次运行 9 条 vs 8 条, 无报错无留痕 |
+
+### 四个候选判定「不该修」
+
+- `lang` 非字符串静默回落默认语种: 只影响选词语种, 不影响分桶/裁决,
+  修它要改 picker, 收益低 → **未修**, 加回归锁住
+- `record_error` 的 event / kind 非字符串: D4 已净化, **已正确**
+- `sanitize_log_field` / `sanitize_verb` 非字符串返回空串: 既有
+  fail-closed 契约, **未修**
+- `owner=None` 与 `''` 同桶、`dispatch_log(None)` 全量: 文档明确的
+  兼容契约, **未修**; 本轮只把「非字符串脏值」与「无 owner」分开
+
+### 修复
+
+- **N1 · 查表前类型守卫**: `pick_for_event` 开头
+  `if not isinstance(event, str): raise UnboundSloganEvent(...)`,
+  消息用**固定占位** `<invalid-event>`, 刻意不调用 `str(raw)` 以免
+  超长/带控制字符的外部串进 traceback。九种非字符串 (含不可 hash
+  的 list/dict/tuple/frozenset) 统一结构化拒绝; 18 个合法事件零变化。
+- **N2 · 固定隔离桶 + 入口计数留痕**: `norm_owner` 的 `None` 仍返回
+  `''`, 其余非字符串返回 `_INVALID_OWNER_KEY = "owner:invalid"`
+  (干净、13 码点、严格幂等, 写入/查询自动对上);
+  `_coerce_owner()` 只在两个入口调用并对非 str 调
+  `_note_invalid_owner()` (类型名过同一份净化核心、限长 32、
+  种类上限 32 超出归 `<other>`), 查询侧不重复计数;
+  `dispatch_log_stats()` 新增 `invalid_owner_calls` /
+  `invalid_owner_types`, `audit().as_dict()` 自动携带;
+  返回类型注解改 `Dict[str, object]`; 全清才归零。
+
+### 实测
+
+```
+修复前  pick_for_event(['a']) -> TypeError: unhashable type: 'list'
+修复后  -> UnboundSloganEvent("<invalid-event>")
+修复前  dispatch_log(None)=9, dispatch_log(123)=8, owners=2
+修复后  owners=3, decisions=9, invalid_owner_calls=6,
+        types=(('bool',1),('bytes',1),('dict',1),('float',1),('int',1),('list',1))
+        dispatch_log(None)=9, dispatch_log(123)=6,
+        dispatch_log("")=2, dispatch_log("real")=1
+        norm_owner('owner:invalid') == 'owner:invalid'
+        audit ok=True
+自引入边界 A'–E' 逐个量过: 查询不重复计 / 类名脱敏 33 码点 /
+        60 种类型 -> 32 具体 + '<other>' / reset 语义 /
+        falsy 非 str 同样隔离。本轮实测未发现需回修的自引入缺陷。
+```
+
+### 验证
+
+```
+343 passed (pytest) + 105 项纯 stdlib 独立验证
+verify_deep.py / verify_deep2.py   22 / 20 项全绿
+index_stats 1695×4 / clipped=0 / unrenderable=0 / collisions=0
+            index_misses=0 / unresolved_misses=0
+```
+
+**一条既有源码级断言因行为变更同步到新契约, 不是放宽**:
+`t_d5_owner_normalization` 原断言 `owner = norm_owner(owner)`;
+入口改走 `_coerce_owner` 后改为同时检查 `def norm_owner` /
+`def _coerce_owner` / `owner = _coerce_owner(owner)` / 两处调用,
+并保留全部运行时断言。其余既有断言一条未动、一条未放宽。
+
+### 如实边界
+
+1. 本轮唯一改动的运行时代码是 `ui/slogans/mapping.py`;
+   净化层 / TUI / runtime_slogans / 引擎测试逐字节未改。
+2. **行为变更仅针对错误用法**: 非字符串 owner 从默认桶移到隔离桶;
+   正常字符串 / `None` / `''` 零变化。依赖「传数字也进默认桶」的
+   调用方需改传字符串。
+3. **固定键固有碰撞面**: 真的把 `"owner:invalid"` 当 owner 用会与
+   脏值桶撞 (已加回归锁住), 不宣称零碰撞。
+4. `invalid_owner_types` 最多 32 种具体 + 1 个 `<other>`; 超长类名
+   只保留前 32 码点 + 省略号。计数只在两个入口发生。
+5. **本轮没有出现需要回修的自引入缺陷** (连续三轮 A′ 后第一次),
+   但 A′–E′ 五个边界都做了实测; 不写成「零缺陷」, 只写「实测未发现」。
+6. 并发压测仍未复现 list 撕裂; 不是真机长跑; TUI 仍未替换既有
+   i18n 文案; 分叉改动仍未合并; 第三方自适应红队仍未做;
+   **不宣称性能提升** (入口多一次 isinstance 与有界 Counter 更新,
+   未做基准对比)。
+
 ## [Unreleased] - 只修证据缺口，六个候选判定「不该动」
 
 > 前七轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈、

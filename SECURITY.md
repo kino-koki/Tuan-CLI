@@ -1223,4 +1223,66 @@ re-export 的 `sanitize_verb` 因共享 `_clean_once` 对连续 ESC
 
 验证：319 例 pytest + 97 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 
+---
+
+## 24. public 入参类型面：event 守卫与脏 owner 隔离
+
+本轮不改任何安全裁决，也不改净化层一行，只补前八轮一直没扫到的
+**public 入参类型面**。
+
+- **N1 · `event` 查表前无类型守卫**：实测
+  `pick_for_event(['a'])` 抛底层 `TypeError: unhashable type: 'list'`
+  （`{'x':1}` 同理），与 `record_error` 先净化再结构化拒绝的口径
+  不一致。TUI `_slogan_dispatch` 的 `except UnboundSloganEvent`
+  接不住它，落到 `except Exception` 只记 `error:TypeError`，
+  `strict=True` 开发模式期望的严格契约被绕过。现在
+  `pick_for_event` 开头加 `isinstance` 守卫，非 str 一律走同一个
+  `UnboundSloganEvent`，消息用**固定占位** `<invalid-event>`，
+  刻意不调用 `str(raw)` —— 否则超长或带控制字符的外部串会进
+  traceback。九种非字符串输入（含不可 hash 的 list / dict /
+  tuple / frozenset）统一结构化拒绝，18 个合法事件零变化。
+- **N2 · 非字符串 `owner` 静默折叠成空 key**：旧
+  `norm_owner` 把 `None / 123 / True / bytes / list / dict / float`
+  全部折叠成 `''`。实测七个不同脏 owner 共用一个桶、污染
+  「不传 owner」调用方的默认桶；更糟的是 `dispatch_log(None)`
+  是「全量」语义而 `dispatch_log(123)` 查的是空桶，同一次运行
+  分别返回 **9 条和 8 条** —— 一个笔误就拿到完全错误的日志集合，
+  无报错、无留痕。现在 `None` 仍表示「无 owner」，其余非字符串
+  归到固定隔离桶 `owner:invalid`（干净、13 码点、严格幂等，
+  写入/查询自动对上），并由入口 `_coerce_owner()` 调
+  `_note_invalid_owner()` 留痕。类型名来自 public 可控的
+  `type(raw).__name__`，过同一份净化核心并限长 32、种类上限 32
+  （超出归 `<other>`）；实测自定义类名含 OSC8 + RLO + 500 个 A
+  时脱敏后只剩 33 码点且无控制字符。`dispatch_log_stats()` 新增
+  `invalid_owner_calls` / `invalid_owner_types`，`audit().as_dict()`
+  自动携带；计数只在两个入口发生，查询侧 20 轮调用后仍为 1。
+  全部是**信息项**，不参与 `audit().ok`。
+
+**四个候选判定「不该修」**：`lang` 非字符串静默回落默认语种
+（只影响选词语种，不影响分桶/裁决）、`record_error` 的
+event/kind 已被 D4 净化、`sanitize_log_field` / `sanitize_verb`
+非字符串返回空串（既有 fail-closed 契约）、`owner=None` 与 `''`
+同桶且 `dispatch_log(None)` 全量（文档明确的兼容契约）。
+本轮只把「非字符串脏值」与「无 owner」分开，不动后两条。
+
+**一条既有源码级断言因行为变更同步到新契约，不是放宽**：
+`t_d5_owner_normalization` 原断言 `owner = norm_owner(owner)`；
+入口改走 `_coerce_owner` 后改为同时检查 `def norm_owner` /
+`def _coerce_owner` / `owner = _coerce_owner(owner)` 与两处调用，
+并保留全部运行时断言。其余既有断言一条未动。
+
+**如实边界**：行为变更**仅针对错误用法** —— 非字符串 owner 从
+默认桶移到隔离桶，正常字符串 / `None` / `''` 零变化；依赖「传数字
+也进默认桶」的调用方需改传字符串。若真的把字符串
+`"owner:invalid"` 当 owner 用，会与脏值桶撞（固定键的固有碰撞面，
+已加回归锁住，不宣称零碰撞）。类型分布最多 32 种具体 + 1 个
+`<other>`，超长类名只保留前 32 码点 + 省略号。`_clean.py` /
+`tui.py` / `runtime_slogans.py` / `test_runtime_slogans.py` 逐字节
+未改，均不在本轮推送清单。并发压测仍未复现 list 撕裂；不是真机
+长跑；分叉改动仍未合并；第三方自适应红队仍未做；**不宣称性能
+提升**（入口多一次 isinstance 与有界 Counter 更新，未做基准对比）。
+本轮实测未发现需要回修的自引入缺陷，但 A′–E′ 五个边界都量过。
+
+验证：343 例 pytest + 105 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

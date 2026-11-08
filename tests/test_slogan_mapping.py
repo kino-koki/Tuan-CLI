@@ -2169,3 +2169,251 @@ class TestFullHealthAfterD8:
                 assert d.reason == "ok" and d.entry_id, (ev, lang)
         assert mapping.audit().ok is True
         mapping.reset_runtime_counters(include_dispatch_log=True)
+
+# ================================================================ 深度轮 9
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestEventTypeGuard:
+    """N1: event 查表前无类型守卫，不可 hash 输入漏底层 TypeError。"""
+
+    NON_STR = [None, 123, True, b"x", ["a"], {"a": 1}, 1.5,
+               ("t",), frozenset({"z"})]
+
+    def test_non_str_event_always_raises_unbound_slogan_event(self):
+        for bad in self.NON_STR:
+            with pytest.raises(mapping.UnboundSloganEvent) as ei:
+                mapping.pick_for_event(bad, owner="t")
+            msg = str(ei.value)
+            assert "<invalid-event>" in msg, bad
+            # 固定占位，绝不把外部串带进 traceback
+            assert str(bad) not in msg or bad is None, bad
+            assert "\x1b" not in msg and "\u202e" not in msg
+
+    def test_unhashable_event_no_longer_leaks_typeerror(self):
+        """修复前: TypeError: unhashable type: 'list'。"""
+        for bad in (["a"], {"x": 1}):
+            with pytest.raises(mapping.UnboundSloganEvent):
+                mapping.pick_for_event(bad, owner="t")
+
+    def test_tui_strict_contract_is_reachable(self):
+        """TUI 的 ``except UnboundSloganEvent`` 必须能接住这条路径。
+
+        修复前不可 hash 的 event 抛 TypeError，落到
+        ``except Exception`` 只记 ``error:TypeError``，``strict=True``
+        期望的严格契约被绕过。
+        """
+        import inspect
+        from tuan_cli.tui import tui as T
+        src = inspect.getsource(T.Tui._slogan_dispatch) if hasattr(T, "Tui") else ""
+        if not src:
+            src = inspect.getsource(T)
+        assert "except mapping.UnboundSloganEvent" in src
+        with pytest.raises(mapping.UnboundSloganEvent):
+            mapping.pick_for_event(["a"], owner="t")
+
+    def test_legal_events_are_unchanged(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        for ev in mapping.EVENT_BINDINGS:
+            d = mapping.pick_for_event(ev, owner="legal", now=1000.0)
+            assert d.reason in ("ok", "security-notice"), (ev, d.reason)
+        assert mapping.audit().ok is True
+
+    def test_guard_is_before_table_lookup(self):
+        import inspect
+        src = inspect.getsource(mapping.pick_for_event)
+        assert src.index("if not isinstance(event, str)") < src.index(
+            "if event in SECURITY_EVENTS")
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestInvalidOwnerIsolation:
+    """N2: 非字符串 owner 全部静默折叠成空 key，串桶且污染默认桶。"""
+
+    DIRTY = [123, True, b"bytes", ["a"], {"x": 1}, 1.5, 0, False,
+             0.0, [], {}, ()]
+
+    def test_dirty_owner_no_longer_lands_in_default_bucket(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner="")
+        for bad in self.DIRTY:
+            mapping.pick_for_event("tool.exploring", owner=bad)
+        default = mapping.dispatch_log("")
+        assert len(default) == 1                       # 只有那条显式 ""
+        invalid = mapping.dispatch_log(mapping._INVALID_OWNER_KEY)
+        assert len(invalid) == len(self.DIRTY)
+        assert mapping.dispatch_log_stats()["owners"] == 2
+
+    def test_dirty_owner_is_queryable_via_decision_owner(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        d = mapping.pick_for_event("tool.exploring", owner=999)
+        assert d.owner == mapping._INVALID_OWNER_KEY
+        assert len(mapping.dispatch_log(d.owner)) == 1
+        assert len(mapping.dispatch_log(999)) == 1
+
+    def test_fixed_key_is_idempotent_and_bounded(self):
+        k = mapping._INVALID_OWNER_KEY
+        assert k == "owner:invalid" and len(k) == 13
+        assert mapping.norm_owner(k) == k
+        assert mapping.norm_owner(mapping.norm_owner(123)) == k
+        assert len(k) <= mapping.OWNER_LIMIT
+
+    def test_none_and_empty_string_still_share_default_bucket(self):
+        """不修的既有契约: None / '' 都表示「无 owner」。"""
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner=None)
+        mapping.pick_for_event("tool.exploring", owner="")
+        assert mapping.dispatch_log_stats()["owners"] == 1
+        assert len(mapping.dispatch_log("")) == 2
+        assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 0
+
+    def test_dispatch_log_none_is_still_full_snapshot(self):
+        """不修的兼容契约: owner=None -> 全量。"""
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner="a")
+        mapping.pick_for_event("tool.exploring", owner="b")
+        mapping.pick_for_event("tool.exploring", owner=123)
+        assert len(mapping.dispatch_log(None)) == 3
+        assert len(mapping.dispatch_log(123)) == 1
+
+    def test_counter_only_counts_entries_not_queries(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        d = mapping.pick_for_event("tool.exploring", owner=123)
+        assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+        for _ in range(20):
+            mapping.dispatch_log(123)
+            mapping.dispatch_log(d.owner)
+            mapping.dispatch_log(None)
+            mapping.dispatch_log_stats()
+        assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+
+    def test_record_error_also_counts(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        d = mapping.record_error("e", "k", owner={"bad": 1})
+        assert d.owner == mapping._INVALID_OWNER_KEY
+        assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+        assert dict(mapping.dispatch_log_stats()["invalid_owner_types"])["dict"] == 1
+
+    def test_type_distribution_is_sanitized_and_sorted(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        for bad in self.DIRTY:
+            mapping.pick_for_event("tool.exploring", owner=bad)
+        types = mapping.dispatch_log_stats()["invalid_owner_types"]
+        assert list(types) == sorted(types)
+        blob = repr(types)
+        assert "\x1b" not in blob and "\u202e" not in blob
+        assert all(isinstance(k, str) and isinstance(v, int) for k, v in types)
+
+    def test_custom_class_name_is_desensitized(self):
+        cls = type("Evil", (), {})
+        cls.__name__ = "\x1b]8;;x\x07\u202e" + "A" * 500
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner=cls())
+        types = mapping.dispatch_log_stats()["invalid_owner_types"]
+        assert len(types) == 1
+        k = types[0][0]
+        assert len(k) <= 33
+        assert "\x1b" not in k and "\u202e" not in k and "]8;;" not in k
+
+    def test_type_kind_cap_is_bounded(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        for i in range(60):
+            cls = type("T%02d" % i, (), {})
+            mapping.pick_for_event("tool.exploring", owner=cls())
+        types = mapping.dispatch_log_stats()["invalid_owner_types"]
+        # 具体种类 <= CAP，<other> 是额外一个桶（与 d8 口径一致）
+        assert sum(1 for k, _ in types if k != "<other>") <= mapping._INVALID_OWNER_TYPE_CAP
+        assert len(types) <= mapping._INVALID_OWNER_TYPE_CAP + 1
+        assert any(k == "<other>" for k, _ in types)
+        assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 60
+
+    def test_falsy_non_strings_are_isolated(self):
+        """A′ 候选: 0 / False / [] / {} 旧版也被 fold 成 ''。"""
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        for bad in (0, False, 0.0, [], {}, ()):
+            assert mapping.pick_for_event("tool.exploring", owner=bad).owner == (
+                mapping._INVALID_OWNER_KEY)
+        assert len(mapping.dispatch_log("")) == 0
+
+    def test_reset_semantics(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner=123)
+        assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+        mapping.reset_runtime_counters()               # 默认不清
+        assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+        mapping.reset_dispatch_log("one")              # 单 owner 不清
+        assert mapping.dispatch_log_stats()["invalid_owner_calls"] == 1
+        mapping.reset_dispatch_log()                   # 全清才归零
+        st = mapping.dispatch_log_stats()
+        assert st["invalid_owner_calls"] == 0
+        assert st["invalid_owner_types"] == ()
+
+    def test_audit_health_and_auto_carry(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner=123)
+        a = mapping.audit().as_dict()
+        assert a["ok"] is True
+        assert a["dispatch_stats"]["invalid_owner_calls"] == 1
+        assert a["dispatch_stats"]["invalid_owner_types"]
+
+    def test_real_string_equal_to_fixed_key_collides(self):
+        """如实边界: 真的把 'owner:invalid' 当 owner 用会撞脏值桶。"""
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner="owner:invalid")
+        mapping.pick_for_event("tool.exploring", owner=123)
+        assert len(mapping.dispatch_log("owner:invalid")) == 2
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestMeasuredButDeliberatelyNotChangedD9:
+    """本轮「不该修」的四个候选，锁住当前行为。"""
+
+    def test_lang_non_str_falls_back_to_default_locale(self):
+        """resolve_lang 的既有兜底，不影响分桶/裁决，未修。"""
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        for bad in (123, True, b"x", ["a"], 1.5):
+            d = mapping.pick_for_event("tool.exploring", lang=bad, owner="t")
+            assert d.reason == "ok" and d.entry_id
+        assert mapping.audit().ok is True
+
+    def test_record_error_event_kind_are_already_sanitized(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        for bad in (None, 123, True, b"x", ["a"], 1.5):
+            d = mapping.record_error(bad, bad, owner="t")
+            assert d.event in ("<invalid-event>", "ev")
+            assert d.reason.startswith("error:")
+            assert "\x1b" not in d.event and "\u202e" not in d.event
+
+    def test_sanitize_non_string_returns_empty(self):
+        """既有 fail-closed 契约，未修。"""
+        from tuan_cli.ui.slogans import _clean as C
+        for bad in (None, 123, True, b"x", ["a"], 1.5):
+            assert C.sanitize_log_field(bad) == ""
+        assert C.sanitize_verb(123) == ""
+
+    def test_owner_none_vs_dirty_are_semantically_distinct(self):
+        """None 是「无 owner」，123 是错误用法 —— 现在真的分开了。"""
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner=None)
+        mapping.pick_for_event("tool.exploring", owner=123)
+        assert mapping.dispatch_log_stats()["owners"] == 2
+        assert len(mapping.dispatch_log("")) == 1
+        assert len(mapping.dispatch_log(123)) == 1
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestFullHealthAfterD9:
+    def test_registry_and_all_events_still_green(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        r = mapping.audit()
+        assert r.ok and r.index_consistent
+        st = mapping.index_stats()
+        assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+        assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+        for lang in L.LANGUAGES:
+            for ev in mapping.EVENT_BINDINGS:
+                d = mapping.pick_for_event(ev, lang=lang, owner="final",
+                                           now=1000.0)
+                assert d.reason == "ok" and d.entry_id, (ev, lang)
+        assert mapping.audit().ok is True
+        mapping.reset_runtime_counters(include_dispatch_log=True)
