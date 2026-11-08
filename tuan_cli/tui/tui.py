@@ -4155,23 +4155,34 @@ class QxtTUI:
             parts.append(("class:warning", f"? {t('tui.confirm_title')}"))
             return self._clip_parts(parts)
         if self._busy or self._running or self._streaming:
-            # codex 状态行: "• Working (Ns • esc to interrupt)" (替代旧月亮 + Processing)
-            parts.extend(self._working_status_line())
             # Claude Code 同款：状态行旁挂一条运行时标语。文案由真实事件驱动，
             # 忙碌但长时间无进展时改成「疑似摸鱼」诊断并标 warning。
             engine = getattr(self, "_slogans", None)
             view = engine.render(busy=True) if engine is not None else None
-            if view is not None and view.mode != "off" and view.text:
-                # 深度轮：三态视觉分级。stalled -> warning（真没进展），
-                # slow -> textdim（比预期慢但不冤枉它），healthy -> primary。
-                # 文案不变、裁决不变，只是让状态口径与真实活性一致。
+            diagnosing = (view is not None and view.mode != "off"
+                          and view.stalled and bool(view.headline))
+            if diagnosing:
+                # 深度轮 2：诊断态**不再挂**完整的
+                # "Working (Ns • esc to interrupt)" —— 那条「还在工作」的
+                # 字样正是本诊断要戳破的假象，而且它约 35 列，在窄终端会把
+                # 关键秒数挤没。只留短锚点 + 短版 headline（<=40 列、
+                # 已过统一净化出口）；完整诊断仍在 view.diagnostic。
+                parts.append(("class:warning", STATUS_BULLET))
+            else:
+                # codex 状态行: "• Working (Ns • esc to interrupt)"
+                parts.extend(self._working_status_line())
+            if view is not None and view.mode != "off" and (view.headline or view.text):
+                # 三态视觉分级：stalled -> warning，slow -> textdim，
+                # healthy -> primary。文案裁决不变。
                 if view.stalled:
                     cls = "class:warning"
                 elif view.state == "slow":
                     cls = "class:textdim"
                 else:
                     cls = "class:primary"
-                parts.append((cls, " " + view.text))
+                label = view.headline or view.text
+                # STATUS_BULLET 自带尾空格；普通态在状态行后补一个空格。
+                parts.append((cls, label if diagnosing else " " + label))
         else:
             parts.append(("class:success", f"{SUCCESS_MARK} {t('fs.ready')}"))
         if self._plan_mode:

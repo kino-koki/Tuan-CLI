@@ -452,3 +452,22 @@ Apache-2.0 / MIT Codex 归属混用**。
 **Codex 的键位、布局数值、组件树、交互契约一律未动** —— 这正是
 「完全相同但有自己本地化」的 A 线约束。93 例 pytest + 22 项纯 stdlib
 独立验证全绿。详见 `RUNTIME_SLOGANS.md` §10。
+
+
+---
+
+## 深度轮 2（仍不占任何 Codex 对齐指标）
+
+本轮只深化运行时标语的净化与 header 呈现，
+**`pending` / `fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- 净化层补齐 bidi/零宽/ESC 序列/变体选择符/组合标记开头，
+  grapheme 簇边界截断，构造性幂等；
+- `display_cols()` 与 `tui._display_width` 做 500 串交叉一致回归，
+  堵住 B3 漏掉的第三套宽度算法；
+- 诊断态 header 改用短版 `headline`，完整诊断留在 `diagnostic`；
+  **普通态的 Codex `Working (Ns • esc)` 状态行完全不动**，
+  键位、布局数值、组件树、交互契约一律未改。
+
+40 列窄终端、10 语言短文案、139 例 pytest + 20 项纯 stdlib 验证全绿。
+详见 `RUNTIME_SLOGANS.md` §11。

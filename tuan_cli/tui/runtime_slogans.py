@@ -59,6 +59,7 @@ D4 **事件覆盖补全**。新增 ``note_progress()``：只刷新活性时间�
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import re
@@ -74,6 +75,7 @@ __all__ = [
     "PHASES", "LANGUAGES", "PHASE_BUDGET_MS", "LivenessState",
     "SpinnerVerbsConfig", "EventRecord", "Liveness", "SloganView",
     "RuntimeSloganEngine", "load_config", "slogan_bank", "sanitize_verb",
+    "display_cols", "MAX_SETTINGS_BYTES",
 ]
 
 # ------------------------------------------------------------------ 阶段
@@ -223,6 +225,26 @@ _STALL_TEXT: Dict[str, str] = {
     "ru": "Похоже, бездельничает · {sec} с без событий модели/инструмента/потока",
 }
 
+#: header 用的**短版**诊断（完整版是 ``Liveness.diagnostic``）。
+#: 上一轮文档写了「header 只显示短文案」，但 ``render()`` 实际把
+#: ``_STALL_TEXT`` 整串塞了进去 —— 中文约 26 个 CJK ≈ 52 列，
+#: 比 ``_MAX_VERB_COLS``(40) 还长，窄终端下关键秒数直接被 ``_clip_parts``
+#: 裁没。更根本的是：**内置诊断文案绕过了 ``sanitize_verb`` 的宽度/不可见
+#: 字符约束**，等于净化层留了一道侧门。现在短版与自定义词走同一条
+#: ``_fit_headline()`` 通道。
+_STALL_SHORT: Dict[str, str] = {
+    "zh-CN": "疑似摸鱼 · {sec}s 无进展",
+    "zh-TW": "疑似摸魚 · {sec}s 無進展",
+    "en": "Possibly slacking · {sec}s idle",
+    "ja": "サボり疑い · {sec}秒 無進展",
+    "ko": "땡땡이 의심 · {sec}초 무진행",
+    "es": "Posible holgazanería · {sec}s sin avance",
+    "pt-BR": "Possível enrolação · {sec}s sem progresso",
+    "fr": "Ça flâne peut-être · {sec}s sans progrès",
+    "de": "Möglicherweise blau · {sec}s ohne Fortschritt",
+    "ru": "Похоже, бездельничает · {sec} с без прогресса",
+}
+
 #: 阶段 -> 诊断类别。决定该给哪一类可操作建议，而不是所有阶段都劝人查网络。
 _PHASE_KIND: Dict[str, str] = {
     "booting": "model", "waiting_model": "model", "retrying": "model",
@@ -323,44 +345,159 @@ def _detail_class(s: str) -> str:
 
 # ------------------------------------------------------------------ 净化
 
-# ESC / CSI / OSC / C0 / C1 / DEL。标语会直接进终端，绝不能回显控制序列。
-_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?")
+# 标语会直接进终端，绝不能回显控制序列，也不能带不可见/双向字符。
+#
+# 深度轮 2 实测复现的洞（见 RUNTIME_SLOGANS.md §11.1）：旧版只剥了
+# OSC(BEL/ST) 与 CSI，其余 ESC 序列只删掉了 ESC 本身，把参数字符留在文案里；
+# 更严重的是 **bidi 覆写 (U+202E RLO / U+202D LRO)、isolate、零宽字符
+# 全部原样输出** —— 终端会按它们重排显示方向，用户看到的和字符串内容
+# 不一致（Trojan Source 的 UI 版）。旧 docstring 还声称「去掉组合标记开头
+# 的异常串」，实测根本没做。
+_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?")   # BEL 或 ST 终止
 _CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+# 其余 ESC 序列：ESC c (RIS)、ESC 7/8 (save/restore)、ESC ( B (charset) …
+# ``[ -/]*`` 吃中间字节，``[0-~]`` 吃终止/单字符命令。必须排在 OSC/CSI 之后。
+_ESC_SEQ_RE = re.compile(r"\x1b[ -/]*[0-~]")
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
-_MAX_VERB_CHARS = 48          # 字符数上限
-_MAX_VERB_COLS = 40           # 显示列上限（CJK 算 2）
+
+_MAX_VERB_CHARS = 48          # 码点上限（第二道保险）
+_MAX_VERB_COLS = 40           # 显示列上限（CJK / emoji 算 2）
+
+#: 绝不进终端的 Unicode 通用类别。
+#: Cc 控制 / Cf 格式（bidi、ZWSP、ZWJ、BOM、WJ、软连字符全在这里）/
+#: Cs 代理项 / Co 私用区 / Cn 未分配。
+_DROP_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Cn"})
 
 
-def _char_cols(ch: str) -> int:
-    if unicodedata.combining(ch):
-        return 0
-    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+def _is_variation_selector(ch: str) -> bool:
+    """VS1–VS16 (U+FE00–FE0F) 与补充变体选择符 (U+E0100–E01EF)。
+
+    它们不可见，却会改变前一个字符的**终端宽度**：实测 wcwidth 把
+    ``❤\ufe0f`` 算 2 列、``❤`` 算 1 列，而纯 ``east_asian_width`` 实现
+    会算出 1 列 —— 于是「同一套宽度真值」在 emoji 呈现序列上又裂开。
+    净化层直接删掉它们：短 UI 文案不需要文本/emoji 呈现切换，
+    换来的是宽度可预测、且没有任何不可见字符进终端。
+    """
+    cp = ord(ch)
+    return 0xFE00 <= cp <= 0xFE0F or 0xE0100 <= cp <= 0xE01EF
+
+
+def display_cols(s: str) -> int:
+    """一串文本的终端显示列数（**纯 stdlib**，无第三方依赖）。
+
+    这是上一轮 B3「统一宽度真值来源」的收口：那时把 ``_disp_width`` 与
+    ``_display_width`` 合并了，却漏了 ``sanitize_verb`` 里还藏着第三套
+    ``_char_cols`` —— 实测 ``👩‍💻`` 它算 5 列、wcwidth 算 2 列，
+    ``a\\u200db`` 算 3 列、wcwidth 算 1 列。净化后 Cf 已全部删除，
+    变体选择符已由净化层删除，这里只需处理组合标记(0 列) 与 W/F(2 列)，
+    并与 ``tui._display_width`` 在「已净化串」上逐值一致（有 500 串交叉回归守着）。
+
+    刻意**不 import wcwidth、不引入运行时注入**：引擎必须能被
+    ``verify_deep.py`` 这类纯 stdlib 脚本独立验证，也不该为了对齐宽度
+    再引入一处全局可变状态（那会破坏 D1 的并发不变量）。
+    """
+    total = 0
+    for ch in s:
+        cat = unicodedata.category(ch)
+        if cat[0] == "M" or cat in _DROP_CATEGORIES:
+            continue                       # 组合标记 / 变体选择符 / 不可见
+        total += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return total
+
+
+def _clusters(s: str) -> List[str]:
+    """按 grapheme 近似分簇：基字符 + 其后连续的组合标记/变体选择符。
+
+    不做完整 UAX #29（零依赖约束），但足够保证**截断不落在组合序列中间** ——
+    旧实现 ``s[:48]`` 会把 ``e\u0301`` 切成孤立的 ``\u0301`` 挂到前一个字上。
+    净化后 ZWJ 已删除，emoji 序列天然拆成独立簇，无需处理 ZWJ 连接。
+    """
+    out: List[str] = []
+    cur = ""
+    for ch in s:
+        if cur and unicodedata.category(ch)[0] != "M":
+            out.append(cur)
+            cur = ch
+        else:
+            cur += ch
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _sanitize_once(raw: str) -> str:
+    s = _OSC_RE.sub("", raw)
+    s = _CSI_RE.sub("", s)
+    s = _ESC_SEQ_RE.sub("", s)             # 吃完整序列，不只是 ESC 字节
+    s = _CTRL_RE.sub("", s)
+    # 删不可见/双向/私用/未分配；保留中间的组合标记（如 ❤️ 的 VS16）。
+    s = "".join(ch for ch in s
+                if unicodedata.category(ch) not in _DROP_CATEGORIES
+                and not _is_variation_selector(ch))
+    # docstring 承诺的「组合标记开头」：旧版声称做了、实测没做。
+    i = 0
+    while i < len(s) and unicodedata.category(s[i])[0] == "M":
+        i += 1
+    s = s[i:].strip()
+    if not s:
+        return ""
+    # 按 grapheme 簇累加，双上限都在**簇边界**上截断。
+    cols = 0
+    chars = 0
+    kept: List[str] = []
+    for cl in _clusters(s):
+        cw = display_cols(cl)
+        if cols + cw > _MAX_VERB_COLS or chars + len(cl) > _MAX_VERB_CHARS:
+            break
+        kept.append(cl)
+        cols += cw
+        chars += len(cl)
+    return "".join(kept).strip()
+
+
+def _fit_headline(s: str) -> str:
+    """所有进 header 的文案统一走这里：净化 + 列宽约束，不留侧门。
+
+    ``_STALL_TEXT`` / ``_STALL_SHORT`` 是内置硬编码，本来「看起来可信」，
+    但正因可信才最容易漏掉校验。上一轮就是这么把 52 列的完整诊断直接
+    塞进单行 header 的。现在自定义 verbs 与内置诊断共用同一个出口，
+    且 ``display_cols`` 与 ``tui._display_width`` 有交叉回归保证一致。
+    """
+    clean = sanitize_verb(s)
+    if not clean:
+        return ""
+    cols = 0
+    kept: List[str] = []
+    for cl in _clusters(clean):
+        cw = display_cols(cl)
+        if cols + cw > _MAX_VERB_COLS:
+            break
+        kept.append(cl)
+        cols += cw
+    return "".join(kept).strip()
 
 
 def sanitize_verb(raw: object) -> str:
     """把任意用户输入净化成可安全渲染的标语；非法输入返回空串。
 
-    去掉 ANSI/OSC/CSI 转义序列、C0/C1 控制字符、组合标记开头的异常串，
-    按显示宽度截断（不切断代理对，Python str 本身已是码点序列）。
+    去掉 ANSI/OSC/CSI/其它 ESC 序列、C0/C1 控制字符、**bidi 覆写与
+    isolate、零宽/格式字符、私用区与未分配码点**，拒绝组合标记开头，
+    按显示列宽在 grapheme 簇边界截断。
+
+    **幂等是构造出来的，不是碰巧**：``_sanitize_once`` 迭代到不动点，
+    最多 3 轮；不收敛就 fail-closed 返回空串，绝不输出可疑文案。
+    净化函数若不满足 ``f(f(x)) == f(x)``，调用方（load_config 存词、
+    reload 换词池）就会在不同路径上得到不同结果，这类隐性不一致最难查。
     """
     if not isinstance(raw, str):
         return ""
-    s = _OSC_RE.sub("", raw)
-    s = _CSI_RE.sub("", s)
-    s = _CTRL_RE.sub("", s)
-    s = s.strip()
-    if not s:
-        return ""
-    s = s[:_MAX_VERB_CHARS]
-    cols = 0
-    out = []
-    for ch in s:
-        c = _char_cols(ch)
-        if cols + c > _MAX_VERB_COLS:
-            break
-        cols += c
-        out.append(ch)
-    return "".join(out).strip()
+    s = raw
+    for _ in range(3):
+        nxt = _sanitize_once(s)
+        if nxt == s:
+            return s
+        s = nxt
+    return ""   # 不收敛：拒绝，而不是把半成品送进终端
 
 
 def slogan_bank(lang: str) -> Dict[str, Tuple[str, ...]]:
@@ -429,6 +566,36 @@ class SpinnerVerbsConfig:
         return int(self.budget_for(phase) * self.slow_ratio)
 
 
+#: settings.json 的读取上限。TUI 启动时会读它；一个损坏/恶意的大文件不该
+#: 被整份 read_text + json.loads 吃进内存。1 MiB 对一份用户配置绰绰有余。
+MAX_SETTINGS_BYTES = 1 << 20
+
+
+def _strict_int(value: object, default: int) -> int:
+    """只接受真正的 int；拒绝 bool（``int(True)==1``）与字符串数字。
+
+    旧实现用 ``int(section.get(...))``，``"3000"``、``True``、``3.9``
+    都会被悄悄接受或截断。用户写 ``"3000"`` 时以为设了 3000ms，
+    实际语义靠隐式转换兜着 —— 配置层不该有这种魔法。
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("expected-int")
+    return value
+
+
+def _strict_ratio(value: object, default: float) -> float:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("expected-number")
+    ratio = float(value)
+    if not math.isfinite(ratio):
+        raise ValueError("non-finite")
+    return ratio
+
+
 def _settings_path(explicit: Optional[Path] = None) -> Path:
     if explicit is not None:
         return Path(explicit)
@@ -447,6 +614,8 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
     """
     p = _settings_path(path)
     try:
+        if p.stat().st_size > MAX_SETTINGS_BYTES:
+            return SpinnerVerbsConfig(source="invalid:too-large")
         raw = json.loads(p.read_text(encoding="utf-8"))
         section = raw.get("spinnerVerbs") if isinstance(raw, dict) else None
     except (OSError, ValueError, TypeError):
@@ -478,9 +647,9 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
         return SpinnerVerbsConfig(source="invalid:empty-verbs")
 
     try:
-        interval = int(section.get("interval_ms", _DEFAULT_INTERVAL_MS))
-        stall = int(section.get("stall_ms", _DEFAULT_STALL_MS))
-    except (TypeError, ValueError):
+        interval = _strict_int(section.get("interval_ms"), _DEFAULT_INTERVAL_MS)
+        stall = _strict_int(section.get("stall_ms"), _DEFAULT_STALL_MS)
+    except ValueError:
         return SpinnerVerbsConfig(source="invalid:numbers")
 
     # 只有显式出现 stall_ms 才算全局覆盖；缺省时走分阶段预算表。
@@ -492,7 +661,12 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
         if not isinstance(raw_budgets, dict):
             return SpinnerVerbsConfig(source="invalid:budgets-not-a-dict")
         try:
-            items = tuple((str(k), int(v)) for k, v in list(raw_budgets.items())[:10])
+            pairs = []
+            for k, v in list(raw_budgets.items())[:10]:
+                if isinstance(v, bool) or not isinstance(v, int):
+                    raise ValueError("expected-int")
+                pairs.append((str(k), v))
+            items = tuple(pairs)
         except (TypeError, ValueError):
             return SpinnerVerbsConfig(source="invalid:budget-values")
         if any(k not in PHASES for k, _ in items):
@@ -500,8 +674,8 @@ def load_config(path: Optional[Path] = None) -> SpinnerVerbsConfig:
         budgets = items
 
     try:
-        ratio = float(section.get("slow_ratio", _DEFAULT_SLOW_RATIO))
-    except (TypeError, ValueError):
+        ratio = _strict_ratio(section.get("slow_ratio"), _DEFAULT_SLOW_RATIO)
+    except ValueError:
         return SpinnerVerbsConfig(source="invalid:slow_ratio")
 
     try:
@@ -536,6 +710,7 @@ class SloganView:
     diagnostic: str = ""      # 完整诊断行（给日志/调试，不进 header）
     evidence_seq: int = 0     # 快照时的证据条数
     slow_after_ms: int = 0    # 「比预期慢」的触发点
+    headline: str = ""        # header 专用短版；空串表示用 text
 
 
 @dataclass(frozen=True)
@@ -608,6 +783,7 @@ class RuntimeSloganEngine:
     def _apply_language_locked(self) -> None:
         self._bank = slogan_bank(self.lang)
         self._stall_fmt = _STALL_TEXT.get(self.lang, _STALL_TEXT["en"])
+        self._stall_short_fmt = _STALL_SHORT.get(self.lang, _STALL_SHORT["en"])
         self._slow_word = _SLOW_TEXT.get(self.lang, _SLOW_TEXT["en"])
         self._advice = _ADVICE_TEXT.get(self.lang, _ADVICE_TEXT["en"])
 
@@ -801,19 +977,25 @@ class RuntimeSloganEngine:
                                   slow_after_ms=lv.slow_after_ms)
             if lv.needs_diagnostic:
                 sec = -1 if lv.idle_ms < 0 else lv.idle_ms // 1000
+                # text 保持**完整**诊断（向后兼容；给日志/多行区域用）。
+                # headline 是单行 header 专用短版，走统一净化/列宽出口 ——
+                # 上一轮的缺陷正是「把完整诊断直接塞进 header」。
                 text = self._stall_fmt.format(sec=sec)
+                headline = _fit_headline(self._stall_short_fmt.format(sec=sec))
                 return SloganView(text, lv.phase, True, lv.idle_ms, self._seq,
                                   cfg.mode, state=lv.state,
                                   budget_ms=lv.budget_ms,
                                   remaining_ms=lv.remaining_ms,
                                   advice=lv.advice, diagnostic=lv.diagnostic,
                                   evidence_seq=len(lv.evidence),
-                                  slow_after_ms=lv.slow_after_ms)
+                                  slow_after_ms=lv.slow_after_ms,
+                                  headline=headline)
             if not self._current:
                 pool = self._pool(lv.phase)
                 text = pool[0] if pool else ""
             else:
                 text = self._current
+            text = _fit_headline(text)
             return SloganView(text, lv.phase, False, lv.idle_ms, self._seq,
                               cfg.mode, state=lv.state,
                               budget_ms=lv.budget_ms,

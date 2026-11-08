@@ -333,3 +333,93 @@ py_compile                     全部通过
   不是真机 TUI 长跑，Windows / 终端能力组合仍未实测。
 - 本轮**没有**合并上轮 `local_fork_unmerged/` 里的分叉改动；
   远端 `PROVENANCE.md`、`GIT_HISTORY_RECONSTRUCTION_AUDIT.md` 原样保留。
+
+
+---
+
+## 11. 深度轮 2：把「净化」也做成可信边界
+
+> 继续「不扩广度、只挖深度」：无新增模块、无新增 CLI 子命令、
+> 无对齐指标变化、`fully_superior` 仍 false。
+
+### 11.1 先复现，再修（6 类实测）
+
+| # | 缺陷 | 实测输入 | 旧输出 |
+|---|---|---|---|
+| 1 | bidi 覆写 / isolate 泄漏 | `正常\u202e话反` | 原样输出 `\u202e`，终端重排方向 |
+| 2 | 零宽 / BOM / WJ / 软连字符泄漏 | `摸\u200b鱼` | `摸\u200b鱼` |
+| 3 | 非 CSI/OSC 的 ESC 序列 | `\x1b(B正常` | `(B正常`（残留参数） |
+| 4 | 组合标记开头（docstring 声称做了） | `\u0301accent` | `\u0301accent` |
+| 5 | 按码点截断切断 grapheme | `e\u0301`×60 | 尾部孤立 `\u0301` |
+| 6 | 第三套宽度算法 | `👩\u200d💻` | 算 5 列，wcwidth 算 2 列 |
+
+### 11.2 净化层重写
+
+剥序列顺序：**OSC(BEL/ST) → CSI → 通用 ESC → C0/C1**，再按 Unicode
+通用类别删 `Cc / Cf / Cs / Co / Cn`（bidi 与全部零宽都在 `Cf`），
+拒绝开头连续组合标记，删除**变体选择符**，最后按 grapheme 簇在
+**簇边界**上同时满足 40 列 / 48 码点双上限。
+
+**幂等是构造出来的**：`_sanitize_once` 迭代到不动点，最多 3 轮；
+不收敛 fail-closed 返回空串。`f(f(x)) == f(x)` 是净化函数最该守的性质，
+否则 `load_config` 存词与 `reload` 换词池会在两条路径上得到不同结果。
+500 串 fuzz 0 例不幂等。
+
+### 11.3 宽度真值收口（S2）
+
+上一轮 B3 合并了两套算法，`sanitize_verb` 里的 `_char_cols` 是漏网的
+第三套。新增纯 stdlib `display_cols()`，并加 **500 串交叉回归**：
+
+```
+display_cols(sanitize_verb(x)) == tui._display_width(sanitize_verb(x))
+```
+
+实测发现 `VS16` 会让 wcwidth 把 `❤` 从 1 列升到 2 列，而
+`east_asian_width` 实现给 1 列 —— 净化层删掉变体选择符后两边完全一致，
+500 串 0 不一致。刻意不 import wcwidth、不做运行时注入：引擎要能被
+`verify_deep2.py` 这类纯 stdlib 脚本独立验证，也不该为对齐宽度引入
+全局可变状态（那会破坏 D1 的并发不变量）。
+
+**代价如实说**：emoji 呈现序列（`❤️`、`👩‍💻`）会被拆成文本样式。
+短 UI 文案里选「宽度可预测 + 零不可见字符」优先。
+
+### 11.4 补齐上一轮承诺的短版诊断（S3）
+
+上一轮写了「header 只显示短文案、完整诊断放 `diagnostic`」，但
+`render()` 实际把 `_STALL_TEXT` 整串塞进 `text`：中文约 52 列，
+比 40 列上限还长，窄终端下关键秒数被 `_clip_parts` 裁没。
+**更根本的是内置诊断文案绕过了净化层** —— 净化留了一道侧门。
+
+- 新增 10 语言 `_STALL_SHORT` 与 `SloganView.headline`（默认空串，
+  `text` 保持完整诊断，旧调用零改动）。
+- 新增 `_fit_headline()`：自定义 verbs 与内置诊断共用同一出口，
+  都过净化 + 40 列约束。
+- `header` 诊断态不再挂 `Working (Ns • esc)`：那条「还在工作」字样
+  正是本诊断要戳破的假象，且约 35 列会挤掉诊断；改为短锚点 +
+  `headline`。普通态 Codex 状态行完全不动。40 列窄终端回归验证
+  诊断完整可读、plan badge / 长模型名让位。
+- 完整信息仍在 `view.diagnostic` 与 `Liveness.diagnostic`（含预算、
+  剩余、按阶段分类的可操作建议）。
+
+### 11.5 配置严格化（S4）
+
+1 MiB 读取上限；`_strict_int` / `_strict_ratio` 拒绝 `bool` 冒充
+`int`、字符串数字、浮点截断、`NaN`/`Infinity`；`phase_budgets_ms`
+的值同样严格。自定义 verbs 与 10 语言内置词库共用同一套净化/列宽
+不变量并已自检。
+
+### 11.6 验证与边界
+
+```
+tests/test_runtime_slogans.py   139 例全绿
+verify_deep2.py                 20 项纯 stdlib 独立验证全绿
+其它 TUI 回归                   291 passed / 4 failed（4 个经隔离验证
+                                在上一轮 tui.py 上同样存在，属分叉副本
+                                与主线代码线错配的既有失败，与本轮无关）
+```
+
+- VS16 删除会让 emoji 呈现退化成文本样式（见 §11.3）。
+- 不是真机 TUI 长跑；Windows / 终端能力组合未实测。
+- `stall` 仍是启发式可观测提示，不是安全闸门/心跳/超时控制。
+- 上轮分叉改动仍未合并；远端 `PROVENANCE.md` 等原样保留；
+  第三方自适应红队仍未做。

@@ -19,13 +19,19 @@ B3  ``_disp_width`` 与 ``_display_width`` 是两套宽度算法，视口切片�
 深度轮（不扩广度）新增覆盖：D1 真实多线程并发下的状态不变量、
 D2 分阶段活性预算与三态、D3 结构化 Liveness + 脱敏证据链、
 D4 ``note_progress`` 生命周期事件与 ``_animate`` 禁令、配置热重载。
+
+深度轮 2（继续往深里挖，指标仍一律不动）：S1 净化层的 bidi/零宽/ESC
+侧门、S2 第三套宽度算法与 tui ``_display_width`` 交叉一致、S3 上一轮
+承诺却没做的「header 短版诊断」、S4 配置严格类型与读取上限。
 """
 from __future__ import annotations
 
 import json
+import math
 import random
 import threading
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -35,7 +41,8 @@ from tuan_cli.i18n import t
 from tuan_cli.tui.runtime_slogans import (
     LANGUAGES, PHASES, PHASE_BUDGET_MS, LivenessState, EventRecord, Liveness,
     RuntimeSloganEngine, SpinnerVerbsConfig, SloganView, _STALL_TEXT,
-    _ADVICE_TEXT, load_config, sanitize_verb, slogan_bank,
+    _STALL_SHORT, _ADVICE_TEXT, _MAX_VERB_COLS, _clusters, _fit_headline,
+    MAX_SETTINGS_BYTES, display_cols, load_config, sanitize_verb, slogan_bank,
 )
 from tuan_cli.tui.tui import QxtTUI, _disp_width, _display_width
 
@@ -852,3 +859,271 @@ class TestConfigSemanticsDeep:
         p.write_text(json.dumps({"spinnerVerbs": {
             "mode": "append", "verbs": []}}), encoding="utf-8")
         assert load_config(p).source == "invalid:empty-verbs"
+
+
+# ================================================================ S1 净化层深度
+
+_INVISIBLE_CATS = {"Cc", "Cf", "Cs", "Co", "Cn"}
+
+
+class TestSanitizerDeep:
+    """实测复现的 6 类缺陷，逐个钉死。"""
+
+    @pytest.mark.parametrize("raw,expect", [
+        ("正常\u202e话反", "正常话反"),              # RLO 双向覆写
+        ("\u202d伪装", "伪装"),                       # LRO
+        ("\u202babc\u202c", "abc"),                   # RLE + PDF
+        ("\u2066x\u2069", "x"),                       # isolate
+        ("摸\u200b鱼", "摸鱼"),                       # ZWSP
+        ("a\u200db", "ab"),                           # ZWJ
+        ("\ufeff闲逛", "闲逛"),                       # BOM
+        ("a\u2060b", "ab"),                           # word joiner
+        ("a\u00adb", "ab"),                           # soft hyphen (Cf)
+        ("\ue000x", "x"),                             # 私用区
+        ("\u0378x", "x"),                             # 未分配
+    ])
+    def test_invisible_and_bidi_are_stripped(self, raw, expect):
+        assert sanitize_verb(raw) == expect
+
+    @pytest.mark.parametrize("raw,expect", [
+        ("\x1b(B正常", "正常"),                       # charset 指定
+        ("\x1bc重置", "重置"),                        # RIS 复位终端
+        ("\x1b7存", "存"),                            # save cursor
+        ("\x1b[31m危险\x1b[0m", "危险"),              # CSI
+        ("\x1b]0;x\x07点我", "点我"),                  # OSC / BEL
+        ("\x1b]8;;https://evil\x1b\\点我\x1b]8;;\x1b\\", "点我"),  # OSC / ST
+        ("\x1b正常", "正常"),                         # 孤立 ESC
+    ])
+    def test_all_escape_sequences_are_consumed_whole(self, raw, expect):
+        """旧版只删 ESC 字节，把 ``(B`` / ``c`` / ``7`` 留在文案里。"""
+        assert sanitize_verb(raw) == expect
+
+    def test_no_invisible_category_survives(self):
+        for raw in ("a\u202eb\u200bc\ufeffd\u2060e\x00f",
+                    "\x1b]8;;x\x07\u202e\u200b摸鱼"):
+            out = sanitize_verb(raw)
+            assert all(unicodedata.category(c) not in _INVISIBLE_CATS
+                       for c in out), repr(out)
+            assert "\x1b" not in out
+
+    def test_leading_combining_marks_removed(self):
+        """旧 docstring 声称做了、实测没做 —— 这是文档与实现不符。"""
+        assert sanitize_verb("\u0301accent") == "accent"
+        assert sanitize_verb("\u20dd圈") == "圈"
+        assert sanitize_verb("a\u0301b") == "a\u0301b"   # 中间保留
+
+    def test_truncation_never_ends_with_dangling_combining_mark(self):
+        long = "e\u0301" * 60
+        out = sanitize_verb(long)
+        assert out
+        assert display_cols(out) <= _MAX_VERB_COLS
+        # 末尾必须是基字符 + 组合标记的完整簇，不能是孤立组合符
+        assert unicodedata.category(out[-1]) != "Mn" or len(_clusters(out)[-1]) > 1
+        assert sanitize_verb(out) == out
+
+    def test_emoji_and_cjk_are_not_cut_mid_cluster(self):
+        for raw in ("\U0001f469\u200d\U0001f4bb" * 20, "中文" * 40,
+                    "❤\ufe0f" * 30):
+            out = sanitize_verb(raw)
+            assert display_cols(out) <= _MAX_VERB_COLS
+            assert sanitize_verb(out) == out
+
+    def test_idempotence_over_500_fuzz_inputs(self):
+        """幂等是净化函数最重要的性质：f(f(x)) == f(x)。"""
+        rng = random.Random(20261108)
+        alphabet = (list("abc中文🚀❤") +
+                    ["\u202e", "\u200b", "\u0301", "\x1b[31m", "\x00",
+                     "\ufeff", "\ufe0f", "\x1b]0;x\x07", "\x1b(B"])
+        for _ in range(500):
+            s = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 24)))
+            a = sanitize_verb(s)
+            assert sanitize_verb(a) == a, repr((s, a))
+            assert display_cols(a) <= _MAX_VERB_COLS
+
+    def test_non_str_or_empty_yields_empty(self):
+        for x in (None, 123, [], {}, b"x", "", "   ", "\u200b" * 5):
+            assert sanitize_verb(x) == ""
+
+
+# ================================================================ S2 宽度收口
+
+class TestWidthSingleSource:
+    """上一轮 B3 只合并了两套算法，sanitize_verb 里还藏着第三套。"""
+
+    def test_known_differences_are_fixed(self):
+        """比对口径是**已净化串**：Cf / VS 已删，不再有 joiner 语义歧义。"""
+        assert sanitize_verb("a\u200db") == "ab"
+        assert display_cols("ab") == _display_width("ab") == 2
+        assert sanitize_verb("\u200b摸鱼") == "摸鱼"
+        assert display_cols("摸鱼") == _display_width("摸鱼") == 4
+        assert display_cols("中文") == _display_width("中文") == 4
+        assert display_cols("🚀") == _display_width("🚀") == 2
+        # VS16 被净化删除：❤️ -> ❤，避免 wcwidth 把 1 列升成 2 列
+        assert sanitize_verb("❤\ufe0f") == "❤"
+        assert display_cols("❤") == _display_width("❤") == 1
+
+    def test_matches_tui_display_width_on_500_sanitized_strings(self):
+        """与 tui._display_width 逐值一致 —— 不许再出现第三套真值来源。"""
+        rng = random.Random(424242)
+        alphabet = (list("abc中文🚀❤e") +
+                    ["\u0301", "\ufe0f", "\u202e", "\u200b", "\x1b[31m"])
+        mismatches = []
+        for _ in range(500):
+            s = "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 18)))
+            v = sanitize_verb(s)
+            if not v:
+                continue
+            if display_cols(v) != _display_width(v):
+                mismatches.append((v, display_cols(v), _display_width(v)))
+        assert mismatches == [], mismatches[:5]
+
+    def test_builtin_bank_is_clean_and_within_width(self):
+        """内置词库从没验证过；现在 10 语言全部词条过同一出口。"""
+        for lang in LANGUAGES:
+            for phase, verbs in slogan_bank(lang).items():
+                for v in verbs:
+                    assert sanitize_verb(v) == v, f"{lang}/{phase}: {v!r}"
+                    assert display_cols(v) <= _MAX_VERB_COLS
+                    assert all(unicodedata.category(c) not in _INVISIBLE_CATS
+                               for c in v)
+
+    def test_disp_width_is_the_same_function_as_display_width(self):
+        """上一轮 B3 的统一不能被后续改动回退。"""
+        assert _disp_width("中文🚀") == _display_width("中文🚀")
+
+
+# ================================================================ S3 短版诊断
+
+class TestHeadline:
+    def _stalled(self, lang="zh-CN", sec=46):
+        clock = _Clock()
+        eng = RuntimeSloganEngine(config=_cfg(stall_ms=1000), lang=lang,
+                                  rng=random.Random(1), clock=clock)
+        eng.note_activity("waiting_model", now=clock.now)
+        clock.advance(float(sec))
+        return eng.render(True, now=clock.now)
+
+    def test_short_bank_covers_all_languages_and_is_bounded(self):
+        assert set(_STALL_SHORT) == set(LANGUAGES)
+        assert len(LANGUAGES) == 10
+        for lang, fmt in _STALL_SHORT.items():
+            assert "{sec}" in fmt
+            text = _fit_headline(fmt.format(sec=46))
+            assert "46" in text
+            assert display_cols(text) <= _MAX_VERB_COLS, (lang, text)
+            assert sanitize_verb(text) == text
+
+    def test_headline_is_short_text_is_full_information_is_preserved(self):
+        """上一轮文档承诺「header 只显示短文案、完整版放 diagnostic」，
+        实际 render() 把完整长串塞进了 text 且没有 headline —— 本轮补齐。"""
+        v = self._stalled()
+        assert v.headline and v.headline != v.text
+        assert display_cols(v.headline) < display_cols(v.text)
+        assert "疑似摸鱼" in v.headline
+        assert v.diagnostic and "预算" in v.diagnostic and v.advice
+        assert "46" in v.text and "46" in v.headline
+
+    def test_full_stall_text_was_too_wide_for_a_single_line(self):
+        """钉死原缺陷：完整诊断本身就超过 40 列。"""
+        assert display_cols(_STALL_TEXT["zh-CN"].format(sec=46)) > _MAX_VERB_COLS
+        assert display_cols(_fit_headline(_STALL_SHORT["zh-CN"].format(sec=46))) \
+               <= _MAX_VERB_COLS
+
+    def test_header_diagnostic_drops_the_working_facade(self):
+        obj = _tui()
+        obj._busy = True
+        obj._slogans.config = _cfg(stall_ms=1000)
+        obj._slogans.note_activity("waiting_model")
+        obj._slogans._last_event_at = time.monotonic() - 9.0
+        text = "".join(seg for _, seg in obj._render_header())
+        assert "Working (" not in text        # 不再假装还在工作
+        assert "疑似摸鱼" in text
+        assert "class:warning" in [c for c, _ in obj._render_header()]
+
+    def test_narrow_terminal_keeps_headline_and_drops_decoration(self):
+        """窄终端（40 列）下诊断仍完整可读，装饰段让位。"""
+        obj = _tui()
+        obj._busy = True
+        obj._plan_mode = True
+        obj._model_label = "anthropic/claude-sonnet-4-5-20250929"
+        obj._slogans.config = _cfg(stall_ms=1000)
+        obj._slogans.note_activity("waiting_model")
+        obj._slogans._last_event_at = time.monotonic() - 9.0
+        obj._term_width = lambda: 40
+        parts = obj._render_header()
+        text = "".join(seg for _, seg in parts)
+        assert "疑似摸鱼" in text and "9" in text
+        assert _disp_width(text) <= 40
+        # 装饰（plan badge / 长模型名）在诊断态让位
+        assert "anthropic/" not in text
+
+    def test_healthy_header_keeps_codex_working_status_line(self):
+        """普通态完全不动 Codex 对齐。"""
+        obj = _tui()
+        obj._busy = True
+        obj._slogans.note_activity("waiting_model")
+        text = "".join(seg for _, seg in obj._render_header())
+        assert "Working (" in text
+        assert "疑似摸鱼" not in text
+
+
+# ================================================================ S4 配置严格化
+
+class TestConfigStrict:
+    def test_oversized_file_is_rejected_without_reading_it(self, tmp_path):
+        p = tmp_path / "settings.json"
+        p.write_bytes(b" " * (MAX_SETTINGS_BYTES + 1))
+        c = load_config(p)
+        assert c.source == "invalid:too-large"
+        assert c.mode == "default" and c.budget_for("streaming") == 6000
+
+    @pytest.mark.parametrize("bad", [
+        {"interval_ms": True}, {"interval_ms": "3000"},
+        {"stall_ms": 3.9}, {"stall_ms": False},
+    ])
+    def test_bool_and_string_numbers_are_rejected(self, tmp_path, bad):
+        p = tmp_path / "settings.json"
+        p.write_text(json.dumps({"spinnerVerbs": bad}), encoding="utf-8")
+        assert load_config(p).source == "invalid:numbers"
+
+    @pytest.mark.parametrize("bad", [
+        {"slow_ratio": "0.5"}, {"slow_ratio": True},
+        {"phase_budgets_ms": {"streaming": "8000"}},
+        {"phase_budgets_ms": {"streaming": True}},
+    ])
+    def test_ratio_and_budget_types_are_strict(self, tmp_path, bad):
+        p = tmp_path / "settings.json"
+        p.write_text(json.dumps({"spinnerVerbs": bad}), encoding="utf-8")
+        c = load_config(p)
+        assert c.source.startswith("invalid:"), c.source
+
+    def test_non_finite_ratio_is_rejected(self, tmp_path):
+        p = tmp_path / "settings.json"
+        p.write_text('{"spinnerVerbs":{"slow_ratio":NaN}}', encoding="utf-8")
+        assert load_config(p).source.startswith("invalid:")
+        assert not math.isfinite(float("nan"))
+
+    def test_valid_config_still_loads(self, tmp_path):
+        p = tmp_path / "settings.json"
+        p.write_text(json.dumps({"spinnerVerbs": {
+            "interval_ms": 900, "phase_budgets_ms": {"streaming": 8000},
+            "slow_ratio": 0.25, "mode": "append", "verbs": ["团队梗"]}}),
+            encoding="utf-8")
+        c = load_config(p)
+        assert c.source == str(p)
+        assert c.interval_ms == 900 and c.budget_for("streaming") == 8000
+        assert c.slow_after_ms("streaming") == 2000
+        assert c.verbs == ("团队梗",)
+
+    def test_custom_verbs_obey_the_same_clean_invariants(self, tmp_path):
+        p = tmp_path / "settings.json"
+        p.write_text(json.dumps({"spinnerVerbs": {
+            "mode": "replace",
+            "verbs": ["\u202e正常\u200b词", "\x1b[31m危险\x1b[0m",
+                      "x" * 200]}}), encoding="utf-8")
+        c = load_config(p)
+        for v in c.verbs:
+            assert sanitize_verb(v) == v
+            assert display_cols(v) <= _MAX_VERB_COLS
+            assert all(unicodedata.category(ch) not in _INVISIBLE_CATS
+                       for ch in v)

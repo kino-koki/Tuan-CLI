@@ -182,3 +182,17 @@ python -m tuan_cli.cli.cmd_harden status   # 或安装后: tuan harden status
 `slow` 只是视觉降级，`reload()` 需显式调用，`_animate` 禁止刷新活性。
 分阶段预算表与优先级见 `RUNTIME_SLOGANS.md` §10.3。本轮**不改**
 `fully_superior`、99 模块基线与任何对齐指标。
+
+
+---
+
+## R29 · 净化边界深度轮 2
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R29 | `sanitize_verb` 原样输出 bidi 覆写/isolate 与零宽字符（终端显示方向可被重排）；非 CSI/OSC 的 ESC 序列只删 ESC 字节；组合标记开头未按文档处理；按码点截断切断 grapheme；净化不保证幂等；内置诊断文案约 52 列且绕过净化层直接进单行 header；`_char_cols` 是第三套宽度算法（`👩‍💻` 算 5 列 vs wcwidth 2 列）；配置接受 `bool`/字符串数字/`NaN`、无读取上限 | 按 Unicode 类别删 `Cc/Cf/Cs/Co/Cn` + 变体选择符；OSC→CSI→通用 ESC→C0/C1 完整剥序列；拒绝开头组合标记；grapheme 簇边界截断；迭代到不动点、不收敛 fail-closed；新增 `_STALL_SHORT`(10 语言) + `SloganView.headline` + `_fit_headline()` 单一出口，诊断态 header 不再挂 `Working (Ns)`；新增 `display_cols()` 并做 500 串与 `tui._display_width` 交叉一致回归；1 MiB 上限 + `_strict_int`/`_strict_ratio` |
+
+如实边界：VS16 删除会让 emoji 呈现退化成文本样式（宽度可预测优先）；
+`stall` 仍是启发式可观测提示，非安全闸门/心跳/超时控制；不是真机 TUI
+长跑；分叉改动仍未合并。详见 `RUNTIME_SLOGANS.md` §11。本轮**不改**
+`fully_superior`、99 模块基线与任何对齐指标。

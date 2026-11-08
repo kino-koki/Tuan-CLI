@@ -679,6 +679,15 @@ THIRD-PARTY ATTRIBUTIONS
               introduced. No new module, CLI subcommand, or parity-matrix
               status change accompanies this pass.
 
+    Deep pass 2 (same section-15 capability, NO new third-party material):
+              the sanitizer was hardened against bidi/zero-width/escape
+              sequences, width calculation was consolidated, a short
+              header headline was added, and config parsing was tightened.
+              No additional upstream source, word list, trademark asset or
+              license scope was introduced. No new module, CLI subcommand,
+              or parity-matrix status change accompanies this pass. The
+              ten short diagnostic phrases are original translations.
+
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
 

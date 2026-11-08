@@ -9,6 +9,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 深度轮 2：净化侧门、宽度真值收口、短版诊断落地
+
+> 延续「不再执着于广度而放弃深度」。本轮**仍不新增模块、不新增 CLI
+> 子命令、不改 99 模块基线、不改 `fully_superior`（仍 false）、
+> 25 个缺口不变、六维判据与所有 Codex/Claude 对齐指标一律不动**。
+> 只把运行时标语这条线再往下挖，且全部缺陷都先实测复现再修。
+
+### S1 净化层：6 类真实缺陷（含一道侧门）
+
+`sanitize_verb` 旧版只剥 OSC/CSI，实测：
+
+- **bidi 覆写与 isolate 全泄漏**：`U+202E RLO` / `U+202D LRO` / `U+2066..2069`
+  原样输出，终端会按它们重排显示方向 —— Trojan Source 的 UI 版，
+  用户看到的和字符串内容不一致；零宽字符（ZWSP/ZWJ/BOM/WJ/软连字符）、
+  私用区、未分配码点同样全部残留。
+- **其它 ESC 序列只删 ESC 字节**：`ESC ( B` / `ESC c` / `ESC 7` 把 `(B`/`c`/`7`
+  留在文案里；现在按「OSC → CSI → 通用 ESC 序列 → C0/C1」完整吃掉。
+- **docstring 承诺「去掉组合标记开头」但代码没做** —— 又一处文档与实现不符。
+- **按码点 `s[:48]` 截断会切断 grapheme**：`e\u0301`*60 的尾部留下孤立组合符。
+- **幂等没有保障**：净化函数若不满足 `f(f(x))==f(x)`，`load_config` 存词与
+  `reload` 换词池会在不同路径上得到不同结果。现在迭代到不动点（最多 3 轮），
+  不收敛就 fail-closed 返回空串，500 串 fuzz 0 例不幂等。
+- **变体选择符造成宽度歧义**：`wcwidth` 把 `❤\ufe0f` 算 2 列、`❤` 算 1 列，
+  而 `east_asian_width` 实现算 1 列。净化层直接删 VS1–VS16 与补充 VS，
+  换来宽度可预测、且没有任何不可见字符进终端。
+
+### S2 第三套宽度算法收口
+
+上一轮 B3 合并了 `_disp_width` 与 `_display_width`，却漏了
+`sanitize_verb` 里还藏着 `_char_cols` —— 实测 `👩‍💻` 它算 5 列、
+`tui._display_width` 算 2 列，`a\u200db` 算 3 列 / 1 列。
+新增纯 stdlib 的 `display_cols()`，并加 **500 串交叉回归**断言
+「已净化串上 `display_cols(s) == tui._display_width(s)`」，0 不一致。
+刻意**不 import wcwidth、不做运行时注入**：引擎必须能被纯 stdlib
+脚本独立验证，也不该为对齐宽度再引入一处全局可变状态（会破坏 D1）。
+
+### S3 补齐上一轮承诺却没做的「header 短版诊断」
+
+上一轮文档写「header 只显示短文案、完整诊断放 `diagnostic`」，
+但 `render()` 实际把 `_STALL_TEXT` 整串塞进 `text`：中文约 26 个 CJK
+≈ 52 列，**比 `_MAX_VERB_COLS`(40) 还长**，窄终端下关键秒数被
+`_clip_parts` 裁没。更根本的是内置诊断文案**绕过了净化层的宽度/不可见
+字符约束**，等于净化层留了一道侧门。
+
+- 新增 10 语言 `_STALL_SHORT` 与 `SloganView.headline`（带默认值，
+  `text` 保持完整诊断，旧调用零改动）。
+- 新增 `_fit_headline()`：自定义 verbs 与内置诊断**共用同一个出口**，
+  都过净化 + 40 列约束。
+- `header` 在诊断态**不再挂** `Working (Ns • esc)` —— 那条「还在工作」
+  字样正是本诊断要戳破的假象，且约 35 列会挤掉诊断；改为短锚点 +
+  `headline`。普通态的 Codex 状态行完全不动。窄终端（40 列）回归验证
+  诊断完整可读、装饰段让位。
+
+### S4 配置严格化
+
+- `settings.json` 读取上限 1 MiB（损坏/恶意大文件不该被整份 `read_text`）。
+- `_strict_int` / `_strict_ratio` 拒绝 `bool` 冒充 `int`、字符串数字、
+  浮点截断、`NaN`/`Infinity`；旧 `int(section.get(...))` 会把 `"3000"`、
+  `True`、`3.9` 悄悄接受 —— 配置层不该有这种魔法。
+- `phase_budgets_ms` 的值同样严格；自定义 verbs 与内置词库共用同一套
+  净化/列宽不变量，10 语言全部词条已自检。
+
+### 验证与如实边界
+
+```
+tests/test_runtime_slogans.py   139 例全绿（上一轮 93 + 本轮 46）
+verify_deep2.py                 20 项纯 stdlib 独立验证全绿
+其它 TUI 回归                   291 passed / 4 failed
+                                4 个失败经隔离验证在**上一轮 tui.py 上同样存在**：
+                                本地分叉测试文件与远端主线 tui.py 代码线错配，
+                                与本轮改动无关（换回上一轮文件复跑仍同样失败）
+py_compile                      全部通过
+```
+
+- VS16 被删会让 emoji 呈现序列退化成文本样式；短 UI 文案里刻意选
+  「宽度可预测」优先，并如实说明。
+- 不是真机 TUI 长跑；Windows / 终端能力组合仍未实测。
+- 上轮 `local_fork_unmerged/` 的分叉改动**仍未合并**；远端
+  `PROVENANCE.md` / `GIT_HISTORY_RECONSTRUCTION_AUDIT.md` 原样保留。
+- 第三方自适应红队仍未做；静态基准与自造 fuzz 不能当对抗证明。
+
 ## [Unreleased] - 深度轮：运行时标语从「一句玩笑」做成可信的活性判定器
 
 > 用户明确要求「不再执着于广度而放弃深度」。本轮**不新增任何模块、

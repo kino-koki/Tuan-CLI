@@ -749,3 +749,44 @@ or changes any verdict. `slow` is only a visual downgrade. `reload()` is
 explicit and keeps the old config on invalid input. `_animate` is explicitly
 forbidden from refreshing liveness. Verification: 93 pytest cases +
 22 pure-stdlib independent checks, all green.
+
+
+---
+
+## 12. Deep Pass 2: Sanitizer Boundary and Width Truth
+
+This round deepens the runtime-slogan sanitizer and header rendering only;
+no new capability surface. Four security-relevant points:
+
+- **Bidi overrides were a real attack surface.** The old `sanitize_verb`
+  emitted `U+202E RLO`, `U+202D LRO`, `U+2066..2069` isolates, ZWSP/ZWJ/
+  BOM/WJ/soft-hyphen, private-use and unassigned code points verbatim.
+  Terminals re-order display according to bidi controls, so what the user
+  sees differs from the string content (the UI variant of Trojan Source).
+  Categories `Cc/Cf/Cs/Co/Cn` are now dropped, along with variation
+  selectors.
+- **Escape sequences must be consumed whole.** The old code removed only
+  the ESC byte, leaving `ESC ( B` -> `(B`, `ESC c` -> `c`, `ESC 7` -> `7`
+  in the text. OSC -> CSI -> generic ESC -> C0/C1 now removes them fully;
+  output is guaranteed to contain no ESC.
+- **Idempotence is constructed, not accidental.** `_sanitize_once` iterates
+  to a fixed point (max 3 rounds); non-convergence is fail-closed to an
+  empty string. 500 fuzz inputs, zero non-idempotent cases.
+- **The built-in diagnostic was also a side door.** The prior round claimed
+  "header shows only a short phrase", but `render()` pushed the full
+  ~52-column `_STALL_TEXT` into a single-line header, bypassing the
+  sanitizer's width/invisible-character constraints. Custom verbs and
+  built-in diagnostics now share `_fit_headline()` (sanitize + 40 cols);
+  the full information stays in `Liveness.diagnostic`.
+
+Config hardening: 1 MiB read cap; `bool` masquerading as `int`, numeric
+strings, float truncation and `NaN`/`Infinity` are rejected. Custom verbs
+and the 10-language built-in bank share the same sanitize/width invariants.
+
+**Unchanged boundaries**: `stall` is a heuristic observability hint, NOT a
+security gate, heartbeat or timeout control -- it never interrupts, retries
+or changes any verdict. Evidence stays redacted in process memory.
+`_animate` remains forbidden from refreshing liveness. Dropping VS16
+degrades emoji presentation to text style -- a deliberate trade for
+predictable width. Verification: 139 pytest cases + 20 pure-stdlib
+independent checks, all green.
