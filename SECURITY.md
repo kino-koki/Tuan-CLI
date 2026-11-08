@@ -769,4 +769,33 @@ mcp:
 
 ---
 
+---
+
+## 13. 运行时标语（spinner verbs）与 TUI 状态口径修复
+
+新增 `tuan_cli/tui/runtime_slogans.py`，在顶部 HUD 的 Codex 风格 Working
+状态行旁挂 Claude Code 同款运行时标语（10 语言，中文保留「磨洋工 /
+腌制入味 / 看报纸中」梗）。安全相关要点：
+
+- **自定义词是终端输出，必须净化**：`sanitize_verb()` 去掉 OSC 8 超链接、
+  CSI 颜色/清屏序列、C0/C1/DEL 控制字符，按显示列宽（CJK 算 2 列，上限 40）
+  截断。这延续 `tui/inputkit/terminal_hyperlinks.py` 的教训 —— 终端会解释
+  执行 OSC/CSI，上游 `web()` 不校验目的地，标语走的是同一条输出通道。
+- **配置 fail-safe 而非 fail-closed**：`~/.tuan/settings.json` 的
+  `spinnerVerbs` 写错（非法 mode / verbs 非列表 / 数字越界 / JSON 损坏）一律
+  回落出厂配置并在 `source` 标注 `invalid:*`，不让 TUI 崩、也不静默生效。
+  这里不涉及安全裁决，故不需要 fail-closed 拒绝命令。
+- **文案由真实事件驱动**：只有 `submit` / 流式分片 / `begin_tool` 才推进；
+  `render()` 纯读。忙碌中超过 `stall_ms` 无事件显示「疑似摸鱼」诊断 —— 这是
+  **启发式可观测提示**，不是心跳、超时控制或安全闸门，不触发中断/重试，
+  也不改变任何裁决。
+- 顺带修 `_render_footer` 工具名死分支、统一两套宽度算法、修正
+  「wcwidth 是 C 实现」的错误注释。主线 `_line_heights` 已有高度缓存，
+  本地分叉副本的性能数字不适用于主线。详见 `RUNTIME_SLOGANS.md` §6。
+
+回归：`tests/test_runtime_slogans.py` 57 例全绿。合规：Claude Code 为专有产品，
+仅依据公开资料做行为对标，**未复制任何源码**（`NOTICE` 第 15 条，Anthropic
+不背书）。本轮**未新增 CLI 子命令**，`CLAUDE_PARITY.md` 的 99 模块基线与
+`fully_superior=false` 均未改动。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

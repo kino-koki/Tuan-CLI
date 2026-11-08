@@ -9,6 +9,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 运行时标语（Claude Code 同款 spinner verbs）+ TUI 状态口径修复
+
+- 灵感来自用户提供的 B 站视频标题「给 Claude Code 转圈的英文挂上中文后，
+  我发现它在摸鱼」；**视频正文未获取**，实现依据为公开可查的 spinner verbs
+  资料与社区中文译名整理（详见 `RUNTIME_SLOGANS.md` §7）。
+- 新增 `tuan_cli/tui/runtime_slogans.py`：spinner / Codex 风格 Working 状态行旁挂
+  运行时标语，`~/.tuan/settings.json` 的 `spinnerVerbs` 键名与上游同款，支持
+  `default / append / replace / off`、自定义词、`interval_ms` / `stall_ms`；
+  **10 语言全覆盖**，中文词池保留「腌制入味 / 磨洋工 / 看报纸中 / 那个啥来着」
+  等摸鱼梗。
+- **刻意做不同的核心一点**：文案**由真实事件驱动**（submit / 流式分片 /
+  `begin_tool`），不是定时随机空转；`render()` 是纯读，每帧重绘不换词。
+  忙碌中超过 `stall_ms` 收不到任何事件时，如实显示「疑似摸鱼 · 已 N s
+  没收到模型/工具/流式的任何动静」并标 warning —— 既致敬梗，也是一条能
+  发现「卡网络 / 死循环」的真实诊断。
+- 自定义词写入终端前经 `sanitize_verb()` 去掉 OSC 8 / CSI / C0 / C1 控制
+  序列、按显示列宽截断；配置非法值一律回落出厂配置并在 `source` 标注
+  `invalid:*`，不静默生效、不让 TUI 崩。
+- 接线：`_render_header` 在 `_working_status_line()` 之后挂标语（`off` 模式只留
+  状态行）；`submit` / `stream_assistant` / `begin_tool` 记真实事件；
+  `_run_submit` 结束时 `reset()`。**未新增 CLI 子命令**。
+- **B2 状态口径分裂（主线同样存在）**：`_render_footer` 把
+  `busy/streaming` 判定放在 `running` 之前，而 `begin_tool()` 同时置
+  `_busy=True`，导致 `_running` 分支成死代码 —— 明明在跑 `git status`，
+  底栏却显示 Codex 风格的 `Working (...)`。改为工具名优先。
+- **B3 双宽度算法**：`_disp_width`（`get_cwidth` 逐字）与 `_display_width`
+  （wcwidth 整串）并存，视口切片与单行裁剪口径分裂；旧 fallback
+  `len(text)` 对 CJK 直接算错。统一到 `_display_width` 单一真值来源。
+- **B1 口径更正（如实）**：文件头旧注释误称 `wcwidth.wcswidth` 是 C 实现
+  （0.8.x 实为纯 Python 逐字表查找），本次修正并加有界 LRU(4096) 作第二层保险。
+  **远端主线 `_line_heights` 已自带 `(width, text)` 高度缓存**，
+  「16.2 → 0.39 ms/帧」那组数字来自本地分叉副本，**不适用于主线**，
+  不得当作本提交的性能成果。
+- 文档：`RUNTIME_SLOGANS.md`（新增）、`CLAUDE_PARITY.md` §11、`TUI_PARITY.md`、
+  `SECURITY.md` / `SECURITY_EN.md`、`SECURITY_BASELINE.md`（R27）、
+  `NOTICE` 第 15 条。**99 模块基线与 `fully_superior=false` 未改动**：
+  spinner verbs 属 UI 文案层，作为 B10 `statusline` 的前置实现记录。
+
+### 推送范围与分叉说明（重要）
+
+本提交基于远端真实 HEAD `8611d5ddf4537275290e16481b26537a7faed380` 逐文件
+比对 tree 后**增量提交**，不改写历史、不删除任何远端文件。核查中发现
+**本地工作副本与远端主线存在实质分叉**（远端 `tuan_cli/tui/tui.py` 4694 行
+vs 本地副本 2563 行；`ext/safety_patterns.py` 1784 vs 833 等），因此此前若干
+轮次在本地副本上的改动**没有推送**，避免覆盖回退主线。本提交只含
+11 个文件：3 个新增、1 个在远端基线上精确改动的 `tui.py`、7 个在原文档上
+追加的文档。其余本地分叉改动另打成离线补丁，需人工决定是否合并。
+
+- 回归：`tests/test_runtime_slogans.py` **57 例全绿**（在远端基线 + 本轮改动的
+  副本上实测）；引擎独立验证 19 项全绿。
+
 ## [Unreleased] - 安全加固持续迭代
 
 ### E2 信任自动衰减：主链路接线 + fail-closed（2026-11-06）

@@ -154,3 +154,17 @@ python -m pytest tests/test_sandbox_system.py tests/test_security_integration.py
 python bench/indep_verify.py
 python -m tuan_cli.cli.cmd_harden status   # 或安装后: tuan harden status
 ```
+
+
+---
+
+## R27 · 运行时标语与 TUI 状态口径（本轮新增）
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R27 | 自定义标语直接渲染进终端；上游同类 UI 不校验 OSC 目的地。footer 在工具运行期显示 `Working (...)` 而非真实工具名（状态与真实活动不符）；`_disp_width` 与 `_display_width` 两套宽度算法导致视口切片与裁剪错位 | `sanitize_verb()` 去掉 OSC 8 / CSI / C0 / C1 并按显示列宽截断；配置非法回落出厂值并留痕；footer 工具名优先；宽度统一到 `_display_width` 单一真值来源；修正「wcwidth 是 C 实现」错误注释 |
+
+如实边界：主线 `_line_heights` 已自带 `(width, text)` 高度缓存，本地分叉副本
+实测的 16.2 → 0.39 ms/帧 **不适用于主线**；本轮在主线未宣称性能修复。
+`stall` 诊断是启发式可观测提示，不是安全闸门、心跳或超时控制。详见
+`RUNTIME_SLOGANS.md`。

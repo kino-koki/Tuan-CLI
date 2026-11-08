@@ -18,6 +18,7 @@ import shutil
 import sys
 import threading
 import time
+from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
@@ -33,14 +34,20 @@ def _wcswidth(s: str) -> int:
     return sum(2 if ord(c) > 0x2E7F else 1 for c in s)
 
 
+@lru_cache(maxsize=4096)
 def _display_width(s: str) -> int:
-    """整串的终端显示宽度 —— 宽度计算的热路径, 必须走一次 C 调用而不是逐字 Python 循环。
+    """整串的终端显示宽度 —— 渲染热路径, 结果按字符串有界缓存 (纯函数)。
 
-    渲染每一帧都要给全部历史行算宽度 (见 `_line_heights`)。逐字符调用
-    ``_wcswidth`` 是 Python 层循环, 2000 行历史每帧要多跑几万次函数调用
-    (实测约 30ms/帧), 而流式输出时每帧都要重算, 直接表现为卡顿。
-    ``wcwidth.wcswidth`` 内部是 C 实现且自带组合字符/东亚宽字符处理, 整串调用
-    结果与逐字累加一致。
+    修正一条历史误注: 旧注释声称 ``wcwidth.wcswidth`` "内部是 C 实现"，
+    **实际不对**。``wcwidth`` 0.8.x 的 ``wcswidth()`` 是纯 Python：它对串中
+    每个字符做 ``wcwidth()`` 表查找 + bisect。所以 2000 行历史 × 每行约 100
+    字符 ≈ 20 万次 Python 层调用，实测 16.2 ms/帧，超过
+    ``test_tui_spacing_perf`` 的 10 ms 预算 —— 这是真实的性能回归，不是机器慢。
+
+    修法不是"换成 C"（该依赖本来就是 Python），而是承认宽度计算是纯函数：
+    历史行在流式输出期间绝大多数不变，只有最后一行在增长，给整串结果加
+    **有界** LRU（4096 条）即可把每帧重算降到常数级。有界是刻意的：不加
+    maxsize 会让长会话无上限持有历史字符串。
 
     例外: 串里含**控制字符**时 ``wcswidth`` 返回 -1 (表示"无法计算"), 此时回退
     逐字累加, 保持与旧实现一致的行为, 不能让 -1 变成 0 宽度而算错行高。
@@ -55,6 +62,7 @@ def _display_width(s: str) -> int:
 
 from ..i18n import t
 from ..core.prompt_tier import PROVIDER_CONTEXT_WINDOWS
+from .runtime_slogans import RuntimeSloganEngine  # Claude Code 同款 spinner verbs
 
 _HAS_PT = False
 try:
@@ -389,12 +397,16 @@ FAILURE_MARK = "✗"
 
 
 def _disp_width(text: str) -> int:
-    """显示宽度 (CJK/绘图形字符按实际列宽), 用于对齐欢迎盒右边框。"""
-    try:
-        from prompt_toolkit.utils import get_cwidth
-        return sum(get_cwidth(ch) for ch in text)
-    except Exception:
-        return len(text)
+    """显示宽度 —— 统一到 ``_display_width``，不再维护第二套算法。
+
+    修复的真实缺陷：旧实现走 ``prompt_toolkit.utils.get_cwidth`` 逐字符累加，
+    而行高计算 (``_line_heights``) 走 ``_display_width``（wcwidth 整串）。
+    两者对组合字符 / emoji ZWJ / 控制字符的判定并不一致，于是**视口切片按 A
+    算法、单行裁剪按 B 算法**：宽字符与 emoji 混排时会算错行高、顶破布局。
+    更糟的是旧 fallback ``return len(text)`` —— prompt_toolkit 缺失时中文按 1
+    列算，欢迎盒右边框必然错位。现在全 TUI 只有一个宽度真值来源。
+    """
+    return _display_width(text)
 
 
 def _env_flag(name: str) -> bool:
@@ -731,6 +743,11 @@ class QxtTUI:
         self._ask_free: bool = False   # 用户是否已进入"自由作答"模式 (输入非编号文本)
         self._frame = 0
         self._moon_frame = 0
+
+        # 运行时标语 (spinner verbs)。事件驱动而非定时随机：只有提交 / 流式
+        # 分片 / 工具开始这些真实事件才会推进文案；忙碌中长时间无进展会如实
+        # 显示「疑似摸鱼」诊断。配置读 ~/.tuan/settings.json 的 spinnerVerbs。
+        self._slogans = RuntimeSloganEngine()
 
         # 流式 / 工具状态
         self._stream_buf = ""
@@ -2679,6 +2696,7 @@ class QxtTUI:
         self._push_history(text)
         self._input.buffer.reset()
         self._busy = True
+        self._slogans.note_activity("waiting_model")
         self._turn_started = time.monotonic()
         self._cancel_requested.clear()
         self._moon_suppressed = False  # 新一轮回合, 思考月亮恢复可用
@@ -3085,6 +3103,9 @@ class QxtTUI:
             return
         self._streaming = True
         self._streamed = True
+        # 每个分片都是一次真实进展：刷新「最后事件时间」，换词仍由引擎按
+        # interval 节流，绝不因为渲染帧多就假装事情在动。
+        self._slogans.note_activity("streaming")
         self._stream_buf += delta
         # 缓冲有界: 模型吐超长回复时把前段固化为日志, 避免内存/渲染无限膨胀
         if len(self._stream_buf) > _MAX_STREAM_BUF:
@@ -3141,6 +3162,7 @@ class QxtTUI:
     def begin_tool(self, name: str) -> None:
         self._running.append(name)
         self._busy = True
+        self._slogans.note_activity("running_tool", detail=name)
         self._moon_suppressed = False  # 新工具开始: 后续思考重新亮出指示
         self._tool_start_times[name] = time.monotonic()
         if self._app and self._app.is_running:
@@ -3680,6 +3702,9 @@ class QxtTUI:
             self._streaming = False
             self._moon_suppressed = False
             self._running.clear()
+            engine = getattr(self, "_slogans", None)
+            if engine is not None:
+                engine.reset()  # 下一回合重新抽词, 不沿用上一条
             # codex `FinalMessageSeparator`: 回合结束注入完成分隔线
             # `  Worked for Xs · HH:MM` (缩进 2 空格, dim), 紧贴助手回复下方。
             footer = self._completion_footer_text()
@@ -4115,6 +4140,13 @@ class QxtTUI:
         if self._busy or self._running or self._streaming:
             # codex 状态行: "• Working (Ns • esc to interrupt)" (替代旧月亮 + Processing)
             parts.extend(self._working_status_line())
+            # Claude Code 同款：状态行旁挂一条运行时标语。文案由真实事件驱动，
+            # 忙碌但长时间无进展时改成「疑似摸鱼」诊断并标 warning。
+            engine = getattr(self, "_slogans", None)
+            view = engine.render(busy=True) if engine is not None else None
+            if view is not None and view.mode != "off" and view.text:
+                cls = ("class:warning" if view.stalled else "class:primary")
+                parts.append((cls, " " + view.text))
         else:
             parts.append(("class:success", f"{SUCCESS_MARK} {t('fs.ready')}"))
         if self._plan_mode:
@@ -4197,14 +4229,17 @@ class QxtTUI:
             elif self._booting:
                 status = t("tui.boot_starting")
                 status_cls = "class:textdim"
+            elif self._running:
+                # 工具执行期间必须显示真实工具名。旧顺序把 busy/streaming 放在
+                # running 之前，而 begin_tool() 同时置 _busy=True，导致 _running
+                # 分支成了死代码 —— 明明在跑命令，底栏却说「Working」。这正是
+                # 「给转圈英文挂上中文后发现它在摸鱼」的那种状态口径分裂。
+                status = self._running[-1]
+                status_cls = "class:accent"
             elif self._busy or self._streaming:
                 # codex 同款: "Working (Ns · esc to interrupt)" 而非简单 "Thinking…"
                 status = self._working_status_text()
                 status_cls = "class:text"
-            elif self._running:
-                tool = self._running[-1] if self._running else ""
-                status = tool if tool else t("fs.ready")
-                status_cls = "class:accent"
             else:
                 status = t("fs.ready")
                 status_cls = "class:success"

@@ -674,3 +674,43 @@ Core safety regression files (must be all green after changes):
 `test_security_hardening.py` / `test_security_auditor_provider.py` / `test_harden_network_policy.py`
 
 > Note: `test_security_v2.py::TestSymlinkResolution` is Windows-environment-related and unrelated to safety logic; not a regression gate.
+
+
+---
+
+## 10. Runtime Slogans (Spinner Verbs) and TUI State Fixes
+
+New `tuan_cli/tui/runtime_slogans.py` renders a Claude-Code-style runtime
+slogan beside the Codex-style Working status line in the top HUD (10 languages;
+the Chinese pool keeps the "slacking / marinating / reading the newspaper" joke).
+Security-relevant points:
+
+- **Custom verbs are terminal output and MUST be sanitized.**
+  `sanitize_verb()` strips OSC 8 hyperlinks, CSI colour/clear sequences,
+  C0/C1/DEL control characters, and clips by *display columns* (CJK = 2,
+  max 40). This follows the lesson from
+  `tui/inputkit/terminal_hyperlinks.py`: terminals interpret OSC/CSI, and
+  the upstream `web()` did not validate link destinations.
+- **Configuration is fail-safe, not fail-closed.** A malformed
+  `spinnerVerbs` section in `~/.tuan/settings.json` (invalid mode, verbs
+  not a list, out-of-range numbers, broken JSON) falls back to factory
+  defaults and records `invalid:*` in `source`. No verdict is affected, so
+  refusing commands here would be inappropriate.
+- **Verbs are driven by real events**, not a timer: only `submit`, stream
+  deltas and `begin_tool` advance the text; `render()` is a pure read. If no
+  event arrives for `stall_ms` while busy, an honest "possibly slacking"
+  diagnostic appears. This is a **heuristic observability hint**, NOT a
+  heartbeat, timeout control, or security gate — it never interrupts,
+  retries, or changes any verdict.
+- Also fixed: the dead `_running` branch in `_render_footer` (tool runs
+  displayed `Working (...)` instead of the tool name), two divergent width
+  algorithms, and the incorrect comment claiming wcwidth was C-implemented.
+  The mainline `_line_heights` already has a `(width, text)` height cache;
+  the 16.2 -> 0.39 ms/frame figures from the local fork do **not** apply to
+  the mainline and are not claimed as a performance result here.
+
+Regression: `tests/test_runtime_slogans.py` 57 cases green. Compliance: Claude
+Code is a proprietary product; only publicly documented behaviour is compared,
+**NO source code is copied** (`NOTICE` section 15, Anthropic does not endorse
+this project). **No new CLI subcommand** was added, and the 99-module baseline
+/ `fully_superior=false` in `CLAUDE_PARITY.md` are unchanged.

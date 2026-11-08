@@ -634,6 +634,43 @@ THIRD-PARTY ATTRIBUTIONS
     NO Claude Code source is copied verbatim. Anthropic does not endorse
     or sponsor this project.
 
+15) Runtime slogans (spinner verbs) - behavioral comparison with Claude Code
+    Location: tuan_cli/tui/runtime_slogans.py, tuan_cli/tui/tui.py,
+              RUNTIME_SLOGANS.md, tests/test_runtime_slogans.py
+    Inspiration: a Bilibili video title supplied by the user
+              (BV1F8nB6fEc1). THE VIDEO CONTENT ITSELF WAS NOT OBTAINED;
+              no part of it is reproduced or paraphrased here. The
+              implementation is based on publicly verifiable material about
+              Claude Code spinner verbs: community lists of ~185 verbs
+              (v2.1.42), the `spinnerVerbs` settings interface
+              (replace/append, v2.1.23+), and the fact that official
+              Anthropic documentation does not enumerate the word list.
+              Sources are recorded in RUNTIME_SLOGANS.md section 7.
+
+    Nature of reuse: a handful of short Chinese phrases in the built-in
+              word pool ("腌制入味" / "磨洋工" / "看报纸中" / "那个啥来着" /
+              "光合作用中" / "闲庭信步") draw on publicly published
+              community translations of those ~185 verbs. These are short
+              factual UI strings, NOT source code, obfuscated build output,
+              or trademark assets. Everything else is independently written
+              by this project: the ten-language translations, the phase
+              taxonomy, the event-driven engine, the "possibly slacking"
+              stall diagnostic, the OSC/CSI/C0/C1 sanitizer, and the
+              configuration loader. The `spinnerVerbs` key name is kept
+              for interoperability with the documented interface.
+
+    Deliberate difference (not a copy): upstream verbs are random spinner
+              decoration that correspond to no phase and no real progress.
+              Here every verb is tied to a real runtime event, render() is
+              a pure read, and a busy session with no events is reported
+              honestly instead of continuing to look busy.
+
+    NO Claude Code source code, configuration schema, or brand asset is
+              copied verbatim. Anthropic does not endorse or sponsor this
+              project. This notice is SEPARATE from the Apache-2.0 / MIT
+              attributions for line A (Codex TUI alignment) in sections
+              9-13; the two lines' license scopes are not mixed.
+
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
 
