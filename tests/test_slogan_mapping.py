@@ -1236,3 +1236,225 @@ class TestSingleRenderExit:
                 mapping._UNRENDERABLE_IDS = ()
                 mapping._CLEAN_COLLISIONS = ()
             mapping.reset_runtime_counters(include_dispatch_log=True)
+
+# ================================================================ 深度轮 5
+
+
+def _d5_evil_owner():
+    return "own" + "\x1b]8;;https://evil.example\x07" + "\u202eRLO" + "x" * 5000
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestOwnerNormalization:
+    """A: D4 净化了 event/kind/context, 偏偏漏了 public 入参 owner。"""
+
+    def test_clean_owner_is_untouched(self):
+        assert mapping.norm_owner("s-0") == "s-0"
+        assert mapping.norm_owner("tui:7f8a") == "tui:7f8a"
+        assert mapping.norm_owner("") == ""
+        assert mapping.norm_owner(None) == ""
+
+    def test_dirty_owner_sanitized_and_bounded(self):
+        raw = _d5_evil_owner()
+        n = mapping.norm_owner(raw)
+        assert len(n) <= 30
+        assert "\x1b" not in n and "\u202e" not in n and "]8;;" not in n
+        assert n.startswith("owner:")
+
+    def test_norm_owner_is_strictly_idempotent(self):
+        """实测逼出来的: 初版拼成 74 码点, 二次归一又被 64 上限截断并
+        重算指纹, 导致 _record 的 key 与查询侧对不上。"""
+        raw = _d5_evil_owner()
+        n = mapping.norm_owner(raw)
+        assert mapping.norm_owner(n) == n
+        assert mapping.norm_owner(mapping.norm_owner(raw)) == n
+
+    def test_write_and_query_use_the_same_key(self):
+        raw = _d5_evil_owner()
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        d = mapping.pick_for_event("tool.exploring", owner=raw)
+        assert d.owner == mapping.norm_owner(raw)
+        assert "\x1b" not in d.owner and "\u202e" not in d.owner
+        assert len(mapping.dispatch_log(raw)) == 1
+        assert len(mapping.dispatch_log(d.owner)) == 1
+
+    def test_distinct_dirty_owners_do_not_collide(self):
+        a, b = _d5_evil_owner(), _d5_evil_owner() + "y"
+        assert mapping.norm_owner(a) != mapping.norm_owner(b)
+
+    def test_owner_clean_in_record_error_and_tui_trace(self):
+        raw = _d5_evil_owner()
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        d = mapping.record_error("typo.event", "boom", owner=raw)
+        assert d.owner == mapping.norm_owner(raw)
+        assert "\x1b" not in d.owner
+        rows = mapping.dispatch_log(raw)
+        assert len(rows) == 1 and rows[0].owner == d.owner
+
+        from tuan_cli.tui.tui import QxtTUI
+        obj = QxtTUI(on_submit=lambda _t: "ok")
+        obj._booting = False
+        obj._boot_error = None
+        obj._slogan_owner = raw
+        obj.begin_tool("git status")
+        tr = obj.slogan_trace()
+        assert tr
+        assert all("\x1b" not in r["owner"] and "\u202e" not in r["owner"]
+                   for r in tr)
+        assert all(r["owner"] == mapping.norm_owner(raw) for r in tr)
+
+    def test_release_and_take_use_normalized_key(self):
+        raw = _d5_evil_owner()
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner=raw)
+        assert mapping.release_owner(raw) == 1
+        assert mapping.dispatch_log(raw) == ()
+        mapping.pick_for_event("tool.exploring", owner=raw)
+        snap = mapping.take_owner_log(raw)
+        assert len(snap) == 1 and snap[0].owner == mapping.norm_owner(raw)
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestLogLimitCoercion:
+    """B: public API 的 limit 脏值直接抛异常。"""
+
+    def test_dirty_limits_never_raise(self):
+        from tuan_cli.ui.slogans import _clean
+        for bad in ("5", None, float("nan"), float("inf"), -1,
+                    True, False, 0, 99999, 8.0, "abc"):
+            assert _clean.sanitize_log_field("abc", bad) == "abc", bad
+
+    def test_positive_int_limit_is_honored(self):
+        from tuan_cli.ui.slogans import _clean
+        long = "字" * 200
+        out = _clean.sanitize_log_field(long, 20)
+        assert len(out) <= 21 and out.endswith("…")
+
+    def test_limit_is_clamped(self):
+        from tuan_cli.ui.slogans import _clean
+        assert len(_clean.sanitize_log_field("a" * 5000, 99999)) <= 4097
+
+    def test_default_limit_unchanged(self):
+        from tuan_cli.ui.slogans import _clean
+        assert _clean.LOG_FIELD_LIMIT == 120
+        assert len(_clean.sanitize_log_field("a" * 5000)) == 121
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestPassiveEvictionTrace:
+    """C: D4 只给显式 close() 封存快照, LRU 被动淘汰仍是无声黑洞。"""
+
+    def test_eviction_is_recorded_not_silent(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        K = mapping._MAX_OWNERS
+        mapping.pick_for_event("tool.exploring", owner="s-0")
+        mapping.pick_for_event("turn.completed", owner="s-0")
+        for i in range(1, K):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        mapping.pick_for_event("tool.exploring", owner="trigger")
+        assert mapping.dispatch_log("s-0") == ()
+        recs = mapping.evicted_owner_log()
+        assert any(r.owner == "s-0" for r in recs)
+        r = next(r for r in recs if r.owner == "s-0")
+        assert r.dropped == 2
+        assert r.last_reason == "ok"
+        assert r.at_ms > 0
+
+    def test_eviction_record_is_desensitized(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        K = mapping._MAX_OWNERS
+        for i in range(K + 5):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        recs = mapping.evicted_owner_log()
+        assert recs
+        for r in recs:
+            assert not hasattr(r, "text") and not hasattr(r, "entry_id")
+            assert isinstance(r.dropped, int) and r.dropped >= 1
+
+    def test_stats_exposes_eviction_and_audit_carries_it(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        K = mapping._MAX_OWNERS
+        for i in range(K + 3):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        st = mapping.dispatch_log_stats()
+        assert st["evicted_recent"] == 3
+        assert st["evicted_cap"] == 64
+        assert st["owners"] == K
+        assert mapping.audit().as_dict()["dispatch_stats"]["evicted_recent"] == 3
+        assert mapping.audit().ok is True   # 淘汰是正常有界行为, 不是故障
+
+    def test_eviction_log_is_bounded(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        for i in range(mapping._EVICT_CAP + 200):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        assert len(mapping.evicted_owner_log()) <= mapping._EVICT_CAP
+        assert mapping.dispatch_log_stats()["evicted_recent"] <= mapping._EVICT_CAP
+
+    def test_reset_dispatch_log_clears_evictions(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        K = mapping._MAX_OWNERS
+        for i in range(K + 2):
+            mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+        assert mapping.evicted_owner_log()
+        mapping.reset_dispatch_log()
+        assert mapping.evicted_owner_log() == ()
+
+    def test_explicit_close_is_not_counted_as_eviction(self):
+        from tuan_cli.tui.tui import QxtTUI
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        obj = QxtTUI(on_submit=lambda _t: "ok")
+        obj._booting = False
+        obj._boot_error = None
+        obj.begin_tool("x")
+        obj.close()
+        # close() 走 take_owner_log 显式释放, 不该记成被动淘汰
+        assert all(r.owner != obj.slogan_owner()
+                   for r in mapping.evicted_owner_log())
+
+
+@pytest.mark.usefixtures("_clean_state")
+class TestCloseSingleExit:
+    """D/E: close 与 take_owner_log 两套实现收敛; 封存写加锁。"""
+
+    def test_close_uses_take_owner_log_single_exit(self):
+        import inspect
+        from tuan_cli.tui import tui as _tui_mod
+        src = inspect.getsource(_tui_mod.QxtTUI.close)
+        assert "mapping.take_owner_log(" in src
+        assert "mapping.release_owner(" not in src
+        assert "mapping.dispatch_log(self._slogan_owner)" not in src
+
+    def test_sealed_write_is_under_lock(self):
+        import inspect
+        from tuan_cli.tui import tui as _tui_mod
+        src = inspect.getsource(_tui_mod.QxtTUI.close)
+        assert "with self._slogan_lock:" in src
+        assert "self._slogan_sealed = sealed" in src
+
+    def test_no_unused_keys_variable(self):
+        import inspect
+        from tuan_cli.tui import tui as _tui_mod
+        src = inspect.getsource(_tui_mod.QxtTUI.slogan_closed_trace)
+        assert 'keys = ("event"' not in src
+
+    def test_close_still_seals_session_exit(self):
+        from tuan_cli.tui.tui import QxtTUI
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        obj = QxtTUI(on_submit=lambda _t: "ok")
+        obj._booting = False
+        obj._boot_error = None
+        obj.begin_tool("A")
+        obj.begin_tool("B")
+        obj.close()
+        assert mapping.dispatch_log(obj.slogan_owner()) == ()
+        sealed = obj.slogan_closed_trace()
+        assert [r["event"] for r in sealed] == [
+            "tool.exploring", "tool.exploring", "session.exit"]
+        assert all(set(r) == {"event", "context", "reason", "origin",
+                              "entry_id", "owner", "at_ms"} for r in sealed)
+
+    def test_take_owner_log_is_idempotent(self):
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+        mapping.pick_for_event("tool.exploring", owner="once")
+        assert len(mapping.take_owner_log("once")) == 1
+        assert mapping.take_owner_log("once") == ()

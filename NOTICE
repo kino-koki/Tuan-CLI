@@ -723,7 +723,16 @@ THIRD-PARTY ATTRIBUTIONS
               Unicode-cleaning core with UI copy, and distribution and
               indexes share one sanitize_verb exit. No new slogans,
               events, CLI subcommands, license scope, upstream source
-              or trademark asset. Sections 9-15 remain unchanged. The Claude Code /
+              or trademark asset. Sections 9-15 remain unchanged.
+    Owner-normalization / eviction-trace pass (still NO new third-
+              party material): the public `owner` argument is
+              normalized through a single idempotent function shared
+              by writes and queries, log-field length limits are
+              strictly validated, passive LRU evictions leave a
+              desensitized bounded trace, and session release is
+              collapsed to one exit. No new slogans, events, CLI
+              subcommands, license scope, upstream source or trademark
+              asset. Sections 9-15 remain unchanged. The Claude Code /
               Codex attributions in sections 9-15 are unchanged.
 
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):

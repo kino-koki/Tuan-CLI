@@ -274,3 +274,26 @@ TUI 未替换既有 i18n 文案；分叉改动仍未合并；第三方自适应�
 不改裁决; 分叉改动仍未合并; 第三方自适应红队仍未做。详见
 `SLOGAN_MAPPING.md` §13。本轮**不改** `fully_superior`、99 模块
 基线与任何对齐指标。
+
+
+---
+
+## R34 · owner 归一 / 被动淘汰留痕 / 单一释放出口
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R34 | public 入参 `owner` 全链路未净化 (实测 5033 码点含 OSC8+RLO 进 `SloganDecision.owner` / 桶 key / `slogan_trace()`); 修净化时初版 key 74 码点**不幂等**, 二次归一重算指纹致 `dispatch_log(evil)` 返回 0; `sanitize_log_field(limit=None/nan/inf)` 抛 TypeError/ValueError/OverflowError; LRU 被动淘汰静默丢含 `turn.completed` 的整桶 (D4 只覆盖显式 close); `close()` 与 `take_owner_log()` 两套实现; `_slogan_sealed` 写无锁 | 写入/查询共用 `norm_owner()` (干净零改动, 脏串定长 `owner:<fp16>` 22 码点严格幂等); 新增 `_coerce_log_limit()` 脏值回落默认 120 不抛; 新增 `EvictionRecord` + 有界 `_EVICTED` (64) + `evicted_owner_log()` + stats `evicted_recent`/`evicted_cap` (脱敏、不复活决策、不参与 `ok`); `close()` 收敛 `take_owner_log()` 并加 `_slogan_lock`; 删未使用 `keys` 变量 |
+
+实测：`5033 -> 22` 码点且 ESC/RLO/OSC8 全清、`norm_owner(n)==n`、
+`dispatch_log(evil)` 命中；`EvictionRecord(owner='s-0', dropped=2,
+last_reason='ok')`；`stats owners=128 / evicted_recent=1 / evicted_cap=64`；
+`limit` 的 `None/nan/inf/-1/True/'5'` 全返回 `'abc'`；
+`index_stats 1695×4 / audit ok=True`。
+
+如实边界：**A′ 是本轮修 A 时自己引入、再被实测抓回来的**（key 归一
+不幂等会让写入与查询静默分叉）；脏 owner 原串不进日志（可读性取舍）；
+淘汰记录只保留最近 64 次且不复活决策内容，`evicted_recent` 是观测项
+不参与 `audit().ok`；并发压测仍未复现 list 撕裂；不是真机长跑；
+TUI 仍未替换既有 i18n 文案；分叉改动仍未合并；第三方自适应红队
+仍未做。详见 `SLOGAN_MAPPING.md` §14。本轮**不改** `fully_superior`、
+99 模块基线与任何对齐指标。

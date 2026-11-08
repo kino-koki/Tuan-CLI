@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from typing import List
@@ -193,6 +194,27 @@ def sanitize_verb(raw: object) -> str:
 LOG_FIELD_LIMIT = 120
 
 
+def _coerce_log_limit(limit: object) -> int:
+    """把 ``limit`` 收敛成合法正整数；脏值一律回落默认，绝不抛异常。
+
+    深度轮 5 实测: ``sanitize_log_field`` 是 public API, 旧实现直接
+    ``int(limit)`` —— ``None`` 抛 TypeError、``nan`` 抛 ValueError、
+    ``inf`` 抛 OverflowError、``'5'`` 被悄悄接受、``True`` 被当成 1。
+    与 ``runtime_slogans.load_config`` 对 ``stall_ms`` 的严格类型口径
+    不一致。这里显式拒绝 bool / 非数值 / 非有限 / 非正, 并夹在
+    ``[8, 4096]``。
+    """
+    if isinstance(limit, bool) or not isinstance(limit, (int, float)):
+        return LOG_FIELD_LIMIT
+    if isinstance(limit, float):
+        if not math.isfinite(limit) or limit != int(limit):
+            return LOG_FIELD_LIMIT
+        limit = int(limit)
+    if limit <= 0:
+        return LOG_FIELD_LIMIT
+    return max(8, min(4096, int(limit)))
+
+
 def sanitize_log_field(raw: object, limit: int = LOG_FIELD_LIMIT) -> str:
     """把任意（可能外部可控的）字段净化成可安全写入日志的字符串。
 
@@ -211,10 +233,13 @@ def sanitize_log_field(raw: object, limit: int = LOG_FIELD_LIMIT) -> str:
 
     同样迭代到不动点；不收敛或非字符串输入返回空串（fail-closed）。
     返回空串时调用方应记为 ``error:invalid-field``，不写原文。
+
+    ``limit`` 走 ``_coerce_log_limit`` 严格校验（深度轮 5）：脏值回落
+    默认 120 而不是抛异常，public API 不会因脏配置崩。
     """
     if not isinstance(raw, str):
         return ""
-    lim = max(8, min(4096, int(limit)))
+    lim = _coerce_log_limit(limit)
     s = raw[:lim * 4]          # 先粗切，避免超长输入在正则上放大
     for _ in range(3):
         nxt = _clean_once(s)

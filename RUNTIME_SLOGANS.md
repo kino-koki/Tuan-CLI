@@ -538,3 +538,30 @@ TUI 留痕**没有 `entry_id`**、错误被 `except Exception` 静默吞掉、
 
 验证：234 passed + 64 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 `stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。
+
+
+---
+
+## 16. owner 归一 / 淘汰留痕（本引擎零改动）
+
+前四轮把对应关系做实；本轮实测又发现五个真实缺陷（public 入参
+`owner` 全链路未净化、`sanitize_log_field` 的 `limit` 脏值抛异常、
+LRU 被动淘汰静默丢整桶、`close()` 与 `take_owner_log()` 两套实现、
+`_slogan_sealed` 写无锁）。完整复现与修复见 `SLOGAN_MAPPING.md` §14。
+
+**本引擎本轮零改动**：事件驱动、三态活性、D1 并发不变量、
+净化层 re-export（`sanitize_verb is _clean.sanitize_verb`）、
+139 例回归全部照常通过。改动集中在 `ui/slogans/_clean.py`
+（新增 `_coerce_log_limit`）、`ui/slogans/mapping.py` 与 `tui/tui.py`。
+
+注意 `_clean.py` 本轮**只改了 `sanitize_log_field` 的 `limit` 校验**，
+`sanitize_verb` / `_clean_once` / `_sanitize_once` / `_fit_headline`
+行为一律不变；`norm_owner` 复用的仍是同一份 `sanitize_log_field`，
+不产生第三套净化真值。
+
+特别记录一条：修 owner 净化时初版把 key 拼成 74 码点，二次归一又
+被 64 上限截断并重算指纹，导致**查询链路静默断裂**；改为定长
+`owner:<fp16>` 后才严格幂等。净化层改动必须连带验证查询侧。
+
+验证：256 passed + 73 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+`stall` 仍是启发式可观测提示，不是安全闸门；本轮未改任何裁决。

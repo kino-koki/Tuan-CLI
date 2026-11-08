@@ -974,3 +974,60 @@ slogan, it changes no verdict. No list corruption was reproduced under
 concurrency; no real-device soak test; fork changes still unmerged; no
 external adaptive red team. Verification: 234 pytest cases + 64
 pure-stdlib checks + 22/20 prior checks, all green.
+
+
+---
+
+## 17. Owner Normalization, Passive-Eviction Trace, Single Release Exit
+
+This round changes no verdict; it patches holes left in the prior four
+rounds of runtime correspondence.
+
+- **`owner` is no longer an injection channel.** It is a public arg of
+  `pick_for_event` / `record_error`. Measured: injecting a
+  5033-codepoint string with `ESC ]8;;` hyperlink and `U+202E` RLO
+  left `SloganDecision.owner`, the bucket KEY, and `slogan_trace()`
+  output all carrying raw control characters -- the prior round
+  sanitized event/kind/context but missed this path entirely. Writes
+  and queries now share `norm_owner()`: clean input is returned
+  unchanged, dirty input becomes a fixed-length
+  `owner:<sha1(raw)[:16]>` key (22 codepoints, strictly idempotent,
+  no collisions between distinct dirty strings). Measured: 5033 -> 22
+  codepoints, ESC/RLO/OSC8 all removed, `dispatch_log(evil)` and
+  `dispatch_log(d.owner)` hit the same bucket.
+- **Do not break the query path while sanitizing.** The first fix
+  built a 74-codepoint key; a second normalization re-truncated at the
+  64 limit and RE-HASHED, so `dispatch_log(evil)` returned 0 while
+  `dispatch_log(d.owner)` returned 1 -- writes and queries silently
+  diverged. Switching to a fixed-length fingerprint key made
+  `norm_owner` strictly idempotent. This defect was INTRODUCED by
+  this round's own fix and caught by measurement; recorded honestly.
+- **Log-field sanitizing no longer crashes on dirty config.**
+  `sanitize_log_field` used bare `int(limit)`: `None` / `nan` / `inf`
+  raised TypeError / ValueError / OverflowError, while `'5'` /
+  `True` / `-1` were silently accepted. `_coerce_log_limit()` now
+  validates strictly, clamps to `[8, 4096]`, and falls back to 120 for
+  any dirty value without raising -- consistent with `load_config`.
+- **LRU passive eviction is no longer a silent black hole.** The prior
+  round sealed snapshots only for explicit `close()`. Measured: the
+  129th session evicted a bucket containing `turn.completed`, with no
+  trace at all. `EvictionRecord` (owner / dropped / last_reason /
+  at_ms, NO text, NO entry_id) now goes into bounded `_EVICTED` (64);
+  `evicted_owner_log()` and `dispatch_log_stats()['evicted_recent']`
+  expose it. Decision contents are deliberately NOT resurrected (that
+  would defeat the 128-owner bound). `evicted_recent` is an
+  observation and does NOT participate in `audit().ok`.
+- **Single release exit + complete concurrency contract.** `close()`
+  collapsed from `dispatch_log + release_owner` to the single
+  `mapping.take_owner_log()`; `_slogan_sealed` writes now hold
+  `_slogan_lock` (reads already did), and the unused `keys` variable
+  in `slogan_closed_trace()` was removed.
+
+**Honest limits**: dirty owners become `owner:<fp16>` and their raw
+text never enters logs (a readability tradeoff); clean owners are
+untouched. Only the most recent 64 evictions are recorded and
+decision contents are not restored. `_slogan_sealed` remains an
+instance-local snapshot. No list corruption was reproduced under
+concurrency; no real-device soak test; fork changes still unmerged;
+no external adaptive red team. Verification: 256 pytest cases + 73
+pure-stdlib checks + 22/20 prior checks, all green.

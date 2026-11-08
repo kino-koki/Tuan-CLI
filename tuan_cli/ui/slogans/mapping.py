@@ -38,6 +38,14 @@ TUI 留痕却丢了 ``entry_id``、错误被 ``except Exception`` 静默吞掉�
 计数、净化撞车检测、owner 桶 LRU 上界与 ``release_owner()``、
 错误双层留痕 ``record_error()``、``_MAX_WINDOWS`` 按真实 key 空间算。
 ``audit()`` 现在还校验三份索引全等与零运行时 miss。
+
+深度轮 4: 连续 miss 自愈 (累计证据/日志不丢)、``close()`` 封存
+``session.exit``、LRU 读刷新、日志字段净化、信息项与 fatal 分离、
+分发与索引共用单一渲染出口。
+
+深度轮 5 再补: ``owner`` 全链路归一 (D4 漏掉的 public 入参)、
+LRU **被动淘汰**留脱敏痕迹 (D4 只覆盖了显式 ``close()``)、
+``sanitize_log_field`` 的 ``limit`` 严格类型校验。
 """
 
 from __future__ import annotations
@@ -45,7 +53,7 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, Optional, Tuple
 
@@ -61,7 +69,8 @@ __all__ = [
     "verbs_for_phase", "entry_for", "entry_for_text", "entry_for_clean",
     "dispatch_log", "reset_dispatch_log", "release_owner", "take_owner_log",
     "record_error", "reset_runtime_counters", "acknowledge_runtime_misses",
-    "dispatch_log_stats", "registry", "index_stats",
+    "dispatch_log_stats", "evicted_owner_log", "norm_owner",
+    "registry", "index_stats",
 ]
 
 
@@ -558,6 +567,55 @@ _DISPATCH_CAP = 64
 _MAX_OWNERS = 128
 _dispatch_lock = threading.RLock()
 
+#: 深度轮 5: LRU **被动淘汰**的记录。D4 只给显式 ``close()`` 封存了
+#: 快照, 但 ``_record()`` 里的 ``popitem(last=False)`` 仍会静默丢掉整桶
+#: (实测: 含 ``turn.completed`` 的 s-0 被第 129 个会话挤掉, 查不到也
+#: 没有任何痕迹)。现在淘汰本身留一条有界记录 —— 不复活决策内容
+#: (那会让 128 桶上界形同虚设), 但「谁、丢了几条、最后一条是什么」
+#: 可查, 证据丢失至少**可见**。
+_EVICT_CAP = 64
+_EVICTED: "deque[EvictionRecord]" = deque(maxlen=_EVICT_CAP)
+
+
+@dataclass(frozen=True)
+class EvictionRecord:
+    """一次 LRU 被动淘汰的痕迹 (脱敏: 不含文案、不含 entry_id)。"""
+    owner: str
+    dropped: int
+    last_reason: str
+    at_ms: int
+
+
+def norm_owner(raw: object) -> str:
+    """把 public API 的 ``owner`` 归一成可安全进日志/桶 key 的字符串。
+
+    深度轮 5 实测: ``owner`` 是 ``pick_for_event`` / ``record_error``
+    的公开入参, 旧实现**全程未净化** —— 注入 5033 码点含 OSC 8 超链接
+    与 U+202E RLO 的串后, ``SloganDecision.owner``、桶 key、
+    ``slogan_trace()`` 输出全部原样带控制字符。D4 净化了
+    event/kind/context, 偏偏漏了这一路。
+
+    两条约束:
+    * **干净输入零改动** —— ``sanitize_log_field(raw) == raw`` 时原样
+      返回, 所以既有 ``owner='s-0'`` / ``tui:%x`` 全部不变, 查询侧
+      用同一个函数即可对上;
+    * **脏串归一定长指纹 key** —— ``owner:<sha1(raw)[:16]>`` 只有 22
+      码点, 干净且远小于 limit, 因此 ``norm_owner(norm_owner(x)) ==
+      norm_owner(x)`` **严格幂等**。这点是实测逼出来的: 初版把净化后
+      的 65 码点文案 + 8 位指纹拼成 74 码点, 二次归一又会被 64 码点
+      上限截断并**重新算指纹**, 结果 ``_record`` 存的 key 与查询侧
+      算出的 key 对不上 (实测 ``dispatch_log(evil)` 返回 0)。
+      代价是脏 owner 原串不进日志 —— 这正是净化的目的。
+    """
+    if not isinstance(raw, str) or not raw:
+        return ""
+    from . import _clean  # noqa: PLC0415
+    clean = _clean.sanitize_log_field(raw, 64)
+    if clean == raw:
+        return raw                     # 干净输入零改动, 严格幂等
+    fp = hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16]
+    return f"owner:{fp}"
+
 
 def dispatch_log(owner: Optional[str] = None) -> Tuple[SloganDecision, ...]:
     """快照 (加锁, 不返回内部可变对象)。
@@ -565,26 +623,33 @@ def dispatch_log(owner: Optional[str] = None) -> Tuple[SloganDecision, ...]:
     ``owner=None`` -> 全量 (兼容旧调用); 指定 owner -> 只看该会话。
     全量在桶数有上界后也可控 (<= ``_MAX_OWNERS * _DISPATCH_CAP``)。
     """
+    key = norm_owner(owner) if owner is not None else None
     with _dispatch_lock:
-        if owner is not None:
-            bucket = _dispatch_log.get(owner, ())
-            if owner in _dispatch_log:
+        if key is not None:
+            bucket = _dispatch_log.get(key, ())
+            if key in _dispatch_log:
                 # 深度轮 4: 读也算「最近使用」。上一轮只有写入刷新 LRU,
                 # 实测高频只读的活跃会话被当成最久未用而淘汰 —— LRU
                 # 名不副实。无参全量读**不**刷新，否则一次全量读会把
                 # 所有桶都刷成最近使用，淘汰策略直接失效。
-                _dispatch_log.move_to_end(owner)
+                _dispatch_log.move_to_end(key)
             return tuple(bucket)
         return tuple(d for bucket in _dispatch_log.values() for d in bucket)
 
 
 def reset_dispatch_log(owner: Optional[str] = None) -> None:
-    """``owner=None`` 清全部 (兼容旧调用); 指定 owner 只清该会话。"""
+    """``owner=None`` 清全部 (兼容旧调用); 指定 owner 只清该会话。
+
+    全清时连 ``_EVICTED`` 一起清 (测试隔离需要); 指定 owner 属于显式
+    释放而非被动淘汰, 不写淘汰痕、也不清已有淘汰痕。
+    """
+    key = norm_owner(owner) if owner is not None else None
     with _dispatch_lock:
-        if owner is None:
+        if key is None:
             _dispatch_log.clear()
+            _EVICTED.clear()
         else:
-            _dispatch_log.pop(owner, None)
+            _dispatch_log.pop(key, None)
 
 
 def release_owner(owner: str) -> int:
@@ -592,10 +657,11 @@ def release_owner(owner: str) -> int:
 
     :return: 被释放的决策条数, 供运维/验证核对。
     """
-    if not owner:
+    key = norm_owner(owner)
+    if not key:
         return 0
     with _dispatch_lock:
-        bucket = _dispatch_log.pop(owner, None)
+        bucket = _dispatch_log.pop(key, None)
         return len(bucket or ())
 
 
@@ -607,7 +673,9 @@ def dispatch_log_stats() -> Dict[str, int]:
                 "decisions": sum(buckets),
                 "max_bucket": max(buckets, default=0),
                 "cap_per_owner": _DISPATCH_CAP,
-                "max_owners": _MAX_OWNERS}
+                "max_owners": _MAX_OWNERS,
+                "evicted_recent": len(_EVICTED),
+                "evicted_cap": _EVICT_CAP}
 
 
 def reset_runtime_counters(include_dispatch_log: bool = False) -> None:
@@ -633,11 +701,25 @@ def take_owner_log(owner: str) -> Tuple[SloganDecision, ...]:
     深度轮 4 实测：``close()`` 先记 ``session.exit`` 再
     ``release_owner()`` 删桶，全局日志永远看不到会话退出事件。
     """
-    if not owner:
+    key = norm_owner(owner)
+    if not key:
         return ()
     with _dispatch_lock:
-        bucket = _dispatch_log.pop(owner, None)
+        bucket = _dispatch_log.pop(key, None)
         return tuple(bucket or ())
+
+
+def evicted_owner_log() -> Tuple[EvictionRecord, ...]:
+    """最近 ``_EVICT_CAP`` 次 LRU **被动淘汰**的痕迹 (快照、加锁)。
+
+    深度轮 5: D4 的 ``slogan_closed_trace()`` 只覆盖显式 ``close()``;
+    被 129 个会话挤掉的桶仍是黑洞。这里不复活决策内容, 只让
+    「谁被淘汰 / 丢了几条 / 最后一条 reason」可见, 128 桶上界不变。
+    ``dispatch_log_stats()['evicted_recent']`` 给聚合计数,
+    ``audit().as_dict()['dispatch_stats']`` 也会带上。
+    """
+    with _dispatch_lock:
+        return tuple(_EVICTED)
 
 
 def acknowledge_runtime_misses() -> int:
@@ -660,15 +742,23 @@ def acknowledge_runtime_misses() -> int:
 
 
 def _record(d: SloganDecision) -> None:
+    key = norm_owner(d.owner)   # 幂等: 干净 owner 原样返回
     with _dispatch_lock:
-        bucket = _dispatch_log.get(d.owner)
+        bucket = _dispatch_log.get(key)
         if bucket is None:
             if len(_dispatch_log) >= _MAX_OWNERS:
-                _dispatch_log.popitem(last=False)   # 淘汰最久未用的会话
+                ev_owner, ev_bucket = _dispatch_log.popitem(last=False)
+                # 淘汰不再静默: 记一条脱敏痕迹 (不含文案 / entry_id)。
+                _EVICTED.append(EvictionRecord(
+                    owner=ev_owner,
+                    dropped=len(ev_bucket),
+                    last_reason=(ev_bucket[-1].reason if ev_bucket else ""),
+                    at_ms=int(time.monotonic() * 1000),
+                ))
             bucket = []
-            _dispatch_log[d.owner] = bucket
+            _dispatch_log[key] = bucket
         else:
-            _dispatch_log.move_to_end(d.owner)
+            _dispatch_log.move_to_end(key)
         bucket.append(d)
         if len(bucket) > _DISPATCH_CAP:
             del bucket[:-_DISPATCH_CAP]
@@ -699,7 +789,7 @@ def record_error(event: str, kind: str, *, owner: str = "",
     safe_ctx = (_clean.sanitize_log_field(context, 64)
                 if context is not None else None)
     d = SloganDecision(ev, safe_ctx, "", "", "error:" + kd,
-                       at, "", "", owner)
+                       at, "", "", norm_owner(owner))
     _record(d)
     return d
 
@@ -729,6 +819,7 @@ def pick_for_event(event: str, lang: Optional[str] = None, *,
     clock = time.monotonic if now is None else (lambda: now)
     at = int(clock() * 1000)
     resolved = picker.resolve_lang(lang)
+    owner = norm_owner(owner)   # 深度轮 5: public 入参, 与查询侧同一归一
 
     if event in SECURITY_EVENTS:
         d = SloganDecision(event, None, resolved, "", "security-notice",

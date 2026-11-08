@@ -616,7 +616,7 @@ def t_owner_buckets_are_bounded():
 
 def t_close_releases_owner():
     tui = (REPO / "tuan_cli/tui/tui.py").read_text(encoding="utf-8")
-    assert "mapping.release_owner(self._slogan_owner)" in tui
+    assert "mapping.take_owner_log(self._slogan_owner)" in tui
     assert "def close(self) -> None:" in tui
     from tuan_cli.tui.tui import QxtTUI
     obj = QxtTUI(on_submit=lambda _t: "ok")
@@ -762,8 +762,8 @@ def t_d4_reset_counters_keeps_logs_by_default():
 
 def t_d4_close_seals_session_exit():
     tui = (REPO / "tuan_cli/tui/tui.py").read_text(encoding="utf-8")
-    assert "self._slogan_sealed = mapping.dispatch_log(self._slogan_owner)" in tui
-    assert "mapping.release_owner(self._slogan_owner)" in tui
+    assert "sealed = mapping.take_owner_log(self._slogan_owner)" in tui
+    assert "with self._slogan_lock:" in tui
     assert "def slogan_closed_trace(self)" in tui
     from tuan_cli.tui.tui import QxtTUI
     obj = QxtTUI(on_submit=lambda _t: "ok")
@@ -795,7 +795,7 @@ def t_d4_take_owner_log_returns_and_releases():
 
 def t_d4_lru_read_refreshes_but_full_snapshot_does_not():
     src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
-    assert "_dispatch_log.move_to_end(owner)" in src
+    assert "_dispatch_log.move_to_end(key)" in src
     _d4_reindex()
     K = mapping._MAX_OWNERS
     for i in range(K):
@@ -962,6 +962,154 @@ def t_d4_audit_report_fields():
     assert mapping.index_stats()["unresolved_misses"] == 0
     assert mapping.index_stats()["unrenderable"] == 0
     assert mapping.audit().ok is True
+
+# ---------------------------------------------------------------- 深度轮 5
+
+
+def _d5_evil_owner():
+    return "own" + "\x1b]8;;https://evil.example\x07" + "\u202eRLO" + "x" * 5000
+
+
+def t_d5_owner_normalization():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "def norm_owner(" in src
+    assert "owner = norm_owner(owner)" in src
+    raw = _d5_evil_owner()
+    n = mapping.norm_owner(raw)
+    assert len(n) <= 30 and n.startswith("owner:")
+    assert "\x1b" not in n and "\u202e" not in n and "]8;;" not in n
+    assert mapping.norm_owner("s-0") == "s-0"
+    assert mapping.norm_owner("tui:7f8a") == "tui:7f8a"
+    assert mapping.norm_owner("") == "" and mapping.norm_owner(None) == ""
+
+
+def t_d5_norm_owner_is_idempotent():
+    """实测逼出来的: 初版 74 码点二次归一会重算指纹。"""
+    raw = _d5_evil_owner()
+    n = mapping.norm_owner(raw)
+    assert mapping.norm_owner(n) == n
+    assert mapping.norm_owner(mapping.norm_owner(raw)) == n
+    assert mapping.norm_owner(raw) != mapping.norm_owner(raw + "y")
+
+
+def t_d5_write_and_query_same_key():
+    raw = _d5_evil_owner()
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    d = mapping.pick_for_event("tool.exploring", owner=raw)
+    assert d.owner == mapping.norm_owner(raw)
+    assert "\x1b" not in d.owner and "\u202e" not in d.owner
+    assert len(mapping.dispatch_log(raw)) == 1
+    assert len(mapping.dispatch_log(d.owner)) == 1
+    assert mapping.release_owner(raw) == 1
+    assert mapping.dispatch_log(raw) == ()
+    mapping.pick_for_event("tool.exploring", owner=raw)
+    snap = mapping.take_owner_log(raw)
+    assert len(snap) == 1 and snap[0].owner == mapping.norm_owner(raw)
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d5_record_error_owner_is_clean():
+    raw = _d5_evil_owner()
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    d = mapping.record_error("typo.event", "boom", owner=raw)
+    assert d.owner == mapping.norm_owner(raw)
+    assert "\x1b" not in d.owner and "\u202e" not in d.owner
+    assert len(mapping.dispatch_log(raw)) == 1
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d5_log_limit_coercion():
+    clean = (REPO / "tuan_cli/ui/slogans/_clean.py").read_text(encoding="utf-8")
+    assert "def _coerce_log_limit(" in clean
+    assert "math.isfinite" in clean
+    from tuan_cli.ui.slogans import _clean
+    for bad in ("5", None, float("nan"), float("inf"), -1,
+                True, False, 0, 99999, 8.0, "abc"):
+        assert _clean.sanitize_log_field("abc", bad) == "abc", bad
+    assert len(_clean.sanitize_log_field("字" * 200, 20)) <= 21
+    assert len(_clean.sanitize_log_field("a" * 5000)) == 121
+    assert _clean.sanitize_verb("正常文案 ✓") == "正常文案 ✓"
+
+
+def t_d5_passive_eviction_is_traced():
+    src = (REPO / "tuan_cli/ui/slogans/mapping.py").read_text(encoding="utf-8")
+    assert "class EvictionRecord" in src
+    assert "def evicted_owner_log(" in src
+    assert "_EVICTED.append(" in src
+    assert "evicted_recent" in src
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    K = mapping._MAX_OWNERS
+    mapping.pick_for_event("tool.exploring", owner="s-0")
+    mapping.pick_for_event("turn.completed", owner="s-0")
+    for i in range(1, K):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+    mapping.pick_for_event("tool.exploring", owner="trigger")
+    assert mapping.dispatch_log("s-0") == ()
+    recs = mapping.evicted_owner_log()
+    r = next(r for r in recs if r.owner == "s-0")
+    assert r.dropped == 2 and r.last_reason == "ok" and r.at_ms > 0
+    assert not hasattr(r, "text") and not hasattr(r, "entry_id")
+    assert mapping.audit().ok is True
+    assert mapping.audit().as_dict()["dispatch_stats"]["evicted_recent"] >= 1
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d5_eviction_log_is_bounded_and_resettable():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    for i in range(mapping._EVICT_CAP + 200):
+        mapping.pick_for_event("tool.exploring", owner="s-%d" % i)
+    assert len(mapping.evicted_owner_log()) <= mapping._EVICT_CAP
+    st = mapping.dispatch_log_stats()
+    assert st["evicted_recent"] <= mapping._EVICT_CAP
+    assert st["evicted_cap"] == 64 and st["owners"] == mapping._MAX_OWNERS
+    mapping.reset_dispatch_log()
+    assert mapping.evicted_owner_log() == ()
+
+
+def t_d5_close_single_exit_and_locked_write():
+    tui = (REPO / "tuan_cli/tui/tui.py").read_text(encoding="utf-8")
+    i = tui.index("    def close(self) -> None:")
+    j = tui.index("    def slogan_closed_trace(self)", i)
+    close_src = tui[i:j]
+    assert "mapping.take_owner_log(" in close_src
+    assert "mapping.release_owner(" not in close_src
+    assert "mapping.dispatch_log(self._slogan_owner)" not in close_src
+    assert "with self._slogan_lock:" in close_src
+    assert "self._slogan_sealed = sealed" in close_src
+    trace_src = tui[j:j + 800]
+    assert 'keys = ("event"' not in trace_src
+    from tuan_cli.tui.tui import QxtTUI
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    obj = QxtTUI(on_submit=lambda _t: "ok")
+    obj._booting = False
+    obj._boot_error = None
+    obj.begin_tool("A")
+    obj.begin_tool("B")
+    obj.close()
+    assert mapping.dispatch_log(obj.slogan_owner()) == ()
+    sealed = obj.slogan_closed_trace()
+    assert [r["event"] for r in sealed] == [
+        "tool.exploring", "tool.exploring", "session.exit"]
+    assert all(set(r) == {"event", "context", "reason", "origin",
+                          "entry_id", "owner", "at_ms"} for r in sealed)
+    assert all(r.owner != obj.slogan_owner()
+               for r in mapping.evicted_owner_log())
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+
+
+def t_d5_full_health_after_all_fixes():
+    mapping.reset_runtime_counters(include_dispatch_log=True)
+    r = mapping.audit()
+    assert r.ok and r.index_consistent
+    st = mapping.index_stats()
+    assert st["by_id"] == st["by_text"] == st["by_clean"] == 1695
+    assert st["index_misses"] == 0 and st["unresolved_misses"] == 0
+    for lang in L.LANGUAGES:
+        for ev in mapping.EVENT_BINDINGS:
+            d = mapping.pick_for_event(ev, lang=lang, owner="final")
+            assert d.reason == "ok" and d.entry_id, (ev, lang)
+    assert mapping.audit().ok is True
+    mapping.reset_runtime_counters(include_dispatch_log=True)
 
 
 for name, fn in sorted(globals().items()):

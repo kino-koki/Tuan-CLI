@@ -550,3 +550,111 @@ LRU 读       高频只读 s-0 存活, s-1 被淘汰
 25. `_MAX_OWNERS=128` / `_MAX_WINDOWS=384` 仍是有界折中；并发压测
     仍未复现 list 撕裂；不是真机长跑；TUI 仍未替换任何既有 i18n
     文案；分叉改动仍未合并；第三方自适应红队仍未做。
+
+
+---
+
+## 14. owner 全链路归一、被动淘汰留痕、单一释放出口
+
+前四轮把对应关系从静态表做到了可反查、可回放、有界、fail-closed、
+可自愈。本轮**先实测再修**，又发现五个真实缺陷 —— 其中一个是
+**修 A 的过程中自己引入、再被实测抓回来的**，这条最值钱。
+
+| # | 实测复现 | 影响 |
+|---|---|---|
+| A | `pick_for_event(owner=注入 5033 码点含 OSC 8 + U+202E RLO 的串)` | `SloganDecision.owner`、桶 key、`slogan_trace()` 输出**全部原样带控制字符**。D4 净化了 event/kind/context，偏偏漏了 public 入参 `owner` 这一路 |
+| A′ | **修 A 时自己引入**：初版把净化后 65 码点文案 + 8 位指纹拼成 74 码点 key | `norm_owner` 不幂等 —— 74 码点超过 64 上限，二次归一又截断并**重算指纹**；`_record` 存的 key 与查询侧算出的对不上，实测 `dispatch_log(evil)` 返回 **0** 而 `dispatch_log(d.owner)` 返回 1。等于修净化反而把查询链路打断 |
+| B | `sanitize_log_field("abc", limit=None / nan / inf)` 分别抛 TypeError / ValueError / OverflowError；`limit='5'` / `True` / `-1` 被悄悄接受 | public API 因脏配置直接崩，与 `runtime_slogans.load_config` 对 `stall_ms` 的严格类型口径不一致 |
+| C | 128 桶填满后第 129 个会话挤掉 `s-0`（含 `turn.completed` 共 2 条），`dispatch_log('s-0')` 空且**无任何痕迹** | D4 只给显式 `close()` 封存了快照，LRU **被动淘汰**仍是无声黑洞，含完成事件的整桶凭空消失 |
+| D | `close()` 自己拼「`dispatch_log(owner)` + `release_owner()`」两步，而 `take_owner_log()` 已是「pop + return」单一出口 | 两套实现会漂移（前者顺带刷新 LRU，后者不会），D4 刚修的语义存在分叉面 |
+| E | `_slogan_sealed` 写在 `_slogan_lock` 外，而 `slogan_closed_trace()` 读有锁；`slogan_closed_trace()` 里 `keys = (...)` 定义后从未使用 | 半截的并发契约 + 死代码 |
+
+### 修复
+
+**A · `norm_owner()` 全链路归一，且严格幂等。** 所有写入
+（`pick_for_event` / `record_error` / `_record`）与所有查询
+（`dispatch_log` / `release_owner` / `take_owner_log` /
+`reset_dispatch_log`）共用**同一个**归一函数：
+
+- **干净输入零改动**：`sanitize_log_field(raw) == raw` 时原样返回，
+  所以既有 `owner='s-0'` / `tui:%x` 全部不变，测试与调用方零迁移；
+- **脏串归一定长指纹 key**：`owner:<sha1(raw)[:16]>` 仅 22 码点，
+  干净且远小于 64 上限，因此 `norm_owner(norm_owner(x)) ==
+  norm_owner(x)` **严格幂等**。这是 A′ 逼出来的设计：不再把净化后
+  的长文案拼进 key。不同脏串不撞车（64 bit 指纹）。
+- 代价如实写：脏 owner 原串不进日志 —— 这正是净化的目的。
+
+实测：`5033 → 22` 码点、ESC/RLO/OSC8 全清、`norm_owner(n)==n`、
+`dispatch_log(evil)` 与 `dispatch_log(d.owner)` 都命中同一桶、
+`slogan_trace()` 里 owner 干净。
+
+**B · `limit` 严格类型校验。** 新增 `_coerce_log_limit()`：显式拒绝
+bool / 非数值 / 非有限浮点 / 非正值，夹在 `[8, 4096]`，脏值一律
+回落默认 120 而**绝不抛异常**。实测 `None` / `nan` / `inf` / `-1` /
+`True` / `'5'` / `0` / `99999` / `8.0` 全部返回 `'abc'`；
+`limit=20` 时 200 字词串截到 21 码点并以 `…` 收尾；
+`sanitize_verb` 行为完全不变。
+
+**C · 被动淘汰不再静默。** 新增 `EvictionRecord`（owner / dropped /
+last_reason / at_ms，**不含文案、不含 entry_id**）与有界
+`_EVICTED`（`deque(maxlen=64)`）。`_record()` 的 `popitem(last=False)`
+处记一条；`evicted_owner_log()` 返回快照，`dispatch_log_stats()`
+增 `evicted_recent` / `evicted_cap`，`audit().as_dict()` 自动带上。
+
+**刻意不复活决策内容** —— 那会让 128 桶上界形同虚设。现在
+「谁被淘汰 / 丢了几条 / 最后一条 reason」可见，证据丢失至少
+**可观测**；`evicted_recent` 是观测项，**不参与 `audit().ok`**
+（淘汰是正常有界行为，不是故障）。`reset_dispatch_log()` 全清时
+连淘汰痕一起清，保证测试隔离。
+
+**D · 单一释放出口。** `close()` 收敛到
+`mapping.take_owner_log(owner)` 一步，`release_owner()` 保留兼容但
+不再被 close 调用。源码结构断言禁止两套实现回归。
+
+**E · 并发契约补全。** `_slogan_sealed` 的写放进 `_slogan_lock`
+（与读一致）；删掉 `slogan_closed_trace()` 里未使用的 `keys` 变量。
+
+### 验证
+
+```
+tests/test_slogan_mapping.py + test_runtime_slogans.py   256 passed
+tests/verify_slogan_mapping.py                           73 项纯 stdlib 全绿
+verify_deep.py / verify_deep2.py                         22 / 20 项全绿
+```
+
+三处既有**静态源码断言**同步到新实现（`close` 改查
+`take_owner_log`、LRU 改查 `move_to_end(key)`）——不是放宽策略，
+是让断言继续指向真实实现。
+
+### 实测数字（同机同环境）
+
+```
+index_stats   1695×4 / clipped=0 / unrenderable=0 / collisions=0
+              index_misses=0 / unresolved_misses=0
+脏 owner      5033 -> 22 码点, 幂等=True, ESC/RLO/OSC8 全清
+写入/查询     同一归一 key, dispatch_log(evil) 命中
+被动淘汰      EvictionRecord(owner='s-0', dropped=2,
+                            last_reason='ok', at_ms>0)
+stats         owners=128 / decisions=128 /
+              evicted_recent=1 / evicted_cap=64
+limit 脏值    None / nan / inf / -1 / True / '5' 全返回 'abc'
+```
+
+### 如实边界（续 §13）
+
+26. 本轮**不改** 18 个事件、16 个上下文、1108 条词条、`fully_superior`、
+    99 模块基线、任何对齐指标、CLI 子命令数；零新增文件、零删除。
+    `runtime_slogans` 引擎本轮零改动。
+27. **A′ 是本轮修 A 时自己引入、再被实测抓回来的**，不是原有缺陷。
+    记录在此是为了说明「净化层改动必须连带验证查询链路」——
+    key 归一这类改动一旦不幂等，写入与查询会静默分叉。
+28. 脏 owner 归一为 `owner:<fp16>`，**原串不进日志**，可读性下降是
+    明确取舍；干净 owner 零改动。
+29. 淘汰记录只保留**最近 64 次**、且不复活决策内容；更早的被动
+    淘汰仍不可查。`evicted_recent` 是观测项，不参与 `audit().ok`。
+30. `_EVICTED` 与 owner 桶共用 `_dispatch_lock`；并发压测**仍未复现**
+    list 撕裂（同 §11），加锁是消除对 GIL 实现细节的依赖，不是修了
+    已观测故障。
+31. `_slogan_sealed` 写加锁后仍只是实例内快照；LRU 淘汰的其它会话
+    历史仍不保留（128 桶上界不变）。不是真机长跑；TUI 仍未替换
+    任何既有 i18n 文案；分叉改动仍未合并；第三方自适应红队仍未做。

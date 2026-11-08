@@ -9,6 +9,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - owner 全链路归一、被动淘汰留痕、单一释放出口
+
+> 前四轮把对应关系做到了可反查、可回放、有界、fail-closed、可自愈。
+> 本轮**先实测再修**, 又发现五个真实缺陷 (完整复现见
+> `SLOGAN_MAPPING.md` §14), 其中 A′ 是**修 A 时自己引入、再被实测
+> 抓回来的**。继续「不扩广度、只挖深度」: 18 个事件、16 个上下文、
+> 1108 条词条、`fully_superior`、99 模块基线、所有对齐指标与 CLI
+> 子命令数**全部不变**; 零新增文件、零删除。
+
+### 五个实测缺陷
+
+| # | 实测 | 影响 |
+|---|---|---|
+| A | `pick_for_event(owner=注入 5033 码点含 OSC 8 + RLO 的串)` | `SloganDecision.owner` / 桶 key / `slogan_trace()` 全原样带控制字符; D4 净化了 event/kind/context, 漏了 owner |
+| A′ | **修 A 时引入**: 初版 key = 净化后 65 码点 + 8 位指纹 = 74 码点, 超过 64 上限, 二次归一又截断并重算指纹 | `norm_owner` 不幂等; `_record` 存的 key 与查询侧对不上, 实测 `dispatch_log(evil)` 返回 **0** 而 `dispatch_log(d.owner)` 返回 1 |
+| B | `sanitize_log_field(limit=None/nan/inf)` 抛 TypeError/ValueError/OverflowError; `'5'`/`True`/`-1` 被悄悄接受 | public API 因脏配置崩, 与 `load_config` 严格类型口径不一致 |
+| C | 第 129 个会话挤掉含 `turn.completed` 的 `s-0`, 查不到且无任何痕迹 | D4 只覆盖显式 `close()`, LRU **被动淘汰**仍是无声黑洞 |
+| D | `close()` 自己拼 `dispatch_log + release_owner` 两步, `take_owner_log()` 已是单一出口 | 两套实现会漂移 (前者顺带刷新 LRU) |
+| E | `_slogan_sealed` 写在锁外 (读有锁); `slogan_closed_trace()` 有未使用的 `keys` 变量 | 半截并发契约 + 死代码 |
+
+### 修复
+
+- **`norm_owner()` 全链路归一且严格幂等**: 写入 (`pick_for_event` /
+  `record_error` / `_record`) 与查询 (`dispatch_log` / `release_owner` /
+  `take_owner_log` / `reset_dispatch_log`) 共用同一函数。干净输入
+  **零改动** (`s-0` / `tui:%x` 不变); 脏串归一成定长
+  `owner:<sha1(raw)[:16]>` (22 码点, 远小于 64 上限, 因此幂等),
+  不同脏串不撞车。实测 `5033 -> 22` 码点、ESC/RLO/OSC8 全清、
+  写入/查询命中同一桶、`slogan_trace()` 里 owner 干净。
+  代价如实: 脏 owner 原串不进日志。
+- **`limit` 严格类型校验**: 新增 `_coerce_log_limit()`, 拒绝 bool /
+  非数值 / 非有限 / 非正, 夹在 `[8, 4096]`, 脏值回落默认 120
+  **绝不抛异常**。`sanitize_verb` 行为不变。
+- **被动淘汰留痕**: 新增 `EvictionRecord` (owner / dropped /
+  last_reason / at_ms, **不含文案与 entry_id**) 与有界 `_EVICTED`
+  (deque maxlen=64); `evicted_owner_log()` 返回快照,
+  `dispatch_log_stats()` 增 `evicted_recent` / `evicted_cap`,
+  `audit().as_dict()` 自动带上。**刻意不复活决策内容** (否则 128 桶
+  上界失效); `evicted_recent` 是观测项, **不参与 `audit().ok`**。
+  `reset_dispatch_log()` 全清时连淘汰痕一起清。
+- **单一释放出口**: `close()` 收敛到 `mapping.take_owner_log()`;
+  `release_owner()` 保留兼容但不再被 close 调用; 源码结构断言防回归。
+- **并发契约补全**: `_slogan_sealed` 写放进 `_slogan_lock`;
+  删掉 `slogan_closed_trace()` 未使用的 `keys` 变量。
+
+### 验证与实测
+
+```
+256 passed (pytest) + 73 项纯 stdlib 独立验证
+verify_deep.py / verify_deep2.py   22 / 20 项全绿
+index_stats  1695×4 / clipped=0 / unrenderable=0 / collisions=0
+             index_misses=0 / unresolved_misses=0
+脏 owner     5033 -> 22 码点, 幂等=True, ESC/RLO/OSC8 全清
+被动淘汰     EvictionRecord(owner='s-0', dropped=2, last_reason='ok')
+stats        owners=128 / decisions=128 / evicted_recent=1 / evicted_cap=64
+limit 脏值   None/nan/inf/-1/True/'5' 全返回 'abc'
+```
+
+三处既有**静态源码断言**同步到新实现 (`close` 改查
+`take_owner_log`、LRU 改查 `move_to_end(key)`), 不是放宽策略。
+
+### 如实边界
+
+1. **A′ 是本轮修 A 时自己引入、再被实测抓回来的**, 不是原有缺陷 ——
+   key 归一一旦不幂等, 写入与查询会静默分叉。
+2. 脏 owner 归一为 `owner:<fp16>`, 原串不进日志 (可读性下降是明确取舍);
+   干净 owner 零改动。
+3. 淘汰记录只保留最近 64 次、不复活决策内容; 更早淘汰仍不可查;
+   `evicted_recent` 不参与 `audit().ok`。
+4. `_EVICTED` 与 owner 桶共用 `_dispatch_lock`; 并发压测仍未复现
+   list 撕裂 (同 §11), 加锁是消除对 GIL 的依赖。
+5. `_slogan_sealed` 写加锁后仍只是实例内快照; 128 桶上界不变;
+   不是真机长跑; TUI 仍未替换既有 i18n 文案; `runtime_slogans`
+   引擎本轮零改动; 分叉改动仍未合并; 第三方自适应红队仍未做。
+
 ## [Unreleased] - 自愈、证据保全、日志字段净化、单一渲染出口
 
 > 前三轮把对应关系从静态表做到了运行时可反查、可回放、有界、

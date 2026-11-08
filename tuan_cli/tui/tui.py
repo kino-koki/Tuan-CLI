@@ -3914,12 +3914,19 @@ class QxtTUI:
         # 永远看不到会话退出事件**, 而实例 ``slogan_trace()`` 里有 ——
         # 两层口径不一致。现在先把含 session.exit 的整桶快照封存到
         # 实例, 再释放全局桶: 桶数仍有界, 证据仍可结构化查询。
+        # 深度轮 5 改用 ``mapping.take_owner_log()`` 单一出口。
+        # 深度轮 5: 上一轮这里自己拼了「dispatch_log(owner) + release_owner」
+        # 两步, 而 mapping.take_owner_log() 已经是「pop + return」的单一
+        # 出口 —— 两套实现会漂移 (前者顺带刷新 LRU, 后者不会)。收敛到
+        # 一处, 并且把写封存放进 _slogan_lock (slogan_closed_trace 读有锁,
+        # 写却没有, 是半截的并发契约)。
         try:
             from ..ui.slogans import mapping  # noqa: PLC0415
-            self._slogan_sealed = mapping.dispatch_log(self._slogan_owner)
-            mapping.release_owner(self._slogan_owner)
+            sealed = mapping.take_owner_log(self._slogan_owner)
         except Exception:  # noqa: BLE001
-            self._slogan_sealed = ()
+            sealed = ()
+        with self._slogan_lock:
+            self._slogan_sealed = sealed
         if self._app and self._app.is_running:
             self._app.exit()
 
@@ -3929,8 +3936,6 @@ class QxtTUI:
         全局桶随后被释放以守住 ``_MAX_OWNERS`` 上界, 但会话最后一条
         事件不再凭空消失。返回结构与 ``slogan_trace()`` 一致。
         """
-        keys = ("event", "context", "reason", "origin",
-                "entry_id", "owner", "at_ms")
         with self._slogan_lock:
             sealed = tuple(self._slogan_sealed)
         out = []

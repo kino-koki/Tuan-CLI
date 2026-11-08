@@ -1010,4 +1010,51 @@ miss、触发事件组完整；`AuditReport` 新增 `clean_collisions` /
 
 验证：234 例 pytest + 64 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
 
+---
+
+## 20. owner 全链路归一、被动淘汰留痕、单一释放出口
+
+本轮不改任何安全裁决，只补前四轮刚修完的运行时对应关系里的漏洞。
+
+- **owner 不再是可注入通道**：`owner` 是 `pick_for_event` /
+  `record_error` 的 public 入参。实测注入 5033 码点含 `ESC ]8;;`
+  超链接与 `U+202E` RLO 的串，`SloganDecision.owner`、桶 key、
+  `slogan_trace()` 输出**全部原样带控制字符** —— D4 净化了
+  event/kind/context，偏偏漏了这一路。现在写入与查询共用
+  `norm_owner()`：干净输入零改动，脏串归一成定长
+  `owner:<sha1(raw)[:16]>`（22 码点，严格幂等，不同脏串不撞车）。
+  实测 5033 → 22 码点、ESC/RLO/OSC8 全清、`dispatch_log(evil)`
+  与 `dispatch_log(d.owner)` 命中同一桶。
+- **修净化时别把查询链路打断**：初版把 key 拼成 74 码点，
+  二次归一又被 64 上限截断并**重算指纹**，实测
+  `dispatch_log(evil)` 返回 0 而 `dispatch_log(d.owner)` 返回 1
+  —— 写入与查询静默分叉。改为定长指纹 key 后 `norm_owner`
+  严格幂等。这是本轮自己引入又自己抓回来的缺陷，如实记录。
+- **日志字段净化不再因脏配置崩溃**：`sanitize_log_field` 的
+  `limit` 旧实现直接 `int(limit)`，`None` / `nan` / `inf` 分别抛
+  TypeError / ValueError / OverflowError，`'5'` / `True` / `-1`
+  被悄悄接受。新增 `_coerce_log_limit()` 严格校验，脏值回落
+  默认 120 绝不抛异常，与 `load_config` 的类型口径一致。
+- **LRU 被动淘汰不再是无声黑洞**：D4 只给显式 `close()` 封存了
+  快照。实测第 129 个会话挤掉含 `turn.completed` 的整桶，查不到
+  且无任何痕迹。现在 `EvictionRecord`（owner / dropped /
+  last_reason / at_ms，**不含文案与 entry_id**）记入有界
+  `_EVICTED`（64），`evicted_owner_log()` 与
+  `dispatch_log_stats()['evicted_recent']` 可查。
+  **刻意不复活决策内容**（否则 128 桶上界失效）；`evicted_recent`
+  是观测项，**不参与 `audit().ok`**。
+- **单一释放出口 + 并发契约补全**：`close()` 从
+  「`dispatch_log` + `release_owner`」两步收敛到
+  `mapping.take_owner_log()`，消除两套实现的漂移面；
+  `_slogan_sealed` 写放进 `_slogan_lock`（读本来就有锁），
+  删掉 `slogan_closed_trace()` 未使用的 `keys` 变量。
+
+**如实边界**：脏 owner 归一为 `owner:<fp16>`，原串不进日志
+（可读性下降是明确取舍），干净 owner 零改动；淘汰记录只保留
+最近 64 次、更早淘汰仍不可查；`_slogan_sealed` 写加锁后仍只是
+实例内快照；并发压测仍未复现 list 撕裂（同 §17）；不是真机长跑；
+分叉改动仍未合并；第三方自适应红队仍未做。
+
+验证：256 例 pytest + 73 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

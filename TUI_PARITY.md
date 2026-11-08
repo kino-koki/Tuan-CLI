@@ -539,3 +539,21 @@ Apache-2.0 / MIT Codex 归属混用**。
   一律未改。
 
 234 例 pytest + 64 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md` §13。
+
+
+---
+
+## owner 归一与淘汰留痕（不占任何 Codex 对齐指标）
+
+本轮只把前四轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- public 入参 `owner` 全链路归一且严格幂等；`limit` 脏值不再抛
+  异常；LRU 被动淘汰留脱敏痕迹；`close()` 收敛到
+  `take_owner_log()` 单一出口；`_slogan_sealed` 写加锁。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。
+
+256 例 pytest + 73 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §14。
