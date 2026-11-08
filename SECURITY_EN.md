@@ -829,3 +829,50 @@ not a security gate; the TUI only dispatches and records, it does NOT
 replace existing i18n copy; no real-device soak test; no external
 adaptive red team. Verification: 175 pytest cases + 26 pure-stdlib
 independent checks, all green.
+
+
+---
+
+## 14. Runtime Closure: No Silent Errors, Traceable Records, Alerts Still Safe
+
+This round does not change any verdict; it makes last round's
+"every slogan has a counterpart" real at runtime.
+
+- **Errors are no longer silent.** `_slogan_dispatch` used
+  `except Exception: return None`, swallowing the `UnboundSloganEvent`
+  that `pick_for_event` raises on a typo, with zero log entries. Unknown
+  events and library failures now record `error:<kind>` via
+  `_slogan_error()`; `slogan_errors()` exposes them; `strict=True`
+  re-raises (dev/test). Production does not crash the UI but NEVER
+  silently swallows -- silent failure is exactly what security
+  observability must avoid.
+- **Records are traceable and session-scoped.** `_slogan_log` now
+  carries `entry_id`; `slogan_trace()` resolves back to the triggering
+  event group. Logs are bucketed by `owner` under `RLock`, and
+  `reset_dispatch_log(owner)` no longer wipes another session.
+  Snapshots return tuples, not the internal mutable object.
+- **Structured alerts are still never downgraded.** All 6
+  `SECURITY_EVENTS` still return empty + `security-notice`;
+  `audit().unsafe_bindings` stays 0. Empty text now means either
+  "security event" or "error" -- distinguished by
+  `slogan_trace().reason`, not guessed.
+
+Also fixed: `audit()`'s O(n^2) `ids.count(i)` -> `Counter`, with the
+1695-entry sanitizer check cached at index build time; linear
+`entry_id` lookup -> O(1) `_BY_ID`/`_BY_TEXT` indexes. A new 11th
+invariant `index_consistent` is enforced. `SloganEntry.events` fixes
+the ownership ambiguity for shared contexts (`model.streaming`,
+`turn.retry`). `rng`/`now`/`owner` injection makes dispatch
+deterministically replayable (injected rng uses a one-shot local
+avoid-repeat window so hidden global state cannot pollute replay).
+
+**Honest limits**: a 12-thread stress test with
+`setswitchinterval(1e-6)` did NOT reproduce a log-length violation
+(observed peak remained 64); the locks remove reliance on CPython GIL
+implementation details rather than fixing an observed failure. 20
+`audit()` calls still take 355.6 ms of `pool_entries` work; no second
+cache layer was added because that would make audit results depend on
+cache timing. `stall` is still not a security gate; TUI replaces no
+existing i18n copy; no real-device soak test; no external adaptive red
+team. Verification: 194 pytest cases + 42 pure-stdlib checks + 22/20
+prior checks, all green.

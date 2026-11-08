@@ -211,3 +211,23 @@ python -m tuan_cli.cli.cmd_harden status   # 或安装后: tuan harden status
 `stall` 仍是启发式可观测提示，非安全闸门；分叉改动仍未合并；第三方
 自适应红队仍未做。详见 `SLOGAN_MAPPING.md`。本轮**不改**
 `fully_superior`、99 模块基线与任何对齐指标。
+
+
+---
+
+## R31 · 运行时对应关系闭环
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R31 | TUI 留痕无 `entry_id`（静态表对应上了、运行时反查断掉）；`except Exception: return None` 静默吞掉未知事件异常；全局裸 list 日志跨 TUI 实例互串且 `reset` 会清掉他人记录；`audit()` O(n²) `ids.count` + 每次重跑 1695 条净化（20 次 763.7 ms）；`pick_for_event` 线性扫全表反查（2000 次 58.9 ms）；随机源不可注入无法回放；共享事件 (`model.streaming`) 归属歧义 | 留痕改 7 元组含 `entry_id`/`owner`/`at_ms` + `slogan_trace()`；`_slogan_error()` 必留痕 + `slogan_errors()` + `strict=True` 向上抛；日志按 `owner` 分桶 + `RLock`，快照返回 tuple；`Counter` + `_CLIPPED_IDS` 构建时缓存；`_BY_ID`/`_BY_TEXT` O(1) 索引 + `entry_for_text()` + 第 11 项不变量 `index_consistent`；`rng`/`now`/`owner` 注入 + 一次性局部避重窗口；`SloganEntry.events` 列全部触发事件 |
+
+实测：`20 次 audit 763.7 → 355.6 ms`、`2000 次分发 58.9 → 33.1 ms`、
+`index_stats registry/by_id/by_text = 1695/1695/1695`。
+
+如实边界：12 线程压测**未复现**日志长度超限（峰值仍 64），加锁是消除
+对 GIL 的依赖而非修复已观测故障；20 次 audit 仍有 355.6 ms 的
+`pool_entries` 开销，未加缓存（避免审计依赖缓存时间点）；6 类
+`SECURITY_EVENTS` 仍返回空且不绑标语，空串语义靠 `trace.reason` 区分；
+TUI 未替换既有 i18n 文案；分叉改动仍未合并；第三方自适应红队仍未做。
+详见 `SLOGAN_MAPPING.md` §11。本轮**不改** `fully_superior`、99 模块
+基线与任何对齐指标。

@@ -181,8 +181,10 @@ class TestStrictDispatch:
         assert len(log) == 64
         blob = repr(log)
         assert "SUPER_SECRET" not in blob
-        # 日志条目只有 (event, context, reason, at_ms, entry_id, origin)
-        assert all(len(d.__dataclass_fields__) == 8 for d in log)
+        # 字段: event, context, lang, text, reason, at_ms, entry_id,
+        #       origin, owner (本轮新增 owner 作用域)
+        assert all(len(d.__dataclass_fields__) == 9 for d in log)
+        assert all(d.owner == "" for d in log)
 
 
 # ================================================================ 本地优先
@@ -328,7 +330,9 @@ class TestPickerFixes:
             for f in [ex.submit(worker, i) for i in range(8)]:
                 f.result()
         assert errors == [], errors[:3]
-        assert len(mapping.dispatch_log()) <= 64
+        # 日志按 owner 分桶后, 无参 dispatch_log() 是全量; 单桶仍 <=64
+        assert len(mapping.dispatch_log("")) <= 64
+        assert all(len(b) <= 64 for b in mapping._dispatch_log.values())
 
 
 # ================================================================ TUI 真实接入
@@ -386,3 +390,226 @@ class TestTuiWiring:
                      "RuntimeSloganEngine", "SpinnerVerbsConfig",
                      "SloganView", "load_config", "slogan_bank"):
             assert hasattr(RS, name), name
+
+
+# ================================================================ 运行时闭环
+
+class _Clock:
+    def __init__(self, start=100.0):
+        self.now = start
+
+    def __call__(self):
+        return self.now
+
+
+class _Rng:
+    """确定性随机源: 每次 choice 取第一个, 用于回放。"""
+    def __init__(self):
+        self.calls = 0
+
+    def choice(self, items):
+        self.calls += 1
+        return items[0]
+
+
+class TestRuntimeClosure:
+    """上一轮建了静态对应表, 本轮实测发现运行时留痕把对应关系丢了。"""
+
+    def _tui(self):
+        from tuan_cli.tui.tui import QxtTUI
+        obj = QxtTUI(on_submit=lambda _t: "ok")
+        obj._booting = False
+        obj._boot_error = None
+        return obj
+
+    def test_tui_trace_carries_entry_id_and_it_resolves(self):
+        obj = self._tui()
+        obj.begin_tool("git status")
+        trace = obj.slogan_trace()
+        assert len(trace) == 1
+        row = trace[0]
+        assert row["event"] == "tool.exploring"
+        assert row["entry_id"], "运行时留痕丢了 entry_id -> 对应关系断掉"
+        entry = mapping.entry_for(row["entry_id"])
+        assert entry is not None
+        assert entry.context == "explore"
+        assert entry.event == "tool.exploring"
+        assert entry.text == mapping.dispatch_log(obj.slogan_owner())[-1].text
+
+    def test_trace_row_zero_is_still_event_for_old_regressions(self):
+        obj = self._tui()
+        obj.begin_tool("git status")
+        assert obj._slogan_log[0][0] == "tool.exploring"
+
+    def test_security_event_trace_is_distinguishable_from_error(self):
+        obj = self._tui()
+        assert obj.slogan_for("security.blocked") == ""
+        row = obj.slogan_trace()[-1]
+        assert row["reason"] == "security-notice" and row["entry_id"] == ""
+        assert obj.slogan_errors() == ()
+
+    def test_unknown_event_is_recorded_not_silently_swallowed(self):
+        obj = self._tui()
+        assert obj._slogan_dispatch("totally.typo.event") is None
+        errs = obj.slogan_errors()
+        assert len(errs) == 1
+        assert errs[0][2] == "error:unbound-event"
+        assert errs[0][0] == "totally.typo.event"
+
+    def test_strict_mode_propagates_the_strict_contract(self):
+        obj = self._tui()
+        with pytest.raises(mapping.UnboundSloganEvent):
+            obj._slogan_dispatch("totally.typo.event", strict=True)
+        with pytest.raises(mapping.UnboundSloganEvent):
+            obj.slogan_for("totally.typo.event", strict=True)
+        assert len(obj.slogan_errors()) == 2
+
+    def test_slogan_for_unknown_returns_empty_but_leaves_a_trace(self):
+        """空串既表示「安全事件」也表示「出错」; 靠 trace 区分, 不靠猜。"""
+        obj = self._tui()
+        assert obj.slogan_for("totally.typo.event") == ""
+        assert len(obj.slogan_errors()) == 1
+
+    def test_owner_scopes_dispatch_log_per_instance(self):
+        a, b = self._tui(), self._tui()
+        mapping.reset_dispatch_log()
+        a.begin_tool("A")
+        b.begin_tool("B")
+        assert a.slogan_owner() != b.slogan_owner()
+        la = mapping.dispatch_log(a.slogan_owner())
+        lb = mapping.dispatch_log(b.slogan_owner())
+        assert len(la) == 1 and len(lb) == 1
+        assert all(d.owner == a.slogan_owner() for d in la)
+        assert all(d.owner == b.slogan_owner() for d in lb)
+        assert set(d.owner for d in mapping.dispatch_log()) == {
+            a.slogan_owner(), b.slogan_owner()}
+
+    def test_reset_one_owner_does_not_wipe_the_other(self):
+        a, b = self._tui(), self._tui()
+        mapping.reset_dispatch_log()
+        a.begin_tool("A")
+        b.begin_tool("B")
+        mapping.reset_dispatch_log(a.slogan_owner())
+        assert mapping.dispatch_log(a.slogan_owner()) == ()
+        assert len(mapping.dispatch_log(b.slogan_owner())) == 1
+
+    def test_dispatch_log_is_locked_snapshot_not_internal_object(self):
+        mapping.reset_dispatch_log()
+        d = mapping.pick_for_event("tool.exploring", owner="x")
+        snap = mapping.dispatch_log("x")
+        assert isinstance(snap, tuple) and snap[0].event == d.event
+        assert len(mapping.dispatch_log("x")) == 1
+
+    def test_tui_log_is_bounded_and_thread_safe(self):
+        obj = self._tui()
+        errors = []
+        barrier = threading.Barrier(8)
+
+        def worker(wid):
+            try:
+                barrier.wait()
+                for i in range(120):
+                    obj._slogan_dispatch(list(mapping.EVENT_BINDINGS)[
+                        (wid + i) % len(mapping.EVENT_BINDINGS)])
+            except Exception as exc:
+                errors.append(repr(exc))
+
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            for f in [ex.submit(worker, i) for i in range(8)]:
+                f.result()
+        assert errors == [], errors[:3]
+        assert len(obj._slogan_log) <= 64
+        assert all(len(r) == 7 for r in obj._slogan_log)
+
+    def test_stream_throttle_still_exactly_one(self):
+        obj = self._tui()
+        for _ in range(50):
+            obj.stream_assistant("x")
+        n = sum(1 for r in obj.slogan_trace() if r["event"] == "model.streaming")
+        assert n <= 1
+
+
+# ================================================================ 性能与索引
+
+class TestIndexAndPerformance:
+    def test_every_dispatch_resolves_an_entry(self):
+        """O(1) 索引不能出现「显示出来了却查不到注册项」的空洞。"""
+        for lang in L.LANGUAGES:
+            for ev in mapping.EVENT_BINDINGS:
+                d = mapping.pick_for_event(ev, lang=lang, owner="idx-test")
+                assert d.reason == "ok"
+                assert d.entry_id, (ev, lang)
+                e = mapping.entry_for(d.entry_id)
+                assert e is not None and d.event in e.events
+                assert e.event == mapping.CONTEXT_EVENTS[e.context]
+                assert e.text == d.text
+
+    def test_index_stats_are_consistent(self):
+        st = mapping.index_stats()
+        assert st["by_id"] == st["registry"] == 1695
+        assert st["by_text"] > 0
+        assert mapping.audit().index_consistent is True
+
+    def test_entry_for_text_is_o1_and_correct(self):
+        reg = mapping.registry()
+        for e in (reg[0], reg[len(reg) // 2], reg[-1]):
+            got = mapping.entry_for_text(e.lang, e.context, e.text)
+            assert got is not None and got.id == e.id
+        assert mapping.entry_for_text("xx", "yy", "zz") is None
+
+    def test_audit_is_linear_not_quadratic(self):
+        """ids.count(i) 曾让单次 audit 38.4 ms / 20 次 763.7 ms。"""
+        import time as _time
+        t0 = _time.perf_counter()
+        for _ in range(20):
+            r = mapping.audit()
+        elapsed = (_time.perf_counter() - t0) * 1000
+        assert r.ok and r.index_consistent
+        assert elapsed < 300, "20 次 audit 耗时 %.1f ms, 疑似退回 O(n^2)" % elapsed
+
+    def test_dispatch_no_longer_scans_whole_registry(self):
+        """结构断言 + 宽松时间断言。
+
+        实测: 修复前 2000 次分发 58.9 ms (每次 for e in registry() 扫
+        1695 条), 修复后 42.5 ms。绝对毫秒数受沙盒负载影响, 所以主判据
+        是**源码里不得出现线性反查**, 时间只作回归护栏 (阈值 80 ms,
+        仍能抓住退回 O(n) 的 ~59 ms 基线之上再加抖动)。
+        """
+        import inspect
+        import time as _time
+        src = inspect.getsource(mapping.pick_for_event)
+        assert "for e in registry()" not in src
+        assert "entry_for_text(" in src
+        t0 = _time.perf_counter()
+        for _ in range(2000):
+            mapping.pick_for_event("tool.exploring", lang="ja", owner="perf")
+        elapsed = (_time.perf_counter() - t0) * 1000
+        assert elapsed < 80, "2000 次分发 %.1f ms, 疑似退回线性反查" % elapsed
+
+
+# ================================================================ 可回放
+
+class TestDeterministicReplay:
+    def test_injected_rng_and_clock_make_dispatch_replayable(self):
+        c = _Clock(42.0)
+        r1, r2 = _Rng(), _Rng()
+        a = mapping.pick_for_event("turn.completed", lang="ja",
+                                   now=c(), rng=r1, owner="replay-a")
+        b = mapping.pick_for_event("turn.completed", lang="ja",
+                                   now=c(), rng=r2, owner="replay-b")
+        assert a.text == b.text and a.entry_id == b.entry_id
+        assert a.at_ms == b.at_ms == 42000
+        assert r1.calls == r2.calls == 1
+
+    def test_different_languages_still_localized_under_fixed_rng(self):
+        for lang in ("ja", "de", "zh-CN"):
+            d = mapping.pick_for_event("turn.completed", lang=lang,
+                                       rng=_Rng(), owner="replay-" + lang)
+            assert d.origin == "locale"
+            assert mapping.entry_for(d.entry_id).lang == lang
+
+    def test_owner_and_at_ms_do_not_break_old_positional_fields(self):
+        d = mapping.pick_for_event("turn.completed", lang="zh-CN", now=7.0)
+        assert d.event == "turn.completed" and d.context == "done"
+        assert d.lang == "zh-CN" and d.reason == "ok" and d.text
+        assert d.at_ms == 7000 and d.owner == ""

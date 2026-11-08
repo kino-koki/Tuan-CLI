@@ -751,6 +751,13 @@ class QxtTUI:
         # 标语库事件分发日志 (有界、脱敏)。每个真实生命周期事件都会
         # 触发一次 pick_for_event, 让 "每个标语都要对应的" 是活的对应关系,
         # 而不是一张静态表。安全事件在这里一律返回空, 告警不降级。
+        #
+        # 本轮: 上一轮这里只记 (event, context, reason, origin), **丢了
+        # entry_id** —— 表上对应上了, 运行时留痕却无法反查「刚才显示了
+        # 哪条标语」。同时日志是裸 list (模型/工具/UI 多线程) 且所有 TUI
+        # 实例共享一个全局日志桶。现在补 entry_id、按实例分域、加锁。
+        self._slogan_lock = threading.RLock()
+        self._slogan_owner = "tui:%x" % id(self)
         self._slogan_log = []
         self._slogan_last_stream_at = 0.0
 
@@ -3109,9 +3116,12 @@ class QxtTUI:
         # 流式分片高频到达; 1s 节流只是为了不刷屏分发日志,
         # 活性引擎的 note_activity 仍按每个真实分片记账 (不节流)。
         now = time.monotonic()
-        if now - self._slogan_last_stream_at >= 1.0:
+        with self._slogan_lock:
+            due = now - self._slogan_last_stream_at >= 1.0
+            if due:
+                self._slogan_last_stream_at = now
+        if due:
             self._slogan_dispatch("model.streaming")
-            self._slogan_last_stream_at = now
         self._streaming = True
         self._streamed = True
         # 每个分片都是一次真实进展：刷新「最后事件时间」，换词仍由引擎按
@@ -3783,36 +3793,93 @@ class QxtTUI:
         finally:
             self._closed = True
 
-    def _slogan_dispatch(self, event: str):
-        """把真实生命周期事件分发到标语库, 记录脱敏决策。
+    def _slogan_row(self, d) -> tuple:
+        """留痕行: **必须带 entry_id**, 否则对应关系在运行时断掉。
+
+        ``row[0]`` 保持 event, 既有生命周期回归无需改动。
+        """
+        return (d.event, d.context, d.reason, d.origin,
+                d.entry_id, d.owner, d.at_ms)
+
+    def _slogan_record(self, row: tuple) -> None:
+        with self._slogan_lock:
+            self._slogan_log.append(row)
+            if len(self._slogan_log) > 64:
+                del self._slogan_log[:-64]
+
+    def _slogan_error(self, event: str, kind: str) -> None:
+        """把「标语库出错/事件拼错」也留痕, 绝不静默。
+
+        上一轮 ``except Exception: return None`` 把严格分发契约吃掉了:
+        拼错事件时 ``pick_for_event`` 明明抛 ``UnboundSloganEvent``,
+        TUI 却什么都不记、返回 None。现在错误进同一份日志,
+        ``slogan_errors()`` 可直接查。
+        """
+        self._slogan_record((event, None, "error:" + kind, "", "",
+                             self._slogan_owner, int(time.monotonic() * 1000)))
+
+    def _slogan_dispatch(self, event: str, *, strict: bool = False):
+        """把真实生命周期事件分发到标语库, 记录**可反查**的决策。
 
         刻意**不替换**任何既有 i18n 文案: 前几轮刚修好的状态口径与
         139 例回归不该为了显示一句俏皮话被掀掉。这里建立的是可验证的
-        「事件 -> 标语」对应关系与留痕; 需要渲染时由调用方显式用
-        ``slogan_for(event)``。
+        「事件 -> 标语 -> entry_id」对应关系与留痕; 需要渲染时由调用方
+        显式用 ``slogan_for(event)``。
+
+        :param strict: 开发/测试模式。``True`` 时未知事件异常**向上抛**,
+            把 ``mapping`` 的严格契约完整暴露; 生产默认 ``False`` ——
+            生命周期回调不该掀掉整个 UI, 但仍会记 ``error:`` 留痕,
+            绝不静默吞掉。
         """
         try:
             from ..ui.slogans import mapping  # noqa: PLC0415
-            d = mapping.pick_for_event(event)
-        except Exception:  # noqa: BLE001 - 标语库不可用绝不能掀掉 TUI
+            d = mapping.pick_for_event(event, owner=self._slogan_owner)
+        except mapping.UnboundSloganEvent:
+            self._slogan_error(event, "unbound-event")
+            if strict:
+                raise
             return None
-        # 只记事件/上下文/原因/来源/序号, 不记文案原文以外的任何上下文
-        self._slogan_log.append((d.event, d.context, d.reason, d.origin))
-        if len(self._slogan_log) > 64:
-            del self._slogan_log[:-64]
+        except Exception as exc:  # noqa: BLE001 - 标语库故障不掀 UI, 但必须留痕
+            self._slogan_error(event, type(exc).__name__)
+            if strict:
+                raise
+            return None
+        self._slogan_record(self._slogan_row(d))
         return d
 
-    def slogan_for(self, event: str) -> str:
+    def slogan_for(self, event: str, *, strict: bool = False) -> str:
         """显式取一条事件标语供 UI 渲染 (空串表示该事件不应显示标语)。
 
         安全事件 (``mapping.SECURITY_EVENTS``) 永远返回空 —— 结构化告警
-        不得被俏皮话替换或稀释。
+        不得被俏皮话替换或稀释。未知事件也返回空, 但**会记 error 留痕**
+        (上一轮是静默返回, 与「安全事件返回空」在语义上混淆了);
+        用 ``slogan_errors()`` / ``slogan_trace()`` 可区分两者。
         """
-        try:
-            from ..ui.slogans import mapping  # noqa: PLC0415
-            return mapping.pick_for_event(event).text
-        except Exception:  # noqa: BLE001
-            return ""
+        d = self._slogan_dispatch(event, strict=strict)
+        return d.text if d is not None else ""
+
+    def slogan_trace(self) -> tuple:
+        """结构化留痕快照 (加锁, 不返回内部可变对象)。
+
+        每条含 ``entry_id``, 可直接用 ``mapping.entry_for(id)`` 反查到
+        「这条标语由哪个事件触发」。这是上一轮「每个标语都要对应的」
+        在**运行时**真正闭环的地方。
+        """
+        with self._slogan_lock:
+            rows = tuple(self._slogan_log)
+        keys = ("event", "context", "reason", "origin",
+                "entry_id", "owner", "at_ms")
+        return tuple(dict(zip(keys, r)) for r in rows)
+
+    def slogan_errors(self) -> tuple:
+        """所有分发错误 (未知事件 / 标语库异常)。运维可直接查, 不靠翻日志。"""
+        with self._slogan_lock:
+            rows = tuple(self._slogan_log)
+        return tuple(r for r in rows if str(r[2]).startswith("error:"))
+
+    def slogan_owner(self) -> str:
+        """本实例的日志作用域, 可传给 ``mapping.dispatch_log(owner=...)``。"""
+        return self._slogan_owner
 
     def liveness(self):
         """运行时活性快照（调试/doctor 用）。不新增 CLI 子命令、不改裁决。"""

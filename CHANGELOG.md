@@ -9,6 +9,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - 运行时闭环：对应关系不再只停在静态表里
+
+> 上一轮把 860 条标语接成了 18 事件 ↔ 16 上下文的静态对应表,
+> `audit().ok=True`。本轮实测发现**关系在运行时其实是断的**:
+> 详见 `SLOGAN_MAPPING.md` §11。继续「不扩广度、只挖深度」:
+> 18 个事件、16 个上下文、1108 条词条、`fully_superior`、
+> 99 模块基线、所有对齐指标**全部不变**。
+
+### 六个实测缺陷
+
+1. `QxtTUI._slogan_log` 只记 4 元组、**无 `entry_id`** → 留痕无法
+   反查「刚才显示了哪条标语」。现记 7 元组 (含 `entry_id`/`owner`/
+   `at_ms`), 新增 `slogan_trace()` 结构化快照, `row[0]` 仍是 event
+   以保持既有回归零改动。
+2. `_slogan_dispatch` 的 `except Exception: return None` 把上一轮刚
+   建立的严格契约吃掉了: 拼错事件时 `pick_for_event` 抛
+   `UnboundSloganEvent`, TUI 却什么都不记。现在错误走
+   `_slogan_error()` 记 `error:<kind>` 留痕, `slogan_errors()` 可查;
+   `strict=True` 时异常向上抛, 生产默认不掀 UI 但**绝不静默**。
+3. `mapping._dispatch_log` 是全局裸 list 单例 → 实测两个 TUI 实例
+   日志互串, `reset_dispatch_log()` 会清掉别人的记录。改为按
+   `owner` 分桶 (`"tui:<id>"`), `dispatch_log(owner)` /
+   `reset_dispatch_log(owner)` 支持会话级查询与清理。
+4. `audit()` 的 `ids.count(i)` 是 O(n²)=287 万次比较, 且每次对
+   1695 条重跑 `sanitize_verb` → 单次 38.4 ms / 20 次 763.7 ms。
+   改 `Counter` + 净化检查挪到索引构建时缓存 (`_CLIPPED_IDS`)。
+5. `pick_for_event` 每次 `for e in registry()` 线性扫 1695 条反查
+   `entry_id` → 2000 次分发 58.9 ms。新增 `_BY_ID` / `_BY_TEXT`
+   O(1) 索引与 `entry_for_text()`, 源码不再出现线性遍历。
+6. 分发链路随机源不可注入 → 无法回放「刚才显示了哪条」。新增
+   `rng` / `now` / `owner` 参数; 注入 rng 时用一次性局部避重窗口
+   (实测共享全局窗口会让第二次分发 `choice` 调用 1 → 13, 回放失效)。
+
+### 顺手修的归属歧义
+
+`SloganEntry.event` 原本只记主事件, 而 `model.streaming` 与
+`turn.retry` 是**显式共享**上下文的: 由 `model.streaming` 触发的标语
+反查出来却显示 `model.waiting`。新增 `SloganEntry.events` 列出全部
+触发事件, `event` 仍是唯一主事件 (向后兼容);
+`audit().index_consistent` (第 11 项不变量) 断言 `e.event in e.events`。
+
+### 实测数字（同机同环境）
+
+```
+20 次 audit()      763.7 ms -> 355.6 ms
+2000 次分发         58.9 ms ->  33.1 ms
+index_stats        registry/by_id/by_text = 1695 / 1695 / 1695
+```
+
+20 次 audit 没降到个位数毫秒, 剩余开销是 10 语种 × 16 上下文的
+`pool_entries()` 组装, **如实留着**, 不伪称根治; 也不加缓存 ——
+那样会让审计结果依赖词池缓存时间点。
+
+### 并发边界（不粉饰）
+
+用 `setswitchinterval(1e-6)` + 12 线程压测, **未复现出日志长度超限**
+(观测峰值仍是 64), CPython 的 GIL 让 list 操作碰巧没撕裂。日志、
+注册表、TUI 留痕各加 `RLock` 是**消除对 GIL 实现细节的依赖**、
+并让「快照不返回内部可变对象」成为契约, 不是修了已观测的故障。
+
+### 验证与边界
+
+```
+tests/test_slogan_mapping.py + test_runtime_slogans.py   194 passed
+tests/verify_slogan_mapping.py                           42 项纯 stdlib 全绿
+verify_deep.py / verify_deep2.py                         22 / 20 项全绿
+```
+
+- TUI 仍只建立分发与留痕, **未替换任何既有 i18n 文案**。
+- `strict=True` 是开发/测试开关, 生产默认关闭; 生产不崩但错误必留痕。
+- 空串既表示「安全事件」也表示「出错」, 现在靠 `slogan_trace().reason`
+  区分, 不靠猜; 6 类 `SECURITY_EVENTS` 仍返回空且不绑标语。
+- 不是真机长跑; 本地副本与远端主线分叉仍在;
+  `local_fork_unmerged/` 改动仍未合并; 第三方自适应红队仍未做。
+- 本轮无新增第三方素材, 无新增 CLI 子命令, 无新增标语词条。
+
 ## [Unreleased] - 每个标语都要对应的：860 条标语从零接入到一一对应
 
 > 用户给了 15 个标语库文件并要求「每个标语都要对应的」。实测发现原库

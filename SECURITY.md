@@ -889,4 +889,41 @@ mcp:
 分发与留痕, 未替换既有 i18n 文案; 不是真机长跑; 第三方自适应红队仍未做。
 验证: 175 例 pytest + 26 项纯 stdlib 独立验证全绿。
 
+---
+
+## 17. 运行时闭环：错误不静默、留痕可反查、安全告警仍不降级
+
+本轮不改安全裁决，只把上一轮「每个标语都要对应的」在运行时做实。
+三点与安全直接相关：
+
+- **错误不再静默**：`_slogan_dispatch` 原本 `except Exception: return None`，
+  拼错事件时 `pick_for_event` 抛的 `UnboundSloganEvent` 被吃掉、日志零记录。
+  现在未知事件与库异常都走 `_slogan_error()` 记 `error:<kind>` 留痕，
+  `slogan_errors()` 可直接查；`strict=True` 时异常向上抛（开发/测试）。
+  生产默认不掀 UI，但**绝不静默吞掉** —— 静默失败是安全观察里最该避免的。
+- **留痕可反查且按会话隔离**：`_slogan_log` 现在带 `entry_id`，
+  `slogan_trace()` 可反查到「这条标语由哪个事件组触发」；日志按
+  `owner` 分桶并加 `RLock`，`reset_dispatch_log(owner)` 不再清掉
+  另一会话的记录。快照返回 `tuple` 而非内部可变对象。
+- **安全告警仍不降级**：6 类 `SECURITY_EVENTS` 依旧返回空 +
+  `security-notice`，`audit().unsafe_bindings` 仍为 0。
+  空串既表示「安全事件」也表示「出错」，现在靠 `slogan_trace().reason`
+  区分（`security-notice` vs `error:*`），不靠猜。
+
+另修两处性能/正确性热路径：`audit()` 的 O(n²) `ids.count(i)` →
+`Counter`，且 1695 条词条的净化检查挪到索引构建时缓存；
+`pick_for_event` 的线性反查 → `_BY_ID`/`_BY_TEXT` O(1) 索引。
+新增第 11 项不变量 `index_consistent`。`SloganEntry.events` 解决
+`model.streaming` / `turn.retry` 共享上下文时的归属歧义。
+`rng`/`now`/`owner` 注入使分发可确定性回放（注入 rng 时用一次性
+局部避重窗口，避免全局隐藏状态污染回放）。
+
+**如实边界**：`setswitchinterval(1e-6)` + 12 线程压测**未复现**日志长度
+超限，加锁是消除对 GIL 实现细节的依赖，不是修了已观测故障；
+20 次 `audit()` 仍有 355.6 ms 的 `pool_entries` 开销，未加第二层缓存
+（避免审计结果依赖缓存时间点）；`stall` 仍不是安全闸门；TUI 未替换
+既有 i18n 文案；不是真机长跑；第三方自适应红队仍未做。
+
+验证：194 例 pytest + 42 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*

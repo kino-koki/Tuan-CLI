@@ -488,3 +488,20 @@ Apache-2.0 / MIT Codex 归属混用**。
   Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约一律未改。
 
 175 例 pytest + 26 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md`。
+
+
+---
+
+## 运行时留痕闭环（不占任何 Codex 对齐指标）
+
+本轮只把「事件 → 标语」的对应关系在运行时做实,
+**`pending` / `fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**:
+
+- TUI 留痕补 `entry_id`/`owner`/`at_ms`, `slogan_trace()` 可反查;
+- 未知事件由静默吞掉改为必留痕 (`strict=True` 才向上抛);
+- 日志按实例分域 + `RLock`, O(1) 索引, `Counter` 审计, rng/clock 回放;
+- **未新增任何生命周期事件**, `begin_tool`/`stream_assistant`/
+  完成/`close` 四个点不变; **未替换任何既有 i18n 文案**;
+  Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约一律未改。
+
+194 例 pytest + 42 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md` §11。

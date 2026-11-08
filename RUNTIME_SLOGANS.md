@@ -467,3 +467,27 @@ runtime_slogans._fit_headline is _clean._fit_headline   → True
 
 验证: `tests/test_slogan_mapping.py` 36 例 + 本文件 139 例 =
 175 passed; `verify_mapping.py` 26 项纯 stdlib 独立验证全绿。
+
+
+---
+
+## 13. 对应关系在运行时闭环（本引擎零改动）
+
+上一轮把 860 条标语接成 18 事件 ↔ 16 上下文的静态表; 本轮实测发现
+TUI 留痕**没有 `entry_id`**、错误被 `except Exception` 静默吞掉、
+全局日志跨实例互串、审计与分发各有一处 O(n²)/O(n) 热路径。
+完整复现与修复见 `SLOGAN_MAPPING.md` §11。
+
+**本引擎本轮零改动**: 事件驱动、三态活性、D1 并发不变量、
+净化层 re-export (`sanitize_verb is _clean.sanitize_verb`)、
+139 例回归全部照常通过。改动集中在 `ui/slogans/mapping.py`、
+`ui/slogans/picker.py` 与 `tui/tui.py` 的标语分发接线。
+
+具体: 留痕补 `entry_id` 并可按 `mapping.entry_for()` 反查;
+`_slogan_error()` 让未知事件必留痕, `strict=True` 才向上抛;
+日志按 `owner` 分桶 + `RLock`; `_BY_ID`/`_BY_TEXT` O(1) 索引;
+`Counter` + 构建时缓存的净化审计; `rng`/`now` 注入使分发可回放。
+`PHASE_EVENTS` 与共享事件组 (`SloganEntry.events`) 的归属歧义也补齐。
+
+验证: 194 passed + 42 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+`stall` 仍是启发式可观测提示, 不是安全闸门; 本轮未改任何裁决。

@@ -27,6 +27,9 @@
   spinner 永远不换词)。
 - **补池**: 合并 ``extra_locales`` (8 语种 × 6 场景) 与
   ``locales.patches`` (空组), 让每个 (语种, 上下文) 都有本语种词条。
+- **可回放**: ``_choose`` 支持 ``rng`` 注入; 注入时用一次性局部避重
+  窗口, 避免全局隐藏状态让「相同输入」得到不同结果 (实测第二次分发
+  的 ``choice`` 调用从 1 变成 13)。生产路径 ``rng=None`` 完全不变。
 
 用法::
 
@@ -238,30 +241,49 @@ def _window_locked(key: Tuple[str, str], size: int) -> Deque[str]:
     return win
 
 
-def _choose(items: Tuple[str, ...], key: Tuple[str, str]) -> str:
-    """随机取一条并尽量避开滑动窗口; 池太小时允许重复 (不阻塞)。"""
+def _choose(items: Tuple[str, ...], key: Tuple[str, str], rng=None) -> str:
+    """随机取一条并尽量避开滑动窗口; 池太小时允许重复 (不阻塞)。
+
+    :param rng: 可注入随机源 (需有 ``choice`` 方法)。上一轮给
+        ``SloganPicker`` 加了 ``clock`` 注入, 但分发链路的随机源仍是
+        模块级 ``random`` —— 于是「刚才显示了哪条标语」无法确定性回放。
+        本轮把 rng 贯通到 ``mapping.pick_for_event``。
+    """
     if not items:
         return ""
+    pick_one = rng.choice if rng is not None else random.choice
+    if rng is not None:
+        # 确定性回放要求「相同输入 -> 相同输出」。全局避重窗口是隐藏状态:
+        # 实测两个独立 rng 依次分发时, 第二个因窗口里已有 items[0]
+        # 被拒 12 次, choice 调用 1 -> 13, 回放失效。注入 rng 时用
+        # 一次性局部窗口, 生产路径 (rng=None) 完全不变。
+        win: Deque[str] = deque(maxlen=max(4, min(20, len(items) // 2)))
+        return _choose_with(items, win, pick_one)
     with _windows_lock:
         win = _window_locked(key, max(4, min(20, len(items) // 2)))
-        # 小池短路: 池 <= 窗口容量时不可能避开全部, 别白抽 12 次
-        if len(items) <= 2:
-            s = random.choice(items)
-            win.append(s)
-            return s
-        for _ in range(12):
-            s = random.choice(items)
-            if s not in win:
-                win.append(s)
-                return s
-        s = random.choice(items)
+        return _choose_with(items, win, pick_one)
+
+
+def _choose_with(items: Tuple[str, ...], win: Deque[str], pick_one) -> str:
+    """避重抽取的公共体, 使全局窗口与回放局部窗口共用同一语义。"""
+    # 小池短路: 池 <= 窗口容量时不可能避开全部, 别白抽 12 次
+    if len(items) <= 2:
+        s = pick_one(items)
         win.append(s)
         return s
+    for _ in range(12):
+        s = pick_one(items)
+        if s not in win:
+            win.append(s)
+            return s
+    s = pick_one(items)
+    win.append(s)
+    return s
 
 
 # ------------------------------------------------------------------ 对外 API
 
-def pick_strict(ctx: str, lang: Optional[str] = None) -> str:
+def pick_strict(ctx: str, lang: Optional[str] = None, rng=None) -> str:
     """严格取词: 未知上下文抛异常, **绝不静默回落 idle**。
 
     生产接线请走 ``mapping.pick_for_event(event)``; 它还会校验事件绑定、
@@ -275,10 +297,10 @@ def pick_strict(ctx: str, lang: Optional[str] = None) -> str:
     items = pool(ctx, resolved)
     if not items:
         return _FALLBACK.get(ctx) or _FALLBACK["idle"]
-    return _choose(items, (resolved, ctx))
+    return _choose(items, (resolved, ctx), rng)
 
 
-def pick(ctx: str, lang: Optional[str] = None) -> str:
+def pick(ctx: str, lang: Optional[str] = None, rng=None) -> str:
     """按上下文取一条标语 (兼容旧调用)。
 
     .. warning::
@@ -294,7 +316,8 @@ def pick(ctx: str, lang: Optional[str] = None) -> str:
     return _choose(items, (resolved, ctx))
 
 
-def pick_local_first(ctx: str, lang: Optional[str] = None) -> Tuple[str, str]:
+def pick_local_first(ctx: str, lang: Optional[str] = None,
+                     rng=None) -> Tuple[str, str]:
     """事件分发专用: **优先本语种词条**, 英文通用池只作最后兜底。
 
     ``audit()`` 已保证每个 (语种, 上下文) 至少有一条本语种词条, 但普通
@@ -311,13 +334,14 @@ def pick_local_first(ctx: str, lang: Optional[str] = None) -> Tuple[str, str]:
     if not entries:
         return _FALLBACK.get(ctx) or _FALLBACK["idle"], "fallback-hardcoded"
     if resolved == "en":
-        return _choose(tuple(e.text for e in entries), (resolved, ctx + ":local")), "locale"
+        return _choose(tuple(e.text for e in entries),
+                       (resolved, ctx + ":local"), rng), "locale"
     local = tuple(e.text for e in entries if e.is_local)
     if not local:
         return _choose(tuple(e.text for e in entries),
-                       (resolved, ctx)), "universal-fallback"
+                       (resolved, ctx), rng), "universal-fallback"
     # 独立窗口 key, 不与兼容路径 pick() 的避重历史串味
-    return _choose(local, (resolved, ctx + ":local")), "locale"
+    return _choose(local, (resolved, ctx + ":local"), rng), "locale"
 
 
 def for_state(state: str, lang: Optional[str] = None) -> str:

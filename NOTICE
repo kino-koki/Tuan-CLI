@@ -700,6 +700,16 @@ THIRD-PARTY ATTRIBUTIONS
               `slogans/` package was converted to thin re-export shims
               (no files deleted) so the word bank exists only once.
 
+    Runtime trace-closure pass (same 18-event / 16-context /
+              1108-entry text bank, NO new third-party material):
+              dispatch records now carry entry_id and an owner scope;
+              unknown events are logged instead of silently swallowed;
+              O(1) indexes, cached sanitizer audit and injectable
+              rng/clock make dispatch auditable and replayable. No new
+              slogans, events, CLI subcommands, license scope, upstream
+              source or trademark asset was introduced. The Claude Code /
+              Codex attributions in sections 9-15 are unchanged.
+
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
 

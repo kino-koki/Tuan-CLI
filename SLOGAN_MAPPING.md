@@ -265,3 +265,103 @@ py_compile                     全部通过
 9. 第三方自适应红队仍未做；静态基准与自造 fuzz 不能当对抗证明。
 10. Claude Code / OpenAI Codex 相关归属仍按 `NOTICE` 第 9–15 条；
     本轮 240 条补池与短诊断文案为原创，**无新增第三方素材**。
+
+
+---
+
+## 11. 运行时闭环：表对应上了，留痕却把对应关系丢了
+
+上一轮建好了静态对应表 (`audit().ok = True`)，本轮**先实测再修**，
+发现对应关系在**运行时**其实没闭合 —— 六个真实缺陷：
+
+| # | 实测复现 | 影响 |
+|---|---|---|
+| 1 | `QxtTUI._slogan_log` 只记 `(event, context, reason, origin)`，**没有 `entry_id`** | 运维看到「刚才分发了 tool.exploring」，却无法反查「显示了哪条标语」。表是静态的，留痕是断的 |
+| 2 | `_slogan_dispatch` 用 `except Exception: return None` | 拼错事件时 `pick_for_event` 明明抛 `UnboundSloganEvent`，TUI 却什么都不记、静默返回 `None` —— 上一轮刚建立的严格契约在接线处被吃掉 |
+| 3 | `mapping._dispatch_log` 是**全局裸 list 单例** | 实测两个 TUI 实例的日志混在一起；`reset_dispatch_log()` 会清掉另一个会话的记录 |
+| 4 | `audit()` 用 `ids.count(i)` 判重复，O(n²) = 287 万次比较；且每次对 1695 条重跑 `sanitize_verb` | 单次 38.4 ms / 20 次 763.7 ms |
+| 5 | `pick_for_event` 每次 `for e in registry()` 线性扫 1695 条反查 `entry_id` | 2000 次分发 58.9 ms |
+| 6 | 随机源不可注入 | 上一轮给 `SloganPicker` 加了 `clock`，但分发链路仍用模块级 `random`；「刚才显示了哪条」无法确定性回放 |
+
+另外挖出一处**归属歧义**：`SloganEntry.event` 只记主事件
+(`CONTEXT_EVENTS["thinking"] = "model.waiting"`)，而 `model.streaming`
+也映射到 `thinking`。运行时由 `model.streaming` 触发的标语，反查出来
+却显示 `model.waiting` —— 共享映射在「每个标语都要对应的」上留了个洞。
+
+### 修复
+
+**留痕闭环**：`_slogan_row()` 现在记 7 元组，含 `entry_id` / `owner` /
+`at_ms`；`slogan_trace()` 返回结构化字典，可直接
+`mapping.entry_for(row["entry_id"])` 反查到触发事件组。
+`row[0]` 仍是 event，既有生命周期回归零改动。
+
+**错误不再静默**：`_slogan_dispatch` 单独捕获 `UnboundSloganEvent`
+与其它异常，两者都走 `_slogan_error()` 记 `error:<kind>` 留痕，
+`slogan_errors()` 可直接查。`strict=True` 时异常**向上抛**，
+把严格契约完整暴露给开发/测试；生产默认 `False`（生命周期回调不该
+掀掉整个 UI），但**绝不静默吞掉**。
+`slogan_for()` 未知事件仍返回空串，但空串既表示「安全事件」也表示
+「出错」—— 现在靠 `slogan_trace()` 的 `reason` 区分，不靠猜。
+
+**按 owner 分域**：`SloganDecision.owner` + `_dispatch_log: Dict[owner, list]`，
+每个 TUI 实例一个 `"tui:<id>"` 作用域；`dispatch_log(owner)` /
+`reset_dispatch_log(owner)` 可只查/只清指定会话。无参调用仍返回全量
+（兼容旧调用）。日志、注册表、TUI 留痕各加 `RLock`。
+
+> **如实标注并发边界**：用 `setswitchinterval(1e-6)` + 12 线程压测，
+> **没有复现出日志长度超限**（观测峰值仍是 64）—— CPython 的 GIL 让
+> list 操作碰巧没撕裂。加锁不是「修了已观测的故障」，是**消除对 GIL
+> 实现细节的依赖**、并让「快照不返回内部可变对象」成为契约。
+> 这一点不包装成战果。
+
+**O(1) 索引**：`_BY_ID` / `_BY_TEXT` 在 `_ensure_index_locked()` 里
+一次性构建（加锁幂等），`entry_for` / `entry_for_text` 都是 O(1)。
+`pick_for_event` 改走 `entry_for_text(lang, context, text)`，源码里
+不再出现线性遍历。`index_stats()` 可核验索引规模。
+
+**审计降复杂度**：`ids.count(i)` → `Counter`（O(n²) → O(n)）；
+1695 条词条的净化检查挪到索引构建时算一次并缓存进 `_CLIPPED_IDS`，
+`audit()` 只读结果。词条是静态常量，语义不变。新增第 11 项不变量
+`index_consistent`（索引规模一致 + 每个注册项的 `events` 含主事件）。
+
+实测（同机同环境）：
+
+```
+20 次 audit()      763.7 ms -> 355.6 ms
+2000 次分发         58.9 ms ->  33.1 ms
+```
+
+> 20 次 audit 没有降到个位数毫秒，剩余开销是 10 语种 × 16 上下文的
+> `pool_entries()` 组装，如实留着，不伪称根治。
+
+**共享事件组**：`SloganEntry.events` 列出**所有**能触发该上下文的事件
+（含主事件），`event` 仍是唯一主事件（向后兼容）。
+`model.streaming` 现在能正确归属到它触发的那条标语。
+`audit().index_consistent` 断言 `e.event in e.events`。
+
+**可确定性回放**：`pick_for_event(..., rng=..., now=..., owner=...)`，
+`rng` 贯通到 `picker._choose`。注入 rng 时用**一次性局部避重窗口** ——
+实测两个独立 rng 依次分发时，第二个因共享全局窗口里已有 `items[0]`
+被拒 12 次，`choice` 调用从 1 变成 13，回放失效。生产路径
+（`rng=None`）完全不变，仍走加锁的全局 LRU 窗口。
+
+### 验证
+
+```
+tests/test_slogan_mapping.py + test_runtime_slogans.py   194 passed
+tests/verify_slogan_mapping.py                           42 项纯 stdlib 全绿
+verify_deep.py / verify_deep2.py                         22 / 20 项全绿
+```
+
+### 如实边界（续 §10）
+
+11. TUI 仍只建立分发与留痕，**未替换任何既有 i18n 文案**；要显示标语需
+    调用方显式 `slogan_for(event)`。
+12. `strict=True` 是开发/测试开关，生产默认关闭；生产不崩但错误**必留痕**。
+13. 并发加锁未对应到已复现的故障（见上方说明）。
+14. 20 次 audit 仍有 355.6 ms 的 `pool_entries` 开销，未做第二层缓存 ——
+    加缓存会让「审计结果」依赖词池缓存时间点，跟前几轮拒绝给活性判定
+    加文件系统缓存是同一个理由。
+15. 本轮**不改** `fully_superior`、99 模块基线、任何对齐指标，未新增
+    CLI 子命令、未新增事件（18 个不变）、未新增标语词条（1108 条不变）。
+    全部是「把已有对应关在运行时做实」的深度工作。
