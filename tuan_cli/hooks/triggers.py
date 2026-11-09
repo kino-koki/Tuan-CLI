@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import contextvars
 import threading
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from .manager import HookDecision
@@ -81,6 +82,10 @@ _PROVIDER_OVERRIDES: int = 0
 _SESSIONS: Dict[str, Any] = {}
 _SESSION_LOCK = threading.Lock()
 _MAX_SESSIONS = 64
+# B3 续轮 VIII: 注册被拒**必须可见**。上一轮 register_session 返回 False，
+# 但 app.py 不检查返回值 —— 长跑把 64 个槽占满后，第 65 个会话静默退化
+# 到单槽回填（实测 bind 返回 False、新会话事件全部 no-op）。
+_SESSION_REJECTIONS: int = 0
 
 # B3 续轮 VII: **当前会话 owner**（contextvars，不是 thread-local）。
 # 与上一轮的 default provider 不同：contextvar 在**并发会话**里各自独立，
@@ -158,10 +163,12 @@ def current_session_hooks() -> Any:
 
 def register_session(owner: str, hooks: Any) -> bool:
     """按 owner 注册会话 hooks；超出上界**拒绝**而不是静默淘汰。"""
+    global _SESSION_REJECTIONS
     if not isinstance(owner, str) or not owner:
         return False
     with _SESSION_LOCK:
         if owner not in _SESSIONS and len(_SESSIONS) >= _MAX_SESSIONS:
+            _SESSION_REJECTIONS += 1          # 可见，不再静默
             return False
         _SESSIONS[owner] = hooks
         return True
@@ -204,19 +211,35 @@ def set_session_owner(owner: str) -> Any:
 
 
 def reset_session_owner(token: Any) -> None:
-    """用 ``set_session_owner`` 返回的 token 复位（异常安全，try/finally）。"""
+    """用 ``set_session_owner`` 返回的 token 复位（异常安全，try/finally）。
+
+    B3 续轮 VIII（A′）：``ContextVar.reset()`` 对**已用过一次**的 token
+    抛 ``RuntimeError("Token has already been used once")``，而上一版只
+    吞 ``ValueError/TypeError``。``deactivate_session`` 重复调用（幂等
+    关闭路径）会因此掀翻 —— 本轮新写的回归直接抓到。三类异常一律吞：
+    已经复位过 == 已达目标状态，不是错误。
+    """
     try:
         _CURRENT_OWNER.reset(token)
-    except (ValueError, TypeError):
-        # token 来自别的 Context（跨线程误用）—— 不掀翻主路径，如实忽略
+    except (ValueError, TypeError, RuntimeError):
+        # 跨 Context 误用 / token 已用过 —— 不掀翻主路径，如实忽略
         pass
 
 
 def _bump_owner_miss(owner: str) -> None:
-    """记录一次 owner 查表落空；有界，尾部归并到 ``<other>``。"""
-    key = owner if owner in _OWNER_MISSES or len(_OWNER_MISSES) < _MAX_MISS_KEYS \
-        else "<other>"
+    """记录一次 owner 查表落空；有界，尾部归并到 ``<other>``。
+
+    B3 续轮 VIII（P4）：上一版 **锁外**读 ``owner in _OWNER_MISSES`` 与
+    ``len()``、锁内写入 —— 是 TOCTOU。GIL 下本次未稳定复现越界（与
+    前几轮「加锁是消除对 GIL 实现细节的依赖」同口径），但把整个判定
+    收进锁内是正确做法。上界语义明确为：最多 ``_MAX_MISS_KEYS`` 个
+    **具体 owner** + 1 个 ``<other>`` = 65 个 key，不是 64。
+    """
     with _SESSION_LOCK:
+        if owner in _OWNER_MISSES or len(_OWNER_MISSES) < _MAX_MISS_KEYS:
+            key = owner
+        else:
+            key = "<other>"
         _OWNER_MISSES[key] = _OWNER_MISSES.get(key, 0) + 1
 
 
@@ -242,11 +265,18 @@ def session_registry_diagnostics() -> Dict[str, Any]:
             "owners": sorted(_SESSIONS),
             "count": len(_SESSIONS),
             "max": _MAX_SESSIONS,
+            "rejected": _SESSION_REJECTIONS,
         }
 
 
 def bind_session_hooks(hooks: Any, *, owner: Optional[str] = None) -> bool:
-    """**会话级统一绑定**：注册 registry + 回填 3 个模块级单例。
+    """**会话级统一绑定**：注册 registry + 回填 **2** 个模块级单例。
+
+    口径纠正（B3 续轮 VIII / P5）：VI 的 docstring 写「3 个模块级单例」，
+    但 ``for`` 元组里一直只有 ``security_alert._global_alerter`` 与
+    ``remote_control._notify_rc`` 两个。ACP ``KernelAcpBridge`` 是
+    **per-agent 实例**、不是模块级单例，走 ``agent.ctx`` 显式句柄
+    （见 ``activate_session``）。不改代码行为，只把口径改如实。
 
     B3 续轮 VI：``_global_alerter`` / ``_notify_rc`` 是进程级单例，
     构造时刻可能早于 ``app.py`` 注入 provider（拿到 None）。本函数在
@@ -272,6 +302,63 @@ def bind_session_hooks(hooks: Any, *, owner: Optional[str] = None) -> bool:
     return ok
 
 
+# ---------------------------------------------------------------- VIII: 生命周期
+@dataclass(frozen=True)
+class SessionHandle:
+    """一次会话激活的句柄；**进程内**对象，不进任何序列化路径。
+
+    ``active=False`` 表示 registry 注册被拒（64 槽已满）——调用方必须
+    检查它并如实降级，不能像上一版那样静默忽略 ``bind`` 的返回值。
+    """
+
+    owner: Optional[str]
+    token: Any
+    active: bool
+
+
+def activate_session(
+    *, owner: str, hooks: Any, provider: Optional[Callable[[], Any]] = None,
+) -> SessionHandle:
+    """**一次调用**完成会话激活，顺序内聚，返回可关闭句柄。
+
+    B3 续轮 VIII（P1/P2）实测：
+    - ``unregister_session`` 在生产代码里**零调用点**，registry 只增不减，
+      长跑占满 64 槽后第 65 个会话注册被拒、事件静默 no-op；
+    - ``set_session_owner`` 设完从不复位，同线程复用时会残留到下一个会话。
+
+    本函数把 ``set_default_hooks_provider`` → ``set_session_owner`` →
+    ``register_session`` / ``bind_session_hooks`` 收成一个入口，并把
+    contextvar token 与 owner 放进 ``SessionHandle``，供
+    ``deactivate_session`` 在会话结束时复位 + 注销。
+    """
+    if provider is not None:
+        set_default_hooks_provider(provider, owner=owner)
+    token = None
+    try:
+        token = set_session_owner(owner)
+    except (ValueError, TypeError):
+        token = None                      # 非法 owner 不掀翻会话启动
+    active = bind_session_hooks(hooks, owner=owner) if owner else False
+    return SessionHandle(owner=owner, token=token, active=bool(active))
+
+
+def deactivate_session(handle: Any) -> bool:
+    """会话结束：注销 registry + 复位 contextvar，返回是否真注销成功。
+
+    刻意**不清** default provider —— 清掉会让仍在运行的其他会话突然失去
+    单槽 fallback（既有行为），如实保留。跨 Context 的 token 复位由
+    ``reset_session_owner`` 内部吞异常，不掀翻关闭路径。
+    """
+    if handle is None:
+        return False
+    owner = getattr(handle, "owner", None)
+    token = getattr(handle, "token", None)
+    ok = unregister_session(owner) if owner else False
+    if token is not None:
+        reset_session_owner(token)
+    return ok
+
+
 def provider_diagnostics() -> Dict[str, Any]:
     """只读诊断：让「全局 provider 被覆盖」不再静默。
 
@@ -281,13 +368,15 @@ def provider_diagnostics() -> Dict[str, Any]:
     """
     with _STATS_LOCK:
         reentry = dict(_REENTRY_STATS)
+    sessions = session_registry_diagnostics()   # 只取一次，避免两次读数不一致
     return {
         "owner": _PROVIDER_OWNER,
         "generation": _PROVIDER_GENERATION,
         "overrides": _PROVIDER_OVERRIDES,
         "installed": _DEFAULT_PROVIDER is not None,
         "reentry": reentry,
-        "sessions": session_registry_diagnostics(),
+        "sessions": sessions,
+        "session_rejections": sessions["rejected"],
         "current_owner": current_session_owner(),
         "owner_misses": owner_miss_stats(),
     }

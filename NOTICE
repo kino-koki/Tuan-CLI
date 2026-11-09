@@ -1004,3 +1004,18 @@ SOFTWARE.
     Items 9-26 remain unchanged; the Apache-2.0 + MIT dual attribution
     for the Codex TUI parity line and all "no endorsement" statements
     still apply unchanged.
+
+
+28. B3-continued VIII session-lifecycle layer: stdlib ``contextvars``
+    based ``SessionHandle`` / ``activate_session`` / ``deactivate_session``
+    in ``hooks/triggers.py``, one ``activate_session`` call plus explicit
+    ``agent.ctx.session_owner`` / ``session_handle`` attachment in
+    ``app.py``, an optional ``owner`` constructor argument and
+    ``_resolve_owner()`` in ``runtime/acp/bridge.py``, a lock-scoped
+    ``_bump_owner_miss``, a ``rejected`` counter in the session registry,
+    and one new stdlib-based regression file
+    (``tests/test_b3viii_session_lifecycle.py``). No new third-party
+    material, no new dependency, and no copied upstream source.
+    Items 9-27 remain unchanged; the Apache-2.0 + MIT dual attribution
+    for the Codex TUI parity line and all "no endorsement" statements
+    still apply unchanged.

@@ -448,19 +448,39 @@ class TestSingletonBoundary:
 # ================================================== 接线 / 矩阵
 class TestWiringAndMatrix:
     def test_app_sets_session_owner_after_bind(self):
+        """**B3 续轮 VIII 同步（改强）**：contextvar 绑定由 activate_session
+        内部完成并**返回可复位 token**，不再有零散的 set 调用。
+        """
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
-        assert "set_session_owner(_session_owner)" in src
-        assert src.index("bind_session_hooks(agent.ctx.hooks") < src.index(
-            "set_session_owner(_session_owner)")
-        assert src.index("set_default_hooks_provider(") < src.index(
-            "bind_session_hooks(agent.ctx.hooks")
+        assert "activate_session(" in src
+        assert "agent.ctx.session_handle = _handle" in src
+        assert "if not _handle.active:" in src
+        assert "set_session_owner(_session_owner)" not in src
+        # activate_session 内部顺序：provider -> set owner -> register/bind
+        tsrc = Path("tuan_cli/hooks/triggers.py").read_text(
+            encoding="utf-8")
+        i = tsrc.index("def activate_session(")
+        body = tsrc[i:i + 1200]
+        assert body.index("set_default_hooks_provider(") < body.index(
+            "set_session_owner(")
+        assert body.index("set_session_owner(") < body.index(
+            "bind_session_hooks(")
 
     def test_bridge_supports_owner_without_auto_mapping(self):
+        """**B3 续轮 VIII 补强**：owner 改为**显式句柄**解析（P3），
+        不再在运行时依赖 contextvar；仍不按 session_id 自动派生。
+        """
         src = Path("tuan_cli/runtime/acp/bridge.py").read_text(
             encoding="utf-8")
         assert "HookTrigger(owner=_o)" in src
         assert "HookTrigger(self.hooks)" in src
         assert "HookTrigger()" not in src
+        assert "_o = self._resolve_owner()" in src
+        assert "def _resolve_owner(" in src
+        assert "agent.ctx" in src or "session_owner" in src
+        assert "owner: Optional[str] = None" in src
+        assert "current_session_owner()" not in src.split(
+            "def ask_user")[1][:900]   # ask_user 内不再直接读 contextvar
 
     def test_no_arg_hooktrigger_code_consumers_still_zero(self):
         hits = []

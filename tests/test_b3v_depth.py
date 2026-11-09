@@ -398,15 +398,31 @@ class TestProviderDiagnostics:
         assert len(a.fired) == 1 and b.fired == []
 
     def test_app_backfills_config_hooks_and_passes_owner(self):
-        """源码级断言：app.py 显式回填 + owner + **会话绑定**（B3 续轮 VI）。"""
+        """源码级断言：app.py 显式回填 + owner + **生命周期**（B3 续轮 VIII）。
+
+        断言同步（改强）：VI 检查分散的 provider/bind 调用与顺序；VIII
+        把四步收进 ``activate_session`` 并返回**可关闭句柄**，故改为
+        检查单一入口、ctx 显式挂载、``active`` 失败可见，以及
+        ``deactivate_session`` 已导出。顺序仍须保持 provider 先激活。
+        """
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
         assert "config._hooks = agent.ctx.hooks" in src
         assert '_session_owner = "agent:%x" % id(agent)' in src
-        assert "lambda: getattr(getattr(agent, \"ctx\", None), \"hooks\", None)" in src
-        assert "bind_session_hooks(agent.ctx.hooks, owner=_session_owner)" in src
-        # 顺序：先注入 provider（新建实例靠它捕获），再回填已存在单例
-        assert src.index("set_default_hooks_provider(") < src.index(
-            "bind_session_hooks(agent.ctx.hooks")
+        assert "activate_session(" in src
+        assert "provider=lambda: getattr(" in src
+        assert "agent.ctx.session_owner" in src
+        assert "agent.ctx.session_handle = _handle" in src
+        assert "if not _handle.active:" in src   # 注册被拒不能静默
+        import tuan_cli.hooks as pkg
+        assert hasattr(pkg, "activate_session")
+        assert hasattr(pkg, "deactivate_session")
+        assert hasattr(pkg, "SessionHandle")
+        # 顺序：provider 注入在会话激活**内部**完成，不再有分散调用。
+        # 只看代码行：历史注释里仍写着 set_default_hooks_provider(A)/(B)。
+        code = "\n".join(l.strip() for l in src.splitlines()
+                          if not l.strip().startswith("#"))
+        assert "set_default_hooks_provider(" not in code
+        assert "bind_session_hooks(agent.ctx.hooks" not in code
 
     def test_provider_api_is_exported(self):
         import tuan_cli.hooks as pkg

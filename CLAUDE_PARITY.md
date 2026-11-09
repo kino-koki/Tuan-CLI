@@ -2151,3 +2151,126 @@ app 接线顺序 + bridge + 全仓无参消费点 + 矩阵钉死 + `catalog.py` 
   第三方自适应红队未做；不是真机多平台验证。
 - 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
   逐字节未改。
+
+
+---
+
+## 深度轮（续八）：会话生命周期收口 + 跨线程 owner 句柄化
+
+> 沿用**自足标题**，不新增数字章节编号。**矩阵计数一个没动**：
+> `ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8`，
+> `gaps=26`，`fully_superior=false`，`b_waves_done=["B1"]`。两个 B3
+> 条目仍 `STATUS_GAP`，`catalog.py` **本轮零改动** —— 本轮修的是
+> 「会话生命周期与线程边界」，不是功能覆盖面，不靠改口径凑数。
+>
+> 上两轮把「派发归属」从单槽 provider 推到 owner 分桶，但留了三处
+> 生命周期/线程边界没处理。本轮一点广度没扩，只把这条线挖到底。
+
+### 六个候选的实测判定（5 修 / 1 不该修）
+
+| 编号 | 修复前实测 | 判定 |
+|---|---|---|
+| P1 | `unregister_session` 在生产代码里**零调用点**（只有定义与 `__init__` 导出）。registry 只增不减，占满 64 槽后 `bind_session_hooks(..., owner=NEW)` 返回 **False**，而 `app.py` 完全不检查返回值 —— 第 65 个会话的 `HookTrigger(owner=NEW).config_change()` 静默 no-op | **修** |
+| P2 | `set_session_owner` 设完从不复位；同线程复用（CLI 循环、ACP server 长驻、测试）时，第二个会话构造失败后 owner 仍是第一个会话的值（实测残留 = True） | **修** |
+| P3 | `ContextVar` **不跨** executor 线程（主线程 `"ctx-main"` / `ThreadPoolExecutor` 线程 `None`，实测）。`KernelAcpBridge` 原先在 `ask_user` 里**运行时**读 `current_session_owner()`，权限回调 / `_AcpUIHandle` 跑在 executor 线程 —— owner 解析退化为实例冻结 hooks | **修**（显式句柄化） |
+| P4 | `_bump_owner_miss` **锁外**读 `len()` / `in`、锁内写入，是 TOCTOU。GIL 下本次未稳定复现越界。上界语义也含糊：实际最多 `_MAX_MISS_KEYS` 个具体 owner + 1 个 `<other>` = 65 | **修**（锁内 + 口径） |
+| P5 | `bind_session_hooks` docstring 写「回填 **3** 个模块级单例」，但 `for` 元组里一直只有 2 个（`_global_alerter` / `_notify_rc`）；ACP bridge 是 per-agent 实例，不是模块级单例 | **修**（口径改如实） |
+| O3 | `get_alerter()` 仍是进程级单例（改成多实例会引入文件竞争、重复 bus 订阅、端口冲突） | **不该修**：前两轮已锁 `x is y`，本轮不动 |
+
+### 修复（如实，不夸大）
+
+1. **`hooks/triggers.py`**：新增 `SessionHandle` /
+   `activate_session(owner=, hooks=, provider=)` /
+   `deactivate_session(handle)`。四个动作（注入 provider、绑定
+   contextvar、注册 registry、回填单例）收成一个入口，返回携带
+   **复位 token** 的句柄；`deactivate` 注销 registry + 复位
+   contextvar。注册被拒新增 `rejected` 计数并进
+   `provider_diagnostics()` —— **可见，不再静默**。
+   `deactivate` 刻意**不清** default provider：清掉会打断仍在运行的
+   其他会话（既有行为）。
+2. **`app.py`**：改用 `activate_session`；把 `session_owner` 与
+   `session_handle` 显式挂到 `agent.ctx`；`active=False` 时
+   `logger.warning`，不静默退化到单槽绑定。
+3. **`runtime/acp/bridge.py`**：新增构造参数 `owner` 与
+   `_resolve_owner()`，优先级 **显式 owner > `agent.ctx.session_owner`
+   > `current_session_owner()`**。前两者跨线程稳定，不依赖
+   contextvar；`ask_user` 改用它。仍**不**按 `session_id` 自动派生
+   owner（一个 bridge 可服务多个 session_id，映射由上层负责）。
+4. **`_bump_owner_miss`** 整个判定收进锁内，docstring 明确
+   「最多 64 个具体 owner + 1 个 `<other>` = 65」。
+5. **`bind_session_hooks`** docstring 口径改成「2 个」。
+
+### 四条上轮断言同步（**全部改强，不是放宽**）
+`test_app_backfills_config_hooks_and_passes_owner` /
+`test_app_calls_bind_after_setting_provider` /
+`test_app_sets_session_owner_after_bind` /
+`test_app_injects_default_provider` 从「检查分散调用与顺序」改为
+「检查单一入口 + ctx 挂载 + `active` 失败可见 + 生命周期 API 导出 +
+旧分散调用已消失」；`test_bridge_supports_owner_without_auto_mapping`
+补上 `_resolve_owner` 与显式句柄断言；
+`test_diagnostics_in_provider_diagnostics` 增加 `rejected` 与顶层
+`session_rejections` 一致性断言。
+
+### A′ ×3（自己写错自己抓回）
+1. **产品代码真缺陷**：`reset_session_owner` 只吞
+   `ValueError/TypeError`，但 `ContextVar.reset()` 对**已用过**的
+   token 抛 `RuntimeError("Token has already been used once")`。
+   `deactivate_session` 重复调用（幂等关闭路径）会掀翻 —— 本轮
+   新写回归直接抓到，已改为三类异常一律吞（已复位 == 已达目标状态）。
+2. **测试自身**：4 处源码扫描把**注释行**里的
+   `set_default_hooks_provider(A)/(B)` 历史说明算成调用，误报 →
+   改为只看非注释行。
+3. **测试自身**：`deactivate_session` 扫描把 `def deactivate_session(`
+   **定义行**算成宿主调用，误报 → 排除 `def ` / `from ` 行。
+
+### 验证（按分批报告，批次间有重叠、不累加）
+
+```
+B3 续轮 VIII + 上三轮 B3（生命周期/并发/绑定/V）       131 passed
+既有 hooks / config / alert / remote / plugin / bus /
+   bridge / ACP 相关                                  233 passed
+宽回归 A（parity / worktree / session / arch / 写边界 /
+   两条侧门 / B2 各轮 / slash 前半）                 （见报告）
+宽回归 B（arch_security / B2 剩余 / slash 后半）     （见报告）
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+py_compile: 改动 Python 文件全部 OK
+```
+
+`tests/test_b3viii_session_lifecycle.py` 覆盖：P1 64 槽耗尽 +
+`rejected` 可见 + 注销后槽位可复用 + `activate`/`deactivate` 往返 +
+provider 注入 + 拒绝句柄安全关闭 / P2 token 复位 + 会话失败不残留 +
+幂等关闭 + foreign token / P3 contextvar 不跨 executor +
+`_resolve_owner` 从 `agent.ctx` 跨线程解析 + 显式 owner 优先 +
+回退 contextvar + 构造签名 + `ask_user` 用 `_resolve_owner` + 不按
+`session_id` 自动映射 / P4 有界 `<other>` + 并发 24 线程不丢计数 +
+判定在锁内 / P5 docstring 2 个单例 + `rejected` 文档 / 不该修的
+单例身份、单槽回填、`AlertRecord.owner` 不序列化、上轮契约 /
+app 接线 + 生命周期 API 导出 + 全仓无参消费点 + 矩阵钉死 +
+`catalog.py` 零改动 + **`deactivate` 未接到所有宿主如实锁住**。
+
+### 如实边界
+- **`deactivate_session` 没有接到所有宿主**：项目里没有统一的 agent
+  close 钩子，本轮只提供 API + `agent.ctx.session_handle` 供宿主调用。
+  未调用的长跑进程仍会占满 64 槽，但现在 `rejected` 可见、`app.py`
+  会 warning，**不再静默**。
+- **P3 修的是「显式句柄传递」，不是「已观测 ACP 串台」**：
+  `ask_user` 经 `run_coroutine_threadsafe` 跑在事件循环线程，
+  `create_agent` 也在该线程，所以原实现多数场景能拿到 contextvar；
+  本轮消除的是「依赖线程上下文」这一脆弱性（executor 线程实测
+  拿不到），不夸大成修了某个已复现的串台故障。
+- **P4 锁内化未对应到已复现的越界**：GIL 下本次未稳定复现，加锁
+  是消除对 GIL 实现细节的依赖（与前几轮同口径），不宣称修了已观测
+  故障；上界语义明确为 65 而非 64。
+- 单例对象身份仍进程级；`bind_session_hooks` 单槽回填仍在；
+  `AlertRecord.owner` 仍不进 `to_dict()`；单 bridge 不按
+  `session_id` 自动派生 owner。
+- **行为变更**：`activate_session` 取代 app.py 里四个分散调用；
+  `KernelAcpBridge` 新增 `owner` 构造参数与 `_resolve_owner()`；
+  `reset_session_owner` 多吞一类异常；`session_registry_diagnostics`
+  多一个 `rejected` 字段。
+- `os_sandbox` 仍 gap、`deny_network_by_default` 仍 `false` 未翻、
+  `credential_masking` 仍 partial；A 线 10 pending、分叉改动未合并、
+  第三方自适应红队未做；不是真机多平台验证。
+- 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
+  逐字节未改。

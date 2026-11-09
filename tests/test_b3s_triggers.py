@@ -508,9 +508,21 @@ class TestSidePaths:
         assert hits == []
 
     def test_app_injects_default_provider(self):
+        """**B3 续轮 VIII 同步（改强）**：provider 注入收进 activate_session。
+
+        B3 两轮前这里检查分散的 ``set_default_hooks_provider`` 与单行
+        lambda；VIII 把四步合成 ``activate_session(owner=, hooks=,
+        provider=)`` 并返回可关闭句柄。断言改为：入口、provider 参数、
+        ctx 显式挂载、``active`` 失败可见；lambda 仍 must 存在（换成
+        多行写法后按 token 检查）。
+        """
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
-        assert "set_default_hooks_provider" in src
-        assert "lambda: getattr(getattr(agent, \"ctx\", None), \"hooks\", None)" in src
+        assert "activate_session(" in src
+        assert "provider=lambda: getattr(" in src
+        assert 'getattr(agent, "ctx", None)' in src
+        assert "hooks=agent.ctx.hooks" in src
+        assert "agent.ctx.session_handle = _handle" in src
+        assert "if not _handle.active:" in src
 
 
 # ================================================== 6 矩阵自洽（一个不动）

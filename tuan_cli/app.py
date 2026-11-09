@@ -266,22 +266,31 @@ def create_agent(
     except Exception:  # noqa: BLE001
         pass
     try:
-        from .hooks.triggers import (
-            set_default_hooks_provider, bind_session_hooks,
-            set_session_owner)
+        # B3 续轮 VIII（P1/P2）: 一次调用完成 provider 注入 / contextvar
+        # 绑定 / registry 注册 / 单例回填，返回**可关闭句柄**。上一版
+        # 四个动作分散、且 set_session_owner 从不复位、registry 从不注销
+        # —— 长跑占满 64 槽后新会话注册被拒且返回值被忽略（实测）。
+        from .hooks.triggers import activate_session
         _session_owner = "agent:%x" % id(agent)
-        set_default_hooks_provider(
-            lambda: getattr(getattr(agent, "ctx", None), "hooks", None),
-            owner=_session_owner)
-        # B3 续轮 VI: 注册到按 owner 分桶的会话表，并回填已存在的
-        # _global_alerter / _notify_rc 两个进程级单例。顺序刻意在
-        # set_default_hooks_provider 之后 —— 新建消费者靠
-        # current_session_hooks() 捕获，已存在的靠这里显式回填。
-        bind_session_hooks(agent.ctx.hooks, owner=_session_owner)
-        # B3 续轮 VII: 把当前上下文标记为这个会话。contextvar 在并发
-        # 会话里各自独立，模块级入口据此查分桶 registry；后台线程由
-        # AlertRecord.owner 显式携带（contextvar 不跨线程，O4 实测）。
-        set_session_owner(_session_owner)
+        _handle = activate_session(
+            owner=_session_owner,
+            hooks=agent.ctx.hooks,
+            provider=lambda: getattr(
+                getattr(agent, "ctx", None), "hooks", None),
+        )
+        # 显式挂到 ctx：跨线程消费者（ACP executor 回调）不依赖
+        # contextvar（P3 实测 executor 线程拿不到 owner）。
+        try:
+            agent.ctx.session_owner = (
+                _session_owner if _handle.active else "")
+            agent.ctx.session_handle = _handle
+        except Exception:  # noqa: BLE001
+            pass
+        if not _handle.active:
+            # 注册被拒**必须可见**，不能静默退化到单槽回填
+            logger.warning(
+                "会话 hooks 注册失败 (registry 已满)，本会话将回落单槽绑定: %s",
+                _session_owner)
     except Exception:  # noqa: BLE001
         pass
     # 自定义斜杠命令: 把 <home>/commands 与 <workspace>/.tuan/commands 挂进分发链

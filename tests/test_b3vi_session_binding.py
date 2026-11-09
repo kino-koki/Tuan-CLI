@@ -373,9 +373,14 @@ class TestSessionRegistry:
         assert len(session_registry_diagnostics()["owners"]) == cap
 
     def test_diagnostics_in_provider_diagnostics(self):
+        """**B3 续轮 VIII 同步（改强）**：sessions 新增 ``rejected``，
+        且 ``provider_diagnostics()`` 顶层同步暴露 ``session_rejections``
+        —— 注册被拒不再静默。
+        """
         d = provider_diagnostics()
         assert "sessions" in d
-        assert set(d["sessions"]) == {"owners", "count", "max"}
+        assert set(d["sessions"]) == {"owners", "count", "max", "rejected"}
+        assert d["session_rejections"] == d["sessions"]["rejected"]
 
     def test_current_session_hooks_matches_frozen_default(self):
         r = Rec("R")
@@ -396,12 +401,26 @@ class TestSessionRegistry:
 # ================================================== 接线 / 矩阵钉死
 class TestWiringAndMatrix:
     def test_app_calls_bind_after_setting_provider(self):
+        """**B3 续轮 VIII 同步（改强）**：四步收进 ``activate_session``。
+
+        VI 检查分散的 provider/bind 与顺序；VIII 改成单一入口并返回
+        ``SessionHandle``。断言改为：入口存在、provider 传入、句柄
+        失败可见、ctx 显式挂载、旧分散调用已消失。
+        """
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
-        assert "_session_owner = \"agent:%x\" % id(agent)" in src
-        assert "bind_session_hooks(agent.ctx.hooks, owner=_session_owner)" in src
-        assert src.index("set_default_hooks_provider(") < src.index(
-            "bind_session_hooks(agent.ctx.hooks")
+        assert '_session_owner = "agent:%x" % id(agent)' in src
+        assert "activate_session(" in src
+        assert "provider=lambda: getattr(" in src
+        assert "hooks=agent.ctx.hooks" in src
+        assert "if not _handle.active:" in src
+        assert "agent.ctx.session_owner" in src
+        assert "agent.ctx.session_handle = _handle" in src
         assert "config._hooks = agent.ctx.hooks" in src
+        # 只看代码行（历史注释里仍有 set_default_hooks_provider 字样）
+        code = "\n".join(l.strip() for l in src.splitlines()
+                          if not l.strip().startswith("#"))
+        assert "set_default_hooks_provider(" not in code
+        assert "bind_session_hooks(agent.ctx.hooks" not in code
 
     def test_plugin_passes_config_hooks(self):
         src = Path("tuan_cli/core/security_plugin.py").read_text(

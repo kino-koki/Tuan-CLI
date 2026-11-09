@@ -2602,3 +2602,97 @@ partial; A-line 10 pending, local fork unmerged, no third-party
 adaptive red team; NO real-device multi-platform verification. The
 slogan engine / cleaning layer / `mapping.py` / `tui.py` /
 `runtime_slogans.py` are byte-identical.
+
+
+---
+
+## B3 Continued VIII: Session Lifecycle Close-out + Cross-Thread Owner Handles
+
+> SELF-CONTAINED heading. NOT A SINGLE MATRIX STATUS CHANGED:
+> `aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+> `b_waves_done=["B1"]`. Both B3 catalog entries stay `STATUS_GAP`;
+> `catalog.py` is UNCHANGED. Full reproduction: final section of
+> `CLAUDE_PARITY.md`.
+>
+> The previous two rounds moved dispatch ownership from a single-slot
+> provider to owner buckets, but left three lifecycle / thread-boundary
+> gaps. This round digs that same line to the bottom. NO breadth added.
+
+### Six candidates (5 fixed / 1 deliberately not)
+
+| ID | Measured | Verdict |
+|---|---|---|
+| P1 | `unregister_session` has ZERO production call sites; the registry only grows. After 64 slots fill, `bind_session_hooks(..., owner=NEW)` returns False and `app.py` never checks it -> the 65th session's events silently no-op | FIX |
+| P2 | `set_session_owner` was never reset; on same-thread reuse (CLI loop, long-lived ACP server, tests) the owner leaked into the next session | FIX |
+| P3 | `ContextVar` does NOT cross `ThreadPoolExecutor` (main `"ctx-main"` / executor `None`, measured); `KernelAcpBridge.ask_user` read the contextvar at RUNTIME, so executor paths degraded to instance-frozen hooks | FIX (explicit handle) |
+| P4 | `_bump_owner_miss` read `len()`/`in` OUTSIDE the lock and wrote inside = TOCTOU (no stable out-of-bounds repro under the GIL); the bound was also ambiguous (actually 65) | FIX (lock-scoped + doc) |
+| P5 | `bind_session_hooks` docstring said "**3** module-level singletons" while the `for` tuple always had 2; the ACP bridge is a per-agent instance, not a module singleton | FIX (honest wording) |
+| O3 | `get_alerter()` is still a process singleton | NOT fixed -- multi-instance would mean file contention, duplicate bus subscriptions, and port conflicts. Regression locks `x is y` |
+
+### Fix
+- `hooks/triggers.py`: new `SessionHandle` / `activate_session` /
+  `deactivate_session`. Provider injection, contextvar binding, registry
+  registration, and singleton backfill collapse into ONE entry point
+  returning a handle that carries the reset token; `deactivate`
+  unregisters + resets (deliberately does NOT clear the default provider,
+  which would break other still-running sessions). Rejected registrations
+  now bump a `rejected` counter exposed via `provider_diagnostics()`.
+- `app.py`: uses `activate_session`, attaches `session_owner` /
+  `session_handle` to `agent.ctx`, and `logger.warning`s on
+  `active=False` instead of silently degrading to the single-slot binding.
+- `runtime/acp/bridge.py`: new `owner` constructor argument and
+  `_resolve_owner()` with precedence **explicit owner >
+  `agent.ctx.session_owner` > `current_session_owner()`**. The first two
+  are cross-thread stable; `ask_user` uses them. STILL does NOT derive
+  owner from `session_id` (one bridge can serve multiple session_ids).
+- `_bump_owner_miss`: entire decision moved inside the lock, doc now
+  states "at most 64 concrete owners + 1 `<other>` = 65".
+- `bind_session_hooks` docstring corrected to "2".
+
+### Four previous-round assertions synchronized (ALL STRENGTHENED)
+The four app.py-related assertions now check the single entry point,
+ctx attachment, visible `active=False`, exported lifecycle API, and the
+absence of the old scattered calls; the bridge assertion gains
+`_resolve_owner`; `provider_diagnostics` gains `rejected` consistency.
+
+### A-prime x3 (self-caught)
+1. **REAL product defect**: `reset_session_owner` swallowed only
+   `ValueError/TypeError`, but `ContextVar.reset()` raises
+   `RuntimeError("Token has already been used once")` for a used token ->
+   a repeated `deactivate_session` blew up the shutdown path. Caught by
+   a newly written regression; now all three exception types are swallowed
+   (already-reset == desired state).
+2. Four source scans counted a HISTORICAL COMMENT mentioning
+   `set_default_hooks_provider(A)/(B)` as a call -> non-comment lines only.
+3. The `deactivate_session` scan counted its own `def` line as a host
+   call -> exclude `def ` / `from ` lines.
+
+### Verification (split batches, NOT one full-suite claim)
+B3-VIII + previous three B3 rounds **131 passed**; existing
+hooks/config/alert/remote/plugin/bus/bridge/ACP related **233 passed**;
+wide combined batches (see report); `matrix.validate()` /
+`evidence.verify_evidence()` / doc-number check / `py_compile` all clean.
+New `tests/test_b3viii_session_lifecycle.py`.
+
+### Honest limits
+`deactivate_session` is NOT WIRED INTO ALL HOSTS (the project has no
+unified agent close hook); this round only provides the API plus
+`agent.ctx.session_handle`. A long-running process that never calls it
+still fills the 64 slots -- but `rejected` is now visible and `app.py`
+warns, so it is no longer silent. **P3 fixes "removing the dependency
+on thread context", NOT an observed ACP cross-wiring bug** (`ask_user`
+runs on the loop thread via `run_coroutine_threadsafe`, and
+`create_agent` also runs there, so the original worked in most cases).
+**P4 lock-scoping does NOT correspond to a reproduced out-of-bounds**;
+it removes reliance on a GIL implementation detail. Singleton object
+identity is still process-wide, single-slot backfill still exists,
+`AlertRecord.owner` is still not serialized, and a single bridge still
+does not auto-derive owner from `session_id`. BEHAVIORAL CHANGES:
+`activate_session` replaces four scattered calls, bridge gains an
+`owner` argument and `_resolve_owner()`, `reset_session_owner` swallows
+one more exception type, and `session_registry_diagnostics` gains
+`rejected`. `os_sandbox` remains a gap, `deny_network_by_default`
+remains false, `credential_masking` remains partial; A-line 10 pending,
+local fork unmerged, no third-party adaptive red team; NO real-device
+multi-platform verification. The slogan engine / cleaning layer /
+`mapping.py` / `tui.py` / `runtime_slogans.py` are byte-identical.

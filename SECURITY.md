@@ -2282,3 +2282,73 @@ owner + 动态分桶、`notify()` 新增可选 `owner`、`AlertRecord` 新增
 `credential_masking` 仍 partial；A 线 10 pending、分叉改动、
 第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
 `mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## B3 续轮 VIII：会话生命周期收口 + 跨线程 owner 句柄化
+
+> 自足标题。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续八）」。
+
+### 六个候选（5 修 / 1 不该修）
+
+| 编号 | 实测 | 判定 |
+|---|---|---|
+| P1 | `unregister_session` 生产零调用点；64 槽占满后新会话注册被拒且 `app.py` 不检查返回值 → 事件静默 no-op | **修** |
+| P2 | `set_session_owner` 从不复位，同线程复用残留到下一会话 | **修** |
+| P3 | `ContextVar` 不跨 `ThreadPoolExecutor`（实测）；bridge `ask_user` 运行时读 contextvar，executor 路径退化 | **修** |
+| P4 | `_bump_owner_miss` 锁外 TOCTOU（GIL 下未稳定复现越界）；上界语义含糊（实际 65） | **修** |
+| P5 | `bind_session_hooks` docstring「3 个模块级单例」实际 2 个 | **修**（口径） |
+| O3 | `get_alerter()` 进程级单例 | **不该修**：多实例会引入文件竞争 / 重复订阅 / 端口冲突 |
+
+### 修复
+- `hooks/triggers.py`：新增 `SessionHandle` / `activate_session` /
+  `deactivate_session`。四步收成单一入口，返回携带复位 token 的句柄；
+  `deactivate` 注销 registry + 复位 contextvar（刻意**不清** provider）。
+  注册被拒新增 `rejected` 计数并进 `provider_diagnostics()`。
+- `app.py`：改用 `activate_session`，`session_owner` / `session_handle`
+  挂到 `agent.ctx`；`active=False` 时 `logger.warning`，不再静默。
+- `runtime/acp/bridge.py`：新增 `owner` 参数与 `_resolve_owner()`
+  （显式 owner > `agent.ctx.session_owner` > `current_session_owner()`），
+  `ask_user` 改用显式句柄；仍不按 `session_id` 自动派生。
+- `_bump_owner_miss` 判定收进锁内，明确「64 具体 owner + 1 `<other>`
+  = 65」；`bind_session_hooks` docstring 改「2 个」。
+
+### 四条上轮断言同步（全部改强，不是放宽）
+四条 app.py 相关断言改为检查单一入口 + ctx 挂载 + `active` 失败可见 +
+API 导出 + 旧分散调用消失；bridge 断言补 `_resolve_owner`；
+`provider_diagnostics` 断言补 `rejected` 一致性。
+
+### A′ ×3（自己写错自己抓回）
+1. **产品代码真缺陷**：`reset_session_owner` 只吞 `ValueError/
+   TypeError`，但 `ContextVar.reset()` 对已用过 token 抛
+   `RuntimeError` → 重复 `deactivate_session` 掀翻关闭路径。新写回归
+   抓回，三类异常一律吞。
+2. 4 处源码扫描把**注释行**的历史说明算成调用 → 只看非注释行。
+3. `deactivate_session` 扫描把 `def` **定义行**算成宿主调用 → 排除
+   `def ` / `from ` 行。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3-VIII + 上三轮 B3 **131 passed**；既有 hooks/config/alert/remote/
+plugin/bus/bridge/ACP 相关 **233 passed**；宽合并批次见报告；
+`matrix.validate()` / `evidence.verify_evidence()` / 文档数字校验 /
+`py_compile` 全干净。新增 `tests/test_b3viii_session_lifecycle.py`。
+
+### 如实边界
+`deactivate_session` **没接到所有宿主**（项目无统一 close 钩子），只
+提供 API + ctx 句柄；未调用的长跑仍会占满槽位，但 `rejected` 可见且
+`app.py` warning，不再静默。**P3 修的是「消除对线程上下文的依赖」
+不是已观测 ACP 串台**（`ask_user` 跑在 loop 线程，多数场景原实现能
+拿到 contextvar）；**P4 锁内化未对应已复现越界**，是消除对 GIL
+实现细节的依赖。单例身份仍进程级、单槽回填仍在、
+`AlertRecord.owner` 仍不序列化、单 bridge 不按 `session_id` 自动
+派生。**行为变更**：`activate_session` 取代四个分散调用、bridge 新增
+`owner` 参数与 `_resolve_owner()`、`reset_session_owner` 多吞一类
+异常、`session_registry_diagnostics` 多 `rejected` 字段。
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。

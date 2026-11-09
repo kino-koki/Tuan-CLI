@@ -643,3 +643,38 @@ registry 上界只影响显式 owner 查询，不影响已绑定实例派发。
 **如实边界**：单例身份仍进程级，隔离的是派发归属不是实例；单槽回填
 仍在但 owner 路径不读它；未设置 owner 的路径沿用既有绑定，不宣称
 「完全多会话隔离」。
+
+
+---
+
+## B3 续轮 VIII 增量（会话生命周期收口 + 跨线程 owner 句柄化）
+
+权威口径见 `CLAUDE_PARITY.md` 末尾「深度轮（续八）」。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`；两个 B3 条目仍 `STATUS_GAP`，`catalog.py` 零改动。
+
+- **P1** `unregister_session` 生产零调用点，registry 只增不减；64 槽
+  占满后新会话注册被拒且 `app.py` 不检查返回值 → 新增 `rejected`
+  计数（进 `provider_diagnostics()`）+ `app.py` `logger.warning`。
+- **P2** `set_session_owner` 从不复位 → `SessionHandle` 携带 token，
+  `deactivate_session` 复位 + 注销。
+- **P3** contextvar 不跨 executor 线程（实测）→ `KernelAcpBridge`
+  新增 `owner` 参数与 `_resolve_owner()`（显式 owner >
+  `agent.ctx.session_owner` > contextvar），`ask_user` 改用显式句柄；
+  仍不按 `session_id` 自动派生。
+- **P4** `_bump_owner_miss` 锁外 TOCTOU → 整个判定收进锁内；口径
+  明确为最多 64 个具体 owner + 1 个 `<other>` = 65。
+- **P5** docstring「3 个模块级单例」实际 2 个 → 改如实。
+- **新增** `activate_session` / `deactivate_session` / `SessionHandle`；
+  `app.py` 四步收成单一入口并把 owner/handle 挂到 `agent.ctx`。
+- 四条上轮断言同步（全部改强）；**A′ ×3**（`reset_session_owner`
+  未吞 `RuntimeError` 是真产品缺陷；另两处是新写测试的源码扫描把
+  注释行 / 定义行算成调用）。新增
+  `tests/test_b3viii_session_lifecycle.py`。详见
+  `SECURITY_BASELINE.md` R54。
+
+**如实边界**：`deactivate_session` 没接到所有宿主（无统一 close 钩子），
+只提供 API + ctx 句柄；未调用的长跑仍会占满槽位但不再静默。P3 修的是
+「消除对线程上下文的依赖」不是已观测串台；P4 锁内化未对应已复现
+越界。单例身份仍进程级，单槽回填仍在，`AlertRecord.owner` 仍不
+序列化。

@@ -61,10 +61,17 @@ class KernelAcpBridge:
         conn: Any = None,
         session_id: str = "",
         hooks: Any = None,
+        owner: Optional[str] = None,
     ) -> None:
         # B3 续轮 VI: ask_user 的 Elicitation/ElicitationResult 必须用本
         # 会话 hooks，而不是派发时刻的全局 provider（C4-E 实测无绑定）。
         self.hooks = hooks if hooks is not None else _session_hooks_snapshot()
+        # B3 续轮 VIII（P3）: owner **显式句柄化**。上一版在 ask_user 里
+        # 运行时读 current_session_owner()，而 contextvar 不跨
+        # executor 线程（实测主线程有 / executor 为 None）。权限回调与
+        # _AcpUIHandle.ask_user 跑在 executor，owner 必须来自可跨线程
+        # 传递的显式值，不能依赖线程上下文。
+        self._owner: Optional[str] = owner
         self._make_agent = make_agent
         self._kernel = kernel
         self._workspace = workspace
@@ -80,6 +87,30 @@ class KernelAcpBridge:
         # 持有事件循环的线程引用 —— 权限回调跑在 executor 线程里，必须靠它把
         # 协程送回主循环（run_coroutine_threadsafe）。
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    # ----------------------------------------------------------- owner 解析
+    def _resolve_owner(self) -> Optional[str]:
+        """跨线程稳定地解析本会话 owner，优先级：
+
+        1. 构造时显式 ``owner=``；
+        2. ``agent.ctx.session_owner``（app.py 激活会话时挂载，跨线程
+           稳定 —— 不依赖 contextvar）；
+        3. ``current_session_owner()``（仅同线程有效，作为兼容回退）。
+
+        刻意**不**按 ``session_id`` 自动派生 owner：一个 bridge 可服务
+        多个 session_id，映射由上层负责（上轮如实边界，本轮不改）。
+        """
+        if self._owner:
+            return self._owner
+        ctx_owner = getattr(
+            getattr(self._agent, "ctx", None), "session_owner", "") or ""
+        if ctx_owner:
+            return ctx_owner
+        try:
+            from ...hooks.triggers import current_session_owner
+            return current_session_owner()
+        except Exception:  # noqa: BLE001
+            return None
 
     # ----------------------------------------------------------- agent 惰性构建
     def _ensure_agent(self) -> Any:
@@ -175,9 +206,9 @@ class KernelAcpBridge:
         # B3 续轮: ACP 的 elicitation/create 反向 RPC 是 CC 语义上真正的
         # MCP elicitation 宿主。提问前派发 Elicitation（block = 取消，
         # 不代答）；拿到真实答案后派发 ElicitationResult（block = 作废）。
-        from ...hooks.triggers import (
-            HookTrigger, current_session_owner, resolve_session)
-        _o = current_session_owner()
+        from ...hooks.triggers import HookTrigger, resolve_session
+        # B3 续轮 VIII: 改用**跨线程稳定**的显式 owner 句柄（P3）。
+        _o = self._resolve_owner()
         # B3 续轮 VII: 一个 KernelAcpBridge 可服务多个 session_id；
         # 有已注册 owner 时按分桶解析，否则沿用实例冻结 hooks。
         if _o and resolve_session(_o) is not None:
