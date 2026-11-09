@@ -9,6 +9,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - B3 续轮 X：create_agent 真实会话生命周期（纠偏 + R1–R4）
+
+> **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续十）」。沿用自足标题。
+
+### 先纠偏
+IX 结尾写「ACP server / web / stream_json / TUI.close /
+AcpSession.dispose 仍未接线」。实测 `tui.py` / `runtime/acp/session.py`
+/ `runtime/acp/server.py` 的 `create_agent` 调用点都是 **0**，不是
+会话宿主。真正产生 handle 的是 **9 个 `create_agent` 调用方**。
+
+### 四个候选（4 修 / 5 项「不该修」契约锁住）
+- **R1** 每个子 agent 创建都覆盖进程级单槽 provider；主会话新建无
+  owner 消费者派到子 agent（实测 A fired=1 / B fired=1）。
+- **R2** provider lambda 闭包 cell 类型就是 `Agent`，最后一个 agent
+  永远无法 GC（删引用 + `gc.collect()` 后弱引用仍存活）。
+- **R3** 短命子 agent 不注销，70 次后打满 64 槽（`rejected=6`），
+  叠加 id 复用被 `conflicts` 拒绝 → 新会话 `active=False` 静默失去
+  hooks（IX 改「拒绝」后暴露的真实回归链）。
+- **R4** 关闭子会话后单槽仍指向已注销会话。
+
+### 修复
+- `hooks/triggers.py`：新增 **`default_hooks_resolver()`**（模块级无
+  闭包函数，按 `current_session_owner()` 分桶查 registry；无 owner
+  回落最早存活会话；不持有 agent/ctx/hooks → R1/R2/R4 消除）与
+  **`close_agent_session(agent)`**（统一、幂等、异常隔离）。刻意
+  **不做 GC 终结器兜底**：槽位释放不依赖 GC 时机。
+- `app.py`：`provider=default_hooks_resolver`，不再用 lambda 捕获 agent。
+- `cli/cmd_chat.py`：`_close_agent_session` 改调公共入口。
+- **5 处 `finally` 接线**：`cli/cmd_chat.py`（TUI + REPL）、
+  `hooks/manager.py`（Subagent hook）、`tools/subagent_tool.py`、
+  `tools/workflow_tool.py`、`stream_json/headless.py`（serve 出口）。
+- `hooks/__init__.py` 导出两个新入口。
+
+### 6 处上轮断言同步（全部改强，不是放宽）
+4 条 `app.py` 的 `provider=lambda: getattr(` 改为共享 resolver 且
+要求 `getattr(getattr(agent` 不再出现；`cmd_chat` 断言改查
+`close_agent_session(agent)` 且旧实现已消失；
+`test_deactivate_wired_to_cmd_chat_only` 整条重写为「5 处接线 +
+3 个长驻宿主未接 + 2 个独立子进程不该修 + 3 个伪宿主 0 调用点」，
+改名 `test_agent_sessions_wired_and_host_scope_corrected`。
+
+### A′ ×3（自己写错自己抓回）
+1. 新写 `default_hooks_resolver` docstring 里 `weakref.finalize` /
+   `weakref.ref` 字面串被「不做 GC 兜底」回归误判（2 次失败）→ 改
+   措辞，产品逻辑零改动。
+2. `owner_miss_stats()` 结构不是 `{"count": ...}`，`KeyError` → 改
+   `sum(stats.values()) >= 1`。
+3. 替换脚本嵌套引号 `SyntaxError`，首次重跑仍在用旧断言 → 重写生效。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3-X + 上五轮 B3 **226 passed**；既有 hooks/config/alert/remote/
+plugin/bus/ACP/workflow/subagent/headless/stream_json 相关
+**285 passed**；宽回归 A **218 passed**；宽回归 B
+**185 passed / 1 failed**（4 个文件与 parent 逐字节一致，策略拒绝
+`/usr/bin/python3` 的既有环境行为，没为变绿动策略）；
+`matrix.validate()` / `evidence.verify_evidence()` / 文档数字校验 /
+14 文件 `py_compile` 全干净。新增
+`tests/test_b3x_agent_sessions.py`。
+
+### 如实边界
+**子 agent 存活期间同线程 contextvar 指向子会话是同步作用域正常
+状态**，本轮不改变；修复的是结束后不残留。后台线程无 owner 时回落
+「最早存活会话」**可能是子 agent**；R3 的 64 槽耗尽是模拟不是真
+跑 70 个 LLM 子代理；R2 的 GC 实测在 CPython 引用计数下成立，其他
+实现不保证。**只接了 5 处**：`cli/cmd_acp.py` / `web/server.py` /
+`runtime/acp/bridge.py` 仍未接线；两个独立子进程判定不该修。
+行为变更：`app.create_agent` 的 provider 从每会话 lambda 变共享
+函数，`provider_diagnostics()["owner"]` 降为纯信息项；子 agent 调用
+方现在会在 `finally` 注销槽。`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`credential_masking` 仍
+partial；A 线 10 pending、分叉改动、第三方自适应红队未做；不是
+真机多平台验证。标语引擎 / 净化层 / `mapping.py` / `tui.py` /
+`runtime_slogans.py` 逐字节未改。
+
 ## [Unreleased] - B3 续轮 IX：会话激活事务化 + owner 冲突拒绝 + CLI 主路径接线
 
 > **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、

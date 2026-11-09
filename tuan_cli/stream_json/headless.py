@@ -451,6 +451,12 @@ class HeadlessDriver:
             # EOF / 中断：在途 turn 的 result 必须 flush 完再退。
             if self._worker is not None:
                 self._worker.join(timeout=60.0)
+            # B3 续轮 X（R3）：headless 驱动器的明确退出出口注销会话槽。
+            try:
+                from ..hooks.triggers import close_agent_session
+                close_agent_session(getattr(self, "_agent", None))
+            except Exception:  # noqa: BLE001 - 退出路径不得被关闭动作掀翻
+                pass
         return 0
 
 

@@ -185,57 +185,63 @@ def _run_subagent(
         exclude_tools=tuple(excluded),
         system_extra=system_extra,
     )
-    # 递归链深: 子代理的 ToolContext 记录链深 (孙代理据此继续 +1)
-    sub_agent.ctx.chain_depth = depth + 1
-
-    # 预加载技能 (如果有)
-    if skills:
-        skill_names = [s.strip() for s in skills.split(",") if s.strip()]
-        sm = kernel.get("skill_manager")
-        if sm:
-            for name in skill_names:
-                try:
-                    skill = sm.get(name)
-                    if skill:
-                        content = sm.render_for_prompt([skill], full_body=True)
-                        if content:
-                            sub_agent.messages.append({
-                                "role": "user",
-                                "content": f"[已加载技能: {name}]\n{content}",
-                            })
-                            sub_agent.messages.append({
-                                "role": "assistant",
-                                "content": f"已加载技能 {name}, 继续任务。",
-                            })
-                except Exception as exc:  # noqa: BLE001
-                    log.debug("子代理技能加载失败 %s: %s", name, exc)
-
-    # 执行子任务 (限制迭代次数, 防止子代理失控)
-    limit = timeout or _DEFAULT_TIMEOUT
-    sub_max_iter = config.get("agent.subagent_max_iterations", 15)
+    # B3 续轮 X（R3）：短命子 agent 必须显式注销会话槽，
+    # 否则 64 槽被短命子代理打满 + id 复用会让新会话静默失去 hooks。
     try:
-        answer = sub_agent.run(
-            task,
-            stream=False,
-            max_iterations=sub_max_iter,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return f"[子代理错误] {type(exc).__name__}: {exc}"
+        # 递归链深: 子代理的 ToolContext 记录链深 (孙代理据此继续 +1)
+        sub_agent.ctx.chain_depth = depth + 1
 
-    # 截断过长的摘要
-    if answer and len(answer) > _MAX_SUMMARY_LEN:
-        answer = answer[:_MAX_SUMMARY_LEN] + f"\n...[摘要截断, 完整输出 {len(answer)} 字符]"
+        # 预加载技能 (如果有)
+        if skills:
+            skill_names = [s.strip() for s in skills.split(",") if s.strip()]
+            sm = kernel.get("skill_manager")
+            if sm:
+                for name in skill_names:
+                    try:
+                        skill = sm.get(name)
+                        if skill:
+                            content = sm.render_for_prompt([skill], full_body=True)
+                            if content:
+                                sub_agent.messages.append({
+                                    "role": "user",
+                                    "content": f"[已加载技能: {name}]\n{content}",
+                                })
+                                sub_agent.messages.append({
+                                    "role": "assistant",
+                                    "content": f"已加载技能 {name}, 继续任务。",
+                                })
+                    except Exception as exc:  # noqa: BLE001
+                        log.debug("子代理技能加载失败 %s: %s", name, exc)
 
-    # 记录子代理用量到主会话 (便于成本追踪)
-    sub_usage = sub_agent.total_usage
-    ctx.kernel.emit("subagent.completed", {
-        "task": task[:200],
-        "summary_len": len(answer) if answer else 0,
-        "turns": sub_agent.turn_count,
-        "usage": sub_usage,
-    })
+        # 执行子任务 (限制迭代次数, 防止子代理失控)
+        limit = timeout or _DEFAULT_TIMEOUT
+        sub_max_iter = config.get("agent.subagent_max_iterations", 15)
+        try:
+            answer = sub_agent.run(
+                task,
+                stream=False,
+                max_iterations=sub_max_iter,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return f"[子代理错误] {type(exc).__name__}: {exc}"
 
-    return answer or "(子代理未产生输出)"
+        # 截断过长的摘要
+        if answer and len(answer) > _MAX_SUMMARY_LEN:
+            answer = answer[:_MAX_SUMMARY_LEN] + f"\n...[摘要截断, 完整输出 {len(answer)} 字符]"
+
+        # 记录子代理用量到主会话 (便于成本追踪)
+        sub_usage = sub_agent.total_usage
+        ctx.kernel.emit("subagent.completed", {
+            "task": task[:200],
+            "summary_len": len(answer) if answer else 0,
+            "turns": sub_agent.turn_count,
+            "usage": sub_usage,
+        })
+
+        return answer or "(子代理未产生输出)"
+    finally:
+        from ..hooks.triggers import close_agent_session
+        close_agent_session(sub_agent)
 
 
 def _run_subagent_resume(

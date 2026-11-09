@@ -270,7 +270,7 @@ def create_agent(
         # 绑定 / registry 注册 / 单例回填，返回**可关闭句柄**。上一版
         # 四个动作分散、且 set_session_owner 从不复位、registry 从不注销
         # —— 长跑占满 64 槽后新会话注册被拒且返回值被忽略（实测）。
-        from .hooks.triggers import activate_session
+        from .hooks.triggers import activate_session, default_hooks_resolver
         _session_owner = "agent:%x" % id(agent)
         # B3 续轮 IX：ctx 交给 activate_session **事务化挂载** ——
         # 注册失败时 ctx 上不留任何归属信息（Q1/Q3 实测会泄漏），
@@ -278,8 +278,10 @@ def create_agent(
         _handle = activate_session(
             owner=_session_owner,
             hooks=agent.ctx.hooks,
-            provider=lambda: getattr(
-                getattr(agent, "ctx", None), "hooks", None),
+            # B3 续轮 X：共享、无闭包的 provider。原 lambda 强引用
+            # agent，使最后一个 agent 永不 GC（R2 实测）；且每个子
+            # agent 创建都会覆盖单槽，关闭后仍指向已注销会话（R1/R4）。
+            provider=default_hooks_resolver,
             ctx=agent.ctx,
         )
         if not _handle.active:

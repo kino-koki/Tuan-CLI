@@ -398,7 +398,9 @@ class TestHostWiring:
         src = Path("tuan_cli/cli/cmd_chat.py").read_text(encoding="utf-8")
         assert "_close_agent_session(" in src
         assert src.count("_close_agent_session(") == 3  # 1 定义 + 2 调用
-        assert "deactivate_session(handle)" in src
+        # B3 续轮 X：cmd_chat 改用公共入口，不再自己实现注销
+        assert "close_agent_session(agent)" in src
+        assert "deactivate_session(handle)" not in src
         # 两个 finally 中，钩子在注销之前
         for seg in src.split("finally:")[1:3]:
             assert seg.index("_run_session_hooks(") < seg.index(

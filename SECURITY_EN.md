@@ -2815,3 +2815,116 @@ pending, local fork unmerged, no third-party adaptive red team; NO
 real-device multi-platform verification. The slogan engine / cleaning
 layer / `mapping.py` / `tui.py` / `runtime_slogans.py` are
 byte-identical.
+
+
+---
+
+## B3 Continued X: Real create_agent Session Lifecycle (Scope Correction + R1-R4)
+
+> SELF-CONTAINED heading. NOT A SINGLE MATRIX STATUS CHANGED:
+> `aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+> `b_waves_done=["B1"]`. Both B3 catalog entries stay `STATUS_GAP`;
+> `catalog.py` is UNCHANGED. Full reproduction: final section of
+> `CLAUDE_PARITY.md`.
+
+### Scope correction first
+Round IX claimed "ACP server / web / stream_json / TUI.close /
+AcpSession.dispose still unwired". A source scan shows
+`tui.py`, `runtime/acp/session.py` and `runtime/acp/server.py`
+have **ZERO `create_agent` call sites** -- they never produce a
+`SessionHandle`, so "no deactivate" is NOT a defect. The real
+leak surface is **9 `create_agent` call sites**.
+
+### Four candidates (4 fixed / 5 "not fixed" contracts locked)
+
+| ID | Measured | Verdict |
+|---|---|---|
+| R1 | Each sub-agent creation overwrites the process-wide single-slot provider; a NEWLY CONSTRUCTED owner-less consumer in the main session dispatched to the sub-agent (A fired=1 / B fired=1) | FIX |
+| R2 | The provider lambda's closure cell type IS `Agent`; the last created agent could NEVER be GC'd (weak reference still alive after del + `gc.collect()`) | FIX |
+| R3 | Short-lived sub-agents never unregistered: 70 creations filled all 64 slots (`rejected=6`); combined with CPython `id` reuse (measured), a new session was rejected by `conflicts` with `active=False` -- silently losing hooks. This is the REAL regression chain exposed by round IX changing "overwrite" to "reject" | FIX |
+| R4 | After closing the sub-session, the single-slot provider still pointed to the UNREGISTERED session (`provider owner` still `sub`) | FIX |
+
+**Deliberately NOT fixed**: `cli/cmd_acp.py` / `web/server.py` /
+`runtime/acp/bridge.py` are STILL UNWIRED (next round);
+`core/_sandbox_entry.py` / `core/background_worker.py` are separate
+child processes whose registry dies with the process, so explicit
+closing has zero benefit; `get_alerter()` process singleton,
+single-slot backfill, `AlertRecord.owner` not serialized, one bridge
+not auto-deriving owner from `session_id`, `deactivate` not clearing
+the default provider -- all previous-round contracts kept.
+
+### Fix
+- `hooks/triggers.py`: new **`default_hooks_resolver()`** -- a
+  module-level, CLOSURE-FREE function object. Resolves via
+  `current_session_owner()` against the owner-partitioned registry;
+  with no owner (background threads / contextvar not crossing
+  threads, P3 measured) it falls back to the EARLIEST LIVE session.
+  It holds NO agent / ctx / hooks reference -> R2 eliminated; the
+  single-slot `owner` degrades to a pure informational field and no
+  longer decides dispatch ownership -> R1/R4 eliminated. New
+  **`close_agent_session(agent)`**: unified, idempotent,
+  exception-isolated close entry reading `agent.ctx.session_handle`.
+  Deliberately NO GC-finalizer fallback: slot release must not depend
+  on GC timing (consistent with earlier rounds rejecting
+  filesystem/cache-timepoint-dependent decisions).
+- `app.py`: `provider=default_hooks_resolver` (shared function, no
+  agent-capturing lambda).
+- `cli/cmd_chat.py`: `_close_agent_session` now delegates to the
+  public entry.
+- **5 explicit wiring points, all in `finally`** (exception paths
+  release too): `cmd_chat.py` (TUI + REPL), `hooks/manager.py`
+  (Subagent hook), `tools/subagent_tool.py`,
+  `tools/workflow_tool.py`, `stream_json/headless.py` (serve exit).
+
+### Six previous-round assertions synchronized (ALL STRENGTHENED)
+The four `provider=lambda: getattr(` checks now require
+`provider=default_hooks_resolver` and that `getattr(getattr(agent`
+no longer appears; the cmd_chat check now requires
+`close_agent_session(agent)` and that the old implementation is gone;
+`test_deactivate_wired_to_cmd_chat_only` was REWRITTEN as "5 wired
+sites + 3 long-lived hosts unwired + 2 child processes deliberately
+unwired + 3 pseudo-hosts with 0 call sites" and renamed
+`test_agent_sessions_wired_and_host_scope_corrected`.
+
+### A-prime x3 (self-caught)
+1. The newly written `default_hooks_resolver` docstring contained
+   the literal `weakref.finalize` / `weakref.ref`, which the newly
+   written "no GC fallback" regression counted (2 failures) -- same
+   class as round IX's `HookTrigger()` literal. Rephrased; zero
+   product logic changed.
+2. `owner_miss_stats()` does not return `{"count": ...}` -> `KeyError`;
+   changed to `sum(stats.values()) >= 1`.
+3. A replacement script had nested-quote `SyntaxError`, so the first
+   rerun still used the old assertions -> rewritten and applied.
+
+### Verification (split batches, NOT one full-suite claim)
+B3-X + previous five B3 rounds **226 passed**; existing
+hooks/config/alert/remote/plugin/bus/ACP/workflow/subagent/headless/
+stream_json related **285 passed**; wide regression A **218 passed**;
+wide regression B **185 passed / 1 failed** (the 4 involved files are
+byte-identical to parent; pre-existing environment behavior rejecting
+`/usr/bin/python3`, no policy relaxed to go green);
+`matrix.validate()` / `evidence.verify_evidence()` / doc-number check /
+`py_compile` on 14 changed Python files all clean. New
+`tests/test_b3x_agent_sessions.py`.
+
+### Honest limits
+While a sub-agent is ALIVE, the same-thread contextvar pointing at
+the sub-session is normal for a synchronous scope; this round does
+not change it -- what is fixed is that nothing RESIDUES after it
+ends (token reset on close). With no owner, a background thread's
+fallback to "earliest live session" MAY BE A SUB-AGENT; we do not
+claim it is always the main session. R3's 64-slot exhaustion is
+SIMULATED, not 70 real LLM sub-agents. R2's GC measurement holds
+under CPython refcounting, not guaranteed on other implementations.
+ONLY 5 sites are wired: `cli/cmd_acp.py`, `web/server.py` and
+`runtime/acp/bridge.py` remain unwired -- NO claim of full coverage.
+Behavioral change: `app.create_agent`'s provider changed from a
+per-session agent-capturing lambda to a shared function, and
+`provider_diagnostics()["owner"]` degraded to a pure informational
+field; sub-agent call sites now unregister in `finally`.
+`os_sandbox` remains a gap, `deny_network_by_default` remains false,
+`credential_masking` remains partial; A-line 10 pending, local fork
+unmerged, no third-party adaptive red team; NO real-device
+multi-platform verification. The slogan engine / cleaning layer /
+`mapping.py` / `tui.py` / `runtime_slogans.py` are byte-identical.

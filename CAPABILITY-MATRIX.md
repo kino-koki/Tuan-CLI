@@ -710,3 +710,42 @@ registry 上界只影响显式 owner 查询，不影响已绑定实例派发。
 未对应已观测派发错误；`deactivate` 只接 CLI 主路径，ACP server / web /
 stream_json / TUI.close 仍未接线；`deactivate` 仍不清 default provider，
 单例身份仍进程级，单槽回填仍在，`AlertRecord.owner` 仍不序列化。
+
+
+---
+
+## B3 续轮 X 增量（create_agent 真实会话生命周期）
+
+权威口径见 `CLAUDE_PARITY.md` 末尾「深度轮（续十）」。**矩阵计数一个
+没动**：`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`；两个 B3 条目仍 `STATUS_GAP`，`catalog.py`
+零改动。
+
+- **纠偏**：IX 点名的 `tui.py` / `runtime/acp/session.py` /
+  `runtime/acp/server.py` 的 `create_agent` 调用点都是 **0**，不是
+  会话宿主。真实泄漏面是 **9 个 `create_agent` 调用方**。
+- **R1** 子 agent 创建覆盖进程级单槽 provider，主会话新建无 owner
+  消费者派到子 agent → 共享 `default_hooks_resolver()` 按 contextvar
+  分桶解析，单槽 `owner` 降为纯信息项。
+- **R2** 原 provider lambda 闭包强引用 agent，最后一个 agent 永不 GC
+  → 共享无闭包函数对象，`app.py` 改传
+  `provider=default_hooks_resolver`。
+- **R3** 短命子 agent 不注销 → 64 槽满 + id 复用被 `conflicts` 拒绝
+  → 新会话静默失去 hooks → 上提公共 `close_agent_session(agent)` 并
+  在 5 处 `finally` 接线（cmd_chat / hooks manager / subagent_tool /
+  workflow_tool / headless）。
+- **R4** 关闭子会话后单槽仍指向已注销会话 → 共享 resolver 不绑
+  owner，关闭后不再陈旧。
+- 刻意**不做 GC 终结器兜底**（槽位释放不依赖 GC 时机）。
+- 6 处上轮断言同步（全部改强）；**A′ ×3**（docstring 字面串误伤
+  新回归、`owner_miss_stats` 结构误判、替换脚本嵌套引号 SyntaxError）。
+  新增 `tests/test_b3x_agent_sessions.py`。详见
+  `SECURITY_BASELINE.md` R56。
+
+**如实边界**：子 agent 存活期间同线程 contextvar 指向子会话是同步
+作用域正常状态；后台线程无 owner 时回落「最早存活会话」可能是子
+agent；R3 的 64 槽耗尽是模拟不是真跑 70 个 LLM 子代理；R2 的 GC
+实测在 CPython 引用计数下成立。只接了 5 处，`cli/cmd_acp.py` /
+`web/server.py` / `runtime/acp/bridge.py` 三个长驻宿主仍未接线；
+两个独立子进程判定不该修。`deactivate` 仍不清 default provider，
+单例身份仍进程级、单槽回填仍在、`AlertRecord.owner` 仍不序列化。

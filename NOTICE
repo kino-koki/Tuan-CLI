@@ -1037,3 +1037,22 @@ SOFTWARE.
     Items 9-28 remain unchanged; the Apache-2.0 + MIT dual attribution
     for the Codex TUI parity line and all "no endorsement" statements
     still apply unchanged.
+
+
+30. B3-continued X shared session resolver and unified close entry:
+    a closure-free module-level ``default_hooks_resolver`` (resolves
+    hooks by ``current_session_owner()`` against the owner-partitioned
+    registry, falling back to the earliest live session when no owner
+    is available), a unified idempotent exception-isolated
+    ``close_agent_session(agent)`` entry, ``provider=default_hooks_resolver``
+    in ``app.py`` replacing the per-session agent-capturing lambda,
+    delegation in ``cli/cmd_chat.py``, and explicit ``finally``
+    close calls in ``hooks/manager.py``, ``tools/subagent_tool.py``,
+    ``tools/workflow_tool.py`` and ``stream_json/headless.py``.
+    Plus one new regression file
+    ``tests/test_b3x_agent_sessions.py``. No GC-finalizer fallback is
+    used (slot release must not depend on GC timing). No new
+    third-party material, no new dependency, and no copied upstream
+    source. Items 9-29 remain unchanged; the Apache-2.0 + MIT dual
+    attribution for the Codex TUI parity line and all "no
+    endorsement" statements still apply unchanged.

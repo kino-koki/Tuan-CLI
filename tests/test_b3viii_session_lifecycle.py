@@ -436,7 +436,8 @@ class TestWiringAndMatrix:
         """
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
         assert "activate_session(" in src
-        assert "provider=lambda: getattr(" in src
+        assert "provider=default_hooks_resolver" in src
+        assert "getattr(getattr(agent" not in src
         assert "hooks=agent.ctx.hooks" in src
         assert "ctx=agent.ctx" in src              # 事务化挂载
         assert "if not _handle.active:" in src
@@ -492,44 +493,93 @@ class TestWiringAndMatrix:
             i = src.index('M("%s"' % key)
             assert "STATUS_GAP" in src[i:i + 400], key
 
-    def test_deactivate_wired_to_cmd_chat_only(self):
-        """**B3 续轮 IX 同步（改强）**：Q6 接上 CLI 主路径。
+    def test_agent_sessions_wired_and_host_scope_corrected(self):
+        """**B3 续轮 X 同步（改强 + 纠偏）**。
 
-        VIII 断言「生产代码零调用点」；IX 在 ``cmd_chat.py`` 两个
-        SessionEnd finally 之后接了 ``_close_agent_session``（内部
-        1 处 ``deactivate_session``）。仍**不**宣称全部宿主已覆盖：
-        ACP server / web / stream_json / TUI.close 逐一锁住未接线。
+        IX 断言「只有 cmd_chat 1 处宿主接线，ACP server / web /
+        stream_json / TUI.close 逐一锁住未接」。X 实测发现这个口径**过宽**：
+        ``tui.py`` / ``runtime/acp/session.py`` / ``runtime/acp/server.py``
+        的 ``create_agent`` 调用点都是 **0**，它们根本不是会话宿主，
+        「没接 deactivate」不构成缺陷。真正产生 session handle 的是
+        **9 个 create_agent 调用方**。
+
+        X 把关闭逻辑上提成公共 ``close_agent_session``，并接上
+        CLI 主路径 + 3 个高频短命子 agent + headless（共 5 处）。
+        仍**不**宣称全部宿主已覆盖：cmd_acp / web / ACP bridge
+        三个长驻宿主未接；两个独立子进程退出即清空，判定不该修。
         """
+        import re
+
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
         assert "ctx=agent.ctx" in src
+        assert "provider=default_hooks_resolver" in src
         chat = Path("tuan_cli/cli/cmd_chat.py").read_text(
             encoding="utf-8")
         assert "_close_agent_session(" in chat
-        assert "deactivate_session(handle)" in chat
+        assert "close_agent_session(agent)" in chat
         assert chat.count("_close_agent_session(") == 3  # 1 定义 + 2 调用
+        assert "deactivate_session(handle)" not in chat
         # SessionEnd 钩子在注销**之前**（钩子还要用 ctx.hooks）
-        for m in ("_run_session_hooks(", "_close_agent_session("):
-            assert m in chat
-        # 排除 API 定义层 triggers.py 后，宿主调用恰好 1 处
-        hits = []
+        for seg in chat.split("finally:")[1:3]:
+            assert seg.index("_run_session_hooks(") < seg.index(
+                "_close_agent_session(")
+
+        # 公共入口已导出且只有一个定义
+        init = Path("tuan_cli/hooks/__init__.py").read_text(
+            encoding="utf-8")
+        assert '"close_agent_session"' in init
+        trig = Path("tuan_cli/hooks/triggers.py").read_text(
+            encoding="utf-8")
+        assert "def close_agent_session(" in trig
+        assert "def default_hooks_resolver(" in trig
+
+        # 5 处显式接线（排除定义 / import / 注释行）
+        wired = {
+            "tuan_cli/cli/cmd_chat.py",
+            "tuan_cli/hooks/manager.py",
+            "tuan_cli/tools/workflow_tool.py",
+            "tuan_cli/tools/subagent_tool.py",
+            "tuan_cli/stream_json/headless.py",
+        }
+        hits = set()
         for p in Path("tuan_cli").rglob("*.py"):
             if p.name == "triggers.py":
                 continue
-            for n, line in enumerate(p.read_text(
-                    encoding="utf-8").splitlines(), 1):
+            for line in p.read_text(encoding="utf-8").splitlines():
                 code = line.strip()
-                if code.startswith("#") or code.startswith("def ") \
-                        or code.startswith("from "):
+                if (code.startswith("#") or code.startswith("def ")
+                        or code.startswith("from ")):
                     continue
-                if "deactivate_session(" in code:
-                    hits.append((str(p), n))
-        assert len(hits) == 1 and hits[0][0].endswith(
-            "cli/cmd_chat.py"), hits
-        # 其余宿主如实未接
-        for rel in ("tuan_cli/runtime/acp/server.py",
-                    "tuan_cli/runtime/acp/session.py",
-                    "tuan_cli/web/server.py",
-                    "tuan_cli/stream_json/headless.py",
-                    "tuan_cli/tui/tui.py"):
+                if "close_agent_session(" in code and \
+                        not code.startswith("def "):
+                    hits.add(str(p))
+        assert hits == wired, (hits ^ wired)
+        # 关闭必须在 finally 里（异常路径也释放）
+        for rel in ("tuan_cli/hooks/manager.py",
+                    "tuan_cli/tools/workflow_tool.py",
+                    "tuan_cli/tools/subagent_tool.py"):
             s = Path(rel).read_text(encoding="utf-8")
+            assert "finally:" in s and "close_agent_session(" in s, rel
+
+        # 三个长驻宿主如实未接（下一轮）
+        for rel in ("tuan_cli/cli/cmd_acp.py",
+                    "tuan_cli/web/server.py",
+                    "tuan_cli/runtime/acp/bridge.py"):
+            assert "close_agent_session(" not in Path(rel).read_text(
+                encoding="utf-8"), rel
+        # 两个独立子进程：退出即清空，判定不该修（回归锁住）
+        for rel in ("tuan_cli/core/_sandbox_entry.py",
+                    "tuan_cli/core/background_worker.py"):
+            assert "close_agent_session(" not in Path(rel).read_text(
+                encoding="utf-8"), rel
+
+        # 纠偏：上轮点名的三个「宿主」其实 0 个 create_agent 调用点
+        for rel in ("tuan_cli/tui/tui.py",
+                    "tuan_cli/runtime/acp/session.py",
+                    "tuan_cli/runtime/acp/server.py"):
+            s = Path(rel).read_text(encoding="utf-8")
+            n = sum(1 for l in s.splitlines()
+                    if not l.strip().startswith("#")
+                    and re.search(r"\bcreate_agent\s*\(", l))
+            assert n == 0, (rel, n)
             assert "deactivate_session(" not in s, rel

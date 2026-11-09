@@ -162,11 +162,16 @@ def _execute_subtask(
 
     sub_max_iter = config.get("agent.subagent_max_iterations", 15)
     try:
-        answer = sub_agent.run(task, stream=False, max_iterations=sub_max_iter)
-    except Exception as exc:  # noqa: BLE001
-        return f"[子任务错误] {type(exc).__name__}: {exc}"
-
-    return answer or "(无输出)"
+        try:
+            answer = sub_agent.run(task, stream=False,
+                                   max_iterations=sub_max_iter)
+        except Exception as exc:  # noqa: BLE001
+            return f"[子任务错误] {type(exc).__name__}: {exc}"
+        return answer or "(无输出)"
+    finally:
+        # B3 续轮 X（R3）：短命子 agent 必须显式注销会话槽。
+        from ..hooks.triggers import close_agent_session
+        close_agent_session(sub_agent)
 
 
 class WorkflowPlugin(Plugin):

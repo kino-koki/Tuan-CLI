@@ -414,7 +414,10 @@ class TestWiringAndMatrix:
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
         assert '_session_owner = "agent:%x" % id(agent)' in src
         assert "activate_session(" in src
-        assert "provider=lambda: getattr(" in src
+        assert "provider=default_hooks_resolver" in src
+        # B3 续轮 X（R2）：共享无闭包 provider，app.py 不得再捕获 agent
+        assert "getattr(getattr(agent" not in src
+        assert "from .hooks.triggers import activate_session, default_hooks_resolver" in src
         assert "hooks=agent.ctx.hooks" in src
         assert "if not _handle.active:" in src
         assert "ctx=agent.ctx" in src   # IX：事务化挂载取代手动赋值

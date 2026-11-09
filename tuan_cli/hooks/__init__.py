@@ -18,7 +18,7 @@ from .triggers import HookTrigger, set_default_hooks_provider, \
     session_registry_diagnostics, current_session_owner, \
     set_session_owner, reset_session_owner, owner_miss_stats, \
     hooks_for_owner, activate_session, deactivate_session, SessionHandle, \
-    session_scope
+    session_scope, default_hooks_resolver, close_agent_session
 
 __all__ = [
     "HookManager", "HookDecision", "HookFailure",
@@ -29,5 +29,6 @@ __all__ = [
     "session_registry_diagnostics", "current_session_owner",
     "set_session_owner", "reset_session_owner", "owner_miss_stats",
     "hooks_for_owner", "activate_session", "deactivate_session",
-    "SessionHandle", "session_scope",
+    "SessionHandle", "session_scope", "default_hooks_resolver",
+    "close_agent_session",
 ]

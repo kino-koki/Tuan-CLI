@@ -567,12 +567,11 @@ def _close_agent_session(agent: Any) -> None:
     如实边界：ACP server / web / stream_json / TUI.close 等宿主仍
     未接线，回归里逐项锁住，不宣称「全部宿主已覆盖」。
     """
-    handle = getattr(getattr(agent, "ctx", None), "session_handle", None)
-    if handle is None:
-        return
+    # B3 续轮 X：统一公共入口（同一份幂等/异常隔离契约），本函数
+    # 只保留 CLI 侧的调用顺序与异常隔离，不再自己实现关闭逻辑。
     try:
-        from ..hooks.triggers import deactivate_session
-        deactivate_session(handle)
+        from ..hooks.triggers import close_agent_session
+        close_agent_session(agent)
     except Exception:  # noqa: BLE001 - 关闭路径不得掀翻 CLI 退出
         pass
 

@@ -518,8 +518,8 @@ class TestSidePaths:
         """
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
         assert "activate_session(" in src
-        assert "provider=lambda: getattr(" in src
-        assert 'getattr(agent, "ctx", None)' in src
+        assert "provider=default_hooks_resolver" in src
+        assert "getattr(getattr(agent" not in src
         assert "hooks=agent.ctx.hooks" in src
         assert "ctx=agent.ctx" in src          # IX：事务化挂载
         assert "agent.ctx.session_handle = _handle" not in src

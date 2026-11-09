@@ -801,6 +801,7 @@ class HookManager:
             self._audit(spec.event, spec.raw, "no_kernel", d)
             self._record_failure(spec, "no_kernel", d)
             return None
+        sub = None
         try:
             from ..app import create_agent
             sub = create_agent(self._kernel, self.workspace or "")
@@ -814,6 +815,10 @@ class HookManager:
             self._audit(spec.event, spec.raw, "error", d)
             self._record_failure(spec, "error", d)
             return None
+        finally:
+            # B3 续轮 X（R3）：短命子 agent 必须显式注销会话槽。
+            from .triggers import close_agent_session
+            close_agent_session(sub)
 
     def _parse_decision(self, stdout: str) -> Optional[Dict[str, Any]]:
         """解析 hook stdout 为统一决策 dict。

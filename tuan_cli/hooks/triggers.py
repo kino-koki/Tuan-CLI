@@ -166,6 +166,48 @@ def current_session_hooks() -> Any:
     return _resolve_default()
 
 
+def default_hooks_resolver() -> Any:
+    """**共享** provider：按当前上下文解析 hooks，不捕获任何 agent / owner。
+
+    B3 续轮 X（R1/R2/R4）实测：``app.create_agent`` 原注入
+
+        provider=lambda: getattr(getattr(agent, "ctx", None), "hooks", None)
+
+    有两个真实缺陷：
+
+    - **R2（内存泄漏）**：lambda 闭包**强引用 agent**，而
+      ``set_default_hooks_provider`` 把它存成模块级单槽 —— 最后一个
+      被创建的 agent 永远无法 GC（实测弱引用仍存活，
+      闭包 cell 类型就是 Agent）。
+    - **R1/R4（归属漂移）**：每个子 agent 创建都会覆盖单槽，且
+      ``deactivate_session`` 刻意不清 provider，关闭后单槽仍指向已
+      注销会话（实测 provider owner 仍是 ``sub``）。
+
+    本函数是**模块级无闭包函数对象**，所有 ``create_agent`` 注入同一个
+    它：按 ``current_session_owner()`` 分桶查 registry；无 owner（后台
+    线程 / contextvar 未跨线程，P3 实测）时回落到**最早存活会话**。
+    它不持有任何 agent、ctx 或 hooks 引用，因此不阻止 GC；单槽记的
+    ``owner`` 退化为纯信息项，不再决定派发归属。
+
+    刻意**不做 GC 终结器兜底**：那会让槽位释放依赖 GC 时机，
+    与本项目前几轮「判定不依赖文件系统/缓存时间点」的立场一致；
+    泄漏由各 ``create_agent`` 调用方在明确作用域出口显式关闭解决。
+    """
+    owner = current_session_owner()
+    if owner:
+        h = resolve_session(owner)
+        if h is not None:
+            return h
+        _bump_owner_miss(owner)
+        return None
+    # 无 owner：后台线程拿不到 contextvar（P3），回落最早存活会话。
+    # 该会话可能是子 agent，如实标在边界里，不谎称总是主会话。
+    with _SESSION_LOCK:
+        for _o, h in _SESSIONS.items():
+            return h
+    return None
+
+
 def register_session(owner: str, hooks: Any) -> bool:
     """按 owner 注册会话 hooks；**已存在 / 超出上界一律拒绝，不覆盖**。
 
@@ -472,6 +514,29 @@ def session_scope(
         yield h
     finally:
         deactivate_session(h)
+
+
+def close_agent_session(agent: Any) -> bool:
+    """**统一**会话关闭入口：任何宿主 / 子 agent 都可调用。
+
+    B3 续轮 X（R3）：``create_agent`` 的真实调用方有 9 处，而上一轮
+    只在 ``cli/cmd_chat.py`` 接了 ``deactivate``。短命子 agent
+    （subagent / workflow / Subagent hook）每次创建都注册一个槽、
+    从不注销 —— 实测 70 次后打满 64 槽（rejected=6），叠加
+    ``"agent:%x" % id(agent)`` 的 id 复用会被 ``conflicts`` 拒绝，
+    新会话 ``active=False`` **静默失去 hooks**。
+
+    本函数从 ``agent.ctx.session_handle`` 取句柄并幂等关闭；异常一律
+    吞掉，**关闭路径绝不掀翻业务返回**。返回值仅供诊断（已关闭的句柄
+    ``deactivate_session`` 会返回 False），调用方无需检查。
+    """
+    handle = getattr(getattr(agent, "ctx", None), "session_handle", None)
+    if handle is None:
+        return False
+    try:
+        return deactivate_session(handle)
+    except Exception:  # noqa: BLE001 - 关闭路径不得掀翻宿主
+        return False
 
 
 def provider_diagnostics() -> Dict[str, Any]:

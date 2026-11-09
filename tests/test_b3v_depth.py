@@ -409,7 +409,10 @@ class TestProviderDiagnostics:
         assert "config._hooks = agent.ctx.hooks" in src
         assert '_session_owner = "agent:%x" % id(agent)' in src
         assert "activate_session(" in src
-        assert "provider=lambda: getattr(" in src
+        assert "provider=default_hooks_resolver" in src
+        # B3 续轮 X（R2）：共享无闭包 provider，app.py 不得再捕获 agent
+        assert "getattr(getattr(agent" not in src
+        assert "from .hooks.triggers import activate_session, default_hooks_resolver" in src
         assert "ctx=agent.ctx" in src   # IX：事务化挂载
         assert "agent.ctx.session_owner =" not in src
         assert "agent.ctx.session_handle = _handle" not in src
