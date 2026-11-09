@@ -2502,3 +2502,103 @@ optional `notify()` keyword, one extra `app.py` registration.
 unmerged, no third-party adaptive red team; NO real-device
 multi-platform verification. The slogan engine / cleaning layer /
 `mapping.py` / `tui.py` / `runtime_slogans.py` are byte-identical.
+
+
+---
+
+## B3 Continued VII: C4 Last Corner -- CONCURRENT Multi-Session Dispatch Ownership
+
+> SELF-CONTAINED heading. NOT A SINGLE MATRIX STATUS CHANGED:
+> `aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+> `b_waves_done=["B1"]`. Both B3 catalog entries stay `STATUS_GAP`;
+> `catalog.py` is UNCHANGED. Full reproduction: final section of
+> `CLAUDE_PARITY.md`.
+>
+> Round VI honestly left one boundary: `_global_alerter` / `_notify_rc`
+> are STILL process singletons, so two CONCURRENTLY coexisting sessions
+> share one instance (the later reuses the earlier binding). This round
+> closes it. NO breadth added.
+
+### Five candidates (4 fixed / 1 deliberately not)
+
+| ID | Measured | Verdict |
+|---|---|---|
+| O1 | `bind_session_hooks(B)` **unconditionally backfills** the singleton `hooks`; A's `SecurityAlerter` alerted after B bound -> **0 to A / 1 to B** | FIX |
+| O2 | Same root in `remote_control.notify()`: C's SECOND notification landed on **D** | FIX |
+| O4 | `contextvars.ContextVar` does NOT cross `threading.Thread` (main `"A"` / child `None`, measured) | FIX (caller bakes owner into the record) |
+| O5 | SELF-INTRODUCED while fixing O1/O2 (A-prime): dynamic owner lookup made "unregistered owner" silently return an empty decision = allow | FIX: fail-closed `owner_not_registered` |
+| O3 | `get_alerter()` is a process singleton; `SecurityAlerter` owns `AlertLogger(home)` + bus subscription, `RemoteControl` owns a port + session file | NOT fixed -- per-owner multi-instance would introduce file contention, duplicate subscriptions, and port conflicts. The regression LOCKS `x is y` |
+
+### Fix
+- `hooks/triggers.py`: new `ContextVar` session owner
+  (`current_session_owner` / `set_session_owner` /
+  `reset_session_owner`), `hooks_for_owner`, `owner_miss_stats`
+  (bounded, `<other>` merge, diagnostics-only). `HookTrigger(owner=)`
+  changed from "freeze the resolved VALUE at construction" to
+  **freeze the OWNER, resolve via the owner-partitioned registry at
+  dispatch time**. The lookup is dynamic but does NOT drift, because
+  the registry is bucketed by owner rather than being a single slot:
+  `bind(B)` cannot change A's bucket. No-`owner` construction still
+  freezes the value (VI's C4-A fix intact). An unknown `owner` does NOT
+  fall back to default; decision events additionally fail closed.
+- `core/security_alert.py`: `AlertRecord` gains `owner: str = ""`
+  (**in-process routing field, NOT serialized in `to_dict()`**, so the
+  existing audit format is unchanged); `alert()` captures the owner on
+  the CALLING thread and bakes it into the record; the background
+  `_notify_safely` thread uses `record.owner` to resolve the bucket,
+  sidestepping O4.
+- `core/remote_control.py`: `notify()` gains an optional keyword
+  `owner`; precedence **explicit hooks > current-session owner bucket >
+  instance-frozen hooks**. With an unregistered owner it only uses the
+  instance's existing binding -- ZERO behavioral regression.
+- `runtime/acp/bridge.py`: `ask_user` supports a registered owner
+  bucket; otherwise `self.hooks`. A single bridge can serve multiple
+  `session_id`s -- **the `session_id` <-> owner mapping is the caller's
+  responsibility; this round does NOT derive it automatically**.
+- `app.py`: calls `set_session_owner(_session_owner)` at session start,
+  AFTER `set_default_hooks_provider` / `bind_session_hooks`.
+
+### One previous-round assertion synchronized (STRENGTHENED)
+`test_module_level_notify_is_now_instance_bound` gains owner-bucket,
+`getattr(record, "owner", "")`, `AlertRecord.owner`, and
+`current_session_owner` assertions; all three VI assertions remain.
+
+### A-prime x2 (self-caught)
+1. **O5** was a risk introduced while fixing O1/O2; caught by a newly
+   written regression and made fail-closed.
+2. A new assertion checked `"record.owner"`, but the code uses
+   `getattr(record, "owner", "")` (compat with older records) -> the
+   literal did not match. Switched to the real spelling. ZERO
+   product-code regressions.
+
+### Verification (split batches, NOT one full-suite claim)
+B3-VII + previous two B3 rounds + 5 existing hooks files + mixin +
+config + alert/remote/plugin/bus/bridge/ACP related **330 passed**;
+wide combined batches (see report); `matrix.validate()` /
+`evidence.verify_evidence()` / doc-number check / `py_compile` all clean.
+New `tests/test_b3vii_concurrent_sessions.py` covers background-thread
+concurrency, single-slot backfill remaining but unused by owner paths,
+`rc is None` still dispatching, contextvar cross-thread, owner hot
+replace, O5 fail-closed + bounded misses, O3 singleton identity, matrix
+pinning.
+
+### Honest limits
+**Singleton OBJECT IDENTITY is still process-wide** (no multi-instance,
+avoiding file contention / duplicate bus subscriptions / port conflicts).
+What is isolated is DISPATCH OWNERSHIP, not the instance. The
+**single-slot backfill in `bind_session_hooks` still exists** (`al.hooks`
+is overwritten by the last bind); owner-context dispatch simply does not
+read it. Paths with **no owner set and no explicit `hooks`** still use
+the last binding (existing behavior) -- "complete multi-session
+isolation" is NOT claimed. `owner_miss_stats` is diagnostics-only and
+does NOT affect adjudication; the decision fail-closed applies only to
+explicit `owner=` lookups that miss. The ACP `session_id` <-> owner
+mapping is the caller's job. BEHAVIORAL CHANGES:
+`HookTrigger(owner=)` now freezes the owner + resolves dynamically,
+`notify()` gains an optional `owner`, `AlertRecord` gains a field,
+`app.py` sets a contextvar. `os_sandbox` remains a gap,
+`deny_network_by_default` remains false, `credential_masking` remains
+partial; A-line 10 pending, local fork unmerged, no third-party
+adaptive red team; NO real-device multi-platform verification. The
+slogan engine / cleaning layer / `mapping.py` / `tui.py` /
+`runtime_slogans.py` are byte-identical.

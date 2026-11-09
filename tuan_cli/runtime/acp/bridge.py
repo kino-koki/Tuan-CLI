@@ -175,8 +175,15 @@ class KernelAcpBridge:
         # B3 续轮: ACP 的 elicitation/create 反向 RPC 是 CC 语义上真正的
         # MCP elicitation 宿主。提问前派发 Elicitation（block = 取消，
         # 不代答）；拿到真实答案后派发 ElicitationResult（block = 作废）。
-        from ...hooks.triggers import HookTrigger
-        _trig = HookTrigger(self.hooks)
+        from ...hooks.triggers import (
+            HookTrigger, current_session_owner, resolve_session)
+        _o = current_session_owner()
+        # B3 续轮 VII: 一个 KernelAcpBridge 可服务多个 session_id；
+        # 有已注册 owner 时按分桶解析，否则沿用实例冻结 hooks。
+        if _o and resolve_session(_o) is not None:
+            _trig = HookTrigger(owner=_o)
+        else:
+            _trig = HookTrigger(self.hooks)
         _pre = _trig.elicitation(
             question=question, options=opts, source="acp_elicitation_create")
         if getattr(_pre, "block", False):

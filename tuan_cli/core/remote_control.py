@@ -362,7 +362,7 @@ def _shared_rc() -> Optional["RemoteControl"]:
 
 
 def notify(title: str, body: str, kind: str = "info", *,
-           hooks: Any = None) -> bool:
+           hooks: Any = None, owner: Optional[str] = None) -> bool:
     """发送一条通知 (任务完成 / 失败 / 预算告警等)。
 
     参数:
@@ -383,10 +383,21 @@ def notify(title: str, body: str, kind: str = "info", *,
     # B3 续轮 VI: 优先用调用方显式 hooks，其次用**单例构造时冻结**的
     # hooks；两者都没有才回落 HookTrigger() 的冻结 default。
     # _shared_rc() 内部吞异常返回 None，提前调用不会掀翻主流程。
-    from ..hooks.triggers import HookTrigger
+    from ..hooks.triggers import (
+        HookTrigger, current_session_owner, resolve_session)
     _rc = _shared_rc()
     _h = hooks if hooks is not None else getattr(_rc, "hooks", None)
-    HookTrigger(_h).notification(
+    _owner = owner or current_session_owner()
+    # B3 续轮 VII: 显式 hooks > 本会话 owner 分桶 > 实例冻结 hooks。
+    # 未注册 owner 时不回落全局 default（VI 修掉的串台根因），只沿用
+    # 实例既有绑定，行为零退化。
+    if hooks is not None:
+        _trig = HookTrigger(hooks)
+    elif _owner and resolve_session(_owner) is not None:
+        _trig = HookTrigger(owner=_owner)
+    else:
+        _trig = HookTrigger(_h)
+    _trig.notification(
         title=title, body=body, kind=kind, source="remote_control")
     pushed = False
     try:

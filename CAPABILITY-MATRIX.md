@@ -611,3 +611,35 @@ Elicitation 语义不等价、`ToolPipeline` 无生产调用链。catalog note �
 
 **如实边界**：两个进程级单例在**并发并存**时仍共用，未重写单例架构；
 registry 上界只影响显式 owner 查询，不影响已绑定实例派发。
+
+
+---
+
+## B3 续轮 VII 增量（并发多会话的派发归属隔离）
+
+权威口径见 `CLAUDE_PARITY.md` 末尾「深度轮（续七）」。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`；两个 B3 条目仍 `STATUS_GAP`，`catalog.py` 零改动。
+
+- **O1** `bind_session_hooks(B)` 无条件回填单例 `hooks` → A 会话告警
+  派到 B。改为 `HookTrigger(owner=)` **冻结 owner、派发时按 owner
+  分桶查 registry**（动态但非单槽，不随别的会话漂移）。
+- **O2** `remote_control.notify()` 并发串台 → 新增可选 `owner`，
+  优先级 显式 hooks > owner 分桶 > 实例冻结 hooks。
+- **O4** contextvar 不跨 `threading.Thread`（实测）→ `AlertRecord`
+  加 `owner` 字段（不进 `to_dict()`），由 `alert()` 在调用线程烘进，
+  后台线程用记录里的 owner 查分桶。
+- **O5**（A′）动态查表引入「owner 未注册 → 决策类静默放行」→
+  fail-closed `owner_not_registered`，通知类 no-op + 有界 miss 留痕。
+- **O3** 判定不该修：不创建按 owner 的多实例（文件竞争 / 重复订阅 /
+  端口冲突），回归锁住单例身份。
+- 新增 `current_session_owner` / `set_session_owner` /
+  `reset_session_owner` / `hooks_for_owner` / `owner_miss_stats`；
+  `app.py` 接上 `set_session_owner`；ACP bridge 支持 owner 分桶。
+- 一条上轮断言同步（改强）；A′ ×2（O5 自身风险 + 断言字面串对不上）。
+新增 `tests/test_b3vii_concurrent_sessions.py`。详见
+`SECURITY_BASELINE.md` R53。
+
+**如实边界**：单例身份仍进程级，隔离的是派发归属不是实例；单槽回填
+仍在但 owner 路径不读它；未设置 owner 的路径沿用既有绑定，不宣称
+「完全多会话隔离」。

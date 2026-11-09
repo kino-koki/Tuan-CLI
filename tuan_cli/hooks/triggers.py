@@ -48,6 +48,7 @@ Notification            ``remote_control.notify`` /    纯通知
 """
 from __future__ import annotations
 
+import contextvars
 import threading
 from typing import Any, Callable, Dict, List, Optional
 
@@ -81,6 +82,23 @@ _SESSIONS: Dict[str, Any] = {}
 _SESSION_LOCK = threading.Lock()
 _MAX_SESSIONS = 64
 
+# B3 续轮 VII: **当前会话 owner**（contextvars，不是 thread-local）。
+# 与上一轮的 default provider 不同：contextvar 在**并发会话**里各自独立，
+# 单槽 provider 做不到。但 contextvar **不跨 threading.Thread**（实测子
+# 线程拿到 None），所以后台线程的 owner 必须由调用方烘进数据（见
+# security_alert.AlertRecord.owner），不能靠这里隐式传递。
+_CURRENT_OWNER: "contextvars.ContextVar[Optional[str]]" = \
+    contextvars.ContextVar("tuan_current_session_owner", default=None)
+
+# owner 查表落空的证据：纯诊断项，不参与裁决（与 evicted_total /
+# unresolved_misses 同一处理），但决策类会另外 fail-closed（见 _decide）。
+_OWNER_MISSES: Dict[str, int] = {}
+_MAX_MISS_KEYS = 64
+
+# ``_UNSET`` 与 ``None`` 必须区分：None 是「确实没配 hooks」的合法值，
+# _UNSET 是「构造时给的是 owner，应在**派发时**按 owner 查表」。
+_UNSET = object()
+
 
 def set_default_hooks_provider(
     fn: Optional[Callable[[], Any]], *, owner: Optional[str] = None,
@@ -95,8 +113,9 @@ def set_default_hooks_provider(
     ``provider_diagnostics()`` 让它可见。需要严格隔离的调用方必须
     **显式传 hooks**：app.py 已把 ``config._hooks`` 回填为本会话的值，
     ``/worktree`` 显式传 ``agent.ctx.hooks``，``ask_user`` 用
-    ``ctx.hooks``。只有模块级函数（``remote_control.notify``、
-    ``SecurityAlerter`` 后台线程）仍依赖这个全局 fallback。
+    ``ctx.hooks``。B3 续轮 VI 起模块级入口也改成实例级绑定；本轮
+    （VII）再补上按 owner 分桶的 contextvar 解析，让**并发**会话
+    不互相覆盖（单槽 provider 仍是单会话默认出口，如实保留）。
     """
     global _DEFAULT_PROVIDER, _PROVIDER_OWNER, _PROVIDER_GENERATION
     global _PROVIDER_OVERRIDES
@@ -162,6 +181,61 @@ def resolve_session(owner: str) -> Any:
         return _SESSIONS.get(owner)
 
 
+# ---------------------------------------------------------------- VII: owner
+def current_session_owner() -> Optional[str]:
+    """返回**当前上下文**的会话 owner；未设置时 None。
+
+    刻意返回 None 而不是回落某个默认值 —— 「没设置 owner」与「owner
+    拼错」是两件事，不能靠猜把派发塞进别的会话。
+    """
+    v = _CURRENT_OWNER.get()
+    return v if isinstance(v, str) and v else None
+
+
+def set_session_owner(owner: str) -> Any:
+    """绑定当前上下文的会话 owner，返回 token 供 ``reset_session_owner``。
+
+    ``owner`` 必须是非空 str：非字符串/空串一律拒绝（不静默接受），
+    否则 registry 的 key 会变成不可哈希或污染 default 桶。
+    """
+    if not isinstance(owner, str) or not owner:
+        raise ValueError("session owner 必须是非空字符串")
+    return _CURRENT_OWNER.set(owner)
+
+
+def reset_session_owner(token: Any) -> None:
+    """用 ``set_session_owner`` 返回的 token 复位（异常安全，try/finally）。"""
+    try:
+        _CURRENT_OWNER.reset(token)
+    except (ValueError, TypeError):
+        # token 来自别的 Context（跨线程误用）—— 不掀翻主路径，如实忽略
+        pass
+
+
+def _bump_owner_miss(owner: str) -> None:
+    """记录一次 owner 查表落空；有界，尾部归并到 ``<other>``。"""
+    key = owner if owner in _OWNER_MISSES or len(_OWNER_MISSES) < _MAX_MISS_KEYS \
+        else "<other>"
+    with _SESSION_LOCK:
+        _OWNER_MISSES[key] = _OWNER_MISSES.get(key, 0) + 1
+
+
+def owner_miss_stats() -> Dict[str, int]:
+    """只读诊断：哪些 owner 查表落空、各多少次。"""
+    with _SESSION_LOCK:
+        return dict(_OWNER_MISSES)
+
+
+def hooks_for_owner(owner: Optional[str]) -> Any:
+    """按 owner 查会话 hooks；未设置/未注册一律返回 None 并留痕。"""
+    if not owner:
+        return None
+    h = resolve_session(owner)
+    if h is None:
+        _bump_owner_miss(owner)
+    return h
+
+
 def session_registry_diagnostics() -> Dict[str, Any]:
     with _SESSION_LOCK:
         return {
@@ -214,6 +288,8 @@ def provider_diagnostics() -> Dict[str, Any]:
         "installed": _DEFAULT_PROVIDER is not None,
         "reentry": reentry,
         "sessions": session_registry_diagnostics(),
+        "current_owner": current_session_owner(),
+        "owner_misses": owner_miss_stats(),
     }
 
 
@@ -237,35 +313,52 @@ class HookTrigger:
     两种都没取到 → 全部方法严格 no-op，既有行为零变化。
     """
 
-    __slots__ = ("_hooks", "_owner")
+    __slots__ = ("_hooks", "_owner", "_kind")
 
     def __init__(self, hooks: Any = None, *, owner: Optional[str] = None) -> None:
-        """**构造时冻结**本次派发要用的 hooks。
+        """**冻结归属**，而不是一律冻结 hooks 值。
 
-        B3 续轮 VI 实测缺陷（C4-A）：上一版 ``_effective()`` 在**每次
-        派发时**才读全局 provider，于是「A 会话构造的 trigger，在 B
-        覆盖 provider 之后派发」会静默落到 B（A 零触发、B 代收）。
-        现在构造时解析一次并冻结：现场构造的 trigger 仍绑定调用时刻
-        的当前会话，而长期持有的 trigger 不会随后续覆盖漂移。
+        B3 续轮 VI（C4-A）：上一版 ``_effective()`` 在每次派发时才读
+        **单槽**全局 provider，于是 A 构造的 trigger 在 B 覆盖后派到 B。
+        VI 改成构造时冻结 hooks 值，修好了串行漂移。
 
-        优先级：显式 ``hooks`` > ``owner`` 查 registry > 冻结 default。
-        ``owner`` 查不到时**不回落** default（避免 owner 拼错就静默
-        派到别的会话）。
+        B3 续轮 VII（O1/O2）：VI 的 ``bind_session_hooks`` 仍会**无条件
+        回填**进程级单例的 ``hooks``，两个会话并发并存时后者覆盖前者
+        （实测 A 的告警派到 B）。本轮把 ``owner=`` 路径改成**冻结
+        owner、派发时按 owner 分桶查表**：查表是动态的，但 registry
+        按 owner 分桶而不是单槽，所以 ``bind(B)`` 不会改 A 桶 —— 既
+        支持会话内热替换，又不会随别的会话漂移。
+
+        优先级：显式 ``hooks`` > ``owner`` 分桶查表 > 冻结 default。
+        ``owner`` 查不到时**不回落** default（避免拼错就静默派到别的
+        会话），且决策类 fail-closed（见 ``_decide``）。
         """
         if hooks is not None:
             self._hooks = hooks
             self._owner = "explicit"
+            self._kind = "explicit"
         elif owner is not None:
-            self._hooks = resolve_session(owner)
+            self._hooks = _UNSET
             self._owner = owner
+            self._kind = "owner"
         else:
             self._hooks = _resolve_default()
             self._owner = None
+            self._kind = "default"
 
     # ---------------------------------------------------------------- 内部
     def _effective(self) -> Any:
-        """返回构造时冻结的 hooks —— 不再读全局 provider。"""
-        return self._hooks
+        """按冻结的归属解析 hooks —— **不读单槽全局 provider**。
+
+        ``owner`` 分支动态查 registry（分桶，非单槽）；其余分支返回
+        构造时冻结的值。查表落空记诊断证据，绝不回落 default。
+        """
+        if self._kind != "owner":
+            return self._hooks
+        h = resolve_session(self._owner)
+        if h is None:
+            _bump_owner_miss(self._owner)
+        return h
 
     @staticmethod
     def _no_decision() -> HookDecision:
@@ -318,6 +411,15 @@ class HookTrigger:
         安全绕过），统一 fail-closed 并标 ``reentry_suppressed``。
         """
         hooks = self._effective()
+        if self._kind == "owner" and hooks is None:
+            # O5 自查（修 VI 的单槽覆盖时自己引入的新风险）：显式绑定
+            # 了 owner 却查不到注册，不能静默返回空决策放行 —— 那是
+            # 把「配置笔误」变成安全绕过。通知类仍严格 no-op（既有）。
+            return HookDecision(
+                block=True,
+                reason="会话 owner 未注册 hooks (fail-closed)",
+                failure_kind="owner_not_registered",
+            )
         if hooks is None or not getattr(hooks, "enabled", False):
             return self._no_decision()
         inflight = _in_flight_events()

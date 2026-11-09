@@ -2203,3 +2203,82 @@ config **185 passed**；宽合并批次见报告；`matrix.validate()` /
 `credential_masking` 仍 partial；A 线 10 pending、分叉改动、
 第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
 `mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## B3 续轮 VII：C4 最后一角（并发多会话的派发归属隔离）
+
+> 自足标题。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续七）」。
+
+### 五个候选（4 修 / 1 不该修）
+
+| 编号 | 实测 | 判定 |
+|---|---|---|
+| O1 | `bind_session_hooks(B)` 无条件回填单例 `hooks`；A 会话订阅的 `SecurityAlerter` 在 B 绑定后告警 → **A 零触发、B 代收** | **修** |
+| O2 | `remote_control.notify()` 同源：C 会话第二次通知落到 **D** | **修** |
+| O4 | `ContextVar` **不跨** `threading.Thread`（主线程 `"A"` / 子线程 `None`，实测） | **修**（由调用方烘进数据） |
+| O5 | 修 O1/O2 时自己引入：动态按 owner 查表后「owner 未注册」让决策类静默返回空决策放行 | **修**：fail-closed `owner_not_registered` |
+| O3 | `get_alerter()` 进程级单例 + `AlertLogger(home)` / bus 订阅 / 端口与会话文件 | **不该修**：按 owner 多实例会引入文件竞争、重复订阅与端口冲突，回归锁住 `x is y` |
+
+### 修复
+- `hooks/triggers.py`：新增 `ContextVar` 会话 owner
+  （`current_session_owner` / `set_session_owner` /
+  `reset_session_owner`）、`hooks_for_owner`、`owner_miss_stats`
+  （有界、`<other>` 归并、纯诊断）。`HookTrigger(owner=)` 改成
+  **冻结 owner、派发时按 owner 分桶查 registry** —— 动态但不漂移，
+  因为 registry 分桶而非单槽；`bind(B)` 不改 A 桶。无 `owner` 的
+  构造仍冻结值（VI 的 C4-A 修复不破）。`owner` 查不到不回落
+  default，决策类另加 fail-closed。
+- `core/security_alert.py`：`AlertRecord` 加 `owner: str = ""`
+  （**进程内路由字段，不进 `to_dict()`**，既有审计格式零变化）；
+  `alert()` 在调用线程捕获 owner 烘进记录；后台线程
+  `_notify_safely` 用它查分桶，绕开 O4。
+- `core/remote_control.py`：`notify()` 加可选关键字 `owner`；
+  优先级 **显式 hooks > 本会话 owner 分桶 > 实例冻结 hooks**；
+  未注册 owner 时只沿用实例既有绑定，行为零退化。
+- `runtime/acp/bridge.py`：`ask_user` 支持已注册 owner 分桶；
+  **owner 与 `session_id` 的映射由上层负责，本轮不自动派生**。
+- `app.py`：会话启动时 `set_session_owner(_session_owner)`，在
+  `set_default_hooks_provider` / `bind_session_hooks` 之后。
+
+### 一条上轮断言同步（改强，不是放宽）
+`test_module_level_notify_is_now_instance_bound` 增加 owner 分桶、
+`getattr(record, "owner", "")`、`AlertRecord.owner` 与
+`current_session_owner` 断言；VI 的三条既有断言全部保留。
+
+### A′ ×2（自己写错自己抓回）
+1. **O5** 是修 O1/O2 时自己引入的新风险，由新写回归抓回并改为
+   fail-closed。
+2. 新断言写 `"record.owner"`，实际代码用
+   `getattr(record, "owner", "")`（兼容旧记录），字面串对不上 →
+   改成检查真实写法。产品代码零回归。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3-VII + 上两轮 B3 + 5 个 hooks 既有文件 + mixin + config +
+alert/remote/plugin/bus/bridge/ACP 相关 **330 passed**；宽合并批次
+见报告；`matrix.validate()` / `evidence.verify_evidence()` /
+文档数字校验 / `py_compile` 全干净。新增
+`tests/test_b3vii_concurrent_sessions.py` 含后台线程并发、
+单槽回填仍在但派发不读它、`rc is None` 仍派发、contextvar 跨线程、
+owner 热替换、O5 fail-closed + miss 有界、O3 单例身份、矩阵钉死。
+
+### 如实边界
+**单例对象身份仍是进程级**（不创建多实例，避免文件竞争 / 重复 bus
+订阅 / 端口冲突）。隔离的是**派发归属**不是实例本身。
+`bind_session_hooks` 的**单槽回填仍在**（`al.hooks` 会被最后一次
+bind 覆盖），只是有 owner 上下文的派发走分桶表、不再读它；
+**未设置 owner 且未显式传 hooks** 的路径仍沿用最后一次 bind 的
+绑定（既有行为）—— **不宣称「完全多会话隔离」**。
+`owner_miss_stats` 纯诊断不参与裁决；决策类 fail-closed 只针对
+显式 `owner=` 却查不到的路径。ACP 的 `session_id` ↔ owner 映射由
+上层负责。**行为变更**：`HookTrigger(owner=)` 从冻结值改为冻结
+owner + 动态分桶、`notify()` 新增可选 `owner`、`AlertRecord` 新增
+字段、`app.py` 设置 contextvar。
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。

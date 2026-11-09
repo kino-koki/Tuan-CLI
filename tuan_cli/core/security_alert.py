@@ -45,6 +45,10 @@ class AlertRecord:
     timestamp: float = 0.0
     source: str = ""
     notified: bool = False
+    # B3 续轮 VII: **进程内路由字段**，不进 to_dict()。后台通知线程不
+    # 继承 contextvar（实测子线程拿到 None），所以 owner 必须由 alert()
+    # 在调用线程里烘进记录，线程侧才能按 owner 分桶查到本会话 hooks。
+    owner: str = ""
 
     def __post_init__(self) -> None:
         if self.timestamp == 0.0:
@@ -274,12 +278,20 @@ class SecurityAlerter:
         Returns:
             AlertRecord: 告警记录
         """
+        # B3 续轮 VII: 在**调用线程**捕获 owner。contextvar 不跨
+        # threading.Thread，不能等后台线程再读（O4 实测）。
+        try:
+            from ..hooks.triggers import current_session_owner
+            _owner = current_session_owner() or ""
+        except Exception:  # noqa: BLE001 - 路由信息不得掀翻告警主路径
+            _owner = ""
         record = AlertRecord(
             severity=severity,
             title=title,
             message=message,
             details=details or {},
             source=source,
+            owner=_owner,
         )
 
         # 速率限制检查
@@ -437,8 +449,16 @@ class SecurityAlerter:
             # B3 续轮: Notification 事件刻意放在**后台线程**里派发 ——
             # hook 是子进程，同步调用会阻塞 _pre_exec_guard 主路径
             # （与桌面通知本身必须异步的理由完全一致）。
-            from ..hooks.triggers import HookTrigger
-            HookTrigger(self.hooks).notification(
+            from ..hooks.triggers import HookTrigger, resolve_session
+            _owner = getattr(record, "owner", "") or None
+            # owner 已注册 -> 按 owner 分桶（并发会话互不覆盖）；
+            # 未注册/未设置 -> 沿用实例级冻结 hooks（既有行为，零退化）。
+            # 刻意不回落单槽 default provider，那是 VI 修掉的串台根因。
+            if _owner and resolve_session(_owner) is not None:
+                _trig = HookTrigger(owner=_owner)
+            else:
+                _trig = HookTrigger(self.hooks)
+            _trig.notification(
                 title=record.title, body=record.message or record.title,
                 kind="security", severity=record.severity,
                 source="security_alerter")

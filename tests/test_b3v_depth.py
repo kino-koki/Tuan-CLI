@@ -414,25 +414,36 @@ class TestProviderDiagnostics:
         assert get_default_hooks_provider() is None
 
     def test_module_level_notify_is_now_instance_bound(self):
-        """**B3 续轮 VI 已修**：模块级入口改用实例级绑定，不再现场读全局。
+        """**B3 续轮 VI 已修、VII 再补 owner 分桶**：模块级入口不再现场读全局。
 
-        断言同步（改强）：上一轮这里断言「仍是全局 fallback」；本轮
-        ``RemoteControl`` / ``SecurityAlerter`` 构造时捕获 hooks，
-        派发时用实例属性。同时断言全仓**无参** ``HookTrigger()``
-        消费点为 0 —— 无参构造现在只用于回落，不再出现在模块级入口。
+        断言同步（改强）：VI 断言「实例级绑定」；VII 在此基础上再加
+        **按 owner 分桶**解析（并发会话互不覆盖）与**后台线程显式携带
+        owner**（contextvar 不跨线程）。无参 ``HookTrigger()`` 消费点
+        仍为 0。
         """
         src = Path("tuan_cli/core/remote_control.py").read_text(
             encoding="utf-8")
-        assert "HookTrigger(_h).notification(" in src
+        assert "_trig.notification(" in src
         assert 'getattr(_rc, "hooks", None)' in src
+        assert "HookTrigger(owner=_owner)" in src
+        assert "resolve_session(_owner)" in src
+        assert "HookTrigger(_h)" in src
+        assert "current_session_owner" in src
         assert "HookTrigger().notification(" not in src
         src2 = Path("tuan_cli/core/security_alert.py").read_text(
             encoding="utf-8")
-        assert "HookTrigger(self.hooks).notification(" in src2
+        assert "_trig.notification(" in src2
+        assert "HookTrigger(owner=_owner)" in src2
+        assert "HookTrigger(self.hooks)" in src2
+        # O4: 后台线程靠记录显式携带 owner（用 getattr 兼容旧记录）
+        assert 'getattr(record, "owner", "")' in src2
+        assert "owner=_owner" in src2
+        assert "owner: str = \"\"" in src2
         assert "HookTrigger().notification(" not in src2
         src3 = Path("tuan_cli/runtime/acp/bridge.py").read_text(
             encoding="utf-8")
         assert "HookTrigger(self.hooks)" in src3
+        assert "HookTrigger(owner=_o)" in src3
         assert "HookTrigger()" not in src3
 
 

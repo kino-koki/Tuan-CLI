@@ -995,3 +995,65 @@ B3 两轮 + 5 个 hooks 既有文件 + mixin + config **185 passed**；
 `py_compile` 全 OK。新增 `tests/test_b3vi_session_binding.py`
 （后台线程 / 回填两单例 / `rc is None` 仍派发 / 64 上界拒绝 /
 全仓源码扫描 / 矩阵钉死）。
+
+
+---
+
+## R53 · B3 续轮 VII：C4 最后一角（并发多会话的派发归属隔离）
+
+完整复现见 `CLAUDE_PARITY.md` 末尾「深度轮（续七）」。自足标题。
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R53-O1 | `bind_session_hooks(B)` 无条件回填单例 `hooks`，A 会话告警派到 B | `HookTrigger(owner=)` **冻结 owner + 派发时按 owner 分桶查 registry**；动态但不漂移（分桶非单槽） |
+| R53-O2 | `remote_control.notify()` 同源，C 第二次通知落到 D | 新增可选 `owner`；优先级 显式 hooks > owner 分桶 > 实例冻结 hooks |
+| R53-O4 | `ContextVar` 不跨 `threading.Thread`（实测） | `AlertRecord.owner` 由 `alert()` 在调用线程烘进，**不进 `to_dict()`**；后台线程用它查分桶 |
+| R53-O5 | 修 O1/O2 时自己引入：owner 未注册 → 决策类静默放行 | fail-closed `owner_not_registered`；通知类 no-op + 有界 miss 留痕 |
+| R53-O3 | `get_alerter()` 单例 + `AlertLogger(home)` / bus 订阅 / 端口与会话文件 | **判定不该修**：按 owner 多实例会引入文件竞争 / 重复订阅 / 端口冲突，回归锁住 `x is y` |
+
+**新增机制**：`current_session_owner` / `set_session_owner` /
+`reset_session_owner` / `hooks_for_owner` / `owner_miss_stats`
+（有界、`<other>` 归并、纯诊断）；`provider_diagnostics()` 增加
+`current_owner` 与 `owner_misses`。`app.py` 在
+`set_default_hooks_provider` / `bind_session_hooks` **之后**调用
+`set_session_owner`；ACP bridge 支持 owner 分桶（`session_id` ↔ owner
+映射由上层负责，不自动派生）。
+
+**两个 B3 条目仍 `STATUS_GAP`**：官方事件面远大于 7 个、exit-code-2
+未实现、Elicitation 语义不等价、`ToolPipeline` 无生产构造方、
+`cmd_hooks` 取 schema 依赖 kernel 暴露 `tool_registry`。本轮修的是
+「并发会话的派发归属」不是覆盖面；`catalog.py` **零改动**，
+`status`/`evidence` 结构不变，**不靠改口径凑数**。
+
+**一条上轮断言同步（改强）**：`test_module_level_notify_is_now_
+instance_bound` 增加 owner 分桶、`getattr(record, "owner", "")`、
+`AlertRecord.owner`、`current_session_owner` 断言；VI 三条既有断言
+全部保留。
+
+**A′ ×2**（自己写错自己抓回）：O5 是修 O1/O2 时自己引入的新风险，
+由新写回归抓回并改为 fail-closed；新断言写 `"record.owner"` 但代码
+用 `getattr(...)`，字面串对不上 → 改检查真实写法。产品代码零回归。
+
+**矩阵一个状态没动**：`aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`；`matrix.validate()` 与
+`evidence.verify_evidence()` 均空。
+
+**如实边界**：单例对象身份仍进程级（不创建多实例），隔离的是**派发
+归属**不是实例；`bind_session_hooks` 单槽回填仍在，只是 owner 路径
+不读它；**未设置 owner 且未显式传 hooks** 的路径仍沿用最后一次
+bind（既有行为），不宣称「完全多会话隔离」。`owner_miss_stats`
+纯诊断不参与裁决；决策类 fail-closed 只针对显式 `owner=` 未注册。
+**行为变更**：`HookTrigger(owner=)` 冻结 owner + 动态分桶、
+`notify()` 新增 `owner`、`AlertRecord` 新增字段、`app.py` 设置
+contextvar。`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false
+未翻、`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+**验证（按分批，批次间有重叠、不累加）**：B3-VII + 上两轮 B3 +
+5 个 hooks 既有文件 + mixin + config + alert/remote/plugin/bus/
+bridge/ACP 相关 **330 passed**；宽合并批次见报告；
+`verify_doc_numbers.py problems == []`；`py_compile` 全 OK。新增
+`tests/test_b3vii_concurrent_sessions.py`（O1 后台线程并发 / 单槽
+回填仍在但派发不读 / O2 优先级与 `rc is None` / O4 跨线程 /
+owner 热替换 / O5 fail-closed + miss 有界 / O3 单例身份 / 矩阵钉死）。

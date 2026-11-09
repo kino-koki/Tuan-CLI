@@ -990,3 +990,17 @@ SOFTWARE.
     Items 9-25 remain unchanged; the Apache-2.0 + MIT dual attribution
     for the Codex TUI parity line and all "no endorsement" statements
     still apply unchanged.
+
+
+27. B3-continued VII concurrent-session dispatch layer: a stdlib
+    ``contextvars``-based session owner API, owner-partitioned
+    ``HookTrigger`` resolution, an ``owner`` routing field on
+    ``core/security_alert.AlertRecord`` (not serialized), an optional
+    ``owner`` keyword on ``core/remote_control.notify``, owner-aware
+    dispatch in ``runtime/acp/bridge.py``, one ``set_session_owner``
+    call in ``app.py``, and one new stdlib-based regression file
+    (``tests/test_b3vii_concurrent_sessions.py``). No new third-party
+    material, no new dependency, and no copied upstream source.
+    Items 9-26 remain unchanged; the Apache-2.0 + MIT dual attribution
+    for the Codex TUI parity line and all "no endorsement" statements
+    still apply unchanged.
