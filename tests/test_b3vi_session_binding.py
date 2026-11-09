@@ -373,14 +373,18 @@ class TestSessionRegistry:
         assert len(session_registry_diagnostics()["owners"]) == cap
 
     def test_diagnostics_in_provider_diagnostics(self):
-        """**B3 续轮 VIII 同步（改强）**：sessions 新增 ``rejected``，
-        且 ``provider_diagnostics()`` 顶层同步暴露 ``session_rejections``
-        —— 注册被拒不再静默。
+        """**B3 续轮 IX 同步（改强）**：新增 ``conflicts`` 可见。
+
+        VIII 已经有 ``rejected`` / ``session_rejections``；IX 再加
+        同 owner 冲突拒绝（Q2 的 id 复用静默覆盖）与顶层
+        ``session_conflicts``。
         """
         d = provider_diagnostics()
         assert "sessions" in d
-        assert set(d["sessions"]) == {"owners", "count", "max", "rejected"}
+        assert set(d["sessions"]) == {
+            "owners", "count", "max", "rejected", "conflicts"}
         assert d["session_rejections"] == d["sessions"]["rejected"]
+        assert d["session_conflicts"] == d["sessions"]["conflicts"]
 
     def test_current_session_hooks_matches_frozen_default(self):
         r = Rec("R")
@@ -413,8 +417,9 @@ class TestWiringAndMatrix:
         assert "provider=lambda: getattr(" in src
         assert "hooks=agent.ctx.hooks" in src
         assert "if not _handle.active:" in src
-        assert "agent.ctx.session_owner" in src
-        assert "agent.ctx.session_handle = _handle" in src
+        assert "ctx=agent.ctx" in src   # IX：事务化挂载取代手动赋值
+        assert "agent.ctx.session_owner =" not in src
+        assert "agent.ctx.session_handle = _handle" not in src
         assert "config._hooks = agent.ctx.hooks" in src
         # 只看代码行（历史注释里仍有 set_default_hooks_provider 字样）
         code = "\n".join(l.strip() for l in src.splitlines()

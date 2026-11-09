@@ -678,3 +678,35 @@ registry 上界只影响显式 owner 查询，不影响已绑定实例派发。
 「消除对线程上下文的依赖」不是已观测串台；P4 锁内化未对应已复现
 越界。单例身份仍进程级，单槽回填仍在，`AlertRecord.owner` 仍不
 序列化。
+
+
+---
+
+## B3 续轮 IX 增量（会话激活事务化 + owner 冲突拒绝 + CLI 主路径接线）
+
+权威口径见 `CLAUDE_PARITY.md` 末尾「深度轮（续九）」。**矩阵计数一个没动**：
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`；两个 B3 条目仍 `STATUS_GAP`，`catalog.py` 零改动。
+
+- **Q1/Q1b** 注册被拒时 provider 已切、单例已回填（实测污染老会话）
+  → `bind_session_hooks` 失败立即 `return False` 不回填；
+  `activate_session` 把注册作为唯一事务边界，成功才建立全局副作用。
+- **Q2** `"agent:%x" % id(agent)` 的 id 复用导致静默覆盖 + ABA 误删
+  → 同 owner 拒绝（`conflicts` 计数）+ `unregister_session(expected=)`
+  精确注销（**行为变更**：热替换需显式 unregister/register）。
+- **Q3** bind 异常时 token 泄漏 → 零副作用早返回 + 阶段 2 异常回滚。
+- **Q4/Q5** ctx 残留 + 无关闭标记 → `SessionHandle` 加
+  `hooks`/`ctx`/`closed`，deactivate 精确清理且幂等。
+- **Q6** deactivate 生产零调用点 → `cmd_chat.py` 两个 SessionEnd
+  finally 之后接 `_close_agent_session`（CLI 主路径 TUI + REPL 分支）。
+- 新增 `session_scope(...)` 上下文管理器；`app.py` 改传 `ctx=agent.ctx`。
+- 11 处上轮断言同步（全部改强）；**A′ ×4**（`__init__.py` 反斜续行
+  尾逗号 SyntaxError、docstring 字面串误伤 4 个源码扫描、Q1b 测试
+  断言自身、`fill()` 前缀写错）。新增
+  `tests/test_b3ix_session_transaction.py`。详见
+  `SECURITY_BASELINE.md` R55。
+
+**如实边界**：Q3 是注入故障、Q2 的 id 复用用同 owner 字符串模拟、Q4
+未对应已观测派发错误；`deactivate` 只接 CLI 主路径，ACP server / web /
+stream_json / TUI.close 仍未接线；`deactivate` 仍不清 default provider，
+单例身份仍进程级，单槽回填仍在，`AlertRecord.owner` 仍不序列化。

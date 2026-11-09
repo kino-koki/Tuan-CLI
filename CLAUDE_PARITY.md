@@ -2274,3 +2274,133 @@ app 接线 + 生命周期 API 导出 + 全仓无参消费点 + 矩阵钉死 +
   第三方自适应红队未做；不是真机多平台验证。
 - 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
   逐字节未改。
+
+
+---
+
+## 深度轮（续九）：会话激活事务化 + owner 冲突拒绝 + CLI 主路径接线
+
+> 沿用**自足标题**，不新增数字章节编号。**矩阵计数一个没动**：
+> `ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8`，
+> `gaps=26`，`fully_superior=false`，`b_waves_done=["B1"]`。两个 B3
+> 条目仍 `STATUS_GAP`，`catalog.py` **本轮零改动** —— 本轮修的是
+> 「会话激活的事务性与生命周期收尾」，不是功能覆盖面，不靠改口径凑数。
+>
+> 上一轮（VIII）把会话生命周期收成 `activate_session` /
+> `deactivate_session`，并如实留下三条边界：`deactivate` 没接到所有
+> 宿主、注册被拒「可见但 provider 可能已被切换」、`SessionHandle` 无
+> 关闭标记。本轮一点广度没扩，只把这条线挖到底。
+
+### 六个候选的实测判定（6 修 / 5 项「不该修」契约锁住）
+
+| 编号 | 修复前实测 | 判定 |
+|---|---|---|
+| Q1 | `activate_session` **先切 provider 再注册**。占满 64 槽后第 65 个会话注册返回 False，但 `set_default_hooks_provider` 已切到新会话 —— 老会话里尚未回填 hooks 的无 owner 消费者从此派到被拒会话（实测 A fired=0 / NEW fired=1） | **修** |
+| Q1b | `bind_session_hooks` 无论注册成功与否都继续回填两个模块级单例。实测注册失败时 `_global_alerter.hooks` 被改成**被拒会话**的 hooks（Q1 污染的隐藏面） | **修** |
+| Q2 | owner 用 `"agent:%x" % id(agent)`，CPython 里 `id` 会被新对象复用（实测同型对象销毁后新建拿到同一 id）。旧 `_SESSIONS[owner] = hooks` **静默覆盖**先建会话的桶；先建会话的旧句柄 `deactivate` 会删掉后建会话（ABA，实测 `resolve_session -> None`） | **修（行为变更）** |
+| Q3 | `bind` 中途抛异常时 provider 已切、contextvar 已设、却没有句柄可复位 —— 实测 `current_session_owner` 泄漏 `"sess-boom"` 且 `provider_diagnostics()["owner"]` 已被改 | **修** |
+| Q4 | `deactivate_session` 不清 `agent.ctx` 上的 `session_owner` / `session_handle`。实测关闭后 `bridge._resolve_owner()` 仍返回**已注销**的 owner | **修** |
+| Q5 | `SessionHandle` 是 frozen、无 `closed` 标记，重复 `deactivate` 只能靠「registry 里还有没有 key」反推 | **修** |
+| Q6 | `deactivate_session` 在生产代码里**零调用点**（只有定义与 `__init__` 导出），registry 只增不减 | **修（接 CLI 主路径）** |
+
+**不该修（配可执行回归锁住）**：`get_alerter()` 仍是进程级单例（多实例会引入文件竞争、重复 bus 订阅、端口冲突）；单 bridge 不按 `session_id` 自动派生 owner；`deactivate` 刻意**不清** default provider（清掉会打断仍在运行的其他会话）；`AlertRecord.owner` 仍不进 `to_dict()`；ACP server / web / stream_json / TUI.close / `AcpSession.dispose` **仍未接线**。
+
+### 修复（如实，不夸大）
+
+1. **`hooks/triggers.py`**：把 **registry 注册**作为唯一事务边界。
+   - `bind_session_hooks` 注册失败立即 `return False`，**不回填单例**。
+   - `activate_session` 改为：先 `bind`（成功才回填）→ 失败/异常返回
+     `active=False, closed=True` 句柄，**零全局副作用** → 成功才注入
+     provider、绑定 contextvar、把 owner/handle 挂到 `ctx`；阶段 2
+     自身异常则精确回滚刚注册的槽并复位 token。
+   - `register_session` 对**已存在 owner 一律拒绝**（不再覆盖）并计数
+     `conflicts`；`unregister_session(owner, *, expected=)` 仅在桶里
+     仍是同一 hooks 对象时删除（ABA 防护，不传则旧语义）。
+   - `SessionHandle` 改为可变 dataclass，新增 `hooks` / `ctx` /
+     `closed`；`deactivate_session` 检查 `closed`、精确注销、仅当
+     `ctx.session_handle is handle` 时清理 ctx 残留。
+   - 新增 `session_scope(...)` 上下文管理器（异常安全自动关闭）。
+2. **`app.py`**：改为 `activate_session(..., ctx=agent.ctx)`，删掉手动
+   挂载（失败路径不再留脏 ctx）。
+3. **`cli/cmd_chat.py`**：新增 `_close_agent_session(agent)`，在**两个**
+   SessionEnd finally 中 `_run_session_hooks` **之后**调用 —— CLI 主
+   路径的 TUI 分支与普通 REPL 分支都接上 `deactivate_session`。
+
+### 11 处上轮断言同步（**全部改强，不是放宽**）
+
+`test_app_uses_activate_and_checks_active` /
+`test_app_calls_bind_after_setting_provider` /
+`test_app_backfills_config_hooks_and_passes_owner` /
+`test_app_injects_default_provider` 改为检查 `ctx=agent.ctx` 入参且
+app.py 不再手动挂载；`test_app_sets_session_owner_after_bind` 改为检查
+事务化顺序 `bind < provider < set_owner` 与失败早返回；
+`test_hot_replace_within_session` 改为检查同 owner 二次注册被拒 +
+`conflicts` 可见 + 显式 unregister/register 的动态查表仍生效；
+`test_diagnostics_in_provider_diagnostics` 补 `conflicts`；
+`test_deactivate_not_wired_to_all_hosts_is_documented` 改为「cmd_chat
+恰好 1 处宿主接线 + 其余宿主逐一锁住未接」；
+`test_lifecycle_api_exported` 补 `session_scope`；
+`test_session_registry_rejected_is_documented` 补 `conflicts`；
+`test_bind_docstring_says_two_singletons` 扩大窗口并补 Q1b 早返回。
+
+### A′ ×4（自己写错自己抓回）
+
+1. **产品代码语法错误**：`hooks/__init__.py` 是反斜续行 import，新增
+   `session_scope` 时误加尾逗号，`py_compile` 直接 `SyntaxError` ——
+   改成续行反斜杠，已重编通过。
+2. **新写 docstring 误伤 4 个既有回归**：`activate_session` docstring
+   里写了 ``HookTrigger()`` 字面串，而全仓「无参消费点」扫描只排除
+   `#` 行注释、不排除 docstring → 4 处误报。改成不含括号的写法，
+   产品代码逻辑零改动。
+3. **新测试自身**：Q1b 用 `Rec.hooks.n` 断言，但「零副作用」的正确
+   表现恰是**属性根本没被设置**（`AttributeError`）→ 改成
+   `not hasattr(...)`，并补「注册成功确实回填」的对照，避免恒真断言。
+4. **新测试自身**：对照用例写 `unregister_session("filler-0")`，而
+   `fill()` 默认前缀是 `f-0` → 改成 `f-0`。
+
+### 验证（按分批报告，批次间有重叠、不累加）
+
+```
+B3 续轮 IX + 上四轮 B3（VIII/VII/VI/V/triggers）           196 passed
+既有 hooks / config / alert / remote / plugin / bus /
+   bridge / ACP 相关                                      203 passed
+宽回归 A（parity / worktree / session / arch / 写边界 /
+   两条侧门 / B2 各轮 / chat_handoff）                     218 passed
+宽回归 B（arch_security / B2 剩余 / slash）              （见报告）
+matrix.validate() == []  |  evidence.verify_evidence() == []
+verify_doc_numbers.py problems == []
+py_compile: 10 个改动 Python 文件全部 OK
+```
+
+`tests/test_b3ix_session_transaction.py` 覆盖：Q1 注册被拒不切
+provider + 老会话 `HookTrigger` 仍收到事件 / Q1b 单例零副作用（含
+成功对照）/ 失败句柄 `closed=True` 且安全 deactivate / contextvar 与
+ctx 零残留 / Q2 id 复用实测 + 同 owner 拒绝 + ABA 误删防护 +
+`unregister(expected=)` 语义 + conflict 不计入容量拒绝 / Q3 bind
+异常注入 + 阶段 2 异常回滚 / Q4 ctx 清理 + 不误清新会话 / Q5
+`closed` 字段与幂等 / `session_scope` 正常与异常路径 / Q6 两个
+finally 顺序 + 外来 agent 安全 + 真释放槽位 + 其余宿主锁住 /
+不该修契约 / 事务化顺序 / 矩阵钉死 / `catalog.py` 零改动。
+
+### 如实边界
+
+- **Q2 是行为变更**：同 owner 二次 `register_session` 从「覆盖」变
+  「拒绝」，会话内热替换需显式 `unregister` + `register`；
+  `HookTrigger(owner=)` 的动态查表仍生效（回归已验证）。
+- **Q3 的异常是注入故障**（monkeypatch `bind` 抛错），不是线上已观测
+  异常；**Q2 的 id 复用**是 CPython 实现特性实测，用「同 owner 字符
+  串」模拟，不声称线上一定发生；**Q4 修的是「归属信息残留」，未
+  对应已观测派发错误**（bridge 的 `ask_user` 会先校验
+  `resolve_session(_o) is not None`）。
+- **`deactivate_session` 只接了 CLI 主路径**：ACP server / web /
+  stream_json / TUI.close / `AcpSession.dispose` 仍未接线，不宣称
+  「全部宿主已覆盖」；`session_scope` 提供了统一契约但未强制改造。
+- 事务化顺序变更意味着注册失败不再切 provider、不再回填单例、ctx
+  不留脏值；`deactivate` 仍不清 default provider；单例对象身份仍
+  进程级、单槽回填仍在、`AlertRecord.owner` 仍不序列化、单 bridge
+  不按 `session_id` 自动派生 owner。
+- `os_sandbox` 仍 gap、`deny_network_by_default` 仍 `false` 未翻、
+  `credential_masking` 仍 partial；A 线 10 pending、分叉改动未合并、
+  第三方自适应红队未做；不是真机多平台验证。
+- 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
+  逐字节未改。

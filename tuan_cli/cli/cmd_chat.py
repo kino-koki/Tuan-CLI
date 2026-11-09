@@ -536,7 +536,9 @@ def cmd_chat(args: Any) -> int:
                     pass
         finally:
             if state["agent"] is not None:
-                _run_session_hooks(state["agent"], "SessionEnd", {"workspace": workspace})
+                _run_session_hooks(state["agent"], "SessionEnd",
+                                   {"workspace": workspace})
+                _close_agent_session(state["agent"])
         return 0
 
     # 普通 REPL 模式
@@ -549,7 +551,30 @@ def cmd_chat(args: Any) -> int:
                             bare=bool(getattr(args, "bare", False)))
     finally:
         _run_session_hooks(agent, "SessionEnd", {"workspace": workspace})
+        _close_agent_session(agent)
     return rc
+
+
+def _close_agent_session(agent: Any) -> None:
+    """会话结束（SessionEnd 之后）注销 hooks 会话槽，异常隔离。
+
+    B3 续轮 IX（Q6）：上一轮 ``deactivate_session`` 在生产代码里
+    **零调用点**，registry 只增不减；这里接上 CLI 主路径的两个
+    finally（TUI 分支 + 普通 REPL 分支）。顺序刻意放在
+    ``_run_session_hooks(..., "SessionEnd")`` **之后** —— SessionEnd
+    钩子还要用 ``ctx.hooks``。
+
+    如实边界：ACP server / web / stream_json / TUI.close 等宿主仍
+    未接线，回归里逐项锁住，不宣称「全部宿主已覆盖」。
+    """
+    handle = getattr(getattr(agent, "ctx", None), "session_handle", None)
+    if handle is None:
+        return
+    try:
+        from ..hooks.triggers import deactivate_session
+        deactivate_session(handle)
+    except Exception:  # noqa: BLE001 - 关闭路径不得掀翻 CLI 退出
+        pass
 
 
 def _run_session_hooks(agent: Any, event: str, payload: Optional[Dict[str, Any]]) -> None:

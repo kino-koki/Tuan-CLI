@@ -1127,3 +1127,71 @@ bridge 断言补 `_resolve_owner`；`provider_diagnostics` 断言补
 可见 + 注销复用 + activate/deactivate 往返 + token 复位 + 幂等关闭 +
 executor 跨线程 owner + `_resolve_owner` 优先级 + miss 有界/并发不丢
 + docstring 口径 + 不该修契约 + 矩阵钉死）。
+
+
+---
+
+## R55 · B3 续轮 IX：会话激活事务化 + owner 冲突拒绝 + CLI 主路径接线
+
+完整复现见 `CLAUDE_PARITY.md` 末尾「深度轮（续九）」。自足标题。
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| R55-Q1 | 注册被拒时 provider 已切到被拒会话，老会话无 owner 消费者派发污染 | 注册作为唯一事务边界；失败零副作用早返回 |
+| R55-Q1b | 注册失败仍回填 `_global_alerter` / `_notify_rc` | `bind_session_hooks` 失败立即 `return False` 不回填 |
+| R55-Q2 | `id(agent)` 复用 → 静默覆盖 + 旧句柄 ABA 误删 | 同 owner 拒绝 + `conflicts` 计数 + `unregister(expected=)` 精确注销 |
+| R55-Q3 | bind 异常时 token 泄漏、无句柄可复位 | 事务化零副作用 + 阶段 2 异常精确回滚 |
+| R55-Q4 | deactivate 不清 ctx 残留，bridge 返回已注销 owner | `SessionHandle.ctx` + 仅当 handle 仍挂载时清理 |
+| R55-Q5 | frozen 句柄无 `closed`，重复关闭靠反推 | 可变 dataclass + `closed` 标记 + 幂等 |
+| R55-Q6 | deactivate 生产零调用点，registry 只增不减 | `cmd_chat.py` 两个 SessionEnd finally 接 `_close_agent_session` |
+
+**新增机制**：`session_scope(owner=, hooks=, provider=, ctx=)` 上下文
+管理器（异常安全自动关闭）；`app.py` 改传 `ctx=agent.ctx`；
+`SessionHandle` 新增 `hooks`/`ctx`/`closed`；`provider_diagnostics()`
+新增 `session_conflicts`。`deactivate` 刻意**不清** default provider
+（清掉会打断仍在运行的其他会话）。
+
+**两个 B3 条目仍 `STATUS_GAP`**：官方事件面远大于 7 个、exit-code-2
+未实现、Elicitation 语义不等价、`ToolPipeline` 无生产构造方、
+`cmd_hooks` 取 schema 依赖 kernel 暴露 `tool_registry`。本轮修的是
+「会话激活事务性与生命周期收尾」不是覆盖面；`catalog.py` **零改动**，
+`status`/`evidence` 结构不变，**不靠改口径凑数**。
+
+**11 处上轮断言同步（全部改强）**：四条 app.py 断言改查
+`ctx=agent.ctx`；事务化顺序改查 `bind < provider < set_owner`；
+热替换改查同 owner 拒绝 + `conflicts` + 显式替换动态查表；
+diagnostics 补 `conflicts`；「未接宿主」改查「cmd_chat 恰好 1 处 +
+其余逐一锁住」；lifecycle API 补 `session_scope`；rejected 文档补
+`conflicts`；docstring 断言扩大窗口并补 Q1b 早返回。
+
+**A′ ×4**（自己写错自己抓回）：① **产品代码语法错误** ——
+`hooks/__init__.py` 反斜续行 import 新增导出时误加尾逗号，
+`py_compile` 直接 SyntaxError → 改续行反斜杠。② 新写 docstring
+里 ``HookTrigger()`` 字面串被 4 个既有全仓源码扫描误判 → 改成不含
+括号写法，产品逻辑零改动。③ Q1b 新测试用 `Rec.hooks.n`，但「零
+副作用」恰是属性不存在 → 改 `not hasattr` 并补成功对照避免恒真。
+④ 对照用例 `unregister_session("filler-0")` 而 `fill()` 默认前缀是
+`f-0` → 改 `f-0`。
+
+**矩阵一个状态没动**：`aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`；`matrix.validate()` 与
+`evidence.verify_evidence()` 均空。
+
+**如实边界**：**Q2 是行为变更**（同 owner 二次注册从覆盖变拒绝，热
+替换需显式 unregister + register）；**Q3 是注入故障**不是线上已观测
+异常；**Q2 的 id 复用**用同 owner 字符串模拟，不声称线上一定发生；
+**Q4 修的是归属信息残留**未对应已观测派发错误。**`deactivate` 只接
+CLI 主路径**：ACP server / web / stream_json / TUI.close /
+`AcpSession.dispose` 仍未接线。单例身份仍进程级、单槽回填仍在、
+`AlertRecord.owner` 仍不序列化、单 bridge 不按 `session_id` 自动
+派生。`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+**验证（按分批，批次间有重叠、不累加）**：B3-IX + 上四轮 B3
+**196 passed**；既有 hooks/config/alert/remote/plugin/bus/bridge/ACP
+相关 **203 passed**；宽回归 A **218 passed**；宽回归 B 见报告；
+`verify_doc_numbers.py problems == []`；10 文件 `py_compile` 全 OK。
+新增 `tests/test_b3ix_session_transaction.py`（Q1–Q6 + 不该修契约
++ 事务化顺序 + 矩阵钉死）。

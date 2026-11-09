@@ -2696,3 +2696,122 @@ remains false, `credential_masking` remains partial; A-line 10 pending,
 local fork unmerged, no third-party adaptive red team; NO real-device
 multi-platform verification. The slogan engine / cleaning layer /
 `mapping.py` / `tui.py` / `runtime_slogans.py` are byte-identical.
+
+
+---
+
+## B3 Continued IX: Transactional Session Activation + Owner Conflict Rejection + CLI Host Wiring
+
+> SELF-CONTAINED heading. NOT A SINGLE MATRIX STATUS CHANGED:
+> `aligned 46 / partial 9 / gap 26`, `fully_superior=false`,
+> `b_waves_done=["B1"]`. Both B3 catalog entries stay `STATUS_GAP`;
+> `catalog.py` is UNCHANGED. Full reproduction: final section of
+> `CLAUDE_PARITY.md`.
+>
+> Round VIII collapsed the lifecycle into `activate_session` /
+> `deactivate_session` and honestly left three boundaries: no host
+> called `deactivate`, a rejected registration could still have
+> switched the provider, and `SessionHandle` had no closed marker.
+> This round digs that same line to the bottom. NO breadth added.
+
+### Six candidates (6 fixed / 5 "not fixed" contracts locked)
+
+| ID | Measured | Verdict |
+|---|---|---|
+| Q1 | After 64 slots fill, the 65th session's registration returns False BUT `set_default_hooks_provider` already switched to it -> the old session's owner-less consumers now dispatch to the rejected session (measured A fired=0 / NEW=1) | FIX |
+| Q1b | `bind_session_hooks` backfilled both module singletons even when registration failed (measured `_global_alerter.hooks` changed to the rejected session's hooks) | FIX |
+| Q2 | `"agent:%x" % id(agent)`: CPython reuses `id` for new objects (measured). The old `_SESSIONS[owner] = hooks` SILENTLY OVERWROTE the earlier session, and its stale handle deleted the newer session on `deactivate` (ABA, measured `resolve_session -> None`) | FIX (behavioral change) |
+| Q3 | If `bind` raised, the provider was switched, the contextvar was set, and NO handle existed to reset it (measured `current_session_owner` leaked `"sess-boom"`) | FIX |
+| Q4 | `deactivate_session` did not clear `agent.ctx.session_owner` / `session_handle`; `bridge._resolve_owner()` still returned the UNREGISTERED owner | FIX |
+| Q5 | `SessionHandle` was frozen with no `closed` marker; a repeated deactivate could only be inferred from whether the registry still had the key | FIX |
+| Q6 | `deactivate_session` had ZERO production call sites (only the definition and the `__init__` re-export); the registry only grew | FIX (CLI main path wired) |
+
+**Deliberately NOT fixed (regressions lock each)**: `get_alerter()`
+is still a process singleton (multi-instance would mean file
+contention, duplicate bus subscriptions, port conflicts); one bridge
+still does not auto-derive owner from `session_id`; `deactivate`
+deliberately does NOT clear the default provider (that would break
+other still-running sessions); `AlertRecord.owner` is still not
+serialized; ACP server / web / stream_json / TUI.close /
+`AcpSession.dispose` are STILL NOT WIRED.
+
+### Fix
+- `hooks/triggers.py`: registry registration becomes the SINGLE
+  transaction boundary. `bind_session_hooks` returns False immediately
+  on failed registration and does NOT backfill singletons.
+  `activate_session` now: bind first -> on failure/exception return an
+  `active=False, closed=True` handle with ZERO global side effects ->
+  only on success inject the provider, bind the contextvar, attach
+  owner/handle to `ctx`; if stage 2 itself raises, precisely roll back
+  the just-registered slot and reset the token. `register_session`
+  rejects any already-present owner (counting `conflicts`);
+  `unregister_session(owner, *, expected=)` deletes only when the
+  bucket still holds the same hooks object (ABA guard; omitting
+  `expected` keeps the old semantics). `SessionHandle` becomes a
+  mutable dataclass with `hooks` / `ctx` / `closed`;
+  `deactivate_session` checks `closed`, performs precise unregistration,
+  and clears ctx residue only when `ctx.session_handle is handle`.
+  New `session_scope(...)` context manager (exception-safe auto-close).
+- `app.py`: passes `ctx=agent.ctx`; manual attachment removed.
+- `cli/cmd_chat.py`: new `_close_agent_session(agent)` called AFTER
+  `_run_session_hooks` in BOTH SessionEnd finally blocks (TUI branch
+  and plain REPL branch both wired).
+
+### Eleven previous-round assertions synchronized (ALL STRENGTHENED)
+The four app.py assertions now check the `ctx=agent.ctx` argument and
+that app.py no longer attaches manually; the ordering assertion now
+checks `bind < provider < set_owner` plus the failure early-return;
+the hot-replace assertion now checks same-owner rejection, `conflicts`
+visibility, and dynamic lookup after explicit unregister/register;
+diagnostics gains `conflicts`; the "no host wired" assertion becomes
+"exactly 1 host call in cmd_chat + others individually locked";
+lifecycle API gains `session_scope`; the rejected-docs assertion gains
+`conflicts`; the docstring assertion widens its window and adds the
+Q1b early-return.
+
+### A-prime x4 (self-caught)
+1. **REAL product syntax error**: `hooks/__init__.py` uses backslash
+   line continuation; adding `session_scope` with a trailing comma
+   produced `SyntaxError` caught by `py_compile` -> fixed to a
+   continuation backslash.
+2. A newly written docstring contained the literal ``HookTrigger()``,
+   which 4 existing repo-wide source scans counted as a consumer
+   (they only exclude `#` line comments, not docstrings) -> rephrased
+   without parentheses; zero product logic changed.
+3. The new Q1b test asserted `Rec.hooks.n`, but "zero side effects"
+   correctly means the attribute is NEVER SET -> changed to
+   `not hasattr(...)` plus a success-path control so it is not
+   vacuously true.
+4. The control case used `unregister_session("filler-0")` while
+   `fill()` defaults to prefix `f-0` -> fixed to `f-0`.
+
+### Verification (split batches, NOT one full-suite claim)
+B3-IX + previous four B3 rounds **196 passed**; existing
+hooks/config/alert/remote/plugin/bus/bridge/ACP related **203 passed**;
+wide regression A **218 passed**; wide regression B (see report);
+`matrix.validate()` / `evidence.verify_evidence()` / doc-number check /
+`py_compile` on 10 changed Python files all clean. New
+`tests/test_b3ix_session_transaction.py`.
+
+### Honest limits
+**Q2 IS A BEHAVIORAL CHANGE**: a second `register_session` for the
+same owner now rejects instead of overwriting; in-session hot
+replacement requires explicit unregister + register (dynamic lookup
+by `HookTrigger(owner=)` still works, regression-verified). **Q3 is
+an INJECTED fault**, not an observed production exception; **Q2's id
+reuse** is a measured CPython property simulated with an identical
+owner string, NOT a claim it happened in production; **Q4 fixes
+residual ownership metadata**, not an observed dispatch error
+(`ask_user` already checks `resolve_session(_o) is not None`).
+**`deactivate` is wired ONLY into the CLI main path**: ACP server /
+web / stream_json / TUI.close / `AcpSession.dispose` remain unwired;
+`session_scope` provides a unified contract but does not force
+migration. Singleton object identity is still process-wide,
+single-slot backfill still exists, `AlertRecord.owner` is still not
+serialized, and a single bridge still does not auto-derive owner from
+`session_id`. `os_sandbox` remains a gap, `deny_network_by_default`
+remains false, `credential_masking` remains partial; A-line 10
+pending, local fork unmerged, no third-party adaptive red team; NO
+real-device multi-platform verification. The slogan engine / cleaning
+layer / `mapping.py` / `tui.py` / `runtime_slogans.py` are
+byte-identical.

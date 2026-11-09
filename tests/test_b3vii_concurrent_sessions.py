@@ -331,14 +331,30 @@ class TestOwnerContext:
 # ================================================== owner 动态分桶
 class TestOwnerBucketLookup:
     def test_hot_replace_within_session(self):
-        """冻结 owner（而非值）-> 会话内替换 hooks 立即生效。"""
+        """**B3 续轮 IX 同步（行为变更，改强）**。
+
+        VII 用「同 owner 二次 register」做会话内热替换；IX 实测
+        ``"agent:%x" % id(agent)`` 的 id 复用会让这变成**跨会话静默
+        覆盖 + ABA 误删**（Q2），故改为显式冲突拒绝。
+
+        动态查表仍生效：显式 ``unregister`` + 重新 ``register`` 后，
+        同一个 ``HookTrigger(owner=)`` 立即看到新 hooks。
+        """
         e, f = Rec("E"), Rec("F")
-        register_session("hot", e)
+        assert register_session("hot", e) is True
         tr = HookTrigger(owner="hot")
         tr.config_change(source="1")
-        register_session("hot", f)
+        # 同 owner 二次注册现在被拒绝，不覆盖
+        assert register_session("hot", f) is False
+        assert provider_diagnostics()["sessions"]["conflicts"] >= 1
         tr.config_change(source="2")
-        assert len(e.fired) == 1 and len(f.fired) == 1
+        assert len(e.fired) == 2 and f.fired == []
+        assert resolve_session("hot") is e
+        # 显式替换路径：先注销再注册，动态查表立即生效
+        assert unregister_session("hot", expected=e) is True
+        assert register_session("hot", f) is True
+        tr.config_change(source="3")
+        assert len(f.fired) == 1
 
     def test_other_session_bind_does_not_change_my_bucket(self):
         """分桶不是单槽：bind(B) 不改 A 桶。"""
@@ -448,23 +464,27 @@ class TestSingletonBoundary:
 # ================================================== 接线 / 矩阵
 class TestWiringAndMatrix:
     def test_app_sets_session_owner_after_bind(self):
-        """**B3 续轮 VIII 同步（改强）**：contextvar 绑定由 activate_session
-        内部完成并**返回可复位 token**，不再有零散的 set 调用。
+        """**B3 续轮 IX 同步（改强）**：激活改为**事务化**。
+
+        VIII 顺序是 provider -> set owner -> bind；IX 实测注册失败时
+        provider 已被切换、污染老会话（Q1），故把 **bind 注册**放到
+        最前面作为事务边界：注册成功才 provider -> set owner。
         """
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
         assert "activate_session(" in src
-        assert "agent.ctx.session_handle = _handle" in src
+        assert "ctx=agent.ctx" in src
         assert "if not _handle.active:" in src
         assert "set_session_owner(_session_owner)" not in src
-        # activate_session 内部顺序：provider -> set owner -> register/bind
+        assert "agent.ctx.session_handle = _handle" not in src
         tsrc = Path("tuan_cli/hooks/triggers.py").read_text(
             encoding="utf-8")
         i = tsrc.index("def activate_session(")
-        body = tsrc[i:i + 1200]
+        body = tsrc[i:i + 2000]
+        assert body.index("bind_session_hooks(") < body.index(
+            "set_default_hooks_provider(")
         assert body.index("set_default_hooks_provider(") < body.index(
             "set_session_owner(")
-        assert body.index("set_session_owner(") < body.index(
-            "bind_session_hooks(")
+        assert "if not active:" in body        # 失败零副作用早返回
 
     def test_bridge_supports_owner_without_auto_mapping(self):
         """**B3 续轮 VIII 补强**：owner 改为**显式句柄**解析（P3），

@@ -410,8 +410,9 @@ class TestProviderDiagnostics:
         assert '_session_owner = "agent:%x" % id(agent)' in src
         assert "activate_session(" in src
         assert "provider=lambda: getattr(" in src
-        assert "agent.ctx.session_owner" in src
-        assert "agent.ctx.session_handle = _handle" in src
+        assert "ctx=agent.ctx" in src   # IX：事务化挂载
+        assert "agent.ctx.session_owner =" not in src
+        assert "agent.ctx.session_handle = _handle" not in src
         assert "if not _handle.active:" in src   # 注册被拒不能静默
         import tuan_cli.hooks as pkg
         assert hasattr(pkg, "activate_session")

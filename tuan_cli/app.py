@@ -272,20 +272,16 @@ def create_agent(
         # —— 长跑占满 64 槽后新会话注册被拒且返回值被忽略（实测）。
         from .hooks.triggers import activate_session
         _session_owner = "agent:%x" % id(agent)
+        # B3 续轮 IX：ctx 交给 activate_session **事务化挂载** ——
+        # 注册失败时 ctx 上不留任何归属信息（Q1/Q3 实测会泄漏），
+        # 关闭时由 deactivate_session 精确清理（Q4）。
         _handle = activate_session(
             owner=_session_owner,
             hooks=agent.ctx.hooks,
             provider=lambda: getattr(
                 getattr(agent, "ctx", None), "hooks", None),
+            ctx=agent.ctx,
         )
-        # 显式挂到 ctx：跨线程消费者（ACP executor 回调）不依赖
-        # contextvar（P3 实测 executor 线程拿不到 owner）。
-        try:
-            agent.ctx.session_owner = (
-                _session_owner if _handle.active else "")
-            agent.ctx.session_handle = _handle
-        except Exception:  # noqa: BLE001
-            pass
         if not _handle.active:
             # 注册被拒**必须可见**，不能静默退化到单槽回填
             logger.warning(

@@ -521,7 +521,8 @@ class TestSidePaths:
         assert "provider=lambda: getattr(" in src
         assert 'getattr(agent, "ctx", None)' in src
         assert "hooks=agent.ctx.hooks" in src
-        assert "agent.ctx.session_handle = _handle" in src
+        assert "ctx=agent.ctx" in src          # IX：事务化挂载
+        assert "agent.ctx.session_handle = _handle" not in src
         assert "if not _handle.active:" in src
 
 

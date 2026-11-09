@@ -9,6 +9,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - B3 续轮 IX：会话激活事务化 + owner 冲突拒绝 + CLI 主路径接线
+
+> **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续九）」。沿用自足标题。
+
+### 六个候选（6 修 / 5 项「不该修」契约锁住）
+- **Q1** 占满 64 槽后第 65 个会话注册返回 False，但 provider 已切到
+  新会话 → 老会话无 owner 消费者派到被拒会话（A fired=0 / NEW=1）。
+- **Q1b** 注册失败仍回填两个模块级单例（隐藏污染）。
+- **Q2** `id(agent)` 在 CPython 里会被新对象复用（实测），旧
+  `_SESSIONS[owner] = hooks` 静默覆盖 + 旧句柄 ABA 误删。
+- **Q3** bind 异常时 provider 已切、contextvar 已设、无句柄可复位。
+- **Q4** deactivate 不清 `agent.ctx` 残留，bridge 仍返回已注销 owner。
+- **Q5** `SessionHandle` frozen 且无 `closed`，重复关闭靠反推。
+- **Q6** `deactivate_session` 生产零调用点，registry 只增不减。
+
+### 修复
+- `hooks/triggers.py`：注册作为唯一事务边界 —— `bind_session_hooks`
+  失败立即 `return False` 不回填单例；`activate_session` 先 bind，
+  失败/异常返回 `active=False, closed=True` 零副作用句柄，成功才
+  注入 provider / 绑定 contextvar / 挂载 `ctx`，阶段 2 异常精确回滚。
+  `register_session` 对已存在 owner 拒绝并计数 `conflicts`；
+  `unregister_session(owner, *, expected=)` 按 hooks 对象身份精确注销。
+  `SessionHandle` 改可变 dataclass（加 `hooks`/`ctx`/`closed`），
+  `deactivate_session` 检查 closed、精确注销、仅清自己的 ctx 残留。
+  新增 `session_scope(...)` 上下文管理器。
+- `app.py`：改传 `ctx=agent.ctx`，删掉手动挂载。
+- `cli/cmd_chat.py`：新增 `_close_agent_session(agent)`，在两个
+  SessionEnd finally 中 `_run_session_hooks` **之后**调用（TUI + REPL
+  两个分支都接上）。
+
+### 11 处上轮断言同步（全部改强，不是放宽）
+四条 app.py 断言改查 `ctx=agent.ctx` 且不再手动挂载；
+`test_app_sets_session_owner_after_bind` 改查事务化顺序
+`bind < provider < set_owner` 与失败早返回；
+`test_hot_replace_within_session` 改查同 owner 拒绝 + `conflicts` +
+显式 unregister/register 动态查表；diagnostics 补 `conflicts`；
+「未接宿主」断言改为「cmd_chat 恰好 1 处 + 其余逐一锁住」；
+lifecycle API 补 `session_scope`；rejected 文档补 `conflicts`；
+docstring 断言扩大窗口并补 Q1b 早返回。
+
+### A′ ×4（自己写错自己抓回）
+1. **产品代码语法错误**：`hooks/__init__.py` 反斜续行 import 新增
+   `session_scope` 时误加尾逗号，`py_compile` 直接 SyntaxError →
+   改续行反斜杠。
+2. 新写 docstring 里 ``HookTrigger()`` 字面串被 4 个既有全仓源码
+   扫描误判（它们只排除 `#` 行注释）→ 改成不含括号写法。
+3. Q1b 新测试用 `Rec.hooks.n`，但「零副作用」恰是属性不存在 →
+   改 `not hasattr` 并补成功对照避免恒真。
+4. 对照用例写 `unregister_session("filler-0")`，`fill()` 默认前缀
+   是 `f-0` → 改 `f-0`。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3-IX + 上四轮 B3 **196 passed**；既有 hooks/config/alert/remote/
+plugin/bus/bridge/ACP 相关 **203 passed**；宽回归 A **218 passed**；
+宽回归 B 见报告；`matrix.validate()` / `evidence.verify_evidence()` /
+文档数字校验 / 10 文件 `py_compile` 全干净。新增
+`tests/test_b3ix_session_transaction.py` 覆盖 Q1–Q6、不该修契约、
+事务化顺序、矩阵钉死。
+
+### 如实边界
+**Q2 是行为变更**：同 owner 二次注册从覆盖变拒绝，热替换需显式
+unregister + register。**Q3 是注入故障**不是线上已观测异常；**Q2 的
+id 复用**用同 owner 字符串模拟，不声称线上一定发生；**Q4 修的是
+归属信息残留**未对应已观测派发错误（ask_user 会先校验
+`resolve_session`）。**`deactivate` 只接 CLI 主路径**：ACP server /
+web / stream_json / TUI.close / `AcpSession.dispose` 仍未接线。
+`deactivate` 仍不清 default provider；单例身份仍进程级、单槽回填
+仍在、`AlertRecord.owner` 仍不序列化、单 bridge 不按 `session_id`
+自动派生。`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false
+未翻、`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
 ## [Unreleased] - B3 续轮 VIII：会话生命周期收口 + 跨线程 owner 句柄化
 
 > **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、

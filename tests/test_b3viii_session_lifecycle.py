@@ -367,20 +367,30 @@ class TestOwnerMissStats:
 # ================================================== P5 口径
 class TestDocstringHonesty:
     def test_bind_docstring_says_two_singletons(self):
+        """**B3 续轮 IX 同步（改强）**：窗口扩大并补 Q1b 早返回。
+
+        IX 在 ``ok`` 之后插入「注册失败立即 return False」与注释，
+        两个单例元组后移；同时新增的早返回必须在回填**之前**。
+        """
         src = Path("tuan_cli/hooks/triggers.py").read_text(
             encoding="utf-8")
         i = src.index("def bind_session_hooks")
-        body = src[i:i + 900]
+        body = src[i:i + 1700]
         assert "**2** 个模块级单例" in body
         assert "回填 3 个模块级单例" not in body
         assert '("security_alert"' in body
         assert '("remote_control"' in body
+        assert body.index("if not ok:") < body.index('("security_alert"')
+        assert "return False" in body
 
     def test_session_registry_rejected_is_documented(self):
+        """**B3 续轮 IX 补强**：新增 ``conflicts``（同 owner 拒绝）可见。"""
         src = Path("tuan_cli/hooks/triggers.py").read_text(
             encoding="utf-8")
         assert "_SESSION_REJECTIONS" in src
         assert '"rejected": _SESSION_REJECTIONS' in src
+        assert "_SESSION_CONFLICTS" in src
+        assert '"conflicts": _SESSION_CONFLICTS' in src
 
 
 # ================================================== 不该修
@@ -418,15 +428,23 @@ class TestNotFixedOnPurpose:
 # ================================================== 接线 / 矩阵
 class TestWiringAndMatrix:
     def test_app_uses_activate_and_checks_active(self):
+        """**B3 续轮 IX 同步（改强）**：ctx 改为事务化入参。
+
+        VIII 由 app.py 手动把 owner/handle 挂到 ``agent.ctx``；IX 实测
+        注册失败时这会造成 ctx 残留（Q4），故改由 ``activate_session``
+        在**注册成功后**挂载、由 ``deactivate_session`` 精确清理。
+        """
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
         assert "activate_session(" in src
         assert "provider=lambda: getattr(" in src
         assert "hooks=agent.ctx.hooks" in src
-        assert "agent.ctx.session_owner" in src
-        assert "agent.ctx.session_handle = _handle" in src
+        assert "ctx=agent.ctx" in src              # 事务化挂载
         assert "if not _handle.active:" in src
         assert "logger.warning(" in src
         assert "config._hooks = agent.ctx.hooks" in src
+        # app.py 不再手动挂载（失败路径会留脏 ctx）
+        assert "agent.ctx.session_owner =" not in src
+        assert "agent.ctx.session_handle = _handle" not in src
         # 旧的分散调用已收进 activate_session（只看**代码行**：历史
         # 注释里仍写着 set_default_hooks_provider(A)/(B)，不算调用）
         code = "\n".join(l.strip() for l in src.splitlines()
@@ -436,9 +454,10 @@ class TestWiringAndMatrix:
         assert "set_session_owner(_session_owner)" not in code
 
     def test_lifecycle_api_exported(self):
+        """**B3 续轮 IX 补强**：新增 ``session_scope`` 上下文管理器。"""
         import tuan_cli.hooks as pkg
         for n in ("activate_session", "deactivate_session",
-                  "SessionHandle"):
+                  "SessionHandle", "session_scope"):
             assert hasattr(pkg, n), n
 
     def test_no_arg_hooktrigger_code_consumers_still_zero(self):
@@ -473,21 +492,44 @@ class TestWiringAndMatrix:
             i = src.index('M("%s"' % key)
             assert "STATUS_GAP" in src[i:i + 400], key
 
-    def test_deactivate_not_wired_to_all_hosts_is_documented(self):
-        """如实边界：项目没有统一 close 钩子，本轮只提供 API + ctx 句柄。"""
+    def test_deactivate_wired_to_cmd_chat_only(self):
+        """**B3 续轮 IX 同步（改强）**：Q6 接上 CLI 主路径。
+
+        VIII 断言「生产代码零调用点」；IX 在 ``cmd_chat.py`` 两个
+        SessionEnd finally 之后接了 ``_close_agent_session``（内部
+        1 处 ``deactivate_session``）。仍**不**宣称全部宿主已覆盖：
+        ACP server / web / stream_json / TUI.close 逐一锁住未接线。
+        """
         src = Path("tuan_cli/app.py").read_text(encoding="utf-8")
-        assert "agent.ctx.session_handle = _handle" in src
-        # 生产代码里没有自动 deactivate（不假装已全面接线）
+        assert "ctx=agent.ctx" in src
+        chat = Path("tuan_cli/cli/cmd_chat.py").read_text(
+            encoding="utf-8")
+        assert "_close_agent_session(" in chat
+        assert "deactivate_session(handle)" in chat
+        assert chat.count("_close_agent_session(") == 3  # 1 定义 + 2 调用
+        # SessionEnd 钩子在注销**之前**（钩子还要用 ctx.hooks）
+        for m in ("_run_session_hooks(", "_close_agent_session("):
+            assert m in chat
+        # 排除 API 定义层 triggers.py 后，宿主调用恰好 1 处
         hits = []
         for p in Path("tuan_cli").rglob("*.py"):
+            if p.name == "triggers.py":
+                continue
             for n, line in enumerate(p.read_text(
                     encoding="utf-8").splitlines(), 1):
                 code = line.strip()
-                if code.startswith("#"):
-                    continue
-                # 定义行 / 导出行不是「宿主调用」
-                if code.startswith("def ") or code.startswith("from "):
+                if code.startswith("#") or code.startswith("def ") \
+                        or code.startswith("from "):
                     continue
                 if "deactivate_session(" in code:
                     hits.append((str(p), n))
-        assert hits == [], hits
+        assert len(hits) == 1 and hits[0][0].endswith(
+            "cli/cmd_chat.py"), hits
+        # 其余宿主如实未接
+        for rel in ("tuan_cli/runtime/acp/server.py",
+                    "tuan_cli/runtime/acp/session.py",
+                    "tuan_cli/web/server.py",
+                    "tuan_cli/stream_json/headless.py",
+                    "tuan_cli/tui/tui.py"):
+            s = Path(rel).read_text(encoding="utf-8")
+            assert "deactivate_session(" not in s, rel

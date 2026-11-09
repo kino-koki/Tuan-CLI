@@ -1019,3 +1019,21 @@ SOFTWARE.
     Items 9-27 remain unchanged; the Apache-2.0 + MIT dual attribution
     for the Codex TUI parity line and all "no endorsement" statements
     still apply unchanged.
+
+
+29. B3-continued IX transactional session layer: stdlib
+    ``contextlib.contextmanager`` based ``session_scope``, a mutable
+    ``SessionHandle`` with ``hooks`` / ``ctx`` / ``closed`` fields,
+    ``register_session`` conflict rejection with a ``conflicts``
+    counter, ``unregister_session(owner, *, expected=)`` ABA guard,
+    an early ``return False`` on failed registration in
+    ``bind_session_hooks``, a reordered (registration-first)
+    ``activate_session`` with stage-2 rollback, ``ctx=agent.ctx`` in
+    ``app.py``, and ``_close_agent_session`` in ``cli/cmd_chat.py``
+    (called after SessionEnd hooks in both finally blocks). Plus one
+    new stdlib-based regression file
+    ``tests/test_b3ix_session_transaction.py``. No new third-party
+    material, no new dependency, and no copied upstream source.
+    Items 9-28 remain unchanged; the Apache-2.0 + MIT dual attribution
+    for the Codex TUI parity line and all "no endorsement" statements
+    still apply unchanged.

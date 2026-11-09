@@ -50,8 +50,9 @@ from __future__ import annotations
 
 import contextvars
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from .manager import HookDecision
 
@@ -86,6 +87,10 @@ _MAX_SESSIONS = 64
 # 但 app.py 不检查返回值 —— 长跑把 64 个槽占满后，第 65 个会话静默退化
 # 到单槽回填（实测 bind 返回 False、新会话事件全部 no-op）。
 _SESSION_REJECTIONS: int = 0
+# B3 续轮 IX（Q2）：同一 owner 二次注册（app.py 用 "agent:%x" % id(agent)，
+# CPython 实测 id 会被新对象复用）会**静默覆盖**旧会话的桶。现改为显式
+# 冲突拒绝并计数，绝不覆盖。
+_SESSION_CONFLICTS: int = 0
 
 # B3 续轮 VII: **当前会话 owner**（contextvars，不是 thread-local）。
 # 与上一轮的 default provider 不同：contextvar 在**并发会话**里各自独立，
@@ -162,22 +167,38 @@ def current_session_hooks() -> Any:
 
 
 def register_session(owner: str, hooks: Any) -> bool:
-    """按 owner 注册会话 hooks；超出上界**拒绝**而不是静默淘汰。"""
-    global _SESSION_REJECTIONS
+    """按 owner 注册会话 hooks；**已存在 / 超出上界一律拒绝，不覆盖**。
+
+    B3 续轮 IX（Q2）：``"agent:%x" % id(agent)`` 在 CPython 里 id 会被
+    新对象复用（实测同型对象销毁后新建拿到同一 id）。旧实现
+    ``_SESSIONS[owner] = hooks`` 会让后建会话静默覆盖先建会话的桶，
+    且先建会话的旧句柄 ``deactivate`` 会删掉后建会话（ABA）。
+    """
+    global _SESSION_REJECTIONS, _SESSION_CONFLICTS
     if not isinstance(owner, str) or not owner:
         return False
     with _SESSION_LOCK:
-        if owner not in _SESSIONS and len(_SESSIONS) >= _MAX_SESSIONS:
+        if owner in _SESSIONS:
+            _SESSION_CONFLICTS += 1
+            return False
+        if len(_SESSIONS) >= _MAX_SESSIONS:
             _SESSION_REJECTIONS += 1          # 可见，不再静默
             return False
         _SESSIONS[owner] = hooks
         return True
 
 
-def unregister_session(owner: str) -> bool:
-    """如实返回是否真删掉；``hooks=None`` 也是合法注册值，不能靠 pop 值判空。"""
+def unregister_session(owner: str, *, expected: Any = _UNSET) -> bool:
+    """如实返回是否真删掉；``hooks=None`` 也是合法注册值，不能靠 pop 值判空。
+
+    B3 续轮 IX（Q2 ABA）：传入 ``expected=<注册时的 hooks 对象>`` 时，
+    仅当桶里仍**是同一个对象**才删。防止旧句柄误删同名重建会话。
+    不传 ``expected`` 保持旧语义（按 key 强删），既有调用方零变化。
+    """
     with _SESSION_LOCK:
         if owner not in _SESSIONS:
+            return False
+        if expected is not _UNSET and _SESSIONS[owner] is not expected:
             return False
         del _SESSIONS[owner]
         return True
@@ -266,6 +287,7 @@ def session_registry_diagnostics() -> Dict[str, Any]:
             "count": len(_SESSIONS),
             "max": _MAX_SESSIONS,
             "rejected": _SESSION_REJECTIONS,
+            "conflicts": _SESSION_CONFLICTS,
         }
 
 
@@ -289,6 +311,11 @@ def bind_session_hooks(hooks: Any, *, owner: Optional[str] = None) -> bool:
     ok = True
     if owner:
         ok = register_session(owner, hooks)
+        if not ok:
+            # B3 续轮 IX（Q1b）：注册失败**绝不回填单例**。上一版无论
+            # ok 与否都继续 for 循环，实测把 _global_alerter.hooks 改成
+            # 被拒会话的 hooks —— 这是 Q1「provider 污染」的隐藏面。
+            return False
     for _mod, _attr in (("security_alert", "_global_alerter"),
                         ("remote_control", "_notify_rc")):
         try:
@@ -303,60 +330,148 @@ def bind_session_hooks(hooks: Any, *, owner: Optional[str] = None) -> bool:
 
 
 # ---------------------------------------------------------------- VIII: 生命周期
-@dataclass(frozen=True)
+@dataclass
 class SessionHandle:
     """一次会话激活的句柄；**进程内**对象，不进任何序列化路径。
 
-    ``active=False`` 表示 registry 注册被拒（64 槽已满）——调用方必须
-    检查它并如实降级，不能像上一版那样静默忽略 ``bind`` 的返回值。
+    ``active=False`` 表示注册被拒（64 槽已满 / owner 冲突 / 中途异常）——
+    调用方必须检查它并如实降级，不能静默忽略。
+
+    B3 续轮 IX 新增：
+    - ``hooks``：注册时的对象引用，供 ``deactivate`` 做 ABA 精确注销；
+    - ``ctx``：可选的宿主上下文引用，关闭时清理其上残留的 owner/handle；
+    - ``closed``：可变关闭标记（故 dataclass 不再是 frozen），重复
+      ``deactivate`` 直接返回 False，不靠 registry 是否有 key 反推。
     """
 
     owner: Optional[str]
     token: Any
     active: bool
+    hooks: Any = None
+    ctx: Any = None
+    closed: bool = False
 
 
 def activate_session(
-    *, owner: str, hooks: Any, provider: Optional[Callable[[], Any]] = None,
+    *, owner: str, hooks: Any,
+    provider: Optional[Callable[[], Any]] = None,
+    ctx: Any = None,
 ) -> SessionHandle:
-    """**一次调用**完成会话激活，顺序内聚，返回可关闭句柄。
+    """**事务化**会话激活：注册成功才建立任何全局可见副作用。
 
-    B3 续轮 VIII（P1/P2）实测：
-    - ``unregister_session`` 在生产代码里**零调用点**，registry 只增不减，
-      长跑占满 64 槽后第 65 个会话注册被拒、事件静默 no-op；
-    - ``set_session_owner`` 设完从不复位，同线程复用时会残留到下一个会话。
+    B3 续轮 IX（Q1/Q1b/Q3）实测三个真实缺陷，全部源于「先切全局状态、
+    再注册」的顺序：
 
-    本函数把 ``set_default_hooks_provider`` → ``set_session_owner`` →
-    ``register_session`` / ``bind_session_hooks`` 收成一个入口，并把
-    contextvar token 与 owner 放进 ``SessionHandle``，供
-    ``deactivate_session`` 在会话结束时复位 + 注销。
+    - **Q1** 占满 64 槽后第 65 个会话注册返回 False，但
+      ``set_default_hooks_provider`` **已经切到新会话** —— 老会话里
+      尚未回填 hooks 的无 owner 消费者（无参 ``HookTrigger``）从此派到
+      被拒会话（实测 A fired=0 / NEW fired=1）。
+    - **Q1b** 注册失败时 ``bind_session_hooks`` 仍回填两个模块级单例
+      （实测 ``_global_alerter.hooks`` 被改成被拒会话的 hooks）。
+    - **Q3** ``bind`` 中途抛异常时 provider 已切、contextvar 已设、
+      却没有句柄可复位（实测 ``current_session_owner`` 泄漏）。
+
+    本版把 **registry 注册**作为唯一事务边界：
+
+    1. 先 ``bind_session_hooks``（成功才回填单例，失败/异常零副作用）；
+    2. 注册失败 → 直接返回 ``active=False, closed=True`` 句柄；
+       **不切 provider、不设 contextvar、不动 ctx**；
+    3. 注册成功 → 才注入 provider、绑定 contextvar、把 owner/handle
+       挂到 ``ctx``；阶段 2 若自身异常，精确回滚刚注册的槽并复位 token。
+
+    ``ctx`` 是可选宿主上下文（app.py 传 ``agent.ctx``），用于让
+    ``deactivate_session`` 清理其上残留的归属信息（Q4）。
     """
-    if provider is not None:
-        set_default_hooks_provider(provider, owner=owner)
+    # ---- 阶段 1：唯一副作用是 registry，且失败/异常零副作用 ----
+    try:
+        active = bool(owner) and bind_session_hooks(hooks, owner=owner)
+    except Exception:  # noqa: BLE001 - 会话启动不得被绑定异常掀翻
+        active = False
+    if not active:
+        return SessionHandle(
+            owner=owner, token=None, active=False, hooks=hooks,
+            ctx=ctx, closed=True)
+
+    # ---- 阶段 2：注册成功才建立全局可见副作用 ----
     token = None
     try:
+        if provider is not None:
+            set_default_hooks_provider(provider, owner=owner)
         token = set_session_owner(owner)
-    except (ValueError, TypeError):
-        token = None                      # 非法 owner 不掀翻会话启动
-    active = bind_session_hooks(hooks, owner=owner) if owner else False
-    return SessionHandle(owner=owner, token=token, active=bool(active))
+    except Exception:  # noqa: BLE001 - 极窄；仍要精确回滚
+        if token is not None:
+            reset_session_owner(token)
+        unregister_session(owner, expected=hooks)
+        return SessionHandle(
+            owner=owner, token=None, active=False, hooks=hooks,
+            ctx=ctx, closed=True)
+
+    handle = SessionHandle(
+        owner=owner, token=token, active=True, hooks=hooks,
+        ctx=ctx, closed=False)
+    if ctx is not None:
+        try:
+            ctx.session_owner = owner
+            ctx.session_handle = handle
+        except Exception:  # noqa: BLE001 - 只读 ctx 不掀翻会话启动
+            pass
+    return handle
 
 
 def deactivate_session(handle: Any) -> bool:
-    """会话结束：注销 registry + 复位 contextvar，返回是否真注销成功。
+    """会话结束：精确注销 + 复位 contextvar + 清理 ctx 残留。
 
-    刻意**不清** default provider —— 清掉会让仍在运行的其他会话突然失去
-    单槽 fallback（既有行为），如实保留。跨 Context 的 token 复位由
-    ``reset_session_owner`` 内部吞异常，不掀翻关闭路径。
+    刻意**不清** default provider —— 清掉会让仍在运行的其他会话突然
+    失去单槽 fallback（既有行为），如实保留。
+
+    B3 续轮 IX：
+    - ``closed`` 标记让重复关闭直接返回 False（Q5）；
+    - ``expected=handle.hooks`` 让旧句柄不会误删同名重建会话（Q2 ABA）；
+    - 仅当 ``ctx.session_handle is handle`` 时才清理 ``session_owner`` /
+      ``session_handle``，避免删掉更新会话刚挂上的句柄（Q4）。
     """
-    if handle is None:
+    if handle is None or getattr(handle, "closed", False):
         return False
+    try:
+        handle.closed = True
+    except Exception:  # noqa: BLE001 - 外来句柄对象也能安全处理
+        pass
     owner = getattr(handle, "owner", None)
     token = getattr(handle, "token", None)
-    ok = unregister_session(owner) if owner else False
+    hooks = getattr(handle, "hooks", _UNSET)
+    ok = (unregister_session(owner, expected=hooks)
+          if owner else False)
     if token is not None:
         reset_session_owner(token)
+    ctx = getattr(handle, "ctx", None)
+    if ctx is not None:
+        try:
+            if getattr(ctx, "session_handle", None) is handle:
+                ctx.session_handle = None
+                if getattr(ctx, "session_owner", None) == owner:
+                    ctx.session_owner = ""
+        except Exception:  # noqa: BLE001
+            pass
     return ok
+
+
+@contextmanager
+def session_scope(
+    *, owner: str, hooks: Any,
+    provider: Optional[Callable[[], Any]] = None,
+    ctx: Any = None,
+) -> Iterator[SessionHandle]:
+    """``with session_scope(...) as h:`` 自动 ``deactivate``（异常安全）。
+
+    提供统一关闭契约，不强制所有宿主都改用它 —— 哪些宿主已接线如实
+    写在回归里，不假装「全部宿主已覆盖」。
+    """
+    h = activate_session(owner=owner, hooks=hooks,
+                         provider=provider, ctx=ctx)
+    try:
+        yield h
+    finally:
+        deactivate_session(h)
 
 
 def provider_diagnostics() -> Dict[str, Any]:
@@ -377,6 +492,7 @@ def provider_diagnostics() -> Dict[str, Any]:
         "reentry": reentry,
         "sessions": sessions,
         "session_rejections": sessions["rejected"],
+        "session_conflicts": sessions["conflicts"],
         "current_owner": current_session_owner(),
         "owner_misses": owner_miss_stats(),
     }
