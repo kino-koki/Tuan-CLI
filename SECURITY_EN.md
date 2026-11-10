@@ -2928,3 +2928,95 @@ field; sub-agent call sites now unregister in `finally`.
 unmerged, no third-party adaptive red team; NO real-device
 multi-platform verification. The slogan engine / cleaning layer /
 `mapping.py` / `tui.py` / `runtime_slogans.py` are byte-identical.
+
+
+---
+
+## A-line XI: Depth-First Verification + Last 10 Codex Modules Cleared
+
+> SELF-CONTAINED heading. Full reproduction: final section of
+> ``CLAUDE_PARITY.md``. **NOT A SINGLE B-LINE MATRIX STATUS CHANGED**:
+> ``aligned 46 / partial 9 / gap 26``, ``fully_superior=false``,
+> ``b_waves_done=["B1"]``, ``catalog.py`` untouched. This round
+> establishes the depth baseline; it does NOT pile up features.
+
+### Why the gate was tightened
+``fully_identical`` previously only checked ``pending == 0``, and the
+status came from a note table: a note pointing at a .py file proves
+"code exists", NOT "behaviour is correct when run". Now:
+
+    fully_identical = (pending == 0) and depth_audit()["ok"]
+
+``tui/parity/depth.py`` really CALLS one registered probe per
+aligned/localized module, asserts behaviour item by item, and times
+it. No caching (verdicts must not depend on cache timepoints), no
+automatic status downgrade (status table and probe table are two
+independent evidence sets). Currently only **10 of 102 (9.8%)**
+have probes; ``depth_missing`` honestly lists the other 92.
+
+### A-line: 10 real implementations (``tui/codexkit/``, ZERO Rust copied)
+auto-review denials (ignore-is-deny / dedup / owner buckets / bounded
+ring), history insertion (monotonic ids / out-of-range rejection /
+idempotency / backtrack invalidation), selection geometry (CJK
+widths / hit==render), local settings (three-layer precedence /
+strict types / never persisted), clock format (injected / monotonic
+clamp / explicit TZ), external config migration (single-pass template
+substitution / unknown-key audit), streaming (seq monotonic / reject
+after done / ESC-sequence stripping / pure-read render), async
+question reply (timeout / cancel / duplicate / NEVER self-answer),
+typed exec command (argv-only / shell metacharacter AND indirect
+interpreter rejection / no shell / output+timeout caps), and a pure
+stdlib self-test harness. **127 probe assertions total**; every item
+is registered in ``PROBE_REGISTRY`` and ``matrix.validate()`` runs
+each one -- a failing probe fails matrix self-check.
+
+### B-line read-only depth baseline (``parity_claude/depth.py``)
+Measured: of 65 non-gap modules, **65/65 have evidence paths, 65/65
+have notes, but 0 have module-level runtime probes**. The six-dimension
+``superiority.probe_all()`` is an AGGREGATE probe (one covers a dozen
+modules); green there is not per-module verification.
+``gap_queue()`` gives per-item evidence for all 26 gaps plus wave
+grouping ``B2:1 / B3:2 / B4:1 / B5:1 / B6:4 / B7:8 / B8:1 / B9:3 /
+B10:5``. **No B-line criterion or status was modified.**
+
+### One real coupling defect (NOT an environment false negative)
+After tightening ``fully_identical``, the B-line six-dimension
+``_probe_verifiable_parity()`` hard-coded "pending==0 implies
+fully_identical=True" and reported "contradictory metrics", cascading
+into ``all_probes_ok=False``, CLI ``UNVERIFIED`` and 5 red tests.
+It now verifies DUAL-GATE self-consistency item by item
+(``all_modules_settled`` vs pending, ``fully_identical == settled
+and depth_strict_ok``, depth counts vs ``depth_missing``) --
+STRENGTHENED, not relaxed. Two hard-coded "10 pending" CLI strings
+now read ``matrix.summary()`` dynamically. 9 existing assertions
+were synchronized with EXTRA depth assertions each.
+
+### A-prime x8 (self-caught)
+base_id mistaken for monotonic id floor / deleting only ESC bytes
+left ``[31m`` residue / two probe assertions inverted / ``sh -c x``
+has no metacharacters yet enables an indirect interpreter / double
+checks increment / harness source-scan matched itself x3 /
+``depth_audit`` not importing the implementation package falsely
+reported 0 / ``gap_queue`` whole-repo scan 18.8s -> 352ms.
+
+### Verification (split batches, NOT summed)
+85 + 555 + 286 passed / **1 failed** (4 files byte-identical to
+parent ``814c3231``: pre-existing environment behaviour rejecting
+``/usr/bin/python3``; no policy relaxed to go green); pure stdlib
+``xi_verify.py`` **30/30**; ``matrix.validate()`` /
+``evidence.verify_evidence()`` / doc-number check /
+``py_compile`` on 14 files all clean. New
+``tests/test_codexkit_depth.py``.
+
+### Honest limits
+A-line ``pending=0`` but ``fully_identical=False``; 92 existing
+aligned/localized modules still lack module-level probes. NO B-line
+gap was closed this round -- starting next round, gaps are filled
+wave by wave from ``gap_queue()``, and EACH closure must register a
+module-level probe. ``os_sandbox`` still a gap,
+``deny_network_by_default`` still false, ``credential_masking`` still
+partial; no third-party adaptive red team; NO real-device
+multi-platform verification. ``codexkit`` is NOT wired into the TUI
+main loop and replaces NO existing runtime object. The slogan engine /
+cleaning layer / ``mapping.py`` / ``tui.py`` / ``runtime_slogans.py``
+are byte-identical.

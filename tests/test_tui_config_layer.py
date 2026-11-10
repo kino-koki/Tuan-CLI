@@ -624,9 +624,10 @@ class TestConfigkitPackage:
         from tuan_cli.tui.parity import parity_report, parity_validate
         r = parity_report()
         assert r["configkit"]["modules"] == 5
-        assert r["matrix"]["pending"] == 10
-        assert r["matrix"]["by_status"]["aligned"] == 35
-        assert r["matrix"]["coverage_pct"] == 93.9
+        assert r["matrix"]["pending"] == 0
+        assert r["matrix"]["by_status"]["aligned"] == 45
+        assert r["matrix"]["coverage_pct"] == 100.0
+        assert r["matrix"]["depth_verified"] == 10
         assert r["matrix"]["fully_identical"] is False
         assert r["corekit"]["security_wiring"]["intact"] is True
         assert parity_validate() == []
@@ -638,4 +639,4 @@ class TestConfigkitPackage:
                   "model_migration", "sidebar_chooser",
                   "sidebar_tab_strip"):
             assert m not in gaps
-        assert len(gaps) == 10
+        assert len(gaps) == 0

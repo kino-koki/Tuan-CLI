@@ -2536,3 +2536,140 @@ create_agent 注入同一函数对象、resolver 按 contextvar 分桶解析 +
   第三方自适应红队未做；不是真机多平台验证。
 - 标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
   逐字节未改。
+
+
+---
+
+## A 线续轮 XI：最后 10 个 pending 清零 + 深度真实性判据（B 线只读基线）
+
+> **自足标题，不新增数字章节编号。** 用户原话：「确保深度的真实复现，
+> 而非仅仅广度；开始做到百分百，同时融入 Codex 有但是 Tuan 还没有的」。
+> 本轮把「对齐」从**一行 note** 重新定义成**一个通过的运行时探针**。
+
+### 矩阵真实变化（实测）
+
+| 线 | 上轮 | 本轮 |
+|---|---|---|
+| A 线 pending | 10 | **0** |
+| A 线 aligned / localized / na | 35 / 57 / 63 | **45 / 57 / 63** |
+| A 线宽口径 coverage | 93.9% | **100.0%** |
+| A 线严格对齐 / 逐值 | 55.8% / 21.2% | **61.8% / 27.3%** |
+| A 线 `all_modules_settled` | False | **True** |
+| A 线 `fully_identical` | False | **仍 False** |
+| A 线深度探针 | — | **10 / 102（9.8%）** |
+| B 线 aligned / partial / gap | 46 / 9 / 26 | **46 / 9 / 26（一个没动）** |
+| B 线 `fully_superior` | False | **仍 False** |
+
+**`fully_identical` 为什么没变 true**：判据加严为
+``pending == 0 and depth_audit()["ok"]``。旧口径只看状态表，
+一条 note 指向某个 .py 文件只证明「有代码」，证明不了「跑起来行为
+真的对」。现在 102 个 aligned/localized 里只有本轮 10 个有模块级
+运行时探针，``depth_missing`` 如实列出 92 项 —— **不靠改状态定义
+凑数**。这正是「深度而非广度」的代价，不是倒退。
+
+### A 线：10 个真实实现（零 Rust 源码复制）
+
+新建 ``tuan_cli/tui/codexkit/``，5 个文件、4 个实现模块 + 1 个
+纯 stdlib 自检 harness。**每个模块都有 ``probe()``**：真调代码、
+逐项断言、返回结构化证据，注册到 ``tui/parity/depth.py`` 的
+``PROBE_REGISTRY``。合计 **127 条断言 + 6 条 harness 自检**。
+
+| 上游模块 | 实现 | 关键契约（probe 数） |
+|---|---|---|
+| `auto_review_denials` | `approval_history.py::DenialLedger` | 忽略即拒绝 / 去重 / owner 分桶 / 有界 ring（13） |
+| `insert_history` | `approval_history.py::HistoryBuffer` | id 单调 / 越界拒绝 / 幂等 / backtrack 失效 / 几何同源（12） |
+| `rendered_selection` | `approval_history.py::SelectionGeometry` | CJK 列宽 / 组合标记 / `hit_matches_render()`（12） |
+| `local_settings` | `session_config.py::LocalSettings` | 三层优先级 / 严格类型 / 不落盘（17） |
+| `clock_format` | `session_config.py::ClockFormat` | 注入时钟 / 脏值回落 / 单调钳制 / 显式时区（16） |
+| `external_agent_config_migration` | `session_config.py::migrate_external_agent_config` | 单次模板替换 / 未知键留痕 / 类型守卫（12） |
+| `streaming` | `stream_exec.py::StreamAssembler` | seq 单调 / done 拒绝 / ESC 序列剥离 / render 纯读 / 上限（13） |
+| `async_question_reply` | `stream_exec.py::AsyncQuestionReply` | 登记 / 超时 / 取消 / 重复 / 不覆盖 / **绝不代答**（17） |
+| `exec_command` | `stream_exec.py::ExecCommand` | argv 强制 / 元字符与间接执行器拒绝 / 无 shell / 输出与超时上限（15） |
+| `tests` | `selftest.py::run_all_probes` | 纯 stdlib harness / 坏探针不被吞（6） |
+
+延续前几轮**实测过的真实缺陷**（不是凭空设计）：链式 ``replace``
+二次替换（第 13 轮 ``model_migration``）、hit/render 两套几何
+（``sidebar_tab_strip``）、渲染循环偷偷记活性（D4）、模型自问自答
+（B3 Elicitation）、``bool("false")`` / NaN 冒充数值、``shell=True``
+拼接、会话设置污染全局配置、自动审查决策被静默丢弃。
+
+### 深度制度（两处硬约束）
+
+1. ``tui/parity/depth.py``：``run_probe()`` 真调 + 计时 + 异常即失败；
+   ``depth_audit()`` 对全部 102 项逐项核销，返回
+   ``claimed / verified / ok / missing``；**不缓存**（判定不依赖缓存
+   时间点）、**不自动降级状态**（两张独立证据表）。
+   ``matrix.validate()`` 现在会对本轮 10 项逐一执行探针，任一失败
+   都算矩阵自检不通过。
+2. ``parity_claude/depth.py``（B 线，**只读**）：实测 65 个非 gap
+   模块里 **65/65 有 evidence 路径、65/65 有 note，但模块级运行时
+   探针 0 个**。六维 ``superiority.probe_all()`` 是**聚合维度**探针
+   （一个探针覆盖十几个模块），它绿不等于模块级验证。
+   ``gap_queue()`` 给出 26 个 gap 的逐项证据与按 wave 分组
+   ``B2:1 / B3:2 / B4:1 / B5:1 / B6:4 / B7:8 / B8:1 / B9:3 / B10:5``。
+   **本轮不改 B 线任何判据 / 状态**，``catalog.py`` 零改动。
+
+### 一处真实联动缺陷（不是环境假阴性）
+
+加严 ``fully_identical`` 后，B 线六维探针的
+``_probe_verifiable_parity()`` 硬编码假设「``pending == 0`` ⇒
+``fully_identical is True``」，直接判「指标自相矛盾」并失败，连带
+``all_probes_ok=False``、CLI 输出 ``UNVERIFIED``、5 条既有回归红。
+已改成逐项核销**双口径自洽**（``all_modules_settled`` 与 pending、
+``fully_identical == settled and depth_strict_ok``、深度计数与
+``depth_missing`` 对账）—— **改强不是放宽**。CLI 里两处硬编码
+「还剩 10 个 pending」改成动态读 ``matrix.summary()``。
+
+另同步 **9 条既有断言**到新基线（``pending 10→0``、
+``aligned 35→45``、``coverage 93.9→100.0``、``len(gaps) 10→0``），
+每条都**额外加** ``depth_verified == 10`` 等深度断言，不是单纯改数字。
+
+### A′（本轮自己写错自己抓回，全部实测复现）
+
+1. ``HistoryBuffer(base_id=7)`` 把 base_id 当 cell_id 单调下界，
+   连 ``append(id=1)`` 都被拒 → base_id 只管 backtrack 失效判定。
+2. 流式净化只删 ESC 字节，留下 ``[31m`` 残片 → 先整段剥 CSI/OSC。
+3. 两条探针断言写反（净化分片应返回 True、拼接结果口径）。
+4. ``sh -c x`` 不含 shell 元字符却等于间接启用解释器 → 加执行器
+   黑名单（``sh/bash/python3 -c`` 等）。
+5. ``probe_clock_format`` 重复自增 checks → 计数失真。
+6. harness 的「不得依赖测试框架」源码扫描**扫到自己** 3 次
+   （docstring / 注释 / 扫描代码里的字面串）→ 改措辞 + 拆分字面串。
+7. ``depth_audit()`` 不 import 实现包导致 10 个探针一个没注册、
+   ``depth_verified`` 假报 0 → 加幂等 ``_ensure_registry()``。
+8. B 线 ``gap_queue()`` 初版扫全仓 1300+ 个 .py 耗时 **18.8s**
+   → 改为只核销每个模块自己声明的 evidence 文件（**352ms**）。
+
+### 验证（分批报告，批次间有重叠、不累加）
+
+```
+新回归 + B 线 parity 全量                        85 passed
+宽回归 A（codexkit / claude parity / tui parity / cli parity /
+   config/core/input layer / headless / fullscreen / overlay / layout） 555 passed
+宽回归 B（arch_security / B2 各轮 / hooks / worktree / slash）  286 passed / 1 failed
+纯 stdlib 独立验证 xi_verify.py                  30 / 30 全绿
+matrix.validate() / evidence.verify_evidence() / verify_doc_numbers.py  全干净
+py_compile 14 个改动文件全过
+```
+
+那 **1 例失败**做了 parent-blob 基线对照：``arch/security.py`` /
+``test_arch_security.py`` / ``arch/platform.py`` /
+``tools/permissions.py`` 与 parent ``814c3231`` 逐字节一致，是策略
+拒绝 ``/usr/bin/python3`` 的既有环境行为，没为变绿动策略。
+
+### 如实边界 / 下一轮
+
+- **A 线 92 个既有 aligned/localized 仍无模块级探针**，
+  ``fully_identical=False``；``depth_missing`` 是下一轮工作队列。
+- **B 线 26 个 gap 一个未消**：本轮只立深度基线，没堆功能。
+  下一轮起按 ``gap_queue()`` 逐域真实补齐，**每消一个必须同时注册
+  一个模块级探针**（``MODULE_PROBES``），优先 B3 两个 hooks gap
+  （前面十几轮引擎已挖透，剩余硬理由明确）。
+- ``os_sandbox`` 仍 gap、``deny_network_by_default`` 仍 ``false``
+  未翻、``credential_masking`` 仍 partial；``b_waves_done=["B1"]``、
+  ``external_adaptive_red_team=False``；A 线分叉改动未合并、第三方
+  自适应红队未做；不是真机多平台验证。
+- ``codexkit`` **不接 TUI 主循环**、不替换任何既有运行时对象，
+  只提供可验证的对齐实现与探针；纯 Python，零 Rust 源码复制。
+- 标语引擎 / 净化层 / ``mapping.py`` / ``tui.py`` /
+  ``runtime_slogans.py`` 本轮逐字节未改。

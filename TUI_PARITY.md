@@ -663,3 +663,34 @@ Apache-2.0 / MIT Codex 归属混用**。
 
 404 例 pytest + 126 项纯 stdlib 验证全绿。
 详见 `SLOGAN_MAPPING.md` §20。
+
+
+---
+
+## 续轮 XI：最后 10 个 pending 清零 + 深度真实性判据（自足标题）
+
+完整复现见 ``CLAUDE_PARITY.md`` 末尾「A 线续轮 XI」。
+
+- **状态**：``pending 10 → 0``、``aligned 35 → 45``、
+  ``localized 57`` / ``not_applicable 63`` 不变，
+  ``coverage 93.9% → 100.0%``、``aligned_pct 55.8% → 61.8%``、
+  ``aligned_only_pct 21.2% → 27.3%``，``all_modules_settled=True``。
+- **但 ``fully_identical`` 仍 False**：判据加严为
+  ``pending == 0 and depth_audit()["ok"]``。102 个 aligned/localized
+  里只有本轮 10 个有模块级运行时探针（**10/102，9.8%**），
+  ``depth_missing`` 如实列出 92 项 —— 不靠改状态定义凑数。
+- **10 个真实实现**落 ``tui/codexkit/``：``approval_history.py``
+  （3 模块）、``session_config.py``（3 模块）、``stream_exec.py``
+  （3 模块）、``selftest.py``（1 模块）+ ``__init__.py``。
+  合计 **127 条探针断言**，每项注册到 ``parity/depth.py``，
+  ``matrix.validate()`` 逐一执行。纯 Python，零 Rust 源码复制。
+- **9 条既有断言同步（改强）**：数字更新之外全部额外加
+  ``depth_verified == 10`` 等深度断言；``cmd_tui_parity`` 输出新增
+  「状态清零 / 深度探针」两行，gaps 空队列如实显示。
+- **A′ ×8** 自查抓回，详见 ``SECURITY_BASELINE.md`` R57。
+- **下一轮**：为其余 92 个 aligned/localized 补模块级探针；
+  B 线按 ``parity_claude/depth.py::gap_queue()`` 逐域消 26 gap，
+  每消一个必须注册模块级探针。
+
+验证：85 + 555 + 286/1 既有环境失败 + 30/30 纯 stdlib +
+文档/矩阵/py_compile 全干净。

@@ -233,15 +233,24 @@ class TestMatrix:
         assert {r.status for r in rows} <= set(mx._STATUSES)
 
     def test_summary_metrics(self):
-        """第 13 轮基线（config_models + misc 5 个转 aligned）：pending 15 -> 10。"""
+        """A 线续轮 XI 基线（最后 10 个 pending 清零 + 深度判据加严）。
+
+        同步（**改强**）：除更新计数外，新增 all_modules_settled /
+        depth_* 四项断言，防止「pending=0 就宣称完全相同」。
+        """
         s = mx.summary()
         assert s["total_modules"] == 165
-        assert s["pending"] == 10
-        assert s["by_status"]["aligned"] == 35
-        assert s["coverage_pct"] == 93.9
-        assert s["aligned_pct"] == 55.8
-        assert s["aligned_only_pct"] == 21.2
-        assert s["fully_identical"] is False   # 如实：还没完全相同
+        assert s["pending"] == 0
+        assert s["by_status"]["aligned"] == 45
+        assert s["coverage_pct"] == 100.0
+        assert s["aligned_pct"] == 61.8
+        assert s["aligned_only_pct"] == 27.3
+        assert s["all_modules_settled"] is True
+        assert s["depth_claimed"] == 102
+        assert s["depth_verified"] == 10
+        assert s["depth_strict_ok"] is False
+        assert len(s["depth_missing"]) == 92
+        assert s["fully_identical"] is False   # 如实：深度探针未全覆盖
         assert s["upstream_rs_files"] == 1216
         # 派生一致性：防止以后改状态定义凑数而测试没发现
         assert s["settled"] == sum(s["by_status"][k] for k in
@@ -326,8 +335,9 @@ class TestParityCLI:
         args = type("A", (), {"report_json": False, "gaps": False})()
         assert cmd_tui_parity(args) == 0
         out = capsys.readouterr().out
-        assert "1216" in out and "165" in out and "93.9%" in out
+        assert "1216" in out and "165" in out and "100.0%" in out
         assert "完全相同  : 否" in out
+        assert "深度探针" in out and "10/102" in out
 
     def test_json_report(self, capsys):
         from tuan_cli.cli.cmd_tui_parity import cmd_tui_parity
@@ -335,14 +345,16 @@ class TestParityCLI:
         assert cmd_tui_parity(args) == 0
         data = json.loads(capsys.readouterr().out)
         assert data["matrix"]["total_modules"] == 165
-        assert len(data["gaps"]) == 10
+        assert len(data["gaps"]) == 0
+        assert data["matrix"]["depth_verified"] == 10
         assert data["validate"] == []
 
     def test_gaps_human(self, capsys):
         from tuan_cli.cli.cmd_tui_parity import cmd_tui_parity
         args = type("A", (), {"report_json": False, "gaps": True})()
         assert cmd_tui_parity(args) == 0
-        assert "待对齐队列 (10)" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "待对齐队列 (0)" in out and "（空 —— 状态表已清零）" in out
 
 
 # ---------------------------------------------------------------- 归属

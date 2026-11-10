@@ -35,6 +35,11 @@ def parity_report() -> dict:
         cfk = configkit.configkit_report()
     except Exception as exc:  # noqa: BLE001
         cfk = {"error": f"{type(exc).__name__}: {exc}"}
+    try:
+        from .. import codexkit
+        cxk = codexkit.codexkit_report()
+    except Exception as exc:  # noqa: BLE001
+        cxk = {"error": f"{type(exc).__name__}: {exc}"}
     return {
         "scale": dict(upstream_spec.SCALE),
         "layout": dict(upstream_spec.LAYOUT_CONSTANTS),
@@ -45,6 +50,7 @@ def parity_report() -> dict:
         "inputkit": ik,
         "corekit": ck,
         "configkit": cfk,
+        "codexkit": cxk,
         "matrix": matrix.summary(),
         "groups": matrix.group_summary(),
     }
@@ -75,4 +81,10 @@ def parity_validate() -> list[str]:
         problems.extend(f"configkit: {p}" for p in configkit.configkit_validate())
     except Exception as exc:  # noqa: BLE001
         problems.append(f"configkit 自检不可用: {type(exc).__name__}: {exc}")
+    # A 线续轮 XI：最后 10 个模块必须真有探针且通过
+    try:
+        from .. import codexkit
+        problems.extend(f"codexkit: {p}" for p in codexkit.codexkit_validate())
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"codexkit 自检不可用: {type(exc).__name__}: {exc}")
     return problems

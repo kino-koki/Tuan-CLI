@@ -167,10 +167,19 @@ class TestSuperiorityProbes:
         assert r.ok
         assert "spawn 失败" in " ".join(r.checks)
 
-    def test_verifiable_parity_probe_reports_pending(self):
+    def test_verifiable_parity_probe_checks_dual_gate(self):
+        """**A 线续轮 XI 同步（改强）**：fully_identical 加严为双口径。
+
+        旧名 reports_pending 只验 r.ok + 165；现在额外要求探针逐项
+        核销 all_modules_settled / depth_strict_ok / 深度计数对账。
+        """
         r = superiority._probe_verifiable_parity()
-        assert r.ok
-        assert "165" in " ".join(r.checks)
+        assert r.ok, r.detail
+        joined = " ".join(r.checks)
+        assert "165" in joined
+        assert "all_modules_settled" in joined
+        assert "depth_strict_ok" in joined
+        assert "深度探针" in r.detail
 
 
 # ================================================================ 矩阵与判据

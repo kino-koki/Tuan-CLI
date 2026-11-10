@@ -77,7 +77,14 @@ def cmd_claude_parity(args: Any) -> int:
               "denyInsteadOfPrompting / worktree 逃逸证明")
     print("\n  归属: NOTICE 第 14 条 · CLAUDE_PARITY.md · "
           "tuan_cli/parity_claude/")
-    print("  A 线并行: tuan tui parity (Codex TUI 对齐，还剩 10 个 pending)")
+    try:
+        from ..tui.parity import matrix as _am
+        _as = _am.summary()
+        print("  A 线并行: tuan tui parity (Codex TUI 对齐，"
+              f"pending={_as['pending']}，"
+              f"深度探针 {_as['depth_verified']}/{_as['depth_claimed']})")
+    except Exception:  # noqa: BLE001 - 展示层不让 A 线异常掀翻报告
+        print("  A 线并行: tuan tui parity (状态暂不可读)")
     return 1 if report["validate"] else 0
 
 

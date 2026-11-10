@@ -9,6 +9,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - A 线续轮 XI：Codex 侧清零 + 深度真实性判据
+
+> 用户原话：「确保深度的真实复现，而非仅仅广度；开始做到百分百，
+> 同时融入 Codex 有但是 Tuan 还没有的」。完整复现见
+> ``CLAUDE_PARITY.md`` 末尾「A 线续轮 XI」。自足标题。
+
+### 矩阵（实测）
+A 线 ``pending 10→0``、``aligned 35→45``、
+``coverage 93.9%→100.0%``、``all_modules_settled=True``；
+**``fully_identical`` 仍 False** —— 加严为
+``pending==0 and depth_audit()["ok"]``，102 项里只有 **10/102**
+有模块级运行时探针。B 线 ``aligned 46 / partial 9 / gap 26``
+**一个没动**，``fully_superior=false``，``catalog.py`` 零改动。
+
+### 10 个真实实现（``tui/codexkit/``）
+``auto_review_denials`` / ``insert_history`` / ``rendered_selection`` /
+``local_settings`` / ``clock_format`` /
+``external_agent_config_migration`` / ``streaming`` /
+``async_question_reply`` / ``exec_command`` / ``tests``。
+每个都有 ``probe()`` 真调代码，合计 **127 条断言**；纯 Python，
+零 Rust 源码复制，不接 TUI 主循环、不替换既有运行时对象。
+
+### 深度制度
+- ``tui/parity/depth.py``：``run_probe`` 真调 + 计时 + 异常即失败；
+  ``depth_audit()`` 逐项核销 102 项；**不缓存、不自动降级状态**；
+  ``matrix.validate()`` 对本轮 10 项逐一验探针。
+- ``parity_claude/depth.py``（只读）：实测 65 个非 gap 模块
+  **65/65 有 evidence 路径与 note，但模块级运行时探针 0 个**；
+  六维聚合探针不等于模块级验证。``gap_queue()`` 给出 26 个 gap
+  逐项证据与 wave 分组（B2:1 / B3:2 / B4:1 / B5:1 / B6:4 /
+  B7:8 / B8:1 / B9:3 / B10:5）。
+
+### 真实联动缺陷 + 9 条断言同步（全部改强）
+B 线六维 ``verifiable_parity`` 探针硬编码「``pending==0`` ⇒
+``fully_identical=True``」，加严后误报「指标自相矛盾」并连带
+5 条回归红 → 改为逐项核销双口径自洽。CLI 两处硬编码
+「还剩 10 个 pending」改动态读。9 条既有断言同步到新基线，
+每条额外加 ``depth_verified==10`` 等深度断言。
+
+### A′ ×8（自查抓回）
+base_id 当单调下界 / 只删 ESC 留下 ``[31m`` / 两条探针断言写反 /
+``sh -c`` 间接 shell / 重复计数 / 源码扫描自我引用 ×3 /
+探针未注册导致假报 0 / ``gap_queue`` 18.8s→352ms。
+
+### 验证（分批，不累加）
+85 + 555 + 286 passed / **1 failed**（4 文件与 parent ``814c3231``
+逐字节一致，策略拒绝 ``/usr/bin/python3`` 的既有环境行为，
+没为变绿动策略）；纯 stdlib ``xi_verify.py`` **30/30**；
+``matrix.validate()`` / ``evidence.verify_evidence()`` /
+``verify_doc_numbers.py`` / 14 文件 ``py_compile`` 全干净。
+新增 ``tests/test_codexkit_depth.py``。
+
+### 如实边界
+A 线 92 个既有 aligned/localized 仍无模块级探针；B 线 26 gap
+一个未消（本轮只立基线，下一轮起按 ``gap_queue()`` 逐域补，
+每消一个必须注册模块级探针）；``os_sandbox`` 仍 gap、
+``deny_network_by_default`` 仍 false 未翻、``credential_masking``
+仍 partial；``b_waves_done=["B1"]``、第三方红队未做；不是真机
+多平台验证。标语引擎 / 净化层 / ``mapping.py`` / ``tui.py`` /
+``runtime_slogans.py`` 逐字节未改。
+
 ## [Unreleased] - B3 续轮 X：create_agent 真实会话生命周期（纠偏 + R1–R4）
 
 > **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、

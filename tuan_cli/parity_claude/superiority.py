@@ -247,12 +247,30 @@ def _probe_verifiable_parity() -> ProbeResult:
         if s["total_modules"] != 165:
             return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
                                "Codex TUI 模块树规模不是 165", checks)
-        checks.append("fully_identical 如实为 false（pending != 0）")
-        if s["pending"] == 0 and s["fully_identical"] is not True:
+        # A 线续轮 XI 联动修正（**改强，不是放宽**）：fully_identical 现在
+        # 加严为「pending 清零 **且** 深度探针全覆盖」。旧版硬编码假设
+        # pending==0 时它必须为 True，加严后会误报「指标自相矛盾」。
+        # 现在逐项核销双口径自洽，任何一项不自洽都算探针失败。
+        settled = s["pending"] == 0
+        checks.append("all_modules_settled = (pending == 0)")
+        if s.get("all_modules_settled") is not settled:
             return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
-                               "指标自相矛盾", checks)
+                               "all_modules_settled 与 pending 不自洽", checks)
+        depth_ok = bool(s.get("depth_strict_ok"))
+        checks.append("fully_identical = settled 且 depth_strict_ok")
+        if s["fully_identical"] is not (settled and depth_ok):
+            return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
+                               "fully_identical 与双口径不自洽", checks)
+        claimed = int(s.get("depth_claimed") or 0)
+        verified = int(s.get("depth_verified") or 0)
+        checks.append("depth_verified <= depth_claimed 且 missing 可对账")
+        if not (0 <= verified <= claimed) or \
+                len(s.get("depth_missing") or []) != claimed - verified:
+            return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
+                               "深度探针计数不自洽", checks)
         return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], True,
-                           f"165 模块矩阵自检干净，pending 如实为 {s['pending']}", checks)
+                           f"165 模块矩阵自检干净，pending={s['pending']}，"
+                           f"深度探针 {verified}/{claimed}", checks)
     except Exception as exc:  # noqa: BLE001
         return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
                            f"探针异常: {type(exc).__name__}: {exc}", checks)

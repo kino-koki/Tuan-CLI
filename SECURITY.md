@@ -2517,3 +2517,79 @@ LLM 子代理；R2 的 GC 实测在 CPython 引用计数下成立，其他实现
 partial；A 线 10 pending、分叉改动、第三方自适应红队未做；不是
 真机多平台验证。标语引擎 / 净化层 / `mapping.py` / `tui.py` /
 `runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## A 线续轮 XI：深度真实性判据 + Codex 侧 10 项清零
+
+> 自足标题。完整复现见 ``CLAUDE_PARITY.md`` 末尾「A 线续轮 XI」。
+> **B 线矩阵一个状态没动**：``aligned 46 / partial 9 / gap 26``、
+> ``fully_superior=false``、``b_waves_done=["B1"]``、
+> ``catalog.py`` 零改动。本轮只立深度基线，不堆功能。
+
+### 为什么加严
+此前 ``fully_identical`` 只看 ``pending == 0``，状态来自一张 note
+表 —— 一条 note 指向 .py 文件只证明「有代码」，证明不了「跑起来
+行为真的对」。现在：
+
+    fully_identical = (pending == 0) and depth_audit()["ok"]
+
+``tui/parity/depth.py`` 对每个 aligned/localized 真调一个注册探针、
+逐项断言并计时；**不缓存**（判定不依赖缓存时间点）、**不自动降级
+状态**（状态表与探针表是两张独立证据）。102 项里当前只 **10/102
+（9.8%）** 有探针，``depth_missing`` 如实列出 92 项。
+
+### A 线 10 项真实实现（``tui/codexkit/``，零 Rust 源码复制）
+审批拒绝（忽略即拒绝 / 去重 / 分桶 / 有界 ring）、历史插入
+（id 单调 / 越界拒绝 / 幂等 / backtrack 失效）、选区几何
+（CJK 列宽 / hit==render）、本地设置（三层优先级 / 严格类型 /
+不落盘）、时钟格式（注入 / 单调钳制 / 显式时区）、外部配置迁移
+（单次模板替换 / 未知键留痕）、流式装配（seq 单调 / done 拒绝 /
+ESC 序列剥离 / render 纯读）、异步问答（超时/取消/重复 /
+**绝不代答**）、命令类型化（argv 强制 / 元字符与间接执行器拒绝 /
+无 shell / 输出与超时上限）、纯 stdlib 自检 harness。
+合计 **127 条探针断言**，每项注册到 ``PROBE_REGISTRY``，
+``matrix.validate()`` 逐一执行，失败即自检不通过。
+
+### B 线只读深度基线（``parity_claude/depth.py``）
+实测 65 个非 gap 模块：**65/65 有 evidence 路径、65/65 有 note，
+但模块级运行时探针 0 个**。六维 ``superiority.probe_all()`` 是
+**聚合维度**探针（一个覆盖十几个模块），它绿不等于逐模块验证。
+``gap_queue()`` 给出 26 个 gap 的逐项证据 + wave 分组
+``B2:1 / B3:2 / B4:1 / B5:1 / B6:4 / B7:8 / B8:1 / B9:3 / B10:5``。
+**不改任何 B 线判据 / 状态。**
+
+### 一处真实联动缺陷（不是环境假阴性）
+加严 ``fully_identical`` 后，B 线六维 ``_probe_verifiable_parity()``
+硬编码「``pending==0`` ⇒ ``fully_identical=True``」，判「指标自相
+矛盾」并失败，连带 ``all_probes_ok=False`` / CLI ``UNVERIFIED`` /
+5 条回归红。已改为逐项核销**双口径自洽**（``all_modules_settled``
+与 pending、``fully_identical == settled and depth_strict_ok``、
+深度计数与 ``depth_missing`` 对账）—— **改强不是放宽**。
+CLI 两处硬编码「还剩 10 个 pending」改动态读。另同步 **9 条既有
+断言**到新基线，每条额外加 ``depth_verified==10`` 等深度断言。
+
+### A′ ×8（自查抓回）
+base_id 当 cell_id 单调下界 / 只删 ESC 字节留下 ``[31m`` 残片 /
+两条探针断言写反 / ``sh -c x`` 不含元字符却间接启用解释器 /
+重复自增 checks / harness 源码扫描自我引用 ×3 / ``depth_audit``
+不 import 实现包导致假报 0 / ``gap_queue`` 全仓扫描 18.8s→352ms。
+
+### 验证（分批，不累加）
+85 + 555 + 286 passed / **1 failed**（4 文件与 parent ``814c3231``
+逐字节一致，策略拒绝 ``/usr/bin/python3`` 的既有环境行为，没为
+变绿动策略）；纯 stdlib ``xi_verify.py`` **30/30**；
+``matrix.validate()`` / ``evidence.verify_evidence()`` /
+``verify_doc_numbers.py`` / 14 文件 ``py_compile`` 全干净。
+新增 ``tests/test_codexkit_depth.py``。
+
+### 如实边界
+A 线 ``pending=0`` 但 ``fully_identical=False``；92 个既有
+aligned/localized 仍无模块级探针。B 线 26 gap 一个未消，
+下一轮起按 ``gap_queue()`` 逐域补，**每消一个必须注册模块级
+探针**。``os_sandbox`` 仍 gap、``deny_network_by_default`` 仍
+false 未翻、``credential_masking`` 仍 partial；第三方自适应
+红队未做；不是真机多平台验证。``codexkit`` 不接 TUI 主循环、
+不替换任何既有运行时对象。标语引擎 / 净化层 / ``mapping.py`` /
+``tui.py`` / ``runtime_slogans.py`` 逐字节未改。

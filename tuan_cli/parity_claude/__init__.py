@@ -2,7 +2,9 @@
 
 这是 B 线的第 1 轮（B1）。与 A 线（把 TUI 对齐 OpenAI Codex）并行：
 
-  - A 线：``tuan_cli/tui/parity`` + ``TUI_PARITY.md``，还剩 10 个 pending；
+  - A 线：``tuan_cli/tui/parity`` + ``TUI_PARITY.md``；续轮 XI 后
+  ``pending=0``，但 ``fully_identical`` 加严为「还须深度探针全覆盖」，
+  当前 ``depth_verified/depth_claimed`` 见 ``matrix.summary()``；
   - B 线：本包 + ``CLAUDE_PARITY.md``，对标 Claude Code **v2.1.319**
     （GitHub tag v2.1.319, 2026-11-06），目标是全模块补齐并反超。
 

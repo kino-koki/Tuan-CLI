@@ -1056,3 +1056,22 @@ SOFTWARE.
     source. Items 9-29 remain unchanged; the Apache-2.0 + MIT dual
     attribution for the Codex TUI parity line and all "no
     endorsement" statements still apply unchanged.
+
+
+31. A-line continued XI depth-first parity layer: a new pure-Python
+    ``tuan_cli/tui/codexkit/`` package implementing the final ten
+    pending Codex TUI modules (auto-review denials, history insertion,
+    rendered selection geometry, local settings, clock format,
+    external agent config migration, streaming assembly, async
+    question reply, typed exec command, and a pure-stdlib self-test
+    harness), each with a registered runtime probe in
+    ``tuan_cli/tui/parity/depth.py``; a tightened
+    ``fully_identical`` gate requiring both zero pending modules and
+    a fully verified probe set; a read-only B-line depth baseline in
+    ``tuan_cli/parity_claude/depth.py``; and one new regression file
+    ``tests/test_codexkit_depth.py``. All implementations are
+    independent Python written against publicly described semantics;
+    NO Rust source was copied and NO existing runtime object was
+    replaced. Items 9-30 remain unchanged; the Apache-2.0 + MIT
+    dual attribution for the Codex TUI parity line and all "no
+    endorsement" statements still apply unchanged.

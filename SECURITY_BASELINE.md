@@ -1267,3 +1267,55 @@ subagent/headless/stream_json 相关 **285 passed**；宽回归 A
 parent 逐字节一致，策略拒绝 `/usr/bin/python3` 的既有环境行为，
 没为变绿动策略）；`verify_doc_numbers.py problems == []`；14 文件
 `py_compile` 全 OK。新增 `tests/test_b3x_agent_sessions.py`。
+
+
+---
+
+## R57 · A 线续轮 XI：深度真实性判据 + Codex 侧清零
+
+完整复现见 ``CLAUDE_PARITY.md`` 末尾「A 线续轮 XI」。自足标题。
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| 状态表虚高 | 一行 note 指向 .py 只证明「有代码」，证明不了行为正确 | ``tui/parity/depth.py``：每个 aligned/localized 必须有注册探针且真调通过 |
+| 判据可凑数 | 旧 ``fully_identical`` 只看 ``pending==0`` | 加严为 ``pending==0 and depth_audit()["ok"]``；当前 10/102，如实 False |
+| B 线水分 | 六维聚合探针绿 ≠ 模块级验证 | ``parity_claude/depth.py`` 只读量化：65/65 有路径与 note，**模块级探针 0** |
+| 双口径联动 | 加严后 B 线 ``verifiable_parity`` 硬编码假设误报「指标自相矛盾」 | 逐项核销 ``all_modules_settled`` / ``depth_strict_ok`` / 计数对账（改强） |
+| 26 gap 无基线 | 直接堆功能会滑向广度 | ``gap_queue()`` 逐项证据 + wave 分组，下一轮按此逐域补 |
+
+**新增机制**：``tui/codexkit/`` 5 文件 10 个真实实现（审批拒绝 /
+历史插入 / 选区几何 / 本地设置 / 时钟格式 / 外部配置迁移 /
+流式装配 / 异步问答 / 命令类型化 / 纯 stdlib harness），
+**127 条探针断言**；``PROBE_REGISTRY`` 注册 + ``matrix.validate()``
+逐一执行；不缓存、不自动降级状态。``parity_claude/depth.py`` 只读，
+**不改 B 线任何判据/状态**，``catalog.py`` 零改动。
+
+**矩阵**：A 线 ``pending 10→0`` / ``aligned 35→45`` /
+``coverage 93.9%→100.0%`` / ``all_modules_settled=True`` /
+``depth 10/102`` / ``fully_identical=False``；
+B 线 ``aligned 46 / partial 9 / gap 26`` / ``fully_superior=false``
+**一个没动**。
+
+**9 条既有断言同步（全部改强）**：数字更新之外，每条额外加
+``depth_verified==10`` 等深度断言；CLI 两处硬编码「还剩 10 个
+pending」改动态读 ``matrix.summary()``。
+
+**A′ ×8**（自查抓回）：base_id 语义 / ESC 残片 / 探针断言写反 /
+间接 shell / 重复计数 / 源码扫描自我引用 ×3 / 探针未注册 /
+``gap_queue`` 18.8s→352ms。
+
+**验证（分批，不累加）**：85 + 555 + 286 passed / 1 failed
+（4 文件与 parent ``814c3231`` 逐字节一致，策略拒绝
+``/usr/bin/python3`` 的既有环境行为，没为变绿动策略）；
+纯 stdlib ``xi_verify.py`` 30/30；``matrix.validate()`` /
+``evidence.verify_evidence()`` / ``verify_doc_numbers.py`` /
+14 文件 ``py_compile`` 全干净。新增 ``tests/test_codexkit_depth.py``。
+
+**如实边界**：A 线 92 个既有 aligned/localized 仍无模块级探针；
+B 线 26 gap 一个未消，下一轮起按 ``gap_queue()`` 逐域补且
+每消一个必须注册模块级探针；``os_sandbox`` 仍 gap、
+``deny_network_by_default`` 仍 false 未翻、``credential_masking``
+仍 partial；``b_waves_done=["B1"]``、第三方红队未做；不是真机
+多平台验证。``codexkit`` 不接 TUI 主循环、不替换任何既有运行时
+对象；纯 Python，零 Rust 源码复制。标语引擎 / 净化层 /
+``mapping.py`` / ``tui.py`` / ``runtime_slogans.py`` 逐字节未改。

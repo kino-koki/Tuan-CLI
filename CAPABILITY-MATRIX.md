@@ -749,3 +749,37 @@ agent；R3 的 64 槽耗尽是模拟不是真跑 70 个 LLM 子代理；R2 的 G
 `web/server.py` / `runtime/acp/bridge.py` 三个长驻宿主仍未接线；
 两个独立子进程判定不该修。`deactivate` 仍不清 default provider，
 单例身份仍进程级、单槽回填仍在、`AlertRecord.owner` 仍不序列化。
+
+
+---
+
+## A 线续轮 XI 增量（深度真实性判据 + Codex 侧清零）
+
+权威口径见 ``CLAUDE_PARITY.md`` 末尾「A 线续轮 XI」。沿用自足标题。
+
+- **A 线**：``pending 10 → 0``、``aligned 35 → 45``、
+  ``coverage 93.9% → 100.0%``、``all_modules_settled=True``；
+  但 ``fully_identical`` **仍 False** —— 判据加严为
+  ``pending==0 and depth_audit()["ok"]``，102 个 aligned/localized
+  里只有 **10/102（9.8%）** 有模块级运行时探针。
+- **10 个真实实现**落 ``tui/codexkit/``：审批拒绝 / 历史插入 /
+  选区几何 / 本地设置 / 时钟格式 / 外部配置迁移 / 流式装配 /
+  异步问答 / 命令类型化 / 纯 stdlib 自检 harness。合计 127 条
+  探针断言，零 Rust 源码复制。
+- **深度制度**：``tui/parity/depth.py``（真调探针 + 逐项核销 +
+  不缓存 + 不自动降级状态）；``parity_claude/depth.py``（B 线只读
+  基线：65 个非 gap 模块 **65/65 有路径与 note，但模块级探针 0**；
+  ``gap_queue()`` 给出 26 个 gap 逐项证据与 wave 分组）。
+- **B 线矩阵一个状态没动**：``aligned 46 / partial 9 / gap 26``、
+  ``fully_superior=false``、``b_waves_done=["B1"]``、
+  ``catalog.py`` 零改动。本轮只立基线，下一轮起逐域消 gap，
+  每消一个必须注册模块级探针。
+- **真实联动缺陷**：B 线六维 ``verifiable_parity`` 探针硬编码
+  「pending==0 ⇒ fully_identical=True」→ 改双口径逐项核销（改强）。
+  9 条既有断言同步到新基线且全部额外加深度断言。
+- **A′ ×8** 自查抓回（base_id 语义 / ESC 残片 / 探针断言写反 /
+  间接 shell / 重复计数 / 源码扫描自我引用 ×3 / 探针未注册 /
+  gap_queue 18.8s→352ms）。详见 ``SECURITY_BASELINE.md`` R57。
+
+验证：85 + 555 + 286/1 既有环境失败（4 文件 parent-blob 逐字节一致）
++ 30/30 纯 stdlib + 文档/矩阵/py_compile 全干净。

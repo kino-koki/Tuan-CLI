@@ -70,8 +70,18 @@ def cmd_tui_parity(args: Any) -> int:
         print(f"  配置/侧栏 : configkit {cfk['modules']} 个模块已对齐 "
               f"(第 13 轮: add_dirs / collaboration_modes / "
               f"model_migration / sidebar_chooser / sidebar_tab_strip)")
+    cxk = report.get("codexkit", {})
+    if isinstance(cxk, dict) and "modules" in cxk:
+        print(f"  收尾层    : codexkit {cxk['modules']} 个模块已对齐 "
+              f"(续轮 XI: 审批 / 历史 / 选区 / 设置 / 时钟 / 迁移 / "
+              f"流式 / 异步问答 / 命令 / 自检)")
+    print(f"  状态清零  : {'是' if m['all_modules_settled'] else '否'} "
+          f"(pending={m['pending']})")
+    print(f"  深度探针  : {m['depth_verified']}/{m['depth_claimed']} "
+          f"已验证 ({m['depth_coverage_pct']}%) · "
+          f"待补 {len(m['depth_missing'])} 项")
     print(f"  完全相同  : {'是' if m['fully_identical'] else '否'} "
-          f"(还有 {m['pending']} 个模块待对齐)")
+          f"(状态清零 且 深度探针全覆盖)")
     if problems:
         for p in problems:
             print(f"  !! 自检失败: {p}")
@@ -80,10 +90,13 @@ def cmd_tui_parity(args: Any) -> int:
     if show_gaps:
         gaps = matrix.gaps()
         print(f"\n  待对齐队列 ({len(gaps)}):")
+        if not gaps:
+            print("    （空 —— 状态表已清零）")
         for g, mod in gaps:
             print(f"    - {g:22s} {mod}")
-        print("\n  下一轮优先: streaming_async + tools_exec + "
-              "history_transcript 组 (见 TUI_PARITY.md §5)")
+        print("\n  下一轮优先: 为其余 aligned/localized 模块补"
+              "模块级运行时探针；B 线逐域消 26 个 gap"
+              " (见 CLAUDE_PARITY.md / parity/depth.py)")
     print("\n  归属: NOTICE 第 9–13 条 · THIRD_PARTY_LICENSES/ · TUI_PARITY.md")
     return 1 if problems else 0
 
