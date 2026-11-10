@@ -38,13 +38,47 @@ JSON decision** 的事件 —— 走通知通道等于把 hook 的 stdout 裁决
 - **不把本地 CLI 没有的能力包装成对齐**：CC 事件面持续演进，本地
   只登记可核验清单，不宣称与某一发行版逐值相等。
 
+## B3 续轮 XIV：接线之后的失败闭合与 payload 脱敏（先实测复现）
+
+XIII 把 13 个事件接到真实生产点后，本轮真跑又抓出 7 个缺陷，全是
+「装了 hook 反而不安全」这一类：
+
+- **F1/F2（安全洞）**：``owner`` 未注册、或 provider 抛异常时
+  ``_resolve_hooks`` 返回 ``None``，``emit`` 走 ``no_hooks`` 静默放行 ——
+  ``emit_preventable`` 返回 ``False``，可预防动作照做。B3 VII 的
+  「owner 拼错 fail-closed」与本模块 docstring 写的「决策类沿用 B1
+  fail-closed」在**新模块里一条都没接**。
+- **F3/F4**：``dict(payload or {})`` 在 ``try`` 之外，脏 payload
+  （str/int/list）直接抛；``str(event)`` 对 ``__str__`` 抛异常的未知对象
+  也掀翻 ``emit``。生产触发点全包 ``except Exception: pass``，异常被吞
+  → 又一次静默放行。
+- **F5（脱敏）**：真起 command hook 把 stdin 原样落盘，实测
+  ``PermissionDenied`` 的 ``reason``/``safety_advice``、``TaskCreated``
+  的 ``task.content``、``CwdChanged`` 的 ``cwd`` 把 ``ghp_`` 明文与
+  OSC 8 / RLO 原样送给第三方子进程。前十几轮给日志 / 错误文本 /
+  标语净化层建过的脱敏契约，这个新模块一条都没接。
+- **F6**：hook stdout 的 ``reason`` 原样进 ``LifecycleOutcome``
+  （``to_dict`` 只截 400，不剥控制字符）。
+- **F7**：4 个可预防触发点的 ``except Exception: pass`` 吞掉注入的
+  ``emit_preventable`` 异常，todo 仍写入、``set_model`` 仍切换。
+
+修法：**``emit`` 自己永不抛异常**（全程单一 try + 按决策类 fail-closed
+分流），payload / reason 统一过净化出口；4 个可预防触发点的兜底改
+fail-closed。通知类 9 处保持吞异常（动作已发生，不该回滚）。
+
 许可：纯 Python 独立实现，零源码复制；见 ``NOTICE``。
 """
 from __future__ import annotations
 
+import json
+import math
+import re
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Optional, Tuple
+
+from tuan_cli.core import security_utils as _SU
+from tuan_cli.ui.slogans import _clean as _CL
 
 from . import exit_semantics as XS
 from . import triggers as TR
@@ -89,6 +123,10 @@ SEMANTIC_DIFFERENCES: Dict[str, str] = {
                      "不擅自替上层终止回合",
     "InstructionsLoaded": "payload 只带路径/字节数/是否截断，不带正文（凭据脱敏），"
                           "CC 会带文件内容",
+    "LifecyclePayload": "B3 XIV：Tuan 对所有 lifecycle payload 与 hook reason 做"
+                        "控制字符清理 + 凭据脱敏 + 有界递归截断后才交给 hook，"
+                        "CC 会把完整 payload（含工具参数/正文）原样传给 hook；"
+                        "这是刻意更严的脱敏边界，不是事件语义等价",
 }
 
 _REENTRY = threading.local()
@@ -97,7 +135,111 @@ _STATS: Dict[str, int] = {
     "emitted": 0, "decision": 0, "notify": 0, "blocked": 0,
     "noop_no_hooks": 0, "reentry_suppressed": 0, "errors_swallowed": 0,
     "unknown_event": 0,
+    # B3 XIV: 失败闭合与脱敏的可观测计数（不是装饰，validate 会核销键）
+    "owner_not_registered": 0, "provider_error": 0,
+    "payload_rejected": 0, "sanitized_fields": 0, "fail_closed": 0,
 }
+
+# ---------------------------------------------------------------- XIV: 净化出口
+# 复现 F5：真起 command hook、把 stdin 原样落盘，实测 ``ghp_`` 明文与
+# OSC 8 / RLO 原样进第三方子进程。复用既有**单一真值源**，不造第三套：
+#   - 控制字符序列（OSC/CSI/bidi/Cf/Cc）→ _clean.sanitize_log_field
+#   - 密钥（ENV 行 / key=value / Bearer / sk- / JWT）→ security_utils.redact_sensitive
+# 顺序刻意是「先清控制字符，再脱敏」：控制字符夹在 token 中间时，先清理
+# 才能让脱敏正则匹配上；安全文本链路的 safe_error_text 是同样的取舍。
+#
+# 本地补充一条：``redact_sensitive`` 实测**不认裸 ``ghp_`` 串**（只在
+# ``GITHUB_TOKEN=...`` 这类 ENV 行/键值形式里遮蔽）。不改全局
+# security_utils：那会误伤文档里的 ``ghp_...`` 占位串与既有审计口径，
+# 属于把本轮修复扩散成全局行为变更。这里显式登记，只覆盖 lifecycle
+# 出站的 payload / reason。
+# A′（XIV 自查）两条：
+# 1) 初版加了 ``\b`` 前边界，实测 ``xghp_<36 chars>``（token 与其它
+#    文本粘连，这是 payload 里的常态）**匹配不到** —— ``x`` 与 ``g``
+#    都是 \w，中间没有词边界。去掉边界，按子串匹配。
+# 2) 初版 ``ghp_[A-Za-z0-9]{20,}`` 不含下划线，实测带下划线的
+#    token 形态仍漏。统一成 ``[A-Za-z0-9_]{20,}``；仍要求 20+ 字符，
+#    文档占位 ``ghp_...`` / ``ghp_REAL_SECRET_VALUE`` 不会被误伤。
+# A′（XIV 自查 #3）：无上限的 ``{20,}`` 会把 token **后面紧邻的普通
+# 文本**一并吃掉（实测 ``BLOCKED<token>END`` -> ``BLOCKED[REDACTED]``，
+# ``END`` 丢了）。classic PAT 是 ``ghp_`` + 精确 36 位字母数字，优先用
+# 精确分支；宽松分支保留给 fine-grained / 带下划线的形态，但设 80 上界
+# 并在边界里如实登记「紧邻普通文本可能被一并遮蔽」。
+_SECRET_TOKEN_RE = re.compile(
+    r"(?:ghp_[A-Za-z0-9]{36}"
+    r"|github_pat_[A-Za-z0-9_]{20,80}"
+    r"|ghp_[A-Za-z0-9_]{20,80})")
+_MAX_STR = 512            # 单个字符串值上限（码点）
+_MAX_REASON = 400
+_MAX_DEPTH = 8
+_MAX_ITEMS = 64
+_MAX_TOTAL = 65536        # 整个 payload 输出上限，防超长/深递归 DoS
+
+
+def _clean_str(s: str, limit: int = _MAX_STR) -> str:
+    """单个字符串出口：剥控制字符 → 脱敏凭据 → 限长。绝不抛异常。"""
+    try:
+        out = _CL.sanitize_log_field(s, 4096)
+        out = _SU.redact_sensitive(out)
+        out = _SECRET_TOKEN_RE.sub("[REDACTED]", out)
+        if len(out) > limit:
+            out = out[:limit].rstrip() + "…"
+        return out
+    except Exception:  # noqa: BLE001 - 净化自身绝不让事件通道再抛
+        return ""
+
+
+def _walk(value: Any, depth: int, budget: list, changed: list) -> Any:
+    """有界递归净化：非 str 输入只取类型名，绝不 str() 未知对象。"""
+    if depth > _MAX_DEPTH or budget[0] >= _MAX_TOTAL:
+        changed[0] += 1
+        return "<已截断:深度或总量超限>"
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else "<non-finite-float>"
+    if isinstance(value, str):
+        s = _clean_str(value)
+        if s != value:
+            changed[0] += 1
+        budget[0] += len(s)
+        if budget[0] > _MAX_TOTAL:
+            changed[0] += 1
+            return "<已截断:总量超限>"
+        return s
+    if isinstance(value, (bytes, bytearray)):
+        changed[0] += 1
+        return "<bytes:%d>" % len(value)
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        for i, (k, v) in enumerate(value.items()):
+            if i >= _MAX_ITEMS:
+                out["<...>"] = "<%d 项省略>" % (len(value) - _MAX_ITEMS)
+                changed[0] += 1
+                break
+            key = _clean_str(k, 64) if isinstance(k, str) else type(k).__name__
+            out[key] = _walk(v, depth + 1, budget, changed)
+        return out
+    if isinstance(value, (list, tuple, set, frozenset)):
+        seq = list(value)
+        if len(seq) > _MAX_ITEMS:
+            changed[0] += 1
+        return [_walk(x, depth + 1, budget, changed)
+                for x in seq[:_MAX_ITEMS]]
+    changed[0] += 1
+    return "<%s>" % type(value).__name__
+
+
+def _sanitize_payload(payload: Any) -> Tuple[Dict[str, Any], int]:
+    """返回 (净化后 payload, 被改动字段数)。非 dict 一律拒绝，交给 emit
+    按决策类 fail-closed —— 绝不把脏值变成「没配 hook」而放行。"""
+    if not isinstance(payload, dict):
+        raise TypeError("payload_must_be_dict")
+    budget = [0]
+    changed = [0]
+    out = _walk(payload, 0, budget, changed)
+    return out, changed[0]
+
 
 
 @dataclass(frozen=True)
@@ -125,23 +267,49 @@ def _noop(event: str, source: str) -> LifecycleOutcome:
     return LifecycleOutcome(event, False, False, False, "", False, source)
 
 
-def _resolve_hooks(hooks: Any, owner: Optional[str]) -> Tuple[Any, str]:
+def _resolve_hooks(hooks: Any, owner: Optional[str]) -> Tuple[Any, str, Optional[str]]:
     """显式 hooks > owner 分桶 > 当前会话 > default。
 
-    ``owner`` 查不到时**不回落** default（拼错 owner 绝不静默派到别的
-    会话）—— 这是 B3 VI/VII 用实测换来的契约。
+    **B3 XIV（F1/F2）**：返回第三项 ``failure``，把三种「拿不到 hooks」
+    分开，绝不混成一个 ``no_hooks`` 静默放行：
+
+    - ``owner_not_registered``：拼错 / 未注册的 owner（B3 VII O5 契约）
+    - ``provider_error``：provider / registry 抛异常
+    - ``None`` + ``source=no_hooks``：**确实没配 hook**，这是唯一允许
+      放行的分支（既有「没配 hooks 时 emit 严格 no-op」契约零变化）
     """
     if hooks is not None:
-        return hooks, "explicit"
+        return hooks, "explicit", None
     if owner is not None:
-        h = TR.resolve_session(owner)
+        # A′（XIV 自查）：owner 非字符串 / 不可 hash 时 ``resolve_session``
+        # 会抛 TypeError，旧版把它归到 provider_error —— 归因错了。
+        # 拼错的 owner 就是「未注册」，不该被记成 provider 故障。
+        if not isinstance(owner, str) or not owner:
+            return None, "owner_not_registered", "owner_not_registered"
+        try:
+            h = TR.resolve_session(owner)
+        except Exception:  # noqa: BLE001
+            return None, "provider_error", "provider_error"
         if h is None:
-            TR._bump_owner_miss(owner)
-        return h, "owner"
+            try:
+                TR._bump_owner_miss(owner)
+            except Exception:  # noqa: BLE001
+                pass
+            return None, "owner_not_registered", "owner_not_registered"
+        return h, "owner", None
+    # A′（XIV 自查 F2）：``TR.current_session_hooks()`` →
+    # ``_resolve_default()`` **内部就把 provider 异常吞成 None**，
+    # lifecycle 根本感知不到，于是又走 no_hooks 静默放行。这里直接
+    # 取 provider 自己调一次（语义等价，只是能看见异常），不改
+    # triggers 的既有「绝不掀翻主路径」契约。
     try:
-        return TR.current_session_hooks(), "default"
-    except Exception:  # noqa: BLE001 - provider 异常一律当「没配 hooks」
-        return None, "default"
+        provider = TR.get_default_hooks_provider()
+        h = provider() if provider is not None else None
+    except Exception:  # noqa: BLE001
+        return None, "provider_error", "provider_error"
+    if h is None:
+        return None, "no_hooks", None
+    return h, "default", None
 
 
 def _in_flight() -> set:
@@ -162,36 +330,75 @@ def emit(event: str, payload: Optional[Dict[str, Any]] = None, *,
          tool_name: str = "", prevent: Optional[bool] = None) -> LifecycleOutcome:
     """按官方真值表派发一个生命周期事件。
 
-    ``prevent`` 覆盖「这次动作是否还能被阻止」：``None`` 时按
-    ``semantics_for(event).blocks_on_exit2`` 判定。对「动作已发生」的
-    事件（PostToolUse / PostToolUseFailure 等），即便 hook 返回 block
-    也只把 reason 作为反馈返回，``blocked=False`` —— 与 CC 逐事件
-    exit-code-2 表一致。
+    **B3 XIV 契约：本函数永不抛异常。** 生产触发点全都包在
+    ``try/except`` 里，只要 emit 会抛，异常就被吞成静默放行 —— 实测
+    F3（脏 payload）、F4（恶意 event ``__str__``）、F7（注入异常）
+    都是这条路。现在全程单一 try，任何异常按
+    ``decision_channel and preventable`` fail-closed；通知类只吞。
+
+    ``prevent`` 只接受 ``bool``（脏值回落真值表），``None`` 时按
+    ``semantics_for(event).blocks_on_exit2`` 判定。
     """
+    # event 守卫刻意**不调 str(event)**：未知对象 __str__ 可能抛异常
+    # 或泄露 repr，固定占位 + unknown_event 计数即可（F4）。
     if not isinstance(event, str) or event not in XS.OFFICIAL_EVENTS:
         _bump("unknown_event")
-        return _noop(str(event), "unknown_event")
+        return _noop("<invalid-event>", "unknown_event")
 
-    sem = XS.semantics_for(event)
-    decision_channel = event in XS.DECISION_CAPABLE_EVENTS
-    preventable = (prevent if prevent is not None
-                   else bool(sem and sem.blocks_on_exit2))
-
-    # 同线程同事件重入抑制（in-process hook 里再触发自己会无限递归）
     inflight = _in_flight()
-    if event in inflight:
-        _bump("reentry_suppressed")
-        return _noop(event, "reentry_suppressed")
-
-    m, source = _resolve_hooks(hooks, owner)
-    if m is None:
-        _bump("noop_no_hooks")
-        return _noop(event, "no_hooks")
-
-    pl = dict(payload or {})
-    pl.setdefault("hook_event_name", event)
+    # A′（XIV 自查）：add 必须在判定**之后**。初版把 add 提到 try 外
+    # 最前面，``event in inflight`` 于是恒真 —— 每个事件都被误判成
+    # 重入、决策类全部 fail-closed，既有 XIII 回归整片变红。先算快照。
+    reentry = event in inflight
     inflight.add(event)
     try:
+        sem = XS.semantics_for(event)
+        decision_channel = event in XS.DECISION_CAPABLE_EVENTS
+        preventable = (prevent if isinstance(prevent, bool)
+                       else bool(sem and sem.blocks_on_exit2))
+
+        # 重入抑制：防 in-process hook 无限递归。决策类按 B3 V 既有
+        # 契约 fail-closed，不静默放行。
+        if reentry:
+            _bump("reentry_suppressed")
+            if decision_channel and preventable:
+                _bump("fail_closed")
+                return LifecycleOutcome(
+                    event, False, True, True,
+                    "生命周期 hook 重入抑制 (fail-closed)",
+                    True, "reentry_suppressed")
+            return _noop(event, "reentry_suppressed")
+
+        # payload 归一化 + 净化（原本 dict(payload or {}) 在 try 之外）
+        try:
+            pl, nsan = _sanitize_payload(payload if payload is not None else {})
+        except Exception:  # noqa: BLE001
+            _bump("payload_rejected")
+            if decision_channel and preventable:
+                _bump("fail_closed")
+                return LifecycleOutcome(
+                    event, True, True, True,
+                    "生命周期 payload 非法 (fail-closed)",
+                    True, "payload_rejected")
+            return _noop(event, "payload_rejected")
+        if nsan:
+            _bump("sanitized_fields")
+        pl["hook_event_name"] = event
+
+        m, source, failure = _resolve_hooks(hooks, owner)
+        if failure is not None:
+            _bump(failure)
+            if decision_channel and preventable:
+                _bump("fail_closed")
+                return LifecycleOutcome(
+                    event, True, True, True,
+                    "生命周期 hook 通道不可用 (fail-closed): %s" % failure,
+                    True, failure)
+            return _noop(event, failure)
+        if m is None:
+            _bump("noop_no_hooks")
+            return _noop(event, "no_hooks")
+
         _bump("emitted")
         if decision_channel:
             _bump("decision")
@@ -199,23 +406,22 @@ def emit(event: str, payload: Optional[Dict[str, Any]] = None, *,
             blocked = bool(d.block) and preventable
             if blocked:
                 _bump("blocked")
+            # hook stdout 的 reason 也过同一份净化真值（F6）
+            reason = _clean_str(d.reason or "", _MAX_REASON)
             return LifecycleOutcome(
-                event, True, True, blocked, d.reason or "",
+                event, True, True, blocked, reason,
                 preventable, source, bool(getattr(d, "retry", False)))
         _bump("notify")
-        # 既有 7 个扩展事件中 ConfigChange 等仍走 run_notify；新增通知类
-        # 事件同样走它。run_notify 内部对决策类事件会 misrouted 拒绝，
-        # 本函数已按真值表把决策类分流，不会踩到那个坑。
         m.run_notify(event, pl)
         return LifecycleOutcome(event, True, False, False, "",
                                 preventable, source)
     except Exception as exc:  # noqa: BLE001 - 绝不掀翻主流程
         _bump("errors_swallowed")
-        # 决策类沿用 B1 fail-closed；通知类只吞。
         if decision_channel and preventable:
+            _bump("fail_closed")
             return LifecycleOutcome(
                 event, True, True, True,
-                f"生命周期 hook 通道异常 (fail-closed): {type(exc).__name__}",
+                "生命周期 hook 通道异常 (fail-closed): %s" % type(exc).__name__,
                 True, "error")
         return _noop(event, "error")
     finally:
@@ -283,4 +489,20 @@ def validate() -> list:
         problems.append("WIRED_EVENTS 与两类接线清单不一致")
     if not c["lifecycle_wired_disjoint_from_legacy"]:
         problems.append("本轮接线与既有接线有交集（重复计数）")
+    # B3 XIV: 净化出口真跑自检（不只检查函数存在）
+    for key in ("owner_not_registered", "provider_error",
+                "payload_rejected", "sanitized_fields", "fail_closed"):
+        if key not in _STATS:
+            problems.append("XIV 失败闭合计数键缺失: %s" % key)
+    probe = ("x\x1b]8;;https://evil.example\x07\u202e" +
+             "ghp_" + "A" * 36 + " GITHUB_TOKEN=ghp_" + "B" * 36)
+    cleaned = _clean_str(probe)
+    if "ghp_" in cleaned or "\x1b" in cleaned or "\u202e" in cleaned:
+        problems.append("payload 净化出口未清除凭据/控制字符")
+    try:
+        dirty, n = _sanitize_payload({"a": probe, "b": [probe] * 3})
+        if n == 0 or "ghp_" in json.dumps(dirty, ensure_ascii=False):
+            problems.append("payload 递归净化未生效")
+    except Exception as exc:  # noqa: BLE001
+        problems.append("_sanitize_payload 抛异常: %s" % type(exc).__name__)
     return problems

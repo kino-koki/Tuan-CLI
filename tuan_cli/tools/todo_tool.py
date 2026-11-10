@@ -110,7 +110,10 @@ def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs: Any) -> 
             if emit_preventable("TaskCompleted", {"task": t}):
                 return "TaskCompleted hook 拒绝标记完成（fail-closed）"
     except Exception:  # noqa: BLE001
-        pass
+        # B3 XIV（F7）：实测注入 emit_preventable 抛异常时旧版 ``pass``
+        # 让 ``ctx.todos = cleaned`` 照写 —— 装了 TaskCreated 拦截器
+        # 反而没有拦截。改为拒绝整个写入（不写内存态、不落盘）。
+        return "任务清单 hook 通道异常，已拒绝更新（fail-closed）"
     ctx.todos = cleaned
     # 持久化到工作区 (失败不阻断: 内存态已生效)
     try:

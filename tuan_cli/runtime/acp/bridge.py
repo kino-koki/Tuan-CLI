@@ -395,7 +395,9 @@ class KernelAcpBridge:
                     "to_model": model_id}):
                 return
         except Exception:  # noqa: BLE001
-            pass
+            # B3 XIV（F7）：可预防动作通道异常 → 不切换偏好，也不派发
+            # PostModelSwitch（否则会谎报「切换已完成」）。
+            return
         self._model = model_id
         try:
             from ...hooks.lifecycle import emit

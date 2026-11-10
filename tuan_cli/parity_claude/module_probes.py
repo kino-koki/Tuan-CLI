@@ -527,6 +527,183 @@ def probe_hook_lifecycle_triggers() -> dict:
             "problems": problems}
 
 
+
+def probe_hook_lifecycle_fail_closed() -> dict:
+    """B3 XIV 模块级探针：接线之后的**失败闭合 + payload 脱敏**真跑。
+
+    前三个探针证明「事件能触发、协议能解析」；这个证明「装了 hook 之后
+    不会反而变不安全」。刻意**不 import 任何 CLI / rich 模块**，保持
+    ``xi_verify.py`` 的纯 stdlib 干净环境约束（XIII A′#6 的教训）。
+    """
+    import os
+    import subprocess
+    from tuan_cli.hooks import exit_semantics as XS
+    from tuan_cli.hooks import lifecycle as LC
+    from tuan_cli.hooks import manager as HM
+    from tuan_cli.hooks import triggers as TR
+
+    problems: List[str] = []
+    checks = 0
+
+    def chk(cond: bool, label: str) -> None:
+        nonlocal checks
+        checks += 1
+        if not cond:
+            problems.append(label)
+
+    SECRET = "ghp_FAKE_SECRET_VALUE_FOR_REPRO_ONLY"
+    REAL = "ghp_" + "A" * 36
+    OSC = "\x1b]8;;https://evil.example\x07"
+    RLO = "\u202e"
+    D = Path(tempfile.mkdtemp(prefix="tuan_probe_xiv_"))
+    stdin_log = D / "stdin.jsonl"
+
+    def script(name, stdout="{}", dump=True):
+        f = D / (name + ".py")
+        f.write_text(
+            "import sys\nd = sys.stdin.read()\n"
+            + ("open(%r,'a').write(d.replace('\\n','\\\\n')+'\\n')\n"
+               % str(stdin_log) if dump else "")
+            + "sys.stdout.write(%r)\n" % stdout, encoding="utf-8")
+        return {"command": [sys.executable, str(f)]}
+
+    def mgr(block):
+        return HM.HookManager({"hooks": dict(block)}, kernel=_FakeKernel())
+
+    old_provider = TR.get_default_hooks_provider()
+    try:
+        chk(LC.validate() == [], "XIV lifecycle 自检不干净")
+        for key in ("owner_not_registered", "provider_error",
+                    "payload_rejected", "sanitized_fields", "fail_closed"):
+            chk(key in LC.stats(), "失败闭合计数键缺失: %s" % key)
+
+        # F1 / F2：三种 no-hooks 分开，只有「确实没配」允许放行
+        TR.set_default_hooks_provider(lambda: mgr({"enabled": True}))
+        LC.reset_stats()
+        o1 = LC.emit("WorktreeRemove", {"name": "x"}, owner="missing-owner")
+        chk(o1.blocked and o1.source == "owner_not_registered",
+            "owner 未注册未 fail-closed")
+        chk(LC.emit_preventable("PreCompact", {"hot_entries": 9},
+                                owner="missing-owner"),
+            "emit_preventable 仍静默放行")
+
+        def boom():
+            raise RuntimeError("provider exploded")
+        TR.set_default_hooks_provider(boom)
+        o2 = LC.emit("PreCompact", {"hot_entries": 9})
+        chk(o2.blocked and o2.source == "provider_error",
+            "provider 异常未 fail-closed")
+        TR.set_default_hooks_provider(None)
+        LC.reset_stats()
+        chk(not LC.emit_preventable("PreCompact", {"hot_entries": 9}),
+            "确实没配 hook 却被拦（破坏既有 no-op 契约）")
+
+        # F3 / F4：emit 永不抛
+        for dirty in ("not-a-dict", 123, ["a", "b"], object()):
+            r = LC.emit("PreCompact", dirty,
+                        hooks=mgr({"enabled": True}))
+            chk(r.blocked and r.source == "payload_rejected",
+                "脏 payload 未 fail-closed: %r" % type(dirty).__name__)
+
+        class Evil:
+            def __str__(self):
+                raise RuntimeError("str exploded")
+        ev = LC.emit(Evil(), {})
+        chk(ev.event == "<invalid-event>" and ev.source == "unknown_event",
+            "恶意 event __str__ 仍掀翻 emit")
+
+        # F5：真起 command hook，把 stdin 原样落盘
+        m = mgr({"enabled": True,
+                 "PermissionDenied": [script("pd")],
+                 "TaskCreated": [script("tc")],
+                 "CwdChanged": [script("cc")]})
+        LC.emit("PermissionDenied", {
+            "tool_name": "shell",
+            "reason": "用户未批准 " + SECRET + OSC + RLO,
+            "safety_advice": REAL}, hooks=m)
+        LC.emit("TaskCreated", {"task": {
+            "id": "a", "content": "key=" + REAL, "status": "pending"}}, hooks=m)
+        LC.emit("CwdChanged", {"cwd": "/tmp/" + REAL,
+                               "previous": "/x"}, hooks=m)
+        rows = ([json.loads(x) for x in stdin_log.read_text(
+            encoding="utf-8", errors="replace").splitlines() if x.strip()]
+            if stdin_log.exists() else [])
+        chk(len(rows) == 3, "3 个 hook 子进程未真实收到 payload")
+        flat = json.dumps(rows, ensure_ascii=False)
+        chk(SECRET not in flat and REAL not in flat, "密钥仍进子进程 stdin")
+        chk(OSC not in flat and RLO not in flat
+            and "evil.example" not in flat, "控制字符仍进子进程 stdin")
+        chk("[REDACTED]" in flat, "脱敏未留痕")
+        chk(all(r.get("hook_event_name") for r in rows),
+            "净化把语义字段也删了")
+
+        # F6：hook stdout reason 净化
+        m2 = mgr({"enabled": True, "PreCompact": [
+            script("pc", json.dumps({"decision": "block",
+                                    "reason": "BLOCKED" + OSC + RLO + REAL
+                                    + "END"}, ensure_ascii=False), dump=False)]})
+        r6 = LC.emit("PreCompact", {"hot_entries": 9}, hooks=m2)
+        chk(r6.blocked and r6.reason.startswith("BLOCKED")
+            and r6.reason.endswith("END"), "reason 未保留语义")
+        chk(OSC not in r6.reason and RLO not in r6.reason
+            and REAL not in r6.reason, "reason 未净化")
+        chk("[REDACTED]" in r6.reason, "reason 脱敏未留痕")
+
+        # F7：生产触发点兜底 fail-closed（真跑，不 monkeypatch emit 自己）
+        from tuan_cli.arch.context import TieredContext
+        from tuan_cli.runtime.acp.bridge import KernelAcpBridge
+        from tuan_cli.tools.base import ToolContext
+        from tuan_cli.tools.todo_tool import _todo_write_handler
+
+        original = LC.emit_preventable
+
+        def injected(*a, **k):
+            raise RuntimeError("injected emit failure")
+        LC.emit_preventable = injected
+        try:
+            c = TieredContext(budget_tokens=60, hot_capacity=2)
+            for _ in range(6):
+                c.add("user", "x" * 100)
+            chk(c.compactions == 0, "压缩通道异常后仍压缩")
+            br = KernelAcpBridge(make_agent=lambda: None)
+            br._model = "old"
+            br.set_model("s", "new")
+            chk(br._model == "old", "模型切换通道异常后仍切换")
+            tctx = ToolContext(kernel=_FakeKernel(), workspace=str(D))
+            out = _todo_write_handler(tctx, todos=[
+                {"id": "a", "content": "x", "status": "pending"}])
+            chk(not getattr(tctx, "todos", None)
+                and "fail-closed" in out, "todo 通道异常后仍写入")
+        finally:
+            LC.emit_preventable = original
+
+        # 源码级核销：worktree remove 的 except 不再 pass（端到端真 git
+        # 由 pytest 批次 test_f7_worktree_remove_refuses_real_git 覆盖）
+        wt = (Path(__file__).resolve().parents[1]
+              / "core/worktree_layer.py").read_text(encoding="utf-8")
+        i = wt.index('except WorktreeError:')
+        chk("raise WorktreeError" in wt[i:i + 500],
+            "worktree except 未改成 fail-closed")
+        chk("except Exception" in wt[i:i + 500]
+            and "pass\n" not in wt[i:i + 500],
+            "worktree except 仍是 pass")
+
+        chk(LC.validate() == [], "XIV 跑完后 lifecycle 自检变脏")
+        return {"ok": not problems, "checks": checks,
+                "evidence": "XIV 失败闭合/脱敏模块级探针：owner/provider/"
+                            "脏 payload/恶意 event 四类 fail-closed 真跑 + "
+                            "真子进程 stdin 脱敏核销 + reason 净化 + "
+                            "3 个生产触发点注入异常真跑 + worktree 源码核销",
+                "problems": problems}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "checks": checks, "evidence": "raised",
+                "problems": ["%s: %s" % (type(exc).__name__, exc)]}
+    finally:
+        TR.set_default_hooks_provider(old_provider)
+        LC.reset_stats()
+
+
+
 def XS_CHECK():
     """延迟导入真值表自检（避免模块导入期拉起 hooks 子包）。"""
     try:
@@ -543,6 +720,8 @@ def register_all() -> None:
                      ("hook_updated_input_validation",
                       probe_hook_updated_input_validation),
                      ("hook_lifecycle_triggers",
-                      probe_hook_lifecycle_triggers)):
+                      probe_hook_lifecycle_triggers),
+                     ("hook_lifecycle_fail_closed",
+                      probe_hook_lifecycle_fail_closed)):
         if name not in depth_mod.MODULE_PROBES:
             depth_mod.register(name)(fn)

@@ -88,8 +88,13 @@ class TieredContext:
                     "budget": getattr(self, "budget", None),
                     "compactions": self.compactions}):
                 return
-        except Exception:  # noqa: BLE001 - hook 通道绝不掀翻上下文写入
-            pass
+        except Exception:  # noqa: BLE001
+            # B3 XIV（F7）：可预防动作的 hook 通道异常**不得静默放行**。
+            # 实测注入 emit_preventable 抛异常时，旧版 ``pass`` 让压缩照做，
+            # 等于「装了拦截器反而没有拦截」。改为不压缩（hot 如实超预算，
+            # 与 hook block 的既有行为一致）；emit 自身已在 XIV 全路径兜住，
+            # 这里只兜 import 失败 / 外部注入故障。
+            return
         # 把一半最旧的 hot 压缩成 warm 摘要
         half = max(1, len(self.hot) // 2)
         to_compact = self.hot[:half]

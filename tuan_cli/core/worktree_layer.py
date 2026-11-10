@@ -294,8 +294,12 @@ class WorktreeLayer:
                     "WorktreeRemove hook 拒绝移除（fail-closed）")
         except WorktreeError:
             raise
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # B3 XIV（F7）：hook 通道异常一律拒绝移除，绝不裸跑
+            # ``git worktree remove``。原因只记类型名，不回显 str(exc)。
+            raise WorktreeError(
+                "WorktreeRemove hook 通道异常 (fail-closed): %s"
+                % type(exc).__name__) from None
         r = self._git(["worktree", "remove", str(target)])
         if r.returncode != 0:
             raise WorktreeError(

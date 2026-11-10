@@ -2930,3 +2930,117 @@ exit_semantics.validate() / lifecycle.validate() / 20 文件 py_compile   全干
   第三方自适应红队未做，不是真机多平台验证。
 - 行为变更：13 个事件现在会派发已配置的 hook、4 个动作可被真阻断、
   ``PreCompact`` 在 context 层有第二个派发点（与 agent 层既有通知并存）。
+
+
+## B3 续轮 XIV｜接线之后的失败闭合与 payload 脱敏
+
+基线 parent ``5eebfad2``。用户约束仍是「**确保深度的真实复现，而非仅仅广度；
+开始做到百分百，同时融入 Codex 有但是 Tuan 还没有的**」。XIII 把 13 个
+事件接上真实生产点，本轮一点广度没扩：**不新增事件、不新增触发点、
+不新增 CLI 子命令、矩阵状态字段一个不动**，只问「装了 hook 之后会不会
+反而不安全」。
+
+### 先实测复现（真起子进程，不是读代码猜）
+
+| 编号 | 实测现象 | 判定 |
+|---|---|---|
+| F1 | ``owner`` 未注册时 ``_resolve_hooks`` 返回 ``None``，``emit`` 走 ``no_hooks``；``emit_preventable("WorktreeRemove", owner="missing")`` 返回 **False**，可预防动作照做 | 安全洞（B3 VII O5「owner 拼错 fail-closed」在新模块没接） |
+| F2 | provider 抛异常同样归一成 ``no_hooks`` 静默放行；而模块 docstring 写着「决策类沿用 B1 fail-closed」—— **声明与实现相反** | 安全洞 + 口径谎言 |
+| F3 | ``dict(payload or {})`` 在 ``try`` **之外**，4 种脏值（str/int/list/object）全部抛异常 | 真缺陷 |
+| F4 | 非字符串 ``event`` 走 ``str(event)``；``__str__`` 抛异常的未知对象直接掀翻 ``emit`` | 真缺陷 |
+| F5 | 真起 command hook 把 **stdin 原样落盘**：``PermissionDenied`` 的 ``reason``/``safety_advice``、``TaskCreated`` 的 ``task.content``、``CwdChanged`` 的 ``cwd`` 把 ``ghp_`` 明文与 OSC 8 / RLO **原样送给第三方子进程** | 脱敏契约在新模块一条都没接 |
+| F6 | hook stdout 的 ``reason`` 原样进 ``LifecycleOutcome``（``to_dict`` 只截 400 码点，不剥控制字符） | 真缺陷 |
+| F7 | 注入 ``emit_preventable`` 抛异常，4 个可预防触发点的 ``except Exception: pass`` 吞掉它：todo 仍写入、``set_model`` 仍切换、压缩仍发生 | 真缺陷（「装了拦截器反而没有拦截」） |
+
+F1/F2 尤其刺眼：前几轮用实测换来的 fail-closed 契约，在 XIII 新写的
+``lifecycle.py`` 里**一条都没接**。而 13 个触发点全包 ``except:pass``，
+让任何 emit 异常都退化成静默放行。
+
+### 修复
+
+- **``emit`` 自己永不抛异常**：全程单一 ``try``，``event`` 守卫刻意不调
+  ``str(event)``（固定占位 ``<invalid-event>``）；``payload`` 归一化与净化
+  移进 try；异常按 ``decision_channel and preventable`` fail-closed，
+  通知类只吞。``prevent`` 只接受 ``bool``，脏值回落真值表。
+- **三种「拿不到 hooks」分开**：``owner_not_registered`` /
+  ``provider_error`` → 决策类 fail-closed；只有 ``no_hooks``（确实没配）
+  允许放行，**既有「没配 hooks 时 emit 严格 no-op」契约零变化**。
+  为此直接取 ``TR.get_default_hooks_provider()`` 自己调一次 ——
+  ``TR.current_session_hooks()`` 内部的 ``_resolve_default()`` 会把
+  provider 异常吞成 ``None``，lifecycle 根本感知不到（F2 根因）。
+- **净化出口单一真值**：复用 ``_clean.sanitize_log_field``（整段 OSC/CSI/
+  bidi/Cf/Cc 清理）+ ``security_utils.redact_sensitive``（ENV 行 / key=value /
+  Bearer / sk- / JWT），顺序「先清控制字符再脱敏」；补一条**本地**裸
+  GitHub PAT 规则并登记为什么不改全局 ``security_utils``（会误伤文档
+  占位串、扩散成全局行为变更）。有界递归（深度 8 / 每容器 64 项 /
+  单值 512 码点 / 总量 64 KiB），非 str 对象只取类型名、绝不 ``str()``。
+  hook stdout 的 ``reason`` 过同一出口。
+- **4 个可预防触发点兜底改 fail-closed**：``context._maybe_compact``
+  不压缩（hot 如实超预算）、``worktree_layer.remove`` 抛 ``WorktreeError``
+  且不裸跑 ``git worktree remove``、``bridge.set_model`` 不切换且不派发
+  PostModelSwitch、``todo_tool`` 不写内存态也不落盘。9 个通知类触发点
+  保持吞异常（动作已发生，不该回滚）。
+- ``validate()`` 新增**真跑**净化自检与 5 个失败闭合计数键核销，
+  ``stats()`` / ``LifecycleOutcome.source`` 可区分四类归因。
+
+### 矩阵一个状态没动
+
+``ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8``、
+``fully_superior=false``、``b_waves_done=["B1"]``。catalog 两条 B3 note
+补 XIV 实测段与「url/prompt/subagent 三类 hook 等价故障闭合表仍未做」
+的纠偏，**status 字段逐字节未改**。
+
+**深度推进**：``gap_probe_audit()`` 3 → **4 个**模块级探针
+（30 + 18 + 27 + 29 = 104 条断言，4/4 全绿），新增
+``hook_lifecycle_fail_closed`` 纯 stdlib 真跑（真起子进程核销 stdin、
+真跑三个生产触发点注入异常）。``module_depth.probe_verified`` 仍如实
+**0/65**，两张证据表分开，不混进覆盖率。
+
+### A′ 自查抓回（全部有可执行证据）
+
+1. 重构时把 ``inflight.add(event)`` 提到重入判定**之前**，``event in inflight``
+   恒真 → 每个事件都被误判重入、决策类全 fail-closed，XIII 回归整片变红。
+   改成先算快照再 add。
+2. token 正则加了 ``\b`` 前边界，``xghp_<36 chars>``（token 与文本粘连）
+   **匹配不到** —— ``x`` 与 ``g`` 都是 ``\w``。去掉边界。
+3. 字符类不含下划线，带下划线的 token 形态仍漏；统一成
+   ``[A-Za-z0-9_]{20,80}``。
+4. 无上限 ``{20,}`` 把 token **后面紧邻的普通文本**一并吃掉
+   （``BLOCKED<token>END -> BLOCKED[REDACTED]``）。classic PAT 精确 36 位
+   字母数字分支优先，宽松分支设 80 上界并如实登记边界。
+5. ``TR.current_session_hooks()`` 内部吞 provider 异常，F2 初版修完仍
+   是 ``no_hooks`` 放行 —— 改直接取 provider 自己调。
+6. owner 非字符串 / 不可 hash 时 ``resolve_session`` 抛 TypeError 被归成
+   ``provider_error`` —— 归因错，改成 ``owner_not_registered``。
+7. ``validate()`` 的自检 probe 初版把 ``ghp_`` 紧贴 ``x``，与 #2 同源，
+   由 ``LC.validate()`` 当场报「净化出口未清除凭据」抓回。
+
+### 验证（分批报告，批次间有重叠，不累加）
+
+```
+XIV 新回归（真子进程 / 真 git worktree / 注入异常）              30 passed
+XIII + XII + B3 各续轮 + hooks + parity + codexkit + doc_numbers 448 passed
+纯 stdlib xi_verify.py（有 rich / 无 rich 两种环境各一次）        36 / 36 全绿
+gap_probe_audit() 4/4（30 + 18 + 27 + 29 = 104 条断言）
+verify_doc_numbers.py / matrix.validate() / evidence.verify_evidence()
+lifecycle.validate() / exit_semantics.validate() / py_compile       全干净
+```
+
+### 如实边界
+
+- **行为变更**：provider 异常 / owner 拼错 / 脏 payload / hook 通道异常时，
+  可预防动作现在会被拒绝（此前一律放行）；4 个触发点的兜底从 ``pass``
+  变拒绝。若 ``lifecycle`` 模块本身 import 失败，这些动作也会 fail-closed
+  —— 这是 B1 立场的取舍，不是零风险。
+- 脱敏是**刻意更严**的边界：Tuan 不把完整 payload（工具参数 / 指令正文）
+  原样交给 hook，与 CC 不等价，已登记在 ``SEMANTIC_DIFFERENCES``。
+  宽松 token 分支对「token 后紧邻普通文本」可能过度遮蔽，宁可多抹不漏。
+- 26 个 gap 一个未消：``os_sandbox`` 仍 gap、
+  ``deny_network_by_default`` 仍 ``false`` 未翻、``credential_masking`` 仍
+  partial；A 线 ``fully_identical=False``（92 项无模块级探针）；
+  ``StopFailure`` 仍未接，5 个事件本地无对应生命周期，不造空转触发点；
+  url/prompt/subagent 三类 hook 的等价故障闭合表**仍未做**；
+  第三方自适应红队未做、不是真机多平台验证。
+- 标语引擎 / 净化层 ``_clean.py`` / ``mapping.py`` / ``tui.py`` /
+  ``runtime_slogans.py`` 逐字节未改；用户贴回的「转圈标语 / 摸鱼」视频
+  本轮未碰。
