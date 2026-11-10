@@ -385,7 +385,24 @@ class KernelAcpBridge:
         模型选择由内核 model_router 在 prompt 时解析, 邀请设置的 model_id 会
         被记录以支持将来按会话路由; 传入空串视为清除偏好。
         """
+        # B3 XIII: PreModelSwitch 是**可预防**动作 —— hook block 时不改
+        # 偏好（真的没切换），随后不派发 PostModelSwitch。
+        try:
+            from ...hooks.lifecycle import emit, emit_preventable
+            if emit_preventable("PreModelSwitch", {
+                    "session_id": session_id,
+                    "from_model": getattr(self, "_model", None),
+                    "to_model": model_id}):
+                return
+        except Exception:  # noqa: BLE001
+            pass
         self._model = model_id
+        try:
+            from ...hooks.lifecycle import emit
+            emit("PostModelSwitch", {
+                "session_id": session_id, "model": model_id})
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def from_existing_acp_server(acp_server: Any) -> Any:

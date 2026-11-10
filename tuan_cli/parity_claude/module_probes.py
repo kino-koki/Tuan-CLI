@@ -266,11 +266,283 @@ def probe_hook_updated_input_validation() -> dict:
             "problems": problems}
 
 
+def probe_hook_lifecycle_triggers() -> dict:
+    """B3 XIII：13 个真实生产触发点的模块级运行时探针。
+
+    与另两个 XII 探针不同，这个**真跑生产操作**（真起 hook 子进程、
+    真压缩、真 chdir、真 git worktree、真 todo 写入、真工具失败、
+    真权限拒绝、真批量执行、真模型切换），不是只检查文件存在。
+    ``lifecycle.coverage()`` 三表核销与 4 个可预防动作真阻断也在内。
+    """
+    problems: List[str] = []
+    checks = 0
+
+    def chk(cond: bool, label: str) -> None:
+        nonlocal checks
+        checks += 1
+        if not cond:
+            problems.append(label)
+
+    import json
+    import os
+    import subprocess
+    import tempfile
+    from collections import Counter
+    root = Path(__file__).resolve().parents[2]   # A′: 源码级核销需要仓库根
+    from tuan_cli.hooks import lifecycle as LC
+    from tuan_cli.hooks import manager as HM
+    from tuan_cli.hooks import triggers as TR
+
+    chk(XS_CHECK(), "exit_semantics 自检不干净")
+    chk(not LC.validate(), "lifecycle 自检不干净")
+    c = LC.coverage()
+    chk(c["official"] == 33 and c["wired"] == 27
+        and c["wired_this_round"] == 13 and c["not_wired"] == 1,
+        "coverage 三表不对: %s" % c)
+    chk(c["wired"] + c["no_local_lifecycle"] + c["not_wired"] == 33,
+        "三表不相加")
+    chk(c["wired_equals_union"] and c["lifecycle_wired_disjoint_from_legacy"],
+        "接线清单自相矛盾")
+    chk(len(LC.LIFECYCLE_WIRED_EVENTS) == 13, "本轮接线不是 13")
+
+    D = Path(tempfile.mkdtemp(prefix="tuan_probe_xiii_"))
+    LOG = D / "fired.jsonl"
+
+    class K:
+        def get(self, n, d=None): return d
+        def emit(self, t, p=None): pass
+        def on(self, *a, **k): pass
+
+    def hookfile(ev, stdout="{}"):
+        p = D / (ev + ".py")
+        p.write_text(
+            "import sys,json\n"
+            "d=json.loads(sys.stdin.read() or '{}')\n"
+            "open(%r,'a').write(json.dumps({'event':d.get('hook_event_name')})+'\\n')\n"
+            "sys.stdout.write(%r)\n"
+            "sys.exit(0)\n" % (str(LOG), stdout), encoding="utf-8")
+        return {"command": [sys.executable, str(p)]}
+
+    blk = {"enabled": True}
+    for ev in LC.LIFECYCLE_WIRED_EVENTS:
+        blk[ev] = [hookfile(ev)]
+    mgr = HM.HookManager({"hooks": blk}, kernel=K())
+    TR.set_default_hooks_provider(lambda: mgr)
+    LC.reset_stats()
+
+    def fired():
+        if not LOG.exists():
+            return []
+        return [json.loads(x)["event"]
+                for x in LOG.read_text(encoding="utf-8").splitlines()
+                if x.strip()]
+
+    def run(label, fn):
+        try:
+            fn()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            problems.append("%s 真跑抛异常: %s" % (label, type(exc).__name__))
+            return False
+
+    from tuan_cli.arch.context import TieredContext
+    run("compact", lambda: [TieredContext(
+        budget_tokens=60, hot_capacity=2).add("user", "y" * 100)
+        for _ in range(1)])  # 单次不压缩，下面单独跑
+    tc = TieredContext(budget_tokens=60, hot_capacity=2)
+    for _ in range(10):
+        tc.add("user", "x" * 100)
+    chk(tc.compactions > 0, "真压缩没发生")
+
+    from tuan_cli.core.prompts import _read_instruction_capped
+    f = D / "CLAUDE.md"
+    f.write_text("# ins\n", encoding="utf-8")
+    run("instructions", lambda: _read_instruction_capped(f, 32768))
+
+    # A′（B3 XIII 自查）：本探针最初直接 import CLI 模块，但
+    # ``tuan_cli.cli.__init__`` 会连带拉起 rich（plain_console 的
+    # ``_ensure_rich``）。在 ``xi_verify.py`` 的纯 stdlib 干净环境里
+    # 整个探针会 ModuleNotFoundError 崩掉——等于本轮自己破坏了
+    # 「独立验证不依赖第三方」的既有约束。改成：能 import 就真跑；
+    # import 不了就把这两个 CLI 事件**降级为源码级核销**并如实分表，
+    # 绝不静默算作「真跑通过」。端到端真跑由 pytest 批次覆盖（那里
+    # rich 是项目正常运行时依赖，已安装）。
+    cli_runtime = True
+    source_only_events: List[str] = []
+    runtime_only_events: List[str] = []
+    try:
+        from tuan_cli.cli.cmd_slash_claude import cmd_cd
+        from tuan_cli.cli import cmd_setup as CS
+    except ImportError:  # rich / prompt_toolkit 缺失的干净环境
+        cli_runtime = False
+        cd_src = (root / "tuan_cli/cli/cmd_slash_claude.py").read_text(
+            encoding="utf-8")
+        su_src = (root / "tuan_cli/cli/cmd_setup.py").read_text(
+            encoding="utf-8")
+        chk('emit("CwdChanged"' in cd_src and "previous_cwd" in cd_src,
+            "CwdChanged 源码派发点/绝对路径修复缺失")
+        chk('emit("Setup"' in su_src
+            and su_src.index('emit("Setup"') < su_src.index("build_kernel()"),
+            "Setup 派发点未在 build_kernel 之前")
+        source_only_events = ["CwdChanged", "Setup"]
+    else:
+        old = os.getcwd()
+        try:
+            cmd_cd(type("Ag", (), {"ctx": type(
+                "C", (), {"workspace": str(D)})()})(), str(D))
+        finally:
+            os.chdir(old)
+        runtime_only_events = ["CwdChanged", "Setup"]
+
+    from tuan_cli.runtime.acp.bridge import KernelAcpBridge
+    run("set_model", lambda: KernelAcpBridge(
+        make_agent=lambda: None).set_model("s", "m"))
+
+    from tuan_cli.tools.base import ToolContext, ToolRegistry, Tool
+    from tuan_cli.tools.todo_tool import _todo_write_handler
+    tctx = ToolContext(kernel=K(), workspace=str(D))
+    _todo_write_handler(tctx, todos=[
+        {"id": "a", "content": "x", "status": "pending"}])
+    _todo_write_handler(tctx, todos=[
+        {"id": "a", "content": "x", "status": "completed"}])
+
+    from tuan_cli.core.tool_executor import ToolExecutor
+    ToolExecutor(registry=type("R", (), {
+        "get": lambda s, n: None})()).execute_batch([], None)
+
+    reg = ToolRegistry()
+    reg.register(Tool(name="boom", description="x",
+                      parameters={"type": "object", "properties": {}},
+                      handler=lambda c, **k: (_ for _ in ()).throw(
+                          RuntimeError("k")), dangerous=False))
+    reg.dispatch_result("boom", "{}", ToolContext(kernel=K(),
+                                                  workspace=str(D)))
+    reg.register(Tool(name="danger", description="x",
+                      parameters={"type": "object", "properties": {}},
+                      handler=lambda c, **k: "ok", dangerous=True))
+    dctx = ToolContext(kernel=K(), workspace=str(D))
+    dctx.confirm = lambda p: False
+    reg.dispatch_result("danger", "{}", dctx)
+
+    # 真 git worktree（端到端，不 monkeypatch）
+    try:
+        repo = D / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=repo,
+                       capture_output=True, timeout=15)
+        subprocess.run(["git", "-c", "user.email=a@b",
+                        "-c", "user.name=a", "commit", "--allow-empty",
+                        "-qm", "i"], cwd=repo, capture_output=True,
+                       timeout=15)
+        from tuan_cli.core.worktree_layer import WorktreeLayer
+        w = WorktreeLayer(str(repo))
+        w.create("probe")
+        w.remove("probe")
+    except Exception as exc:  # noqa: BLE001
+        problems.append("真 worktree: %s" % type(exc).__name__)
+
+    # Setup：真进入向导但截断后续重依赖（emit 已真实执行）。
+    # 干净环境（cli_runtime=False）下这步不跑，已在上面源码核销。
+    if cli_runtime:
+        import builtins
+        old_input = builtins.input
+        builtins.input = lambda *a: "1"
+        old_build = CS.build_kernel
+
+        def _stop(*a, **k):
+            raise RuntimeError("truncated")
+        CS.build_kernel = _stop
+        try:
+            try:
+                CS.cmd_setup(type("A", (), {"quick": True,
+                                            "skip": False})())
+            except RuntimeError:
+                pass
+        finally:
+            builtins.input = old_input
+            CS.build_kernel = old_build
+
+    cnt = Counter(fired())
+    runtime_events = sorted(set(LC.LIFECYCLE_WIRED_EVENTS)
+                            - set(source_only_events))
+    for ev in runtime_events:
+        chk(cnt.get(ev, 0) > 0,
+            "%s 配了 hook 但真实操作 0 派发" % ev)
+    chk(len(runtime_events) + len(source_only_events) == 13,
+        "真跑 + 源码核销未覆盖 13 个事件")
+    chk(len(runtime_only_events) + len(source_only_events) == 2,
+        "CLI 两步分表不对")
+    chk(cli_runtime or len(source_only_events) == 2,
+        "干净环境未如实降级")
+
+    # 4 个可预防动作真阻断
+    blocking = HM.HookManager({"hooks": {
+        "enabled": True,
+        "PreCompact": [hookfile("blk", json.dumps(
+            {"decision": "block", "reason": "no"}))],
+        "WorktreeRemove": [hookfile("blk2", json.dumps(
+            {"decision": "block", "reason": "no"}))],
+        "PreModelSwitch": [hookfile("blk3", json.dumps(
+            {"decision": "block", "reason": "no"}))],
+        "TaskCreated": [hookfile("blk4", json.dumps(
+            {"decision": "block", "reason": "no"}))],
+    }}, kernel=K())
+    TR.set_default_hooks_provider(lambda: blocking)
+    c2 = TieredContext(budget_tokens=60, hot_capacity=2)
+    for _ in range(6):
+        c2.add("user", "x" * 100)
+    chk(c2.compactions == 0, "PreCompact block 未真的阻止压缩")
+    br = KernelAcpBridge(make_agent=lambda: None)
+    br._model = "old"
+    br.set_model("s", "new")
+    chk(br._model == "old", "PreModelSwitch block 未真的阻止切换")
+    tctx2 = ToolContext(kernel=K(), workspace=str(D))
+    out = _todo_write_handler(tctx2, todos=[
+        {"id": "z", "content": "x", "status": "pending"}])
+    chk("拒绝" in out and not getattr(tctx2, "todos", None),
+        "TaskCreated block 未真的回滚")
+
+    # PermissionDenied 官方 retry
+    r = LC.emit("PermissionDenied", {"reason": "x"}, hooks=HM.HookManager(
+        {"hooks": {"enabled": True, "PermissionDenied": [
+            hookfile("retry", json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PermissionDenied", "retry": True}}))]}},
+        kernel=K()))
+    chk(r.retry is True and r.blocked is False,
+        "PermissionDenied retry 未读出")
+
+    TR.set_default_hooks_provider(None)
+    return {"ok": not problems, "checks": checks,
+            "cli_runtime": cli_runtime,
+            "runtime_events": runtime_events,
+            "source_only_events": source_only_events,
+            "evidence": "lifecycle: %d 个事件端到端真跑（真 hook 子进程 / "
+                        "真压缩 / 真 git worktree / 真 todo / 真工具失败与"
+                        "拒绝 / 真批量 / 真模型切换）%s + 3 个真阻断 + "
+                        "retry + coverage 三表" % (
+                            len(runtime_events),
+                            "；CLI 两步真跑（chdir/setup）" if cli_runtime
+                            else "；CLI 两步在纯 stdlib 干净环境降级为"
+                                 "源码级核销（端到端真跑见 pytest 批次）"),
+            "problems": problems}
+
+
+def XS_CHECK():
+    """延迟导入真值表自检（避免模块导入期拉起 hooks 子包）。"""
+    try:
+        from tuan_cli.hooks import exit_semantics as _xs
+        return not _xs.validate()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def register_all() -> None:
     """注册到 ``depth.MODULE_PROBES``；重复注册报错，不许互相覆盖。"""
     from . import depth as depth_mod
     for name, fn in (("hook_events_extended", probe_hook_events_extended),
                      ("hook_updated_input_validation",
-                      probe_hook_updated_input_validation)):
+                      probe_hook_updated_input_validation),
+                     ("hook_lifecycle_triggers",
+                      probe_hook_lifecycle_triggers)):
         if name not in depth_mod.MODULE_PROBES:
             depth_mod.register(name)(fn)

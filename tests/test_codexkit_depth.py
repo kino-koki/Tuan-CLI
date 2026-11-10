@@ -184,7 +184,8 @@ class TestBLineBaseline:
         assert r["probe_verified"] == 0
         assert r["runtime_verified_pct"] == 0.0
         g = BD.gap_probe_audit()
-        assert g["registered"] == 2 and g["verified"] == 2 and g["ok"]
+        assert g["registered"] == 3 and g["verified"] == 3 and g["ok"]
+        assert g["results"]["hook_lifecycle_triggers"]["checks"] >= 20
 
     def test_gap_queue_is_reproducible(self):
         q = BD.gap_queue()

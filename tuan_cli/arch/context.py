@@ -78,6 +78,18 @@ class TieredContext:
         total = sum(e.tokens for e in self.hot)
         if total <= self.budget and len(self.hot) <= self.hot_capacity:
             return
+        # B3 XIII: 真实压缩生命周期。PreCompact 是**可预防**动作 ——
+        # hook 返回 block 时保留 hot 不压缩（如实超预算，不假装压了）。
+        # 没配 hooks 时 emit 严格 no-op，既有逐字节行为零变化。
+        try:
+            from ..hooks.lifecycle import emit, emit_preventable
+            if emit_preventable("PreCompact", {
+                    "hot_entries": len(self.hot), "tokens": total,
+                    "budget": getattr(self, "budget", None),
+                    "compactions": self.compactions}):
+                return
+        except Exception:  # noqa: BLE001 - hook 通道绝不掀翻上下文写入
+            pass
         # 把一半最旧的 hot 压缩成 warm 摘要
         half = max(1, len(self.hot) // 2)
         to_compact = self.hot[:half]
@@ -85,6 +97,16 @@ class TieredContext:
         summary = self._summarize(to_compact)
         self.warm.append(ContextEntry("system", summary, cache_anchor=True, seq=self._seq))
         self.compactions += 1
+        # B3 XIII: 压缩**真实完成后**才派发 PostCompact（B3 V 同源契约：
+        # 失败不派发，不谎报已发生）。
+        try:
+            from ..hooks.lifecycle import emit
+            emit("PostCompact", {
+                "compactions": self.compactions,
+                "warm_entries": len(self.warm),
+                "hot_entries": len(self.hot)})
+        except Exception:  # noqa: BLE001
+            pass
 
     @staticmethod
     def _summarize(entries: List[ContextEntry]) -> str:

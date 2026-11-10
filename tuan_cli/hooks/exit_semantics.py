@@ -193,6 +193,59 @@ ANY_NONZERO_FAILS_EVENTS: FrozenSet[str] = frozenset(
 EXIT_IGNORED_EVENTS: FrozenSet[str] = frozenset(
     e.event for e in _SEMANTICS.values() if e.exit_ignored)
 
+# ---------------------------------------------------------------- 决策通道分类
+# B3 续轮 XIII 实测复现：上一轮把 18 个新增事件**全部**塞进
+# ``_NOTIFY_EVENTS``，但按官方真值表其中 ConfigChange / TaskCreated /
+# TaskCompleted / PreCompact / PreModelSwitch / Stop / PostToolBatch
+# 等是**可阻断 / 支持 JSON decision** 的事件。走通知通道等于把 hook
+# 的 stdout 裁决整个吞掉 —— 正是 B3 主链路 R2 修过的坑，在新增事件上
+# 又犯了一次。
+#
+# 这里是显式真值源（不靠 ``blocks_on_exit2`` 隐式推断，因为
+# PermissionDenied 虽忽略 exit code 却支持 hookSpecificOutput.retry，
+# PermissionRequest 虽 exit 2 不生效却只有 JSON decision 能 deny）。
+DECISION_CAPABLE_EVENTS: FrozenSet[str] = frozenset({
+    # 顶层 decision:"block" / hookSpecificOutput 类
+    "PreToolUse", "PermissionRequest", "PreModelSwitch",
+    "UserPromptSubmit", "UserPromptExpansion", "PostToolUse",
+    "PostToolUseFailure", "PostToolBatch", "Stop", "SubagentStop",
+    "TeammateIdle", "TaskCreated", "TaskCompleted", "ConfigChange",
+    "PreCompact", "Elicitation", "ElicitationResult",
+    # 任何非零都失败（JSON 说了不算）
+    "WorktreeCreate", "WorktreeRemove",
+    # exit code 被忽略，但 hookSpecificOutput.retry 仍生效
+    "PermissionDenied",
+})
+
+NOTIFY_ONLY_EVENTS: FrozenSet[str] = frozenset(
+    OFFICIAL_EVENTS - DECISION_CAPABLE_EVENTS)
+
+# ---------------------------------------------------------------- 本地生命周期
+# 如实登记：Tuan 是单进程 CLI，以下事件在**本地没有对应生命周期**。
+# 不造空转触发点（那正是「转圈标语装忙」要反对的东西），也不把
+# 「本地不适用」包装成「已对齐」。配置这些事件仍可加载、仍可经
+# 统一出口派发（供外部集成/未来宿主），但本地 CLI 不会凭空触发。
+NO_LOCAL_LIFECYCLE: FrozenSet[str] = frozenset({
+    "FileChanged",       # 无文件监视器 / CLAUDE_ENV_FILE watch list
+    "TeammateIdle",      # 无 agent team 编排
+    "SubagentStart",     # ports/protocol 有事件类，但生产侧无派发点
+    "UserPromptExpansion",  # 无 prompt 展开机制
+    "MessageDisplay",    # TUI render 层，本轮不接（避免渲染循环副作用）
+})
+# A′ 自查修正：初版把 ``PostModelSwitch`` 也列进 NO_LOCAL_LIFECYCLE，
+# 但同一轮又在 ``KernelAcpBridge.set_model`` 真接了它 —— 自相矛盾，
+# validate() 立刻报「WIRED 与 NO_LOCAL 有交集 / 三表不相加」。
+# 真实情况是「接了，但语义不完全等价」，应留在
+# ``lifecycle.SEMANTIC_DIFFERENCES``，而不是「本地无生命周期」。
+
+# A′ 自查修正：初版把「不是 NO_LOCAL_LIFECYCLE」直接叫
+# ``LOCAL_LIFECYCLE_EVENTS``，27 个事件全都算进去，会给人「都有生产
+# 触发点」的错觉 —— 那恰恰是用户反对的「广度代替深度」。改名为
+# ``LOCAL_CAPABLE``（仅表示本地有对应概念/能力），**实际接线清单**
+# 由 ``lifecycle.WIRED_EVENTS`` 单独维护，两张表分开核销。
+LOCAL_CAPABLE_EVENTS: FrozenSet[str] = frozenset(
+    OFFICIAL_EVENTS - NO_LOCAL_LIFECYCLE)
+
 
 def semantics_for(event: str) -> Optional[EventSemantics]:
     if not isinstance(event, str):
@@ -343,6 +396,27 @@ def validate() -> list:
     if EXIT_IGNORED_EVENTS != frozenset(
             {"PermissionDenied", "StopFailure", "InstructionsLoaded"}):
         problems.append("exit_ignored 特例集合不对")
+    # B3 XIII: 分类自洽
+    if not DECISION_CAPABLE_EVENTS <= OFFICIAL_EVENTS:
+        problems.append("DECISION_CAPABLE_EVENTS 含未知事件")
+    if DECISION_CAPABLE_EVENTS & NOTIFY_ONLY_EVENTS:
+        problems.append("决策类与通知类有交集")
+    if (DECISION_CAPABLE_EVENTS | NOTIFY_ONLY_EVENTS) != OFFICIAL_EVENTS:
+        problems.append("决策/通知分类未覆盖全部事件")
+    if not NO_LOCAL_LIFECYCLE <= OFFICIAL_EVENTS:
+        problems.append("NO_LOCAL_LIFECYCLE 含未知事件")
+    if (LOCAL_CAPABLE_EVENTS | NO_LOCAL_LIFECYCLE) != OFFICIAL_EVENTS:
+        problems.append("本地能力登记未覆盖全部事件")
+    if LOCAL_CAPABLE_EVENTS & NO_LOCAL_LIFECYCLE:
+        problems.append("本地能力登记有交集")
+    # 硬规则：可阻断事件必须在决策类里（否则 JSON 裁决被吞）
+    for name, sem in _SEMANTICS.items():
+        if sem.blocks_on_exit2 and name not in DECISION_CAPABLE_EVENTS:
+            problems.append("%s 可阻断却落在通知类" % name)
+    # 硬规则：exit 完全忽略的事件除 PermissionDenied 外不进决策类
+    for name in EXIT_IGNORED_EVENTS - {"PermissionDenied"}:
+        if name in DECISION_CAPABLE_EVENTS:
+            problems.append("%s exit 被忽略却进了决策类" % name)
     for name, sem in _SEMANTICS.items():
         if sem.event != name:
             problems.append("%s: event 字段不匹配" % name)

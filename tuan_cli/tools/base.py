@@ -537,6 +537,16 @@ class ToolRegistry:
             reason = "用户未批准该操作。"
             if getattr(ctx, "safety_advice", None):
                 reason += f" {ctx.safety_advice}"
+            # B3 XIII: 真实的权限拒绝结果。PermissionDenied 在官方表里
+            # exit code 被忽略，但 hookSpecificOutput.retry 仍生效；
+            # 这里只派发、不擅自重试（重试决策属于上层）。
+            try:
+                from ..hooks.lifecycle import emit
+                emit("PermissionDenied", {
+                    "tool_name": name, "reason": reason,
+                    "safety_advice": getattr(ctx, "safety_advice", None)})
+            except Exception:  # noqa: BLE001
+                pass
             return ToolResult(status="denied", content=f"[已拒绝] {reason}", tool_name=name)
         return None
 
@@ -624,6 +634,14 @@ class ToolRegistry:
                 except Exception:
                     pass
             self._emit_exec(ctx, name, "error", elapsed=elapsed, error_type=type(exc).__name__)
+            # B3 XIII: 工具**真的失败之后**才派发（不是预计失败）。
+            try:
+                from ..hooks.lifecycle import emit
+                emit("PostToolUseFailure", {
+                    "tool_name": name, "error_type": type(exc).__name__,
+                    "elapsed_ms": round(elapsed * 1000, 2)})
+            except Exception:  # noqa: BLE001
+                pass
             return ToolResult(
                 status="error",
                 content=f"[错误] 工具 {name} 执行失败: {type(exc).__name__}: {exc}",

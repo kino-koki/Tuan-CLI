@@ -2814,3 +2814,119 @@ verify_doc_numbers.py / 10 文件 py_compile                    全干净
   核对，**不宣称与某一 CC 发行版逐值相等**。
 - 标语引擎 / 净化层 / ``mapping.py`` / ``tui.py`` /
   ``runtime_slogans.py`` / catalog 状态字段逐字节未改。
+
+
+## B3 续轮 XIII｜新增官方 hooks 事件的真实生产触发点与 decision 通道
+
+基线 parent ``7954c4df``。本轮沿用户约束「**确保深度的真实复现，而非仅仅广度；
+开始做到百分百，同时融入 Codex 有但是 Tuan 还没有的**」继续，一点广度没扩：
+不新增 CLI 子命令、不新增模块域、矩阵状态字段一个不动。
+
+### 先实测复现，再决定修什么
+
+| 编号 | 实测现象 | 判定 |
+|---|---|---|
+| D1 | 18 个新增事件**全部**落在 ``_NOTIFY_EVENTS``；按官方真值表 ConfigChange / TaskCreated / TaskCompleted / PreCompact / PreModelSwitch / Stop / PostToolBatch 等是**可阻断 / 支持 JSON decision** 的事件，``run_notify`` 把 hook stdout 裁决整个吞掉 | 真缺陷（B3 主链路 R2 的坑在新增事件上重现） |
+| D2 | 18 条 hook 配置 100% 加载，真跑压缩 / chdir / git worktree / todo / 工具失败 / 权限拒绝 / 批量 / 模型切换 / 指令读取 / setup，触发 **0 次**；全仓生产侧源码扫描几乎全 0 命中 | 真缺陷 |
+| D3 | 上一轮 note「CC 的 updatedInput 覆盖含 HTTP/prompt/agent 类型，本地只覆盖 command」实测**为错误口径**：``_exec()`` 对四种类型统一返回 ``out``，``validate_updated_input`` 调用点前后 900 字符无 ``hook_type`` 分支 | 口径错误，纠正并锁回归 |
+| D4 | 13 个真实生命周期点在源码里存在，但没有任何一个调用派发 | 真缺陷 |
+
+### 修复
+
+- ``hooks/exit_semantics.py`` 新增 **DECISION_CAPABLE_EVENTS(20) / NOTIFY_ONLY_EVENTS(13) /
+  NO_LOCAL_LIFECYCLE(5) / LOCAL_CAPABLE_EVENTS(27)** 四张显式真值表；``validate()``
+  加硬规则：可阻断事件必须落决策类、exit 被忽略的事件（除 PermissionDenied）不得进决策类、
+  决策/通知分类必须覆盖全部 33 事件。
+- ``hooks/manager.py`` 新增 ``run_event()`` **通用事件裁决出口**（既有 ``run_decision``
+  硬编码 4 个事件，本轮零改动），决策类事件走它才不吞 stdout；
+  ``HookDecision.retry`` + ``hookSpecificOutput.retry`` 官方协议真读出。
+- 新增 ``hooks/lifecycle.py``：``emit()`` 按真值表自动路由；``blocked`` 由
+  ``semantics_for(event).blocks_on_exit2`` 区分「可预防动作（真阻断）」与
+  「动作已发生、只作反馈（不阻断但保留 reason）」；thread-local 重入守卫；
+  全路径异常隔离；``coverage()`` 把 **wired 27（本轮 13 + 既有 14）/
+  no_local_lifecycle 5 / not_wired 1（StopFailure）** 三张表分开核销，
+  绝不把「本地有对应概念」虚报成「已接生产触发点」。
+- **13 个真实生产触发点**：PreCompact/PostCompact → ``TieredContext._maybe_compact``
+  真压缩前后；CwdChanged → ``/cd`` 真 chdir 后；PostToolBatch →
+  ``ToolExecutor.execute_batch`` 一批解决后；PostToolUseFailure / PermissionDenied
+  → ``tools/base.py`` 真失败 / 真拒绝结果路径；Pre/PostModelSwitch →
+  ``KernelAcpBridge.set_model``；InstructionsLoaded →
+  ``_read_instruction_capped`` 真读到内容后（payload **不带正文**，脱敏）；
+  Setup → ``cmd_setup`` 向导入口；WorktreeRemove → ``WorktreeLayer.remove``
+  真 git 移除前；TaskCreated/TaskCompleted → todo 真新建 / 真转完成。
+- **4 个可预防动作真阻断**（不是只返回标记）：PreCompact block → ``compactions``
+  不增、hot 如实超预算；WorktreeRemove block → 不执行 ``git worktree remove``；
+  PreModelSwitch block → ``_model`` 不变；TaskCreated block → 回滚不写 ``ctx.todos``。
+- 既有 7 个扩展事件与 CORE 生命周期路由**零改动**（ConfigChange 仍是 B3 V
+  的「写盘成功后通知」契约），语义差异在 ``lifecycle.SEMANTIC_DIFFERENCES``
+  显式登记，包括「PreCompact 双重触发」「PostToolBatch 不擅自终止回合」
+  「InstructionsLoaded 不带正文」等。
+
+### 矩阵一个状态没动
+
+``ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8``、
+``fully_superior=false``、``b_waves_done=["B1"]``。catalog 两条 B3 note 补了 XIII
+实测段与错误口径纠正，**status 字段逐字节未改**。中途曾把两条翻成 partial
+（26→24），但全仓 20+ 个历史轮次回归把 26/9 硬编码为「当时矩阵没动」的证据，
+为本轮数字去改它们等于篡改历史；且剩余硬理由真实存在，**刻意回退**并在 note
+里写明「为什么不翻状态」。
+
+**深度确实推进**：``gap_probe_audit()`` 从 2 个探针变成 **3 个**
+（30 + 18 + 27 条断言，3/3 全绿）；第三个 ``hook_lifecycle_triggers`` 真起
+hook 子进程、真跑 git init/worktree add/remove、真 chdir、真压缩、真工具失败
+与权限拒绝。但 ``module_depth.probe_verified`` 仍如实为 **0/65**，两张证据表
+分开，不混进覆盖率。
+
+### A′ 自查抓回（全部有可执行证据）
+
+1. ``cmd_cd`` 插入的 payload 引用只在相对路径分支定义的 ``base``，传绝对路径
+   时 ``NameError`` 被 ``except`` 吞掉 → CwdChanged 静默不派发。**端到端真跑**
+   抓回，源码扫描看不出；改成函数开头记录 ``previous_cwd``。
+2. ``cmd_setup`` 派发点放在 ``build_kernel()`` / ``input()`` 之后，重依赖链
+   一阻塞就静默不触发 → 移到函数最开头。
+3. ``PostModelSwitch`` 同时出现在 ``NO_LOCAL_LIFECYCLE`` 与接线清单，
+   ``validate()`` 立刻报「有交集 / 三表不相加」→ 移到语义差异表。
+4. ``lifecycle.py`` 三表分类重构残留旧 ``WIRED_EVENTS`` 块 →
+   ``IndentationError``，删净。
+5. 新写测试的源码扫描起点写错（``_exec`` 在 ``run_pre`` 之后）→ 修正。
+6. 新模块级探针直接 import CLI 模块，连带拉起 ``rich``，**破坏了
+   ``xi_verify.py`` 的纯 stdlib 干净环境约束**（本轮自引入）→ 改为
+   「能 import 就真跑；import 不了就把 CwdChanged/Setup 降级为源码级核销」，
+   ``cli_runtime`` / ``runtime_events`` / ``source_only_events`` 分表如实上报，
+   绝不把降级冒充真跑。两种环境各跑一次均 34/34。
+7. 探针用了未定义的 ``root`` → 补 ``Path(__file__).resolve().parents[2]``。
+8. 宽回归暴露 **3 个 XII 遗留的过时断言**（``len(HOOK_EVENTS)==15``、
+   ``ToolPipeline(`` 生产命中为空）。**parent-blob 实证对照**：把
+   ``manager.py`` / ``tool_executor.py`` / ``module_probes.py`` 还原到
+   ``7954c4df`` 后复跑同样失败，与本轮无关。同步到官方真值并**改强**
+   （逐值等于 ``OFFICIAL_EVENTS``、历史 15 是子集、决策分类自洽、
+   生产 ToolPipeline 带 ``schema_resolver``、两条旁路有 schema 证据）。
+
+### 验证（分批报告，批次间有重叠，不累加）
+
+```
+核心回归（XIII + XII + B3/hooks + parity + doc_numbers + cli/tui）  343 passed
+宽回归 B（B2 各轮 + B3 各续轮，改强同步后重跑）                    522 passed
+核心回归批次（XIII + XII + hooks + parity + codexkit + tui/cli）     284 passed
+纯 stdlib xi_verify.py（无 rich 干净环境 / 有 rich 环境各一次）       34 / 34 全绿
+gap_probe_audit() 3/3（30 + 18 + 27 条断言）
+verify_doc_numbers.py / matrix.validate() / evidence.verify_evidence()
+exit_semantics.validate() / lifecycle.validate() / 20 文件 py_compile   全干净
+```
+
+### 如实边界
+
+- **5 个事件本地无对应生命周期**（FileChanged / MessageDisplay /
+  SubagentStart / TeammateIdle / UserPromptExpansion），**不造空转触发点** ——
+  那正是「转圈标语装忙」要反对的东西；``StopFailure`` 本地有能力但本轮未接，
+  ``coverage().not_wired`` 如实为 1。
+- CC 事件面持续演进，不宣称与某一发行版逐值相等；ConfigChange 仍是
+  post-hoc 通知、Elicitation 语义刻意不等价（Tuan 不许模型自问自答）。
+- 干净环境下 CwdChanged/Setup 只做源码级核销，端到端真跑由安装 rich 的
+  pytest 批次覆盖，分表可查。
+- B 线 26 个 gap 一个未消，``os_sandbox`` 仍 gap、
+  ``deny_network_by_default`` 仍 false 未翻、``credential_masking`` 仍 partial；
+  A 线 92 个既有 aligned/localized 仍无模块级探针、``fully_identical=False``；
+  第三方自适应红队未做，不是真机多平台验证。
+- 行为变更：13 个事件现在会派发已配置的 hook、4 个动作可被真阻断、
+  ``PreCompact`` 在 context 层有第二个派发点（与 agent 层既有通知并存）。

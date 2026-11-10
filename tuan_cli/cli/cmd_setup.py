@@ -104,6 +104,16 @@ def cmd_setup(args: Any) -> int:
         console.print("  已跳过设置向导。可用 `tuan setup` 随时重跑。")
         return 0
 
+    # B3 XIII A′: 一进入向导就派发（--skip 快速路径上面已 return，不派发）。
+    # 初版放在 input() 之后，重依赖链阻塞时静默不触发 —— 端到端真跑
+    # 抓回，源码扫描看不出来。
+    try:
+        from ..hooks.lifecycle import emit
+        emit("Setup", {"quick": bool(getattr(args, "quick", False)),
+                       "source": "cli/setup"})
+    except Exception:  # noqa: BLE001
+        pass
+
     kernel = build_kernel()
     config = kernel.require("config")
     ensure_language(config)

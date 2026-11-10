@@ -139,6 +139,7 @@ def cmd_cd(agent: Any, arg: str) -> None:
         base = getattr(getattr(agent, "ctx", None), "workspace", None) or os.getcwd()
         target = os.path.join(base, target)
     target = os.path.normpath(target)
+    previous_cwd = os.getcwd()  # B3 XIII A′: 绝对路径分支也必须有值
     if not os.path.isdir(target):
         ui.error(f"目录不存在: {target}")
         return
@@ -150,6 +151,13 @@ def cmd_cd(agent: Any, arg: str) -> None:
     ctx = getattr(agent, "ctx", None)
     if ctx is not None:
         setattr(ctx, "workspace", target)
+    # B3 XIII: 目录**真的切换成功后**才派发（失败路径上面已 return）。
+    try:
+        from ..hooks.lifecycle import emit
+        emit("CwdChanged", {"cwd": os.getcwd(),
+                            "previous": previous_cwd, "source": "/cd"})
+    except Exception:  # noqa: BLE001
+        pass
     ui.success(f"当前目录: {os.getcwd()}")
 
 

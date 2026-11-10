@@ -106,9 +106,22 @@ def _read_instruction_capped(path: Path, max_bytes: int) -> str:
         raw = path.read_bytes()
     except OSError:
         return ""
+    # B3 XIII: 指令文件**真的被读取并注入上下文**时才派发。只带路径与
+    # 字节数，不带正文（正文可能是凭据/项目私有内容），与 D3 脱敏契约一致。
+    def _notice(nbytes: int, truncated: bool = False) -> None:
+        try:
+            from ..hooks.lifecycle import emit
+            emit("InstructionsLoaded", {
+                "path": str(path), "bytes": nbytes, "truncated": truncated,
+                "max_bytes": max_bytes})
+        except Exception:  # noqa: BLE001
+            pass
+
     if max_bytes > 0 and len(raw) > max_bytes:
         truncated = raw[:max_bytes].decode("utf-8", errors="replace").strip()
+        _notice(len(raw), True)
         return truncated + "\n…(文件过大已截断，完整内容请用 read_file 读取)"
+    _notice(len(raw))
     return raw.decode("utf-8", errors="replace").strip()
 
 

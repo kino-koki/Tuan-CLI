@@ -309,7 +309,7 @@ class TestAllPathSchema:
 class TestModuleProbesAndHonestMatrix:
     def test_gap_probes_registered_and_green(self):
         r = BD.gap_probe_audit()
-        assert r["registered"] == 2 and r["verified"] == 2 and r["ok"]
+        assert r["registered"] == 3 and r["verified"] == 3 and r["ok"]
         for name in ("hook_events_extended",
                      "hook_updated_input_validation"):
             assert r["results"][name]["ok"]

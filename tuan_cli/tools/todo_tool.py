@@ -90,6 +90,27 @@ def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs: Any) -> 
     if err is not None:
         return err
     assert cleaned is not None
+    # B3 XIII: 比较新旧清单，只对**真实新增 / 真实转为 completed** 的任务
+    # 派发；hook block 时回滚整个写入（不写 ctx.todos、不落盘）。
+    try:
+        from ..hooks.lifecycle import emit_preventable
+        old = list(getattr(ctx, "todos", None) or [])
+        old_ids = {str(t.get("id", "")) for t in old}
+        old_done = {str(t.get("id", "")) for t in old
+                    if t.get("status") == "completed"}
+        created = [t for t in cleaned if str(t.get("id", "")) not in old_ids]
+        completed = [t for t in cleaned
+                     if t.get("status") == "completed"
+                     and str(t.get("id", "")) in old_ids
+                     and str(t.get("id", "")) not in old_done]
+        for t in created:
+            if emit_preventable("TaskCreated", {"task": t}):
+                return "TaskCreated hook 拒绝创建任务（fail-closed）"
+        for t in completed:
+            if emit_preventable("TaskCompleted", {"task": t}):
+                return "TaskCompleted hook 拒绝标记完成（fail-closed）"
+    except Exception:  # noqa: BLE001
+        pass
     ctx.todos = cleaned
     # 持久化到工作区 (失败不阻断: 内存态已生效)
     try:

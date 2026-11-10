@@ -284,6 +284,18 @@ class WorktreeLayer:
         target = self._wt_path(name)
         if not target.exists():
             raise WorktreeError(f"worktree 不存在: {target}")
+        # B3 XIII: WorktreeRemove 是**可预防**动作；CC 里任何非零 rc 都
+        # 使移除失败。hook block 时真的不执行 git worktree remove。
+        try:
+            from ..hooks.lifecycle import emit_preventable
+            if emit_preventable("WorktreeRemove", {
+                    "name": name, "path": str(target)}):
+                raise WorktreeError(
+                    "WorktreeRemove hook 拒绝移除（fail-closed）")
+        except WorktreeError:
+            raise
+        except Exception:  # noqa: BLE001
+            pass
         r = self._git(["worktree", "remove", str(target)])
         if r.returncode != 0:
             raise WorktreeError(

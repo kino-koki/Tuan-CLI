@@ -639,6 +639,16 @@ class ToolExecutor:
             else:
                 for tc in calls:
                     self._execute_single(tc, ctx, exclude, on_tool, on_tool_result)
+        # B3 XIII: 一整批并行/串行工具调用**解决之后**、下次模型调用之前。
+        # 如实：PostToolBatch 在 CC 里 exit 2 会停止 agentic loop；Tuan 这里
+        # 只派发并保留 reason，不擅自替上层终止回合（见 SEMANTIC_DIFFERENCES）。
+        try:
+            from ..hooks.lifecycle import emit
+            emit("PostToolBatch", {
+                "batches": len(batches), "calls": len(tool_calls),
+                "tool_names": [tc["function"]["name"] for tc in tool_calls][:32]})
+        except Exception:  # noqa: BLE001
+            pass
 
     # -------------------------------------------------------- 并行执行
 

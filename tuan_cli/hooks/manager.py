@@ -125,6 +125,11 @@ class HookDecision:
     reason: str = ""
     args: Optional[Dict[str, Any]] = None
     failure_kind: str = ""
+    # B3 XIII: 官方 PermissionDenied 的
+    # ``hookSpecificOutput.retry: true`` —— 告诉模型可以重试被拒绝的
+    # 工具调用。旧版解析时把整个 hso 当成 no_decision 丢掉，装了事件
+    # 也没有真能力。新增字段向后兼容（默认 False）。
+    retry: bool = False
 
 
 @dataclass(frozen=True)
@@ -528,6 +533,101 @@ class HookManager:
                 else:
                     self._audit("PreToolUse", spec.raw, "edit_args_denied",
                                 "hook 请求改写参数但未被授权")
+        return decision
+
+    def run_event(self, event: str, payload: Optional[Dict[str, Any]] = None,
+                  tool_name: str = "") -> HookDecision:
+        """B3 续轮 XIII：**通用事件裁决出口**（给新增 18 个官方事件用）。
+
+        与 ``run_decision`` 的区别：后者硬编码 ``_DECISION_EVENTS`` 只有
+        4 个（既有 B3 契约，本轮**零改动**）；本方法以
+        ``exit_semantics.DECISION_CAPABLE_EVENTS`` 为白名单，让新增的
+        决策类事件也能解析 hook stdout，而不是被 ``run_notify`` 吞掉。
+
+        实测复现（D1）：上一轮 18 个新增事件全部塞进 ``_NOTIFY_EVENTS``，
+        而按官方真值表 ConfigChange / TaskCreated / TaskCompleted /
+        PreCompact / PreModelSwitch / Stop / PostToolBatch 等都是**可阻断 /
+        支持 JSON decision** 的事件 —— 走通知通道等于把裁决整个吞掉，
+        正是 B3 主链路 R2 修过的坑在新增事件上重现。
+
+        **block 的语义由调用方按事件解释**（``lifecycle`` 用
+        ``semantics_for(event).blocks_on_exit2`` 区分「可预防动作」与
+        「动作已发生、只作反馈」）。本方法只负责**不吞 stdout**。
+        """
+        decision = HookDecision()
+        if not self.enabled:
+            return decision
+        if not isinstance(event, str):
+            self._audit("lifecycle", {}, "invalid_event_type",
+                        "run_event 的 event 必须是字符串")
+            return decision
+        if event not in _xs.DECISION_CAPABLE_EVENTS:
+            self._audit(event, {}, "run_event_not_decision_capable",
+                        "%r 不是决策类事件；请走 run_notify/run_session" % event)
+            return decision
+        pl = dict(payload or {})
+        pl["hook_event_name"] = event
+        if tool_name:
+            pl.setdefault("tool_name", tool_name)
+        for spec in self._specs:
+            if spec.event != event:
+                continue
+            if tool_name and not self._match(spec.matcher, tool_name):
+                continue
+            out = self._exec(spec, pl)
+            policy = spec.on_failure or self.on_failure
+            verdict, skip_failure_block = self._exit_gate(spec, policy)
+            if verdict is not None and verdict.block:
+                if verdict.json_may_override and out:
+                    _p = self._parse_decision(out)
+                    if _p is not None and _p.get("block"):
+                        decision.block = True
+                        decision.reason = str(_p.get("reason") or "hook 未提供原因")
+                        self._audit(event, spec.raw,
+                                    "non2_json_decision_honored",
+                                    f"rc={verdict.rc} 采纳 hook JSON reason")
+                        return decision
+                decision.block = True
+                decision.reason = verdict.reason
+                decision.failure_kind = "exit_%d" % verdict.rc
+                self._audit(event, spec.raw, "exit_code_blocked", verdict.reason)
+                return decision
+            failure = getattr(self._tls, "last_failure", None)
+            failed_run = (out is None or
+                          (isinstance(out, str) and not out.strip()))                 and failure is not None and not skip_failure_block
+            if failed_run:
+                reason = (f"hook 执行失败 (fail-closed, on_failure={policy}): "
+                          f"event={spec.event} hook={spec.uid} "
+                          f"kind={failure.kind} detail={failure.detail}")
+                if policy in ("block", "ask"):
+                    decision.block = True
+                    decision.reason = reason
+                    decision.failure_kind = failure.kind
+                    self._audit(event, spec.raw, "failure_blocked", reason)
+                    return decision
+                self._audit(event, spec.raw, "failure_allowed",
+                            f"on_failure=allow 放行 ({failure.kind})")
+                continue
+            if out is None:
+                continue
+            if verdict is not None and verdict.json_ignored:
+                self._audit(event, spec.raw, "exit_json_ignored",
+                            f"rc={verdict.rc} path={verdict.code_path}")
+                continue
+            parsed = self._parse_decision(out)
+            if parsed is None:
+                continue
+            if parsed.get("block"):
+                if self.allow_blocking and spec.blocking:
+                    decision.block = True
+                    decision.reason = str(parsed.get("reason") or "hook 未提供原因")
+                    return decision
+                self._audit(event, spec.raw, "block_denied",
+                            parsed.get("reason", ""))
+            elif parsed.get("args") is not None:
+                decision.args = parsed["args"]
+            if parsed.get("retry"):
+                decision.retry = True
         return decision
 
     def run_decision(self, event: str, tool_name: str = "",
@@ -986,6 +1086,13 @@ class HookManager:
             #   "decision":{"behavior":"deny"|"allow", "updatedInput":{...}}}}
             # 旧版只读 permissionDecision 字符串，decision 是 dict 时被
             # 整个忽略 → 官方写法静默放行（实测 block=False, reason=""）。
+            # B3 XIII: PermissionDenied 的官方 retry 语义。它忽略 exit
+            # code，但 hookSpecificOutput.retry 仍要被读出来。
+            retry = hso.get("retry")
+            if isinstance(retry, bool) and retry:
+                return {"block": False, "reason": "", "args": None,
+                        "retry": True, "source": "cc_permission_denied_retry",
+                        "permission_decision": ""}
             dec = hso.get("decision")
             if isinstance(dec, dict):
                 behavior = str(dec.get("behavior", "") or "").strip().lower()

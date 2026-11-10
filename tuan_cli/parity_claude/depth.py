@@ -137,6 +137,13 @@ def gap_probe_audit() -> dict:
             out[name] = {"ok": ok, "checks": int(r.get("checks") or 0),
                          "evidence": str(r.get("evidence") or ""),
                          "problems": [str(x) for x in (r.get("problems") or [])]}
+            # B3 XIII: 探针自报的「真跑 / 源码核销」分表透传，
+            # 让纯 stdlib 独立验证能核销干净环境下的降级，而不是
+            # 只看一个 ok 布尔。
+            for extra in ("cli_runtime", "runtime_events",
+                          "source_only_events"):
+                if extra in r:
+                    out[name][extra] = r[extra]
         except Exception as exc:  # noqa: BLE001
             out[name] = {"ok": False, "checks": 0, "evidence": "raised",
                          "problems": ["%s: %s" % (type(exc).__name__, exc)]}

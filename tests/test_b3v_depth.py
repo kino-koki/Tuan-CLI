@@ -355,8 +355,26 @@ class TestClassificationTruth:
         for e in ("WorktreeCreate", "Elicitation", "ElicitationResult"):
             assert e in src
 
-    def test_event_table_still_15(self):
-        assert len(HOOK_EVENTS) == 15
+    def test_event_table_is_official_33(self):
+        """B3 续轮 XIII：XII 把事件表 15 → 33，这条断言当时漏同步。
+
+        **parent-blob 实证对照**：把 ``manager.py`` / ``tool_executor.py``
+        / ``module_probes.py`` 还原到 ``7954c4df`` 后复跑同样失败
+        （``assert 33 == 15``），与本轮无关。同步到官方真值并**改强**：
+        不仅 33，还要求事件集合逐值等于官方真值表、历史 15 是子集、
+        决策/通知分类自洽、lifecycle 三表自检干净。
+        """
+        from tuan_cli.hooks import exit_semantics as XS
+        from tuan_cli.hooks import lifecycle as LC
+        from tuan_cli.hooks.manager import (
+            CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS, OFFICIAL_EXTRA_EVENTS)
+        assert len(HOOK_EVENTS) == 33
+        assert set(HOOK_EVENTS) == set(XS.OFFICIAL_EVENTS)
+        assert len(CORE_HOOK_EVENTS) + len(EXTENDED_HOOK_EVENTS) == 15
+        assert len(OFFICIAL_EXTRA_EVENTS) == 18
+        assert len(XS.DECISION_CAPABLE_EVENTS) == 20
+        assert len(XS.NOTIFY_ONLY_EVENTS) == 13
+        assert LC.validate() == []
 
 
 # ================================================== C4 串台可见 + 显式绑定

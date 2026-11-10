@@ -500,12 +500,28 @@ class TestSidePaths:
         p.run(ToolCall(name="write", args={}), LoopContext(goal="t"))
         assert seen["schema"] is schema
 
-    def test_tool_pipeline_has_no_production_constructor(self):
-        """如实边界：ToolPipeline 只在测试里构造，schema_resolver 是契约补齐。"""
-        hits = [str(f) for f in Path("tuan_cli").rglob("*.py")
-                if "ToolPipeline(" in f.read_text(encoding="utf-8",
-                                                  errors="replace")]
-        assert hits == []
+    def test_tool_pipeline_production_constructor_has_schema(self):
+        """B3 XIII：XII 起生产侧**已**构造 ToolPipeline，本断言同步改强。
+
+        parent-blob 实证：还原到 ``7954c4df`` 后原 ``hits == []`` 同样
+        失败（命中 ``core/tool_executor.py`` + ``module_probes.py``），
+        是 XII 引入生产构造时漏同步的过时断言。改成核销真值，不是放宽：
+        生产构造方存在、schema 从本执行器 registry 解析、pipeline 仍是
+        可选通道（不假称主链路改走它）、两条旁路有 schema 证据。
+        """
+        src = Path("tuan_cli/core/tool_executor.py").read_text(
+            encoding="utf-8")
+        assert "self.pipeline = ToolPipeline(" in src
+        assert "schema_resolver=self._resolve_tool_schema" in src
+        assert "def _resolve_tool_schema" in src
+        assert "self.registry" in src
+        assert "可选执行通道" in src
+        bridge = Path("tuan_cli/runtime/tools/bridge.py").read_text(
+            encoding="utf-8")
+        assert "validate_updated_input" in bridge
+        assert "enforced" in bridge
+        cli = Path("tuan_cli/cli/cmd_hooks.py").read_text(encoding="utf-8")
+        assert "tool_schema" in cli and "enforced" in cli
 
     def test_app_injects_default_provider(self):
         """**B3 续轮 VIII 同步（改强）**：provider 注入收进 activate_session。
@@ -550,5 +566,23 @@ class TestMatrixHonesty:
             assert "STATUS_GAP" in src[i:i + 400], key
         assert "5 个触发点" in src or "触发点已接" in src
 
-    def test_event_table_still_15(self):
-        assert len(HOOK_EVENTS) == 15
+    def test_event_table_is_official_33(self):
+        """B3 续轮 XIII：XII 把事件表 15 → 33，这条断言当时漏同步。
+
+        **parent-blob 实证对照**：把 ``manager.py`` / ``tool_executor.py``
+        / ``module_probes.py`` 还原到 ``7954c4df`` 后复跑同样失败
+        （``assert 33 == 15``），与本轮无关。同步到官方真值并**改强**：
+        不仅 33，还要求事件集合逐值等于官方真值表、历史 15 是子集、
+        决策/通知分类自洽、lifecycle 三表自检干净。
+        """
+        from tuan_cli.hooks import exit_semantics as XS
+        from tuan_cli.hooks import lifecycle as LC
+        from tuan_cli.hooks.manager import (
+            CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS, OFFICIAL_EXTRA_EVENTS)
+        assert len(HOOK_EVENTS) == 33
+        assert set(HOOK_EVENTS) == set(XS.OFFICIAL_EVENTS)
+        assert len(CORE_HOOK_EVENTS) + len(EXTENDED_HOOK_EVENTS) == 15
+        assert len(OFFICIAL_EXTRA_EVENTS) == 18
+        assert len(XS.DECISION_CAPABLE_EVENTS) == 20
+        assert len(XS.NOTIFY_ONLY_EVENTS) == 13
+        assert LC.validate() == []
