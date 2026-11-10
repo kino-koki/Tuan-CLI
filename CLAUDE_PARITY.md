@@ -2673,3 +2673,144 @@ py_compile 14 个改动文件全过
   只提供可验证的对齐实现与探针；纯 Python，零 Rust 源码复制。
 - 标语引擎 / 净化层 / ``mapping.py`` / ``tui.py`` /
   ``runtime_slogans.py`` 本轮逐字节未改。
+
+
+---
+
+## B3 续轮 XII：hooks exit-code-2 深度真实性（状态一个没动）
+
+> **自足标题，不新增数字章节编号。** 用户约束：「确保深度的真实复现，
+> 而非仅仅广度；开始做到百分百」。本轮**没有把任何 gap 数字往下刷**：
+> B 线仍是 ``aligned 46 / partial 9 / gap 26``、
+> ``fully_superior=false``、``b_waves_done=["B1"]``。原因是先实测复现
+> 出**一个真实安全洞**和六个协议/旁路缺口，把它们做深做透，比把
+> 26 改成 25 更有价值。
+
+### 最值钱的发现：失败闭合被一行 stdout JSON 打穿（H1）
+
+实测（真起子进程）：
+
+```
+hook: exit 2
+  stderr = "BLOCKED: 禁止写 /etc"
+  stdout = '{"hookSpecificOutput":{"permissionDecision":"allow"}}'
+Tuan 旧行为: block=False, reason="", failure_kind=""
+CC 官方行为: 阻断工具调用，stderr 作为阻断原因反馈给模型，
+             stdout 的 allow 不能覆盖 exit 2
+```
+
+旧 ``_exec_command`` 把 ``rc`` / ``stderr`` 埋进 ``failure.detail``
+字符串，调用方拿不到结构化值；只要 stdout 非空就跳过失败判定，直接
+把 ``permissionDecision:allow`` 当放行。**这不是文档口径问题，是
+真实的安全洞**：stderr 里的阻断原因也彻底丢失。
+
+### 修复（全部先复现再修）
+
+| # | 缺陷（实测复现） | 处置 |
+|---|---|---|
+| H1 | exit 2 + JSON allow 绕过 fail-closed | ``hooks/exit_semantics.py`` 33 事件逐事件真值表 + ``classify()`` 结构化裁决；``_exec_command`` 记 ``HookExit(rc,stderr,stdout)``；``run_pre``/``run_decision`` 加统一闸门 |
+| H2 | CC 官方 ``hookSpecificOutput.decision.behavior="deny"`` 旧版完全不识别、静默放行 | ``_parse_decision`` 补官方 PermissionRequest 格式 |
+| H3 | 官方 ``allow + updatedInput`` 不识别；决策类一律忽略 args | 按官方语义解析并暴露 ``decision.args``；allow 缺 updatedInput 时如实不生效 |
+| H4 | ``WorktreeCreate`` rc=1 + JSON allow 被放行 | CC 语义：任何非零 rc 都失败，JSON 说了不算 |
+| H5 | 官方事件面 33 项、旧表 15；**18 个官方事件配置全部 0 加载** | 事件表 15 → 33，以真值表为单一真值源派生 ``OFFICIAL_EXTRA_EVENTS`` |
+| H6 | ``ToolPipeline`` 生产构造方全仓 **0 个**（只有测试构造） | ``core/tool_executor.py::ToolExecutor.__init__`` 真实构造并挂 ``self.pipeline`` + ``_resolve_tool_schema()`` |
+| H7 | ``runtime/tools/bridge.py`` 真实生产旁路直接 ``handler(ctx,**args)``，未知键抛 TypeError、缺 required / 类型不符无人校验 | 接 ``validate_updated_input`` 同一份真值，4 类 case 真跑 asyncio 验证 |
+
+### exit-code-2 逐事件真值表（官方口径）
+
+联网核对官方 Hooks 参考 + 逐事件表交叉核对后做成常量：
+
+- **exit 2 阻断**：PreToolUse / UserPromptSubmit / UserPromptExpansion /
+  Stop / SubagentStop / TeammateIdle / TaskCreated / TaskCompleted /
+  ConfigChange / PostToolBatch / PreCompact / Elicitation /
+  ElicitationResult / PreModelSwitch / WorktreeCreate / WorktreeRemove
+- **exit 2 不生效**：``PermissionRequest``（权限流照旧、stderr 丢弃，
+  只有 JSON decision 能 deny）
+- **exit code 完全忽略**：``PermissionDenied`` / ``StopFailure`` /
+  ``InstructionsLoaded``
+- **任何非零都失败**：``WorktreeCreate`` / ``WorktreeRemove``
+- **动作已发生、stderr 只作反馈**：PostToolUse / PostToolUseFailure /
+  PostModelSwitch / SessionEnd / Notification / CwdChanged / FileChanged /
+  DirectoryAdded / PostCompact / MessageDisplay
+- **stderr 去向**（claude / user / discarded / debug_log / ignored）逐事件标注；
+  ``NO_MATCHER_EVENTS`` 10 项可反查。
+
+**刻意保留的 Tuan 差异**：``on_failure=block`` 出厂默认比 CC 更严
+（CC 里 exit 1 是非阻断错误），这是 B1 既有安全立场，**不因为对标就
+放宽**；``compare_with_tuan_policy()`` 把差异逐项列出来。
+CC 不同页面对「exit 2 时 stdout JSON 是否被读取」措辞有差异，锁死的
+是所有来源一致的硬规则：**allow 不能覆盖 exit 2**。
+
+### 两个模块级运行时探针（B 线深度从 0 → gap 级 2）
+
+``parity_claude/module_probes.py`` 给两条 B3 gap 各注册一个**真调代码**
+的探针到 ``depth.MODULE_PROBES``：
+
+- ``hook_events_extended``：30 条断言（真起 exit-2 子进程、真调
+  run_pre/run_decision、真解析 CC 官方协议、逐事件语义核销）
+- ``hook_updated_input_validation``：18 条断言（真调
+  validate_updated_input、真跑 bridge asyncio、真构造 ToolExecutor
+  拿生产 pipeline + schema_resolver、4 处源码证据）
+
+新增独立入口 ``depth.gap_probe_audit()``：``registered 2 / verified 2 /
+ok=True``。**刻意不把 gap 探针混进 ``module_depth.probe_verified``** ——
+后者统计的是「65 个非 gap 模块里有多少被逐模块验证过」，仍如实为
+**0 / 65（0.0%）**，两张证据表分开。
+
+### 状态仍 GAP 的剩余硬理由（收窄但未消除）
+
+- ``hook_events_extended``：新增 18 个事件**只有通知通道、无生产触发点、
+  无 JSON decision 裁决**；Elicitation 语义刻意不等价（Tuan 不允许
+  模型自问自答，CC 允许程序化代答）；CC 事件面持续演进。
+- ``hook_updated_input_validation``：``cmd_hooks`` 取 schema 仍依赖
+  kernel 暴露 ``tool_registry``，取不到回落保守子集并标
+  ``enforced=False``；``ToolPipeline`` 是**可选执行通道**、主链路仍是
+  ``execute_batch``，不假称所有调用改走 pipeline；CC 的 updatedInput
+  覆盖也含 HTTP/prompt/agent hook 类型，本地只覆盖 command 类型。
+
+catalog 两条 note 已按实测收窄，**status 字段逐字节未动**，不靠改
+状态定义凑数。下一轮按 ``gap_queue()`` 逐域消 gap，每消一个必须
+同时注册模块级探针。
+
+### A′ 自查抓回
+
+1. ``module_probes.py`` 初版写了一个不存在的 ``exit_semantics_bridge``
+   哨兵 import → 模块刚加载就 ImportError、两个探针一个注册不上。
+2. ``classify()`` 初版对 rc=1 也把 JSON 全忽略 → 既有回归
+   ``test_nonzero_rc_with_valid_decision_still_honors_decision`` 变红
+   （``reason`` 从 ``"rc1"`` 变成 Tuan 闭合文案）。CC 在**非 2** 的
+   非零退出码下仍读取有效 JSON decision；新增 ``json_may_override``
+   字段，只有 exit 2 / any_nonzero_fails 才锁死 JSON 覆盖。
+3. 事件表断言从 15 同步到 33 时 import 路径写错（从 ``hooks`` 包取
+   未导出的名字）→ 改从 ``hooks.manager`` 取。
+4. 上一轮历史重写后本地残留的审计文件被列成「新增」差点推回 main
+   —— 本轮推送前再次确认它不在清单（见续轮 XI 报告）。
+
+### 验证（分批报告，批次间有重叠，不累加）
+
+```
+新回归 + B3/hooks + claude_parity + codexkit + headless     171 passed
+宽回归 A（+ tui parity / cli parity / config / core / input /
+  fullscreen）                                            552 passed
+宽回归 B（B2 各轮 / worktree / slash / arch_security）      232 passed / 1 failed
+ToolExecutor / bridge / arch_execution 相关                    67 passed
+纯 stdlib 独立验证 xi_verify.py                              32 / 32 全绿
+matrix.validate() / evidence.verify_evidence() / exit_semantics.validate()
+verify_doc_numbers.py / 10 文件 py_compile                    全干净
+```
+
+那 1 例失败做了 parent-blob 基线对照：``arch/security.py`` /
+``test_arch_security.py`` / ``arch/platform.py`` /
+``tools/permissions.py`` 与 parent ``0fa1653c`` 逐字节一致，是策略
+拒绝 ``/usr/bin/python3`` 的既有环境行为，没为变绿动策略。
+
+### 如实边界
+
+- B 线 26 个 gap 一个未消，``os_sandbox`` 仍 gap、
+  ``deny_network_by_default`` 仍 false 未翻、``credential_masking``
+  仍 partial；A 线 92 个既有 aligned/localized 仍无模块级探针、
+  ``fully_identical=False``；第三方自适应红队未做，不是真机多平台验证。
+- ``exit_semantics`` 事件面 33 项来自官方 Hooks 参考 + 逐事件表交叉
+  核对，**不宣称与某一 CC 发行版逐值相等**。
+- 标语引擎 / 净化层 / ``mapping.py`` / ``tui.py`` /
+  ``runtime_slogans.py`` / catalog 状态字段逐字节未改。

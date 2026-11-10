@@ -783,3 +783,36 @@ agent；R3 的 64 槽耗尽是模拟不是真跑 70 个 LLM 子代理；R2 的 G
 
 验证：85 + 555 + 286/1 既有环境失败（4 文件 parent-blob 逐字节一致）
 + 30/30 纯 stdlib + 文档/矩阵/py_compile 全干净。
+
+
+---
+
+## B3 续轮 XII 增量（exit-code-2 深度真实性，状态不动）
+
+权威口径见 ``CLAUDE_PARITY.md`` 末尾「B3 续轮 XII」。自足标题。
+
+- **B 线矩阵一个状态没动**：``aligned 46 / partial 9 / gap 26``、
+  ``fully_superior=false``、``b_waves_done=["B1"]``。本轮修真实缺陷，
+  不刷数字。
+- **H1 真实安全洞**：``exit 2 + stderr 阻断原因 + stdout 一行
+  permissionDecision:allow`` 旧版 ``block=False, reason=''``，失败闭合
+  被一行 JSON 打穿。新增 ``hooks/exit_semantics.py``（33 事件逐事件
+  真值表 + ``classify()``）+ ``HookExit`` 结构化退出事实 + 统一闸门。
+- **H2–H5**：CC 官方 ``hookSpecificOutput.decision.behavior`` /
+  ``updatedInput`` 协议补齐；``WorktreeCreate`` 任何非零 rc 都失败；
+  事件表 15 → 33，18 个官方事件配置不再被静默丢弃。
+- **H6–H7**：``ToolExecutor`` 真实构造生产 ``ToolPipeline`` +
+  ``schema_resolver``；``runtime/tools/bridge.py`` 旁路接
+  ``validate_updated_input``（外部未知键不再抛 TypeError）。
+- **深度**：两条 B3 gap 各注册 1 个真调代码的模块级探针
+  （30 + 18 条断言），``depth.gap_probe_audit()`` → ``2/2 ok``；
+  ``module_depth.probe_verified`` 仍如实为 **0/65**。
+- **两条 gap 仍 GAP**：新增 18 事件无生产触发点 / 无 JSON decision
+  通道、Elicitation 语义刻意不等价、``ToolPipeline`` 是可选通道、
+  HTTP/prompt/agent hook 类型未覆盖。catalog note 按实测收窄，
+  status 字段逐字节未动。
+- **A′ ×4** 自查抓回（不存在的哨兵 import / rc=1 的 JSON reason 被吞
+  / 事件面断言 import 路径 / 审计文件残留复查）。
+
+验证：171 + 552 + 232/1 既有环境失败 + 67 + 32/32 纯 stdlib；
+矩阵 / 证据 / 文档数字 / 真值表 / 10 文件 py_compile 全干净。

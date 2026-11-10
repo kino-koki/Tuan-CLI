@@ -1319,3 +1319,46 @@ B 线 26 gap 一个未消，下一轮起按 ``gap_queue()`` 逐域补且
 多平台验证。``codexkit`` 不接 TUI 主循环、不替换任何既有运行时
 对象；纯 Python，零 Rust 源码复制。标语引擎 / 净化层 /
 ``mapping.py`` / ``tui.py`` / ``runtime_slogans.py`` 逐字节未改。
+
+
+---
+
+## R58 · B3 续轮 XII：hooks exit-code-2 深度真实性（状态不动）
+
+完整复现见 ``CLAUDE_PARITY.md`` 末尾「B3 续轮 XII」。自足标题。
+
+| 项 | 风险 | 处置 |
+|---|---|---|
+| **H1 真实安全洞** | ``exit 2`` + stderr 阻断原因 + stdout 一行 ``permissionDecision:allow`` → ``block=False, reason=''`` | ``hooks/exit_semantics.py`` 33 事件真值表 + ``classify()``；``HookExit``；``_exit_gate()``；exit 2 强制阻断且 JSON 绝不覆盖 |
+| H2/H3 | CC 官方 PR ``decision.behavior`` / ``updatedInput`` 静默放行 | ``_parse_decision`` 补官方协议 |
+| H4 | ``WorktreeCreate`` 非零 rc 被 JSON allow 绕过 | 任何非零 rc 都失败 |
+| H5 | 18 个官方事件配置 0 加载 | 事件表 15 → 33（真值表单一真值源） |
+| H6 | ``ToolPipeline`` 生产构造方 0 个 | ``ToolExecutor.__init__`` 真实构造 |
+| H7 | bridge 旁路 ``handler(ctx,**args)`` 无 schema 校验 | 接 ``validate_updated_input`` |
+| 深度虚高 | 六维聚合探针 ≠ 逐模块验证 | 两条 B3 gap 各注册 1 个真调代码的模块级探针（30+18 断言），``gap_probe_audit() 2/2``；``module_depth`` 仍如实 0/65 |
+
+**逐事件真值表**：16 事件 exit 2 阻断；PR exit 2 不生效；3 事件完全忽略
+exit code；WorktreeCreate/Remove 任何非零失败；stderr 去向逐事件标注。
+**Tuan 差异保留**：``on_failure=block`` 比 CC 更严（B1 立场），
+``compare_with_tuan_policy()`` 逐项列出；``json_may_override`` 只在
+非 2 非零时为真。
+
+**矩阵**：B 线 ``aligned 46 / partial 9 / gap 26`` /
+``fully_superior=false`` / ``b_waves_done=["B1"]`` **一个没动**；
+catalog status 字段逐字节未改，两条 note 按实测收窄。A 线
+``pending 0 / depth 10/102 / fully_identical=False`` 不变。
+
+**A′ ×4**：不存在的哨兵 import / rc=1 JSON reason 被吞（既有回归变红）
+/ 事件面断言 import 路径 / 审计文件残留复查。
+
+**验证（分批，不累加）**：171 + 552 + 232 passed / 1 failed（4 文件与
+parent ``0fa1653c`` 逐字节一致，策略拒绝 ``/usr/bin/python3`` 的既有
+环境行为，没为变绿动策略）+ 67 + 纯 stdlib 32/32；矩阵 / 证据 /
+文档数字 / 真值表 / 10 文件 py_compile 全干净。新增
+``tests/test_b3xii_exit_semantics.py``。
+
+**如实边界**：26 gap 一个未消（新增 18 事件无生产触发点 / 无 JSON
+decision 通道、Elicitation 语义刻意不等价、``ToolPipeline`` 是可选
+通道、HTTP/prompt/agent hook 类型未覆盖）；第三方红队未做；不是真机
+多平台验证。标语引擎 / 净化层 / ``mapping.py`` / ``tui.py`` /
+``runtime_slogans.py`` 逐字节未改。

@@ -694,3 +694,16 @@ Apache-2.0 / MIT Codex 归属混用**。
 
 验证：85 + 555 + 286/1 既有环境失败 + 30/30 纯 stdlib +
 文档/矩阵/py_compile 全干净。
+
+
+---
+
+## B 线联动说明（B3 续轮 XII，自足标题）
+
+本轮改动在 **B 线 hooks 域**，A 线矩阵状态``pending 0 / aligned 45 /
+localized 57 / na 63 / depth 10/102 / fully_identical=False`` 不变。
+联动点只有一处：六维 ``verifiable_parity`` 探针读 A 线双口径，本轮
+未改该契约，``claude_parity`` 全量回归仍全绿。B 线新增的两个模块级
+探针在 ``tuan_cli/parity_claude/module_probes.py``，与 A 线
+``tui/parity/depth.py`` 的 ``PROBE_REGISTRY`` 是**两张独立证据表**，
+不混算。完整复现见 ``CLAUDE_PARITY.md`` 末尾「B3 续轮 XII」。

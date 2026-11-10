@@ -94,10 +94,29 @@ class _WrappedTool:
 async def _run_base_handler(tool: Any, args: dict, workspace: str) -> ExecutableToolResult:
     # 惰性导入：避免 import 期拉起全部工具插件
     from tuan_cli.tools.base import ToolContext
+    from tuan_cli.hooks.input_validation import validate_updated_input
+
+    # B3 续轮 XII（实测复现的真实缺口）：这条生产旁路此前**直接**
+    # ``handler(ctx, **args)``，既没有 run_pre 也没有 updatedInput 的
+    # schema 白名单 —— 外部 Agent 多给一个未知键就抛 TypeError，缺
+    # required / 类型不符也无人校验。主链路 tools/base.py 早就修好了，
+    # 这里漏了。现在按同一份 input_validation 真值裁决：
+    #   deny -> 结构化拒绝调用；sanitized -> 丢未知键后执行。
+    # 如实：无 schema 时 validate_updated_input 走保守子集并标
+    # enforced=False，不把「没校验过」包装成「已通过校验」。
+    schema = getattr(tool, "parameters", None)
+    name = str(getattr(tool, "name", "") or "")
+    raw = args if isinstance(args, dict) else {}
+    verdict = validate_updated_input(raw, raw, schema, tool_name=name)
+    if verdict.deny:
+        return ExecutableToolResult(
+            output=f"Tool {name} 参数校验拒绝: {verdict.reason}",
+            is_error=True)
+    eff = verdict.sanitized
 
     base_ctx = ToolContext(kernel=None, workspace=workspace)
     try:
-        out = tool.handler(base_ctx, **args)
+        out = tool.handler(base_ctx, **eff)
         if asyncio.iscoroutine(out):
             out = await out
     except Exception as exc:  # noqa: BLE001

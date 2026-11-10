@@ -39,6 +39,8 @@ log = logging.getLogger(__name__)
 
 # hook 故障策略 (B1)。"block" 最严格且为出厂默认；"ask" 同样阻断但标注
 # 需人工确认；"allow" 是显式逃生口, 会记 failure_allowed 审计。
+from . import exit_semantics as _xs  # noqa: E402 - 逐事件 exit-code-2 真值表
+
 ON_FAILURE_POLICIES = ("block", "ask", "allow")
 DEFAULT_ON_FAILURE = "block"
 
@@ -72,7 +74,22 @@ EXTENDED_HOOK_EVENTS = (
     "ElicitationResult",   # 用户响应 elicitation 后，可覆盖
 )
 
-HOOK_EVENTS = CORE_HOOK_EVENTS + EXTENDED_HOOK_EVENTS
+# B3 续轮 XII：官方 hooks 参考的完整事件面。旧版只登记 15 个，实测
+# 18 个官方事件的配置**全部 0 加载**（只进 unknown_hook_event 审计）。
+# 现在以 exit_semantics.OFFICIAL_EVENTS 为**单一真值源**派生，避免两张表
+# 漂移；每个事件的 exit-code-2 / stderr 去向语义都在那张表里可核验。
+# 如实：事件面可配置 != 有生产触发点，也不等于 CC 全事件逐值对齐
+#（CC 持续新增事件；部分事件在本地 CLI 没有对应生命周期）。
+OFFICIAL_EXTRA_EVENTS: Tuple[str, ...] = tuple(sorted(
+    set(_xs.OFFICIAL_EVENTS) - set(CORE_HOOK_EVENTS)
+    - set(EXTENDED_HOOK_EVENTS)))
+HOOK_EVENTS = (CORE_HOOK_EVENTS + EXTENDED_HOOK_EVENTS
+               + OFFICIAL_EXTRA_EVENTS)
+
+# 新增事件默认走通知通道（stdout 忽略），与官方「多数事件 stdout 只进
+# debug log」一致。**决策类仍只限下面 4 个**（既有契约不扩），新增事件
+# 若需要 JSON decision 裁决，需逐个接 run_decision —— 这是剩余硬理由，
+# 如实留在 catalog note 里，不假装已覆盖。
 
 # 仅通知类事件 (无 matcher、stdout 忽略), 由 run_notify 统一派发。
 # B3 把三个纯通知扩展事件纳入；决策类事件**不在**这里 —— 它们必须用
@@ -80,7 +97,7 @@ HOOK_EVENTS = CORE_HOOK_EVENTS + EXTENDED_HOOK_EVENTS
 _NOTIFY_EVENTS = (
     "Stop", "SubagentStop", "PreCompact", "SessionStart", "SessionEnd",
     "Notification", "DirectoryAdded", "ConfigChange",
-)
+) + OFFICIAL_EXTRA_EVENTS
 
 # 决策类扩展事件：hook 的输出必须被解析成裁决，不能当通知忽略。
 _DECISION_EVENTS = frozenset({
@@ -128,6 +145,26 @@ class HookFailure:
                 "hook_type": self.hook_type, "kind": self.kind,
                 "detail": self.detail, "tool_name": self.tool_name,
                 "ts": self.ts}
+
+
+@dataclass(frozen=True)
+class HookExit:
+    """一次 command hook 的进程退出事实（rc / stderr / stdout）。
+
+    B3 续轮 XII：**旧版把 rc 与 stderr 埋进 failure.detail 字符串**，
+    调用方拿不到结构化值，于是 exit 2 + stdout 一行 JSON allow 就能
+    把 fail-closed 打穿（实测 ``block=False, reason="", failure_kind=""``）。
+    现在 ``_exec_command`` 把它记到 thread-local，run_pre / run_decision
+    用 ``exit_semantics.classify()`` 做逐事件裁决。
+    """
+    rc: int
+    stderr: str
+    stdout: str
+    event: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"rc": self.rc, "stderr": self.stderr[:400],
+                "stdout": self.stdout[:400], "event": self.event}
 
 
 @dataclass
@@ -344,6 +381,36 @@ class HookManager:
 
     # ------------------------------------------------------------------ 执行
 
+    def _exit_gate(self, spec: "_HookSpec", policy: str):
+        """逐事件 exit-code-2 闸门。
+
+        返回 ``(verdict, skip_failure_block)``：
+        - ``verdict.block=True`` → 调用方**直接阻断且不得解析 stdout JSON**；
+        - ``skip_failure_block`` → CC 语义下这个 rc 不该被 Tuan 的
+          ``on_failure`` 叠加层再闭合一次（如 PermissionRequest 的
+          exit 2、exit_ignored 事件）。
+
+        这是修 H1 的关键：旧版只要 stdout 非空就跳过失败判定，直接把
+        ``permissionDecision:allow`` 当成放行。
+        """
+        last = getattr(self._tls, "last_exit", None)
+        if last is None:
+            return None, False
+        v = _xs.classify(spec.event, last.rc, last.stderr,
+                         tuan_policy=policy)
+        self._tls.last_verdict = v
+        self._audit(spec.event, spec.raw, "exit_code_semantics",
+                    f"rc={v.rc} path={v.code_path} block={v.block} "
+                    f"stderr_dest={v.stderr_destination} "
+                    f"json_ignored={v.json_ignored}")
+        if v.block:
+            return v, False
+        skip = v.code_path in (
+            "exit2_not_honored", "exit_ignored", "exit2_nonblocking_notice",
+            "exit2_stderr_only", "exit2_ignored",
+            "non2_nonzero_nonblocking_error", "exit0")
+        return v, skip
+
     def run_pre(self, tool_name: str, args: Dict[str, Any],
                 dangerous: bool = False, impact: Optional[str] = None,
                 tool_schema: Optional[Dict[str, Any]] = None) -> HookDecision:
@@ -373,13 +440,38 @@ class HookManager:
                 "dangerous": dangerous,
                 "impact": impact,
             })
+            policy = spec.on_failure or self.on_failure
+            verdict, skip_failure_block = self._exit_gate(spec, policy)
+            if verdict is not None and verdict.block:
+                # A′：非 2 的非零 rc 下，CC 仍读取 stdout 的有效 JSON
+                # decision。先给 hook 自己写的 reason 一个机会（不改
+                # 既有行为），否则才落到 Tuan 的 on_failure 闭合。
+                # exit 2 / any_nonzero_fails 的 json_may_override=False，
+                # 绝不进这个分支 —— H1 的硬规则不因此松动。
+                if verdict.json_may_override and out:
+                    _p = self._parse_decision(out)
+                    if _p is not None and _p.get("block"):
+                        if self.allow_blocking and spec.blocking:
+                            decision.block = True
+                            decision.reason = str(
+                                _p.get("reason") or "hook 未提供原因")
+                            decision.failure_kind = ""
+                            self._audit("PreToolUse", spec.raw,
+                                        "non2_json_decision_honored",
+                                        f"rc={verdict.rc} 采纳 hook JSON reason")
+                            return decision
+                decision.block = True
+                decision.reason = verdict.reason
+                decision.failure_kind = "exit_%d" % verdict.rc
+                self._audit("PreToolUse", spec.raw, "exit_code_blocked",
+                            verdict.reason)
+                return decision
             failure = getattr(self._tls, "last_failure", None)
             failed_run = (out is None or
-                          (isinstance(out, str) and not out.strip()))                 and failure is not None
+                          (isinstance(out, str) and not out.strip()))                 and failure is not None and not skip_failure_block
             if failed_run:
                 # B1: hook 故障默认闭合。CC 需逐条显式 onFailure:"block"。
                 # blocking 开关只影响 hook 自己返回的 block, 不影响这里。
-                policy = spec.on_failure or self.on_failure
                 reason = (
                     f"hook 执行失败 (fail-closed, on_failure={policy}): "
                     f"event={spec.event} hook={spec.uid} "
@@ -397,6 +489,13 @@ class HookManager:
                             f"on_failure=allow 放行 ({failure.kind})")
                 continue
             if out is None:
+                continue
+            if verdict is not None and verdict.json_ignored:
+                # exit 2 / any_nonzero_fails 等：stdout 的 JSON **不能**
+                # 覆盖退出码语义（尤其 allow）。留痕后跳过解析。
+                self._audit("PreToolUse", spec.raw, "exit_json_ignored",
+                            f"rc={verdict.rc} path={verdict.code_path} "
+                            f"stdout={out[:120]!r}")
                 continue
             parsed = self._parse_decision(out)
             if parsed is None:
@@ -462,11 +561,31 @@ class HookManager:
             if tool_name and not self._match(spec.matcher, tool_name):
                 continue
             out = self._exec(spec, pl)
+            policy = spec.on_failure or self.on_failure
+            verdict, skip_failure_block = self._exit_gate(spec, policy)
+            if verdict is not None and verdict.block:
+                if verdict.json_may_override and out:
+                    _p = self._parse_decision(out)
+                    if _p is not None and _p.get("block"):
+                        if self.allow_blocking and spec.blocking:
+                            decision.block = True
+                            decision.reason = str(
+                                _p.get("reason") or "hook 未提供原因")
+                            decision.failure_kind = ""
+                            self._audit(event, spec.raw,
+                                        "non2_json_decision_honored",
+                                        f"rc={verdict.rc} 采纳 hook JSON reason")
+                            return decision
+                decision.block = True
+                decision.reason = verdict.reason
+                decision.failure_kind = "exit_%d" % verdict.rc
+                self._audit(event, spec.raw, "exit_code_blocked",
+                            verdict.reason)
+                return decision
             failure = getattr(self._tls, "last_failure", None)
             failed_run = (out is None or
-                          (isinstance(out, str) and not out.strip()))                 and failure is not None
+                          (isinstance(out, str) and not out.strip()))                 and failure is not None and not skip_failure_block
             if failed_run:
-                policy = spec.on_failure or self.on_failure
                 reason = (f"hook 执行失败 (fail-closed, on_failure={policy}): "
                           f"event={spec.event} hook={spec.uid} "
                           f"kind={failure.kind} detail={failure.detail}")
@@ -481,12 +600,22 @@ class HookManager:
                 continue
             if out is None:
                 continue
+            if verdict is not None and verdict.json_ignored:
+                self._audit(event, spec.raw, "exit_json_ignored",
+                            f"rc={verdict.rc} path={verdict.code_path} "
+                            f"stdout={out[:120]!r}")
+                continue
             parsed = self._parse_decision(out)
             if parsed is None:
                 continue
-            if parsed.get("args") is not None:
+            if (parsed.get("args") is not None
+                    and parsed.get("source") != "cc_permission_request"):
                 self._audit(event, spec.raw, "decision_args_ignored",
                             "决策类事件不支持改参，updatedInput/args 已忽略")
+            elif parsed.get("args") is not None:
+                # CC PermissionRequest 官方协议：allow 必须带
+                # updatedInput 才生效。解析结果暴露给调用方，不静默丢弃。
+                decision.args = parsed["args"]
             if parsed.get("block"):
                 if self.allow_blocking and spec.blocking:
                     decision.block = True
@@ -615,6 +744,8 @@ class HookManager:
         ``_record_failure``。调用方据此做 fail-closed 判定。
         """
         self._tls.last_failure = None
+        self._tls.last_exit = None
+        self._tls.last_verdict = None
         if spec.hook_type == "url":
             return self._exec_http(spec, payload)
         elif spec.hook_type == "prompt":
@@ -700,9 +831,12 @@ class HookManager:
         if proc.returncode != 0:
             d = f"rc={proc.returncode} stderr={err[:200]}"
             self._audit(spec.event, spec.raw, "nonzero_rc", d)
-            # 仍返回 out: 若 hook 输出了合法 decision 则优先按 decision 处理
-            # (兼容既有行为)；out 为空时 run_pre 会按 on_failure 闭合。
+            # 仍返回 out（向后兼容所有调用方）；但**是否采纳 stdout 的
+            # JSON 由 exit_semantics 裁决**，不再无条件「JSON 优先」。
             self._record_failure(spec, "nonzero_rc", d)
+        self._tls.last_exit = HookExit(
+            rc=int(proc.returncode or 0), stderr=err or "",
+            stdout=out or "", event=spec.event)
         return out
 
     @staticmethod
@@ -847,6 +981,30 @@ class HookManager:
         # ---- CC 原生: hookSpecificOutput (PreToolUse / ElicitationResult 等) ----
         hso = data.get("hookSpecificOutput")
         if isinstance(hso, dict):
+            # ---- CC 官方 PermissionRequest 协议（B3 续轮 XII 实测复现）
+            # {"hookSpecificOutput":{"hookEventName":"PermissionRequest",
+            #   "decision":{"behavior":"deny"|"allow", "updatedInput":{...}}}}
+            # 旧版只读 permissionDecision 字符串，decision 是 dict 时被
+            # 整个忽略 → 官方写法静默放行（实测 block=False, reason=""）。
+            dec = hso.get("decision")
+            if isinstance(dec, dict):
+                behavior = str(dec.get("behavior", "") or "").strip().lower()
+                if behavior in ("allow", "deny", "ask"):
+                    reason = str(dec.get("message") or dec.get("reason")
+                                 or hso.get("permissionDecisionReason")
+                                 or data.get("reason", "") or "")
+                    upd = dec.get("updatedInput")
+                    if behavior == "allow" and not isinstance(upd, dict):
+                        # CC: 需要用户交互的工具（ExitPlanMode）的 allow
+                        # 必须带 updatedInput，否则忽略并仍显示提示。
+                        self._audit("PermissionRequest", {},
+                                    "allow_without_updated_input",
+                                    "CC 语义: allow 缺 updatedInput 不生效")
+                        upd = None
+                    return {"block": behavior in ("deny", "ask"),
+                            "reason": reason, "args": upd,
+                            "source": "cc_permission_request",
+                            "permission_decision": behavior}
             pd = str(hso.get("permissionDecision", "") or "").strip().lower()
             reason = str(hso.get("permissionDecisionReason", "")
                          or data.get("reason", "") or "")

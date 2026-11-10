@@ -316,6 +316,33 @@ class ToolExecutor:
         self._kernel_cache: Any = None
         # E5: 写操作风暴检测器
         self._write_storm = _WriteStormDetector()
+        # B3 续轮 XII：ToolPipeline 的**真实生产构造方**。此前全仓扫描
+        # 只有测试构造它，schema_resolver 只是「契约补齐」而非覆盖面
+        # 扩大 —— 这是 hook_updated_input_validation 仍标 GAP 的硬理由
+        # 之一。现在 ToolExecutor（真实的批量工具执行器，见
+        # KernelToolExecutorAdapter）在初始化时构造并挂载，schema
+        # 从本执行器自己的 registry 解析，不再依赖外部注入。
+        # 如实：pipeline 是可选执行通道，主链路仍是 execute_batch；
+        # 它提供「全路径 schema 证据」的可核销生产实例，不假称所有
+        # 调用都改走 pipeline。
+        try:
+            from tuan_cli.arch.execution import ToolPipeline
+            self.pipeline = ToolPipeline(
+                hooks=getattr(self, "hooks", None),
+                schema_resolver=self._resolve_tool_schema,
+            )
+        except Exception:  # noqa: BLE001 - 构造失败不掀翻执行器初始化
+            self.pipeline = None
+
+    def _resolve_tool_schema(self, name: str):
+        """从本执行器的注册表解析工具 JSON Schema（供 ToolPipeline）。"""
+        try:
+            get = getattr(self.registry, "get", None)
+            tool = get(name) if callable(get) else None
+            params = getattr(tool, "parameters", None)
+            return params if isinstance(params, dict) and params else None
+        except Exception:  # noqa: BLE001 - 取不到 = 无 schema 保守子集
+            return None
 
     # -------------------------------------------------------- 批量执行
 

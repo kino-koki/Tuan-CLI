@@ -172,11 +172,19 @@ class TestALineMatrix:
 # ================================================== B 线只读深度基线
 class TestBLineBaseline:
     def test_module_depth_quantifies_water(self):
+        """B3 续轮 XII 同步（**改强**）：新增 gap 级探针的独立入口。
+
+        非 gap 模块仍 0 个模块级探针（如实，不把 gap 探针混进这个
+        数字）；但两条 B3 gap 现在各有 1 个真调代码的模块级探针，
+        由 ``gap_probe_audit()`` 单独核销。
+        """
         r = BD.module_depth_audit()
         assert r["claimed"] == 65
         assert r["path_ok"] == 65 and r["note_present"] == 65
         assert r["probe_verified"] == 0
         assert r["runtime_verified_pct"] == 0.0
+        g = BD.gap_probe_audit()
+        assert g["registered"] == 2 and g["verified"] == 2 and g["ok"]
 
     def test_gap_queue_is_reproducible(self):
         q = BD.gap_queue()

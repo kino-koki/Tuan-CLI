@@ -103,14 +103,33 @@ SCHEMA = {
 
 # ================================================== 1 事件表 / 静默配错
 class TestEventSurface:
-    def test_15_events_8_core_7_extended(self):
+    def test_official_event_surface_33(self):
+        """B3 续轮 XII 同步（**改强**）：事件面 15 -> 33。
+
+        旧断言只数 15 个；现在额外要求与 exit_semantics 真值表**同源**、
+        18 个新增事件逐一枚举、真值表自检干净。实测修复前：18 个官方
+        事件配置全部 0 加载（只进 unknown_hook_event 审计）。
+        """
+        from tuan_cli.hooks import exit_semantics as XS
+        from tuan_cli.hooks.manager import OFFICIAL_EXTRA_EVENTS
         assert len(CORE_HOOK_EVENTS) == 8
         assert len(EXTENDED_HOOK_EVENTS) == 7
-        assert len(HOOK_EVENTS) == 15
+        assert len(OFFICIAL_EXTRA_EVENTS) == 18
+        assert len(HOOK_EVENTS) == 33
         assert set(EXTENDED_HOOK_EVENTS) == {
             "PermissionRequest", "Notification", "DirectoryAdded",
             "ConfigChange", "WorktreeCreate", "Elicitation",
             "ElicitationResult"}
+        assert set(HOOK_EVENTS) == set(XS.OFFICIAL_EVENTS)
+        assert XS.validate() == []
+        for name in ("PermissionDenied", "PostToolUseFailure",
+                     "PostToolBatch", "TaskCreated", "TaskCompleted",
+                     "SubagentStart", "TeammateIdle", "StopFailure",
+                     "InstructionsLoaded", "CwdChanged", "FileChanged",
+                     "WorktreeRemove", "PostCompact", "PreModelSwitch",
+                     "PostModelSwitch", "Setup", "MessageDisplay",
+                     "UserPromptExpansion"):
+            assert name in OFFICIAL_EXTRA_EVENTS, name
 
     def test_extended_event_config_is_loaded_not_dropped(self):
         """R1：旧版整段静默丢弃。"""

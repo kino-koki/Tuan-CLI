@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [Unreleased] - B3 续轮 XII：hooks exit-code-2 深度真实性（状态不动）
+
+> 用户约束：「确保深度的真实复现，而非仅仅广度；开始做到百分百」。
+> 完整复现见 ``CLAUDE_PARITY.md`` 末尾「B3 续轮 XII」。自足标题。
+> **B 线矩阵一个状态没动**：``aligned 46 / partial 9 / gap 26``、
+> ``fully_superior=false``、``b_waves_done=["B1"]``，catalog status 字段
+> 逐字节未改。本轮先实测复现真实缺陷再修，不刷数字。
+
+### 真实缺陷（全部先跑通旧行为）
+- **H1 真实安全洞**：``exit 2`` + stderr 阻断原因 + stdout 一行
+  ``permissionDecision:allow`` → 旧版 ``block=False, reason="",
+  failure_kind=""``。失败闭合被一行 JSON 打穿，stderr 原因丢失。
+- **H2/H3**：CC 官方 PermissionRequest
+  ``hookSpecificOutput.decision.behavior`` + ``updatedInput`` 协议
+  旧版完全不识别、静默放行。
+- **H4**：``WorktreeCreate`` rc=1 + JSON allow 被放行（CC 里任何非零
+  rc 都失败）。
+- **H5**：官方事件面 33 项、旧表 15；实测 **18 个官方事件配置全部 0
+  加载**。
+- **H6**：``ToolPipeline`` 生产构造方全仓 **0 个**。
+- **H7**：``runtime/tools/bridge.py`` 真实生产旁路直接
+  ``handler(ctx, **args)``，外部未知键抛 TypeError、缺 required /
+  类型不符无人校验。
+
+### 修复
+- 新增 ``hooks/exit_semantics.py``：33 事件逐事件 exit-code-2 真值表
+  （blocks / not_honored / ignored / stderr 去向 / any_nonzero_fails /
+  no_matcher）+ ``classify()`` 结构化 ``ExitVerdict`` + ``validate()``。
+- ``manager.py``：``HookExit(rc, stderr, stdout)`` thread-local；
+  ``_exit_gate()`` 统一闸门；``HOOK_EVENTS`` 15 → 33（真值表单一真值
+  源）；``_parse_decision`` 补官方 PR 协议；rc=1 的有效 JSON reason
+  仍优先（``json_may_override``）。
+- ``core/tool_executor.py``：``ToolExecutor.__init__`` 真实构造
+  ``self.pipeline`` + ``_resolve_tool_schema()``。
+- ``runtime/tools/bridge.py``：接 ``validate_updated_input``。
+- 新增 ``parity_claude/module_probes.py``：两条 B3 gap 各 1 个真调
+  代码的模块级探针（30 + 18 条断言）；``depth.gap_probe_audit()``
+  → ``registered 2 / verified 2 / ok=True``。``module_depth`` 仍如实
+  ``0/65``。
+
+### 状态仍 GAP 的剩余硬理由（收窄未消除）
+新增 18 事件无生产触发点 / 无 JSON decision 通道；Elicitation 语义
+刻意不等价；``ToolPipeline`` 是可选通道、主链路仍 ``execute_batch``；
+HTTP/prompt/agent hook 类型未覆盖。catalog 两条 note 按实测收窄，
+**status 字段逐字节未动**，不靠改状态定义凑数。
+
+### A′ ×4（自查抓回）
+不存在的 ``exit_semantics_bridge`` 哨兵 import / rc=1 的 JSON reason
+被吞（既有回归变红）/ 事件面断言 import 路径 / 审计文件残留复查。
+
+### 验证（分批，不累加）
+171 + 552 + 232 passed / **1 failed**（4 文件与 parent ``0fa1653c``
+逐字节一致，策略拒绝 ``/usr/bin/python3`` 的既有环境行为，没为变绿
+动策略）+ 67 + 纯 stdlib ``xi_verify.py`` **32/32**；
+``matrix.validate()`` / ``evidence.verify_evidence()`` /
+``exit_semantics.validate()`` / ``verify_doc_numbers.py`` /
+10 文件 ``py_compile`` 全干净。新增
+``tests/test_b3xii_exit_semantics.py``。
+
+### 如实边界
+26 gap 一个未消、``os_sandbox`` 仍 gap、``deny_network_by_default``
+仍 false、``credential_masking`` 仍 partial；A 线 92 个既有
+aligned/localized 仍无模块级探针；第三方自适应红队未做，不是真机
+多平台验证。标语引擎 / 净化层 / ``mapping.py`` / ``tui.py`` /
+``runtime_slogans.py`` 逐字节未改。
+
 ## [Unreleased] - A 线续轮 XI：Codex 侧清零 + 深度真实性判据
 
 > 用户原话：「确保深度的真实复现，而非仅仅广度；开始做到百分百，

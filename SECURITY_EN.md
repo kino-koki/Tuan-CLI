@@ -3020,3 +3020,92 @@ multi-platform verification. ``codexkit`` is NOT wired into the TUI
 main loop and replaces NO existing runtime object. The slogan engine /
 cleaning layer / ``mapping.py`` / ``tui.py`` / ``runtime_slogans.py``
 are byte-identical.
+
+
+---
+
+## B3 XII: hooks exit-code-2 depth, NO matrix status changed
+
+> SELF-CONTAINED heading. Full reproduction: final section of
+> ``CLAUDE_PARITY.md``. **NOT A SINGLE B-LINE STATUS CHANGED**:
+> ``aligned 46 / partial 9 / gap 26``, ``fully_superior=false``,
+> ``b_waves_done=["B1"]``; catalog status fields byte-identical.
+> This round fixes real defects instead of moving numbers.
+
+### H1: a real security hole (reproduced first)
+```
+hook: exit 2
+  stderr = "BLOCKED: writing /etc denied"
+  stdout = '{"hookSpecificOutput":{"permissionDecision":"allow"}}'
+Old Tuan: block=False, reason="", failure_kind=""
+CC:       blocks the tool call; stderr is the reason fed to the model;
+          a JSON allow on stdout CANNOT override exit 2
+```
+The old ``_exec_command`` buried rc/stderr inside a ``failure.detail``
+string; callers skipped failure handling whenever stdout was non-empty
+and treated ``permissionDecision:allow`` as approval. **Fail-closed was
+pierced by one line of stdout JSON, and the stderr reason was lost.**
+
+### Fixes (H1-H7, each reproduced then fixed)
+- ``hooks/exit_semantics.py``: a 33-event per-event exit-code-2 truth
+  table (blocks / not_honored / ignored / stderr destination /
+  any_nonzero_fails / no_matcher) + ``classify()`` returning a
+  structured ``ExitVerdict`` + ``validate()``.
+- ``manager.py``: ``HookExit(rc, stderr, stdout)`` thread-local record;
+  ``_exit_gate()`` shared by ``run_pre``/``run_decision``;
+  ``HOOK_EVENTS`` 15 -> 33 derived from the truth table as the SINGLE
+  source of truth; ``_parse_decision`` now understands the official
+  PermissionRequest ``hookSpecificOutput.decision.behavior`` and
+  ``updatedInput``; a valid JSON ``reason`` on rc=1 is still honoured
+  (``json_may_override``).
+- ``WorktreeCreate``/``WorktreeRemove``: ANY non-zero rc fails, JSON
+  cannot override. ``PermissionRequest`` exit 2 is NOT honoured (only a
+  JSON decision denies). ``PermissionDenied``/``StopFailure``/
+  ``InstructionsLoaded`` ignore the exit code entirely.
+- ``core/tool_executor.py``: ``ToolExecutor.__init__`` now REALLY
+  constructs a production ``ToolPipeline`` with a
+  ``_resolve_tool_schema()`` bound to its own registry (previously the
+  whole repo had ZERO production constructors).
+- ``runtime/tools/bridge.py``: the real production bypass used to call
+  ``handler(ctx, **args)`` directly -- an unknown key raised TypeError
+  and missing required / wrong types were unchecked. Now wired to
+  ``validate_updated_input``.
+
+### Depth: two module-level runtime probes
+``parity_claude/module_probes.py`` registers one REAL-CALLING probe per
+B3 gap (30 + 18 assertions): real exit-2 subprocesses, real
+``run_pre``/``run_decision`` calls, real CC-protocol parsing, real
+asyncio bridge execution, real production ToolPipeline construction.
+``depth.gap_probe_audit()`` -> ``2/2 ok``. Deliberately NOT folded into
+``module_depth.probe_verified`` (still honestly ``0/65``).
+
+### Still GAP -- remaining hard reasons (narrowed, not eliminated)
+The 18 new events have only a notification channel: no production
+trigger points, no JSON decision routing. Elicitation semantics are
+deliberately non-equivalent (Tuan forbids model self-answering; CC
+allows programmatic answers). ``ToolPipeline`` is an OPTIONAL channel;
+the main path is still ``execute_batch``. HTTP/prompt/agent hook types
+are not covered. Catalog notes were narrowed by measurement; status
+fields untouched -- no credit by redefining states.
+
+### A-prime x4 (self-caught)
+A non-existent sentinel import; rc=1 JSON reason swallowed (an existing
+regression went red); wrong import path for the 33-event assertion;
+re-check that the previously deleted audit file is not re-pushed.
+
+### Verification (split batches, NOT summed)
+171 + 552 + 232 passed / **1 failed** (4 files byte-identical to parent
+``0fa1653c``: pre-existing environment behaviour rejecting
+``/usr/bin/python3``; no policy relaxed to go green) + 67 + pure-stdlib
+**32/32**; matrix / evidence / doc-number / truth-table checks and
+``py_compile`` on 10 files all clean. New
+``tests/test_b3xii_exit_semantics.py``.
+
+### Honest limits
+No gap closed; ``os_sandbox`` still a gap,
+``deny_network_by_default`` still false, ``credential_masking`` still
+partial; 92 A-line aligned/localized modules still lack module-level
+probes; no third-party adaptive red team; NO real-device multi-platform
+verification. The 33-event surface is NOT claimed byte-equal to any one
+CC release. Slogan engine / cleaning layer / ``mapping.py`` / ``tui.py``
+/ ``runtime_slogans.py`` are byte-identical.

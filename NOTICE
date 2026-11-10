@@ -1075,3 +1075,22 @@ SOFTWARE.
     replaced. Items 9-30 remain unchanged; the Apache-2.0 + MIT
     dual attribution for the Codex TUI parity line and all "no
     endorsement" statements still apply unchanged.
+
+
+32. B3 continued XII depth-first hooks layer: a new pure-Python
+    ``tuan_cli/hooks/exit_semantics.py`` holding the per-event
+    Claude Code exit-code-2 truth table and structured ``classify()``
+    verdicts; ``HookExit`` capture and a shared ``_exit_gate()`` in
+    ``hooks/manager.py`` (event surface 15 -> 33, official
+    ``hookSpecificOutput.decision`` / ``updatedInput`` protocol,
+    rc=1 JSON reason preserved); a real production ``ToolPipeline``
+    constructor in ``core/tool_executor.py``; ``validate_updated_input``
+    wiring in ``runtime/tools/bridge.py``; two module-level runtime
+    probes in ``tuan_cli/parity_claude/module_probes.py`` with the
+    ``gap_probe_audit()`` observability entry; and one new regression
+    file ``tests/test_b3xii_exit_semantics.py``. All implementations
+    are independent Python written against publicly documented
+    semantics; NO upstream source was copied and NO existing runtime
+    object was replaced. Items 9-31 remain unchanged; the Apache-2.0 +
+    MIT dual attribution and all "no endorsement" statements still
+    apply unchanged.

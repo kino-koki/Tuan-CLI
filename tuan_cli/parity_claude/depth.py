@@ -38,6 +38,25 @@ from . import catalog
 # 模块级运行时探针注册表。当前为空 —— 下一轮起每消一个 gap / partial
 # 就必须在这里注册一个真调代码的探针，否则不认「已验证」。
 MODULE_PROBES: Dict[str, Callable[[], dict]] = {}
+_PROBES_READY = False
+
+
+def _ensure_probes() -> None:
+    """触发模块级探针包导入并注册。
+
+    A′ 修正（与 A 线 ``depth._ensure_registry`` 同源）：若只在
+    ``MODULE_PROBES`` 里等别人注册，而审计器自己不 import 实现包，
+    ``probe_verified`` 会假报 0。这里幂等触发一次。
+    """
+    global _PROBES_READY
+    if _PROBES_READY:
+        return
+    _PROBES_READY = True
+    try:
+        import importlib
+        importlib.import_module("tuan_cli.parity_claude.module_probes").register_all()
+    except Exception:  # noqa: BLE001 - 注册失败由 probe_verified=0 如实暴露
+        pass
 
 
 def register(module: str) -> Callable[[Callable[[], dict]], Callable[[], dict]]:
@@ -66,6 +85,7 @@ def _path_evidence(m: Any) -> Tuple[bool, List[str]]:
 
 def module_depth_audit() -> dict:
     """对全部非 gap / 非 na 模块逐项核销三层证据。"""
+    _ensure_probes()
     rows: Dict[str, dict] = {}
     for m in catalog.MODULES:
         if m.status in (catalog.STATUS_GAP, catalog.STATUS_NA):
@@ -99,6 +119,31 @@ def module_depth_audit() -> dict:
             1) if claimed else 0.0,
         "rows": rows,
     }
+
+
+def gap_probe_audit() -> dict:
+    """对**已注册探针的 gap 模块**单独核销（深度真实性工作队列）。
+
+    ``module_depth_audit()`` 刻意跳过 gap（它统计的是「非缺口模块里
+    有多少被逐模块验证过」）。但本轮给两个 B3 gap 注册了模块级探针，
+    必须有独立可观测入口，否则注册了也看不见。
+    """
+    _ensure_probes()
+    out: Dict[str, dict] = {}
+    for name, fn in sorted(MODULE_PROBES.items()):
+        try:
+            r = fn()
+            ok = bool(r.get("ok")) and not (r.get("problems") or [])
+            out[name] = {"ok": ok, "checks": int(r.get("checks") or 0),
+                         "evidence": str(r.get("evidence") or ""),
+                         "problems": [str(x) for x in (r.get("problems") or [])]}
+        except Exception as exc:  # noqa: BLE001
+            out[name] = {"ok": False, "checks": 0, "evidence": "raised",
+                         "problems": ["%s: %s" % (type(exc).__name__, exc)]}
+    return {"registered": len(MODULE_PROBES),
+            "verified": sum(1 for v in out.values() if v["ok"]),
+            "ok": len(out) > 0 and all(v["ok"] for v in out.values()),
+            "results": out}
 
 
 def gap_queue() -> dict:
@@ -147,4 +192,6 @@ def gap_queue() -> dict:
 
 def baseline_report() -> dict:
     """只读总报告，供 ``matrix.summary()`` 作信息项带上。"""
-    return {"module_depth": module_depth_audit(), "gap_queue": gap_queue()}
+    return {"module_depth": module_depth_audit(),
+            "gap_probes": gap_probe_audit(),
+            "gap_queue": gap_queue()}
