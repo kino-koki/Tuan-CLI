@@ -268,7 +268,11 @@ class TestSanitizationSingleTruth:
         assert LC._safe_hook_text is ST.safe_hook_text
         assert NP.safe_hook_text is ST.safe_hook_text
         src = Path("tuan_cli/hooks/manager.py").read_text(encoding="utf-8")
-        assert "from tuan_cli.core.safe_text import safe_hook_text" in src
+        # XVI：manager 的 import 改成多行，同时引入 safe_payload。
+        # 这里改核销「两个名字都从同一模块导入」，比字面串更强。
+        assert "from tuan_cli.core.safe_text import (" in src
+        assert "safe_hook_text, safe_payload" in src
+        assert "safe_payload(payload)" in src
 
     def test_known_adjacent_overredaction_is_not_hidden(self):
         """XIV 已登记的边界：token 紧邻普通文本会被宽松分支一并遮蔽。

@@ -81,8 +81,13 @@ from typing import Any, Dict, FrozenSet, Optional, Tuple
 # 完全没有净化（N3/N3b），于是把 XIV 的实现抽到 ``core.safe_text``，
 # lifecycle / manager / nonprocess 三处共用 **同一个** ``safe_hook_text``。
 from tuan_cli.core.safe_text import (  # noqa: E402
+    MAX_PAYLOAD_DEPTH as _MAX_DEPTH,
+    MAX_PAYLOAD_ITEMS as _MAX_ITEMS,
+    MAX_PAYLOAD_STR as _MAX_STR,
+    MAX_PAYLOAD_TOTAL as _MAX_TOTAL,
     SECRET_TOKEN_RE as _SECRET_TOKEN_RE,
     safe_hook_text as _safe_hook_text,
+    safe_payload as _safe_payload,
 )
 
 from . import exit_semantics as XS
@@ -155,70 +160,23 @@ _STATS: Dict[str, int] = {
 # 顺序「先清控制字符，再脱敏」。``_SECRET_TOKEN_RE`` 现在是 re-export，
 # XIV 的注释/validate 与四条 A′ 修正全部保留在 safe_text.py。
 # lifecycle / manager / nonprocess 三处共用，不产生第三套真值。
-_MAX_STR = 512            # 单个字符串值上限（码点）
+# B3 XVI：递归净化真值已搬到 ``core/safe_text.safe_payload``，
+# lifecycle / manager 共用**同一个函数对象**。下方四个常量是 re-export，
+# ``_clean_str`` / ``_sanitize_payload`` 保留名字与签名只为兼容 XIV
+# 既有回归（test_b3xiv_lifecycle_safety.py:236 直接调
+# ``LC._sanitize_payload``）与 ``LC.validate()``。
 _MAX_REASON = 400
-_MAX_DEPTH = 8
-_MAX_ITEMS = 64
-_MAX_TOTAL = 65536        # 整个 payload 输出上限，防超长/深递归 DoS
 
 
 def _clean_str(s: str, limit: int = _MAX_STR) -> str:
-    """单个字符串出口（XV 起委托共享真值，``_clean_str`` 名字保留以
-    兼容 XIV 既有回归与 validate 自检）。绝不抛异常。"""
+    """单个字符串出口（XV 起委托共享真值）。绝不抛异常。"""
     return _safe_hook_text(s, limit)
-
-
-def _walk(value: Any, depth: int, budget: list, changed: list) -> Any:
-    """有界递归净化：非 str 输入只取类型名，绝不 str() 未知对象。"""
-    if depth > _MAX_DEPTH or budget[0] >= _MAX_TOTAL:
-        changed[0] += 1
-        return "<已截断:深度或总量超限>"
-    if value is None or isinstance(value, (bool, int)):
-        return value
-    if isinstance(value, float):
-        return value if math.isfinite(value) else "<non-finite-float>"
-    if isinstance(value, str):
-        s = _clean_str(value)
-        if s != value:
-            changed[0] += 1
-        budget[0] += len(s)
-        if budget[0] > _MAX_TOTAL:
-            changed[0] += 1
-            return "<已截断:总量超限>"
-        return s
-    if isinstance(value, (bytes, bytearray)):
-        changed[0] += 1
-        return "<bytes:%d>" % len(value)
-    if isinstance(value, dict):
-        out: Dict[str, Any] = {}
-        for i, (k, v) in enumerate(value.items()):
-            if i >= _MAX_ITEMS:
-                out["<...>"] = "<%d 项省略>" % (len(value) - _MAX_ITEMS)
-                changed[0] += 1
-                break
-            key = _clean_str(k, 64) if isinstance(k, str) else type(k).__name__
-            out[key] = _walk(v, depth + 1, budget, changed)
-        return out
-    if isinstance(value, (list, tuple, set, frozenset)):
-        seq = list(value)
-        if len(seq) > _MAX_ITEMS:
-            changed[0] += 1
-        return [_walk(x, depth + 1, budget, changed)
-                for x in seq[:_MAX_ITEMS]]
-    changed[0] += 1
-    return "<%s>" % type(value).__name__
 
 
 def _sanitize_payload(payload: Any) -> Tuple[Dict[str, Any], int]:
     """返回 (净化后 payload, 被改动字段数)。非 dict 一律拒绝，交给 emit
     按决策类 fail-closed —— 绝不把脏值变成「没配 hook」而放行。"""
-    if not isinstance(payload, dict):
-        raise TypeError("payload_must_be_dict")
-    budget = [0]
-    changed = [0]
-    out = _walk(payload, 0, budget, changed)
-    return out, changed[0]
-
+    return _safe_payload(payload)
 
 
 @dataclass(frozen=True)

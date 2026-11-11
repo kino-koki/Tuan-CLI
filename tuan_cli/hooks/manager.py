@@ -31,6 +31,25 @@ stdout 限长、detail/reason 过 ``core.safe_text`` 单一净化真值，
 ``classify_channel()`` 把通道故障映射成等价 rc 后**复用**
 ``exit_semantics.classify()``，33 个官方事件在两类通道上同裁决。
 command hook 路径逐字节零改动。
+
+**B3 续轮 XVI**：XV 把三类非进程 hook 收口到单一执行器后，仍留下
+**出站 / 入站两条侧门**（真起 HTTP server、真起 command 子进程复现）：
+- P1 ``manager`` 五条链路的 payload **全部原样**进 command hook 的
+  stdin 与 url hook 的 POST body，实测真实 ``ghp_`` 明文 + RLO +
+  OSC 8 原样交给第三方。XIV 只修了 lifecycle 通道，manager 侧完全漏。
+  现在 ``_exec`` 是**唯一**出站净化点，复用 XIV 搬到
+  ``core/safe_text.safe_payload`` 的同一份递归真值。
+- P2 ``run_user_prompt_submit`` 把 command hook 的 **stdout 原样**
+  注入模型 additionalContext（控制字符 + 伪造系统指令），且多 hook
+  拼接无上界（30 hooks 实测 30029 码点）。现在单一出口净化 +
+  总长 4000 上界 + 结构化留痕。
+- P3 ``run_post`` / ``run_notify`` / ``run_session`` 三条非裁决链路
+  原先只有 ``channel_failed`` / ``failed``，运维看不出「为什么这次
+  失败没有阻断」。现在统一写 ``channel_notification`` 留痕，docstring
+  也改成如实（**同步有界等待**，不改变动作裁决）。
+- P4 ``run_user_prompt_submit`` 的 ``prompt`` public 入参无类型守卫：
+  int / dict / bool 抛底层 TypeError，bytes 静默失败，三种不同行为。
+  现在非 str 一律回落空串并留痕，不抛异常。
 """
 
 from __future__ import annotations
@@ -52,7 +71,13 @@ log = logging.getLogger(__name__)
 # 需人工确认；"allow" 是显式逃生口, 会记 failure_allowed 审计。
 from . import exit_semantics as _xs  # noqa: E402 - 逐事件 exit-code-2 真值表
 from . import nonprocess as _np       # noqa: E402 - XV 三类非进程 hook 等价故障闭合表
-from tuan_cli.core.safe_text import safe_hook_text  # noqa: E402 - 单一净化真值
+from tuan_cli.core.safe_text import (  # noqa: E402 - 单一净化真值
+    safe_hook_text, safe_payload)
+
+# XVI P2：additionalContext 的硬上界。单 hook 1000（既有 docstring
+# 承诺），**总长** 4000 —— 修复前 30 个 hook 拼出 30029 码点无上界。
+MAX_PER_HOOK_CONTEXT = 1000
+MAX_ADDITIONAL_CONTEXT = 4000
 
 ON_FAILURE_POLICIES = ("block", "ask", "allow")
 DEFAULT_ON_FAILURE = "block"
@@ -774,9 +799,37 @@ class HookManager:
                             parsed.get("reason", ""))
         return decision
 
+    def _exec_notify(self, spec: _HookSpec, pl: Dict[str, Any],
+                     label: str) -> None:
+        """B3 XVI P3：非裁决链路的**单一**执行 + 结构化留痕出口。
+
+        实修复现：``run_post`` / ``run_notify`` / ``run_session`` 原先只有
+        ``channel_failed`` / ``failed`` 两条审计，运维看不出「为什么这次
+        hook 失败却没阻断」。这里如实写明 stdout 被忽略、失败不改变动作
+        裁决、同步等待耗时与是否有界。
+        """
+        t0 = time.monotonic()
+        self._exec(spec, pl)
+        ch = getattr(self._tls, "last_channel", None)
+        elapsed = int((time.monotonic() - t0) * 1000)
+        status = ch.status if ch is not None else "command"
+        kind = (ch.failure_kind if ch is not None else "") or "-"
+        bounded = getattr(ch, "bounded", True) if ch is not None else True
+        detached = getattr(ch, "detached", False) if ch is not None else False
+        self._audit(
+            spec.event, spec.raw, "channel_notification",
+            "%s: stdout 忽略、失败不改变动作裁决（设计内）；status=%s "
+            "kind=%s elapsed=%dms bounded=%s detached=%s"
+            % (label, status, kind, elapsed, bounded, detached))
+
     def run_post(self, tool_name: str, args: Dict[str, Any],
                  result: Any = None) -> None:
-        """PostToolUse: 只读审计, stdout 忽略, 异常隔离。"""
+        """PostToolUse: 只读审计, stdout 忽略, 异常隔离。
+
+        **B3 XVI 口径纠正**：「不阻断主流程」指**不改变动作裁决**，不是
+        「不耗时」。hook 执行本身同步有界等待（三类 hook 走墙钟 deadline，
+        command 走看门狗），耗时记入 ``channel_notification`` 审计。
+        """
         if not self.enabled:
             return
         res = result
@@ -795,12 +848,19 @@ class HookManager:
                 continue
             if not self._match(spec.matcher, tool_name):
                 continue
-            self._exec(spec, payload)  # stdout 忽略
+            self._exec_notify(spec, payload, "run_post")
 
     def run_notify(self, event: str, payload: Optional[Dict[str, Any]] = None) -> None:
         """通知类事件的统一派发 (Stop/SubagentStop/PreCompact/SessionStart/SessionEnd)。
 
-        只读通知: stdout 忽略、异常隔离、不阻断主流程。
+        只读通知: stdout 忽略、异常隔离、**不改变动作裁决**。
+
+        **B3 XVI 口径纠正**：实测 ``timeout=1.0s`` 的挂住 url 通知 hook
+        会让本方法同步等待 1.00s —— 旧 docstring 写「不阻断主流程」
+        容易被读成「不耗时」。现在如实写明同步有界等待，并把耗时、
+        status、kind 写进 ``channel_notification`` 审计。刻意**不**改成
+        异步：post/notify 是高频调用，异步化会引入 detached 线程与
+        资源泄漏，收益不抵风险。
         """
         if not self.enabled:
             return
@@ -819,7 +879,7 @@ class HookManager:
         for spec in self._specs:
             if spec.event != event:
                 continue
-            self._exec(spec, pl)
+            self._exec_notify(spec, pl, "run_notify")
 
     def run_session(self, event: str, payload: Optional[Dict[str, Any]] = None) -> None:
         """SessionStart / SessionEnd: 只读通知 (run_notify 的会话别名)。"""
@@ -830,19 +890,68 @@ class HookManager:
 
         返回所有命中 hook 的 stdout (各截断 1000 字符后以换行拼接);
         无 hook 命中或无输出时返回空串。对标 Claude Code 的 additionalContext。
+
+        **B3 XVI P2/P4（先实测复现）**：
+        - 修复前 command hook 的 stdout **原样**注入模型上下文，实测
+          OSC 8 / RLO / ZWSP / bidi isolate 与伪造系统指令全部原样。
+          XV 只净化了三类非进程 hook 的 stdout 与 ``_parse_decision``
+          的 ``reason``，这里是唯一剩下的**入站**旁路。
+        - 30 个 hook 实测拼出 **30029 码点**（单 hook 1000，总长无界）。
+        - ``prompt`` 非 str 时三种不同行为：int/dict/bool 抛底层
+          TypeError、bytes 静默失败、list 恰好能跑。现在统一回落空串
+          并留痕，绝不抛异常。
+
+        现在每条 stdout 过 ``safe_hook_text``（与 lifecycle / nonprocess
+        **同一函数对象**），总长硬上界 ``MAX_ADDITIONAL_CONTEXT``。
+        净化剥控制字符 / 脱敏凭据，**但剥不掉语义层面的伪系统指令**
+        —— 那是模型侧的输入边界，不谎称「防住 prompt injection」。
         """
         if not self.enabled:
             return ""
+        if prompt is None:
+            # 既有行为：``(None or "")`` 就是空串，保持静默兼容。
+            prompt = ""
+        elif not isinstance(prompt, str):
+            self._audit("UserPromptSubmit", {}, "invalid_prompt_type",
+                        "prompt 非 str（%s），按空串处理，不抛异常"
+                        % type(prompt).__name__)
+            prompt = ""
         outs: List[str] = []
+        total = 0
         for spec in self._specs:
             if spec.event != "UserPromptSubmit":
                 continue
             out = self._exec(spec, {
                 "hook_event_name": "UserPromptSubmit",
-                "prompt": (prompt or "")[:4000],
+                "prompt": prompt[:4000],
             })
-            if out and out.strip():
-                outs.append(out.strip()[:1000])
+            if not out or not out.strip():
+                continue
+            clean = safe_hook_text(out.strip(), MAX_PER_HOOK_CONTEXT)
+            if not clean:
+                self._audit("UserPromptSubmit", spec.raw,
+                            "additional_context_dropped",
+                            "hook stdout 净化后为空，不注入模型上下文")
+                continue
+            # A′（XVI）：``"\n".join(outs)`` 的分隔符也要算进总量，
+            # 否则 30 hooks 实测 4003 > 4000，违反「总长硬上界」承诺。
+            sep = 1 if outs else 0
+            if total + sep + len(clean) > MAX_ADDITIONAL_CONTEXT:
+                room = MAX_ADDITIONAL_CONTEXT - total - sep
+                self._audit("UserPromptSubmit", spec.raw,
+                            "additional_context_capped",
+                            "总长超过 %d 码点，本条起截断/丢弃"
+                            % MAX_ADDITIONAL_CONTEXT)
+                if room <= 0:
+                    break
+                clean = clean[:room]
+            outs.append(clean)
+            total += sep + len(clean)
+        if outs:
+            self._audit("UserPromptSubmit", {},
+                        "additional_context_injected",
+                        "hooks=%d chars=%d（已净化 + 总长有界）"
+                        % (len(outs), total))
         return "\n".join(outs)
 
     # ------------------------------------------------------------------ 底层
@@ -900,8 +1009,31 @@ class HookManager:
         self._tls.last_exit = None
         self._tls.last_verdict = None
         self._tls.last_channel = None
+        # B3 XVI P1：**唯一**出站净化点。run_pre / run_post / run_notify /
+        # run_event / run_decision / run_user_prompt_submit 六条链路 + 两类
+        # 执行器（command stdin / url POST / prompt / subagent）全部过这里。
+        # 复用 XIV 搬到 core/safe_text.safe_payload 的同一份递归真值，
+        # lifecycle 也调它 —— 不产生第二套 payload 净化。
+        try:
+            pl, changed = safe_payload(payload)
+        except TypeError:
+            self._audit(spec.event, spec.raw, "payload_rejected",
+                        "出站 payload 非 dict（fail-closed），hook 未执行")
+            self._record_failure(spec, "invalid_spec",
+                                 "出站 payload 非 dict（fail-closed）")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            self._audit(spec.event, spec.raw, "payload_rejected",
+                        "出站 payload 净化异常: %s" % type(exc).__name__)
+            self._record_failure(spec, "error",
+                                 "出站 payload 净化异常（fail-closed）")
+            return None
+        if changed:
+            self._audit(spec.event, spec.raw, "payload_sanitized",
+                        "出站 payload 已脱敏/剥控制字符/截断，改动 %d 处"
+                        % changed)
         if spec.hook_type in _np.HOOK_TYPES:
-            oc = _np.execute(spec, payload, self._kernel,
+            oc = _np.execute(spec, pl, self._kernel,
                              self.workspace or "", self.default_timeout)
             self._tls.last_channel = oc
             for status, detail in oc.audit_events:
@@ -910,7 +1042,7 @@ class HookManager:
                 self._record_failure(spec, oc.failure_kind,
                                      oc.failure_detail)
             return oc.stdout
-        return self._exec_command(spec, payload)
+        return self._exec_command(spec, pl)
 
     def _exec_command(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
         """执行传统 argv 脚本。

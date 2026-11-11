@@ -184,12 +184,13 @@ class TestBLineBaseline:
         assert r["probe_verified"] == 0
         assert r["runtime_verified_pct"] == 0.0
         g = BD.gap_probe_audit()
-        assert g["registered"] == 5 and g["verified"] == 5 and g["ok"]
+        assert g["registered"] == 6 and g["verified"] == 6 and g["ok"]
         assert g["results"]["hook_lifecycle_triggers"]["checks"] >= 20
         # XIV / XV：失败闭合 + 等价故障闭合表两个探针逐项核销
         assert g["results"]["hook_lifecycle_fail_closed"]["checks"] >= 25
         assert g["results"]["hook_nonprocess_equivalence"]["checks"] >= 25
-        assert sum(v["checks"] for v in g["results"].values()) >= 150
+        assert sum(v["checks"] for v in g["results"].values()) >= 175
+        assert g["results"]["hook_payload_context_gate"]["checks"] >= 20
 
     def test_gap_queue_is_reproducible(self):
         q = BD.gap_queue()

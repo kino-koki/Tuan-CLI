@@ -415,7 +415,10 @@ class TestHonestMatrix:
     def test_gap_probes_still_green(self):
         from tuan_cli.parity_claude import depth as BD
         r = BD.gap_probe_audit()
-        assert r["registered"] == 5 and r["verified"] == 5 and r["ok"]
+        assert r["registered"] == 6 and r["verified"] == 6 and r["ok"]
+        # XVI：第 6 个模块级探针（双侧门）真跑 >= 20 条断言
+        vx = r["results"]["hook_payload_context_gate"]
+        assert vx["ok"] and vx["checks"] >= 20, vx["problems"]
         # XV：第 5 个模块级探针（等价故障闭合表）真跑 >= 25 条断言
         vx = r["results"]["hook_nonprocess_equivalence"]
         assert vx["ok"] and vx["checks"] >= 25, vx["problems"]

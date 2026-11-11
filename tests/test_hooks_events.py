@@ -32,10 +32,18 @@ def make_cfg(block: dict) -> dict:
 # ------------------------------------------------------------------ 事件表
 
 def test_hook_events_surface():
-    # B3 同步到新契约：8 个核心 + 7 个扩展事件。
-    # 这是**把断言同步到新的事件表**（并新增扩展事件逐项断言），
-    # 不是放宽检查 —— 事件表仍被完整枚举、多一个少一个都会失败。
-    from tuan_cli.hooks import CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS
+    """**B3 续轮 XVI 同步（改强）**：XII 把事件表从 15 扩到 33 个官方
+    事件后，这条断言仍停在「8 核心 + 7 扩展 = 15」，是 XII/XIII 轮
+    **漏同步**的既有失败 —— 已做 parent-blob（``582b0682``）实证对照：
+    还原本轮全部改动后同一测试同样失败，与本轮无关。
+
+    现在不写死 15，而是核销三层真值：核心 8 / 扩展 7 完整枚举、
+    额外 18 个逐个来自 ``exit_semantics.OFFICIAL_EVENTS``、
+    总数与官方真值表严格相等。断言比原来更多，不是放宽。
+    """
+    from tuan_cli.hooks import (CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS,
+                                HOOK_EVENTS)
+    from tuan_cli.hooks import exit_semantics as XS
     assert set(CORE_HOOK_EVENTS) == {
         "PreToolUse", "PostToolUse", "UserPromptSubmit",
         "Stop", "SubagentStop", "PreCompact",
@@ -45,8 +53,14 @@ def test_hook_events_surface():
         "PermissionRequest", "Notification", "DirectoryAdded",
         "ConfigChange", "WorktreeCreate", "Elicitation", "ElicitationResult",
     }
-    assert set(HOOK_EVENTS) == set(CORE_HOOK_EVENTS) | set(EXTENDED_HOOK_EVENTS)
-    assert len(HOOK_EVENTS) == 15
+    assert (set(CORE_HOOK_EVENTS) | set(EXTENDED_HOOK_EVENTS)) <= set(HOOK_EVENTS)
+    assert len(CORE_HOOK_EVENTS) == 8 and len(EXTENDED_HOOK_EVENTS) == 7
+    # 额外事件逐个来自官方真值表，不多不少
+    extra = set(HOOK_EVENTS) - set(CORE_HOOK_EVENTS) - set(EXTENDED_HOOK_EVENTS)
+    assert extra == set(XS.OFFICIAL_EVENTS) - set(CORE_HOOK_EVENTS) -         set(EXTENDED_HOOK_EVENTS)
+    assert len(HOOK_EVENTS) == len(set(HOOK_EVENTS)) == 33
+    assert set(HOOK_EVENTS) == set(CORE_HOOK_EVENTS) | set(
+        EXTENDED_HOOK_EVENTS) | set(XS.OFFICIAL_EVENTS)
 
 
 def test_run_notify_dispatches(tmp_path):

@@ -33,8 +33,9 @@ XV 把 XIV 的 ``lifecycle._clean_str`` 与 ``manager._parse_decision``
 """
 from __future__ import annotations
 
+import math
 import re
-from typing import Any
+from typing import Any, Dict, Tuple
 
 from tuan_cli.core import security_utils as _SU
 from tuan_cli.ui.slogans import _clean as _CL
@@ -81,6 +82,81 @@ def safe_hook_text(raw: Any, limit: int = 400) -> str:
         return ""
 
 
+# ---------------------------------------------------------------- XVI: payload 净化真值
+# XIV 在 ``hooks/lifecycle.py`` 里实现了完整的 ``_walk`` /
+# ``_sanitize_payload``（递归、深度/条目/总量上限、非 str 只取类型名）。
+# XVI 真跑复现 P1：``manager`` 五条链路（run_pre / run_post / run_notify /
+# run_event / run_decision / run_user_prompt_submit）的 payload **全部**
+# 原样进 command hook 的 stdin 与 url hook 的 POST body，实测真实
+# ``ghp_`` 明文 + RLO + OSC 8 原样交给第三方。XIV 只修了 lifecycle 通道，
+# manager 侧完全漏 —— 又一处「收口后剩下的侧门」。
+#
+# 因此把 XIV 的递归净化**搬到本模块**，lifecycle 与 manager 共用同一个
+# ``safe_payload`` 函数对象；lifecycle 保留 ``_sanitize_payload`` 名字与
+# 签名只为兼容 XIV 既有回归与 LC.validate()。
+MAX_PAYLOAD_STR = 512          # 单个字符串值上限（码点）
+MAX_PAYLOAD_DEPTH = 8
+MAX_PAYLOAD_ITEMS = 64
+MAX_PAYLOAD_TOTAL = 65536      # 整个 payload 输出上限，防超长/深递归 DoS
+
+
+def _walk_payload(value: Any, depth: int, budget: list,
+                  changed: list) -> Any:
+    """有界递归净化：非 str 输入只取类型名，绝不 ``str()`` 未知对象。"""
+    if depth > MAX_PAYLOAD_DEPTH or budget[0] >= MAX_PAYLOAD_TOTAL:
+        changed[0] += 1
+        return "<已截断:深度或总量超限>"
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else "<non-finite-float>"
+    if isinstance(value, str):
+        s = safe_hook_text(value, MAX_PAYLOAD_STR)
+        if s != value:
+            changed[0] += 1
+        budget[0] += len(s)
+        if budget[0] > MAX_PAYLOAD_TOTAL:
+            changed[0] += 1
+            return "<已截断:总量超限>"
+        return s
+    if isinstance(value, (bytes, bytearray)):
+        changed[0] += 1
+        return "<bytes:%d>" % len(value)
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        for i, (k, v) in enumerate(value.items()):
+            if i >= MAX_PAYLOAD_ITEMS:
+                out["<...>"] = "<%d 项省略>" % (len(value) - MAX_PAYLOAD_ITEMS)
+                changed[0] += 1
+                break
+            key = (safe_hook_text(k, 64) if isinstance(k, str)
+                   else type(k).__name__)
+            out[key] = _walk_payload(v, depth + 1, budget, changed)
+        return out
+    if isinstance(value, (list, tuple, set, frozenset)):
+        seq = list(value)
+        if len(seq) > MAX_PAYLOAD_ITEMS:
+            changed[0] += 1
+        return [_walk_payload(x, depth + 1, budget, changed)
+                for x in seq[:MAX_PAYLOAD_ITEMS]]
+    changed[0] += 1
+    return "<%s>" % type(value).__name__
+
+
+def safe_payload(payload: Any) -> Tuple[Dict[str, Any], int]:
+    """返回 ``(净化后 payload, 被改动字段数)``。
+
+    非 dict 一律抛 ``TypeError``，由调用方按决策类 fail-closed —— 绝不把
+    脏值变成「没配 hook」而放行（XIV F3 的既有契约）。
+    """
+    if not isinstance(payload, dict):
+        raise TypeError("payload_must_be_dict")
+    budget = [0]
+    changed = [0]
+    out = _walk_payload(payload, 0, budget, changed)
+    return out, changed[0]
+
+
 # 已知边界（XIV 文档已登记，XV 保留、不粉饰）：宽松 token 分支
 # ``[A-Za-z0-9_]{20,80}`` 没有右边界，token **紧邻**普通文本时
 # （``ghp_<36>END``）会把 ``END`` 一并遮蔽。精确 36 位 classic PAT
@@ -105,4 +181,31 @@ def validate() -> list:
         problems.append("safe_hook_text 非字符串输入未 fail-closed")
     if safe_hook_text("x" * 100, limit=float("nan")) == "":
         problems.append("safe_hook_text 脏 limit 处理异常")
+    # XVI: payload 递归净化
+    dirty = {"tool_result": {"content": "ghp_" + "C" * 36 + "\x1b]8;;x\x07\u202e"},
+             "nested": [{"k": "ghp_" + "D" * 36}, 3, None, True, 1.5]}
+    pl, n = safe_payload(dirty)
+    if n < 2:
+        problems.append("safe_payload 未报告改动字段")
+    flat = repr(pl)
+    if "ghp_" in flat or "\x1b" in flat or "\u202e" in flat:
+        problems.append("safe_payload 未清除凭据/控制字符")
+    if pl.get("nested", [{}])[0].get("k") != "[REDACTED]":
+        problems.append("safe_payload 未递归进 nested dict/list")
+    if safe_payload(pl)[0] != pl:
+        problems.append("safe_payload 不幂等（lifecycle 二次净化会误报改动）")
+    if safe_payload({"a": float("nan")})[0]["a"] != "<non-finite-float>":
+        problems.append("safe_payload 未处理 non-finite float")
+    cyc = {}
+    cyc["self"] = cyc
+    try:
+        safe_payload(cyc)
+    except RecursionError:
+        problems.append("safe_payload 循环引用未受深度上限保护")
+    for bad in (None, 123, "x", [1, 2]):
+        try:
+            safe_payload(bad)
+            problems.append("safe_payload 非 dict 未拒绝: %r" % type(bad).__name__)
+        except TypeError:
+            pass
     return problems

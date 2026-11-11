@@ -3168,3 +3168,129 @@ ST/LC/NP/XS.validate() / 20 文件 py_compile                    全干净
 - 标语引擎 / ``ui/slogans/_clean.py`` / ``mapping.py`` / ``tui.py`` /
   ``runtime_slogans.py`` 逐字节未改；用户贴回的「转圈标语 / 摸鱼」视频
   本轮未碰。
+
+
+## B3 续轮 XVI｜XV 收口后剩下的两条侧门（出站 payload / 入站 additionalContext）
+
+基线 parent ``582b0682``（XV）。用户约束仍是「**确保深度的真实复现，
+而非仅仅广度；开始做到百分百，同时融入 Codex 有但是 Tuan 还没有的**」。
+XV 把三类非进程 hook 收口到 ``hooks/nonprocess.execute()``、把文本净化
+收敛到 ``core/safe_text.safe_hook_text``，并在报告里写「command hook 路径
+逐字节零改动」。本轮一点广度没扩：不新增事件、不新增触发点、不新增 CLI
+子命令、矩阵状态字段一个不动，只问「收口之后还有没有旁路」。
+
+### 先实测复现（真起 HTTP server / command 子进程 / stdin 落盘）
+
+| 编号 | 修复前实测 | 判定 |
+|---|---|---|
+| **P1** | ``run_post`` 的 ``tool_result.content`` 含 ``ghp_`` 明文 + OSC 8 + RLO，url hook 的 POST body 与 command hook 的 stdin **原样**；``run_pre`` / ``run_notify`` / ``run_event`` / ``run_decision`` / ``UserPromptSubmit`` 同源 | XIV 只修了 lifecycle 通道，manager 五条链路**全漏** —— 真实凭据外泄给第三方 hook，又一处「收口后剩下的侧门」 |
+| **P2** | ``run_user_prompt_submit`` 把 command hook stdout **原样**注入模型 additionalContext：OSC 8 / RLO / ZWSP / bidi isolate 与伪造系统指令全部原样；30 个 hook 拼出 **30029 码点**（单 hook 截 1000、总长无界） | XV 只净化了三类非进程 hook 的 stdout 与 ``_parse_decision`` 的 ``reason``，唯一剩下的**入站**旁路 |
+| **P3** | ``run_post`` / ``run_notify`` / ``run_session`` 失败时只有 ``channel_failed`` / ``failed``；docstring 写「不阻断主流程」但实测 ``timeout=1.0s`` 的挂住 url 通知 hook **同步等待 1.00s** | 运维看不出「为什么这次失败没有阻断」；口径不实 |
+| **P4** | ``run_user_prompt_submit(123)`` 抛 ``TypeError: 'int' object is not subscriptable``；``dict`` 抛 ``unhashable type: 'slice'``；``bytes`` 静默失败；``list`` 恰好能跑 | 同一 public 入参四种不同行为 |
+| **N7'** | ``on_failure=allow`` + 通知类失败放行 | **判定不该修**，既有显式逃生口 |
+| **R7'** | 失败时 ``out=None`` 跳过注入 | **判定不该修**，既有正确行为 |
+
+### 修复
+
+- ``core/safe_text.py``：把 XIV 的 ``lifecycle._walk`` / ``_sanitize_payload``
+  **搬到本模块**成 ``safe_payload()``（递归、深度 8 / 条目 64 / 总量
+  65536 码点、单串 512、non-finite float 兜底、循环引用受深度上限保护、
+  非 dict 抛 TypeError）。``LC._safe_payload is ST.safe_payload`` 有 ``is``
+  断言；lifecycle 保留 ``_sanitize_payload`` 名字与签名只为兼容 XIV 既有
+  回归（``tests/test_b3xiv_lifecycle_safety.py`` 直接调它）。
+- ``manager._exec`` 成为**唯一**出站净化点：六条链路（run_pre / run_post /
+  run_notify / run_event / run_decision / run_user_prompt_submit）+ 两类
+  执行器（command stdin / url POST / prompt / subagent）全部过这里；
+  改动字段数写 ``payload_sanitized`` 审计，非 dict / 净化异常 fail-closed
+  ``payload_rejected`` 且 hook **不执行**。
+- ``run_user_prompt_submit``：每条 stdout 过 ``safe_hook_text``（与
+  lifecycle / nonprocess **同一函数对象**），单 hook 1000、总长硬上界
+  ``MAX_ADDITIONAL_CONTEXT=4000``（**含换行分隔符**，XVI A′ 实测修前
+  4003 > 4000），写 ``additional_context_injected`` / ``capped`` /
+  ``dropped`` 留痕；``prompt`` 非 str 回落空串 + ``invalid_prompt_type``，
+  ``None`` 保持既有静默兼容。
+- ``_exec_notify()`` 单一出口给三条非裁决链路写
+  ``channel_notification``（status / kind / elapsed_ms / bounded /
+  detached），docstring 改成如实「同步有界等待、不改变动作裁决」。刻意
+  **不**改成异步：post/notify 是高频调用，异步化会引入 detached 线程与
+  资源泄漏，收益不抵风险。
+
+### 四个「不该修」都有可执行回归
+
+语义级伪系统指令净化**剥不掉**（模型侧输入边界，不谎称防住 prompt
+injection）、通知类同步等待语义不改、失败时跳过注入、
+``on_failure`` 对通知类不阻断。另把 ``run_event`` / ``run_decision`` /
+``run_notify`` 的 ``dict(payload or {})`` 脏值入参面**登记为新硬理由**：
+它仍在 ``_exec`` 之前抛底层异常，本轮刻意不扩（改成静默跳过会掩盖上游
+bug），不包装成已修。
+
+### 矩阵一个状态没动
+
+``ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8``、
+``fully_superior=false``、``b_waves_done=["B1"]``。catalog 两条 B3 note
+补 XVI 实测段与新硬理由登记，``status`` 字段逐字节未改。
+
+**深度推进**：``gap_probe_audit()`` 5 → **6 个**模块级探针
+（30 + 18 + 27 + 29 + 52 + 22 = **178 条断言**，6/6 全绿）。新增
+``hook_payload_context_gate`` 纯 stdlib 真跑：真 HTTP server POST body +
+真 command 子进程 stdin + 真 stdout 注入，核销出站递归脱敏 / 幂等 /
+fail-closed、入站净化与总长硬上界、通知留痕、入参类型面。
+``module_depth.probe_verified`` 仍如实 **0/65**。
+
+### A′ 自查抓回（6 项，全部有可执行证据）
+
+1. 总长上界漏算 ``"\n".join(outs)`` 的分隔符，30 hooks 实测 **4003 >
+   4000**，违反「硬上界」承诺 → ``total`` 计入 ``sep``。
+2. ``None`` 被当成「非 str」写 ``invalid_prompt_type``，改变了
+   ``(None or "")`` 的既有静默行为 → 单独分支保持兼容。
+3. manager 的 import 改成多行引入 ``safe_payload`` 后，XV 的一条
+   **源码字面串断言**失配（``from tuan_cli.core.safe_text import
+   safe_hook_text``）→ 同步为「两个名字都从同一模块导入 +
+   ``safe_payload(payload)`` 在 ``_exec`` 里」，**改强**。
+4. ``test_hooks_events.py::test_hook_events_surface`` 从 XII 起就停在
+   「8 核心 + 7 扩展 = 15」，而事件表早已是 33 —— 做 **parent-blob
+   （``582b0682``）实证对照**：还原本轮全部改动后同一测试同样失败，
+   与本轮无关。同步为核销三层真值（核心 8 / 扩展 7 完整枚举、额外 18
+   个逐个来自 ``exit_semantics.OFFICIAL_EVENTS``、总数严格 33），断言
+   更多不是放宽。
+5. 4 处 ``gap_probe_audit`` 计数断言（XII / XIII / codexkit_depth /
+   ``xi_verify.py``）集体变红 → 全部同步到 6/178 且逐项核销三个新增探针。
+6. ``safe_payload`` 的 validate 自检里，循环引用 probe 若不受深度上限
+   保护会 RecursionError；补真值自检并确认 lifecycle 二次净化幂等
+   （``n1>0, n2==0``），否则每次 emit 都误报「payload 被改动」。
+
+### 验证（分批报告，批次间有重叠，不累加）
+
+```
+XVI 新回归（真 HTTP server / 真子进程 stdin / 真 stdout 注入）    36 passed
+宽回归批次 A（hooks×3 + XII/XIII/XIV/XV/XVI + B3 各续轮
+             + parity + codexkit + doc_numbers）                531 passed
+宽回归批次 B（B2 各轮 + B3 续轮 VI-X + XIV/XV/XVI）            525 passed
+纯 stdlib xi_verify.py（有 rich / 无 rich 两种环境各一次）      40 / 40 全绿
+gap_probe_audit() 6/6（178 条断言）
+verify_doc_numbers / matrix.validate() / evidence.verify_evidence()
+ST|LC|NP|XS.validate() / py_compile / 干净环境 import          全干净
+```
+
+沙箱多次 502 与环境重置（``pytest`` / ``rich`` 等 pip 包反复丢失、
+一次 ``Stale file handle``），命令实际完成、日志均已落盘；重装依赖后
+重跑通过。
+
+### 如实边界
+
+- **行为变更**：hook 现在拿不到真实 ``ghp_`` 值（出站 ``[REDACTED]``）；
+  单字符串值截 512 码点、总量 65536；additionalContext 总长 4000；
+  非 str ``prompt`` 静默回落；三条通知链路新增 ``channel_notification``
+  审计。依赖「hook 读完整工具结果正文」的第三方集成需核对。
+- 净化是**刻意更严**的边界，与 CC「完整 payload 原样传 hook」不等价；
+  XIV 已登记的「token 紧邻普通文本会过度遮蔽」边界仍在。
+- **26 个 gap 一个未消**：``os_sandbox`` 仍 gap、
+  ``deny_network_by_default`` 仍 ``false`` 未翻、``credential_masking`` 仍
+  partial；A 线 ``fully_identical=False``（92 项无模块级探针）；
+  ``StopFailure`` 仍未接、5 事件本地无对应生命周期、``ToolPipeline``
+  无生产调用链；第三方自适应红队未做、不是真机多平台验证。
+- 「做到 100%」仍**未达成**：B 线宽口径约 73.7%、完全对齐约 56.6%；
+  A 线宽口径 100% 但深度门槛仍 False。
+- 标语引擎 / ``ui/slogans/_clean.py`` / ``mapping.py`` / ``tui.py`` /
+  ``runtime_slogans.py`` 逐字节未改；用户贴回的「转圈标语 / 摸鱼」视频
+  本轮未碰。
