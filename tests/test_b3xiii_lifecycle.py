@@ -163,16 +163,27 @@ class TestTruthTableAndCoverage:
         assert out.blocked is True and out.reason == "no"
 
     def test_d3_all_four_hook_types_share_validation(self):
-        """上一轮 note「本地只覆盖 command 类型」实测为错误口径。"""
+        """**B3 XV 同步（改强）**：三类非进程 hook 收口到单一执行器。
+
+        XIII 断言的是 ``_exec`` 里三条 ``spec.hook_type == "..."`` 分派
+        + validate_updated_input 不按类型分流。XV 把三条分派合成
+        ``spec.hook_type in _np.HOOK_TYPES`` 并新增等价故障闭合表，
+        这里改核销「三类走同一执行器 / 同一裁决 / 同一净化真值」。
+        """
+        from tuan_cli.hooks import nonprocess as NP
         src = Path(HM.__file__).read_text(encoding="utf-8")
         i = src.index("def _exec(self")
-        j = src.index("def _exec_command", i)   # A′: run_pre 在 _exec 之前
+        j = src.index("def _exec_command", i)
         seg = src[i:j]
-        for kind in ("url", "prompt", "subagent"):
-            assert 'spec.hook_type == "%s"' % kind in seg
+        assert "spec.hook_type in _np.HOOK_TYPES" in seg
+        assert "_np.execute(" in seg
+        assert "_np.classify_channel(" in src
+        assert set(NP.HOOK_TYPES) == {"url", "prompt", "subagent"}
         k = src.index("validate_updated_input(", src.index("def run_pre"))
         assert "hook_type" not in src[k - 900:k]
-        # 断言口径纠正已写进 note（不是靠改状态定义）
+        np_src = Path(NP.__file__).read_text(encoding="utf-8")
+        assert "from tuan_cli.core.safe_text import" in np_src
+        assert np_src.count("safe_hook_text(") >= 3
         from tuan_cli.parity_claude import catalog as C
         note = next(x for x in C.MODULES
                     if x.name == "hook_updated_input_validation").note
@@ -404,4 +415,7 @@ class TestHonestMatrix:
     def test_gap_probes_still_green(self):
         from tuan_cli.parity_claude import depth as BD
         r = BD.gap_probe_audit()
-        assert r["registered"] == 3 and r["verified"] == 3 and r["ok"]
+        assert r["registered"] == 5 and r["verified"] == 5 and r["ok"]
+        # XV：第 5 个模块级探针（等价故障闭合表）真跑 >= 25 条断言
+        vx = r["results"]["hook_nonprocess_equivalence"]
+        assert vx["ok"] and vx["checks"] >= 25, vx["problems"]

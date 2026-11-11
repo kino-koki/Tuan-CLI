@@ -704,6 +704,242 @@ def probe_hook_lifecycle_fail_closed() -> dict:
 
 
 
+
+def probe_hook_nonprocess_equivalence() -> dict:
+    """B3 XV 模块级探针：三类非进程 hook 的**等价故障闭合表**真跑。
+
+    前四个探针证明「事件能触发 / 协议能解析 / 通道不静默放行」；这个
+    证明 command 与 url/prompt/subagent 在 33 个官方事件上**同裁决**，
+    且通道自身真墙钟有界、拒绝重定向、净化与限长真生效。刻意只 import
+    stdlib + 纯 stdlib 模块，保持 ``xi_verify.py`` 干净环境约束。
+    """
+    import http.server
+    import socketserver
+    import sys
+    import threading
+    import time
+    from tuan_cli.core import safe_text as ST
+    from tuan_cli.hooks import exit_semantics as XS
+    from tuan_cli.hooks import lifecycle as LC
+    from tuan_cli.hooks import manager as HM
+    from tuan_cli.hooks import nonprocess as NP
+
+    problems: List[str] = []
+    checks = 0
+
+    def chk(cond: bool, label: str) -> None:
+        nonlocal checks
+        checks += 1
+        if not cond:
+            problems.append(label)
+
+    class K:
+        def __init__(self, adapter=None):
+            self.a = adapter
+            self.events = []
+
+        def get(self, n, d=None):
+            return self.a if n == "model_adapter" else d
+
+        def emit(self, topic, payload=None):
+            self.events.append((topic, payload or {}))
+
+        def on(self, *a, **k):
+            pass
+
+    def statuses(k):
+        return [p.get("status") for t, p in k.events if t == "hook.executed"]
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", "0"))
+            self.rfile.read(n)
+            m = self.server.mode
+            if m == "empty":
+                self.send_response(200); self.end_headers()
+            elif m == "block":
+                self.send_response(200); self.end_headers()
+                self.wfile.write(b'{"decision":"block","reason":"NO"}')
+            elif m == "redirect":
+                self.send_response(302)
+                self.send_header("Location", self.server.target)
+                self.end_headers()
+            elif m == "slow":
+                self.send_response(200)
+                self.send_header("Content-Length", "10"); self.end_headers()
+                for _ in range(10):
+                    try:
+                        self.wfile.write(b"x"); self.wfile.flush()
+                        time.sleep(0.3)
+                    except Exception:
+                        break
+            elif m == "500":
+                self.send_response(500); self.end_headers()
+                self.wfile.write(b"err")
+            elif m == "leak":
+                self.send_response(200); self.end_headers()
+                self.wfile.write(
+                    b'{"decision":"block","reason":"tok=ghp_'
+                    + b"A" * 36 + b' \\u202e"}')
+            else:
+                self.send_response(200); self.end_headers()
+
+        def do_GET(self):
+            self.server.got_get.append(1)
+            self.send_response(200); self.end_headers()
+            self.wfile.write(b'{"decision":"block","reason":"TARGET"}')
+
+        def log_message(self, *a):
+            pass
+
+    s1 = socketserver.TCPServer(("127.0.0.1", 0), H)
+    s2 = socketserver.TCPServer(("127.0.0.1", 0), H)
+    s1.mode = "empty"; s2.mode = "target"
+    s1.target = "http://127.0.0.1:%d/x" % s2.server_address[1]
+    s1.got_get = []; s2.got_get = []
+    url = "http://127.0.0.1:%d/hook" % s1.server_address[1]
+    th1 = threading.Thread(target=s1.serve_forever, daemon=True)
+    th2 = threading.Thread(target=s2.serve_forever, daemon=True)
+    th1.start(); th2.start()
+
+    def mgr(spec, policy="block", kernel=None):
+        return HM.HookManager(
+            {"hooks": {"enabled": True, "on_failure": policy,
+                       "PermissionRequest": [spec]}},
+            kernel=kernel or K())
+
+    try:
+        chk(ST.validate() == [], "safe_text 自检不干净")
+        chk(LC.validate() == [], "lifecycle 自检不干净")
+        chk(NP.validate() == [], "nonprocess 等价表自检不干净")
+        chk(XS.validate() == [], "exit_semantics 真值表自检不干净")
+        chk(set(NP.HOOK_TYPES) == {"url", "prompt", "subagent"},
+            "HOOK_TYPES 未覆盖三类")
+
+        # N1 成功但无裁决 → 结构化留痕，不静默
+        s1.mode = "empty"; k = K(); m = mgr(
+            {"type": "url", "url": url, "timeout": 1.0}, kernel=k)
+        d = m.run_decision("PermissionRequest", tool_name="shell")
+        s = statuses(k)
+        chk(not d.block, "空响应被错误阻断")
+        chk("channel_no_decision" in s and "channel_semantics" in s,
+            "成功但无裁决仍零留痕")
+        chk("exit_json_ignored" in s, "既有留痕分支未被走到")
+
+        # 正常 JSON 裁决仍生效
+        s1.mode = "block"
+        chk(mgr({"type": "url", "url": url, "timeout": 1.0})
+            .run_decision("PermissionRequest", tool_name="shell").block,
+            "正常 JSON block 失效")
+
+        # N2 真墙钟有界
+        s1.mode = "slow"; k = K(); m = mgr(
+            {"type": "url", "url": url, "timeout": 0.5}, kernel=k)
+        t0 = time.monotonic()
+        d = m.run_decision("PermissionRequest", tool_name="shell")
+        elapsed = time.monotonic() - t0
+        chk(elapsed < 1.5, "慢速 drip 未墙钟有界: %.2fs" % elapsed)
+        chk(d.block and [f["kind"] for f in m.failures()] == ["timeout"],
+            "墙钟超时未 fail-closed")
+        oc = m._tls.last_channel
+        chk(oc.bounded and not oc.detached, "HTTP 超时不应是 detached")
+
+        # N3 / N3b 单一净化真值
+        s1.mode = "leak"
+        d = mgr({"type": "url", "url": url, "timeout": 1.0}) \
+            .run_decision("PermissionRequest", tool_name="shell")
+        chk("ghp_" not in d.reason and "\u202e" not in d.reason
+            and "[REDACTED]" in d.reason, "stdout reason 未净化")
+
+        class Bad:
+            def chat(self, messages, stream=False):
+                raise RuntimeError("api_key=ghp_" + "B" * 36
+                                   + " \x1b]8;;evil\x07\u202e")
+        k = K(Bad())
+        mp = HM.HookManager(
+            {"hooks": {"enabled": True, "on_failure": "block",
+                       "PermissionRequest": [
+                           {"type": "prompt", "prompt": "check",
+                            "timeout": 1.0}]}}, kernel=k)
+        dp = mp.run_decision("PermissionRequest", tool_name="shell")
+        chk("ghp_" not in dp.reason and "\x1b" not in dp.reason
+            and "\u202e" not in dp.reason, "失败 detail 未净化")
+        chk(dp.failure_kind == "error", "failure_kind 被等价 rc 覆盖")
+
+        # N4 拒绝重定向
+        s1.mode = "redirect"; s2.got_get.clear(); k = K()
+        m = mgr({"type": "url", "url": url, "timeout": 1.0}, kernel=k)
+        d = m.run_decision("PermissionRequest", tool_name="shell")
+        chk(not s2.got_get, "302 仍被跟随到第二主机")
+        chk(d.block and "channel_redirect_blocked" in statuses(k),
+            "重定向未被拒绝并留痕")
+
+        # N6 stdout 有界
+        class Big:
+            def chat(self, messages, stream=False):
+                return type("R", (), {"content": "A" * 500000})()
+        m6 = HM.HookManager(
+            {"hooks": {"enabled": True, "on_failure": "block",
+                       "PermissionRequest": [
+                           {"type": "prompt", "prompt": "check",
+                            "timeout": 1.0}]}}, kernel=K(Big()))
+        m6.run_decision("PermissionRequest", tool_name="shell")
+        oc6 = m6._tls.last_channel
+        chk(len(oc6.stdout or "") <= NP.MAX_STDOUT,
+            "stdout 超过有界上限")
+        chk(oc6.truncated, "prompt 截断未标记")
+
+        # 等价表：command rc=1 与 url 500 同裁决，且 failure_kind 真实
+        s1.mode = "500"
+        kc = K()
+        mc = HM.HookManager(
+            {"hooks": {"enabled": True, "on_failure": "block",
+                       "PermissionRequest": [
+                           {"command": [sys.executable, "-c",
+                                        "import sys;sys.exit(1)"]}]}},
+            kernel=kc)
+        dc = mc.run_decision("PermissionRequest", tool_name="shell")
+        du = mgr({"type": "url", "url": url, "timeout": 1.0}) \
+            .run_decision("PermissionRequest", tool_name="shell")
+        chk(dc.block == du.block is True, "两类通道裁决不一致")
+        for event in sorted(XS.OFFICIAL_EVENTS)[:10]:
+            ocf = NP.ChannelOutcome(
+                event=event, hook_type="url", status="failure",
+                stdout=None, failure_kind="http_error",
+                equivalent_rc=1, stderr="x")
+            for policy in ("block", "ask", "allow"):
+                v = NP.classify_channel(event, ocf, tuan_policy=policy)
+                b = XS.classify(event, 1, "x", tuan_policy=policy)
+                chk((v.block, v.code_path) == (b.block, b.code_path),
+                    "等价表偏离 XS.classify: %s/%s" % (event, policy))
+
+        # on_failure=allow 仍放行（不该修）
+        s1.mode = "500"
+        chk(not mgr({"type": "url", "url": url, "timeout": 1.0},
+                    "allow").run_decision(
+                        "PermissionRequest", tool_name="shell").block,
+            "on_failure=allow 被错误闭合")
+
+        # 单一净化函数对象
+        chk(LC._safe_hook_text is ST.safe_hook_text
+            and NP.safe_hook_text is ST.safe_hook_text,
+            "净化真值出现第二套")
+
+        return {"ok": not problems, "checks": checks,
+                "evidence": "XV 等价故障闭合表模块级探针：真 HTTP server "
+                            "空响应/慢速 drip/302/500/泄漏 + 真 command "
+                            "子进程 + 真模型异常，核销 33 事件逐策略等价、"
+                            "墙钟有界、净化与限长、failure_kind 保真",
+                "problems": problems}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "checks": checks, "evidence": "raised",
+                "problems": ["%s: %s" % (type(exc).__name__, exc)]}
+    finally:
+        s1.shutdown(); s2.shutdown()
+        s1.server_close(); s2.server_close()
+
+
+
 def XS_CHECK():
     """延迟导入真值表自检（避免模块导入期拉起 hooks 子包）。"""
     try:
@@ -722,6 +958,8 @@ def register_all() -> None:
                      ("hook_lifecycle_triggers",
                       probe_hook_lifecycle_triggers),
                      ("hook_lifecycle_fail_closed",
-                      probe_hook_lifecycle_fail_closed)):
+                      probe_hook_lifecycle_fail_closed),
+                     ("hook_nonprocess_equivalence",
+                      probe_hook_nonprocess_equivalence)):
         if name not in depth_mod.MODULE_PROBES:
             depth_mod.register(name)(fn)

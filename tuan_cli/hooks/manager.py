@@ -20,6 +20,17 @@
 - 通知类事件 (PostToolUse / Stop / Session* / UserPromptSubmit) 没有
   action 可阻断, 失败**只留痕不卡住主回合**；``failures()`` 可查询。
 - 所有调用写入审计事件 hook.executed (供 self-improve / 观测订阅)。
+
+**B3 续轮 XV**：url / prompt / subagent 三类**非进程 hook** 没有进程 rc，
+``_exit_gate`` 原先只读 ``last_exit``，于是逐事件 exit-code-2 真值表对
+它们完全不适用，且实测「HTTP 200 空 body → 零审计静默放行」「timeout
+配置 0.5s 实测 2.71s」「失败 detail 里的 ghp_ 明文与 OSC 8 原样回显」
+「302 静默跟随到另一主机」「prompt 返回 500000 字符 reason」。现在三类
+hook 统一走 ``hooks/nonprocess.execute()``：真墙钟有界、拒绝重定向、
+stdout 限长、detail/reason 过 ``core.safe_text`` 单一净化真值，
+``classify_channel()`` 把通道故障映射成等价 rc 后**复用**
+``exit_semantics.classify()``，33 个官方事件在两类通道上同裁决。
+command hook 路径逐字节零改动。
 """
 
 from __future__ import annotations
@@ -32,7 +43,7 @@ import signal
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional
 
 log = logging.getLogger(__name__)
@@ -40,6 +51,8 @@ log = logging.getLogger(__name__)
 # hook 故障策略 (B1)。"block" 最严格且为出厂默认；"ask" 同样阻断但标注
 # 需人工确认；"allow" 是显式逃生口, 会记 failure_allowed 审计。
 from . import exit_semantics as _xs  # noqa: E402 - 逐事件 exit-code-2 真值表
+from . import nonprocess as _np       # noqa: E402 - XV 三类非进程 hook 等价故障闭合表
+from tuan_cli.core.safe_text import safe_hook_text  # noqa: E402 - 单一净化真值
 
 ON_FAILURE_POLICIES = ("block", "ask", "allow")
 DEFAULT_ON_FAILURE = "block"
@@ -398,6 +411,42 @@ class HookManager:
         这是修 H1 的关键：旧版只要 stdout 非空就跳过失败判定，直接把
         ``permissionDecision:allow`` 当成放行。
         """
+        # B3 XV: 三类非进程 hook 的等价故障闭合表。映射成等价 rc 后
+        # 复用同一份 exit_semantics.classify()，不新建第二套逐事件策略。
+        ch = getattr(self._tls, "last_channel", None)
+        if ch is not None:
+            v = _np.classify_channel(spec.event, ch, tuan_policy=policy)
+            self._tls.last_verdict = v
+            self._audit(
+                spec.event, spec.raw, "channel_semantics",
+                f"type={ch.hook_type} status={ch.status} "
+                f"kind={ch.failure_kind or '-'} eq_rc={ch.equivalent_rc} "
+                f"path={v.code_path} block={v.block} "
+                f"elapsed={ch.elapsed_ms}ms bounded={ch.bounded} "
+                f"detached={ch.detached} truncated={ch.truncated}")
+            if ch.status == "failure":
+                # A′（XV 宽回归抓回）：若直接把 ``v.block=True`` 交回
+                # 调用方，三条链路都会走 ``exit_code_blocked`` 分支并把
+                # ``failure_kind`` 写成 ``exit_1`` —— 真实故障种类
+                # （no_kernel / timeout / http_error）丢失，且
+                # ``on_failure=allow`` 的显式逃生口被绕过。实测 2 条
+                # 既有回归变红。这里把等价裁决**降级**为「交给
+                # failed_run」：由既有分支保留真实 kind 与 policy 语义，
+                # 逐事件语义通过 ``skip`` 表达。
+                # 唯一例外 ``any_nonzero_fails``（WorktreeCreate/Remove）：
+                # CC 明文「任何非零都失败」，必须强制阻断。
+                if v.code_path == "any_nonzero_fails":
+                    return v, False
+                v = replace(v, block=False, json_ignored=False,
+                            json_may_override=False)
+                return v, v.code_path == "exit_ignored"
+            if v.block:
+                return v, False
+            skip = v.code_path in (
+                "exit2_not_honored", "exit_ignored", "exit2_nonblocking_notice",
+                "exit2_stderr_only", "exit2_ignored",
+                "non2_nonzero_nonblocking_error", "exit0")
+            return v, skip
         last = getattr(self._tls, "last_exit", None)
         if last is None:
             return None, False
@@ -835,25 +884,33 @@ class HookManager:
         """执行单条 hook, 返回结果文本; 超时/异常返回 None。
 
         支持四种类型:
-        - command: 传统 argv 脚本 (stdin JSON, stdout 文本)
-        - url: HTTP POST (发送 JSON, 读取响应)
-        - prompt: LLM prompt (调用模型, 返回模型输出)
-        - subagent: 子代理 (创建隔离 Agent, 返回摘要)
+        - command: 传统 argv 脚本 (stdin JSON, stdout 文本) —— 原路径零改动
+        - url / prompt / subagent: **B3 XV** 统一走
+          ``hooks/nonprocess.execute()``，权威实现只有一份
 
         B1: 每次派发前清空「最近一次失败」，执行器在失败时调用
         ``_record_failure``。调用方据此做 fail-closed 判定。
+
+        **XV**: 三类非进程 hook 把结构化事实写进 ``last_channel``，
+        由 ``_exit_gate`` 复用既有逐事件真值表裁决；failure 由**主线程**
+        在这里统一补记（后台线程写 thread-local 主线程读不到，与
+        ``_exec_command`` 看门狗的既有注释同源）。
         """
         self._tls.last_failure = None
         self._tls.last_exit = None
         self._tls.last_verdict = None
-        if spec.hook_type == "url":
-            return self._exec_http(spec, payload)
-        elif spec.hook_type == "prompt":
-            return self._exec_prompt(spec, payload)
-        elif spec.hook_type == "subagent":
-            return self._exec_subagent(spec, payload)
-        else:
-            return self._exec_command(spec, payload)
+        self._tls.last_channel = None
+        if spec.hook_type in _np.HOOK_TYPES:
+            oc = _np.execute(spec, payload, self._kernel,
+                             self.workspace or "", self.default_timeout)
+            self._tls.last_channel = oc
+            for status, detail in oc.audit_events:
+                self._audit(spec.event, spec.raw, status, detail)
+            if oc.failure_kind:
+                self._record_failure(spec, oc.failure_kind,
+                                     oc.failure_detail)
+            return oc.stdout
+        return self._exec_command(spec, payload)
 
     def _exec_command(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
         """执行传统 argv 脚本。
@@ -968,93 +1025,32 @@ class HookManager:
             except Exception:  # noqa: BLE001
                 pass
 
-    def _exec_http(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
-        """执行 HTTP POST hook。"""
-        import urllib.request
-        import urllib.error
-
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        req = urllib.request.Request(
-            spec.url,
-            data=data,
-            headers={"Content-Type": "application/json", "User-Agent": "tuan_cli-hook"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=spec.timeout) as resp:  # noqa: S310
-                body = resp.read(50000).decode("utf-8", errors="replace")
-                return str(body)
-        except urllib.error.HTTPError as exc:
-            d = f"HTTP {exc.code} {exc.reason}"
-            self._audit(spec.event, spec.raw, "http_error", d)
-            self._record_failure(spec, "http_error", d)
-            return None
-        except Exception as exc:  # noqa: BLE001
-            d = f"{type(exc).__name__}: {exc}"
-            self._audit(spec.event, spec.raw, "error", d)
-            self._record_failure(spec, "error", d)
-            return None
-
-    def _exec_prompt(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
-        """执行 Prompt hook: 调用模型返回结果。"""
-        if self._kernel is None:
-            d = "Prompt hook: 无内核, 模型不可用"
-            self._audit(spec.event, spec.raw, "no_kernel", d)
-            self._record_failure(spec, "no_kernel", d)
-            return None
-        model = self._kernel.get("model_adapter")
-        if model is None:
-            d = "Prompt hook: 无可用模型适配器"
-            self._audit(spec.event, spec.raw, "no_model", d)
-            self._record_failure(spec, "no_model", d)
-            return None
-
-        # 构建 prompt: 将 payload 注入模板
-        prompt = spec.prompt_text
-        for key, val in payload.items():
-            placeholder = "{" + key + "}"
-            if placeholder in prompt:
-                prompt = prompt.replace(placeholder, json.dumps(val, ensure_ascii=False) if not isinstance(val, str) else val)
-
-        messages = [{"role": "user", "content": prompt}]
-        try:
-            result = model.chat(messages, stream=False)
-            if hasattr(result, "content"):
-                return result.content or ""
-            return str(result) if result else ""
-        except Exception as exc:  # noqa: BLE001
-            d = f"Prompt hook 模型调用失败: {exc}"
-            self._audit(spec.event, spec.raw, "error", d)
-            self._record_failure(spec, "error", d)
-            return None
-
-    def _exec_subagent(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
-        """执行 Subagent hook: 创建隔离 Agent 运行任务。"""
-        if self._kernel is None:
-            d = "Subagent hook: 无内核, 无法创建隔离 Agent"
-            self._audit(spec.event, spec.raw, "no_kernel", d)
-            self._record_failure(spec, "no_kernel", d)
-            return None
-        sub = None
-        try:
-            from ..app import create_agent
-            sub = create_agent(self._kernel, self.workspace or "")
-            # 将 payload 注入为上下文
-            context = json.dumps(payload, ensure_ascii=False)[:3000]
-            task = f"{spec.prompt_text}\n\n上下文: {context}" if spec.prompt_text else f"处理以下事件: {context}"
-            result = sub.run(task, stream=False, max_iterations=5)
-            return result[:3000] if result else ""
-        except Exception as exc:  # noqa: BLE001
-            d = f"Subagent hook 失败: {exc}"
-            self._audit(spec.event, spec.raw, "error", d)
-            self._record_failure(spec, "error", d)
-            return None
-        finally:
-            # B3 续轮 X（R3）：短命子 agent 必须显式注销会话槽。
-            from .triggers import close_agent_session
-            close_agent_session(sub)
+    # B3 XV: ``_exec_http`` / ``_exec_prompt`` / ``_exec_subagent`` 三个
+    # 重复执行器已删除，权威实现只有 ``hooks/nonprocess.execute()`` 一份。
+    # 删除理由（实测）：旧 HTTP 用 socket 级 timeout 而非墙钟、默认跟随
+    # 302、stdout 无界、失败 detail 不净化；旧 prompt/subagent 完全不传
+    # timeout，调用方能无限挂住。保留三份旧实现只会产生两套真值。
+    # 全仓源码扫描回归确认无残留 ``_exec_http(`` / ``_exec_prompt(`` /
+    # ``_exec_subagent(`` 调用点。
 
     def _parse_decision(self, stdout: str) -> Optional[Dict[str, Any]]:
+        """B3 XV 单一净化出口：所有 hook stdout 的 ``reason`` 在返回前
+        过 ``core.safe_text.safe_hook_text``（与 XIV lifecycle、
+        XV nonprocess 共用同一函数对象）。
+
+        实测 N3/N3b：url hook 成功返回的 reason、prompt hook 异常 detail
+        里的 ``ghp_`` 明文与 OSC 8 / RLO 原样进 ``HookDecision.reason``，
+        再经 ``ToolResult.content`` 回显。command hook 的 stdout 此前也
+        没净化，一并覆盖。只净化 ``reason``，**不碰 args / updatedInput**
+        （那是工具参数，净化会破坏语义）。
+        """
+        parsed = self._parse_decision_raw(stdout)
+        if isinstance(parsed, dict) and isinstance(parsed.get("reason"), str):
+            parsed = dict(parsed)
+            parsed["reason"] = safe_hook_text(parsed["reason"], 400)
+        return parsed
+
+    def _parse_decision_raw(self, stdout: str) -> Optional[Dict[str, Any]]:
         """解析 hook stdout 为统一决策 dict。
 
         B3 R3：旧实现只认 ``args`` / ``block`` / ``decision``，用户按

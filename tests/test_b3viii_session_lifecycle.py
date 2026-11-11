@@ -536,7 +536,7 @@ class TestWiringAndMatrix:
         # 5 处显式接线（排除定义 / import / 注释行）
         wired = {
             "tuan_cli/cli/cmd_chat.py",
-            "tuan_cli/hooks/manager.py",
+            "tuan_cli/hooks/nonprocess.py",
             "tuan_cli/tools/workflow_tool.py",
             "tuan_cli/tools/subagent_tool.py",
             "tuan_cli/stream_json/headless.py",
@@ -555,7 +555,7 @@ class TestWiringAndMatrix:
                     hits.add(str(p))
         assert hits == wired, (hits ^ wired)
         # 关闭必须在 finally 里（异常路径也释放）
-        for rel in ("tuan_cli/hooks/manager.py",
+        for rel in ("tuan_cli/hooks/nonprocess.py",
                     "tuan_cli/tools/workflow_tool.py",
                     "tuan_cli/tools/subagent_tool.py"):
             s = Path(rel).read_text(encoding="utf-8")

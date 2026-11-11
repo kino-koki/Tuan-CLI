@@ -309,11 +309,15 @@ class TestAllPathSchema:
 class TestModuleProbesAndHonestMatrix:
     def test_gap_probes_registered_and_green(self):
         r = BD.gap_probe_audit()
-        assert r["registered"] == 3 and r["verified"] == 3 and r["ok"]
+        assert r["registered"] == 5 and r["verified"] == 5 and r["ok"]
         for name in ("hook_events_extended",
                      "hook_updated_input_validation"):
             assert r["results"][name]["ok"]
             assert r["results"][name]["checks"] >= 18
+        # XIV / XV 新增两个 gap 级探针，逐项核销（不只看总数）
+        assert r["results"]["hook_lifecycle_fail_closed"]["checks"] >= 25
+        assert r["results"]["hook_nonprocess_equivalence"]["checks"] >= 25
+        assert sum(v["checks"] for v in r["results"].values()) >= 150
 
     def test_module_depth_still_honest(self):
         """非 gap 模块仍 0 个模块级探针 —— 不把 gap 探针混进这个数字。"""

@@ -72,13 +72,18 @@ from __future__ import annotations
 
 import json
 import math
-import re
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Optional, Tuple
 
-from tuan_cli.core import security_utils as _SU
-from tuan_cli.ui.slogans import _clean as _CL
+# B3 XV: 净化真值收敛到单一函数对象。XIV 的 ``_clean_str`` 原本在此
+# 自建 ``_SECRET_TOKEN_RE`` + 两份调用；XV 真跑发现 manager 三类 hook
+# 完全没有净化（N3/N3b），于是把 XIV 的实现抽到 ``core.safe_text``，
+# lifecycle / manager / nonprocess 三处共用 **同一个** ``safe_hook_text``。
+from tuan_cli.core.safe_text import (  # noqa: E402
+    SECRET_TOKEN_RE as _SECRET_TOKEN_RE,
+    safe_hook_text as _safe_hook_text,
+)
 
 from . import exit_semantics as XS
 from . import triggers as TR
@@ -140,35 +145,16 @@ _STATS: Dict[str, int] = {
     "payload_rejected": 0, "sanitized_fields": 0, "fail_closed": 0,
 }
 
-# ---------------------------------------------------------------- XIV: 净化出口
+# ---------------------------------------------------------------- XIV / XV: 净化出口
 # 复现 F5：真起 command hook、把 stdin 原样落盘，实测 ``ghp_`` 明文与
-# OSC 8 / RLO 原样进第三方子进程。复用既有**单一真值源**，不造第三套：
+# OSC 8 / RLO 原样进第三方子进程。净化真值现由
+# ``core.safe_text.safe_hook_text`` **单一函数对象**提供（XV）：
 #   - 控制字符序列（OSC/CSI/bidi/Cf/Cc）→ _clean.sanitize_log_field
 #   - 密钥（ENV 行 / key=value / Bearer / sk- / JWT）→ security_utils.redact_sensitive
-# 顺序刻意是「先清控制字符，再脱敏」：控制字符夹在 token 中间时，先清理
-# 才能让脱敏正则匹配上；安全文本链路的 safe_error_text 是同样的取舍。
-#
-# 本地补充一条：``redact_sensitive`` 实测**不认裸 ``ghp_`` 串**（只在
-# ``GITHUB_TOKEN=...`` 这类 ENV 行/键值形式里遮蔽）。不改全局
-# security_utils：那会误伤文档里的 ``ghp_...`` 占位串与既有审计口径，
-# 属于把本轮修复扩散成全局行为变更。这里显式登记，只覆盖 lifecycle
-# 出站的 payload / reason。
-# A′（XIV 自查）两条：
-# 1) 初版加了 ``\b`` 前边界，实测 ``xghp_<36 chars>``（token 与其它
-#    文本粘连，这是 payload 里的常态）**匹配不到** —— ``x`` 与 ``g``
-#    都是 \w，中间没有词边界。去掉边界，按子串匹配。
-# 2) 初版 ``ghp_[A-Za-z0-9]{20,}`` 不含下划线，实测带下划线的
-#    token 形态仍漏。统一成 ``[A-Za-z0-9_]{20,}``；仍要求 20+ 字符，
-#    文档占位 ``ghp_...`` / ``ghp_REAL_SECRET_VALUE`` 不会被误伤。
-# A′（XIV 自查 #3）：无上限的 ``{20,}`` 会把 token **后面紧邻的普通
-# 文本**一并吃掉（实测 ``BLOCKED<token>END`` -> ``BLOCKED[REDACTED]``，
-# ``END`` 丢了）。classic PAT 是 ``ghp_`` + 精确 36 位字母数字，优先用
-# 精确分支；宽松分支保留给 fine-grained / 带下划线的形态，但设 80 上界
-# 并在边界里如实登记「紧邻普通文本可能被一并遮蔽」。
-_SECRET_TOKEN_RE = re.compile(
-    r"(?:ghp_[A-Za-z0-9]{36}"
-    r"|github_pat_[A-Za-z0-9_]{20,80}"
-    r"|ghp_[A-Za-z0-9_]{20,80})")
+#   - 裸 GitHub PAT → SECRET_TOKEN_RE（精确 36 位优先 + 80 上界）
+# 顺序「先清控制字符，再脱敏」。``_SECRET_TOKEN_RE`` 现在是 re-export，
+# XIV 的注释/validate 与四条 A′ 修正全部保留在 safe_text.py。
+# lifecycle / manager / nonprocess 三处共用，不产生第三套真值。
 _MAX_STR = 512            # 单个字符串值上限（码点）
 _MAX_REASON = 400
 _MAX_DEPTH = 8
@@ -177,16 +163,9 @@ _MAX_TOTAL = 65536        # 整个 payload 输出上限，防超长/深递归 Do
 
 
 def _clean_str(s: str, limit: int = _MAX_STR) -> str:
-    """单个字符串出口：剥控制字符 → 脱敏凭据 → 限长。绝不抛异常。"""
-    try:
-        out = _CL.sanitize_log_field(s, 4096)
-        out = _SU.redact_sensitive(out)
-        out = _SECRET_TOKEN_RE.sub("[REDACTED]", out)
-        if len(out) > limit:
-            out = out[:limit].rstrip() + "…"
-        return out
-    except Exception:  # noqa: BLE001 - 净化自身绝不让事件通道再抛
-        return ""
+    """单个字符串出口（XV 起委托共享真值，``_clean_str`` 名字保留以
+    兼容 XIV 既有回归与 validate 自检）。绝不抛异常。"""
+    return _safe_hook_text(s, limit)
 
 
 def _walk(value: Any, depth: int, budget: list, changed: list) -> Any:

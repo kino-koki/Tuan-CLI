@@ -3044,3 +3044,127 @@ lifecycle.validate() / exit_semantics.validate() / py_compile       全干净
 - 标语引擎 / 净化层 ``_clean.py`` / ``mapping.py`` / ``tui.py`` /
   ``runtime_slogans.py`` 逐字节未改；用户贴回的「转圈标语 / 摸鱼」视频
   本轮未碰。
+
+
+## B3 续轮 XV｜三类非进程 hook 的等价故障闭合表
+
+基线 parent ``9730d4cc``。用户约束仍是「**确保深度的真实复现，而非仅仅广度；
+开始做到百分百，同时融入 Codex 有但是 Tuan 还没有的**」。XIII 接了 13 个
+生产触发点、XIV 修了 lifecycle 出站通道的失败闭合与脱敏，并在 catalog
+note 里明确留下一条硬理由：**url / prompt / subagent 三类 hook 的故障闭合
+语义与 command 的 exit-code 语义不同（无进程 rc，只有 timeout / HTTP
+error / 模型拒绝），未逐类建立等价裁决表**。本轮一点广度没扩：不新增事件、
+不新增触发点、不新增 CLI 子命令、矩阵状态字段一个不动，只把这条做实。
+
+### 先实测复现（真起 HTTP server / 真起 command 子进程 / 真模型调用）
+
+| 编号 | 修复前实测 | 判定 |
+|---|---|---|
+| **N1** | HTTP 200 空 body / 非 JSON body → ``block=False``、``failures()=[]``、**审计 0 条**；对照 command hook 空 stdout 至少有 ``exit_code_semantics`` | 「成功但无裁决」零留痕，装了拦截器运维看不到它跑过 |
+| **N2** | 配置 ``timeout=0.5s``，慢速 drip server 每 0.3s 发 1 字节，实测 ``_exec_http`` 耗时 **2.71s**（5.4 倍）且 ``block=False``、``failures=[]`` | ``urlopen(timeout=)`` 是 socket 级超时不是墙钟；command 有看门狗强杀进程树，三类没有 |
+| **N3** | 模型异常 ``api_key=ghp_... OSC8 RLO`` 原样进 ``HookDecision.reason``（再经 ``ToolResult.content`` 回显）；HTTP 成功 reason 里的 token / RLO 同样原样采纳 | XIV 净化只覆盖 lifecycle 链路 |
+| **N4** | ``urlopen`` 默认跟随 302，POST 改 GET 静默发到**另一主机**（第二 server 收到 501） | URL 白名单 / SSRF 边界缺口 |
+| **N6** | prompt 返回 500000 字符，``reason`` 原样 500000 字符进决策对象 | 三类 hook stdout 无界 |
+| **N7** | ``on_failure=allow`` + HTTP 500 放行、留 ``failure_allowed`` | **判定不该修**，显式逃生口，加回归锁住 |
+
+### 修复
+
+- 新增 ``hooks/nonprocess.py``：三类 hook 的**唯一权威执行入口**。
+  - HTTP 用 ``read1``（单次底层 recv，不等读满）+ 墙钟 deadline +
+    ``resp.close()``，是真停；修复后同样慢速 drip **0.60s**、``timeout``
+    failure、fail-closed 阻断。
+  - prompt / subagent 走 daemon 线程 + ``join(timeout)``：Python **无法强杀**
+    正在 ``model.chat`` / ``agent.run`` 的线程，超时后主线程立即返回失败
+    裁决、后台结果丢弃，``detached=True`` 如实登记，不宣称强杀。
+  - 自定义 ``_NoRedirect`` 拒绝全部 3xx；URL scheme 只允许 http/https。
+    stdout 限 4096 码点、截断标 ``truncated``。
+  - 失败 detail 与 stdout 统一过 ``core.safe_text.safe_hook_text``。
+- 新增 ``core/safe_text.py``：把 XIV 的 ``lifecycle._clean_str`` 抽成
+  **共享函数对象**，lifecycle / manager / nonprocess 三处调同一个
+  ``safe_hook_text``（``LC._safe_hook_text is ST.safe_hook_text`` 有回归
+  断言），不产生第二套净化真值。manager 的 ``_parse_decision`` 也统一
+  在出口净化 ``reason``（command hook stdout 此前也没净化，一并覆盖）。
+- ``classify_channel()`` 是「等价故障闭合表」的全部：通道故障映射成
+  **等价 rc=1**，然后**复用** ``exit_semantics.classify()`` 这一份既有
+  真值表 —— 不新建第二套逐事件策略。33 个官方事件在 command 与三类
+  hook 上同裁决，``on_failure`` 三策略逐值不变。
+- ``manager._exit_gate`` 新增 channel 分支；把 ``v.block`` **降级**交给
+  既有 ``failed_run`` 分支（唯一例外 ``any_nonzero_fails`` 强制阻断），
+  以保留真实 ``failure_kind`` 与 ``policy=allow`` 逃生口；``exit_ignored``
+  事件通过 ``skip`` 表达「故障不阻断」。command 路径逐字节零改动。
+  删掉三份重复执行器，源码扫描回归确认无残留调用点。
+
+### 矩阵一个状态没动
+
+``ahead 10 / aligned 46 / partial 9 / gap 26 / not_applicable 8``、
+``fully_superior=false``、``b_waves_done=["B1"]``。catalog 两条 B3 note
+补 XV 实测段，并如实写明「三类 hook 等价故障闭合表」这条硬理由**已消除**，
+但 ``ToolPipeline`` 无生产调用链、CC 事件面持续演进、5 事件本地不适用、
+Elicitation 刻意不等价仍在 —— ``status`` 字段逐字节未改，不靠改口径凑数。
+
+**深度推进**：``gap_probe_audit()`` 4 → **5 个**模块级探针
+（30 + 18 + 27 + 29 + 52 = **156 条断言**，5/5 全绿）。新增
+``hook_nonprocess_equivalence`` 纯 stdlib 真跑：真 HTTP server 五种模式
++ 真 command 子进程 + 真模型异常 + 逐事件逐策略等价核销。
+``module_depth.probe_verified`` 仍如实 **0/65**，两张证据表分开。
+
+### A′ 自查抓回（8 项，全部有可执行证据）
+
+1. 初版把 ``v.block=True`` 直接交回调用方 → 三条链路走
+   ``exit_code_blocked``，``failure_kind`` 变成 ``exit_1``，
+   ``on_failure=allow`` 被绕过，**2 条既有回归变红**。改成降级交给
+   ``failed_run``。
+2. ``safe_hook_text`` 截断用 ``out[:cap] + "…"``，实际长度 cap+1
+   （N6 实测 4097 > 4096），违反「有界」承诺 → 改 ``cap-1``。
+3. prompt / subagent 路径只截断、不设 ``truncated`` → 运维看不到输出
+   被截过，改与 HTTP 路径同一标记。
+4. ``ST.validate()`` 自检 probe 把 token 紧贴 ``END``，撞上 XIV 已登记的
+   「宽松分支过度遮蔽」已知边界 → 改用空格分隔验证保真，并把该边界
+   写成显式回归 `test_known_adjacent_overredaction_is_not_hidden`，
+   不粉饰成「零过度遮蔽」。
+5. 测试 fixture 用 ``type("E", (), {"mode": lambda m: ...})``，
+   lambda 被当实例方法绑定（self 占第一位）→ 10 条用例 TypeError，
+   改 ``SimpleNamespace``。
+6. catalog note 追加时第二个锚点写长了，与实际文本对不上 → 改短锚点。
+7. 删掉三份执行器后，6 条既有源码扫描断言（create_agent 调用点集合 /
+   close_agent_session 接线集合 / gap 探针数量 3→5 / 四类 hook 分派）
+   集体变红 —— **全部同步到新契约且改强**（新增 try/finally、单独核销
+   两个新探针、单一执行器与单一净化真值断言），不是放宽。
+8. ``nonprocess.py`` 新增了一个真实 ``create_agent`` 调用点，
+   b3x 的「9 个调用方」集合需同步：``manager.py`` → ``nonprocess.py``，
+   并额外要求新调用点在 ``finally`` 里 ``close_agent_session(sub)``。
+
+### 验证（分批报告，批次间有重叠，不累加）
+
+```
+XV 新回归（真 HTTP server / 真墙钟 / 真模型 / 真子进程）        34 passed
+TestHookFailClosed + XV 定点复验                                55 passed
+宽回归批次 A（XII/XIII/XIV/XV + B3 各续轮 + hooks + parity
+             + codexkit + doc_numbers）                        482 passed
+宽回归批次 B（B2 各轮 + B3 续轮 VI-X + XIV + XV）              489 passed
+纯 stdlib xi_verify.py（有 rich / 无 rich 两种环境各一次）      38 / 38 全绿
+gap_probe_audit() 5/5（156 条断言）
+verify_doc_numbers.py / matrix.validate() / evidence.verify_evidence()
+ST/LC/NP/XS.validate() / 20 文件 py_compile                    全干净
+```
+
+### 如实边界
+
+- **行为变更**：超长 hook stdout（>4096 码点）截断后 JSON 不完整，
+  按「无裁决噪声」留痕放行，不再被采纳为有效决策；三类 hook 的失败
+  现在有结构化 ``channel_*`` 审计；302 一律拒绝；prompt/subagent 超时
+  后台线程残留（``detached=True``），不是强杀。
+- 等价表把通道故障映射成 rc=1 而非 rc=2，**不擅自放宽或收紧**：逐事件
+  裁决完全交给既有 ``classify()``，真跑对照 command rc=1 与 url 500 同结果。
+- 净化是**刻意更严**的边界，与 CC 不等价；XIV 已登记的「token 紧邻普通
+  文本会过度遮蔽」边界仍在，宁可多抹不漏。
+- **26 个 gap 一个未消**：``os_sandbox`` 仍 gap、
+  ``deny_network_by_default`` 仍 ``false`` 未翻、``credential_masking`` 仍
+  partial；A 线 ``fully_identical=False``（92 项无模块级探针）；
+  ``StopFailure`` 仍未接、5 事件本地无对应生命周期、``ToolPipeline``
+  无生产调用链；第三方自适应红队未做、不是真机多平台验证。
+- 「做到 100%」仍**未达成**：B 线宽口径约 73.7%、完全对齐约 56.6%；
+  A 线宽口径 100% 但深度门槛仍 False。
+- 标语引擎 / ``ui/slogans/_clean.py`` / ``mapping.py`` / ``tui.py`` /
+  ``runtime_slogans.py`` 逐字节未改；用户贴回的「转圈标语 / 摸鱼」视频
+  本轮未碰。

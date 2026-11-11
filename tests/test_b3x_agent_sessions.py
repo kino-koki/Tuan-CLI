@@ -242,7 +242,7 @@ class TestHostScopeCorrection:
             "tuan_cli/stream_json/headless.py",
             "tuan_cli/tools/subagent_tool.py",
             "tuan_cli/tools/workflow_tool.py",
-            "tuan_cli/hooks/manager.py",
+            "tuan_cli/hooks/nonprocess.py",
             "tuan_cli/runtime/acp/bridge.py",
             "tuan_cli/core/_sandbox_entry.py",
             "tuan_cli/core/background_worker.py",
@@ -257,11 +257,19 @@ class TestHostScopeCorrection:
         # app.py 是定义处，不算调用方
         found.discard("tuan_cli/app.py")
         assert expected <= found, expected - found
+        # XV：非进程 subagent hook 是新增的真实调用点，必须在 finally
+        # 里显式注销会话槽（否则短命子 agent 占满 64 槽位）。
+        np_src = Path("tuan_cli/hooks/nonprocess.py").read_text(
+            encoding="utf-8")
+        i = np_src.index("create_agent(")
+        assert "try:" in np_src[max(0, i - 400):i]
+        assert "finally:" in np_src[i:i + 900]
+        assert "close_agent_session(sub)" in np_src[i:i + 900]
 
     def test_five_wired_sites_all_use_finally(self):
         wired = {
             "tuan_cli/cli/cmd_chat.py",
-            "tuan_cli/hooks/manager.py",
+            "tuan_cli/hooks/nonprocess.py",
             "tuan_cli/tools/subagent_tool.py",
             "tuan_cli/tools/workflow_tool.py",
             "tuan_cli/stream_json/headless.py",
@@ -278,7 +286,7 @@ class TestHostScopeCorrection:
                 if "close_agent_session(" in c:
                     hits.add(str(p))
         assert hits == wired, hits ^ wired
-        for rel in ("tuan_cli/hooks/manager.py",
+        for rel in ("tuan_cli/hooks/nonprocess.py",
                     "tuan_cli/tools/subagent_tool.py",
                     "tuan_cli/tools/workflow_tool.py"):
             s = Path(rel).read_text(encoding="utf-8")
