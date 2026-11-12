@@ -5,7 +5,7 @@
 ``--gaps`` 列出待对齐模块队列。
 
 上游源码规模、165 个模块、键位表与布局常量均来自本地完整解压核查，
-见 ``tuan_cli/tui/parity/upstream_spec.py`` 与 ``TUI_PARITY.md``。
+见 ``tuan_cli/tui/parity/upstream_spec.py``。
 """
 from __future__ import annotations
 
@@ -83,8 +83,8 @@ def cmd_tui_parity(args: Any) -> int:
         for g, mod in gaps:
             print(f"    - {g:22s} {mod}")
         print("\n  下一轮优先: streaming_async + tools_exec + "
-              "history_transcript 组 (见 TUI_PARITY.md §5)")
-    print("\n  归属: NOTICE 第 9–13 条 · THIRD_PARTY_LICENSES/ · TUI_PARITY.md")
+              "history_transcript 组")
+    print("\n  归属: NOTICE 第 9–13 条 · THIRD_PARTY_LICENSES/")
     return 1 if problems else 0
 
 
