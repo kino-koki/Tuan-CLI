@@ -49,6 +49,11 @@ def sanitize_env(
 
 REDACT_TAG = "[REDACTED]"
 
+# 占位符前缀 (单一真值, sandbox/egress.py 从此处导入为 SENTINEL_PREFIX)。
+# 脱敏后的环境变量值用 `<prefix><sha256指纹>` 替换, 真实值只在 CredentialBroker
+# 内存中, 绝不出现在子进程 env / 审计日志 / 可序列化字段。
+MASKED_PLACEHOLDER_PREFIX = "TUAN_MASKED_"
+
 # 配置/结构化字段名: 命中即视为敏感, dump/get 时遮蔽
 _SENSITIVE_KEY_MARKERS: tuple = (
     "api_key", "apikey", "api_secret", "secret", "token", "password",
@@ -205,6 +210,28 @@ def safe_error_text(obj: Any, limit: Any = None) -> str:
         return text
     except Exception:  # noqa: BLE001 - 展示原语绝不抛
         return "object"
+
+
+def safe_exception_text(exc: BaseException, limit: Any = None) -> str:
+    """把异常对象安全展示。
+
+    与 ``safe_error_text`` 的区别: 输入是异常对象 (可能有 ``.message`` /
+    ``.args``), 我们只取 ``str(exc)`` 后走同一净化管线, 并用 try 包住防
+    损坏对象掀翻错误路径。
+    """
+    try:
+        return safe_error_text(str(exc), limit)
+    except Exception:  # noqa: BLE001
+        return type(exc).__name__
+
+
+def is_masked_placeholder(value: Any) -> bool:
+    """判断字符串是否是 MASKED_PLACEHOLDER_PREFIX 占位符。
+
+    用于拒绝把占位符当真实值写回 / 发送: egress 层把占位符 resolve 成
+    真实值后才出网, 直接出现的占位符意味着 broker 丢失或 resolve 漏调。
+    """
+    return isinstance(value, str) and value.startswith(MASKED_PLACEHOLDER_PREFIX)
 
 
 def redact_nested(data: Any) -> Any:
