@@ -24,6 +24,7 @@ def _parse(*argv):
 DELETED = [
     "arch", "ext", "others", "code-edit", "impact",
     "open", "replay", "trajectory", "compact", "bench", "codedev",
+    "sessions",  # v0.4.0: 合并入 `session` (list/delete)
 ]
 # 注: "mode" 曾于 2026-09-27 一并删除, 2026-10-23 起以五模式语义重新加回
 # (tuan_cli.cli.cmd_mode: list / current / show / switch), 故移入下方保留列表。

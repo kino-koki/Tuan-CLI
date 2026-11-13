@@ -758,15 +758,10 @@ def register_subcommands(sub: Any) -> None:
     )
     p.set_defaults(func="cmd_session")
 
-    # ---- sessions (复数: 精简列表 / 删除, C-4.4/C-4.5) ----
-    p = sub.add_parser("sessions", help="会话列表与删除 (最近 20 条 / rm)")
-    sesub2 = p.add_subparsers(dest="sessions_cmd")
-    sesub2.add_parser("list", help="列出最近 20 条会话 (默认子命令)")
-    rm = sesub2.add_parser("rm", help="删除指定会话")
-    rm.add_argument("target", nargs="?", help="会话ID / 编号 / latest")
-    rm.add_argument("--all", action="store_true", help="清空全部会话")
-    rm.add_argument("--yes", "-y", action="store_true", help="跳过确认")
-    p.set_defaults(func="cmd_sessions", sessions_cmd="list")
+    # NOTE: `sessions` (复数) 已于 v0.4.0 合并入 `session`:
+    #   sessions list → session list
+    #   sessions rm   → session delete
+    # 顶层不再注册 `sessions`，cmd_sessions 函数保留供 session_workspace 内部使用。
 
     p = sub.add_parser("usercmd", help="用户自定义斜杠命令 (列出)")
     ussub = p.add_subparsers(dest="usercmd_cmd")
