@@ -30,6 +30,7 @@ from .egress_allowlist import (
     NetworkClaim, claim_from_args, claim_from_verdict, evaluate_claim,
     claim_to_verdict_extra, profile_domains, normalize_domain,
 )
+from .egress_plan import plan_egress, MODE_UNPROVABLE, MODE_DEGRADED
 
 log = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ class SandboxManager:
         # B2: 出网边界守卫 (从 sandbox.resource 策略读 egress_* 开关)
         self._egress = EgressGuard.from_policy(self.policy)
         # B2: 最近一次出网裁决 (审计可查; 只记名字与计数, 不记值)
-        self.last_egress: Dict[str, Any] = {
+        self._last_egress: Dict[str, Any] = {
             "allowed": True, "reason": "",
             "masked_count": 0, "masked_names": [], "dropped_count": 0,
             "invalid_base": False, "block_local_applied": False,
@@ -146,8 +147,18 @@ class SandboxManager:
         }
         self.last_proxy_audit: List[Dict[str, Any]] = []
         # B2: 无人值守策略 (denyInsteadOfPrompting)
-        self.unattended_policy: UnattendedPolicy = UnattendedPolicy.from_mapping(self.policy)
+        self._unattended_policy: UnattendedPolicy = UnattendedPolicy.from_mapping(self.policy)
         self._unattended_log: List[Dict[str, Any]] = []
+
+    @property
+    def last_egress(self) -> Dict[str, Any]:
+        """只读快照 (返回引用; 调用方应只读, 不持有长期缓存)。"""
+        return self._last_egress
+
+    # B2: 无人值守策略 (denyInsteadOfPrompting)
+    @property
+    def unattended_policy(self) -> UnattendedPolicy:
+        return self._unattended_policy
 
     # ------------------------------------------------------------ 工具参数归一化
     @staticmethod
@@ -396,55 +407,41 @@ class SandboxManager:
         不重复判定。通过后用 broker 生成子进程 env, 敏感变量替换为 sentinel。
         """
         backend = verdict.backend or pick_backend("auto")[0]
-        # B2: local 后端 + 禁网裁决 → 明确拒绝, 绝不裸跑
-        decision = self._egress.prepare(verdict, backend, os.environ)
-
-        # B2: 出网代理 + 声明一致性 —— strict claim + egress_proxy_enabled → 注入代理
-        claim = claim_from_verdict(verdict)
-        proxy_enabled = bool(self.policy.get("resource", {}).get("egress_proxy_enabled", False))
-        detected = _extract_domains(command)
+        # B2: 统一出网/凭据计划 (plan_egress 是所有执行分支的单一出口)
         try:
-            egress_decision = evaluate_claim(claim, detected)
+            plan = plan_egress(verdict, backend, self.policy, dict(os.environ))
         except Exception as exc:  # noqa: BLE001
             from ..core.security_utils import safe_error_text
-            decision.reason = f"egress_allowlist fail-closed: {safe_error_text(str(exc))}"
-            decision.allowed = False
-            self.last_egress = decision.to_audit_dict()
-            return SandboxExecResult(returncode=-1, backend=backend, enforced=False,
-                                     error=decision.reason)
-        decision.claim_consistent = egress_decision.allowed
-        decision.proxy_audit = []  # 真实代理审计由代理线程写入 last_proxy_audit
+            return SandboxExecResult(
+                returncode=-1, backend=backend, enforced=False,
+                terminal_refusal=True,
+                error=f"egress plan fail-closed: {safe_error_text(str(exc))}")
+        self._last_egress = plan.to_audit_dict()
 
-        if proxy_enabled and claim.strict and claim.required_domains and decision.allowed:
+        if not plan.allowed:
+            # 终态安全拒绝: 不裸跑, 不进入 diff/确认
+            return SandboxExecResult(
+                returncode=-1, backend=backend, enforced=False,
+                terminal_refusal=True, error=plan.reason)
+
+        env = dict(plan.env)
+        if plan.wants_proxy:
             from .egress_proxy import EgressProxy
-            ep = EgressProxy(claim)
+            ep = EgressProxy(plan.claim)
             ep.start()  # 启动本地回环代理线程 (daemon)
-            proxy_env = ep.env_overrides  # @property
-            decision.env.update(proxy_env)
+            env.update(ep.env_overrides)  # @property
             self._last_proxy = ep  # 供后续 stop / audit
             try:
                 self.last_proxy_audit = ep.audit()
             except Exception:
                 self.last_proxy_audit = []
-            decision.proxy_enabled = True
-            decision.enforcement = "network-proxy"
-        else:
-            decision.proxy_enabled = False
-            decision.enforcement = "text-layer-only"
-
-        self.last_egress = decision.to_audit_dict()
-        if not decision.allowed:
-            return SandboxExecResult(
-                returncode=-1, backend=backend, enforced=False,
-                error=decision.reason)
 
         if backend in ("jobobject",) and os.name == "nt":
             return self._run_syscall(command, timeout, not verdict.network, cwd, backend,
-                                     env=decision.env)
-        if backend == "landlock":
-            return self._run_provider("landlock", command, cwd, timeout, not verdict.network, verdict)
-        if backend == "docker":
-            return self._run_provider("docker", command, cwd, timeout, not verdict.network, verdict)
+                                     env=env)
+        if backend in ("landlock", "docker"):
+            return self._run_provider(backend, command, cwd, timeout, not verdict.network, verdict,
+                                      env=env)
         # local / 其它: 裸跑(非 OS 级隔离), 交由上层 enforce 决定是否接受
         try:
             from ..core.proc import run_with_tree_kill
@@ -452,7 +449,7 @@ class SandboxManager:
                 command, shell=True, cwd=cwd,
                 capture_output=True, text=True, timeout=timeout or 60.0,
                 errors="replace",
-                env=decision.env,
+                env=env,
             )
             return SandboxExecResult(stdout=proc.stdout or "", stderr=proc.stderr or "",
                                      returncode=proc.returncode or 0,

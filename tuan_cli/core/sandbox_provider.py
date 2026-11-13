@@ -193,6 +193,7 @@ class LandlockSandbox(SandboxProvider):
             env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         profile = profile or SandboxProfile()
         sandbox_env = self._sanitize_env(env)
+        sandbox_env["TUAN_WORKSPACE"] = workspace
 
         bwrap_cmd = self._build_bwrap_command(command, workspace, profile)
         if bwrap_cmd is None:
@@ -306,6 +307,7 @@ class SeatbeltSandbox(SandboxProvider):
             env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         profile = profile or SandboxProfile()
         sandbox_env = self._sanitize_env(env)
+        sandbox_env["TUAN_WORKSPACE"] = workspace
 
         profile_content = self._generate_seatbelt_profile(workspace, profile)
 
@@ -418,6 +420,7 @@ class WindowsTokenAclSandbox(SandboxProvider):
             env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         profile = profile or SandboxProfile()
         sandbox_env = self._sanitize_env(env)
+        sandbox_env["TUAN_WORKSPACE"] = workspace
 
         if sys.platform != "win32":
             return SandboxResult(

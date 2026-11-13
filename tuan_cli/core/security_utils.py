@@ -34,13 +34,19 @@ def sanitize_env(
     - base: 源环境 (None = os.environ)
     - extra: 额外注入的非敏感变量 (不会被抹除)
 
+    B2: 已经是 ``TUAN_MASKED_*`` sentinel 的值**保留原样** —— 它们本身已经
+    是安全占位符, 再清空等于把 broker 的指纹也丢掉。
+
     返回脱敏后的环境变量字典。
     """
     env = dict(base if base is not None else os.environ)
     if extra:
         env.update(extra)
     return {
-        k: ("" if any(h in k.upper() for h in SECRET_HINTS) else v)
+        k: ("" if (any(h in k.upper() for h in SECRET_HINTS)
+                    and not (isinstance(v, str)
+                             and v.startswith(MASKED_PLACEHOLDER_PREFIX)))
+            else v)
         for k, v in env.items()
     }
 
