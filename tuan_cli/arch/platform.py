@@ -19,7 +19,7 @@ import platform
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 IS_WINDOWS = os.name == "nt" or sys.platform.startswith("win")
 IS_LINUX = sys.platform.startswith("linux")
@@ -257,6 +257,7 @@ def _windows_job_object_sandbox(
     active_process_limit: int = 16,
     kill_timeout_seconds: float = 5.0,
     cwd: Optional[str] = None,
+    env: Optional[Dict[str, str]] = None,
 ) -> SyscallResult:
     """Windows: 用 Job Object 限制子进程的 CPU/内存/活跃进程数。
 
@@ -285,6 +286,7 @@ def _windows_job_object_sandbox(
         proc = subprocess.Popen(  # noqa: S603
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, creationflags=0, cwd=cwd,
+            env=env,
         )
         # fail-closed: 挂不上 Job = 拿不到任何资源约束与进程树归属, 绝不放行。
         if not kernel32.AssignProcessToJobObject(job, int(proc._handle)):  # type: ignore[attr-defined]
@@ -331,6 +333,7 @@ def _linux_seccomp_sandbox(
     cmd: List[str],
     timeout: float,
     allowlist: Optional[List[str]] = None,
+    env: Optional[Dict[str, str]] = None,
 ) -> SyscallResult:
     """Linux: 在 fork 出的子进程里安装 seccomp 白名单过滤器, 再 exec 目标命令。
 
@@ -370,7 +373,7 @@ def _linux_seccomp_sandbox(
         except Exception:
             os._exit(127)  # 过滤器安装失败, 直接失败 (fail-closed)
         try:
-            os.execvp(cmd[0], cmd)
+            os.execvpe(cmd[0], cmd, env or os.environ)
         except Exception:
             os._exit(127)
     else:
@@ -428,6 +431,7 @@ def run_syscall_sandboxed(
     allowlist: Optional[List[str]] = None,
     block_network: bool = False,
     cwd: Optional[str] = None,
+    env: Optional[Dict[str, str]] = None,
 ) -> SyscallResult:
     """跨平台 syscall 级沙箱执行。
 
@@ -449,7 +453,7 @@ def run_syscall_sandboxed(
         try:
             return _linux_seccomp_sandbox(
                 ["unshare", "-n", "--"] + cmd, timeout=timeout,
-                allowlist=filtered_allowlist,
+                allowlist=filtered_allowlist, env=env,
             )
         except Exception:
             # unshare 失败 -> 降级但仍然从白名单移除网络 syscall (兜底)
@@ -462,6 +466,7 @@ def run_syscall_sandboxed(
                 cpu_rate_pct=cpu_rate_pct,
                 active_process_limit=active_process_limit,
                 kill_timeout_seconds=kill_timeout_seconds, cwd=cwd,
+                env=env,
             )
         except Exception as exc:
             # E3: Job Object 不可用 -> 普通子进程。必须显式标记 enforced=False,
@@ -472,7 +477,7 @@ def run_syscall_sandboxed(
             try:
                 proc = run_with_tree_kill(
                     cmd, capture_output=True, text=True,
-                    timeout=timeout, cwd=cwd,
+                    timeout=timeout, cwd=cwd, env=env,
                 )
                 return SyscallResult(
                     returncode=proc.returncode, stdout=proc.stdout or "",
@@ -489,7 +494,7 @@ def run_syscall_sandboxed(
     if IS_LINUX:
         try:
             return _linux_seccomp_sandbox(
-                cmd, timeout=timeout, allowlist=filtered_allowlist,
+                cmd, timeout=timeout, allowlist=filtered_allowlist, env=env,
             )
         except Exception:
             # 降级: 普通子进程 + 资源限制 (preexec 建新会话, 超时可整树清理)

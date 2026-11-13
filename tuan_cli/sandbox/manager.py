@@ -22,6 +22,7 @@ from .verdict import Action, Payload, Verdict, SEV
 from .filters import SandboxFilterChain, build_chain
 from .backends import pick_backend
 from .egress import EgressGuard, enforce_local_egress
+from .egress_proxy import EgressProxy
 from .unattended import (
     UnattendedPolicy, resolve_confirm, REASON_TEMPLATE,
     SCOPE_ALL, SCOPE_NO_CHANNEL,
@@ -426,7 +427,6 @@ class SandboxManager:
 
         env = dict(plan.env)
         if plan.wants_proxy:
-            from .egress_proxy import EgressProxy
             ep = EgressProxy(plan.claim)
             ep.start()  # 启动本地回环代理线程 (daemon)
             env.update(ep.env_overrides)  # @property
@@ -548,6 +548,7 @@ class SandboxManager:
                 cpu_rate_pct=int(resource.get("cpu_rate_pct", 50) or 50),
                 active_process_limit=int(resource.get("active_process_limit", 16) or 16),
                 kill_timeout_seconds=float(resource.get("kill_timeout_seconds", 5.0) or 5.0),
+                env=env,
             )
             note = res.degraded_reason or res.error or ("blocked" if res.blocked else "")
             return SandboxExecResult(stdout=res.stdout or "", stderr=res.stderr or "",

@@ -174,6 +174,18 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
             if isinstance(sb_net, dict) and sb_net.get("strict") is True:
                 warnings.append(
                     "行为变更: sandbox.network.strict=True 时未命中白名单的命令将被拒")
+            # B2: 强后端 strict claim 失败策略枚举
+            _STRONG_POLICIES = ("deny", "metadata_only")
+            scp = res.get("strict_claim_strong_backend")
+            if scp is not None:
+                if not isinstance(scp, str) or scp not in _STRONG_POLICIES:
+                    errors.append(
+                        f"非法枚举: sandbox.resource.strict_claim_strong_backend={scp!r} "
+                        f"不在 {_STRONG_POLICIES} 中")
+                elif scp == "metadata_only":
+                    warnings.append(
+                        "安全降级: sandbox.resource.strict_claim_strong_backend="
+                        "metadata_only 时强后端下的逐命令域名声明仅作元数据, 不真正拦截")
 
     _validate_rules(errors, warnings, get("permissions.rules"))
     _str_list(errors, "permissions.shell.deny_patterns", get("permissions.shell.deny_patterns"))
