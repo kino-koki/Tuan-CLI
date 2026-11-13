@@ -152,12 +152,37 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
                 errors.append(
                     f"非法枚举: sandbox.resource.isolate_copy_threshold={thr!r} "
                     f"不在 {_THRESHOLDS} 中")
+            # B2: 出网边界开关
+            _bool_field(errors, "sandbox.resource.egress_credential_masking",
+                        res.get("egress_credential_masking"),
+                        dangerous_when_false="子进程可继承父进程敏感环境变量")
+            _bool_field(errors, "sandbox.resource.egress_block_local_when_denied",
+                        res.get("egress_block_local_when_denied"),
+                        dangerous_when_false="local 后端禁网裁决被显式放行 (安全降级)")
 
     _validate_rules(errors, warnings, get("permissions.rules"))
     _str_list(errors, "permissions.shell.deny_patterns", get("permissions.shell.deny_patterns"))
     _str_list(errors, "permissions.network.allow_domains",
               get("permissions.network.allow_domains"))
     _str_list(errors, "mode.yolo_require_confirm", get("mode.yolo_require_confirm"))
+
+    # B2: denyInsteadOfPrompting — 无人值守时拒绝并继续 turn
+    # 严格类型：非 bool 一律报错，未知 scope 报非法枚举。
+    _VALID_SCOPES = ("no_confirm_channel", "all_confirmations")
+    dip = get("permissions.denyInsteadOfPrompting")
+    if dip is not None:
+        if not isinstance(dip, bool):
+            errors.append(f"类型错误: permissions.denyInsteadOfPrompting 应为 bool, 实际为 {type(dip).__name__}")
+        elif dip is True:
+            warnings.append(
+                "行为变更: permissions.denyInsteadOfPrompting=True 时无人值守会拒绝需确认的调用"
+                "并继续 turn (不再挂起等待)")
+    scope = get("permissions.denyInsteadOfPromptingScope")
+    if scope is not None:
+        if not isinstance(scope, str) or scope not in _VALID_SCOPES:
+            errors.append(
+                f"非法枚举: permissions.denyInsteadOfPromptingScope={scope!r} "
+                f"不在 {_VALID_SCOPES} 中")
 
     net = get("security.network")
     if net is not None and not isinstance(net, dict):

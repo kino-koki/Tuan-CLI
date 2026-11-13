@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
+from ..sandbox.worktree_boundary import assert_worktree_target, sanitize_git_env
+
 
 # ---- OP-1: 子代理 ephemeral worktree 常量 ----------------------------------
 # ephemeral slug 前缀: 精确圈定可自动清理的子代理 worktree, 绝不碰用户命名。
@@ -213,6 +215,11 @@ class WorktreeLayer:
         target = self._wt_path(name)
         if target.exists():
             raise WorktreeError(f"worktree 已存在: {target}")
+        # B2: worktree 边界校验 (target 必须在 workspace 内, 防止 symlink 逃逸)
+        try:
+            assert_worktree_target(self.workspace, target)
+        except (ValueError, TypeError) as e:
+            raise WorktreeError(f"worktree 边界校验失败: {e}")
         self.dir.mkdir(parents=True, exist_ok=True)
         # 新分支 <name> 挂在当前 HEAD 上
         cmd = ["worktree", "add", "-b", name, str(target)]
@@ -400,7 +407,10 @@ class WorktreeLayer:
         self, args: List[str], check: bool = True,
         cwd: Optional[str | Path] = None, timeout: int = 30,
     ) -> "subprocess.CompletedProcess":
-        env = {**os.environ, **_GIT_NO_PROMPT_ENV}
+        # B2: 过滤 GIT_WORK_TREE / GIT_DIR 等环境变量，防止 git 元数据被重定向到 workspace 外。
+        clean_env, stripped = sanitize_git_env(os.environ)
+        self.last_git_stripped_env = stripped  # 供审计查询
+        env = {**clean_env, **_GIT_NO_PROMPT_ENV}
         r = subprocess.run(
             ["git"] + args,
             cwd=str(cwd or self.workspace),

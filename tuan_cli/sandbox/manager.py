@@ -21,6 +21,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from .verdict import Action, Payload, Verdict, SEV
 from .filters import SandboxFilterChain, build_chain
 from .backends import pick_backend
+from .egress import EgressGuard, enforce_local_egress
+from .unattended import (
+    UnattendedPolicy, resolve_confirm, REASON_TEMPLATE,
+    SCOPE_ALL, SCOPE_NO_CHANNEL,
+)
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +100,17 @@ class SandboxManager:
         self._disabled = not self.policy.get("enabled", True)
         self._auditor = auditor       # SecurityAuditor (可选): 每条裁决直写审计
         self._bus = bus               # SecurityEventBus (可选): 沙箱事件汇入统一审计流
+        # B2: 出网边界守卫 (从 sandbox.resource 策略读 egress_* 开关)
+        self._egress = EgressGuard.from_policy(self.policy)
+        # B2: 最近一次出网裁决 (审计可查; 只记名字与计数, 不记值)
+        self.last_egress: Dict[str, Any] = {
+            "allowed": True, "reason": "",
+            "masked_count": 0, "masked_names": [], "dropped_count": 0,
+            "invalid_base": False, "block_local_applied": False,
+        }
+        # B2: 无人值守策略 (denyInsteadOfPrompting)
+        self.unattended_policy: UnattendedPolicy = UnattendedPolicy.from_mapping(self.policy)
+        self._unattended_log: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------ 工具参数归一化
     @staticmethod
@@ -231,6 +247,23 @@ class SandboxManager:
             return True, verdict.describe()
         if verdict.action == Action.CONFIRM and not payload.yolo:
             confirm = getattr(ctx, "confirm", None)
+            has_confirm_channel = confirm is not None
+            # B2: denyInsteadOfPrompting — 无人值守时拒绝并继续 turn
+            if self.unattended_policy.enabled:
+                outcome = resolve_confirm(
+                    verdict,
+                    has_confirm_channel=has_confirm_channel,
+                    policy=self.unattended_policy,
+                )
+                if outcome.applied:
+                    reason = REASON_TEMPLATE.format(why=verdict.reason)
+                    self._unattended_log.append({
+                        "tool": fn_name,
+                        "denied": True,
+                        "continue_turn": outcome.continue_turn,
+                        "suppressed_prompt": True,
+                    })
+                    return True, reason
             if confirm is None:
                 return True, f"[沙箱信任滤网] 需要人工确认但没有确认通道: {verdict.reason}"
             try:
@@ -239,6 +272,10 @@ class SandboxManager:
             except Exception:
                 return True, f"[沙箱信任滤网] 确认通道异常, fail-closed: {verdict.reason}"
         return False, ""
+
+    def unattended_decisions(self) -> List[Dict[str, Any]]:
+        """返回 denyInsteadOfPrompting 决策记录 (供审计查询)。"""
+        return list(self._unattended_log)
 
     def assess_command(self, command: str, ctx: Any) -> Verdict:
         """对单条命令做完整滤网(供 run_shell 的隔离选路)。"""
@@ -281,16 +318,28 @@ class SandboxManager:
 
     def _execute_backend(self, command: str, verdict: Verdict, cwd: str,
                          timeout: float) -> SandboxExecResult:
-        """按选中后端在指定工作目录执行 (cwd 可以是真实工作区或隔离副本)。"""
+        """按选中后端在指定工作目录执行 (cwd 可以是真实工作区或隔离副本)。
+
+        B2: 执行前统一过 EgressGuard —— 禁网请求在 local 后端上明确拒绝
+        (local 没有 OS 级出网隔离能力), 强后端 (docker/landlock/...) 自带边界
+        不重复判定。通过后用 broker 生成子进程 env, 敏感变量替换为 sentinel。
+        """
         backend = verdict.backend or pick_backend("auto")[0]
-        block_net = not verdict.network
+        # B2: local 后端 + 禁网裁决 → 明确拒绝, 绝不裸跑
+        decision = self._egress.prepare(verdict, backend, os.environ)
+        self.last_egress = decision.to_audit_dict()
+        if not decision.allowed:
+            return SandboxExecResult(
+                returncode=-1, backend=backend, enforced=False,
+                error=decision.reason)
 
         if backend in ("jobobject",) and os.name == "nt":
-            return self._run_syscall(command, timeout, block_net, cwd, backend)
+            return self._run_syscall(command, timeout, not verdict.network, cwd, backend,
+                                     env=decision.env)
         if backend == "landlock":
-            return self._run_provider("landlock", command, cwd, timeout, block_net, verdict)
+            return self._run_provider("landlock", command, cwd, timeout, not verdict.network, verdict)
         if backend == "docker":
-            return self._run_provider("docker", command, cwd, timeout, block_net, verdict)
+            return self._run_provider("docker", command, cwd, timeout, not verdict.network, verdict)
         # local / 其它: 裸跑(非 OS 级隔离), 交由上层 enforce 决定是否接受
         try:
             from ..core.proc import run_with_tree_kill
@@ -298,6 +347,7 @@ class SandboxManager:
                 command, shell=True, cwd=cwd,
                 capture_output=True, text=True, timeout=timeout or 60.0,
                 errors="replace",
+                env=decision.env,
             )
             return SandboxExecResult(stdout=proc.stdout or "", stderr=proc.stderr or "",
                                      returncode=proc.returncode or 0,
@@ -366,13 +416,15 @@ class SandboxManager:
                 wd.cleanup()
 
     def _run_syscall(self, command: str, timeout: float, block_net: bool,
-                     cwd: str, backend: str) -> SandboxExecResult:
+                     cwd: str, backend: str, env: Optional[Dict[str, str]] = None) -> SandboxExecResult:
         """调用 OS 原语执行, 并如实汇报是否真的拿到了强制隔离。
 
         E3: 旧实现把 ``enforced=True`` 写死 —— 只要 platform 层没抛异常,
         即使内部已降级为普通子进程 (libseccomp 缺失 / Job Object 挂不上),
         上层也会认为"已强隔离执行"并放行。现在以 ``SyscallResult.enforced``
         为准; ``enforce_required=True`` 时降级由 HardIsolationFilter 拒绝。
+
+        B2: 传入 ``env`` (由 EgressGuard 生成, 含 sentinel 替换)。
         """
         try:
             from ..arch.platform import run_syscall_sandboxed
