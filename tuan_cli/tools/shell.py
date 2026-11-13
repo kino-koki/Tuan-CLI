@@ -774,6 +774,9 @@ def _start_background(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     """后台 `! cmd`: 异步启动并立即返回 job 摘要文本。
 
     后台命令同样经过执行前安全护栏: 命中红线/非良性命令仍被拦截 (后台不等于豁免)。
+    后台分支实测缺口 (先复现再修): 异步路径无法套用同步隔离执行器与确认流程,
+    因此 isolate 裁决一律 fail-closed 拒绝; 子进程环境经 sanitize_env 脱敏 +
+    显式补 TUAN_WORKSPACE, 不继承父进程密钥。
     """
     body = strip_bg_prefix(command).strip()
     if not body:

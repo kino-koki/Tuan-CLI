@@ -180,7 +180,10 @@ class McpToolServer:
         if self.allow_dangerous_tools:
             tools.append(_tool(
                 "run_shell",
-                "[危险] 在青小团侧执行 shell 命令 (经安全引擎判定, 硬红线仍拒绝)。"
+                "[危险] 在青小团侧执行 shell 命令 (经安全引擎 + SandboxManager 四层滤网判定)。"
+                "没有 OS 级隔离、没有逐命令域名强绑定、没有副本确认;"
+                "仅做文本红线 + 滤网裁决 + sentinel 脱敏 env 传递;"
+                "DENY / CONFIRM / isolate 裁决一律 fail-closed 拒绝。"
                 "仅在 ecosystem.mcp.allow_dangerous_tools=true 时暴露。",
                 {
                     "type": "object",
@@ -326,27 +329,59 @@ class McpToolServer:
     def _h_run_shell(self, args: Dict[str, Any]) -> Tuple[str, bool]:
         import subprocess
 
+        from ..core.security_utils import safe_error_text, safe_exception_text
         from ..ext.safety_engine import is_hard_redline, is_redline
+        from ..sandbox.egress_plan import plan_egress
+        from ..sandbox.manager import SandboxManager
+        from ..sandbox.verdict import Action
 
         command = str(args.get("command", "")).strip()
         if not command:
             return _err("command 不能为空")
+        # 第 1 层: 既有文本红线 (保留, 不因接入滤网而删除)
         try:
             hard = is_hard_redline(command)
             risk = is_redline(command)
         except Exception as exc:  # noqa: BLE001
-            return _err(f"安全判定失败 (fail-closed): {exc}")
+            return _err(f"安全判定失败 (fail-closed): {safe_exception_text(exc)}")
         if hard:
             return _err("硬红线拦截: 该命令在任何模式下都不可自动执行 (fail-closed)。")
         if risk:
             return _err("安全引擎标记高风险, MCP 通道拒绝自动执行; 请改用 tuan_run 走完整确认流程。")
+        # 第 2 层: SandboxManager 四层滤网裁决 (DENY / CONFIRM / isolate fail-closed)
+        verdict = None
+        try:
+            verdict = SandboxManager().assess_command(command, ctx=None)
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"安全裁决失败 (fail-closed): {safe_exception_text(exc)}")
+        if verdict.action == Action.DENY or verdict.isolate:
+            reason = (verdict.reason if verdict.action == Action.DENY
+                      else "要求强隔离 (isolate=True), MCP 通道无隔离执行器")
+            return _err(f"安全裁决拒绝: {reason} (fail-closed, 不执行)。")
+        if verdict.action == Action.CONFIRM:
+            return _err("安全裁决要求人工确认, MCP 通道无确认通道 (fail-closed, 不执行)。")
+        # 第 3 层: plan_egress (backend 固定 local, 不拿强后端名假装隔离)
+        try:
+            plan = plan_egress(verdict, "local", {}, dict(__import__("os").environ))
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"出网计划失败 (fail-closed): {safe_exception_text(exc)}")
+        if not plan.allowed:
+            return _err(f"出网合规拒绝: {plan.reason} (fail-closed, 不执行)。")
+        # 第 4 层: 用 plan.env (sentinel 脱敏) 显式传给子进程, 不继承父进程密钥
+        child_env = dict(plan.env)
+        if self.workspace:
+            child_env["TUAN_WORKSPACE"] = self.workspace.as_posix()
+        cwd_arg = self.workspace.as_posix() if self.workspace else None
         try:
             proc = subprocess.run(command, shell=True, capture_output=True,
-                                  text=True, timeout=60, cwd=str(self.workspace) if self.workspace else None)
+                                  text=True, timeout=60, env=child_env,
+                                  cwd=cwd_arg)
         except subprocess.TimeoutExpired:
             return _err("命令超时 (60s)")
         except OSError as exc:
-            return _err(f"执行失败: {exc}")
+            return _err(f"执行失败: {safe_exception_text(exc)}")
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"执行失败: {safe_exception_text(exc)}")
         out = (proc.stdout or "") + (("\n[stderr] " + proc.stderr) if proc.stderr else "")
         status = f"[退出码 {proc.returncode}] " if proc.returncode else ""
         return _ok(status + (out[:MAX_OUTPUT_CHARS] or "(无输出)"))
