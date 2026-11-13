@@ -26,8 +26,32 @@ from .unattended import (
     UnattendedPolicy, resolve_confirm, REASON_TEMPLATE,
     SCOPE_ALL, SCOPE_NO_CHANNEL,
 )
+from .egress_allowlist import (
+    NetworkClaim, claim_from_args, claim_from_verdict, evaluate_claim,
+    claim_to_verdict_extra, profile_domains, normalize_domain,
+)
 
 log = logging.getLogger(__name__)
+
+# 命令文本层 URL/host 启发式（不作为最终判定, 只供 egress_allowlist 做一致性断言）
+_URL_RE = _re = __import__("re").compile(r"(?i)\b(?:https?|ftp|ssh|git)://([a-z0-9.-]+)", __import__("re").I)
+_HOST_RE = _hr = __import__("re").compile(r"(?i)(?:--host\s*=?\s*|--server\s*=?\s*)([a-z0-9.-]+)")
+
+def _extract_domains(command: str) -> List[str]:
+    """从命令文本中提取域名 (只作为 egress_allowlist 一致性断言的辅助,
+    不作为最终判定; 实际强制在出网代理 CONNECT/HTTP 主机层)。"""
+    if not isinstance(command, str):
+        return []
+    out: List[str] = []
+    for m in _URL_RE.findall(command):
+        n = normalize_domain(m)
+        if n and n not in out:
+            out.append(n)
+    for m in _HOST_RE.findall(command):
+        n = normalize_domain(m)
+        if n and n not in out:
+            out.append(n)
+    return out
 
 DEFAULT_POLICY: Dict[str, Any] = {
     "enabled": True,
@@ -115,6 +139,12 @@ class SandboxManager:
             "masked_count": 0, "masked_names": [], "dropped_count": 0,
             "invalid_base": False, "block_local_applied": False,
         }
+        # B2: 逐命令域名声明裁决结果 (egress_allowlist) + 最近代理审计
+        self.last_allowlist: Dict[str, Any] = {
+            "allowed": True, "reason": "", "claim": {"source": "none"},
+            "detected": [], "unmatched": [], "undetectable": False,
+        }
+        self.last_proxy_audit: List[Dict[str, Any]] = []
         # B2: 无人值守策略 (denyInsteadOfPrompting)
         self.unattended_policy: UnattendedPolicy = UnattendedPolicy.from_mapping(self.policy)
         self._unattended_log: List[Dict[str, Any]] = []
@@ -250,6 +280,19 @@ class SandboxManager:
             },
         )
         verdict = self.assess(payload)
+        # B2: 逐命令域名声明 + 一致性断言
+        claim = claim_from_args(fn_args if isinstance(fn_args, dict) else {},
+                                fallback=self._allowed_domains(ctx))
+        verdict.extra.update(claim_to_verdict_extra(claim))
+        try:
+            detected = self._detected_domains(command or "")
+            decision = evaluate_claim(claim, detected)
+        except Exception as exc:  # noqa: BLE001
+            from ..core.security_utils import safe_error_text
+            return True, f"egress_allowlist fail-closed: {safe_error_text(str(exc))}"
+        self.last_allowlist = decision.to_audit_dict()
+        if claim.strict and not decision.allowed:
+            return True, f"egress_allowlist: {decision.reason}"
         if verdict.blocks:
             return True, verdict.describe()
         if verdict.action == Action.CONFIRM and not payload.yolo:
@@ -284,10 +327,18 @@ class SandboxManager:
         """返回 denyInsteadOfPrompting 决策记录 (供审计查询)。"""
         return list(self._unattended_log)
 
+    def _detected_domains(self, command: str) -> List[str]:
+        """供 patch.object 使用; 直接调用 _extract_domains。"""
+        return _extract_domains(command)
+
     def assess_command(self, command: str, ctx: Any) -> Verdict:
         """对单条命令做完整滤网(供 run_shell 的隔离选路)。"""
         if self._disabled:
-            return Verdict()
+            v = Verdict()
+            # B2: 即便 disabled 也要写 network_claim 到 verdict.extra
+            v.extra.update(claim_to_verdict_extra(NetworkClaim()))
+            return v
+        fallback_domains = self._allowed_domains(ctx)
         payload = Payload(
             tool_name="run_shell",
             text=[command],
@@ -299,9 +350,22 @@ class SandboxManager:
             yolo=bool(getattr(ctx, "yolo", False)),
             require_confirm=True,
             meta={"severity": getattr(ctx, "safety_severity", None),
-                  "allowed_domains": self._allowed_domains(ctx)},
+                  "allowed_domains": fallback_domains},
         )
-        return self.assess(payload)
+        verdict = self.assess(payload)
+        # B2: 逐命令域名声明 → verdict.extra (供执行层/代理读取)
+        claim = claim_from_args({"command": command}, fallback=fallback_domains)
+        verdict.extra.update(claim_to_verdict_extra(claim))
+        # 评估并写审计
+        detected = _extract_domains(command)
+        decision = evaluate_claim(claim, detected)
+        self.last_allowlist = decision.to_audit_dict()
+        if claim.strict and not decision.allowed:
+            verdict.action = Action.DENY
+            verdict.reason = f"egress_allowlist: {decision.reason}"
+            verdict.blocks = True
+            verdict.severity = "critical"
+        return verdict
 
     # ------------------------------------------------------------ 隔离执行
     def should_isolate(self, verdict: Verdict) -> bool:
@@ -334,6 +398,40 @@ class SandboxManager:
         backend = verdict.backend or pick_backend("auto")[0]
         # B2: local 后端 + 禁网裁决 → 明确拒绝, 绝不裸跑
         decision = self._egress.prepare(verdict, backend, os.environ)
+
+        # B2: 出网代理 + 声明一致性 —— strict claim + egress_proxy_enabled → 注入代理
+        claim = claim_from_verdict(verdict)
+        proxy_enabled = bool(self.policy.get("resource", {}).get("egress_proxy_enabled", False))
+        detected = _extract_domains(command)
+        try:
+            egress_decision = evaluate_claim(claim, detected)
+        except Exception as exc:  # noqa: BLE001
+            from ..core.security_utils import safe_error_text
+            decision.reason = f"egress_allowlist fail-closed: {safe_error_text(str(exc))}"
+            decision.allowed = False
+            self.last_egress = decision.to_audit_dict()
+            return SandboxExecResult(returncode=-1, backend=backend, enforced=False,
+                                     error=decision.reason)
+        decision.claim_consistent = egress_decision.allowed
+        decision.proxy_audit = []  # 真实代理审计由代理线程写入 last_proxy_audit
+
+        if proxy_enabled and claim.strict and claim.required_domains and decision.allowed:
+            from .egress_proxy import EgressProxy
+            ep = EgressProxy(claim)
+            ep.start()  # 启动本地回环代理线程 (daemon)
+            proxy_env = ep.env_overrides  # @property
+            decision.env.update(proxy_env)
+            self._last_proxy = ep  # 供后续 stop / audit
+            try:
+                self.last_proxy_audit = ep.audit()
+            except Exception:
+                self.last_proxy_audit = []
+            decision.proxy_enabled = True
+            decision.enforcement = "network-proxy"
+        else:
+            decision.proxy_enabled = False
+            decision.enforcement = "text-layer-only"
+
         self.last_egress = decision.to_audit_dict()
         if not decision.allowed:
             return SandboxExecResult(
@@ -471,8 +569,10 @@ class SandboxManager:
         try:
             from ..core.sandbox_provider import SandboxProvider, SandboxProfile
             provider = SandboxProvider.create(backend)
+            claim = claim_from_verdict(verdict)
             profile = SandboxProfile(network=verdict.network,
-                                     max_memory_mb=verdict.memory_mb)
+                                     max_memory_mb=verdict.memory_mb,
+                                     allowed_domains=list(claim.required_domains))
             result = provider.run(["/bin/sh", "-c", command] if os.name != "nt" else ["cmd", "/c", command],
                                   workspace=cwd, profile=profile, timeout=timeout or 60.0,
                                   env=env)

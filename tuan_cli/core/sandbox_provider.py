@@ -59,6 +59,7 @@ class SandboxProfile:
     max_memory_mb: int = 0        # 内存上限 (0=不限)
     max_cpu_seconds: int = 0      # CPU 时间上限 (0=不限)
     env_allowlist: List[str] = field(default_factory=list)    # 允许传递的环境变量
+    allowed_domains: List[str] = field(default_factory=list)  # B2: 出网域名白名单
 
 
 class SandboxProvider(abc.ABC):

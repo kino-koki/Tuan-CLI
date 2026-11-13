@@ -110,7 +110,7 @@ if not _HAS_PT:  # pragma: no cover - 仅在无 prompt_toolkit 环境
         )
 
 
-class _PlaceholderProcessor:  # type: ignore[no-redef]
+class _PlaceholderProcessor:
     """占位处理器: prompt_toolkit 缺失时仅让模块级 `input_processors` 构造可通过。
 
     真正实例化时 (TUI 启动) 会因缺少 pt 而在别处报清晰错误, 这里只是占位基类。
@@ -812,7 +812,7 @@ class QxtTUI:
             height=1,
             history=InMemoryHistory(),
             # 空输入时显示 Codex 同款 placeholder "Ask Codex to do anything"。
-            input_processors=[_PlaceholderProcessor()],
+            input_processors=[_PlaceholderProcessor()],  # type: ignore[list-item]
             # "/" 命令面板由 QxtTUI 自绘 (见 _render_slash_menu): 输入 "/" 即弹出,
             # ↑↓ 选择 · Enter/Tab 确认 · Esc 关闭。不走 prompt_toolkit 补全器 ——
             # 其下拉菜单位于输入框下方, 而本布局输入框贴屏幕底部, 菜单会被裁掉。

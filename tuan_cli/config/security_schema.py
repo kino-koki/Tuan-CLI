@@ -24,7 +24,8 @@ _RULE_STR_KEYS = ("tool", "pattern", "param", "value", "exclude")
 
 
 def _bool_field(errors: List[str], section: str, val: Any, *,
-                dangerous_when_false: str | None = None) -> None:
+                dangerous_when_false: str | None = None,
+                dangerous_when_true: str | None = None) -> None:
     if val is None:
         return
     if not isinstance(val, bool):
@@ -32,6 +33,8 @@ def _bool_field(errors: List[str], section: str, val: Any, *,
         return
     if dangerous_when_false and val is False:
         errors.append(f"安全降级: {section}=false ({dangerous_when_false})")
+    if dangerous_when_true and val is True:
+        errors.append(f"行为变更: {section}=true ({dangerous_when_true})")
 
 
 def _str_list(errors: List[str], section: str, val: Any) -> None:
@@ -159,6 +162,18 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
             _bool_field(errors, "sandbox.resource.egress_block_local_when_denied",
                         res.get("egress_block_local_when_denied"),
                         dangerous_when_false="local 后端禁网裁决被显式放行 (安全降级)")
+            _bool_field(errors, "sandbox.resource.egress_proxy_enabled",
+                        res.get("egress_proxy_enabled"))
+            if res.get("egress_proxy_enabled") is True:
+                warnings.append(
+                    "行为变更: sandbox.resource.egress_proxy_enabled=True 时所有子进程网络出口改经本地代理"
+                    " (改变子进程网络拓扑)")
+            sb_net = res.get("network")
+            _bool_field(errors, "sandbox.network.strict",
+                        sb_net.get("strict") if isinstance(sb_net, dict) else None)
+            if isinstance(sb_net, dict) and sb_net.get("strict") is True:
+                warnings.append(
+                    "行为变更: sandbox.network.strict=True 时未命中白名单的命令将被拒")
 
     _validate_rules(errors, warnings, get("permissions.rules"))
     _str_list(errors, "permissions.shell.deny_patterns", get("permissions.shell.deny_patterns"))
