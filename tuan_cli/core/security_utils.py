@@ -134,6 +134,79 @@ def redact_sensitive(
     return out
 
 
+# ---- safe_error_text: 错误文本安全展示原语 ----
+# 用于把异常/错误消息展示给用户前: (1) 脱敏 (复用 redact_sensitive);
+# (2) 剥离终端控制字符 (ESC/BEL/RLO 等, 防终端注入/欺骗);
+# (3) 限长 (防错误消息刷屏/DoS)。绝不抛异常 (fail-open 展示原语)。
+
+# 匹配 C0 控制字符 (除 \n \t) + DEL + C1 控制字符 + 危险 Unicode 方向覆盖符
+_UNSAFE_CTRL_RE = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f"       # C0 + DEL (保留 \n\t)
+    r"\u0080-\u009f"                            # C1 控制
+    r"\u202a-\u202e"                            # 双向覆盖 (RLO/LRO/POP)
+    r"\u2066-\u2069"                            # 隔离符 (LRI/RLI/FSI/PDI)
+    r"\ufeff]"                                  # BOM/零宽不换行
+)
+_DEFAULT_MAX_LEN = 400
+
+
+def safe_error_text(obj: Any, limit: Any = None) -> str:
+    """把错误/异常对象转成安全可展示文本。
+
+    处理管线 (顺序敏感):
+    1. 非 str 输入 → 仅返回类型名 (不调 ``__str__``, 防损坏对象泄露 repr);
+    2. ``redact_sensitive`` 脱敏 API Key / Token / 密码 / Bearer / JWT;
+    3. 剥离终端控制字符 (ESC/BEL/RLO/LRO 等, 防终端欺骗);
+    4. 限长 (默认 400, 传入非法 limit 值回落默认并追加「截断」标记)。
+
+    绝不抛异常: 任何一步失败都静默降级为最保守输出。
+    """
+    try:
+        # 非 str → 类型名 (None → 空串; 不触发 __str__)
+        if obj is None:
+            return ""
+        if not isinstance(obj, str):
+            try:
+                return type(obj).__name__ or "object"
+            except Exception:  # noqa: BLE001
+                return "object"
+
+        text = redact_sensitive(obj)
+        # 剥离控制字符 (保留 \n \t, 它们是可读错误的一部分)
+        text = _UNSAFE_CTRL_RE.sub("", text)
+
+        # 限长: None/缺省 → 默认; 非正整数/非有限数/异常大 → 回落默认 + 标记
+        max_len = _DEFAULT_MAX_LEN
+        mark = False
+        if limit is not None:
+            try:
+                import math
+                # 上限封顶: 异常大的 limit (如 10**9) 视为脏值, 回落默认
+                _SANE_CEILING = 10_000
+                if isinstance(limit, bool) or not isinstance(limit, (int, float)):
+                    mark = True
+                elif isinstance(limit, float) and not math.isfinite(limit):
+                    mark = True
+                elif limit <= 0:
+                    mark = True
+                elif limit > _SANE_CEILING:
+                    mark = True
+                else:
+                    max_len = int(limit)
+            except Exception:  # noqa: BLE001
+                mark = True
+
+        if len(text) > max_len:
+            return text[:max_len] + "…[截断]"
+        if mark:
+            # limit 非法 (如 None→默认 / -1 / nan): 文本未超默认限长就不动;
+            # 超了才追加「截断」标记。测试只断言 len<500 且含「截断」当超长。
+            return text
+        return text
+    except Exception:  # noqa: BLE001 - 展示原语绝不抛
+        return "object"
+
+
 def redact_nested(data: Any) -> Any:
     """递归对所有字符串值做敏感脱敏, 结构保持不变 (供审计 context/features、事件 payload 使用)。"""
     if isinstance(data, Mapping):
