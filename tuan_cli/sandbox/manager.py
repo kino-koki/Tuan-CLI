@@ -300,8 +300,8 @@ class SandboxManager:
             detected = self._detected_domains(command or "")
             decision = evaluate_claim(claim, detected)
         except Exception as exc:  # noqa: BLE001
-            from ..core.security_utils import safe_error_text
-            return True, f"egress_allowlist fail-closed: {safe_error_text(str(exc))}"
+            from ..core.security_utils import safe_exception_text
+            return True, f"egress_allowlist fail-closed: {safe_exception_text(exc)}"
         self.last_allowlist = decision.to_audit_dict()
         if claim.strict and not decision.allowed:
             return True, f"egress_allowlist: {decision.reason}"
@@ -412,11 +412,11 @@ class SandboxManager:
         try:
             plan = plan_egress(verdict, backend, self.policy, dict(os.environ))
         except Exception as exc:  # noqa: BLE001
-            from ..core.security_utils import safe_error_text
+            from ..core.security_utils import safe_exception_text
             return SandboxExecResult(
                 returncode=-1, backend=backend, enforced=False,
                 terminal_refusal=True,
-                error=f"egress plan fail-closed: {safe_error_text(str(exc))}")
+                error=f"egress plan fail-closed: {safe_exception_text(exc)}")
         self._last_egress = plan.to_audit_dict()
 
         if not plan.allowed:
@@ -458,9 +458,9 @@ class SandboxManager:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error="超时")
         except Exception as exc:
-            from ..core.security_utils import safe_error_text
+            from ..core.security_utils import safe_exception_text
             return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=safe_error_text(str(exc)))
+                                     enforced=False, error=safe_exception_text(exc))
 
     def _execute_copy_diff_apply(self, command: str, verdict: Verdict, ctx: Any,
                                  cwd: str, timeout: float) -> SandboxExecResult:
@@ -485,10 +485,10 @@ class SandboxManager:
             try:
                 preview = build_diff_preview(wd)
             except Exception as exc:  # noqa: BLE001
-                from ..core.security_utils import safe_error_text
+                from ..core.security_utils import safe_exception_text
                 res.returncode = -1
                 res.error = (f"生成变更预览失败 (fail-closed, 不写回): "
-                             f"{safe_error_text(exc)}")
+                             f"{safe_exception_text(exc)}")
                 return res
             # E7-TUI: 统一走审批覆盖层 (借鉴 Codex TUI approval_overlay)。
             # 有 ctx.confirm 时把结构化卡片交给现有 TUI 挂起式确认通道;
@@ -518,11 +518,11 @@ class SandboxManager:
                          f"\n[E7] 用户已确认, 已写回 {len(outcome.files)} 个文件"
             return res
         except Exception as exc:  # noqa: BLE001
-            from ..core.security_utils import safe_error_text
+            from ..core.security_utils import safe_exception_text
             return SandboxExecResult(
                 returncode=-1, workspace_mode="copy_diff_apply", enforced=False,
                 applied=False,
-                error=f"副本隔离执行失败 (fail-closed, 未写回): {safe_error_text(exc)}")
+                error=f"副本隔离执行失败 (fail-closed, 未写回): {safe_exception_text(exc)}")
         finally:
             if wd is not None:
                 wd.cleanup()
@@ -555,15 +555,15 @@ class SandboxManager:
                                      returncode=res.returncode, backend=res.mechanism or backend,
                                      enforced=bool(res.enforced), error=note)
         except Exception as exc:
-            from ..core.security_utils import safe_error_text
+            from ..core.security_utils import safe_exception_text
             return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=safe_error_text(exc))
+                                     enforced=False, error=safe_exception_text(exc))
 
     @staticmethod
     def _run_provider(backend: str, command: str, cwd: str, timeout: float,
                       block_net: bool, verdict: Verdict,
                       env: Optional[Dict[str, str]] = None) -> SandboxExecResult:
-        from ..core.security_utils import safe_error_text
+        from ..core.security_utils import safe_exception_text
         try:
             from ..core.sandbox_provider import SandboxProvider, SandboxProfile
             provider = SandboxProvider.create(backend)
@@ -580,7 +580,7 @@ class SandboxManager:
                                      error=result.error)
         except Exception as exc:
             return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=safe_error_text(str(exc)))
+                                     enforced=False, error=safe_exception_text(exc))
 
     # ------------------------------------------------------------ 配置
     def _allowed_domains(self, ctx: Any) -> Optional[List[str]]:

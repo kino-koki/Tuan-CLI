@@ -226,9 +226,13 @@ def safe_exception_text(exc: BaseException, limit: Any = None) -> str:
     损坏对象掀翻错误路径。
     """
     try:
-        return safe_error_text(str(exc), limit)
+        out = safe_error_text(str(exc), limit)
+        type_name = type(exc).__name__ if isinstance(exc, BaseException) else "object"
+        if out:
+            return f"{type_name}: {out}"
+        return type_name
     except Exception:  # noqa: BLE001
-        return type(exc).__name__
+        return (f"{type(exc).__name__} (异常消息不可用已丢弃)")
 
 
 def is_masked_placeholder(value: Any) -> bool:

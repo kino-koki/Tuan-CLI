@@ -238,10 +238,12 @@ class BackgroundShellManager:
             return 0
 
     def start(self, command: str, cwd: Optional[str] = None,
-              timeout: Optional[float] = None) -> ShellJob:
+              timeout: Optional[float] = None,
+              env: Optional[Dict[str, str]] = None) -> ShellJob:
         """异步启动一条 shell 命令, 立即返回 job (不阻塞)。
 
         ``timeout`` 为可选软超时 (达到后自动 kill 进程树, 防失控)。
+        ``env`` 为子进程环境变量 (None = 继承父进程, 既有调用点语义不变)。
         超过并发上限 (见 max_running) 时抛 RuntimeError, 防止后台进程失控。
         """
         cap = self.max_running()
@@ -270,6 +272,7 @@ class BackgroundShellManager:
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     text=True, errors="replace",
                     start_new_session=os.name != "nt",
+                    env=env,
                 )
                 job.register_proc(proc)
                 # 读线程: 关闭句柄避免管道缓冲阻塞子进程
@@ -292,7 +295,8 @@ class BackgroundShellManager:
                     if job.status != "cancelled":
                         job._finalize("done" if rc == 0 else "failed", rc, None)
             except Exception as exc:  # noqa: BLE001
-                job._finalize("failed", None, f"{type(exc).__name__}: {exc}")
+                from .security_utils import safe_exception_text
+                job._finalize("failed", None, safe_exception_text(exc))
 
         threading.Thread(target=_run, name=f"shl-{job.job_id}", daemon=True).start()
         return job
@@ -492,9 +496,13 @@ def strip_bg_prefix(command: str) -> str:
 
 
 def run_in_background(command: str, cwd: Optional[str] = None,
-                      timeout: Optional[float] = None) -> ShellJob:
-    """工具层便捷入口: 解析 ``! cmd`` 并异步执行, 返回 job。"""
+                      timeout: Optional[float] = None,
+                      env: Optional[Dict[str, str]] = None) -> ShellJob:
+    """工具层便捷入口: 解析 ``! cmd`` 并异步执行, 返回 job。
+
+    ``env`` 透传到 ``BackgroundShellManager.start`` (None = 继承父进程)。
+    """
     real = strip_bg_prefix(command).strip()
     if not real:
         raise ValueError("后台命令为空")
-    return get_manager().start(real, cwd=cwd, timeout=timeout)
+    return get_manager().start(real, cwd=cwd, timeout=timeout, env=env)

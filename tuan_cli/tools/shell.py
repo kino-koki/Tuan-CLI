@@ -26,6 +26,7 @@ import time
 from typing import Any
 
 from ..core.proc import normalize_shell_command
+from ..core.security_utils import safe_exception_text
 
 from ..core.kernel import Kernel, Plugin
 from ..core.whitelist import WhitelistManager, get_warning_level, MultiStageConfirm
@@ -268,7 +269,8 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
             from ..core.workspace_trust import consult_for_shell
             taction, treason = consult_for_shell(trust_level, command)
         except Exception as exc:  # noqa: BLE001
-            taction, treason = "deny", f"信任级别裁决异常, 保守拒绝: {exc}"
+            taction, treason = "deny", (f"信任级别裁决异常, 保守拒绝: "
+                                        f"{safe_exception_text(exc)}")
         if taction == "deny":
             ctx.safety_severity = "high"
             return f"[已拦截] {treason}: {command}"
@@ -705,7 +707,8 @@ def _route_sandbox_isolation(ctx: ToolContext, command: str, timeout: int) -> An
     except Exception as exc:  # noqa: BLE001 - 隔离执行异常不外抛, 但也不回落
         from ..core.security_utils import safe_exception_text as _set
         return f"[错误] 沙箱隔离执行初始化异常: {_set(exc)}"
-    if res.decided:
+    # B2: 只把 "decided is False" 视为未触发回落; 默认 True 兼容旧结果对象
+    if getattr(res, "decided", True):
         return res.as_shell_text() if res.returncode >= 0 else f"[错误] {res.error or '隔离执行失败'}"
     return None
 
@@ -763,7 +766,8 @@ def run_shell(ctx: ToolContext, command: str, timeout: int = 0) -> str:
             out = out[:MAX_OUTPUT] + f"\n...[截断, 原始输出 {_orig_len} 字符]"
         return f"exit={proc.returncode}\n{out.strip()}"
     except Exception as exc:  # noqa: BLE001
-        return f"[错误] shell 执行异常: {type(exc).__name__}: {exc}"
+        from ..core.security_utils import safe_exception_text
+        return f"[错误] shell 执行异常: {safe_exception_text(exc)}"
 
 
 def _start_background(ctx: ToolContext, command: str, timeout: int = 0) -> str:
@@ -782,13 +786,24 @@ def _start_background(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     guard = _pre_exec_guard(ctx, body)
     if guard:
         return guard
+    # B2: 后台侧门修复 —— isolate 裁决时 fail-closed 拒绝 (异步路径无法套用
+    # 同步隔离执行器与 copy-diff-apply 确认), 不再裸 Popen 绕过整条安全链。
+    verdict = getattr(ctx, "_sandbox_verdict", None)
+    if verdict is not None and getattr(verdict, "isolate", False):
+        return ("[错误] 后台命令不支持隔离执行: 当前裁决要求沙箱隔离 (isolate=True), "
+                "但 `!` 异步路径无法套用同步隔离执行器与确认流程。"
+                "请去掉 `!` 同步运行, 或调整安全策略后再试。")
+    # B2: 后台子进程环境脱敏 (SECRET_HINTS 抹敏感键) + 补 TUAN_WORKSPACE
+    from ..core.security_utils import sanitize_env
+    bg_env = sanitize_env()
+    bg_env["TUAN_WORKSPACE"] = getattr(ctx, "workspace", "") or ""
     try:
         job = run_in_background(body, cwd=getattr(ctx, "workspace", None) or None,
-                                timeout=timeout or None)
+                                timeout=timeout or None, env=bg_env)
     except ValueError as exc:
-        return f"[错误] {exc}"
+        return f"[错误] {safe_exception_text(exc)}"
     except Exception as exc:  # noqa: BLE001
-        return f"[错误] 后台命令启动失败: {type(exc).__name__}: {exc}"
+        return f"[错误] 后台命令启动失败: {safe_exception_text(exc)}"
     return (f"[后台已启动] job={job.job_id} (pid={job.pid}) status=running\n"
             f"命令: {body}\n"
             f"该命令在后台执行, 不阻塞当前回合。用 bg_shell 工具 (action=status) "
@@ -868,7 +883,7 @@ def run_bg_shell(ctx: ToolContext, action: str = "status", job_id: str = "",
             return f"[已终止] {job_id}" if ok else f"[错误] job={job_id} 不存在或已结束"
         return f"[错误] 未知 action: {action}"
     except Exception as exc:  # noqa: BLE001
-        return f"[错误] bg_shell 执行异常: {type(exc).__name__}: {exc}"
+        return f"[错误] bg_shell 执行异常: {safe_exception_text(exc)}"
 
 
 class ShellPlugin(Plugin):
