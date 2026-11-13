@@ -306,13 +306,14 @@ class AltScreenGuard:
         self.entered = True
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> bool:
+    def __exit__(self, exc_type: Optional[type], exc: Optional[BaseException],
+                 tb: Optional[Any]) -> None:
         try:
             self.tui.leave_alt_screen()
         except Exception:  # noqa: BLE001 - 异常路径也必须恢复
             pass
         self.entered = False
-        return False  # 不吞异常
+        # 返回 None (等价 False): 不吞异常
 
 
 def run_model_migration_prompt(

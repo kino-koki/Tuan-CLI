@@ -496,6 +496,35 @@ class SecurityClassifier:
         self._threshold_deny = threshold_deny
         self._threshold_confirm = threshold_confirm
         self._history: List[ClassificationResult] = []
+        # 多路防御: 可选挂载在线学习器 (perceptron), 与规则引擎/分类器并行判定。
+        # fail-closed 原则: 学习器异常绝不放行, 仅当其明确投 deny/confirm 票时才收紧。
+        self._learner: Any = None
+
+    def attach_learner(self, learner: Any) -> None:
+        """挂载在线学习器 (security_learner.SecurityLearner)。
+
+        挂载后 `classify` 会把学习器的风险分并入判定: 取「分类器线性分」与
+        「学习器分」的较大者, 使学习器能**收紧**判决但绝不会单独放行 —— 多路
+        并行、取保守值, 不给任何单点故障留下绕过空间。
+        """
+        self._learner = learner
+
+    def learn(self, command: str, label: str, confidence: float = 1.0,
+              evidence: Optional[List[str]] = None) -> bool:
+        """把一条 (命令, 标签) 反馈喂给挂载的学习器。
+
+        label ∈ {"danger", "safe"}。学习器内部有硬红线护栏 (safe 标签绝不用于
+        硬红线命令)。未挂载学习器时返回 False (no-op), 不抛异常。
+        """
+        if self._learner is None:
+            return False
+        try:
+            return bool(self._learner.observe(command, label=label,
+                                              confidence=confidence,
+                                              evidence=evidence or []))
+        except Exception:
+            # 学习反馈失败不影响主判定链; 记录但不中断。
+            return False
 
     def classify(self, command: str) -> ClassificationResult:
         """对命令做安全分类。"""
@@ -566,6 +595,21 @@ class SecurityClassifier:
             if all(features.get(f, False) for f in required_feats):
                 risk_score += bonus
                 reasons.append(f"组合加分: {desc} +{bonus}")
+
+        # 3.5 多路融合: 学习器票 (仅收紧, 绝不放行)。
+        # 取「分类器线性分」与「学习器风险分」的较大者作为最终判定分;
+        # 学习器异常/未挂载时跳过, 不影响原判决。
+        if self._learner is not None:
+            try:
+                learner_score, learner_reasons = self._learner.risk_score_with_features(command)
+                learner_score = float(learner_score)
+                if learner_score > risk_score:
+                    risk_score = learner_score
+                    if learner_reasons:
+                        reasons.append(f"学习器收紧: {learner_reasons[0]}")
+            except Exception:
+                # 学习器故障 → 忽略其票, 绝不让故障放大权限。
+                pass
 
         # 4. 决策
         elapsed = (time.monotonic() - started) * 1000

@@ -106,7 +106,8 @@ def build_permission_policy(cfg: Any) -> PermissionPolicy:
     """
     # E1: 主链路注入 MCP 信任分级策略。开关只提供"显式关闭"的逃生口
     # (mcp.policy.enabled=false), 缺省即启用 —— 否则又是"实现了但没接线"。
-    store = None
+    # store 是鸭子类型: 正常走 MCPPolicyStore, fail-closed 走 _DenyAllMCPPolicy (同接口)。
+    store: Any = None
     if _cfg_bool(cfg, "mcp.policy.enabled", True):
         try:
             from .mcp.policy import get_mcp_policy_store

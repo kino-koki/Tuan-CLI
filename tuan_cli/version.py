@@ -24,4 +24,7 @@
 # v0.3.4: 安全引擎攻击面修复 (ReDoS 护栏 + rsync --delete 目标端 + 信号类毁灭 +
 #         反引号命令替换 mask 回归); API 冻结 (见 docs/API_FREEZE.md);
 #         1.0 目标升级为「Linux 6.5+ / Windows 10+ / macOS 17+ 全平台最安全」。
-__version__ = "0.3.4"
+# v0.4.0: 安全防线多路完善 (神经网络学习器等多路防御 + 全新安全模块);
+#         新增 Qwen 办公 2.0 团队协作模式; CLI 命令简化 (合并/精简入口数量);
+#         API 冻结点确立, 1.0 目标重定为由 GitHub STAR 数门控 (见 VERSION_POLICY.md)。
+__version__ = "0.4.0"

@@ -15,10 +15,10 @@
 """
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Sequence
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
 
 class EventType(str, Enum):

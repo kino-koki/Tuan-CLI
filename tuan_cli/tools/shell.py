@@ -615,6 +615,47 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
         log.error("安全分类器异常, fail-closed 拒绝: %s", exc)
         return f"[已拦截] 安全分类器不可用, 安全降级拒绝: {command}"
 
+    # ======== 6) 污点追踪外泄检测器 (v0.4.0 新增, 多路防御第四路) ========
+    # 与规则引擎 / 语义分类器互补: 做**数据流分析**, 追踪「敏感源 → 外部汇」。
+    # 典型漏判被此路捕获: `cp id_rsa /tmp/` (本地外泄前落盘)、
+    # `curl -d @~/.ssh/id_rsa` (看似无管道实则上传)、`pbcopy < ~/.aws/credentials`。
+    # 设计: 本模块只收紧 (allow → confirm/deny), 不放行; detector 内部 fail-closed,
+    # 异常返回 confirm, 不会静默通过。
+    from ..core.taint_exfil import detect_exfiltration as _detect_exfil
+    exfil_verdict = _detect_exfil(command)
+    if exfil_verdict.blocks():
+        advice = "; ".join(exfil_verdict.reasons[:3])
+        ctx.safety_severity = exfil_verdict.severity
+        _emitSecurityEvent("security.command.blocked", {
+            "reason": "; ".join(exfil_verdict.reasons) or "taint_exfil_denied",
+            "severity": exfil_verdict.severity,
+        })
+        return (f"[已拦截] 污点追踪检测到数据外泄:\n{command}\n"
+                f"原因: {advice}\n"
+                f"疑似外泄路径: 源={list(exfil_verdict.sources)}, 汇={list(exfil_verdict.sinks)}")
+    if exfil_verdict.needs_confirm() and ctx.confirm is not None:
+        advice = "; ".join(exfil_verdict.reasons[:3])
+        if getattr(ctx, "yolo", False):
+            log.info("YOLO 自动批准污点追踪建议确认的操作 (%s): %s",
+                     exfil_verdict.severity, command)
+        else:
+            warning = (
+                f"⚠️ 污点追踪检测到可能的敏感数据外泄:\n{command}\n"
+                f"原因: {advice}\n"
+                f"疑似外泄路径: 源={list(exfil_verdict.sources)}, 汇={list(exfil_verdict.sinks)}\n"
+                "确认要执行吗? (仅本次生效)"
+            )
+            try:
+                if not ctx.confirm(warning):
+                    _emitSecurityEvent("security.command.blocked", {
+                        "reason": "taint_exfil_rejected_by_human",
+                        "severity": exfil_verdict.severity,
+                    })
+                    return f"[已拦截] 用户拒绝污点追踪建议确认的操作: {command}"
+            except Exception as exc:  # noqa: BLE001
+                log.error("污点追踪确认通道异常, fail-closed 拒绝: %s", exc)
+                return f"[已拦截] 污点追踪确认通道异常, 安全降级拒绝: {command}"
+
     return None
 
 

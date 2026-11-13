@@ -43,7 +43,7 @@ def _build_enum_rules() -> List[Tuple[str, tuple]]:
         from ..modes.registry import MODE_IDS
         mode_ids = MODE_IDS
     except Exception:  # noqa: BLE001
-        mode_ids = ("gantong", "lingma", "chat", "boundless", "collaboration")
+        mode_ids = ("gantong", "lingma", "chat", "boundless", "collaboration", "qwen_office")
     return [
         # mode.default 允许旧三档别名 + 新五模式; mode.current 仅新五模式 (MODE_IDS)
         ("mode.default", tuple(["standard", "yolo", "plan"]) + mode_ids),

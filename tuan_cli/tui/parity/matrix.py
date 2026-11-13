@@ -17,7 +17,7 @@ not_applicable == 165``。本模块不虚报状态 —— 每个 aligned 都必�
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, List, Tuple
+from typing import Dict, FrozenSet, List, Set, Tuple
 
 from .upstream_spec import TOP_LEVEL_MODULES, MODULE_GROUPS, SCALE
 
@@ -213,7 +213,7 @@ def gaps(limit: int = 0) -> List[Tuple[str, str]]:
         for m in mods:
             if m in pending:
                 out.append((group, m))
-    seen = set()
+    seen: Set[str] = set()
     uniq = [(g, m) for g, m in out if not (m in seen or seen.add(m))]
     return uniq[:limit] if limit else uniq
 

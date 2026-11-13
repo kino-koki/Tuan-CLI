@@ -337,7 +337,7 @@ class MCPPolicyStore:
         # 这一层模型，本地化映射为会话内临时授权，并在返回值里显式标注，
         # 不静默当成持久化授权。
         prefix_localized = decision == ApprovalDecision.PREFIX
-        kwargs = dict(
+        kwargs: Dict[str, Any] = dict(
             read_only=read_only,
             tool_allowlist=list(tool_allowlist or []),
             tool_denylist=list(tool_denylist or []),

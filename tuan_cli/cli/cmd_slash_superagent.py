@@ -22,7 +22,7 @@ Super-Agent 引擎的子命令:
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from ._ui_singleton import ui
 
@@ -145,7 +145,7 @@ def _cmd_superagent(agent: Any, arg: str) -> None:
         action = s[1].strip() if len(s) > 1 else "allow"
         # ProgramRule 用 fn 谓词; 简化: 匹配词出现在 content 中即命中
         kw = s[0]
-        eng.add_rule(ProgramRule(name=kw, fn=lambda t, k=kw: k in t.content, action=action))
+        eng.add_rule(ProgramRule(name=kw, fn=lambda t: kw in t.content, action=action))
         ui.success(f"已添加规则: match='{kw}' action={action}")
     elif sub == "recover":
         eng._recover_pending()

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [0.4.0] - 2026-11-13 (大更新 · 安全防线多路完善 + Qwen 协作 + CLI 简化)
+
+### 概述
+- **1.0 门控于 STAR**: 本版本确立 `1.0`（API 冻结）由 GitHub STAR ≥ 1000 门控；
+  此前永久处于 `0.x` 磨合期迭代更新（见 VERSION_POLICY.md 顶部全局规则）。
+- **API 冻结基线**: 确立 v0.4.0 公共 API 为冻结基线（`docs/API_FREEZE.md`）。
+
+### 安全防线多路完善
+- `safety_patterns.py` 拆分重组为 `patterns_data/` 包（数据逐字节一致，路径/导入不变）。
+- 多路防御持续增强（神经网络学习器 + 规则引擎 + 分类器等并行判定）。
+
+### CLI 简化
+- 精简/合并命令入口，降低命令数量与操作复杂度（详见后续提交）。
+
+### 团队协作
+- 新增 Qwen 办公 2.0 团队协作模式（详见后续提交）。
+
+### 质量
+- 修复阻塞 CI 的 mypy `redundant-cast` 错误（`crypto_provider.py` / `crypto_engine.py`）。
+- 修复 `arch/platform.py` 缺失 `Any` 导入导致的 `NameError`。
+- 消除多处 mypy 严格模式错误（superagent / tools / cli / tui 等）。
+
 ## [0.3.4] - 2026-11-03 (小更新 · 安全引擎攻击面修复 + API 冻结)
 
 ### 安全引擎攻击面修复 (实测对抗 → 修复)

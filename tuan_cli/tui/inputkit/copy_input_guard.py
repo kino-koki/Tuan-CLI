@@ -51,10 +51,10 @@ class CopyInputGuard:
     def __enter__(self) -> "CopyInputGuard":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> bool:
+    def __exit__(self, exc_type: Optional[type], exc: Optional[BaseException],
+                 tb: Optional[object]) -> None:
         # 关键：绝不通过返回 True 吞掉用户异常；只保证释放动作发生。
         self.release()
-        return False
 
     def close(self) -> None:
         """显式释放（与 ``with`` 等价）。"""
@@ -78,7 +78,7 @@ class CopyInputGuard:
             self._events.append(f"{TRANSCRIPT_COPY_CLOSED}:send_failed")
         return True
 
-    def __del__(self):  # pragma: no cover - 解释器退出时序不确定
+    def __del__(self) -> None:  # pragma: no cover - 解释器退出时序不确定
         try:
             self.release()
         except Exception:
@@ -108,7 +108,7 @@ class QueuedSubmissions:
 
     __slots__ = ("_paused", "_count")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._paused = True
         self._count = 0
 

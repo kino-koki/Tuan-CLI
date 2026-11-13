@@ -25,6 +25,7 @@ MODE_IDS: Tuple[str, ...] = (
     "chat",
     "boundless",
     "collaboration",
+    "qwen_office",
 )
 
 MODE_NAMES: Dict[str, str] = {
@@ -33,11 +34,13 @@ MODE_NAMES: Dict[str, str] = {
     "chat": "闲聊",
     "boundless": "无界",
     "collaboration": "协同",
+    "qwen_office": "Qwen办公2.0",
 }
 
 MODE_LEVELS: Dict[str, str] = {
     "chat": "L0",
     "collaboration": "L2",
+    "qwen_office": "L2",
     "gantong": "L3",
     "lingma": "L3",
     "boundless": "L4",
@@ -46,6 +49,7 @@ MODE_LEVELS: Dict[str, str] = {
 MODE_RISK: Dict[str, str] = {
     "chat": "低",
     "collaboration": "中",
+    "qwen_office": "中",
     "gantong": "高",
     "lingma": "高",
     "boundless": "极高",
@@ -56,6 +60,9 @@ MODE_ALIASES: Dict[str, str] = {
     "standard": "collaboration",
     "yolo": "boundless",
     "plan": "chat",
+    "office": "qwen_office",
+    "office2": "qwen_office",
+    "qwen": "qwen_office",
 }
 
 # 权限等级数值序（用于比较升级/降级）
@@ -115,6 +122,46 @@ MODE_REGISTRY: Dict[str, Dict[str, Any]] = {
             "file_write": True,
             "memory_write": True,
             "tts": True,
+        },
+    },
+
+    # ---- Qwen 办公 2.0 团队协作 (L2) ----
+    # 基于协同模式扩展: 文档/看板/日历等办公 MCP 白名单 + 团队共享会话。
+    # 与 collaboration 的差异: 面向团队 (非个人), 默认启用协作协议,
+    # MCP 白名单偏办公场景 (文档/表格/演示文稿/项目看板/日历)。
+    "qwen_office": {
+        "id": "qwen_office",
+        "name": "Qwen办公2.0",
+        "level": "L2",
+        "risk": "中",
+        "description": (
+            "Qwen 办公 2.0 团队协作: 工作区读写 + 办公 MCP 白名单 "
+            "(文档/表格/看板/日历) + 团队共享会话 (CollaborationProtocol); "
+            "Shell 禁用, 无代码执行能力"
+        ),
+        "loop": {"enabled": True, "max_iterations": 10},
+        "capabilities": {
+            "tools": [
+                "read_file", "write_file", "edit_file",
+                "list_files", "glob", "move_file",
+                "memory_read", "memory_note_append",
+                "web_search", "web_fetch",
+                # 团队协作专用工具 (CollaborationProtocol 暴露)
+                "team_share_note", "team_list_members",
+                "team_post_update", "team_read_updates",
+            ],
+            "shell": False,
+            "mcp": True,
+            "network": True,
+            "file_write": True,
+            "memory_write": True,
+            "tts": True,
+        },
+        # 团队协作扩展字段 (可选, ModePolicy 不强制)
+        "team": {
+            "enabled": True,
+            "protocol": "CollaborationProtocol",
+            "default_share_scope": "workspace",
         },
     },
 

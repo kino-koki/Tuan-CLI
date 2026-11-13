@@ -13,7 +13,7 @@ import argparse
 from typing import Any
 
 # dispatch 子命令共用的五模式 (与 tuan_cli/agents/base.py TaskRequest.mode 对齐)
-_DISPATCH_MODES = ("chat", "collaboration", "gantong", "lingma", "boundless")
+_DISPATCH_MODES = ("chat", "collaboration", "qwen_office", "gantong", "lingma", "boundless")
 
 
 def _add_network_parser(sub: Any, name: str, help_text: str) -> "argparse.ArgumentParser":
@@ -73,10 +73,10 @@ def register_subcommands(sub: Any) -> None:
         "--mode",
         choices=[
             "standard", "yolo", "plan",
-            "gantong", "lingma", "chat", "boundless", "collaboration",
+            "gantong", "lingma", "chat", "boundless", "collaboration", "qwen_office",
         ],
-        help="临时切换运行模式 (旧三档 standard/yolo/plan 或五模式 "
-             "gantong/lingma/chat/boundless/collaboration)",
+        help="临时切换运行模式 (旧三档 standard/yolo/plan 或六模式 "
+             "gantong/lingma/chat/boundless/collaboration/qwen_office)",
     )
     p.add_argument(
         "--permission-mode",
@@ -141,10 +141,10 @@ def register_subcommands(sub: Any) -> None:
         "--mode",
         choices=[
             "standard", "yolo", "plan",
-            "gantong", "lingma", "chat", "boundless", "collaboration",
+            "gantong", "lingma", "chat", "boundless", "collaboration", "qwen_office",
         ],
-        help="临时切换运行模式 (旧三档 standard/yolo/plan 或五模式 "
-             "gantong/lingma/chat/boundless/collaboration)",
+        help="临时切换运行模式 (旧三档 standard/yolo/plan 或六模式 "
+             "gantong/lingma/chat/boundless/collaboration/qwen_office)",
     )
     p.add_argument(
         "--permission-mode",
@@ -292,10 +292,10 @@ def register_subcommands(sub: Any) -> None:
         "--mode",
         choices=[
             "standard", "yolo", "plan",
-            "gantong", "lingma", "chat", "boundless", "collaboration",
+            "gantong", "lingma", "chat", "boundless", "collaboration", "qwen_office",
         ],
-        help="临时切换运行模式 (旧三档 standard/yolo/plan 或五模式 "
-             "gantong/lingma/chat/boundless/collaboration)",
+        help="临时切换运行模式 (旧三档 standard/yolo/plan 或六模式 "
+             "gantong/lingma/chat/boundless/collaboration/qwen_office)",
     )
     p.set_defaults(func="cmd_agent")
 

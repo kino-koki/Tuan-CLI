@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, List, cast
 
 from ..harden import (
     AuditExporter,
@@ -193,7 +193,7 @@ def _status(args: Any) -> int:
         enforce = bool(sb.get("enforce_required", True))
         deny_net = bool((sb.get("resource", {}) or {}).get("deny_network_by_default", False))
         allowed = sb.get("allowed_domains", []) or []
-        strong = [b["name"] for b in detect_backends()
+        strong: List[str] = [cast(str, b["name"]) for b in detect_backends()
                   if b.get("available") and b.get("name") != "local"]
         print("[harden] 安全基线:")
         print(f"  - 无强后端时 fail-closed : {'OK 开启' if enforce else '!! 关闭 (会静默降级为裸执行)'}")

@@ -19,7 +19,7 @@ import platform
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
 
 IS_WINDOWS = os.name == "nt" or sys.platform.startswith("win")
 IS_LINUX = sys.platform.startswith("linux")
