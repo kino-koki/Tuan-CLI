@@ -687,8 +687,12 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
 def _route_sandbox_isolation(ctx: ToolContext, command: str, timeout: int) -> Any:
     """若统一滤网裁决本命令需隔离, 用隔离后端执行并返回结果文本 (None=无需隔离)。
 
-    消费 ToolExecutor 在 ctx._sandbox_verdict 写下的 L3 裁决; 未裁决或后端不可用
-    (非强制) 时返回 None, 交原有本地执行路径。
+    消费 ToolExecutor 在 ctx._sandbox_verdict 写下的 L3 裁决; 未裁决时返回 None,
+    交原有本地执行路径。
+
+    B2: 唯一回落条件是 ``res.decided is False`` (隔离裁决根本没触发)。任何
+    真实执行结果 (包括降级部署里 local 分支跑过的、超时返回 -1、强后端抛
+    异常) 都是终态 —— 绝不再 bare Popen, 不双重执行, 不丢弃脱敏 env。
     """
     verdict = getattr(ctx, "_sandbox_verdict", None)
     if verdict is None or not getattr(verdict, "isolate", False):
@@ -698,11 +702,10 @@ def _route_sandbox_isolation(ctx: ToolContext, command: str, timeout: int) -> An
         manager = SandboxManager.from_kernel(getattr(ctx, "kernel", None)) \
             if getattr(ctx, "kernel", None) is not None else SandboxManager()
         res = manager.execute_isolated(command, verdict, ctx, timeout=timeout or 60.0)
-    except Exception as exc:  # noqa: BLE001 - 隔离执行异常不外抛, 留给原有路径兜底
-        return f"[错误] 沙箱隔离执行初始化异常: {type(exc).__name__}: {exc}"
-    # 强制隔离且后端可用 → 返回隔离结果。否则 (enforced=False, 回落 local):
-    # 若配置 enforce_required 则以裁决的 DENY 语义拒绝, 由调用方阅读; 这里统一落地。
-    if verdict.enforced or getattr(verdict, "backend_available", False):
+    except Exception as exc:  # noqa: BLE001 - 隔离执行异常不外抛, 但也不回落
+        from ..core.security_utils import safe_exception_text as _set
+        return f"[错误] 沙箱隔离执行初始化异常: {_set(exc)}"
+    if res.decided:
         return res.as_shell_text() if res.returncode >= 0 else f"[错误] {res.error or '隔离执行失败'}"
     return None
 

@@ -63,7 +63,12 @@ _EXEC_FIELDS = (
 
 @dataclass
 class SandboxExecResult:
-    """隔离执行返回。enforced=False 表示实际回落到非隔离执行。"""
+    """隔离执行返回。enforced=False 表示实际回落到非隔离执行。
+
+    B2: ``decided=True`` (默认 fail-closed) 表示本次执行是终态, 调用方
+    必须采纳结果, 绝不能回落裸跑。唯一合法的 ``decided=False`` 是执行层
+    显式声明「隔离裁决根本没触发」(``not verdict.isolate`` 分支)。
+    """
 
     stdout: str = ""
     stderr: str = ""
@@ -72,6 +77,8 @@ class SandboxExecResult:
     backend: str = ""
     enforced: bool = False
     error: str = ""
+    decided: bool = True         # B2: 是否已决断 (执行层终态)
+    terminal_refusal: bool = False  # B2: 终端拒绝 (命令本身被拒, 不视为执行失败)
     # E7: copy-diff-apply 结果的可观测字段 (全部有默认值, 不破坏既有构造)
     workspace_mode: str = "direct"
     applied: bool = False
@@ -310,7 +317,7 @@ class SandboxManager:
         真的在隔离副本里执行, 经过 diff 预览 + 用户确认后才写回。
         """
         if not verdict.isolate:
-            return SandboxExecResult()
+            return SandboxExecResult(decided=False)
         cwd = getattr(ctx, "workspace", None) or "."
         if getattr(verdict, "workspace_mode", "direct") == "copy_diff_apply":
             return self._execute_copy_diff_apply(command, verdict, ctx, cwd, timeout)
@@ -356,8 +363,9 @@ class SandboxManager:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error="超时")
         except Exception as exc:
+            from ..core.security_utils import safe_error_text
             return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=str(exc))
+                                     enforced=False, error=safe_error_text(str(exc)))
 
     def _execute_copy_diff_apply(self, command: str, verdict: Verdict, ctx: Any,
                                  cwd: str, timeout: float) -> SandboxExecResult:
@@ -369,15 +377,23 @@ class SandboxManager:
             wd = isolate_workdir(cwd)
             res = self._execute_backend(command, verdict, wd.path, timeout)
             res.workspace_mode = "copy_diff_apply"
-            # 副本隔离本身已生效, 标记 enforced 让 shell.py 的路由返回结果文本,
-            # 而不是回落 None 后又把命令在真实工作区跑一遍。
-            verdict.enforced = True
+            # B2/F3: enforced 与 verdict 只在真实执行时才宣称 —— backend 返回失败
+            # 时不得声明隔离成功, 避免上层把"根本没跑"当成"已隔离执行"。
+            if res.returncode < 0:
+                # F5: 执行失败 → 不生成 diff、不确认、不写回
+                res.applied = False
+                res.applied_files = []
+                res.diff_preview = None
+                verdict.enforced = False
+                return res
+            verdict.enforced = True  # 执行成功才宣告隔离生效
             try:
                 preview = build_diff_preview(wd)
             except Exception as exc:  # noqa: BLE001
+                from ..core.security_utils import safe_error_text
                 res.returncode = -1
                 res.error = (f"生成变更预览失败 (fail-closed, 不写回): "
-                             f"{type(exc).__name__}: {exc}")
+                             f"{safe_error_text(exc)}")
                 return res
             # E7-TUI: 统一走审批覆盖层 (借鉴 Codex TUI approval_overlay)。
             # 有 ctx.confirm 时把结构化卡片交给现有 TUI 挂起式确认通道;
@@ -407,10 +423,11 @@ class SandboxManager:
                          f"\n[E7] 用户已确认, 已写回 {len(outcome.files)} 个文件"
             return res
         except Exception as exc:  # noqa: BLE001
+            from ..core.security_utils import safe_error_text
             return SandboxExecResult(
-                returncode=-1, workspace_mode="copy_diff_apply", enforced=True,
+                returncode=-1, workspace_mode="copy_diff_apply", enforced=False,
                 applied=False,
-                error=f"副本隔离执行失败 (fail-closed, 未写回): {type(exc).__name__}: {exc}")
+                error=f"副本隔离执行失败 (fail-closed, 未写回): {safe_error_text(exc)}")
         finally:
             if wd is not None:
                 wd.cleanup()
@@ -442,26 +459,30 @@ class SandboxManager:
                                      returncode=res.returncode, backend=res.mechanism or backend,
                                      enforced=bool(res.enforced), error=note)
         except Exception as exc:
+            from ..core.security_utils import safe_error_text
             return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=str(exc))
+                                     enforced=False, error=safe_error_text(exc))
 
     @staticmethod
     def _run_provider(backend: str, command: str, cwd: str, timeout: float,
-                      block_net: bool, verdict: Verdict) -> SandboxExecResult:
+                      block_net: bool, verdict: Verdict,
+                      env: Optional[Dict[str, str]] = None) -> SandboxExecResult:
+        from ..core.security_utils import safe_error_text
         try:
             from ..core.sandbox_provider import SandboxProvider, SandboxProfile
             provider = SandboxProvider.create(backend)
             profile = SandboxProfile(network=verdict.network,
                                      max_memory_mb=verdict.memory_mb)
             result = provider.run(["/bin/sh", "-c", command] if os.name != "nt" else ["cmd", "/c", command],
-                                  workspace=cwd, profile=profile, timeout=timeout or 60.0)
+                                  workspace=cwd, profile=profile, timeout=timeout or 60.0,
+                                  env=env)
             return SandboxExecResult(stdout=result.stdout, stderr=result.stderr,
                                      returncode=result.returncode,
                                      backend=backend, enforced=result.enforced,
                                      error=result.error)
         except Exception as exc:
             return SandboxExecResult(returncode=-1, backend=backend,
-                                     enforced=False, error=str(exc))
+                                     enforced=False, error=safe_error_text(str(exc)))
 
     # ------------------------------------------------------------ 配置
     def _allowed_domains(self, ctx: Any) -> Optional[List[str]]:
