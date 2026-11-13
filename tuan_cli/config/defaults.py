@@ -429,6 +429,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
     },
     "permissions": {
+        # 写路径硬边界: 关闭时行为与既有完全一致 (write/edit/delete/move 仍走
+        # 危险确认 + Read-before-Edit); 开启后这些写操作一律 fail-closed 拒绝
+        # 越出工作区 + extra_dirs 的目标。默认关闭 = 不做破坏性默认变更。
+        "blockWritesOutsideWorkingDirectories": False,
         "shell": {
             "deny_patterns": [
                 r"\b(?:format|diskpart)\b",

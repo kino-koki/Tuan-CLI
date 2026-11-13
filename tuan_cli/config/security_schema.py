@@ -193,6 +193,17 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
               get("permissions.network.allow_domains"))
     _str_list(errors, "mode.yolo_require_confirm", get("mode.yolo_require_confirm"))
 
+    # B2: 写路径硬边界 — 严格 bool; 开启时警告「拒绝, 提示仅读」
+    FLAG_WB = "permissions.blockWritesOutsideWorkingDirectories"
+    wb = get(FLAG_WB)
+    if wb is not None and not isinstance(wb, bool):
+        errors.append(f"类型错误: {FLAG_WB} 应为 bool, 实际为 {type(wb).__name__}")
+    elif wb is True:
+        warnings.append(
+            "行为变更: permissions.blockWritesOutsideWorkingDirectories=True 时"
+            "write/edit/delete/move 一律拒绝越出工作区 + extra_dirs 的目标, "
+            "提示仅读上下文不能写 (需 /add-dir 显式可写授权)")
+
     # B2: denyInsteadOfPrompting — 无人值守时拒绝并继续 turn
     # 严格类型：非 bool 一律报错，未知 scope 报非法枚举。
     _VALID_SCOPES = ("no_confirm_channel", "all_confirmations")

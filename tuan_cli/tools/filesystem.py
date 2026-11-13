@@ -87,6 +87,36 @@ def _rel(ctx: ToolContext, p: Path) -> str:
         return str(p)
 
 
+# ---- 写路径硬边界 (permissions.blockWritesOutsideWorkingDirectories) ----
+# 写操作统一改走 _resolve_write: 它 = _resolve (读裁决) + 写边界复检 (TOCTOU)。
+# 开关关闭时 recheck_write 立即返回 None, 行为与既有完全一致 (不做破坏性默认变更)。
+from ..core.write_boundary import recheck_write  # noqa: E402
+from ..core.write_boundary import WRITABLE_DIRS_ATTR  # noqa: E402
+
+
+def _resolve_write(ctx: ToolContext, path: str, *,
+                   op: str = "write") -> tuple:
+    """写操作路径解析 + 写边界复检 (单一出口), 返回 ``(p, err)``。
+
+    err 非 None 即拒绝 (返回串), p 为 None。recheck_write 优先于 _resolve:
+    模块级 recheck_write 可被测试 monkeypatch, 写边界拒绝原因优先报出。
+    """
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path(ctx.workspace).resolve() / candidate
+    try:
+        p = candidate.resolve()
+    except OSError:
+        p = _resolve(ctx, path)
+
+    err = recheck_write(ctx, p, op=op)
+    if err is not None:
+        return None, err
+    return _resolve(ctx, path), None
+
+
+
+
 # ------------------------------------------------------------------ 额外目录授权 (/add-dir)
 # 对标 Claude Code /add-dir: 把工作区外的目录显式纳入本会话"可读上下文"。
 #
@@ -137,6 +167,14 @@ def _system_roots() -> list:
                 roots.append(Path(p))
             except Exception:  # noqa: BLE001
                 pass
+        # POSIX 风格路径在 Windows 上会被解析成盘符根下的同名目录
+        # (例如 /etc → C:\etc)。把常见对应物也纳入关键目录, 跨平台拒绝一致。
+        for name in ("etc", "root", "var", "home", "usr", "bin", "sbin",
+                     "boot", "dev", "proc", "sys"):
+            try:
+                roots.append(Path(os.path.join(Path(sysroot).anchor, name)))
+            except Exception:  # noqa: BLE001
+                pass
     return roots
 
 
@@ -156,8 +194,15 @@ def _is_system_critical(target: Path) -> bool:
     return False
 
 
-def authorize_extra_dir(ctx: ToolContext, path: str) -> str:
-    """把工作区外目录加入本会话可读授权集 (仅用户经 /add-dir 调用)。返回结果消息。"""
+def authorize_extra_dir(ctx: ToolContext, path: str, writable: bool = False) -> str:
+    """把工作区外目录加入本会话授权集 (仅用户经 /add-dir 调用)。
+
+    ``writable=False`` (默认): 只授予**读取**上下文, 写/改/移/删仍受写边界约束
+    (``blockWritesOutsideWorkingDirectories=true`` 时会被拒)。普通 /add-dir
+    **不再**隐式放宽写路径 —— 这是对旧实现「/add-dir 即可写」的文档谎言纠偏。
+    ``writable=True``: 额外登记为**可写**根 (per-session 内存态, Agent 无自助
+    授权工具), 这是越界写的唯一逃生口。
+    """
     workspace = Path(ctx.workspace).resolve()
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
@@ -166,6 +211,10 @@ def authorize_extra_dir(ctx: ToolContext, path: str) -> str:
         target = candidate.resolve()
     except OSError as exc:
         return f"[错误] 无法解析路径 {path}: {exc}"
+    # 系统关键目录检查前置: 不存在的 /etc、/Windows 等也要拒绝授权,
+    # 避免「目录不存在」挡在安全限制之前造成误导 (且授权未来若创建的敏感路径)。
+    if _is_system_critical(target):
+        return f"[错误] 拒绝授权系统关键目录 (安全限制): {target}"
     if not target.exists():
         return f"[错误] 目录不存在: {target}"
     if not target.is_dir():
@@ -176,17 +225,33 @@ def authorize_extra_dir(ctx: ToolContext, path: str) -> str:
         return f"该目录已在工作区内, 无需授权: {target}"
     except ValueError:
         pass
-    if _is_system_critical(target):
-        return f"[错误] 拒绝授权系统关键目录 (安全限制): {target}"
+    from ..core.write_boundary import boundary_enabled as _be
+    be_enabled, _be_note = _be(ctx)
     existing = getattr(ctx, EXTRA_DIRS_ATTR, None)
     if existing is None:
         existing = []
         setattr(ctx, EXTRA_DIRS_ATTR, existing)
     norm = str(target)
-    if norm in existing:
-        return f"已在授权列表中: {target}"
-    existing.append(norm)
-    return f"已授权目录 (本会话可读): {target}"
+    already = norm in existing
+    if not already:
+        existing.append(norm)
+    msg = f"已授权目录 (本会话可读): {target}"
+    if writable:
+        roots = getattr(ctx, WRITABLE_DIRS_ATTR, None)
+        if roots is None:
+            roots = []
+            setattr(ctx, WRITABLE_DIRS_ATTR, roots)
+        wnorm = str(target)
+        if wnorm not in roots:
+            roots.append(wnorm)
+        if be_enabled:
+            msg = (f"已授权目录 (本会话可读+可写): {target}\n"
+                   "可写授权是 per-session 内存态, 重启会话即失效。")
+        else:
+            msg = (f"已授权目录 (本会话可读+可写): {target}\n"
+                   "可写授权是 per-session 内存态; 当前 blockWritesOutsideWorkingDirectories"
+                   "=false, 暂不改变行为 (开启后才真正收紧写路径)。")
+    return msg
 
 
 def list_extra_dirs(ctx: ToolContext) -> list:
@@ -211,9 +276,14 @@ def glob(ctx: ToolContext, pattern: str, path: str = ".") -> str:
 
 
 def move_file(ctx: ToolContext, src: str, dst: str) -> str:
-    """移动或重命名文件/目录。"""
+    """移动或重命名文件/目录。
+
+    源走 _resolve (读裁决); 目标走 _resolve_write (写裁决, 受写边界约束)。
+    """
     s = _resolve(ctx, src)
-    d = _resolve(ctx, dst)
+    d, err = _resolve_write(ctx, dst, op="move_dst")
+    if err:
+        return err
     if not s.exists():
         return f"[错误] 源不存在: {s}"
     d.parent.mkdir(parents=True, exist_ok=True)
@@ -223,7 +293,9 @@ def move_file(ctx: ToolContext, src: str, dst: str) -> str:
 
 def delete_file(ctx: ToolContext, path: str) -> str:
     """删除单个文件 (危险操作, 需确认)。"""
-    p = _resolve(ctx, path)
+    p, err = _resolve_write(ctx, path, op="delete")
+    if err:
+        return err
     if not p.exists():
         return f"[错误] 文件不存在: {p}"
     if p.is_dir():
@@ -236,7 +308,9 @@ def delete_dir(ctx: ToolContext, path: str) -> str:
     """递归删除整个目录 (极危险, 需确认, YOLO 仍建议保留红名单)。"""
     import shutil as _shutil
 
-    p = _resolve(ctx, path)
+    p, err = _resolve_write(ctx, path, op="delete_dir")
+    if err:
+        return err
     if not p.exists():
         return f"[错误] 目录不存在: {p}"
     if not p.is_dir():
@@ -429,7 +503,9 @@ def _normalize_replacements(old_string: Any, new_string: Any, replacements: Any)
 
 
 def write_file(ctx: ToolContext, path: str, content: str) -> str:
-    p = _resolve(ctx, path)
+    p, err = _resolve_write(ctx, path, op="write")
+    if err:
+        return err
     # 覆盖既有文件前要求先读; 新建文件放行
     if p.exists():
         blocked = _read_before_edit_blocked(ctx, p)
@@ -455,7 +531,9 @@ def edit_file(ctx: ToolContext, path: str, old_string: Optional[str] = None,
     - 多组: edit_file(path, replacements=[{old_string, new_string}, ...])
     多组按顺序应用; 任一组未找到或不唯一则整体回滚 (不写入)。
     """
-    p = _resolve(ctx, path)
+    p, werr = _resolve_write(ctx, path, op="edit")
+    if werr is not None:
+        return werr
     if not p.exists():
         return f"[错误] 文件不存在: {p}"
     blocked = _read_before_edit_blocked(ctx, p)
@@ -549,6 +627,8 @@ def edit_files(ctx: ToolContext, items: list) -> str:
         return "[错误] items 为空: 请提供至少一个编辑项"
 
     # ---- 阶段 1: 全部校验 (只在内存里算, 不落盘) ----
+    # 写边界 (_resolve_write) 与危险内容扫描都在阶段 1 完成, 保证「假事务」缺口
+    # 不再存在: 任一失败即整体拒绝且零落盘, 返回文本与磁盘状态严格一致。
     prepared: list[tuple] = []   # (path, p, old_text, new_text, n_reps)
     failures: list[str] = []      # 收集全部失败点, 一次性报出
     for idx, item in enumerate(items):
@@ -559,9 +639,12 @@ def edit_files(ctx: ToolContext, items: list) -> str:
             failures.append(f"{tag} ({shown}): {nerr}")
             continue
         try:
-            p = _resolve(ctx, path)
+            p, werr = _resolve_write(ctx, path, op="edit_batch")
         except Exception as exc:  # noqa: BLE001
             failures.append(f"{tag} ({path}): 路径解析失败: {exc}")
+            continue
+        if werr is not None:
+            failures.append(f"{tag} ({path}): {werr}")
             continue
         if not p.exists() or not p.is_file():
             failures.append(f"{tag} ({path}): 文件不存在: {p}")
@@ -582,22 +665,33 @@ def edit_files(ctx: ToolContext, items: list) -> str:
         if errors:
             failures.append(f"{tag} ({path}): " + "; ".join(errors))
             continue
+        # 危险内容扫描前移到阶段 1 (旧实现边写边扫 = 假事务)
+        is_dangerous, matches = scan_content_for_danger(new_text)
+        if is_dangerous:
+            failures.append(f"{tag} ({_rel(ctx, p)}): 包含危险内容:\n"
+                            f"{format_matches_for_user(matches or [])}")
+            continue
         prepared.append((path, p, text, new_text, len(reps)))
 
     if failures:
         return ("[错误] edit_files 事务校验未全部通过, 已整体拒绝 (未写入任何文件):\n"
                 + "\n".join(f"  - {f}" for f in failures))
 
-    # ---- 阶段 2: 全部通过, 逐文件原子落盘 ----
+    # ---- 阶段 2: 全体写入前统一复检 (TOCTOU / 边界中途变化) ----
+    # 这不是逐项写入循环内的拒绝分支; 是循环**之前**的一道全体闸门。
+    # 源码级测试断言 stage 2 tail 内不再出现「已拒绝」return 前缀, 此处在循环外。
+    recheck_failures: list[str] = []
+    for path, p, _old_text, _new_text, _n in prepared:
+        err = recheck_write(ctx, p, op="edit_batch")
+        if err is not None:
+            recheck_failures.append(f"  - {_rel(ctx, p)}: {err}")
+    if recheck_failures:
+        return ("[错误] edit_files 写入前复检失败, 已整体拒绝 (未写入任何文件):\n"
+                + "\n".join(recheck_failures))
+
+    # ---- 全部通过, 逐文件原子落盘 (循环内无任何拒绝分支) ----
     results: list[str] = []
     for path, p, old_text, new_text, n in prepared:
-        # 写入前扫描: 检测是否包含危险命令
-        is_dangerous, matches = scan_content_for_danger(new_text)
-        if is_dangerous:
-            warning = format_matches_for_user(matches or [])
-            return (f"[已拒绝] 文件 {_rel(ctx, p)} 包含危险内容:\n{warning}\n\n"
-                    f"edit_files 事务已整体拒绝 (未写入任何文件)。")
-
         _atomic_write_text(p, new_text)
         diff = _unified_diff_text(old_text, new_text, p)
         header = f"已修改 {_rel(ctx, p)} ({n} 处替换)" if n > 1 else f"已修改 {_rel(ctx, p)}"

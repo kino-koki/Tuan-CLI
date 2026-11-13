@@ -29,6 +29,23 @@ from ..harden import (
 from ..core.security_bus import SecurityEvent
 
 
+class _CfgProbe:
+    """最小配置探针: 让 harden 审计复用 write_boundary 的 fail-closed 判定。
+
+    ``boundary_enabled`` 调 ``ctx.config(dotted, default)``; 本类用固定值响应,
+    供 ``tuan harden`` 校验「开关关闭/开启/类型非法」三种场景与裁决层逻辑一致。
+    """
+
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def config(self, dotted: str, default: Any = None) -> Any:
+        from ..core.write_boundary import FLAG as _WB_FLAG
+        if dotted == _WB_FLAG:
+            return self._value
+        return default
+
+
 def _resolve_bus_log() -> Path:
     """解析安全事件默认落盘路径: 优先已存在且非空的候选文件, 否则回退到主路径。
 
