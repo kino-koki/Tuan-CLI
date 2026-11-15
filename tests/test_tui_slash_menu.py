@@ -341,3 +341,58 @@ class TestSlashKeyBindings:
         from tuan_cli.tui import tui as tui_mod
         src = inspect.getsource(tui_mod)
         assert "_close_slash_menu" in src
+
+
+# ---------------------------------------------------------------- 可达性回归
+class TestSlashReachability:
+    """SLASH_COMMAND_NAMES 的每个命令必须在 _handle_slash 有分发分支, 且无孤儿分支。
+
+    防止: 注册了命令名但 _handle_slash 忘了加分支 (用户敲了没反应),
+    或分支存在但命令名未注册 (永久死分支)。
+    """
+
+    @staticmethod
+    def _handle_slash_body() -> str:
+        import inspect
+        import re as _re
+        from tuan_cli.cli import cmd_slash
+        src = inspect.getsource(cmd_slash._handle_slash)
+        # 取函数体 (去掉 def 行)
+        body = src[src.index("def _handle_slash"):]
+        next_def = _re.search(r"\n(?:async )?def ", body[1:])
+        if next_def:
+            body = body[:next_def.start() + 1]
+        return body
+
+    def test_every_registered_name_has_branch(self):
+        import re as _re
+        from tuan_cli.cli.cmd_slash import SLASH_COMMAND_NAMES
+        body = self._handle_slash_body()
+        branches = set(_re.findall(r'head == "([^"]*)"', body))
+        branches |= set(_re.findall(r'cmd == "([^"]*)"', body))
+        for m in _re.finditer(r'head in \(([^)]*)\)', body):
+            branches |= set(_re.findall(r'"([^"]*)"', m.group(1)))
+        for m in _re.finditer(r'cmd in \(([^)]*)\)', body):
+            branches |= set(_re.findall(r'"([^"]*)"', m.group(1)))
+        prefix_branches = set(_re.findall(r'head\.startswith\("([^"]+)"', body))
+        known = set(SLASH_COMMAND_NAMES)
+        missing = sorted(n for n in known if n not in branches)
+        missing = [n for n in missing if not any(n.startswith(p) for p in prefix_branches)]
+        assert not missing, f"注册但无分发分支的命令: {missing}"
+
+    def test_no_orphan_branches(self):
+        import re as _re
+        from tuan_cli.cli.cmd_slash import SLASH_COMMAND_NAMES
+        body = self._handle_slash_body()
+        branches = set(_re.findall(r'head == "([^"]*)"', body))
+        branches |= set(_re.findall(r'cmd == "([^"]*)"', body))
+        for m in _re.finditer(r'head in \(([^)]*)\)', body):
+            branches |= set(_re.findall(r'"([^"]*)"', m.group(1)))
+        for m in _re.finditer(r'cmd in \(([^)]*)\)', body):
+            branches |= set(_re.findall(r'"([^"]*)"', m.group(1)))
+        prefix_branches = set(_re.findall(r'head\.startswith\("([^"]+)"', body))
+        known = set(SLASH_COMMAND_NAMES)
+        orphan = sorted(b for b in branches
+                        if b.startswith("/") and b not in known
+                        and not any(b.startswith(p) for p in prefix_branches))
+        assert not orphan, f"已分发但未注册的孤儿分支: {orphan}"
