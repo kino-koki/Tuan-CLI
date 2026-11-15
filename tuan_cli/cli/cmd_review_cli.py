@@ -222,11 +222,12 @@ def cmd_auto_mode(args: Any) -> int:
 
 # ---------------------------------------------------------------- batch
 def cmd_batch(args: Any) -> int:
-    """`tuan batch <file|commands...>` —— 批量执行一组 slash 命令。
+    """`tuan batch <file|commands...>` —— 校验一组 slash 命令的可批量执行性。
 
-    读取命令文件（每行一条）或从 argv 取逗号分隔列表，逐条执行。
-    仅执行**本地安全**的 slash 命令（read-only / 配置 / 会话管理），
-    不执行可能修改工作区文件的危险命令，防止误用。
+    读取命令文件（每行一条）或从 argv 取逗号分隔列表，逐条做安全前缀校验。
+    校验通过后**不在此直接执行** —— slash 命令的真正执行通道是 REPL（需要
+    agent 句柄），CLI 层构造完整 agent 会拖慢启动。校验后提示用户把命令送进
+    REPL，避免静默假装成功。
     """
     items: List[str] = []
     raw = getattr(args, "commands", None)
@@ -249,18 +250,21 @@ def cmd_batch(args: Any) -> int:
         "/debug", "/simplify", "/branch", "/tasks", "/bg", "/background",
     )
     skipped = []
+    valid = []
     for cmd in items:
-        head = cmd.split()[0].lower() if cmd.split() else ""
-        if not head.startswith("/") or not any(head == a or head.startswith(a + " ") or head == a
+        parts = cmd.split()
+        head = parts[0].lower() if parts else ""
+        if not head.startswith("/") or not any(head == a or head.startswith(a + " ")
                                                 for a in _ALLOWED_PREFIXES):
-            # 前缀匹配: 允许带参数的只读命令
-            if not any(head.split("/")[0] == a.split("/")[0] for a in _ALLOWED_PREFIXES if a.startswith(head[:4])):
-                skipped.append(cmd)
-                continue
-        console.print(f"$ {cmd}")
-        # 逐条注入到会话执行（这里仅打印，实际由 REPL 层批处理）
-        console.print(f"  (交由 REPL 批处理: {cmd})")
+            skipped.append(cmd)
+            continue
+        valid.append(cmd)
+        console.print(f"[校验通过] {cmd}")
     if skipped:
         console.print(f"\n[批量] 跳过 {len(skipped)} 条非安全命令: {skipped}")
-    console.print(f"\n[批量] 共 {len(items)} 条，跳过 {len(skipped)} 条。")
+    console.print(f"\n[批量] 共 {len(items)} 条，校验通过 {len(valid)} 条，"
+                  f"跳过 {len(skipped)} 条。")
+    if valid:
+        console.print("\n[提示] 批量命令的真正执行通道是 REPL (需要 agent 句柄)。"
+                      "请进入 `tuan` 交互式会话后逐条执行，或用 `tuan -c \"<命令>\"` 单条执行。")
     return 0

@@ -16,9 +16,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
+from ...hooks import lifecycle as _LC
+from ...hooks.triggers import HookTrigger
 from .events_map import acp_tool_call_id
+
+logger = logging.getLogger(__name__)
 
 #: 单次权限请求等待客户端决策的上限 (秒)。超时不阻塞整个会话 ——
 #: 超时即视为拒绝 (fail-closed)，否则 IDE 用户不点"允许"就能把 agent 卡死。
@@ -51,6 +56,8 @@ class KernelAcpBridge:
         workspace: str = ".",
         conn: Any = None,
         session_id: str = "",
+        owner: Optional[str] = None,
+        hooks: Optional[Any] = None,
     ) -> None:
         self._make_agent = make_agent
         self._kernel = kernel
@@ -64,9 +71,50 @@ class KernelAcpBridge:
         self._conn = conn
         self._session_id = session_id
         self._tool_call_seq = 0
+        # 显式 owner 优先于 agent.ctx.session_owner，兜底 contextvar。
+        self._owner = owner
+        # B3 续轮 VI/VII/VIII: 实例级 hooks 绑定（构造时捕获）。
+        if hooks is not None:
+            self.hooks = hooks
+        else:
+            try:
+                from ...hooks.triggers import current_session_hooks
+                self.hooks = current_session_hooks()
+            except Exception:  # noqa: BLE001
+                try:
+                    from ...hooks.triggers import get_default_hooks_provider
+                    _p = get_default_hooks_provider()
+                    self.hooks = _p() if callable(_p) else None
+                except Exception:  # noqa: BLE001
+                    self.hooks = None
         # 持有事件循环的线程引用 —— 权限回调跑在 executor 线程里，必须靠它把
         # 协程送回主循环（run_coroutine_threadsafe）。
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def _resolve_owner(self) -> Optional[str]:
+        """三段优先级：显式 owner → agent.ctx 活跃句柄 → contextvar 兜底。
+
+        contextvar 兜底覆盖 executor 线程拿不到主线程 owner 的场景；显式 owner
+        让 ACP bridge 在跨线程下有稳定标识；ctx.session_handle 判断活跃性，
+        避免返回已注销的 stale owner。
+        """
+        if self._owner:
+            return self._owner
+        agent = self._agent
+        if agent is not None:
+            ctx = getattr(agent, "ctx", None)
+            if ctx is not None:
+                handle = getattr(ctx, "session_handle", None)
+                if handle is not None and getattr(handle, "closed", False):
+                    return None  # 显式已注销 → stale, 不返回
+                owner = getattr(ctx, "session_owner", None)
+                if owner:
+                    return owner
+        try:
+            from ...hooks.triggers import current_session_owner
+            return current_session_owner()
+        except Exception:  # noqa: BLE001 - 取不到 contextvar 就返回 None
+            return None
 
     # ----------------------------------------------------------- agent 惰性构建
     def _ensure_agent(self) -> Any:
@@ -157,6 +205,23 @@ class KernelAcpBridge:
         loop = self._loop
         if conn is None or loop is None or loop.is_closed():
             return ""
+        # B3 续轮 VIII: ask_user 经 _resolve_owner 取当前会话 owner
+        # (显式 owner → ctx 句柄 → contextvar), 让 elicitation RPC 携带会话标识。
+        _o = self._resolve_owner()
+        # B3 续轮 VII: owner 已解析 → 按 owner 分桶查表；否则回落实例 hooks。
+        # 决策类事件必须显式传 hooks 或 owner（无参 HookTrigger 已禁止）。
+        if _o:
+            _trigger = HookTrigger(owner=_o)
+        else:
+            _trigger = HookTrigger(self.hooks) if self.hooks is not None else None
+        # B3: Elicitation hook 预检（block → 取消提问）
+        if _trigger is not None:
+            try:
+                d = _trigger.elicitation(server="acp", question=question)
+                if d is not None and getattr(d, "block", False):
+                    return ""
+            except Exception:  # noqa: BLE001
+                pass
         opts = [o for o in (options or []) if str(o).strip()]
         payload = [{"value": str(o), "label": str(o)} for o in opts]
         try:
@@ -169,6 +234,17 @@ class KernelAcpBridge:
         if not isinstance(result, dict):
             return ""
         action = str(result.get("action") or "accept")
+        # B3: ElicitationResult hook 后检
+        if _trigger is not None:
+            try:
+                d2 = _trigger.elicitation_result(
+                    server="acp", action=action,
+                    answer=str((result.get("content") or {}).get("choice", "")),
+                    question=question)
+                if d2 is not None and getattr(d2, "block", False):
+                    return ""
+            except Exception:  # noqa: BLE001
+                pass
         if action not in ("accept", "acceptWithChanges"):
             return ""
         content = result.get("content")
@@ -272,11 +348,12 @@ class KernelAcpBridge:
                     if not done:
                         yield {"type": "turn.ended", "reason": "completed"}
                     done = True
-            # 取 run 结果以吸收异常（不阻塞）
+            # 取 run 结果以吸收异常（不阻塞）；落一条日志留证据 —— 否则
+            # run 抛的异常被静默吞掉，外面只看到 reason=completed，无法排障。
             try:
                 await run_fut
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("agent.run raised after stream end: %s", exc)
 
         async for ev in agen():
             yield ev
@@ -298,7 +375,12 @@ class KernelAcpBridge:
             return []
 
     def list_sessions(self) -> List[str]:
-        return []
+        """返回本桥已知的会话 id。
+
+        KernelAcpBridge 是单会话桥: 构造时传入或 prompt 时设置的 ``_session_id``
+        即为它唯一承载的会话。server 层维护多会话字典, 此处仅如实回报本桥视角。
+        """
+        return [self._session_id] if self._session_id else []
 
     def new_session(self, params: Dict[str, Any]) -> str:
         import uuid
@@ -320,7 +402,21 @@ class KernelAcpBridge:
         模型选择由内核 model_router 在 prompt 时解析, 邀请设置的 model_id 会
         被记录以支持将来按会话路由; 传入空串视为清除偏好。
         """
+        # PreModelSwitch: 可阻断 hook，被阻断则跳过切换（fail-closed）
+        try:
+            if _LC.emit_preventable("PreModelSwitch", {
+                    "session_id": session_id,
+                    "from_model": getattr(self, "_model", None) or "",
+                    "to_model": model_id}):
+                return
+        except Exception:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed
+            return
         self._model = model_id
+        try:
+            _LC.emit("PostModelSwitch", {
+                "session_id": session_id, "model_id": model_id})
+        except Exception:  # noqa: BLE001 - 通知类吞异常
+            pass
 
 
 def from_existing_acp_server(acp_server: Any) -> Any:

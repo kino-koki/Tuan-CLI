@@ -301,6 +301,42 @@ def dump_yaml(data: Dict[str, Any], path: Path) -> None:
                 pass
     except Exception as exc:
         log.warning("配置写入失败 (%s): %s", path, exc)
+        return False
+
+
+def _dump_yaml_impl(data: Dict[str, Any], path: Path) -> bool:
+    """写入 YAML 配置核心实现 (原子写, 返回是否成功)。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            _yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_name, path)
+        return True
+    finally:
+        try:
+            Path(temp_name).unlink()
+        except FileNotFoundError:
+            pass
+
+
+def dump_yaml_checked(data: Dict[str, Any], path: Path) -> bool:
+    """同 dump_yaml 但如实返回落盘成败 (B3: ConfigChange 只在成功时派发)。"""
+    try:
+        return _dump_yaml_impl(data, path)
+    except Exception as exc:
+        log.warning("配置写入失败 (%s): %s", path, exc)
+        return False
+
+
+def dump_yaml(data: Dict[str, Any], path: Path) -> None:
+    """写入 YAML 配置 (临时文件 + 原子替换, 崩溃不留下半截配置)。"""
+    try:
+        _dump_yaml_impl(data, path)
+    except Exception as exc:
+        log.warning("配置写入失败 (%s): %s", path, exc)
 
 
 def to_yaml_str(data: Dict[str, Any]) -> str:
@@ -315,12 +351,14 @@ class Config:
     """组合后的配置视图。"""
 
     def __init__(self, profile: str = "default", patch_file: Optional[str] = None,
-                 bare: bool = False):
+                 bare: bool = False, hooks: Any = None):
         self.profile = profile
         self.bare = bare
+        self.hooks = hooks
         self.home = home_dir()
         self.user_config_path = self.home / "config.yaml"
         self.profile_dir = self.home / "profiles" / profile
+        self.last_write_persisted: bool = True
 
         merged = copy.deepcopy(DEFAULT_CONFIG)
         # 预设 profile 作为基线 (用户可在 profiles/<name>/config.yaml 再覆盖)
@@ -361,6 +399,7 @@ class Config:
         dump_yaml(cfg, self.user_config_path)
         # 同步内存视图: 用 patch_replace 整值替换目标键 (保留同级默认字段)。
         self.data = patch_replace(self.data, {dotted: value})
+        self._fire_config_change("user_config", dotted)
 
     def delete_user(self, dotted: str) -> bool:
         """从用户层配置删除某个点路径键 (复位到内置默认值)。返回是否真的删掉了。
@@ -386,7 +425,18 @@ class Config:
             self.data = deep_merge(self.data, PRESET_PROFILES[self.profile])
         self.data = deep_merge(self.data, cfg)
         self.data = deep_merge(self.data, _load_yaml(self.profile_dir / "config.yaml"))
+        self._fire_config_change("user_config", dotted)
         return True
+
+    def _fire_config_change(self, source: str, key: str) -> None:
+        """触发 ConfigChange hook（通知类，任何异常都吞掉）。"""
+        if self.hooks is None:
+            return
+        try:
+            from tuan_cli.hooks.triggers import HookTrigger
+            HookTrigger(self.hooks).config_change(source=source, key=key)
+        except Exception:  # noqa: BLE001 - 通知失败不影响主流程
+            pass
 
     @staticmethod
     def _autofill_preset_fields(value: Any) -> Any:

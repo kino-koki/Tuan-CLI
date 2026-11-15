@@ -116,7 +116,8 @@ class RemoteControl:
         rc.send_prompt("my-session", "What files changed?")
     """
 
-    def __init__(self, home: Path, host: str = "localhost", port: int = 0) -> None:
+    def __init__(self, home: Path, host: str = "localhost", port: int = 0,
+                 hooks: Optional[Any] = None) -> None:
         self.home = Path(home)
         self._sessions: Dict[str, RemoteSession] = {}
         self._host = host
@@ -126,6 +127,15 @@ class RemoteControl:
         # 配对确认爆破防护
         self._confirm_failures: int = 0
         self._confirm_locked_until: float = 0.0
+        # B3 续轮 VI: 实例级 hooks 绑定（构造时从 default provider 捕获）
+        if hooks is not None:
+            self.hooks = hooks
+        else:
+            try:
+                from ..hooks.triggers import current_session_hooks
+                self.hooks = current_session_hooks()
+            except Exception:  # noqa: BLE001
+                self.hooks = None
 
     def _find_free_port(self) -> int:
         """找一个空闲端口。"""
@@ -346,20 +356,58 @@ def _shared_rc() -> Optional["RemoteControl"]:
         return None
 
 
-def notify(title: str, body: str, kind: str = "info") -> bool:
+def notify(
+    title: str,
+    body: str,
+    kind: str = "info",
+    *,
+    hooks: Optional[Any] = None,
+    owner: Optional[str] = None,
+) -> bool:
     """发送一条通知 (任务完成 / 失败 / 预算告警等)。
 
     参数:
         title: 通知标题 (简短, 如 "预算告警")
         body:  通知正文 (人可读, 中文)
         kind:  通知类别 (info / success / error / budget) —— 仅用于日志归类
+        hooks: 显式 hooks 对象（最高优先级，跳过 owner 查表）
+        owner: 跨上下文指定归属（如后台线程指定会话 owner）
 
     返回:
         True = 至少推送到一个已配对且开启推送的远程设备;
         False = 无活跃推送对象 (此时已落日志, 不影响主流程)。
+
+    B3 续轮 VII: Notification hook 派发按 **显式 hooks > 显式 owner > 当前
+    contextvar owner > 实例 hooks** 优先级，且**无论 RC 是否活跃都派发**。
     """
     # 证据 1: 日志 —— 验收时据此证明告警确实触发过
     log.warning("[通知][%s] %s — %s", kind, title, body)
+    # B3 续轮 VII: Notification hook —— 无论 RC 是否活跃都派发。
+    # 优先级: 显式 hooks > 显式 owner > contextvar owner 分桶
+    #         > 单例实例 hooks（冻结于构造时） > default provider 捕获。
+    try:
+        from tuan_cli.hooks.triggers import (
+            HookTrigger, current_session_owner, hooks_for_owner,
+            current_session_hooks, get_default_hooks_provider,
+        )
+        _h = hooks
+        if _h is None and owner:
+            _h = hooks_for_owner(owner)
+        if _h is None:
+            _o = current_session_owner()
+            if _o:
+                _h = hooks_for_owner(_o)
+        if _h is None and _notify_rc is not None:
+            _h = getattr(_notify_rc, "hooks", None)
+        if _h is None:
+            _h = current_session_hooks()
+        if _h is None:
+            _p = get_default_hooks_provider()
+            _h = _p() if callable(_p) else _p
+        if _h is not None:
+            HookTrigger(_h).notification(title=title, body=body, kind=kind)
+    except Exception:  # noqa: BLE001 - 通知 hook 失败不影响主流程
+        pass
     pushed = False
     try:
         rc = _shared_rc()

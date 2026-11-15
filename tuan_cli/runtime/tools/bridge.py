@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, AsyncIterator, Callable, List, Optional
 
 from .contract import (
@@ -21,6 +22,8 @@ from .contract import (
     ToolAccesses,
 )
 from .executor import ToolExecutionResult
+
+logger = logging.getLogger(__name__)
 
 
 def wrap_existing_tool(
@@ -91,9 +94,72 @@ class _WrappedTool:
         )
 
 
-async def _run_base_handler(tool: Any, args: dict, workspace: str) -> ExecutableToolResult:
+async def _run_base_handler(
+    tool: Any, args: dict, workspace: str, *,
+    tool_schema: Optional[dict] = None, hooks: Any = None,
+) -> ExecutableToolResult:
     # 惰性导入：避免 import 期拉起全部工具插件
     from tuan_cli.tools.base import ToolContext
+
+    # B3: 桥接层接入 PreToolUse hook 改参校验。无 schema 时退化为保守子集
+    # (enforced=False)，不声称通过校验；有 schema 时严格校验，deny → 不执行。
+    if hooks is not None:
+        try:
+            d = hooks.run_pre(tool.name, args,
+                              tool_schema=tool_schema or getattr(tool, "parameters", None))
+        except TypeError:
+            d = hooks.run_pre(tool.name, args)  # 老式 mock 无 tool_schema
+        except Exception:
+            d = None
+        if getattr(d, "block", False):
+            return ExecutableToolResult(
+                output=f"Tool {tool.name} blocked by hook: {getattr(d, 'reason', '')}",
+                is_error=True,
+            )
+        new_args = getattr(d, "args", None)
+        if isinstance(new_args, dict) and new_args:
+            try:
+                from tuan_cli.hooks.input_validation import validate_updated_input
+                v = validate_updated_input(
+                    new_args, args, tool_schema or getattr(tool, "parameters", None),
+                    tool_name=tool.name)
+                if v.deny:
+                    return ExecutableToolResult(
+                        output=f"Tool {tool.name} hook 改参未通过校验: {v.reason}",
+                        is_error=True,
+                    )
+                if v.enforced:
+                    args = v.sanitized  # 严格校验通过的替换语义
+                # 无 schema 保守子集 (enforced=False): 只挡未知键，不声称通过校验
+            except Exception as exc:  # noqa: BLE001 - hook 改参失败不阻断调用
+                logger.warning("Tool %s pre-execution hook error (ignored): %s",
+                               tool.name, exc)
+
+    # B3: 按 schema 过滤未知键（防止 hook 或上游注入额外参数）
+    schema = tool_schema or getattr(tool, "parameters", None)
+    if isinstance(schema, dict) and isinstance(args, dict):
+        props = schema.get("properties", {})
+        if props:
+            required = set(schema.get("required", []))
+            filtered = {k: v for k, v in args.items() if k in props}
+            # 检查 required 字段
+            missing = required - set(filtered.keys())
+            if missing:
+                return ExecutableToolResult(
+                    output=f"Tool {tool.name} missing required: {sorted(missing)}",
+                    is_error=True,
+                )
+            # 检查类型（简单 str/number/boolean/int）
+            _TYPE_MAP = {"string": str, "number": (int, float), "integer": int, "boolean": bool}
+            for k, v in filtered.items():
+                expected = props.get(k, {}).get("type")
+                py_type = _TYPE_MAP.get(expected)
+                if py_type and not isinstance(v, py_type):
+                    return ExecutableToolResult(
+                        output=f"Tool {tool.name} param {k} type error: expected {expected}, got {type(v).__name__}",
+                        is_error=True,
+                    )
+            args = filtered
 
     base_ctx = ToolContext(kernel=None, workspace=workspace)
     try:

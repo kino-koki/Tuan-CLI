@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from ..i18n import LANGUAGES, normalize_language
+from ..hooks import lifecycle as _LC
 
 log = logging.getLogger(__name__)
 
@@ -108,7 +109,20 @@ def _read_instruction_capped(path: Path, max_bytes: int) -> str:
         return ""
     if max_bytes > 0 and len(raw) > max_bytes:
         truncated = raw[:max_bytes].decode("utf-8", errors="replace").strip()
-        return truncated + "\n…(文件过大已截断，完整内容请用 read_file 读取)"
+        out = truncated + "\n…(文件过大已截断，完整内容请用 read_file 读取)"
+        # InstructionsLoaded：通知类，payload 只带路径/字节数/是否截断，不带正文
+        try:
+            _LC.emit("InstructionsLoaded", {
+                "path": str(path), "bytes": len(raw), "truncated": True})
+        except Exception:  # noqa: BLE001 - 通知类吞异常
+            pass
+        return out
+    # 未截断：也派发（fired 但 body 不进 payload）
+    try:
+        _LC.emit("InstructionsLoaded", {
+            "path": str(path), "bytes": len(raw), "truncated": False})
+    except Exception:  # noqa: BLE001
+        pass
     return raw.decode("utf-8", errors="replace").strip()
 
 

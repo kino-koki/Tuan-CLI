@@ -132,6 +132,44 @@ class ProviderService:
             self.register("active", active)
             self._active_id = "active"
 
+    # ---------------- 团组授权解析 (v0.4.2) ----------------
+    def build_for_member(
+        self, team_group: Any, grant_id: str, provider_id: str,
+        member: str, model: Optional[str] = None, key_env: Optional[str] = None,
+    ) -> ChatProvider:
+        """按团组签名授权为某成员构造供应商客户端 (使用前验证, fail-closed)。
+
+        关键约束 (对齐 goal「无云端传 key / key 所有者验证 / 时限」):
+        - 先 ``team_group.verify_grant`` 验签+TTL+scope+成员有效性, 任一不满足即抛错;
+        - 供应商 API key **不经过团组流转**, 而是从 key 所有者本机环境变量
+          (``key_env`` 或默认 ``TUAN_GROUP_KEY_<PROVIDER>``) 读取后注入 ——
+          团组内只流转「可否使用」的签名授权, 不流转凭证原文。
+        """
+        verdict = team_group.verify_grant(grant_id, provider_id, model=model)
+        if not verdict.get("ok"):
+            raise ValueError(f"团组授权验证未通过: {verdict}")
+        env_name = key_env or f"TUAN_GROUP_KEY_{provider_id.upper()}"
+        api_key = os.environ.get(env_name)
+        if not api_key:
+            raise ValueError(
+                f"供应商凭证不可用: 环境变量 {env_name} 未设置 (key 原文留在所有者本机)"
+            )
+        # 复用团组登记的 provider 元数据 (type/model/base_url/protocol) 若有
+        meta: Dict[str, Any] = {}
+        for entry in team_group.list_providers():
+            if entry.get("provider_id") == provider_id:
+                meta = dict(entry.get("meta") or {})
+                break
+        chosen_model = model or meta.get("model") or verdict.get("models", [None])[0]
+        cfg = ProviderConfig(
+            type=meta.get("type", provider_id),
+            model=chosen_model or "",
+            base_url=meta.get("base_url"),
+            api_key=api_key,
+            protocol=meta.get("protocol"),
+        )
+        return build_provider(cfg)
+
     def register(self, provider_id: str, cfg: ProviderConfig) -> None:
         self._providers[provider_id] = cfg
         self._active_id = self._active_id or provider_id

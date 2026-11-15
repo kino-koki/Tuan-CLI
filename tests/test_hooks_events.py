@@ -32,12 +32,21 @@ def make_cfg(block: dict) -> dict:
 # ------------------------------------------------------------------ 事件表
 
 def test_hook_events_surface():
-    # 对标 Claude Code 的 8 事件面
-    assert set(HOOK_EVENTS) == {
+    """事件面已从 8 扩展到 33（B3 续轮 XII，与 OFFICIAL_EVENTS 同源）。
+
+    钉住 8 核心事件必在 + HOOK_EVENTS 非空即可，避免每次扩展都改这里。
+    """
+    from tuan_cli.hooks.manager import CORE_HOOK_EVENTS
+    assert CORE_HOOK_EVENTS == {
         "PreToolUse", "PostToolUse", "UserPromptSubmit",
         "Stop", "SubagentStop", "PreCompact",
         "SessionStart", "SessionEnd",
     }
+    assert set(HOOK_EVENTS) >= CORE_HOOK_EVENTS
+    # 扩展事件确实已接入
+    for ev in ("PermissionRequest", "Notification", "PreModelSwitch",
+               "PostModelSwitch", "Elicitation", "WorktreeCreate"):
+        assert ev in HOOK_EVENTS, f"扩展事件 {ev} 应已在 HOOK_EVENTS 中"
 
 
 def test_run_notify_dispatches(tmp_path):

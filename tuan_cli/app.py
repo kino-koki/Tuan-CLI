@@ -246,8 +246,27 @@ def create_agent(
     else:
         try:
             from .hooks.manager import HookManager
+            from .hooks.triggers import activate_session, default_hooks_resolver
+            from .hooks.triggers import set_default_hooks_provider  # B3: 低级 API
 
             agent.ctx.hooks = HookManager(config, workspace, kernel=kernel)
+            # B3 续轮 VIII: 把 hooks 收进事务化会话注册表 + 注入无闭包 default
+            # provider。注册失败/异常时 activate_session 内部 fail-closed，不掀翻会话。
+            # 先给 owner 一个本地变量名供日志/审计 (不写回 ctx 属性)。
+            _session_owner = "agent:%x" % id(agent)
+            _handle = activate_session(
+                owner=_session_owner,
+                hooks=agent.ctx.hooks,
+                provider=default_hooks_resolver,
+                ctx=agent.ctx,
+            )
+            if not _handle.active:  # 注册失败可见，不静默
+                logger.warning("会话 hooks 注册失败（owner=%s）: 上界或冲突",
+                               _handle.owner)
+            # 把会话 hooks 挂到 config 供安全插件 (kernel 服务) 读取:
+            # plugin activate 时 config 先于 agent 就绪, 但 classifier 等子系统
+            # 在 create_agent 阶段才取到 hooks —— 用 config._hooks 做跨层传递点。
+            config._hooks = agent.ctx.hooks
         except Exception:  # noqa: BLE001
             agent.ctx.hooks = None
     # 自定义斜杠命令: 把 <home>/commands 与 <workspace>/.tuan/commands 挂进分发链

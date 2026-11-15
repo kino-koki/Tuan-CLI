@@ -537,6 +537,7 @@ def cmd_chat(args: Any) -> int:
         finally:
             if state["agent"] is not None:
                 _run_session_hooks(state["agent"], "SessionEnd", {"workspace": workspace})
+                _close_agent_session(state["agent"])
         return 0
 
     # 普通 REPL 模式
@@ -549,6 +550,7 @@ def cmd_chat(args: Any) -> int:
                             bare=bool(getattr(args, "bare", False)))
     finally:
         _run_session_hooks(agent, "SessionEnd", {"workspace": workspace})
+        _close_agent_session(agent)
     return rc
 
 
@@ -561,6 +563,20 @@ def _run_session_hooks(agent: Any, event: str, payload: Optional[Dict[str, Any]]
             hooks.run_session(event, payload)
         except Exception as exc:  # noqa: BLE001
             log.debug("会话钩子 %s 执行失败: %s", event, exc)
+
+
+def _close_agent_session(agent: Any) -> bool:
+    """CLI 宿主的会话注销入口：异常安全，绝不掀翻退出流程。
+
+    包装公共 ``hooks.close_agent_session(agent)``；agent 为 None /
+    无 ctx / 无 handle / 已关闭 / 已被更新会话接管时静默跳过。
+    """
+    try:
+        from ..hooks import close_agent_session
+        return bool(close_agent_session(agent))
+    except Exception as exc:  # noqa: BLE001 - 关闭失败不阻断 CLI 退出
+        log.debug("会话注销失败 (忽略): %s", exc)
+        return False
 
 
 def _security_alerter(event: Any) -> None:

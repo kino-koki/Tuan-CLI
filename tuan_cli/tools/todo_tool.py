@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.kernel import Kernel, Plugin
+from ..hooks import lifecycle as _LC
 from .base import Tool, ToolContext, string_prop
 
 TODO_STATUSES = ("pending", "in_progress", "completed")
@@ -90,6 +91,20 @@ def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs: Any) -> 
     if err is not None:
         return err
     assert cleaned is not None
+
+    # TaskCreated：可阻断 hook，被阻断则拒绝写入（fail-closed）
+    try:
+        if _LC.emit_preventable("TaskCreated", {"tasks": list(cleaned)}):
+            return "[拒绝] TaskCreated hook 阻止了任务写入 (fail-closed)"
+    except Exception:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed
+        return "[拒绝] TaskCreated hook 通道异常，任务写入已回滚 (fail-closed)"
+
+    # TaskCompleted：对 newly-completed 任务逐个 emit（通知类 + 决策类）
+    prev = {t.get("content"): t.get("status") for t in (getattr(ctx, "todos", None) or [])}
+    newly_completed = [t for t in cleaned
+                       if t["status"] == "completed"
+                       and prev.get(t.get("content")) != "completed"]
+
     ctx.todos = cleaned
     # 持久化到工作区 (失败不阻断: 内存态已生效)
     try:
@@ -100,6 +115,12 @@ def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs: Any) -> 
         ctx.kernel.emit("todos.updated", {"todos": list(cleaned)})
     except Exception:  # noqa: BLE001
         pass
+    # 派发 TaskCompleted（对每个新完成任务）
+    for t in newly_completed:
+        try:
+            _LC.emit("TaskCompleted", {"task": dict(t)})
+        except Exception:  # noqa: BLE001 - 通知类吞异常
+            pass
     done = sum(1 for t in cleaned if t["status"] == "completed")
     return f"任务清单已更新 ({done}/{len(cleaned)} 完成)。"
 

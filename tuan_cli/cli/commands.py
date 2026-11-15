@@ -149,6 +149,8 @@ _CMD_SOURCES = {
     "cmd_debug": ".cmd_review_cli",
     "cmd_batch": ".cmd_review_cli",
     "cmd_auto_mode": ".cmd_review_cli",
+    # ---- cmd_evolve (阶段 A: 反思性自我进化闭环命令面) ----
+    "cmd_evolve": ".cmd_evolve",
 }
 
 __all__ = sorted(_CMD_SOURCES) + ["ui"]

@@ -235,6 +235,13 @@ def authorize_extra_dir(ctx: ToolContext, path: str, writable: bool = False) -> 
     already = norm in existing
     if not already:
         existing.append(norm)
+    if already:
+        msg = f"该目录已在授权列表中 (无需重复授权, 本会话可读): {target}"
+        if writable:
+            roots = getattr(ctx, WRITABLE_DIRS_ATTR, None) or []
+            if norm in roots:
+                msg = f"该目录已在授权列表中 (本会话可读+可写): {target}"
+        return msg
     msg = f"已授权目录 (本会话可读): {target}"
     if writable:
         roots = getattr(ctx, WRITABLE_DIRS_ATTR, None)

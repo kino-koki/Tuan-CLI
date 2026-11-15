@@ -147,7 +147,9 @@ class SecurityAuditor:
         self._agent_id = agent_id
         self._seq_counter = 0
         self._prev_hash = ""
-        self._lock = threading.Lock()
+        # RLock 而非 Lock: record() → _publish_correlation_alerts() → bus.emit()
+        # → _on_security_event() → record() 是同线程重入路径, 非重入锁会死锁。
+        self._lock = threading.RLock()
 
         # 内存缓冲 (最近 N 条明文, 查询用)
         self._buffer: List[AuditRecord] = []

@@ -44,7 +44,8 @@ class SecurityPlugin(Plugin):
         # 1. 安全分类器
         try:
             from .security_classifier import SecurityClassifier
-            clf = SecurityClassifier()
+            clf = SecurityClassifier(
+                hooks=getattr(config, "_hooks", None))
             kernel.provide("security_classifier", clf, owner=self.name)
             log.debug("安全分类器已注册")
         except Exception as exc:  # noqa: BLE001

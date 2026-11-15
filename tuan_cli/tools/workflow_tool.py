@@ -164,7 +164,15 @@ def _execute_subtask(
     try:
         answer = sub_agent.run(task, stream=False, max_iterations=sub_max_iter)
     except Exception as exc:  # noqa: BLE001
-        return f"[子任务错误] {type(exc).__name__}: {exc}"
+        answer = f"[子任务错误] {type(exc).__name__}: {exc}"
+    finally:
+        # B3 续轮 X (R3): 短命子代理必须在 finally 显式注销会话槽，
+        # 否则累积创建会打满 64 槽导致后续会话静默失去 hooks。
+        try:
+            from ..hooks.triggers import close_agent_session
+            close_agent_session(sub_agent)
+        except Exception:  # noqa: BLE001
+            pass
 
     return answer or "(无输出)"
 

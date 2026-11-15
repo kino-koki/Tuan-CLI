@@ -68,3 +68,55 @@ def test_legacy_mode_still_writes_stderr_notice(capfd):
     ))
     assert ask("edit_file src/a.py") is True
     assert "放行" in capfd.readouterr().err
+
+
+# ----------------------------------------------------------- permission_callback (EC-6)
+
+def test_callback_allows_when_returns_true():
+    """壳注入 callback 返回 True → 放行。"""
+    ask = _confirm(HeadlessConfig(
+        permission_mode="default",
+        permission_callback=lambda q: True,
+    ))
+    assert ask("run_shell ls") is True
+
+
+def test_callback_denies_when_returns_false():
+    """callback 返回 False → 拒绝 (fail-closed)。"""
+    ask = _confirm(HeadlessConfig(
+        permission_mode="default",
+        permission_callback=lambda q: False,
+    ))
+    assert ask("run_shell rm") is False
+
+
+def test_callback_exception_fails_closed(capfd):
+    """callback 抛异常 → 拒绝 (fail-closed)，stderr 说明原因。"""
+    def boom(_):
+        raise RuntimeError("callback crashed")
+    ask = _confirm(HeadlessConfig(
+        permission_mode="default",
+        permission_callback=boom,
+    ))
+    assert ask("delete /tmp/x") is False
+    assert "异常" in capfd.readouterr().err
+
+
+def test_callback_takes_priority_over_fail_closed_false():
+    """callback 优先于 fail_closed_on_permission=False; callback 拒绝时拒绝。"""
+    ask = _confirm(HeadlessConfig(
+        permission_mode="default",
+        fail_closed_on_permission=False,
+        permission_callback=lambda q: q.startswith("safe"),
+    ))
+    assert ask("safe operation") is True
+    assert ask("dangerous operation") is False
+
+
+def test_bypass_ignores_callback():
+    """bypassPermissions 模式下 callback 不参与，直接放行。"""
+    ask = _confirm(HeadlessConfig(
+        permission_mode="bypassPermissions",
+        permission_callback=lambda q: False,
+    ))
+    assert ask("anything") is True

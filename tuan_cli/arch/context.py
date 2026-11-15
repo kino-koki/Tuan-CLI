@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..core.event_sourcer import EventSourcer, SourcedEvent
+from ..hooks import lifecycle as _LC
 
 
 def _estimate_tokens(text: str) -> int:
@@ -78,6 +79,14 @@ class TieredContext:
         total = sum(e.tokens for e in self.hot)
         if total <= self.budget and len(self.hot) <= self.hot_capacity:
             return
+        # PreCompact: 可阻断 hook，被阻断则跳过本次压缩（fail-closed）
+        try:
+            if _LC.emit_preventable("PreCompact", {
+                    "hot_entries": len(self.hot),
+                    "total_tokens": total}):
+                return
+        except Exception:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed
+            return
         # 把一半最旧的 hot 压缩成 warm 摘要
         half = max(1, len(self.hot) // 2)
         to_compact = self.hot[:half]
@@ -85,6 +94,11 @@ class TieredContext:
         summary = self._summarize(to_compact)
         self.warm.append(ContextEntry("system", summary, cache_anchor=True, seq=self._seq))
         self.compactions += 1
+        try:
+            _LC.emit("PostCompact", {"entries_compacted": len(to_compact),
+                                     "summary_len": len(summary)})
+        except Exception:  # noqa: BLE001 - 通知类吞异常（动作已发生）
+            pass
 
     @staticmethod
     def _summarize(entries: List[ContextEntry]) -> str:

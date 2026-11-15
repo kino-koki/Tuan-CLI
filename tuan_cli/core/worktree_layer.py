@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
+from ..hooks import lifecycle as _LC
 from ..sandbox.worktree_boundary import assert_worktree_target, sanitize_git_env
 
 
@@ -161,9 +162,10 @@ def delete_worktree_state(session_id: str, home: Optional[str | Path] = None) ->
 class WorktreeLayer:
     """git worktree 管理层 (每个项目一份)。"""
 
-    def __init__(self, workspace: str | Path) -> None:
+    def __init__(self, workspace: str | Path, hooks: Any = None) -> None:
         self.workspace = Path(workspace).resolve()
         self.dir = self.workspace / ".tuan" / "worktrees"
+        self.hooks = hooks
 
     # ------------------------------------------------------------ 前置检查
 
@@ -220,6 +222,18 @@ class WorktreeLayer:
             assert_worktree_target(self.workspace, target)
         except (ValueError, TypeError) as e:
             raise WorktreeError(f"worktree 边界校验失败: {e}")
+        # B3: WorktreeCreate 决策类 hook（block = 拒绝创建，任何非零 rc 都失败）
+        if self.hooks is not None:
+            from tuan_cli.hooks.triggers import HookTrigger
+            d = HookTrigger(self.hooks).worktree_create(
+                name=name, path=str(target), branch=name or (base or ""),
+                source="create",
+            )
+            if d.block:
+                raise WorktreeError(
+                    f"WorktreeCreate Hook 阻断 ({d.failure_kind or 'hook deny'}): "
+                    f"{d.reason or '（hook 未给原因）'}"
+                )
         self.dir.mkdir(parents=True, exist_ok=True)
         # 新分支 <name> 挂在当前 HEAD 上
         cmd = ["worktree", "add", "-b", name, str(target)]
@@ -275,6 +289,17 @@ class WorktreeLayer:
         target = self._wt_path(name)
         if not target.exists():
             raise WorktreeError(f"worktree 不存在: {target}")
+        # WorktreeRemove: 可阻断 hook，被阻断则拒绝移除（fail-closed）
+        try:
+            if _LC.emit_preventable("WorktreeRemove", {
+                    "name": name, "path": str(target)}):
+                raise WorktreeError(
+                    f"拒绝移除 worktree: WorktreeRemove hook 阻止了移除 (fail-closed)")
+        except WorktreeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed
+            raise WorktreeError(
+                f"拒绝移除 worktree: hook 通道异常 {type(exc).__name__} (fail-closed)")
         r = self._git(["worktree", "remove", str(target)])
         if r.returncode != 0:
             raise WorktreeError(
@@ -321,6 +346,18 @@ class WorktreeLayer:
         if target.exists() and (target / ".git").exists():
             return WorktreeInfo(name=name, path=str(target), branch=name)
 
+        # B3: WorktreeCreate 决策类 hook（仅新建路径触发，复用路径不重复打扰）
+        if self.hooks is not None:
+            from tuan_cli.hooks.triggers import HookTrigger
+            d = HookTrigger(self.hooks).worktree_create(
+                name=name, path=str(target), branch=name,
+                source="create_agent", ephemeral=True,
+            )
+            if d.block:
+                raise WorktreeError(
+                    f"WorktreeCreate hook 拒绝为子代理创建 worktree: "
+                    f"{d.reason or '（hook 未给原因）'}"
+                )
         self.dir.mkdir(parents=True, exist_ok=True)
         if self._branch_exists(name):
             cmd = ["worktree", "add", str(target), name]

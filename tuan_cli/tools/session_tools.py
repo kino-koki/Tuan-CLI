@@ -183,12 +183,26 @@ def _ask_user_handler(ctx: ToolContext, question: Any = "", options: Any = None,
         return "[错误] ask_user 需要 question 参数"
     opts = [str(o).strip() for o in (options or []) if str(o).strip()]
 
+    # B3: Elicitation 决策类 hook（block = 取消提问，不代答）
+    hooks = getattr(ctx, "hooks", None)
+    if hooks is not None:
+        from tuan_cli.hooks.triggers import HookTrigger
+        d = HookTrigger(hooks).elicitation(question=q, options=opts)
+        if d.block:
+            return f"Elicitation Hook 阻断 ({d.failure_kind or 'deny'}): 取消提问 {d.reason or '（hook 未给原因）'}"
+
     # 扩展点: TUI 在 ctx.ui 上注入 ask_user 钩子 (QxtTUI.attach_ui -> TuiUI),
     # 提问渲染成对话区可选卡片 (↑↓/Enter), 不碰 stdout。
     ui_handle = getattr(ctx, "ui", None)
     if ui_handle is not None and hasattr(ui_handle, "ask_user"):
         try:
             ans = ui_handle.ask_user(q, opts)
+            # B3: ElicitationResult 决策类 hook（block = 作废本次回答）
+            if hooks is not None and ans:
+                from tuan_cli.hooks.triggers import HookTrigger
+                d2 = HookTrigger(hooks).elicitation_result(answer=str(ans))
+                if d2.block:
+                    return f"ElicitationResult Hook 阻断 ({d2.failure_kind or 'deny'}): 作废本次回答 {d2.reason or '（hook 未给原因）'}"
             return f"用户回答: {ans}" if ans else "用户未回答本次提问 (已跳过), 请基于现有信息继续并说明你的假设。"
         except Exception:  # noqa: BLE001 - 钩子失效时走下面的安全分支
             pass

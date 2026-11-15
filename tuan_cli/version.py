@@ -27,4 +27,15 @@
 # v0.4.0: 安全防线多路完善 (神经网络学习器等多路防御 + 全新安全模块);
 #         新增 Qwen 办公 2.0 团队协作模式; CLI 命令简化 (合并/精简入口数量);
 #         API 冻结点确立, 1.0 目标重定为由 GitHub STAR 数门控 (见 VERSION_POLICY.md)。
-__version__ = "0.4.0"
+# v0.4.1: web 团队协作页 (GitHub 设备流登录 + 协作黑板) + MotionHarness
+#         代码动画节点工作台 (/web ComfyUI 风格)。
+# v0.4.2: 团组 (TeamGroup) —— Tuan 的团队核心: 最多 100 人纯本地团队,
+#         供应商/模型授权互通 (key 所有者签名 + 时限≤90天 + 无云端传 key);
+#         AgentCapability 统一能力门面 (融合 Kiro/Codebuff/Cursor/herdr/
+#         kimicode/doubao-cli 等 17 项各家 Agent 核心理念为可插拔能力矩阵);
+#         tuan team CLI 子命令 (create/show/add-member/register/issue/verify/
+#         revoke-grant/revoke-member/audit/invite/import-invite);
+#         团组审计日志 (team_audit.jsonl, 追加链不可篡改);
+#         跨机邀请令牌 export_invite/import_invite (远程+局域网加入);
+#         web 团组面板 (成员/供应商/授权三列管理 + 能力矩阵展示)。
+__version__ = "0.4.2"

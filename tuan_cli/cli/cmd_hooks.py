@@ -100,16 +100,41 @@ def _hooks_test(workspace: str, args: Any) -> int:
         console.print(f"事件 {event} 未配置任何 hook。")
         return 0
     console.print(f"触发 {event} (tool={tool}) ...")
+    # B3: 决策类扩展事件统一走 run_decision；有工具 schema 时传给改参校验。
+    schema = _lookup_tool_schema(kernel, tool)
     if event == "PreToolUse":
-        d = mgr.run_pre(tool, payload, dangerous=True)
+        d = mgr.run_pre(tool, payload, dangerous=True, tool_schema=schema)
         console.print(f"  block={d.block}  reason={d.reason!r}  args={d.args!r}")
+        _print_validation_notes(d)
     elif event == "PostToolUse":
         mgr.run_post(tool, payload, None)
         console.print("  PostToolUse 已触发 (见 hook 脚本输出/审计事件)。")
+    elif event in ("PermissionRequest", "WorktreeCreate",
+                   "Elicitation", "ElicitationResult"):
+        # 决策类扩展事件（可 block），stdout 解析失败 fail-closed
+        mgr.run_decision(event, tool_name=tool, payload=payload)
+        console.print(f"  {event} 已走 run_decision (见 hook 脚本输出/审计事件)。")
     else:
-        mgr.run_session(event, {"tool": tool, **payload})
-        console.print(f"  {event} 已触发。")
+        mgr.run_notify(event, {"tool": tool, **payload})
+        console.print(f"  {event} 已触发 (通知类, stdout 忽略)。")
     return 0
+
+
+def _lookup_tool_schema(kernel: Any, tool_name: str) -> dict | None:
+    """从内核 registry 取工具 schema (仅用于 run_pre 改参校验, 失败降级 None)。"""
+    try:
+        registry = kernel.get("tool_registry")
+        tool = registry.get(tool_name) if registry is not None else None
+        params = getattr(tool, "parameters", None)
+        return params if isinstance(params, dict) else None
+    except Exception:
+        return None
+
+
+def _print_validation_notes(d: Any) -> None:
+    """把 run_pre 的改参校验结果落到 console (enforced / 保守子集)。"""
+    if getattr(d, "args", None):
+        console.print("  [改参] 已按工具 schema 校验；无 schema 时退化为保守子集 (enforced=False)，不声称通过校验。")
 
 
 def _cmd_hooks(agent: Any, arg: str) -> None:

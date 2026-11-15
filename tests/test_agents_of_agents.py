@@ -2,9 +2,9 @@
 
 覆盖:
 - 事件模型 (EventType / AgentEvent / TaskRequest / AgentInfo)
-- 5 家适配器注册闭合 + build_command
+- 9 家适配器注册闭合 + build_command (v0.4.2: 原 5 家 + gemini/aider/qwen-code/doubao)
 - router: 显式指定 / auto 打分排序 / 不健康跳过 / 无可用
-- discovery: 并行探测返回 5 家
+- discovery: 并行探测返回全部已注册家数
 
 不依赖本机真实安装哪些代理: detect() 在测试里被 monkeypatch 为可控的 healthy 状态。
 """
@@ -19,7 +19,10 @@ from tuan_cli.agents.base import AgentAdapter, AgentEvent, AgentInfo, EventType,
 from tuan_cli.agents.discovery import discover_agents, probe_agent, summarize
 from tuan_cli.agents.router import REGISTRATION_PRIORITY, route, route_explain
 
-EXPECTED_ADAPTERS = ("claude-code", "codex", "hermes", "deepseek-harness", "kimi-code")
+EXPECTED_ADAPTERS = (
+    "claude-code", "codex", "hermes", "deepseek-harness", "kimi-code",
+    "gemini", "aider", "qwen-code", "doubao",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -71,8 +74,13 @@ def test_agent_info_to_dict_omits_reason_when_none():
 def test_five_adapters_registered():
     for aid in EXPECTED_ADAPTERS:
         assert aid in ADAPTERS, f"adapter {aid} 未注册"
-    # 注册顺序固定, 供 UI 稳定渲染
-    assert list(ADAPTERS.keys()) == list(EXPECTED_ADAPTERS)
+    assert set(ADAPTERS.keys()) == set(EXPECTED_ADAPTERS)
+
+
+def test_detection_order_matches_registry():
+    """DETECTION_ORDER 应覆盖全部注册 adapter, 作为稳定探测序列。"""
+    from tuan_cli.agents.discovery import DETECTION_ORDER
+    assert set(DETECTION_ORDER) == set(EXPECTED_ADAPTERS)
 
 
 def test_build_command_claude():
@@ -87,6 +95,11 @@ def test_build_command_all_adapters():
     assert asyncio.run(ADAPTERS["kimi-code"].build_command(TaskRequest(id="t", prompt="p"))) == ["kimi-code", "--prompt", "p"]
     # hermes 实测口径 (v0.17.0): 单次查询走 `chat -q`
     assert asyncio.run(ADAPTERS["hermes"].build_command(TaskRequest(id="t", prompt="p"))) == ["hermes", "chat", "-q", "p"]
+    # v0.4.2 新增 4 家
+    assert asyncio.run(ADAPTERS["gemini"].build_command(TaskRequest(id="t", prompt="p"))) == ["gemini", "-p", "p"]
+    assert asyncio.run(ADAPTERS["aider"].build_command(TaskRequest(id="t", prompt="p"))) == ["aider", "--message", "p", "--yes-always", "--no-pretty"]
+    assert asyncio.run(ADAPTERS["qwen-code"].build_command(TaskRequest(id="t", prompt="p"))) == ["qwen", "-p", "p"]
+    assert asyncio.run(ADAPTERS["doubao"].build_command(TaskRequest(id="t", prompt="p"))) == ["doubao", "-p", "p"]
 
 
 def test_all_adapters_subclass_base_and_are_configured():
@@ -267,13 +280,16 @@ def test_detect_verify_mismatch_scores_60_but_stays_healthy(monkeypatch):
 
 def test_route_auto_health_score_breaks_weight_tie(monkeypatch):
     # chat 模式: deepseek-harness / hermes / kimi-code 权重同为 3;
-    # claude-code (权重 5) 不健康被跳过 → 同权重按健康分决胜:
+    # claude-code (权重 5) 不健康被跳过; v0.4.2 新增 4 家 (gemini/qwen/doubao
+    # 权重 4, aider 权重 3) 均标记不健康, 保持原 3 家同权重决胜场景:
     # hermes 100 > deepseek 60 → 选 hermes; kimi-code 不健康不参与。
     _stub_detect(monkeypatch, "claude-code", AgentInfo(id="claude-code", name="cc", healthy=False, reason="missing"))
     _stub_detect(monkeypatch, "deepseek-harness", AgentInfo(id="deepseek-harness", name="dsh", healthy=True, score=60))
     _stub_detect(monkeypatch, "hermes", AgentInfo(id="hermes", name="hermes", healthy=True, score=100))
     _stub_detect(monkeypatch, "kimi-code", AgentInfo(id="kimi-code", name="kimi", healthy=False, reason="missing"))
     _stub_detect(monkeypatch, "codex", AgentInfo(id="codex", name="codex", healthy=True, score=100))
+    for aid in ("gemini", "aider", "qwen-code", "doubao"):
+        _stub_detect(monkeypatch, aid, AgentInfo(id=aid, name=aid, healthy=False, reason="missing"))
     a, err = asyncio.run(route(TaskRequest(id="t", prompt="p", mode="chat")))
     assert err is None
     assert a is not None

@@ -489,6 +489,7 @@ class SecurityClassifier:
         feature_weights: Optional[Dict[str, float]] = None,
         threshold_deny: float = _THRESHOLD_DENY,
         threshold_confirm: float = _THRESHOLD_CONFIRM,
+        hooks: Optional[Any] = None,
     ) -> None:
         self._weights = dict(_FEATURE_RISK_WEIGHTS)
         if feature_weights:
@@ -499,6 +500,9 @@ class SecurityClassifier:
         # 多路防御: 可选挂载在线学习器 (perceptron), 与规则引擎/分类器并行判定。
         # fail-closed 原则: 学习器异常绝不放行, 仅当其明确投 deny/confirm 票时才收紧。
         self._learner: Any = None
+        # 会话 hooks (可选): 由 security_plugin 从 config._hooks 传入,
+        # 供 classify() 路径触发安全事件 hook; 传入 None 时安全 hook 跳过。
+        self._hooks = hooks
 
     def attach_learner(self, learner: Any) -> None:
         """挂载在线学习器 (security_learner.SecurityLearner)。

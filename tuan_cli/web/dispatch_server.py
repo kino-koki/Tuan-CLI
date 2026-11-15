@@ -21,8 +21,9 @@ import asyncio
 import json
 import os
 import platform
-import random
+import secrets
 import string
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -59,18 +60,25 @@ _pairing_sessions: Dict[str, dict] = {}
 
 
 def _gen_pair_code() -> str:
-    """生成 6 位纯数字配对码。"""
-    return f"{random.randint(0, 999999):06d}"
+    """生成 6 位纯数字配对码 (secrets 防 暴力枚举)。"""
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 
 def _audit(event: dict) -> None:
-    """写审计日志 (一行一条 JSON)。失败静默, 不影响主流程。"""
+    """写审计日志 (一行一条 JSON)。
+
+    失败时 stderr 告警——远程任务/审批/配对码等安全事件静默丢失会让追溯链断裂。
+    不抛异常（不影响主流程），但调用方可观测到落盘故障。
+    """
     try:
         AUDIT_DIR.mkdir(parents=True, exist_ok=True)
         with open(AUDIT_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        try:
+            sys.stderr.write(f"[dispatch] audit 落盘失败: {exc}\n")
+        except Exception:
+            pass
 
 
 class DispatchSession:
@@ -93,11 +101,18 @@ class DispatchSession:
         return self.session_id is not None and (time.time() - (self.paired_at or 0)) < SESSION_TTL_SEC
 
     async def send(self, msg: dict) -> None:
-        """发送消息 (异常时关闭连接)。"""
+        """发送消息。
+
+        异常时关闭连接（调用方通过后续 ``ws.closed`` / recv 异常感知断开），
+        避免僵尸 WebSocket 留在 _SESSIONS 里持续占用资源。
+        """
         try:
             await self.ws.send(json.dumps(msg, ensure_ascii=False))
         except Exception:
-            pass
+            try:
+                await self.ws.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 async def handle_connection(ws: Any) -> None:

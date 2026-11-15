@@ -49,13 +49,10 @@ class AcpSession:
         conn: AcpConn,
         session_id: str,
         agent_provider: Any,
-        *,
-        elicitation_form: bool = False,
     ) -> None:
         self._conn = conn
         self._session_id = session_id
         self._agent_provider = agent_provider
-        self._elicitation_form = elicitation_form
 
         self._turn_counter = 0
         self._current_turn_id: Optional[int] = None

@@ -240,4 +240,47 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
             _bool_field(errors, "mcp.policy.enabled", pol.get("enabled"),
                         dangerous_when_false="MCP 信任分级整体关闭, 未登记 server 将由外层一刀切放行")
 
+    # B3: hooks 配置验证 (fail-closed 策略)
+    hooks = get("hooks")
+    if hooks is not None:
+        if not isinstance(hooks, dict):
+            errors.append(f"类型错误: hooks 应为配置字典, 实际为 {type(hooks).__name__}")
+        else:
+            # 全局 on_failure 策略
+            of = hooks.get("on_failure")
+            if of is not None:
+                if not isinstance(of, str) or of.strip().lower() not in ("block", "ask", "allow"):
+                    errors.append(
+                        f"非法枚举: hooks.on_failure={of!r} 不在 ('block', 'ask', 'allow') 中")
+                elif of.strip().lower() == "allow":
+                    warnings.append(
+                        "安全降级: hooks.on_failure=allow 时 hook 执行失败不阻断 (fail-open)")
+            # per-hook on_failure 验证
+            _VALID_HOOK_EVENTS = (
+                "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop",
+                "SubagentStop", "PreCompact", "SessionStart", "SessionEnd",
+                "PermissionRequest", "Notification", "DirectoryAdded",
+                "ConfigChange", "WorktreeCreate", "Elicitation",
+                "ElicitationResult",
+            )
+            for event, hooks_list in hooks.items():
+                if event in ("enabled", "default_timeout", "allow_blocking",
+                             "allow_edit_args", "audit_log", "on_failure"):
+                    continue
+                if event not in _VALID_HOOK_EVENTS:
+                    warnings.append(f"未知的 hook 事件名: {event!r}")
+                    continue
+                if not isinstance(hooks_list, (list, tuple)):
+                    continue
+                for i, item in enumerate(hooks_list):
+                    if not isinstance(item, dict):
+                        continue
+                    per_of = item.get("on_failure")
+                    if per_of is not None and (
+                            not isinstance(per_of, str)
+                            or per_of.strip().lower() not in ("block", "ask", "allow")):
+                        errors.append(
+                            f"非法枚举: hooks.{event}[{i}].on_failure={per_of!r} "
+                            f"不在 ('block', 'ask', 'allow') 中")
+
     return errors, warnings

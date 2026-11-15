@@ -221,6 +221,14 @@ def _run_subagent(
         )
     except Exception as exc:  # noqa: BLE001
         return f"[子代理错误] {type(exc).__name__}: {exc}"
+    finally:
+        # B3 续轮 X (R3): 短命子代理必须在 finally 显式注销会话槽，
+        # 否则 70 次创建打满 64 槽导致后续会话静默失去 hooks。
+        try:
+            from ..hooks.triggers import close_agent_session
+            close_agent_session(sub_agent)
+        except Exception:  # noqa: BLE001
+            pass
 
     # 截断过长的摘要
     if answer and len(answer) > _MAX_SUMMARY_LEN:

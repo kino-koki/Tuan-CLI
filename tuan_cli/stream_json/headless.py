@@ -24,7 +24,7 @@ import threading
 import time
 import uuid as _uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .. import __version__
 from .schema import ResultMessage, SystemInitMessage, encode_message, parse_input_line
@@ -116,6 +116,11 @@ class HeadlessConfig:
     #   RPC 可回问壳, 默认放行等于"看起来在检查、其实什么都没拦"。
     # False (legacy): 放行并写一行 stderr —— 仅当壳侧已自行把关时用它恢复旧行为。
     fail_closed_on_permission: bool = True
+    # 壳侧注入的权限审批回调 (v0.4.2 EC-6): 签名 ``fn(question: str) -> bool``。
+    # 当设置时, 非 bypassPermissions 模式优先调用它决定放行与否;
+    # 回调抛异常或返回非真值 → 拒绝 (fail-closed)。
+    # 适用场景: 壳通过 stdin 控制、远程 RPC、或 GUI 弹窗实现交互式审批。
+    permission_callback: Optional[Callable[[str], bool]] = None
     # ---- 壳固定追加的 argv（不报错、尽量生效）----
     thinking_enabled: bool = False
     resume_session_id: Optional[str] = None  # 壳 --resume <session_id>
@@ -174,14 +179,31 @@ class HeadlessDriver:
         ``fail_closed_on_permission=False`` 恢复旧的放行行为。
 
         TODO(EC-6): default/plan 模式应经 control_request RPC 向壳请求权限,
-        届时 fail-closed 可降级为「等待壳回包」。
+        届时 fail-closed 可降级为「等待壳回包」。当前版本通过 ``permission_callback``
+        让壳侧注入同步审批回调 (GUI 弹窗/远程 RPC/stdin 通道皆可)。
         """
         if self.config.permission_mode == "bypassPermissions":
             return lambda question: True
 
         fail_closed = getattr(self.config, "fail_closed_on_permission", True)
+        callback = getattr(self.config, "permission_callback", None)
 
         def _ask(question: str) -> bool:
+            # 优先走壳注入的审批回调 (EC-6): 异常或返回非真值一律拒绝 (fail-closed)
+            if callable(callback):
+                try:
+                    ok = bool(callback(question))
+                except Exception as exc:  # noqa: BLE001
+                    sys.stderr.write(
+                        f"[headless] 权限审批回调异常 (拒绝): {exc}\n"
+                    )
+                    return False
+                if not ok:
+                    sys.stderr.write(
+                        f"[headless] 权限请求被回调拒绝: {question!r}\n"
+                    )
+                return ok
+            # 回退: fail-closed 拒绝
             if fail_closed:
                 sys.stderr.write(
                     f"[headless] 权限请求被拒绝 (permission_mode={self.config.permission_mode!r}, "
@@ -191,8 +213,10 @@ class HeadlessDriver:
                 )
                 return False
             sys.stderr.write(
-                f"[headless] 权限请求 {question!r} — 非 bypassPermissions 模式"
-                "按 fail_closed_on_permission=False 放行（TODO EC-6: control_request RPC）\n"
+                f"[headless] 警告: 权限请求 {question!r} 在非 bypassPermissions 模式下"
+                "被放行 (fail_closed_on_permission=False 且无 permission_callback)。\n"
+                "  这等价于跳过权限闸门 —— 仅当壳侧已自行把关时才使用。\n"
+                "  推荐做法: 设置 HeadlessConfig.permission_callback=fn 以显式审批。\n"
             )
             return True
 
@@ -451,6 +475,12 @@ class HeadlessDriver:
             # EOF / 中断：在途 turn 的 result 必须 flush 完再退。
             if self._worker is not None:
                 self._worker.join(timeout=60.0)
+            # B3 续轮 X: headless serve 退出时注销会话槽 (长驻但进程级一次)。
+            try:
+                from ..hooks.triggers import close_agent_session
+                close_agent_session(self._agent)
+            except Exception:  # noqa: BLE001
+                pass
         return 0
 
 

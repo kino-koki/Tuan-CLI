@@ -84,7 +84,10 @@ def _cmd_handoff(agent: Any, config: Any, workspace: str) -> None:
 
 def _cmd_worktree(agent: Any, arg: str, workspace: str) -> None:
     """/worktree create|list|remove|switch —— git worktree 并行实验。"""
-    layer = WorktreeLayer(workspace)
+    # B3: 注入 hooks 以支持 WorktreeCreate 决策
+    ctx = getattr(agent, "ctx", None)
+    agent_hooks = ctx.hooks if ctx is not None else None
+    layer = WorktreeLayer(workspace, hooks=agent_hooks)
     parts = arg.strip().split()
     sub = parts[0].lower() if parts else "list"
     name = parts[1] if len(parts) > 1 else ""

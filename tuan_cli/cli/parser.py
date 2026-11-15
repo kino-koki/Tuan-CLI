@@ -150,6 +150,8 @@ def _auto_register() -> None:
     importlib.import_module(".cmd_handoff", __package__)
     importlib.import_module(".cmd_help", __package__)
     importlib.import_module(".cmd_skills", __package__)
+    importlib.import_module(".cmd_team", __package__)  # 团组 (v0.4.2)
+    importlib.import_module(".cmd_teamlead", __package__)  # 专家团 (v0.4.2)
     # 导入 commands.py，它会通过 PEP 562 惰性路由注册所有命令
     importlib.import_module(".commands", __package__)
     # 注意: commands.py 内的 _CMD_SOURCES 已经覆盖所有已注册 func。

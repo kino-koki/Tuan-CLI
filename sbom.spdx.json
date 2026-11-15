@@ -1,0 +1,1468 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "tuan_cli-sbom",
+  "documentNamespace": "https://kino-koki.github.io/sbom/tuan_cli-0.4.2-2026-11-15T08:52:02Z",
+  "creationInfo": {
+    "created": "2026-11-15T08:52:02Z",
+    "creators": [
+      "Tool: tuan_cli-harden-sbom"
+    ],
+    "licenseListVersion": "3.20"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-tuan-cli-0",
+      "name": "tuan_cli",
+      "versionInfo": "0.4.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tuan-cli-1",
+      "name": "tuan-cli",
+      "versionInfo": "0.3.4",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-accelerate-2",
+      "name": "accelerate",
+      "versionInfo": "1.15.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-altgraph-3",
+      "name": "altgraph",
+      "versionInfo": "0.17.5",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-annotated-doc-4",
+      "name": "annotated-doc",
+      "versionInfo": "0.0.5",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-annotated-types-5",
+      "name": "annotated-types",
+      "versionInfo": "0.8.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-anyio-6",
+      "name": "anyio",
+      "versionInfo": "4.15.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-ast-serialize-7",
+      "name": "ast_serialize",
+      "versionInfo": "0.13.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-attrs-8",
+      "name": "attrs",
+      "versionInfo": "26.1.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-brotli-9",
+      "name": "brotli",
+      "versionInfo": "1.2.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-certifi-10",
+      "name": "certifi",
+      "versionInfo": "2026.10.23",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-cffi-11",
+      "name": "cffi",
+      "versionInfo": "2.1.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-charset-normalizer-12",
+      "name": "charset-normalizer",
+      "versionInfo": "3.5.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-click-13",
+      "name": "click",
+      "versionInfo": "8.5.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-colorama-14",
+      "name": "colorama",
+      "versionInfo": "0.4.6",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-cryptography-15",
+      "name": "cryptography",
+      "versionInfo": "50.0.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-filelock-16",
+      "name": "filelock",
+      "versionInfo": "3.32.3",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-fonttools-17",
+      "name": "fonttools",
+      "versionInfo": "4.68.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-fsspec-18",
+      "name": "fsspec",
+      "versionInfo": "2026.7.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-git-filter-repo-19",
+      "name": "git-filter-repo",
+      "versionInfo": "2.47.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-greenlet-20",
+      "name": "greenlet",
+      "versionInfo": "3.5.6",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-h11-21",
+      "name": "h11",
+      "versionInfo": "0.16.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-hf-xet-22",
+      "name": "hf-xet",
+      "versionInfo": "1.7.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-httpcore-23",
+      "name": "httpcore",
+      "versionInfo": "1.0.9",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-httpcore2-24",
+      "name": "httpcore2",
+      "versionInfo": "2.16.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-httpx-25",
+      "name": "httpx",
+      "versionInfo": "0.28.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-httpx2-26",
+      "name": "httpx2",
+      "versionInfo": "2.16.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-huggingface-hub-27",
+      "name": "huggingface_hub",
+      "versionInfo": "2.3.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-idna-28",
+      "name": "idna",
+      "versionInfo": "3.20",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-iniconfig-29",
+      "name": "iniconfig",
+      "versionInfo": "2.3.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-Jinja2-30",
+      "name": "Jinja2",
+      "versionInfo": "3.1.6",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-jiter-31",
+      "name": "jiter",
+      "versionInfo": "0.18.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-librt-32",
+      "name": "librt",
+      "versionInfo": "0.16.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-lxml-33",
+      "name": "lxml",
+      "versionInfo": "6.1.3",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-markdown-it-py-34",
+      "name": "markdown-it-py",
+      "versionInfo": "4.2.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-MarkupSafe-35",
+      "name": "MarkupSafe",
+      "versionInfo": "3.0.3",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mdurl-36",
+      "name": "mdurl",
+      "versionInfo": "0.1.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-modelscope-37",
+      "name": "modelscope",
+      "versionInfo": "1.40.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-modelscope-hub-38",
+      "name": "modelscope-hub",
+      "versionInfo": "0.6.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mpmath-39",
+      "name": "mpmath",
+      "versionInfo": "1.3.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mss-40",
+      "name": "mss",
+      "versionInfo": "10.2.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mypy-41",
+      "name": "mypy",
+      "versionInfo": "2.4.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mypy-extensions-42",
+      "name": "mypy_extensions",
+      "versionInfo": "1.1.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-networkx-43",
+      "name": "networkx",
+      "versionInfo": "3.6.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-numpy-44",
+      "name": "numpy",
+      "versionInfo": "2.5.4",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-openai-45",
+      "name": "openai",
+      "versionInfo": "3.42.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-outcome-46",
+      "name": "outcome",
+      "versionInfo": "1.3.0.post0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-packaging-47",
+      "name": "packaging",
+      "versionInfo": "26.3",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pathspec-48",
+      "name": "pathspec",
+      "versionInfo": "1.1.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pefile-49",
+      "name": "pefile",
+      "versionInfo": "2024.8.26",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pillow-50",
+      "name": "pillow",
+      "versionInfo": "13.0.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pip-51",
+      "name": "pip",
+      "versionInfo": "26.1.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-playwright-52",
+      "name": "playwright",
+      "versionInfo": "1.64.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pluggy-53",
+      "name": "pluggy",
+      "versionInfo": "1.7.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-prompt-toolkit-54",
+      "name": "prompt_toolkit",
+      "versionInfo": "3.0.53",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-psutil-55",
+      "name": "psutil",
+      "versionInfo": "7.2.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pyarrow-56",
+      "name": "pyarrow",
+      "versionInfo": "26.0.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pycparser-57",
+      "name": "pycparser",
+      "versionInfo": "3.12",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pydantic-58",
+      "name": "pydantic",
+      "versionInfo": "2.14.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pydantic-core-59",
+      "name": "pydantic_core",
+      "versionInfo": "2.50.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pyee-60",
+      "name": "pyee",
+      "versionInfo": "14.0.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pyflakes-61",
+      "name": "pyflakes",
+      "versionInfo": "4.1.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-Pygments-62",
+      "name": "Pygments",
+      "versionInfo": "2.21.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pyinstaller-63",
+      "name": "pyinstaller",
+      "versionInfo": "6.22.3",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pyinstaller-hooks-contrib-64",
+      "name": "pyinstaller-hooks-contrib",
+      "versionInfo": "2026.9",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-PySocks-65",
+      "name": "PySocks",
+      "versionInfo": "1.7.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pytest-66",
+      "name": "pytest",
+      "versionInfo": "9.2.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pytest-asyncio-67",
+      "name": "pytest-asyncio",
+      "versionInfo": "1.4.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pytest-timeout-68",
+      "name": "pytest-timeout",
+      "versionInfo": "2.4.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-python-docx-69",
+      "name": "python-docx",
+      "versionInfo": "1.2.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pywin32-ctypes-70",
+      "name": "pywin32-ctypes",
+      "versionInfo": "0.2.3",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-PyYAML-71",
+      "name": "PyYAML",
+      "versionInfo": "6.0.3",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-regex-72",
+      "name": "regex",
+      "versionInfo": "2026.9.29",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-requests-73",
+      "name": "requests",
+      "versionInfo": "2.34.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rich-74",
+      "name": "rich",
+      "versionInfo": "15.0.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-safetensors-75",
+      "name": "safetensors",
+      "versionInfo": "0.8.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-selenium-76",
+      "name": "selenium",
+      "versionInfo": "4.51.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-setuptools-77",
+      "name": "setuptools",
+      "versionInfo": "84.2.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-shellingham-78",
+      "name": "shellingham",
+      "versionInfo": "1.5.4",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sniffio-79",
+      "name": "sniffio",
+      "versionInfo": "1.3.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sortedcontainers-80",
+      "name": "sortedcontainers",
+      "versionInfo": "2.4.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sympy-81",
+      "name": "sympy",
+      "versionInfo": "1.14.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tokenizers-82",
+      "name": "tokenizers",
+      "versionInfo": "0.23.3",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-torch-83",
+      "name": "torch",
+      "versionInfo": "2.14.1+cpu",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tqdm-84",
+      "name": "tqdm",
+      "versionInfo": "4.70.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-transformers-85",
+      "name": "transformers",
+      "versionInfo": "5.21.1",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-trio-86",
+      "name": "trio",
+      "versionInfo": "0.34.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-trio-websocket-87",
+      "name": "trio-websocket",
+      "versionInfo": "0.12.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-truststore-88",
+      "name": "truststore",
+      "versionInfo": "0.10.5",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-typer-89",
+      "name": "typer",
+      "versionInfo": "0.27.3",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-typing-extensions-90",
+      "name": "typing_extensions",
+      "versionInfo": "4.16.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-typing-inspection-91",
+      "name": "typing-inspection",
+      "versionInfo": "0.4.4",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-urllib3-92",
+      "name": "urllib3",
+      "versionInfo": "2.8.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-vtracer-93",
+      "name": "vtracer",
+      "versionInfo": "0.6.15",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-wcwidth-94",
+      "name": "wcwidth",
+      "versionInfo": "0.9.4",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-websocket-client-95",
+      "name": "websocket-client",
+      "versionInfo": "1.9.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-wsproto-96",
+      "name": "wsproto",
+      "versionInfo": "1.3.2",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-tuan-cli-1",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-accelerate-2",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-altgraph-3",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-annotated-doc-4",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-annotated-types-5",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-anyio-6",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-ast-serialize-7",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-attrs-8",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-brotli-9",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-certifi-10",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-cffi-11",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-charset-normalizer-12",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-click-13",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-colorama-14",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-cryptography-15",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-filelock-16",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-fonttools-17",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-fsspec-18",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-git-filter-repo-19",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-greenlet-20",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-h11-21",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-hf-xet-22",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-httpcore-23",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-httpcore2-24",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-httpx-25",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-httpx2-26",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-huggingface-hub-27",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-idna-28",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-iniconfig-29",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-Jinja2-30",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-jiter-31",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-librt-32",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-lxml-33",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-markdown-it-py-34",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-MarkupSafe-35",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-mdurl-36",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-modelscope-37",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-modelscope-hub-38",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-mpmath-39",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-mss-40",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-mypy-41",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-mypy-extensions-42",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-networkx-43",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-numpy-44",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-openai-45",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-outcome-46",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-packaging-47",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pathspec-48",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pefile-49",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pillow-50",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pip-51",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-playwright-52",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pluggy-53",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-prompt-toolkit-54",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-psutil-55",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pyarrow-56",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pycparser-57",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pydantic-58",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pydantic-core-59",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pyee-60",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pyflakes-61",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-Pygments-62",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pyinstaller-63",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pyinstaller-hooks-contrib-64",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-PySocks-65",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pytest-66",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pytest-asyncio-67",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pytest-timeout-68",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-python-docx-69",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-pywin32-ctypes-70",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-PyYAML-71",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-regex-72",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-requests-73",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-rich-74",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-safetensors-75",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-selenium-76",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-setuptools-77",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-shellingham-78",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-sniffio-79",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-sortedcontainers-80",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-sympy-81",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-tokenizers-82",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-torch-83",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-tqdm-84",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-transformers-85",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-trio-86",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-trio-websocket-87",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-truststore-88",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-typer-89",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-typing-extensions-90",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-typing-inspection-91",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-urllib3-92",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-vtracer-93",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-wcwidth-94",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-websocket-client-95",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-wsproto-96",
+      "relationshipType": "DEPENDS_ON"
+    }
+  ]
+}

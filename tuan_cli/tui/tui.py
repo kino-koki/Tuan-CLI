@@ -18,7 +18,12 @@ import shutil
 import sys
 import threading
 import time
+import uuid
+from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from ..ui.slogans import mapping
+from .runtime_slogans import RuntimeSloganEngine
 
 try:
     from wcwidth import wcswidth as _wcswidth_impl  # 终端显示宽度 (prompt_toolkit 同源依赖)
@@ -687,6 +692,22 @@ class QxtTUI:
         # 回合开始单调时钟 (codex 状态行 "Working (Ns · esc to interrupt)" 的 elapsed 来源)
         self._turn_started = 0.0
         self._last_streamed_ts = 0.0  # 流式最后更新时间, 驱动 idle 检测
+
+        # ---- slogans 运行时 (B3 续轮 X) ----
+        self._slogans: RuntimeSloganEngine = RuntimeSloganEngine()
+        self._lang: str = "en"                 # set_lang() 更新
+        self._slogan_owner: str = uuid.uuid4().hex[:12]
+        # _slogan_log: list of (event, context, reason, origin, entry_id,
+        # owner, at_ms) 元组, 上限 64; 测试用 row[0] 取事件。锁保护并发追加。
+        self._slogan_log: List[Tuple] = []
+        self._slogan_errors: List[Tuple[int, str, str]] = []
+        self._slogan_lock = threading.Lock()
+        self._slogan_sealed: Tuple[Dict[str, Any], ...] = ()  # close() 封存快照
+        self._phase: str = "idle"
+        self._phase_since: float = time.monotonic()
+        self._last_event_ms: int = 0
+        self._tool_throttle_ms = 250
+        self._tool_last_ms: int = 0
 
         # 模式: 标准五模式 ID (set_mode 统一解析; standard 别名 → collaboration)
         self._mode = "collaboration"
@@ -2918,6 +2939,89 @@ class QxtTUI:
         if self._app and self._app.is_running:
             self._app.invalidate()
 
+    # ==================================================== slogans 运行时接入
+
+    def _phase_of_context(self, context: Optional[str]) -> str:
+        """事件上下文 → RuntimeSloganEngine 真实阶段 (驱动 stall 诊断)。"""
+        return {
+            "startup": "booting",
+            "thinking": "waiting_model",
+            "streaming": "streaming",
+            "explore": "running_tool",
+        }.get(context or "", "idle")
+
+    def _slogan_dispatch(self, event: str, *,
+                         strict: bool = False,
+                         at_ms: Optional[int] = None
+                         ) -> Optional["mapping.SloganDecision"]:
+        """单一事件驱动入口 (真实接线, 不走静态示例)。
+
+        成功返回 decision 并写 TUI 留痕 + 全局 owner 桶 (pick_for_event 内部做);
+        安全事件返回空文案 decision (reason=security-notice); 未绑事件在非严格
+        模式返回 None 并在两层各留 error 痕 (映射层 record_error + TUI 计数),
+        严格模式向上抛 UnboundSloganEvent。
+        """
+        try:
+            d = mapping.pick_for_event(event, lang=self._lang,
+                                       owner=self._slogan_owner)
+        except mapping.UnboundSloganEvent as exc_val:
+            # 两层都留痕 —— 严格模式也要先记再抛; event 用 record_error
+            # 返回的净化后 decision.event (与映射层保持一致的安全串)。
+            try:
+                err_d = mapping.record_error(event, "unbound-event",
+                                             owner=self._slogan_owner)
+                safe_event = err_d.event
+            except Exception:  # noqa: BLE001
+                safe_event = mapping.norm_owner(event)
+            with self._slogan_lock:
+                self._slogan_errors.append(
+                    (self._last_event_ms, safe_event, "error:unbound-event"))
+            if strict:
+                raise
+            return None
+        with self._slogan_lock:
+            self._slogan_log.append((event, d.context, d.reason, d.origin,
+                                     d.entry_id, d.owner, d.at_ms))
+            if len(self._slogan_log) > 64:
+                del self._slogan_log[:len(self._slogan_log) - 64]
+        self._last_event_ms = d.at_ms
+        if d.context is not None:
+            self._phase = self._phase_of_context(d.context)
+            self._phase_since = time.monotonic()
+        return d
+
+    def slogan_for(self, event: str, *, strict: bool = False) -> str:
+        """事件 → 净化后标语文案。安全/未绑/出错返回空串 (靠 trace 区分)。"""
+        d = self._slogan_dispatch(event, strict=strict)
+        return d.text if d is not None else ""
+
+    def slogan_trace(self) -> List[Dict[str, Any]]:
+        """本实例运行时留痕快照 (每行 dict: event/context/reason/.../at_ms)。"""
+        keys = ("event", "context", "reason", "origin", "entry_id",
+                "owner", "at_ms")
+        return [dict(zip(keys, row)) for row in self._slogan_log]
+
+    def slogan_owner(self) -> str:
+        """本实例的日志桶 owner (多 TUI 实例不互串)。"""
+        return self._slogan_owner
+
+    def slogan_errors(self) -> Tuple[Tuple[str, str, str], ...]:
+        """本实例记录到的错误痕 (event, entry_id, reason)。"""
+        return tuple((ev, "", r) for (_at, ev, r) in self._slogan_errors)
+
+    def slogan_closed_trace(self) -> Tuple[Dict[str, Any], ...]:
+        """close() 时封存的完整决策痕 (含 session.exit, 供审计回放)。"""
+        return self._slogan_sealed
+
+    def _release_slogan_owner(self) -> None:
+        """close() 路径专用: 取走 owner 桶 (不记被动淘汰) 并在锁内封存快照。"""
+        mapping.take_owner_log(self._slogan_owner)
+        keys = ("event", "context", "reason", "origin", "entry_id",
+                "owner", "at_ms")
+        with self._slogan_lock:
+            self._slogan_sealed = tuple(
+                dict(zip(keys, row)) for row in self._slogan_log)
+
     def set_ready(self, config: Any, agent: Any, workspace: str,
                   tools: Optional[List[str]] = None, no_key: bool = False,
                   no_key_env: str = "", mode: Optional[str] = None) -> None:
@@ -3093,6 +3197,13 @@ class QxtTUI:
             self._history_dirty = True
             if len(self._events) > 5000:
                 del self._events[: len(self._events) - 4000]
+        # slogans: 流式分片节流分发 (50 分片 ≤1 次取词, 不逐条刷屏)
+        self._stream_deltas = getattr(self, "_stream_deltas", 0) + 1
+        if self._stream_deltas % 50 == 1:
+            try:
+                self._slogan_dispatch("model.streaming")
+            except Exception:  # noqa: BLE001
+                pass
         self._throttled_invalidate()
 
     def stream_reason(self, delta: str) -> None:
@@ -3143,6 +3254,11 @@ class QxtTUI:
         self._busy = True
         self._moon_suppressed = False  # 新工具开始: 后续思考重新亮出指示
         self._tool_start_times[name] = time.monotonic()
+        # slogans: 工具开始 (每次 begin_tool 都 dispatch, sealed 回放测试依赖计数准确)
+        try:
+            self._slogan_dispatch("tool.exploring")
+        except Exception:  # noqa: BLE001
+            pass
         if self._app and self._app.is_running:
             self._app.invalidate()
 
@@ -3739,6 +3855,18 @@ class QxtTUI:
 
     def close(self) -> None:
         self._closed = True
+        # slogans: close() 先记 session.exit → take_owner_log 取走 owner 桶
+        # (避免被记成被动淘汰) → 在锁内把实例留痕封存为 sealed 快照供回放。
+        try:
+            self._slogan_dispatch("session.exit")
+        except Exception:  # noqa: BLE001
+            pass
+        mapping.take_owner_log(self._slogan_owner)
+        keys = ("event", "context", "reason", "origin", "entry_id",
+                "owner", "at_ms")
+        with self._slogan_lock:
+            sealed = tuple(dict(zip(keys, row)) for row in self._slogan_log)
+            self._slogan_sealed = sealed
         if self._app and self._app.is_running:
             self._app.exit()
 

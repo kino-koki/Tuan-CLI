@@ -25,6 +25,20 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, parse_qs
 
 from .frontend import FRONTEND_HTML
+from .github_auth import (
+    fetch_github_identity as _gh_fetch_identity,
+    poll_once as _gh_poll_once,
+    start_device_flow as _gh_start_device_flow,
+)
+from . import mh_runner as _mh_runner
+from . import code_anim_render as _codeanim
+from ..ports.oauth.constants import GITHUB_DEVICE_FLOW_CONFIG
+from .web_sessions_auth import (
+    WebAuthStore as _WebAuthStore,
+    build_clear_cookie_header as _build_clear_cookie_header,
+    build_set_cookie_header as _build_set_cookie_header,
+    parse_session_cookie as _parse_session_cookie,
+)
 
 _ASSET_DIR = Path(__file__).resolve().parent / "assets"
 _ASSET_CACHE: Dict[str, bytes] = {}  # 读一次缓存, 静态资源体积小但读盘更省
@@ -491,6 +505,75 @@ class _WebHandler(BaseHTTPRequestHandler):
         if path == "/api/screenshot":
             self._json(200, self._owner.take_screenshot())
             return
+        if path == "/api/auth/status":
+            # GitHub 登录状态: 从 Cookie 解析。未配置 client_id 时返回 auth_optional。
+            self._json(200, {"ok": True, **self._owner._auth_status(self)})
+            return
+        # ============== 团队协作黑板 (GET) ==============
+        if path == "/api/team/board":
+            self._json(200, self._owner.team_board())
+            return
+        # ============== 团组 (v0.4.2, GET) ==============
+        if path == "/api/teamgroup/snapshot":
+            self._json(200, self._owner.tg_snapshot())
+            return
+        if path == "/api/teamgroup/grant/verify":
+            qs = parse_qs(parsed.query)
+            gid = (qs.get("grant_id") or [""])[0]
+            pid = (qs.get("provider_id") or [""])[0]
+            model = (qs.get("model") or [""])[0] or None
+            self._json(200, self._owner.tg_verify_grant(gid, pid, model=model))
+            return
+        # ============== MotionHarness 代码动画工作台 (GET) ==============
+        if path == "/api/mh/status":
+            self._json(200, {"ok": True, **self._owner.mh_status()})
+            return
+        if path == "/api/mh/projects":
+            self._json(200, {"ok": True, "projects": self._owner.mh_list_projects()})
+            return
+        if path == "/api/mh/project":
+            qs = parse_qs(parsed.query)
+            pid = (qs.get("id") or [""])[0]
+            self._json(200, self._owner.mh_read_project(pid))
+            return
+        if path == "/api/mh/job":
+            qs = parse_qs(parsed.query)
+            jid = (qs.get("id") or [""])[0]
+            job = _mh_runner.get_job(jid)
+            if job is None:
+                self._json(404, {"ok": False, "error": "job not found"})
+                return
+            self._json(200, {"ok": True, "job": job})
+            return
+        if path == "/api/mh/jobs":
+            self._json(200, {"ok": True, "jobs": _mh_runner.list_jobs(20)})
+            return
+        if path == "/api/mh/media":
+            qs = parse_qs(parsed.query)
+            rel = (qs.get("path") or [""])[0]
+            self._serve_mh_media(rel)
+            return
+        # ============== Code-anim 渲染后端 (GET) ==============
+        if path == "/api/codeanim/status":
+            self._json(200, {"ok": True, **_codeanim.status()})
+            return
+        if path == "/api/codeanim/job":
+            qs = parse_qs(parsed.query)
+            jid = (qs.get("id") or [""])[0]
+            job = _codeanim.get_job(jid)
+            if job is None:
+                self._json(404, {"ok": False, "error": "job not found"})
+                return
+            self._json(200, {"ok": True, "job": job})
+            return
+        if path == "/api/codeanim/jobs":
+            self._json(200, {"ok": True, "jobs": _codeanim.list_jobs(20)})
+            return
+        if path == "/api/codeanim/media":
+            qs = parse_qs(parsed.query)
+            rel = (qs.get("path") or [""])[0]
+            self._serve_codeanim_media(rel)
+            return
         self._json(404, {"ok": False, "error": "not found"})
 
     def do_POST(self) -> None:
@@ -656,7 +739,318 @@ class _WebHandler(BaseHTTPRequestHandler):
             res = self._owner.run_ocr(b64)
             self._json(200 if res.get("ok") else 400, res)
             return
+        # ============== 团队协作黑板 (POST) ==============
+        if path == "/api/team/post":
+            body = self._read_body()
+            ident = self._owner.current_identity(self)
+            sender = (ident.get("login") if ident else None) or "web_user"
+            res = self._owner.team_post(
+                key=str(body.get("key") or ""),
+                value=str(body.get("value") or ""),
+                msg_type=str(body.get("msg_type") or "status"),
+                sender=sender,
+                recipient=str(body.get("recipient") or "*"))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/team/clear":
+            ident = self._owner.current_identity(self)
+            if not ident:
+                self._json(403, {"ok": False, "error": "需要登录"})
+                return
+            self._json(200, self._owner.team_clear())
+            return
+        # ============== GitHub 登录 (设备流) ==============
+        if path == "/api/auth/github/start":
+            self._auth_github_start()
+            return
+        if path == "/api/auth/github/poll":
+            self._auth_github_poll()
+            return
+        if path == "/api/auth/logout":
+            self._auth_logout()
+            return
+        # ============== 团组 (v0.4.2, POST) ==============
+        if path == "/api/teamgroup/create":
+            body = self._read_body()
+            res = self._owner.tg_create(
+                name=str(body.get("name") or ""),
+                owner_member_id=str(body.get("owner_member_id") or "web_owner"),
+                owner_name=str(body.get("owner_name") or ""))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/teamgroup/member/add":
+            body = self._read_body()
+            ident = self._owner.current_identity(self)
+            actor = (ident.get("login") if ident else None) or str(body.get("actor") or "")
+            res = self._owner.tg_add_member(
+                member_id=str(body.get("member_id") or ""),
+                display_name=str(body.get("display_name") or ""),
+                role=str(body.get("role") or "member"), actor=actor)
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/teamgroup/member/revoke":
+            body = self._read_body()
+            ident = self._owner.current_identity(self)
+            actor = (ident.get("login") if ident else None) or str(body.get("actor") or "")
+            res = self._owner.tg_revoke_member(
+                member_id=str(body.get("member_id") or ""), actor=actor)
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/teamgroup/provider/register":
+            body = self._read_body()
+            res = self._owner.tg_register_provider(
+                provider_id=str(body.get("provider_id") or ""),
+                key_fingerprint=str(body.get("key_fingerprint") or ""),
+                owner=str(body.get("owner") or ""))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/teamgroup/grant/issue":
+            body = self._read_body()
+            models = body.get("models")
+            models = [str(m) for m in models] if isinstance(models, list) else None
+            res = self._owner.tg_issue_grant(
+                provider_id=str(body.get("provider_id") or ""),
+                member=str(body.get("member") or ""),
+                days=body.get("days") or 0,
+                models=models,
+                owner=str(body.get("owner") or ""))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/teamgroup/grant/revoke":
+            body = self._read_body()
+            ident = self._owner.current_identity(self)
+            actor = (ident.get("login") if ident else None) or str(body.get("actor") or "")
+            res = self._owner.tg_revoke_grant(
+                grant_id=str(body.get("grant_id") or ""), actor=actor)
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        # ============== MotionHarness 代码动画工作台 (POST) ==============
+        if path == "/api/mh/project":
+            body = self._read_body()
+            res = self._owner.mh_create_project(
+                name=str(body.get("name") or ""),
+                identity=self._owner.current_identity(self))
+            self._json(200 if res.get("ok") else 503, res)
+            return
+        if path == "/api/mh/render":
+            body = self._read_body()
+            res = self._owner.mh_render(
+                project_id=str(body.get("project_id") or ""),
+                out=str(body.get("out") or ""),
+                codec=str(body.get("codec") or ""),
+                fps=body.get("fps"))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/mh/preview":
+            body = self._read_body()
+            times = body.get("times") if isinstance(body.get("times"), list) else []
+            res = self._owner.mh_preview(
+                project_id=str(body.get("project_id") or ""),
+                times=times,
+                contact_sheet=bool(body.get("contact_sheet")))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        # ============== Code-anim 渲染后端 (POST) ==============
+        if path == "/api/codeanim/render":
+            body = self._read_body()
+            pj = body.get("project_json")
+            res = self._owner.codeanim_render(
+                project_json=pj if isinstance(pj, dict) else {},
+                out=str(body.get("out") or ""))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/codeanim/contact":
+            body = self._read_body()
+            pj = body.get("project_json")
+            times = body.get("times") if isinstance(body.get("times"), list) else []
+            res = self._owner.codeanim_contact(
+                project_json=pj if isinstance(pj, dict) else {},
+                times=times)
+            self._json(200 if res.get("ok") else 400, res)
+            return
         self._json(404, {"ok": False, "error": "not found"})
+
+    def do_PUT(self) -> None:
+        """PUT: MotionHarness scene.js / mh.json 写入 (原子覆盖)。"""
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path == "/api/mh/scene":
+            body = self._read_body()
+            res = self._owner.mh_write_scene(
+                project_id=str(body.get("project_id") or ""),
+                scene_js=body.get("scene_js") if isinstance(body.get("scene_js"), str) else "",
+                identity=self._owner.current_identity(self))
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        if path == "/api/mh/mhjson":
+            body = self._read_body()
+            payload = body.get("mh_json")
+            res = self._owner.mh_write_mhjson(
+                project_id=str(body.get("project_id") or ""),
+                mh_json=payload if isinstance(payload, dict) else {})
+            self._json(200 if res.get("ok") else 400, res)
+            return
+        self._json(404, {"ok": False, "error": "not found"})
+
+    # ---------------- MotionHarness 媒体流 (渲染产物) ----------------
+    def _serve_mh_media(self, rel: str) -> None:
+        """流式回渲染产物 (mp4 / gif / png)。路径护栏: 必须落在
+        ``<workspace>/.tuan/mh/`` 之下, 否则 400 拒绝。"""
+        ctype_by_ext = {
+            ".mp4": "video/mp4",
+            ".gif": "image/gif",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webm": "video/webm",
+        }
+        target = _mh_runner.resolve_media_path(self._owner.workspace, rel)
+        if target is None:
+            self._json(400, {"ok": False, "error": "path outside mh workspace"})
+            return
+        if not target.is_file():
+            self._json(404, {"ok": False, "error": "media not found"})
+            return
+        ext = target.suffix.lower()
+        ctype = ctype_by_ext.get(ext, "application/octet-stream")
+        try:
+            raw = target.read_bytes()
+        except (OSError, PermissionError) as exc:
+            self._json(500, {"ok": False, "error": f"读取媒体失败: {exc}"})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(raw)
+
+    # ---------------- Code-anim 媒体流 (渲染产物) ----------------
+    def _serve_codeanim_media(self, rel: str) -> None:
+        """流式回 code-anim 渲染产物 (mp4 / png)。路径护栏: 必须落在
+        ``<workspace>/.tuan/codeanim/`` 之下, 否则 400 拒绝。"""
+        ctype_by_ext = {
+            ".mp4": "video/mp4",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webm": "video/webm",
+        }
+        target = _codeanim.resolve_media_path(self._owner.workspace, rel)
+        if target is None:
+            self._json(400, {"ok": False, "error": "path outside codeanim workspace"})
+            return
+        if not target.is_file():
+            self._json(404, {"ok": False, "error": "media not found"})
+            return
+        ext = target.suffix.lower()
+        ctype = ctype_by_ext.get(ext, "application/octet-stream")
+        try:
+            raw = target.read_bytes()
+        except (OSError, PermissionError) as exc:
+            self._json(500, {"ok": False, "error": f"读取媒体失败: {exc}"})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _secure_cookie_flag(self) -> bool:
+        """当前请求是否 https (决定 Set-Cookie 是否加 Secure)。本地 http 恒 False。"""
+        return (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
+
+    def _auth_github_start(self) -> None:
+        """第 1 步: 申请设备授权码, 返回 verification_uri + user_code (不在请求里轮询)。"""
+        if not self._owner.github_configured():
+            self._json(400, {"ok": False,
+                             "error": "未配置 TUAN_GITHUB_CLIENT_ID, GitHub 登录不可用"})
+            return
+        try:
+            da = _gh_start_device_flow(GITHUB_DEVICE_FLOW_CONFIG)
+        except Exception as exc:  # noqa: BLE001 - 网络/client_id 错误 → 502
+            self._json(502, {"ok": False, "error": f"GitHub 设备授权申请失败: {exc}"})
+            return
+        uri = da.verification_uri_complete or da.verification_uri
+        self._json(200, {
+            "ok": True,
+            "device_auth": {
+                "verification_uri": da.verification_uri,
+                "verification_uri_complete": da.verification_uri_complete,
+                "uri": uri,
+                "user_code": da.user_code,
+                "interval": da.interval,
+                "expires_in": da.expires_in,
+            },
+        })
+
+    def _auth_github_poll(self) -> None:
+        """第 2 步: **单次**轮询 token 端点。前端按 interval 反复调用本端点。
+
+        pending → {pending:true}; 成功 → 取身份 + 建会话 + 设 Cookie;
+        expired/denied → 对应错误; 未知异常 → 500。
+        """
+        if not self._owner.github_configured():
+            self._json(400, {"ok": False,
+                             "error": "未配置 TUAN_GITHUB_CLIENT_ID, GitHub 登录不可用"})
+            return
+        body = self._read_body()
+        device_code = str(body.get("device_code") or "").strip()
+        if not device_code:
+            self._json(400, {"ok": False, "error": "缺少 device_code"})
+            return
+        try:
+            result = _gh_poll_once(device_code, GITHUB_DEVICE_FLOW_CONFIG)
+        except Exception as exc:  # noqa: BLE001
+            self._json(502, {"ok": False, "error": f"GitHub 轮询失败: {exc}"})
+            return
+        if result["status"] == "pending":
+            self._json(200, {"ok": True, "pending": True})
+            return
+        if result["status"] == "expired":
+            self._json(200, {"ok": True, "pending": False, "expired": True,
+                             "error": "设备码已过期, 请重新发起登录"})
+            return
+        if result["status"] == "denied":
+            self._json(200, {"ok": True, "pending": False, "denied": True,
+                             "error": "用户拒绝了授权"})
+            return
+        # status == "ok": token → 身份 → 会话
+        token_info = result["token"]
+        access_token = token_info.access_token
+        try:
+            ident = _gh_fetch_identity(access_token)
+        except Exception as exc:  # noqa: BLE001 - 取身份失败也回滚, 不给半登录态
+            self._json(502, {"ok": False, "error": f"GitHub 身份读取失败: {exc}"})
+            return
+        sid = self._owner._auth_store.create_session(ident, access_token)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        # Set-Cookie: HttpOnly + SameSite=Lax (+ https 时 Secure)。token 不进返回体。
+        self.send_header("Set-Cookie",
+                         _build_set_cookie_header(sid, self._secure_cookie_flag()))
+        body_out = json.dumps({"ok": True, "pending": False,
+                               "login": ident.get("login"),
+                               "avatar_url": ident.get("avatar_url"),
+                               "id": ident.get("id")}, ensure_ascii=False).encode("utf-8")
+        self.send_header("Content-Length", str(len(body_out)))
+        self.end_headers()
+        self.wfile.write(body_out)
+
+    def _auth_logout(self) -> None:
+        """登出: 删会话 + 清 Cookie。"""
+        cookie_val = _parse_session_cookie(self.headers.get("Cookie"))
+        if cookie_val:
+            self._owner._auth_store.delete_session(cookie_val)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Set-Cookie",
+                         _build_clear_cookie_header(self._secure_cookie_flag()))
+        body_out = b'{"ok": true}'
+        self.send_header("Content-Length", str(len(body_out)))
+        self.end_headers()
+        self.wfile.write(body_out)
 
     # ---------------- 工作区 shell (! 执行) ----------------
     def _shell(self) -> None:
@@ -940,6 +1334,10 @@ class WebServer:
         # T-2.6: Web UI 用户偏好落盘文件 (主题/字号/预算告警阈值等任意键, 重启后保留)
         self._settings_file = Path(workspace or ".") / ".tuan" / "web_settings.json"
         self._settings: Dict[str, Any] = {}
+        # GitHub 登录 (设备流) 会话存储: <workspace>/.tuan/web_auth.json
+        # 未配置 TUAN_GITHUB_CLIENT_ID 时占位符 client_id → github_configured() = False,
+        # /api/auth/status 返回 auth_optional:true, 前端可隐藏登录入口。
+        self._auth_store = _WebAuthStore(Path(workspace or ".") / ".tuan" / "web_auth.json")
         # T-5.2: 预算告警去重状态 —— 会话id -> 已告警档位 (0 未告警 / 80 已达阈值 / 100 已用满)
         self._budget_notified: Dict[str, int] = {}
         self.load_sessions()
@@ -1011,6 +1409,426 @@ class WebServer:
         with _SETTINGS_LOCK:
             self._settings.update(values)
         self.save_settings()
+
+    # ---------------- GitHub 登录 (设备流) ----------------
+    @staticmethod
+    def github_configured() -> bool:
+        """GitHub OAuth App client_id 是否已配置 (占位符 = 未配置)。"""
+        return GITHUB_DEVICE_FLOW_CONFIG.get("client_id", "") != "Ov23li00000000000000"
+
+    def current_identity(self, handler: "_WebHandler") -> Dict[str, Any]:
+        """从请求 Cookie 解析当前登录身份 (供**其他** /api 端点鉴权用)。
+
+        返回 {} 表示未登录 (fail-closed)。不抛异常, 便于各端点直接判空。
+        """
+        cookie_val = _parse_session_cookie(handler.headers.get("Cookie"))
+        ident = self._auth_store.verify_session(cookie_val)
+        return ident or {}
+
+    def _auth_status(self, handler: "_WebHandler") -> Dict[str, Any]:
+        """构造 /api/auth/status 返回体。"""
+        if not self.github_configured():
+            return {"authenticated": False, "auth_optional": True,
+                    "reason": "未配置 TUAN_GITHUB_CLIENT_ID"}
+        ident = self.current_identity(handler)
+        if ident:
+            return {"authenticated": True, **ident}
+        return {"authenticated": False, "auth_optional": False}
+
+    # ---------------- 团队协作黑板 HTTP ----------------
+    def _team_protocol(self) -> Any:
+        """从 kernel 拿 CollaborationProtocol; 不可用时返回 None (fail-closed)。"""
+        if self.kernel is None:
+            return None
+        try:
+            return self.kernel.require("collaboration_protocol")
+        except Exception:  # noqa: BLE001
+            return None
+
+    # ---------------- 团组 (v0.4.2) ----------------
+    def _team_group_store(self) -> Any:
+        """加载团组密钥库 (纯本地 <workspace>/.tuan/team_group.json)。"""
+        try:
+            from ..core.team_group import load_team_group
+            return load_team_group(self.workspace)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("团组密钥库加载失败: %s", exc)
+            return None
+
+    def tg_snapshot(self) -> Dict[str, Any]:
+        """/api/teamgroup/snapshot: 团组状态 + 能力矩阵 (一次性总览)。"""
+        store = self._team_group_store()
+        if store is None:
+            return {"ok": False, "error": "团组密钥库不可用"}
+        out: Dict[str, Any] = {"ok": True, "group": store.export_public()}
+        if store.group is not None:
+            out["members"] = store.list_members(include_revoked=True)
+            out["providers"] = store.list_providers()
+            out["grants"] = store.list_grants()
+        try:
+            from ..core.capability import make_capability_registry
+            reg = make_capability_registry()
+            out["capabilities"] = reg.list()
+            out["capability_sources"] = reg.by_source()
+        except Exception:  # noqa: BLE001
+            out["capabilities"] = []
+            out["capability_sources"] = {}
+        return out
+
+    def tg_create(self, name: str, owner_member_id: str, owner_name: str = "") -> Dict[str, Any]:
+        """/api/teamgroup/create: 创建团组。"""
+        store = self._team_group_store()
+        if store is None:
+            return {"ok": False, "error": "团组密钥库不可用"}
+        try:
+            store.create_group(name, owner_member_id, owner_name=owner_name)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "group": store.export_public()}
+
+    def tg_add_member(self, member_id: str, display_name: str, role: str,
+                      actor: str) -> Dict[str, Any]:
+        """/api/teamgroup/member/add: 加入成员 (owner/admin)。"""
+        store = self._team_group_store()
+        if store is None:
+            return {"ok": False, "error": "团组密钥库不可用"}
+        try:
+            info = store.add_member(member_id, display_name, role, actor=actor)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "member": info}
+
+    def tg_register_provider(self, provider_id: str, key_fingerprint: str,
+                             owner: str) -> Dict[str, Any]:
+        """/api/teamgroup/provider/register: 团主登记供应商凭证 (仅存指纹)。"""
+        store = self._team_group_store()
+        if store is None:
+            return {"ok": False, "error": "团组密钥库不可用"}
+        try:
+            entry = store.register_provider_key(provider_id, key_fingerprint, owner=owner)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "provider": entry}
+
+    def tg_issue_grant(self, provider_id: str, member: str, days: int,
+                       models: Optional[List[str]] = None,
+                       owner: str = "") -> Dict[str, Any]:
+        """/api/teamgroup/grant/issue: 团主签发供应商使用授权 (≤90 天)。"""
+        store = self._team_group_store()
+        if store is None:
+            return {"ok": False, "error": "团组密钥库不可用"}
+        try:
+            grant = store.issue_grant(provider_id, member, days, model_scope=models, owner=owner)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "grant": grant}
+
+    def tg_verify_grant(self, grant_id: str, provider_id: str,
+                        model: Optional[str] = None) -> Dict[str, Any]:
+        """/api/teamgroup/grant/verify: 使用前验证 (验签+TTL+scope, fail-closed)。"""
+        store = self._team_group_store()
+        if store is None:
+            return {"ok": False, "error": "团组密钥库不可用"}
+        try:
+            verdict = store.verify_grant(grant_id, provider_id, model=model)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "verdict": verdict}
+
+    def tg_revoke_grant(self, grant_id: str, actor: str) -> Dict[str, Any]:
+        """/api/teamgroup/grant/revoke: 撤销授权 (owner/admin)。"""
+        store = self._team_group_store()
+        if store is None:
+            return {"ok": False, "error": "团组密钥库不可用"}
+        try:
+            store.revoke_grant(grant_id, actor=actor)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True}
+
+    def tg_revoke_member(self, member_id: str, actor: str) -> Dict[str, Any]:
+        """/api/teamgroup/member/revoke: 移除成员 (连带撤销其授权)。"""
+        store = self._team_group_store()
+        if store is None:
+            return {"ok": False, "error": "团组密钥库不可用"}
+        try:
+            store.revoke_member(member_id, actor=actor)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True}
+
+    def team_board(self) -> Dict[str, Any]:
+        """/api/team/board: 返回黑板所有键值 + 消息历史 + 冲突数。"""
+        proto = self._team_protocol()
+        if proto is None:
+            return {"ok": False, "error": "协作协议不可用"}
+        with proto._lock:
+            keys = dict(proto._store)
+            msgs = [
+                {
+                    "msg_id": m.msg_id,
+                    "msg_type": m.msg_type.value,
+                    "sender": m.sender,
+                    "recipient": m.recipient,
+                    "key": m.key,
+                    "value": str(m.value)[:500],
+                    "timestamp": m.timestamp,
+                    "version": m.version,
+                }
+                for m in reversed(proto._messages[-100:])
+            ]
+        # 锁外取冲突数 (get_unresolved_conflicts 自己加锁, 不可重入)
+        unresolved = len(proto.get_unresolved_conflicts())
+        return {"ok": True, "keys": keys, "messages": msgs,
+                "unresolved_conflicts": unresolved}
+
+    def team_post(
+        self, key: str, value: str, msg_type: str,
+        sender: str, recipient: str,
+    ) -> Dict[str, Any]:
+        """/api/team/post: 写入黑板一条消息。"""
+        proto = self._team_protocol()
+        if proto is None:
+            return {"ok": False, "error": "协作协议不可用"}
+        if not key or not value:
+            return {"ok": False, "error": "key 和 value 不能为空"}
+        try:
+            from ..core.collaboration_protocol import MessageType
+            mt: Any = MessageType(msg_type) if msg_type else MessageType.STATUS
+        except Exception:  # noqa: BLE001
+            mt = "status"  # MessageType 是 str Enum, 接受字面量
+        # recipient 写入 metadata; protocol.write 只支持广播 (*)
+        meta: Dict[str, Any] = {}
+        if recipient and recipient != "*":
+            meta["recipient"] = recipient
+            value = f"[→ {recipient}] {value}"
+        proto.write(
+            key=key, value=value, sender=sender or "web_user",
+            msg_type=mt, metadata=meta,
+        )
+        return {"ok": True}
+
+    def team_clear(self) -> Dict[str, Any]:
+        """/api/team/clear: 清空黑板 (仅已登录用户可操作)。"""
+        proto = self._team_protocol()
+        if proto is None:
+            return {"ok": False, "error": "协作协议不可用"}
+        proto.clear()
+        return {"ok": True}
+
+    # ---------------- MotionHarness 代码动画工作台 ----------------
+    def mh_status(self) -> Dict[str, Any]:
+        """/api/mh/status: mh CLI + Node 22 可用性探测 (不硬依赖, 仅展示)。"""
+        res = _mh_runner.resolve_mh()
+        return {
+            "available": bool(res.get("ok")),
+            "mh_cmd": res.get("mh_cmd") or "",
+            "node_dir": res.get("node_dir") or "",
+            "mh_home": res.get("mh_home") or "",
+            "reason": res.get("reason") or "",
+        }
+
+    def _mh_root(self) -> Path:
+        """``<workspace>/.tuan/mh`` 项目根 (resolve)。"""
+        return (Path(self.workspace or ".").resolve() / ".tuan" / "mh")
+
+    def mh_create_project(self, name: str = "", identity: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """POST /api/mh/project: 脚手架一个新 mh 项目, 返回初版 mh.json + scene.js。"""
+        try:
+            created = _mh_runner.scaffold_project(self.workspace, name=name or None)
+        except RuntimeError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"脚手架异常: {exc}"}
+        pid = created["project_id"]
+        proj_dir = created["project_dir"]
+        read = _mh_runner.read_project(proj_dir)
+        # 在 mh.json 里追加轻量元数据 (不覆盖 mh 自己的字段)
+        meta = {
+            "tuan": {
+                "created_at": int(time.time()),
+                "created_by": (identity or {}).get("login") or "anonymous",
+                "name": name or pid,
+            }
+        }
+        if isinstance(read.get("mh_json"), dict):
+            merged = dict(read["mh_json"])
+            merged.setdefault("tuan", meta["tuan"])
+            _mh_runner.write_mh_json(proj_dir, merged)
+            read["mh_json"] = merged
+        return {
+            "ok": True,
+            "project_id": pid,
+            "project_dir": proj_dir,
+            "mh_json": read["mh_json"],
+            "scene_js": read["scene_js"],
+        }
+
+    def mh_read_project(self, project_id: str) -> Dict[str, Any]:
+        """GET /api/mh/project?id=: 读当前 mh.json + scene.js。"""
+        target = _mh_runner.resolve_project_dir(self.workspace, project_id)
+        if target is None:
+            return {"ok": False, "error": "invalid project_id"}
+        if not target.is_dir():
+            return {"ok": False, "error": "project not found"}
+        read = _mh_runner.read_project(str(target))
+        return {
+            "ok": True,
+            "project_id": target.name,
+            "project_dir": str(target),
+            "mh_json": read["mh_json"],
+            "scene_js": read["scene_js"],
+        }
+
+    def mh_list_projects(self) -> List[Dict[str, Any]]:
+        """GET /api/mh/projects: 列出 mh 根目录下的所有项目 (按 updated_at 倒序)。"""
+        root = self._mh_root()
+        if not root.is_dir():
+            return []
+        items: List[Dict[str, Any]] = []
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            try:
+                stat = child.stat()
+            except OSError:
+                continue
+            name = child.name
+            read = _mh_runner.read_project(str(child))
+            mh_json = read.get("mh_json") or {}
+            tuan_meta = mh_json.get("tuan") or {}
+            if isinstance(tuan_meta, dict) and tuan_meta.get("name"):
+                name = str(tuan_meta["name"])
+            items.append({
+                "project_id": child.name,
+                "name": name,
+                "updated_at": int(stat.st_mtime),
+                "created_by": tuan_meta.get("created_by") if isinstance(tuan_meta, dict) else "",
+            })
+        items.sort(key=lambda x: x["updated_at"], reverse=True)
+        return items
+
+    def mh_write_scene(self, project_id: str, scene_js: str,
+                       identity: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """PUT /api/mh/scene: 静态校验 + 原子写 src/scene.js。"""
+        target = _mh_runner.resolve_project_dir(self.workspace, project_id)
+        if target is None:
+            return {"ok": False, "error": "invalid project_id"}
+        if not target.is_dir():
+            return {"ok": False, "error": "project not found"}
+        res = _mh_runner.write_scene_js(str(target), scene_js)
+        if res.get("ok") and identity:
+            # 写入归因 (谁改了 scene.js); 失败不影响主流程
+            try:
+                (target / ".tuan_last_editor").write_text(
+                    json.dumps({"login": identity.get("login"),
+                                "at": int(time.time())}, ensure_ascii=False),
+                    encoding="utf-8")
+            except OSError:
+                pass
+        return res
+
+    def mh_write_mhjson(self, project_id: str, mh_json: Dict[str, Any]) -> Dict[str, Any]:
+        """PUT /api/mh/mhjson: 基本字段校验 + 原子写 mh.json。"""
+        target = _mh_runner.resolve_project_dir(self.workspace, project_id)
+        if target is None:
+            return {"ok": False, "error": "invalid project_id"}
+        if not target.is_dir():
+            return {"ok": False, "error": "project not found"}
+        return _mh_runner.write_mh_json(str(target), mh_json)
+
+    def mh_render(self, project_id: str, out: str = "", codec: str = "",
+                  fps: Any = None) -> Dict[str, Any]:
+        """POST /api/mh/render: 启动后台渲染 job, 返回 job_id 供前端轮询。"""
+        target = _mh_runner.resolve_project_dir(self.workspace, project_id)
+        if target is None:
+            return {"ok": False, "error": "invalid project_id"}
+        if not target.is_dir():
+            return {"ok": False, "error": "project not found"}
+        # out 仅接受文件名 (无路径分隔符); 默认 render-<ts>.mp4
+        safe_out = (out or "").strip()
+        if safe_out:
+            if "/" in safe_out or "\\" in safe_out or ".." in safe_out:
+                return {"ok": False, "error": "out 必须是文件名, 不含路径"}
+            if not safe_out.lower().endswith((".mp4", ".gif", ".webm")):
+                return {"ok": False, "error": "out 必须以 .mp4/.gif/.webm 结尾"}
+        else:
+            safe_out = f"render-{int(time.time())}.mp4"
+        out_abs = (target / safe_out).resolve()
+        try:
+            out_abs.relative_to(target)
+        except ValueError:
+            return {"ok": False, "error": "out 路径越界"}
+        opts: Dict[str, Any] = {}
+        if codec:
+            opts["codec"] = codec
+        if fps is not None:
+            opts["fps"] = fps
+        res = _mh_runner.render(str(target), str(out_abs), opts)
+        if res.get("ok"):
+            res["out_rel"] = f"{target.name}/{safe_out}"  # 供前端拼 /api/mh/media
+        return res
+
+    def mh_preview(self, project_id: str, times: List[Any],
+                   contact_sheet: bool = False) -> Dict[str, Any]:
+        """POST /api/mh/preview: 启动后台关键帧预览 job, 返回 job_id。"""
+        target = _mh_runner.resolve_project_dir(self.workspace, project_id)
+        if target is None:
+            return {"ok": False, "error": "invalid project_id"}
+        if not target.is_dir():
+            return {"ok": False, "error": "project not found"}
+        return _mh_runner.preview(str(target), times or [], contact_sheet=contact_sheet)
+
+    # ---------------- Code-anim 渲染后端 (WebServer 方法) ----------------
+    def codeanim_render(self, project_json: Dict[str, Any], out: str = "") -> Dict[str, Any]:
+        """POST /api/codeanim/render: 启动后台渲染视频 job, 返回 job_id。
+
+        project_json 必须通过 validate_project; out 仅接受文件名 (无路径分隔符),
+        默认 ``render-<ts>.mp4``, 输出落在 ``<workspace>/.tuan/codeanim/`` 下。
+        """
+        err = _codeanim.validate_project(project_json)
+        if err:
+            return {"ok": False, "error": err}
+        if not _codeanim.ffmpeg_available():
+            return {"ok": False, "error": "ffmpeg 不可用, 无法渲染"}
+        root = _codeanim.codeanim_root(self.workspace)
+        safe_out = (out or "").strip()
+        if safe_out:
+            if "/" in safe_out or "\\" in safe_out or ".." in safe_out:
+                return {"ok": False, "error": "out 必须是文件名, 不含路径"}
+            if not safe_out.lower().endswith(".mp4"):
+                return {"ok": False, "error": "out 必须以 .mp4 结尾"}
+        else:
+            safe_out = f"render-{int(time.time())}.mp4"
+        out_abs = (root / safe_out).resolve()
+        try:
+            out_abs.relative_to(root)
+        except ValueError:
+            return {"ok": False, "error": "out 路径越界"}
+        fps = int(project_json.get("fps") or 30)
+        job_id = _codeanim.start_render_job(project_json, str(out_abs), fps=fps)
+        return {"ok": True, "job_id": job_id, "out_rel": safe_out}
+
+    def codeanim_contact(self, project_json: Dict[str, Any], times: List[Any]) -> Dict[str, Any]:
+        """POST /api/codeanim/contact: 启动后台接触表 job, 返回 job_id。"""
+        err = _codeanim.validate_project(project_json)
+        if err:
+            return {"ok": False, "error": err}
+        safe_times: List[float] = []
+        for t in (times or []):
+            if isinstance(t, (int, float)) and not isinstance(t, bool):
+                safe_times.append(float(t))
+        if not safe_times:
+            return {"ok": False, "error": "times 必须是非空数字数组"}
+        root = _codeanim.codeanim_root(self.workspace)
+        safe_out = f"contact-{int(time.time())}.png"
+        out_abs = (root / safe_out).resolve()
+        try:
+            out_abs.relative_to(root)
+        except ValueError:
+            return {"ok": False, "error": "out 路径越界"}
+        job_id = _codeanim.start_contact_job(project_json, safe_times, str(out_abs))
+        return {"ok": True, "job_id": job_id, "out_rel": safe_out}
 
     def save_sessions_soon(self, delay: float = 1.0) -> None:
         """防抖落盘: 合并短时间内的多次保存请求。

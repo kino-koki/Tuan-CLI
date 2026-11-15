@@ -142,10 +142,23 @@ def test_timeout_kills_hook():
         "PreToolUse": [{"matcher": "*", "command": [PY, TIMEOUT], "timeout": 1}],
     }), workspace=os.getcwd())
     t0 = time.time()
-    d = mgr.run_pre("write_file", {})  # 应被超时强杀, 不阻断
+    d = mgr.run_pre("write_file", {})  # 超时强杀, 按 B3 默认 on_failure=block 转为阻断
     dt = time.time() - t0
     assert dt < 10
-    assert d.block is False  # 超时不应转化为阻断
+    # B3: 超时默认按 fail-closed (on_failure=block) 转化为阻断
+    assert d.block is True
+    assert d.failure_kind == "timeout"
+
+
+def test_timeout_allow_policy_does_not_block():
+    """显式 on_failure=allow 时超时放行（向后兼容旧行为）。"""
+    mgr = HookManager(make_cfg({
+        "default_timeout": 1,
+        "on_failure": "allow",
+        "PreToolUse": [{"matcher": "*", "command": [PY, TIMEOUT], "timeout": 1}],
+    }), workspace=os.getcwd())
+    d = mgr.run_pre("write_file", {})
+    assert d.block is False
 
 
 # ------------------------------------------------------------------ dispatch 集成

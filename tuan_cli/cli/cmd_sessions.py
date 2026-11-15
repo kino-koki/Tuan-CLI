@@ -22,7 +22,7 @@ from ._ui_singleton import console
 
 def cmd_sessions(args: Any) -> int:
     """`tuan sessions <list|rm>` CLI 入口。"""
-    sub = getattr(args, "sessions_cmd", "list")
+    sub = getattr(args, "sessions_cmd", None) or "list"
 
     if sub == "list":
         return _cmd_list()

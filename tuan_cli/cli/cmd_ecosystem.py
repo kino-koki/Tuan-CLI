@@ -387,7 +387,7 @@ def _cmd_serve(args: Any) -> int:
 
 def cmd_ecosystem(args: Any) -> int:
     """tuan ecosystem 分发器。"""
-    action = getattr(args, "ecosystem_cmd", "scan")
+    action = getattr(args, "ecosystem_cmd", None) or "scan"
     if action == "scan":
         return _cmd_scan(args)
     if action == "status":

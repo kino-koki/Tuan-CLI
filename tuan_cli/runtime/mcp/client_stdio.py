@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from typing import Any, Callable, Dict, List, Optional
 
@@ -22,6 +23,8 @@ from .types import (
     MCPToolResult,
     UnexpectedCloseReason,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _cfg(config: Any, key: str, default: Any = None) -> Any:
@@ -251,8 +254,8 @@ class StdioMcpClient:
         try:
             proc.stdin.write(data)
             await proc.stdin.drain()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("MCP stdio write error (server may have exited): %s", exc)
 
     async def _read_loop(self) -> None:
         proc = self._proc
@@ -307,8 +310,8 @@ class StdioMcpClient:
                 self._push_stderr(raw.decode("utf-8", errors="replace"))
         except asyncio.CancelledError:
             pass
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("MCP stdio stderr-loop error: %s", exc)
 
     # ------------------------------------------------------------- 工具方法
 

@@ -38,7 +38,7 @@ class MessageType(str, Enum):
     # 控制消息
     REQUEST = "request"      # 请求其他 Agent 执行操作
     DEPENDENCY = "dependency"  # 声明依赖
-    CONFlict = "conflict"    # 冲突声明
+    CONFLICT = "conflict"    # 冲突声明
 
     # 状态消息
     STATUS = "status"        # 状态更新

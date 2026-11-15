@@ -148,8 +148,18 @@ bench/ps_safety_report.html
 # bench/ 下的 `_` 前缀脚本为一次性校准/抓取工具, 与仓库约定一致不入库。
 bench/_*.py
 
+# ===== 根目录一次性调试转储 (命令行重定向/文件清单产物), 不入库 =====
+t.txt
+cmd_files.txt
+cmd_reg.txt
+.git-commit-msg.tmp
+test_results.txt
+dist_check/
+
 # ===== 一次性操作脚本 =====
 scripts/_replace_icons.py
+# scripts/debug/ 是一次性手工调试脚本 (导入安全引擎做临时冒烟), 非工程资产, 不入库
+scripts/debug/
 
 # ===== 临时/内部文件 =====
 .demo-home/
@@ -180,6 +190,14 @@ github token*
 # 上游参考源码抓取 (Codex CLI / Kimi Code 的只读研究素材, 非本仓库代码), 不入库
 .codex_src/
 .kimi_src/
+# DeepSeek Harness (dsh) 的 asar 解包与抓取的 JS 源码/研究素材 (node_modules 级,
+# 18000+ 文件 413MB), 与上游参考源码同理, 不入库。
+.dsh-asar2/
+dsh-identity-deepseek/
+dsh-memewiki/
+index.js
+# 桌面端 IDE 的本地状态目录
+.trae/
 # git 历史手工备份 (git_backup_manual + 引用/合成清单), 属于溯源证据副本, 不入库
 .git_backup_manual/
 .git_refs_backup.txt

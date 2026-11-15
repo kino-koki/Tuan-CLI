@@ -16,6 +16,7 @@ from .task_tool import TaskToolPlugin
 from .monitor_tool import MonitorToolPlugin
 from .session_tools import SessionToolsPlugin
 from .todo_tool import TodoToolPlugin
+from .team_tool import TeamToolPlugin
 from .mcp.plugin import MCPPlugin
 from .pipeline import PipelinePlugin
 from .code_review import CodeReviewPlugin
@@ -62,6 +63,7 @@ def builtin_tool_plugins() -> list[Any]:
         DispatchPlugin(), PipelinePlugin(), CodeReviewPlugin(),
         ExternalToolsPlugin(), LanguagePlugin(), CheckpointPlugin(),
         TaskToolPlugin(), SessionToolsPlugin(), TodoToolPlugin(), CodeGraphPlugin(), BackendDevPlugin(), SandboxPlugin(), DynamicWorkflowPlugin(),
+        TeamToolPlugin(),
         ImageGenPlugin(),
         PickerPlugin(),
         ToolSearchPlugin(),

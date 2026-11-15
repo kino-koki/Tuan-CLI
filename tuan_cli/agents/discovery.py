@@ -14,15 +14,20 @@ import asyncio
 from typing import List
 
 from .adapters import ADAPTERS, register_adapter
+from .adapters.aider import AiderAdapter
 from .adapters.claude_code import ClaudeCodeAdapter
 from .adapters.codex import CodeXAdapter
 from .adapters.deepseek_harness import DeepSeekHarnessAdapter
+from .adapters.doubao import DoubaoAdapter
+from .adapters.gemini import GeminiAdapter
 from .adapters.hermes import HermesAdapter
 from .adapters.kimi_code import KimiCodeAdapter
+from .adapters.qwen_code import QwenCodeAdapter
 from .base import AgentAdapter, AgentInfo
 
-# 注册全部 5 家适配器 (固定顺序, 与协议文档一致)
-for _cls in (ClaudeCodeAdapter, CodeXAdapter, HermesAdapter, DeepSeekHarnessAdapter, KimiCodeAdapter):
+# 注册全部适配器 (v0.4.2 扩充至 9 家: 原 5 家 + gemini/aider/qwen-code/doubao)
+for _cls in (ClaudeCodeAdapter, CodeXAdapter, HermesAdapter, DeepSeekHarnessAdapter,
+             KimiCodeAdapter, GeminiAdapter, AiderAdapter, QwenCodeAdapter, DoubaoAdapter):
     _inst = _cls()
     register_adapter(_inst)
 
@@ -33,6 +38,10 @@ DETECTION_ORDER = [
     "hermes",
     "deepseek-harness",
     "kimi-code",
+    "gemini",
+    "aider",
+    "qwen-code",
+    "doubao",
 ]
 
 

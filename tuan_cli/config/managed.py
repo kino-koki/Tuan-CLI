@@ -48,10 +48,11 @@ class ManagedSettings:
         # config 包含所有层级合并后的设置
     """
 
-    def __init__(self, home: Path) -> None:
+    def __init__(self, home: Path, hooks: Any = None) -> None:
         self.home = Path(home)
         self._sources: List[SettingsSource] = []
         self._locked_fields: Set[str] = set()
+        self.hooks = hooks
         self._load_all()
 
     def _load_all(self) -> None:
@@ -228,3 +229,11 @@ class ManagedSettings:
     def reload(self) -> None:
         """重新加载所有设置源 (配置变更后调用)。"""
         self._load_all()
+        # B3: ConfigChange hook（通知类，origin=reload）
+        if getattr(self, "hooks", None) is not None:
+            try:
+                from tuan_cli.hooks.triggers import HookTrigger
+                HookTrigger(self.hooks).config_change(
+                    source="managed_settings", origin="reload")
+            except Exception:  # noqa: BLE001 - 通知失败不影响主流程
+                pass

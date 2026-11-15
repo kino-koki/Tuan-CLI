@@ -254,7 +254,7 @@ def _status(args: Any) -> int:
 
 
 def cmd_harden(args: Any) -> int:
-    cmd = getattr(args, "harden_cmd", None)
+    cmd = getattr(args, "harden_cmd", None) or "status"
     if cmd == "audit-export":
         return _audit_export(args)
     if cmd == "sbom":

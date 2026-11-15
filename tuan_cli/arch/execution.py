@@ -349,18 +349,25 @@ class ToolPipeline:
     """
 
     def __init__(self, hooks: Any = None, bus: Optional[SemanticBus] = None,
-                 agent_id: str = "main") -> None:
+                 agent_id: str = "main",
+                 schema_resolver: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None) -> None:
         self.pre_stages: List[Callable[[ToolCall, LoopContext], ToolCall]] = []
         self.post_stages: List[Callable[[ToolCall, ToolOutcome, LoopContext], ToolOutcome]] = []
         self.hooks = hooks  # 既有 HookManager (可选)
         self.bus = bus
         self.agent_id = agent_id
+        # B3: schema 解析器 (tool_executor 传入，把工具 schema 交给 run_pre 校验)
+        self._schema_resolver = schema_resolver
 
     def add_pre_stage(self, fn: Callable[[ToolCall, LoopContext], ToolCall]) -> None:
         self.pre_stages.append(fn)
 
     def add_post_stage(self, fn: Callable[[ToolCall, ToolOutcome, LoopContext], ToolOutcome]) -> None:
         self.post_stages.append(fn)
+
+    @property
+    def schema_resolver(self):
+        return self._schema_resolver
 
     def run(self, call: ToolCall, ctx: LoopContext) -> ToolOutcome:
         started = time.time()
@@ -377,8 +384,25 @@ class ToolPipeline:
             outcome.pre_notes.append(f"pre:{getattr(stage, '__name__', 'stage')}")
         # 既有 HookManager 的 pre execute (传入真实工具名/参数, 尊重阻断/改参决策)
         if self.hooks is not None:
+            # B3: 有 schema 时才传关键字（兼容老式 mock 的 run_pre(name, args)）
+            if self._schema_resolver is not None:
+                try:
+                    tool_schema = self._schema_resolver(call.name)
+                except Exception:
+                    tool_schema = None
+            else:
+                tool_schema = None
             try:
-                decision = self.hooks.run_pre(call.name, call.args)
+                import inspect as _inspect
+                if tool_schema is not None:
+                    try:
+                        _inspect.signature(self.hooks.run_pre).parameters["tool_schema"]
+                        decision = self.hooks.run_pre(
+                            call.name, call.args, tool_schema=tool_schema)
+                    except (KeyError, TypeError):
+                        decision = self.hooks.run_pre(call.name, call.args)
+                else:
+                    decision = self.hooks.run_pre(call.name, call.args)
                 if getattr(decision, "block", False):
                     outcome.error = f"hook-pre-blocked: {getattr(decision, 'reason', '')}"
                     self._audit(outcome, ctx, started)

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 import sys
 import uuid
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
@@ -82,6 +83,9 @@ class AcpServer(AcpConn):
     ``cancel(session_id, turn_id)``；可选 ``new_session/load_session/resume_session/
     list_sessions/close_session/delete_session/set_mode/set_model/available_commands``。
     """
+
+    # 失败留痕（写 stderr，不污染 stdout 协议通道）。
+    log = logging.getLogger("tuan.acp.server")
 
     def __init__(
         self,
@@ -266,9 +270,9 @@ class AcpServer(AcpConn):
             return
         try:
             handler(params)
-        except Exception:
-            # 通知不回响应，失败静默
-            pass
+        except Exception as exc:
+            # 通知不回响应, 但留日志 —— 否则 handler bug 全静默
+            self.log.warning("notification %s handler failed: %s", method, exc)
 
     # ============================================================ method handlers
     async def _h_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -495,8 +499,8 @@ class AcpServer(AcpConn):
         if callable(fn):
             try:
                 fn(*args)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - void RPC 失败不中断主循环，但留痕
+                self.log.warning("acp server: void RPC %s failed: %s", name, exc)
 
     def _next_req_id(self) -> int:
         self._req_id += 1

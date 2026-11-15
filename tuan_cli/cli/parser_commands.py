@@ -691,6 +691,73 @@ def register_subcommands(sub: Any) -> None:
     )
     p.set_defaults(func="cmd_undo")
 
+    # ---- team (团组, v0.4.2: 100人/key所有者验证/TTL≤90天/纯本地) ----
+    p = sub.add_parser(
+        "team",
+        help="团组管理: 本地团队 + 供应商/模型授权互通 (100人/key所有者验证/TTL≤90天)",
+    )
+    p.set_defaults(func="cmd_team", team_cmd="show")
+    tsub = p.add_subparsers(dest="team_cmd", required=False)
+    for _t in ("create", "show", "add-member", "register", "issue",
+               "verify", "revoke-grant", "revoke-member", "audit",
+               "invite", "import-invite", "rotate", "challenge", "dispatch"):
+        tp = tsub.add_parser(_t)
+        tp.add_argument("--workspace", default=None, help="工作区目录")
+        tp.add_argument("--json", action="store_true", help="输出 JSON")
+        tp.set_defaults(team_cmd=_t)
+    _ = tsub.choices  # 直接访问子命令 parser
+    _["create"].add_argument("name")
+    _["create"].add_argument("owner")
+    _["add-member"].add_argument("member_id")
+    _["add-member"].add_argument("--display-name", default="")
+    _["add-member"].add_argument("--role", default="member", choices=["admin", "member"])
+    _["add-member"].add_argument("--actor", required=True)
+    _["register"].add_argument("provider_id")
+    _["register"].add_argument("fingerprint")
+    _["register"].add_argument("--owner", default="")
+    _["issue"].add_argument("provider_id")
+    _["issue"].add_argument("member")
+    _["issue"].add_argument("--days", type=int, required=True)
+    _["issue"].add_argument("--models", default="")
+    _["issue"].add_argument("--owner", default="")
+    _["verify"].add_argument("grant_id")
+    _["verify"].add_argument("provider_id")
+    _["verify"].add_argument("--model", default=None)
+    _["revoke-grant"].add_argument("grant_id")
+    _["revoke-grant"].add_argument("--actor", required=True)
+    _["revoke-member"].add_argument("member_id")
+    _["revoke-member"].add_argument("--actor", required=True)
+    _["audit"].add_argument("--limit", type=int, default=100)
+    _["invite"].add_argument("--days", type=int, default=7)
+    _["import-invite"].add_argument("token")
+    _["rotate"].add_argument("--actor", required=True)
+    _["rotate"].add_argument("--grace-days", type=int, default=7)
+    _["challenge"].add_argument("--ttl", type=int, default=120)
+    _["dispatch"].add_argument("--actor", required=True)
+    _["dispatch"].add_argument("--plan", required=True,
+                                help="worker 计划 JSON 文件路径")
+
+    # ---- teamlead (专家团, v0.4.2: 调度本机外部 CLI agent 组成开发团) ----
+    p = sub.add_parser(
+        "teamlead",
+        help="专家团编排: 调度本机外部 CLI agent (claude/codex/kimi…) 组成开发团",
+    )
+    p.set_defaults(func="cmd_teamlead", teamlead_cmd="status")
+    tlsub = p.add_subparsers(dest="teamlead_cmd", required=False)
+    for _t in ("status", "plan", "run"):
+        tlp = tlsub.add_parser(_t)
+        tlp.add_argument("--json", action="store_true", help="输出 JSON")
+        tlp.set_defaults(teamlead_cmd=_t)
+    tlsub.choices["run"].add_argument("goal", help="开发目标 (一句话)")
+    tlsub.choices["run"].add_argument("--roles", default=None,
+                                       help="只跑指定角色, 逗号分隔 (如 architect,reviewer)")
+    tlsub.choices["run"].add_argument("--context", default="",
+                                       help="附加上下文 (可选)")
+    tlsub.choices["run"].add_argument("--workspace", default=None,
+                                       help="工作目录 (默认当前)")
+    tlsub.choices["run"].add_argument("--timeout", type=int, default=600,
+                                       help="单角色超时秒数 (默认 600)")
+
     p = sub.add_parser("improve", help="自我改进闭环: 从执行历史提炼规则与技能草稿")
     impsub = p.add_subparsers(dest="improve_cmd", required=True)
     impsub.add_parser(
@@ -699,6 +766,23 @@ def register_subcommands(sub: Any) -> None:
     impsub.add_parser(
         "apply", help="把经验固化为 rules .jsonl + 技能草稿并落盘"
     ).set_defaults(func="cmd_improve")
+
+    # ---- evolve (阶段 A: 反思性自我进化闭环命令面) ----
+    # 与 improve (蒸馏技能) 不同, evolve 对**系统自身行为**做
+    # "执行→自评→改进→回归验证" 的真闭环, 账本 append-only 可审计。
+    p = sub.add_parser(
+        "evolve", help="反思性自我进化闭环: 执行→自评→改进→回归验证→落账"
+    )
+    evsub = p.add_subparsers(dest="evolve_cmd", required=True)
+    ev_run = evsub.add_parser("run", help="运行一轮进化迭代 (候选+回归验证+落账)")
+    ev_run.add_argument("--tasks", required=True, help="任务集, 分号分隔 (如 'T1;T2')")
+    ev_run.add_argument("--ledger", default=None, help="账本路径 (默认 ~/.tuan/evolution.jsonl)")
+    ev_run.add_argument("--json", action="store_true", help="输出 JSON")
+    ev_run.set_defaults(func="cmd_evolve")
+    ev_rep = evsub.add_parser("report", help="渲染进化账本摘要")
+    ev_rep.add_argument("--ledger", default=None, help="账本路径 (默认 ~/.tuan/evolution.jsonl)")
+    ev_rep.add_argument("--json", action="store_true", help="输出 JSON")
+    ev_rep.set_defaults(func="cmd_evolve")
 
     p = sub.add_parser("session", help="会话管理 (列出/恢复/删除/导出/清理/统计)")
     sesub = p.add_subparsers(dest="session_cmd", required=True)

@@ -45,6 +45,7 @@ class AlertRecord:
     timestamp: float = 0.0
     source: str = ""
     notified: bool = False
+    owner: str = ""                 # 会话归属 (仅内存诊断, 不进 to_dict)
 
     def __post_init__(self) -> None:
         if self.timestamp == 0.0:
@@ -231,10 +232,27 @@ class SecurityAlerter:
         home: Optional[Path] = None,
         on_alert: Optional[Callable[[AlertRecord], None]] = None,
         enable_desktop: bool = True,
+        hooks: Optional[Any] = None,
     ) -> None:
         self._home = Path(home) if home else Path.home() / ".tuan"
         self._on_alert = on_alert
         self._enable_desktop = enable_desktop
+        # B3 续轮 VI: 实例级 hooks 绑定（构造时从 default provider 捕获）。
+        # ``bind_session_hooks`` 会通过 ``inst.hooks = hooks`` 覆盖此属性，
+        # 让进程级单例在会话启动后接到本会话的 hooks（既有行为）。
+        if hooks is not None:
+            self.hooks = hooks
+        else:
+            try:
+                from ..hooks.triggers import current_session_hooks
+                self.hooks = current_session_hooks()
+            except Exception:  # noqa: BLE001
+                try:
+                    from ..hooks.triggers import get_default_hooks_provider
+                    _p = get_default_hooks_provider()
+                    self.hooks = _p() if callable(_p) else None
+                except Exception:  # noqa: BLE001
+                    self.hooks = None
 
         # 通道
         self._logger = AlertLogger(self._home)
@@ -276,6 +294,15 @@ class SecurityAlerter:
             details=details or {},
             source=source,
         )
+        # B3 续轮 VII: 在**调用线程**捕获当前 owner 烘进记录，供后台
+        # 通知线程按 owner 分桶查表（contextvar 不跨线程，必须显式传递）。
+        try:
+            from ..hooks.triggers import current_session_owner
+            _o = current_session_owner()
+            if _o:
+                record.owner = _o
+        except Exception:  # noqa: BLE001 - 取 owner 失败不掀翻告警主路径
+            pass
 
         # 速率限制检查
         rate_key = f"{severity}:{title}"
@@ -427,7 +454,33 @@ class SecurityAlerter:
             log.debug("启动桌面通知线程失败: %s", exc)
 
     def _notify_safely(self, record: "AlertRecord") -> None:
-        """在后台线程里跑桌面通知, 吞所有异常。"""
+        """在后台线程里跑桌面通知, 吞所有异常。
+
+        B3 续轮 VII: 先按 record.owner 派发 Notification hook（owner 分桶
+        查表，落空则回落实例 hooks，**不回落单槽 default**），再发桌面通知。
+        owner 烘在 record 上（O4：contextvar 不跨线程），后台线程不能读。
+        """
+        # —— Notification hook 派发（按 owner 分桶）——
+        try:
+            from ..hooks.triggers import hooks_for_owner
+            hooks = None
+            if record.owner:
+                hooks = hooks_for_owner(record.owner)
+            if hooks is None:
+                # 未设置 owner / 未注册 → 回落实例 hooks（构造时传入或
+                # bind_session_hooks 回填）；不读单槽 default，避免笔误串台。
+                hooks = getattr(self, "hooks", None)
+            if hooks is not None:
+                from ..hooks.triggers import HookTrigger
+                HookTrigger(hooks).notification(
+                    title=record.title,
+                    body=record.message,
+                    severity=record.severity,
+                    source=record.source,
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.debug("Notification hook 派发异常: %s", exc)
+        # —— 桌面通知 ——
         try:
             DesktopNotifier.notify(
                 title=f"[{record.severity.upper()}] {record.title}",

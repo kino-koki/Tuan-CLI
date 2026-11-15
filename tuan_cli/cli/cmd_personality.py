@@ -25,7 +25,7 @@ from ..core.personality import (
 
 def cmd_personality(args: Any) -> int:
     """人设管理命令入口。"""
-    cmd = getattr(args, "personality_cmd", "list")
+    cmd = getattr(args, "personality_cmd", None) or "list"
 
     if cmd == "list":
         return _cmd_personality_list()

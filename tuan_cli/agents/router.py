@@ -27,8 +27,12 @@ from .base import AgentAdapter, TaskRequest
 # 注册顺序 (同分时的优先级, 越靠前越优先)
 REGISTRATION_PRIORITY = [
     "claude-code",
-    "deepseek-harness",
     "codex",
+    "gemini",
+    "aider",
+    "qwen-code",
+    "doubao",
+    "deepseek-harness",
     "kimi-code",
     "hermes",
 ]

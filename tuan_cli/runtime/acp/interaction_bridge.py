@@ -101,10 +101,9 @@ def build_permission_tool_call_update(req: Dict[str, Any]) -> Dict[str, Any]:
 class AcpInteractionBridge:
     """把引擎 approval 经 ``session/request_permission`` 转给 client 并回收决策。"""
 
-    def __init__(self, conn: AcpConn, session_id: str, elicitation_form: bool = False) -> None:
+    def __init__(self, conn: AcpConn, session_id: str) -> None:
         self._conn = conn
         self._session_id = session_id
-        self._elicitation_form = elicitation_form
         self._in_flight: set = set()
 
     async def handle_approval(self, req: Dict[str, Any]) -> ApprovalResponse:

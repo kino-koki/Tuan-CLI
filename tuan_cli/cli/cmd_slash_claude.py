@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..i18n import t
+from ..hooks import lifecycle as _LC
 from ._ui_singleton import ui
 from ..config import home_dir
 
@@ -150,6 +151,11 @@ def cmd_cd(agent: Any, arg: str) -> None:
     ctx = getattr(agent, "ctx", None)
     if ctx is not None:
         setattr(ctx, "workspace", target)
+    # CwdChanged：通知类，payload 只带 cwd，不带正文
+    try:
+        _LC.emit("CwdChanged", {"cwd": target})
+    except Exception:  # noqa: BLE001 - 通知类吞异常
+        pass
     ui.success(f"当前目录: {os.getcwd()}")
 
 

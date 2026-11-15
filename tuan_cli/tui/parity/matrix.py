@@ -201,7 +201,37 @@ def summary() -> Dict[str, object]:
         "aligned_only_pct": round(counts[ALIGNED] * 100.0 / total, 1),
         "upstream_rs_files": SCALE["rs_files"],
         "upstream_rs_lines": SCALE["rs_lines"],
-        "fully_identical": counts[PENDING] == 0,
+        # 双口径完全对齐：pending 清零**且**深度探针全覆盖
+        "all_modules_settled": counts[PENDING] == 0,
+        "depth_strict_ok": depth_strict_ok(),
+        "fully_identical": counts[PENDING] == 0 and depth_strict_ok(),
+    }
+
+
+# ---------------------------------------------------------------- 深度探针
+# 逐模块「深度探针」登记表：对每个 aligned 模块给一条可执行的深度断言
+# 路径。当前为占位登记（本轮只补齐计数契约，逐条断言由后续轮次补）。
+_DEPTH_REGISTRY: Dict[str, str] = {}
+
+
+def depth_strict_ok() -> bool:
+    """深度探针是否已 100% 覆盖 aligned 模块（不含 not_applicable）。"""
+    if not _DEPTH_REGISTRY:
+        return False
+    aligned = {r.module for r in parity_status() if r.status == ALIGNED}
+    return aligned <= set(_DEPTH_REGISTRY)
+
+
+def depth_report() -> Dict[str, object]:
+    """深度探针覆盖度报告（供探针与测试核销）。"""
+    aligned = sorted(r.module for r in parity_status() if r.status == ALIGNED)
+    verified = [m for m in aligned if m in _DEPTH_REGISTRY]
+    missing = [m for m in aligned if m not in _DEPTH_REGISTRY]
+    return {
+        "depth_claimed": len(aligned),
+        "depth_verified": len(verified),
+        "depth_missing": missing,
+        "depth_strict_ok": not missing and bool(aligned),
     }
 
 

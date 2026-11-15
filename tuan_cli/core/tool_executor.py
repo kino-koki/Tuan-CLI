@@ -303,6 +303,12 @@ class ToolExecutor:
         self.messages = messages  # Agent 的消息列表 (tool 结果写入此列表)
         self._session_append = session_append or (lambda *a, **kw: None)
         self._tool_content_fn = tool_content_fn or (lambda x: x)
+        # B3: 可选执行通道 (只读并行策略用)，schema 从 registry 解析
+        from tuan_cli.arch.execution import ToolPipeline
+        self.pipeline = ToolPipeline(
+            bus=getattr(registry, "bus", None),
+            schema_resolver=self._resolve_tool_schema,
+        )
         self.timeout = timeout
         self.max_workers = max_workers
         self._telemetry = telemetry
@@ -316,6 +322,19 @@ class ToolExecutor:
         self._kernel_cache: Any = None
         # E5: 写操作风暴检测器
         self._write_storm = _WriteStormDetector()
+
+    def _resolve_tool_schema(self, tool_name: str) -> Optional[Dict[str, Any]]:
+        """从 registry 取工具 schema (供 hook updatedInput 校验)。"""
+        try:
+            tool = self.registry.get(tool_name) if hasattr(self.registry, "get") else None
+            if tool is None:
+                return None
+            params = getattr(tool, "parameters", None) or getattr(tool, "input_schema", None)
+            if isinstance(params, dict):
+                return params
+        except Exception:
+            pass
+        return None
 
     # -------------------------------------------------------- 批量执行
 
@@ -612,6 +631,12 @@ class ToolExecutor:
             else:
                 for tc in calls:
                     self._execute_single(tc, ctx, exclude, on_tool, on_tool_result)
+        # PostToolBatch: 通知类，整个批次执行完后派发一次
+        try:
+            from ..hooks import lifecycle as _LC
+            _LC.emit("PostToolBatch", {"count": len(tool_calls)})
+        except Exception:  # noqa: BLE001 - 通知类吞异常（动作已发生）
+            pass
 
     # -------------------------------------------------------- 并行执行
 

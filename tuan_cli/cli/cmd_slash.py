@@ -154,6 +154,8 @@ SLASH_COMMAND_NAMES: tuple = (
     "/personality",
     "/batch", "/dataviz", "/design", "/artifacts",
     "/language",
+    "/teamlead",
+    "/team",
 )
 
 
@@ -221,6 +223,8 @@ _CMD_META: Dict[str, str] = {
     "/verify": "编码验证闭环 (test/typecheck/lint 失败自修复)",
     "/subagent": "派发隔离子代理执行任务 (run/status)",
     "/superagent": "Super-Agent: DeepSeek 双层架构 (Router/Worker/事件驱动/Watchdog)",
+    "/teamlead": "外部专家团: 调度本机已安装的 CLI agent 组成开发团 (discover/plan/run)",
+    "/team": "团组管理: 查看/审计本地团组状态 (show/audit)",
     "/personality": "人设管理 (list/show/set/auto)",
     "/rewind": "会话时间线回溯 (快照回退)",
     "/handoff": "会话交接: 摘要压缩后开新会话",
@@ -472,7 +476,36 @@ def _cmd_add_dir(agent: Any, arg: str) -> None:
         for d in dirs:
             ui.info(f"  - {d}")
         return
-    ui.success(authorize_extra_dir(agent.ctx, arg))
+    from pathlib import Path as _P
+    parts = arg.strip().split()
+    writable = "--writable" in parts
+    path_str = " ".join(p for p in parts if p != "--writable")
+    if not path_str:
+        ui.info("用法: /add-dir <绝对路径> [--writable]")
+        return
+    resolved = _P(path_str).expanduser()
+    if not resolved.is_absolute():
+        resolved = _P(agent.ctx.workspace).resolve() / resolved
+    try:
+        resolved = resolved.resolve()
+    except OSError:
+        ui.info(f"[错误] 无法解析路径 {path_str}")
+        return
+    if not resolved.exists() or not resolved.is_dir():
+        ui.info(f"[错误] 目录不存在: {resolved}")
+        return
+    ui.success(authorize_extra_dir(agent.ctx, path_str, writable=writable))
+    hooks = getattr(getattr(agent, "ctx", None), "hooks", None)
+    if hooks is not None:
+        try:
+            hooks.run_notify("DirectoryAdded", {
+                "hook_event_name": "DirectoryAdded",
+                "path": str(resolved),
+                "writable": writable,
+                "session_only": True,
+            })
+        except Exception:
+            pass
 
 
 def _cmd_web(agent: Any, arg: str) -> None:
@@ -617,6 +650,154 @@ def _cmd_subagent(agent: Any, arg: str) -> None:
         return
     ui.info("[子代理] 已派出, 独立上下文执行中…")
     ui.answer_md(_run_subagent(agent.ctx, arg.strip()))
+
+
+def _cmd_team(agent: Any, arg: str) -> None:
+    """/team [show|audit] — 本地团组只读查询。
+
+    show:  团组概览（名称/成员/供应商）；
+    audit: 最近审计事件。
+
+    写操作（create/issue/rotate/...）请用 `tuan team <sub>` CLI，需明确参数解析和确认。
+    """
+    from ..config import home_dir
+    from ..core.team_group import load_team_group
+
+    ws = getattr(getattr(agent, "ctx", None), "workspace", "") or str(home_dir())
+    sub = (arg or "").strip().lower() or "show"
+    store = load_team_group(ws)
+
+    if sub in ("show", "status"):
+        snap = store.export_public()
+        if not snap.get("created"):
+            ui.info("团组未创建（用 `tuan team create <name> <owner>` 创建）。")
+            return
+        ui.info(f"[团组] {snap['name']} ({snap['group_id']})")
+        ui.info(f"  团主: {snap['owner']}")
+        ui.info(f"  成员 ({snap['member_count']}): "
+                + (", ".join(m.get('id', '?') for m in store.list_members())
+                   or "(无)"))
+        provs = store.list_providers()
+        if provs:
+            ui.info(f"  供应商 ({len(provs)}): "
+                    + ", ".join(p.get('name', '?') for p in provs))
+        grants = store.list_grants()
+        if grants:
+            ui.info(f"  有效授权: {len(grants)} 条")
+        else:
+            ui.info("  有效授权: 0 条（用 `tuan team issue <member> <provider> [days]` 签发）")
+        return
+
+    if sub == "audit":
+        audit_path = Path(ws) / ".tuan" / "team_audit.jsonl"
+        evts = []
+        if audit_path.exists():
+            try:
+                lines = audit_path.read_text(encoding="utf-8").splitlines()
+                evts = [json.loads(l) for l in lines[-30:] if l.strip()]
+            except Exception:  # noqa: BLE001
+                pass
+        if not evts:
+            ui.info("  审计链为空。")
+            return
+        ui.info(f"[团组审计] 最近 {len(evts)} 条事件:")
+        for e in evts:
+            ts = e.get("ts", "?")
+            kind = e.get("kind", e.get("event", "?"))
+            actor = e.get("actor", "")
+            ui.info(f"  {ts}  {kind:30s} {actor}")
+        return
+
+    ui.info("用法: /team [show|audit] — 只读查询；写操作请用 `tuan team <sub>` CLI")
+
+
+def _cmd_teamlead(agent: Any, arg: str) -> None:
+    """/teamlead [run <目标> | plan | status] — 外部专家团编排。
+
+    调度本机已安装的外部 CLI Agent (Claude Code / Codex / Gemini / Aider /
+    Qwen Code / Doubao / Hermes / DeepSeek / Kimi Code) 组成开发团
+    (架构师/实现者/审查者/测试者)，并行派发一个开发目标。
+
+    无参数或 status: 探测本机外部 agent；
+    plan:            显示 角色->agent 分配；
+    run <目标>:      组团并并行执行 (结果进团组审计链，若团组已创建)。
+    """
+    import asyncio
+
+    from ..config import home_dir
+
+    parts = (arg or "").strip().split(None, 1)
+    sub = parts[0].lower() if parts else "status"
+    rest = parts[1] if len(parts) > 1 else ""
+
+    from ..core.team_lead import make_audited_team_lead
+
+    ws = getattr(getattr(agent, "ctx", None), "workspace", "") or str(home_dir())
+    store = None
+    try:
+        from ..core.team_group import load_team_group
+        s = load_team_group(ws)
+        if s.group is not None:
+            store = s
+    except Exception:  # noqa: BLE001 - 无团组则纯 TeamLead，不写审计
+        store = None
+
+    lead = make_audited_team_lead(store, cwd=ws)
+
+    def _run(coro: Any) -> Any:
+        return asyncio.new_event_loop().run_until_complete(coro)
+
+    if sub in ("status", "discover"):
+        infos = _run(lead.discover())
+        from ..agents.discovery import summarize
+        s = summarize(infos)
+        ui.info(f"[专家团] 本机外部 Agent ({s['line']}, {s['verified']} 校验通过)")
+        for i in infos:
+            mark = "●" if i.healthy else "○"
+            ver = f" v{i.version}" if i.version else ""
+            reason = f" ({i.reason})" if (i.reason and not i.healthy) else ""
+            ui.info(f"  {mark} {i.name} [{i.id}]{ver}{reason}")
+        if s["online"] == 0:
+            ui.info("  未检测到外部 agent。请安装 claude / codex / gemini /"
+                    " aider / qwen-code / doubao / hermes / dsh / kimi-code 之一。")
+        return
+
+    if sub == "plan":
+        _run(lead.discover())
+        plan = lead.plan()
+        ui.info("[专家团] 分配计划")
+        for r in lead.roles:
+            agent_id = plan.get(r.key)
+            shown = agent_id if agent_id else "缺位"
+            ui.info(f"  {r.title} ({r.key}) -> {shown}  偏好: {', '.join(r.preferred) or '-'}")
+        return
+
+    if sub in ("run", "goal"):
+        if not rest:
+            ui.info("用法: /teamlead run <开发目标> — 例如 /teamlead run 给检索模块加缓存")
+            return
+        _run(lead.discover())
+        online = len(lead.healthy_agents())
+        if online == 0:
+            ui.error("本机无可用外部 agent，无法组团。用 /teamlead status 查看探测结果。")
+            return
+        ui.info(f"[专家团] 已派出 {online} 家外部 agent 并行执行中… (可能耗时数分钟)")
+        report = _run(lead.run(rest, actor="repl"))
+        ui.info(f"[专家团] 报告: 在线 {online} | 角色 {report.total} | "
+                f"成功 {report.ok} | 失败 {report.failed} | 缺位 {report.missing} | "
+                f"耗时 {report.duration_ms}ms")
+        for r in report.roles:
+            icon = {"ok": "✓", "failed": "✗", "missing": "○"}.get(r.status, "○")
+            ui.info(f"  [{icon}] {r.title} ({r.role}) via {r.agent_id} — {r.status}")
+            if r.error:
+                ui.info(f"    错误: {r.error}")
+            if r.text:
+                lines = r.text.splitlines()
+                ui.answer_md("\n".join(lines[:80]) +
+                             (f"\n… (共 {len(lines)} 行)" if len(lines) > 80 else ""))
+        return
+
+    ui.info("用法: /teamlead [status|plan|run <目标>] — 外部专家团编排")
 
 
 def _cmd_workflow(agent: Any, arg: str) -> None:
@@ -1290,6 +1471,10 @@ def _handle_slash(cmd: str, agent: Any, config: Any, workspace: str) -> bool:
         _cmd_subagent_enhanced(agent, arg)
     elif head == "/superagent":
         _cmd_superagent(agent, arg)
+    elif head == "/teamlead":
+        _cmd_teamlead(agent, arg)
+    elif head == "/team":
+        _cmd_team(agent, arg)
     elif head in ("/workflow", "/workflow-authoring", "/deep-research"):
         # /workflow-authoring <主题> 与 /deep-research <主题> 是 /workflow 编排模式的别名。
         if head == "/workflow-authoring":

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union, cast
 
+from ..hooks import lifecycle as _LC
 from .cache import ToolResultCache
 from .permissions import PermissionPolicy
 from .permission_fusion import build_permission_policy
@@ -487,6 +488,27 @@ class ToolRegistry:
         """
         if not tool.dangerous:
             return None
+        # PermissionRequest Hook 预检 (对标 Claude Code 的权限请求 hook):
+        # 在任何 auto-approve / YOLO 快捷通道之前派发, 让用户级 hook 有机会
+        # 程序化**阻断**危险操作。只允许收紧、不允许放宽 —— hook 返回 allow
+        # 时绝不跳过下方的人工确认闸门 (Tuan 的 ctx.confirm 是安全红线,
+        # 与 CC 的"hook 可代答放行"刻意不等价, 防止外部脚本绕过安全闸门)。
+        hooks = getattr(ctx, "hooks", None)
+        if hooks is not None:
+            try:
+                d = hooks.run_decision(
+                    "PermissionRequest",
+                    tool_name=name,
+                    payload={"tool_name": name, "tool_input": args},
+                )
+            except Exception:  # noqa: BLE001 - hook 异常时安全降级, 不放行
+                d = None
+            if d is not None and getattr(d, "block", False):
+                return ToolResult(
+                    status="denied",
+                    content=f"[PermissionRequest Hook 阻断] {d.reason}",
+                    tool_name=name,
+                )
         has_learned = (
             getattr(ctx, "safety_advice", None)
             and "learned" in str(getattr(ctx, "safety_advice", ""))
@@ -507,6 +529,12 @@ class ToolRegistry:
         allowed = ctx.confirm(prompt) if ctx.confirm else False
         if not allowed:
             self._emit_exec(ctx, name, "denied")
+            # PermissionDenied：决策类，payload 带 retry=False
+            try:
+                _LC.emit("PermissionDenied", {
+                    "tool_name": name, "reason": "用户未批准该操作。"})
+            except Exception:  # noqa: BLE001 - 通知类吞异常
+                pass
             if ctx.ui is not None:
                 try:
                     ctx.ui.mascot_set("alert")
@@ -532,7 +560,8 @@ class ToolRegistry:
         if hooks is None:
             return (args, json.dumps(args, ensure_ascii=False, sort_keys=True), None, impact)
         try:
-            _hd = hooks.run_pre(name, args, dangerous=tool.dangerous, impact=impact)
+            _hd = hooks.run_pre(name, args, dangerous=tool.dangerous,
+                                impact=impact, tool_schema=tool.parameters)
         except Exception:
             _hd = None
         if _hd is not None and getattr(_hd, "block", False) and not getattr(ctx, "plan_mode", False):
@@ -601,6 +630,14 @@ class ToolRegistry:
                 except Exception:
                     pass
             self._emit_exec(ctx, name, "error", elapsed=elapsed, error_type=type(exc).__name__)
+            # PostToolUseFailure：决策类，动作已发生（工具执行失败），只作反馈
+            try:
+                _LC.emit("PostToolUseFailure", {
+                    "tool_name": name,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)})
+            except Exception:  # noqa: BLE001 - 通知类吞异常
+                pass
             return ToolResult(
                 status="error",
                 content=f"[错误] 工具 {name} 执行失败: {type(exc).__name__}: {exc}",

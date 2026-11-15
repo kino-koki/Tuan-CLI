@@ -21,6 +21,7 @@ from ..models.provider_catalog import (
 )
 from ..logging_conf import log
 from ..i18n import ensure_language, t
+from ..hooks import lifecycle as _LC
 from ._ui_singleton import console
 
 
@@ -103,6 +104,12 @@ def cmd_setup(args: Any) -> int:
             pass
         console.print("  已跳过设置向导。可用 `tuan setup` 随时重跑。")
         return 0
+
+    # Setup: 派发在最开头（A′#2：不在 build_kernel()/input() 之后）
+    try:
+        _LC.emit("Setup", {"quick": bool(getattr(args, "quick", False))})
+    except Exception:  # noqa: BLE001 - 通知类吞异常
+        pass
 
     kernel = build_kernel()
     config = kernel.require("config")
