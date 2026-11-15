@@ -7,7 +7,7 @@
 
 | 维度 | Claude Code v2.1.289 | Tuan-CLI（当前 0.4.2） | 结论 |
 |---|---|---|---|
-| Slash 命令 | ~80+（含 `/workflow` `/goal` `/design` `/code-review` 等） | 54 个（`SLASH_COMMAND_NAMES`） | **缺 ~30 项** |
+| Slash 命令 | ~80+（含 `/workflow` `/goal` `/design` `/code-review` 等） | 82 个（`SLASH_COMMAND_NAMES` 唯一命令，2026-11-15 去重后核实） | **已对齐** |
 | CLI 子命令 | `claude ...` 全量 | 43 核心 + 扩展 | 部分对齐 |
 | Subagent | 可递归 spawn（链深上限 5） | 链深已实现（`subagent_tool` 链深限制） | **已对齐** |
 | Dynamic Workflow | 数十~数百 subagent 后台编排 | `dynamic_workflow` 已存在 | 已具备，可增强 |
@@ -28,8 +28,14 @@
 > | `--safe-mode`「无独立 CLI 开关」 | **已实现** — `parser.py --safe-mode` → `build_kernel(safe_mode=)` → `app.py` 禁用户级 hooks / 自定义命令 / skills 自动注入 |
 > | subagent「缺递归链深」 | **已实现** — `subagent_tool` 含链深限制 |
 >
-> 仍为**真实差距、本次未解决**：`/agents` 管理界面；subagent「按角色」类型选择
-> （现有「按难度」自动路由，非按角色）；`--input-format stream-json` 流式输入。
+> 此前「仍未解决」三项均已核实落地：
+> - `/agents` 管理界面：**已实现** — CLI `tuan agents`（`cmd_agents_view.py`）已于 2026-11-15 补斜杠入口 `/agents`（`cmd_slash.py` `_cmd_agents` → `cmd_agents_view`，支持 view/watch/kill），
+>   `_HELP` 与 `CATEGORIZED_HELP` 同步收录。
+> - subagent「按角色」选择：**已实现** — `tools/dispatch.py` Role 模式（`Role` 类按角色分配系统提示），
+>   `cmd_dag.py` 传 `role=node.role`；现有「按难度」自动路由之外已有按角色分配。
+> - `--input-format stream-json` 流式输入：**已实现** — `stream_json/__main__.py` + `stream_json/headless.py`（`input_format="stream-json"`、`output_format="stream-json"`，输入/输出格式校验）。
+>
+> 结论：A 类真实可补缺口已清零，GAP 表全部「缺 / 未接线」条目均已核实落地。
 
 > 初稿对照表其余行（`fallbackModel`/`maxEffortLevel` 配置、`/theme` `/color`、
 > `/copy` `/background` 等）的「无 / 缺」结论同样已被上表复核修订覆盖。

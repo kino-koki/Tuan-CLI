@@ -7,7 +7,7 @@
 青小团的命令面分三层：
 
 - **顶层 CLI 子命令**：**156 个**（`parser_commands.py` 顶层 `sub.add_parser`，`set_defaults(func=...)` 引用 52 个 func，逐一反查全部有定义）。
-- **斜杠 `/` 命令**：**82 个**（`SLASH_COMMAND_NAMES`，`cmd_slash.py:151`），`_handle_slash` elif 分支对照：清单无分支 = 0（全部接线）。
+- **斜杠 `/` 命令**：**82 个**（`SLASH_COMMAND_NAMES` 唯一命令，`cmd_slash.py:147`），`_handle_slash` elif 分支对照：清单无分支 = 0（全部接线）。
 - **子命令分组**：`cli/subcommands/`（安全、内核、账本、会话、工作区、信任策略等）。
 
 ## 为什么
@@ -29,11 +29,11 @@
 ## 卖点
 
 - 156 子命令 + 82 斜杠命令，全部接线（诊断核实无"已实现但未接线"）。
-- `/agents` CLI 已实现（view/watch/list/kill/attach，`cmd_agents_view.py:261-294`）。
+- `/agents` CLI **与斜杠入口均实现**（`tuan agents` + `/agents`，view/watch/kill/attach，`cmd_agents_view.py:261-294`）。
 - `/review --security` 真接线（categories="security"）。
+- `/help` 输出与 `SLASH_COMMAND_NAMES` 全量同步（82 命令全覆盖，含 `/teamlead`/`/team` 补齐）。
 
 ## 局限
 
-- 斜杠 `/agents` 不在 `SLASH_COMMAND_NAMES`（仅 CLI `tuan agents`，`/subagent` `/superagent`）——半真缺口。
-- `subagent` 仅"按难度/类型只读查询"，无"按角色选择 spawn"。
+- `subagent` 仅"按难度/类型"自动路由（按角色选择已有 Role 模式，见 ecosystem.md，但无独立 `/subagent --role` 开关）。
 - `--input-format stream-json` 仅 headless 驱动器支持，主 CLI 无独立分支。

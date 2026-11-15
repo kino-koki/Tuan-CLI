@@ -33,5 +33,5 @@
 
 ## 局限
 
-- 斜杠 `/agents` 不在 SLASH_COMMAND_NAMES（仅 CLI `tuan agents`）。
+- `/agents` 斜杠入口与 CLI 均已实现（`cmd_slash.py` `_cmd_agents` → `cmd_agents_view`，view/watch/kill）。
 - 适配器质量参差（Claude Code 对齐度高，其它按需）。

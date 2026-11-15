@@ -94,7 +94,7 @@
 
 - `ipc_client._spawn_once` 全量并行偶发 60s 超时（环境相关，非稳定缺陷）。
 - 事件总线 `_MAX_EVENTS=2000` 上限 + 溢出回调（有意设计，非无限日志）。
-- `--input-format stream-json` 流式输入**仅**由 `tuan_cli.stream_json` headless 驱动器支持，主 CLI 无独立 input-format 分支。
+- `--input-format stream-json` 流式输入由 `tuan_cli.stream_json` headless 驱动器支持（`headless.py` + `__main__.py`，输入/输出格式校验已实现）；主 CLI 无独立 input-format 分支（headless 专有）。
 - TUI 无 aria/screen-reader 支持（键盘/鼠标已完整，可访问性待补）。
 - 索引非增量持久化（indexer 每次会话重建）。
 - 测试收集 8493，实跑全量含少数环境相关偶发（如外部引擎 diff 子进程争用）。

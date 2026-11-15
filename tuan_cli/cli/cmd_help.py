@@ -22,22 +22,25 @@ from typing import Any, Dict, List, Optional
 
 CATEGORIZED_HELP: "Dict[str, List[str]]" = {
     "对话管理": [
-        "/help", "/clear", "/compact", "/context", "/usage", "/cost", "/budget",
-        "/resume", "/export", "/import", "/checkpoint", "/rewind", "/handoff",
+        "/help", "/clear", "/new", "/compact", "/context", "/usage", "/cost", "/budget",
+        "/resume", "/session", "/export", "/import", "/checkpoint", "/rewind", "/handoff",
         "/more", "/exit", "/quit",
     ],
     "代码与工程": [
         "/diff", "/undo", "/impact", "/log", "/verify", "/code", "/worktree",
-        "/workflow", "/gh-borrow", "/web",
+        "/workflow", "/gh-borrow", "/web", "/review", "/security-review", "/simplify",
+        "/debug", "/doctor", "/loop", "/config", "/fork", "/branch", "/cd", "/btw",
+        "/copy", "/background", "/batch", "/dataviz", "/design", "/artifacts",
     ],
     "技能与记忆": [
-        "/skills", "/memory", "/commands", "/subagent", "/swarm", "/route",
+        "/skills", "/tools", "/memory", "/commands", "/subagent", "/superagent",
+        "/swarm", "/route", "/personality", "/teamlead", "/team", "/language",
     ],
     "系统与权限": [
         "/model", "/provider", "/effort", "/mode", "/plan",
         "/permissions", "/sandbox", "/offline", "/audit", "/status", "/stats",
         "/hooks", "/mcp", "/mcp-tools", "/image", "/images", "/clear-images",
-        "/init", "/goal", "/blast",
+        "/init", "/goal", "/blast", "/agents", "/add-dir", "/tasks", "/theme", "/color",
     ],
 }
 

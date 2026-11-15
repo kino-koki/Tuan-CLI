@@ -76,6 +76,7 @@ _HELP = """
 
 ── 专家层 (Expert, 折叠; 输入 /<首字母> 前缀或 /help 可查全部) ──
   [...]/add-dir   把工作区外目录纳入本会话可读上下文 ( /add-dir <路径>; 无参列出 )
+  [...]/agents    会话/Agent 管理面板 ( /agents [view|watch|kill <id>]; 同 tuan agents )
   [...]/audit     审计报告 (统计/查看/导出合规报告)
   [...]/blast     Blast Radius 交互式可视化 (影响半径/安全风险/工具统计)
   [...]/budget    查看/设置成本预算上限 ( /budget <USD> )
@@ -134,6 +135,8 @@ _HELP = """
   [...]/artifacts Artifact 生成 ( /artifacts <工件描述> )
   [...]/auto-mode-setup  Auto 模式分类器展示与测试 ( /auto-mode-setup [test <tool> '<json>'] )
   [...]/language   切换界面语言 ( /language [代码]; 无参列出可用 )
+  [...]/teamlead   外部专家团: 调度本机已安装的 CLI agent 组成开发团 ( /teamlead discover|plan|run )
+  [...]/team       团组管理: 查看/审计本地团组状态 ( /team [show|audit] )
 
 提示: Enter 发送 · Esc+Enter 换行 · 多行可用三引号
 TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执行; 仅列核心层, 输入首字母可展开专家层)"""
@@ -142,7 +145,7 @@ TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执�
 # 权威命令清单: 与 _handle_slash 的 elif 分支一一对应。
 # 供 TUI / REPL 的补全词表、命令发现、ACP/IDE 能力清单共用, 避免多处维护漂移。
 SLASH_COMMAND_NAMES: tuple = (
-    "/add-dir", "/audit", "/background", "/blast", "/branch", "/btw", "/budget", "/cd", "/checkpoint",
+    "/add-dir", "/agents", "/audit", "/background", "/blast", "/branch", "/btw", "/budget", "/cd", "/checkpoint",
     "/clear", "/new", "/clear-images", "/color", "/commands", "/compact", "/config",
     "/context", "/copy", "/cost", "/debug", "/diff", "/doctor",
     "/effort", "/exit", "/export", "/fork", "/gh-borrow", "/goal",
@@ -150,7 +153,7 @@ SLASH_COMMAND_NAMES: tuple = (
     "/loop", "/mcp", "/mcp-tools", "/memory", "/mode", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/review", "/route", "/sandbox", "/security-review", "/session", "/simplify", "/skills", "/stats",
     "/status", "/subagent", "/superagent", "/swarm", "/tasks", "/theme", "/tools", "/undo", "/usage", "/verify",
     "/rewind", "/handoff", "/worktree",
-    "/web", "/workflow", "/code", "/commands",
+    "/web", "/workflow", "/code",
     "/personality",
     "/batch", "/dataviz", "/design", "/artifacts",
     "/language",
@@ -221,6 +224,7 @@ _CMD_META: Dict[str, str] = {
     "/code": "代码感知问答: 检索工作区后带上下文执行",
     "/commands": "热插拔命令管理: list/reload/enable/disable",
     "/verify": "编码验证闭环 (test/typecheck/lint 失败自修复)",
+    "/agents": "会话/Agent 管理面板 (view/watch/kill <id>; 同 tuan agents)",
     "/subagent": "派发隔离子代理执行任务 (run/status)",
     "/superagent": "Super-Agent: DeepSeek 双层架构 (Router/Worker/事件驱动/Watchdog)",
     "/teamlead": "外部专家团: 调度本机已安装的 CLI agent 组成开发团 (discover/plan/run)",
@@ -242,6 +246,8 @@ _CMD_META: Dict[str, str] = {
     "/init": "扫描工作区生成 TUAN.md 项目规则",
     "/image": "图片管理 + AI 生成 (多模态)",
     "/images": "列出待发送图片",
+    "/clear-images": "清除待发送的图片",
+    "/log": "最近工具调用历史 (/log [N] 默认 15 条)",
     "/mcp": "MCP 服务器管理",
     "/mcp-tools": "MCP 工具列表",
     "/gh-borrow": "GitHub 参考借力",
@@ -640,6 +646,27 @@ def _cmd_commands(agent: Any, arg: str, config: Any, workspace: str) -> None:
         return
 
     ui.info("用法: /commands list | reload | enable <名> | disable <名>")
+
+
+def _cmd_agents(agent: Any, arg: str) -> None:
+    """/agents [view|kill <id>] — 会话/Agent 管理面板（复用 tuan agents CLI）。"""
+    from types import SimpleNamespace
+    from .cmd_agents_view import cmd_agents_view, cmd_agents_kill
+    parts = (arg or "").split()
+    cmd = parts[0] if parts else "view"
+    try:
+        if cmd == "kill" and len(parts) > 1:
+            ns = SimpleNamespace(session_id=parts[1])
+            code = cmd_agents_kill(ns)
+        else:
+            # view 默认: 一次一屏表格 (不支持 --watch 长驻, 由 TUI 会话自行驱动)。
+            watch = cmd in ("watch", "monitor")
+            ns = SimpleNamespace(watch=watch)
+            code = cmd_agents_view(ns)
+        if code != 0:
+            ui.warning(f"/agents {cmd} 退出码 {code}")
+    except Exception as exc:  # noqa: BLE001
+        ui.error(f"/agents 失败: {exc}")
 
 
 def _cmd_subagent(agent: Any, arg: str) -> None:
@@ -1467,6 +1494,8 @@ def _handle_slash(cmd: str, agent: Any, config: Any, workspace: str) -> bool:
         _boundary_handoff(agent, config, workspace)
     elif head == "/worktree":
         _boundary_worktree(agent, arg, workspace)
+    elif head == "/agents":
+        _cmd_agents(agent, arg)
     elif head == "/subagent":
         _cmd_subagent_enhanced(agent, arg)
     elif head == "/superagent":
