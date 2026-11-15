@@ -58,7 +58,7 @@
 | `/tasks` | 后台任务列表 | 复用 `BackgroundRunner` |
 | `/theme` | 切换 UI 主题 | 新增 theme 配置 + `ui/theme.py` 应用 |
 | `/color` | 配色方案 | 同 theme |
-| `/loop` | 进入自主开发循环 | 复用 `loop_plugin.switch_loop` + `DevLoopProvider`（**已注册但 slash 未接**） |
+| `/loop` | 进入自主开发循环 | `cmd_slash_claude.py:486` `cmd_loop` → `_handle_slash` elif（**已接线**） |
 | `/review` | 自动代码评审 | 复用 `tools/code_review.py` |
 | `/code-review` | correctness bugs + `--fix` | 复用 `code_review` + 加 `--fix` |
 | `/security-review` | 安全审查 | 复用安全四闸门 + code_review |
