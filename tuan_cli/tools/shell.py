@@ -453,6 +453,17 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
                 + advice + "\n(当前无确认通道, 无法请求人工放行)")
     gate_requires_confirmation = gate_verdict.needs_confirm()
 
+    # ======== 1.5) 会话级 disallowedTools (--disallowed-tools) ========
+    # 优先级高于白名单: 用户显式禁用的命令, 即便在白名单/YOLO 下也不放行。
+    _session_denied = getattr(ctx, "denied_tools", None)
+    if _session_denied is not None \
+            and getattr(_session_denied, "denies_bash", None) is not None \
+            and _session_denied.denies_bash(command):
+        _emitSecurityEvent("security.command.blocked", {
+            "reason": "disallowed_tools", "severity": "high"})
+        return f"[已禁用] 命中本会话 disallowedTools, 不会执行: {command}\n" \
+               f"作用域: {_session_denied.scopes_text()}"
+
     # ======== 2) 白名单检查 (Trae 模式: 用户同意后自动执行) ========
     # 白名单优先级永远低于黑名单: 上面已经检查过红线, 能到这里说明不在红线中
     wl_manager = _get_whitelist_manager()

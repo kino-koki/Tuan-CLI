@@ -85,6 +85,64 @@ def _scope_match(command: str, scope: str) -> bool:
     return command.lower().startswith(scope.lower()[:])
 
 
+@dataclass
+class DeniedTools:
+    """解析后的 disallowedTools 规格 (对标 Claude Code --disallowedTools)。
+
+    与 :class:`AllowedTools` 同一语法, 语义相反: 命中者**硬拒**, 优先级高于
+    白名单/YOLO —— 用户显式声明"不许用"就该不许用。
+    """
+    tools: set[str] = field(default_factory=set)          # 普通工具名
+    bash_scopes: List[str] = field(default_factory=list)  # Bash 作用域
+
+    @classmethod
+    def parse(cls, raw: Optional[str]) -> "DeniedTools":
+        obj = cls()
+        if not raw:
+            return obj
+        try:
+            from ..config.settings_file import normalize_tool_name
+        except Exception:  # noqa: BLE001 - 归一不可用时原样存储
+            normalize_tool_name = lambda x: x  # type: ignore[assignment]
+        for piece in raw.split(","):
+            piece = piece.strip()
+            if not piece:
+                continue
+            m = re.fullmatch(r"Bash\((.*)\)", piece)
+            if m:
+                scope = m.group(1).strip()
+                if scope and scope != "*":
+                    obj.bash_scopes.append(scope)
+                else:
+                    obj.bash_scopes.append("*")
+                continue
+            obj.tools.add(normalize_tool_name(piece))
+        return obj
+
+    def denies_tool(self, tool_name: str) -> bool:
+        # 工具名归一 (read_file→Read, edit_file→Edit 等), 与 settings_file 对齐
+        try:
+            from ..config.settings_file import normalize_tool_name
+            key = normalize_tool_name(tool_name)
+        except Exception:  # noqa: BLE001 - 归一不可用时回退原始名
+            key = str(tool_name).strip()
+        return key in self.tools
+
+    def denies_bash(self, command: str) -> bool:
+        """判断命令是否命中任一禁用作用域。"""
+        if "*" in self.bash_scopes:
+            return True
+        cmd = command.strip()
+        if not cmd:
+            return False
+        return any(_scope_match(cmd, s) for s in self.bash_scopes)
+
+    def scopes_text(self) -> str:
+        parts = [t for t in sorted(self.tools)]
+        parts += [f"Bash({s})" for s in self.bash_scopes]
+        return ", ".join(parts) or "(空)"
+
+
 def _glob_to_regex(pattern: str) -> str:
     import re as _re
 
@@ -94,6 +152,10 @@ def _glob_to_regex(pattern: str) -> str:
             out.append(".*")
         elif ch == " ":
             out.append(r"\s+")
+        elif ch == ":":
+            # Claude Code 作用域分隔符: `Bash(git push:*)` 意为「git push 命令本身
+            # 或其带参数调用」——冒号须匹配「行尾」或「参数前的空白」, 而非字面冒号。
+            out.append(r"(?:$|\s+)")
         elif ch in ".^$+?()[]{}|\\-":
             out.append("\\" + ch)
         else:

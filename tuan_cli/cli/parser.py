@@ -216,6 +216,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="免确认工具/作用域: 如 'Bash(npm test),Read,Write' (命中者不提示)",
     )
     parser.add_argument(
+        "--disallowed-tools",
+        dest="disallowed_tools",
+        help="禁用工具/作用域 (对标 Claude Code --disallowedTools): 命中者硬拒, 如 'WebFetch,Bash(git push:*)'",
+    )
+    parser.add_argument(
+        "--add-dir",
+        dest="add_dir",
+        action="append",
+        default=None,
+        metavar="DIR",
+        help="追加可访问目录 (对标 Claude Code --add-dir, 可重复): 允许在这些目录下读写而无需每次批准",
+    )
+    parser.add_argument(
+        "--settings",
+        help="加载 Claude Code 风格 settings.json 并翻译成会话配置 "
+             "(model/env/permissions/allowedTools/disallowedTools/permissions.additionalDirectories)",
+    )
+    parser.add_argument(
         "--tools",
         dest="tools",
         choices=["minimal", "standard", "full", "auto"],

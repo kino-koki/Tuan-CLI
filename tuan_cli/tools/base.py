@@ -91,6 +91,12 @@ class ToolContext:
     todos: Optional[List[Dict[str, Any]]] = None
     # 宿主 Agent 的反向引用 (Agent.__init__ 注入): plan-mode 等工具需要同步 agent.plan_mode
     agent: Optional[Any] = None
+    # 会话级 allowedTools (--allowed-tools / settings.json allowedTools): 命中者免确认;
+    # 仅本会话生效, 优先级仍低于黑名单/红线 (见 tools/shell.py:459)。
+    allowed_tools: Any = None
+    # 会话级 disallowedTools (--disallowed-tools / settings.json disallowedTools):
+    # 命中者硬拒, 优先级高于白名单/YOLO (对标 Claude Code 同名 flag)。
+    denied_tools: Any = None
     # 检查点存储器 (CheckpointStore): 写工具成功后自动建点, 支持 /undo 与跨会话恢复
     checkpoint_store: Optional[Any] = None
     # 沙箱提供者 (kernel_executor 为子代理注入, run_shell 使用)
@@ -378,6 +384,18 @@ class ToolRegistry:
             (tool, args, decision, targets, impact) —— tool/args 可能被 learned 护栏升级。
             若返回 None 元组第一个元素为 ToolResult, 表示应立即拦截返回。
         """
+        # 会话级 disallowedTools 硬拒 (--disallowed-tools / settings.json):
+        # 优先级高于 Plan 模式/白名单/YOLO —— 用户显式禁用就是禁用。
+        denied = getattr(ctx, "denied_tools", None)
+        if denied is not None and getattr(denied, "denies_tool", None) is not None \
+                and denied.denies_tool(name):
+            return (ToolResult(
+                status="denied",
+                content=(f"[已禁用] 工具 {name} 被本会话 disallowedTools 显式禁用, 不会执行。"
+                        f"若确需使用, 请从 --disallowed-tools 中移除: "
+                        f"{denied.scopes_text()}"),
+                tool_name=name,
+            ),)
         # Plan 模式: 只读放行, 修改类工具一律拦截
         if getattr(ctx, "plan_mode", False) and not tool.read_only:
             return (ToolResult(

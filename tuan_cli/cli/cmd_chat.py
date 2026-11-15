@@ -252,6 +252,22 @@ def _prepare_agent(args: Any, workspace: str, session_id: str, on_progress: Any 
     if at:
         from ..core.allowed_tools import AllowedTools
         agent.ctx.allowed_tools = AllowedTools.parse(at)
+    # 会话级 disallowedTools (--disallowed-tools): 命中者硬拒, 仅本会话生效
+    dt = getattr(args, "disallowed_tools", None)
+    if dt:
+        from ..core.allowed_tools import DeniedTools
+        agent.ctx.denied_tools = DeniedTools.parse(dt)
+    # --add-dir: 把工作区外目录纳入本会话授权 (内存态, 不落盘)
+    for extra in getattr(args, "add_dir", None) or []:
+        try:
+            from ..tools.filesystem import authorize_extra_dir
+            authorize_extra_dir(agent.ctx, str(extra))
+        except Exception as exc:  # noqa: BLE001 - 单目录失败不阻断会话启动
+            print(f"[warn] --add-dir {extra} 授权失败: {exc}", file=sys.stderr)
+    # --settings: 加载 Claude Code 风格 settings.json 并翻译成会话配置 (不写盘)
+    settings_path = getattr(args, "settings", None)
+    if settings_path:
+        _apply_settings_file(agent, config, settings_path)
     # Plan 模式启动: 窗口 Agent 只读 (工具分发层硬拒写操作, 见 tools/base.py:230)
     plan_requested = bool(getattr(args, "plan", False)) or (mode == "plan")
     if plan_requested:
@@ -979,6 +995,60 @@ def _apply_fallback_model(config: Any, raw: Optional[str]) -> None:
         return
     # CLI 显式指定: 整体替换 (而非追加), 保证确定性
     config.set_user("model.fallbacks", parts[:3])
+
+
+def _apply_settings_file(agent: Any, config: Any, settings_path: str) -> None:
+    """加载 Claude Code 风格 settings.json 并翻译成会话配置 (不写盘)。
+
+    对标 Claude Code ``--settings``: model/env/permissions/allowedTools/
+    disallowedTools/permissions.additionalDirectories 全部会话级生效。
+    config.data 原地 patch (内存视图), 不调 set_user —— 避免污染用户配置。
+    """
+    from ..config.settings_file import (
+        apply_env, load_settings, merge_rules,
+    )
+    from ..core.allowed_tools import AllowedTools, DeniedTools
+
+    try:
+        res = load_settings(settings_path)
+    except ValueError as exc:
+        print(f"[warn] --settings 加载失败: {exc}", file=sys.stderr)
+        return
+    if res.warnings:
+        for w in res.warnings:
+            print(f"[warn] settings: {w}", file=sys.stderr)
+
+    # 1) model / permissions.rules: 合并进配置内存视图 (不写盘)
+    patch = dict(res.config_patch)
+    if "permissions.rules" in patch:
+        existing = config.get("permissions.rules")
+        patch["permissions.rules"] = merge_rules(existing, patch["permissions.rules"])
+    if patch:
+        from ..config.patch import patch_replace
+        config.data = patch_replace(config.data, patch)
+
+    # 2) env: 进程环境注入 (不覆盖已存在变量)
+    if res.env:
+        apply_env(res.env)
+
+    # 3) allowedTools / disallowedTools: 会话级工具白/黑名单
+    if res.allowed_tools:
+        agent.ctx.allowed_tools = AllowedTools.parse(",".join(res.allowed_tools))
+    if res.disallowed_tools:
+        agent.ctx.denied_tools = DeniedTools.parse(",".join(res.disallowed_tools))
+
+    # 4) additionalDirectories: 工作区外目录授权 (内存态)
+    for d in res.additional_directories:
+        try:
+            from ..tools.filesystem import authorize_extra_dir
+            authorize_extra_dir(agent.ctx, str(d))
+        except Exception as exc:  # noqa: BLE001 - 单目录失败不阻断
+            print(f"[warn] settings additionalDirectories {d} 授权失败: {exc}",
+                  file=sys.stderr)
+
+    # 5) defaultMode → 会话模式 (返回给调用方; 调用方据此设 agent.ctx.auto_mode 等)
+    if res.mode:
+        agent.ctx.settings_mode = res.mode
 
 
 def _apply_mode_override(kernel: Any, mode: Optional[str], yes: bool = False) -> str:
