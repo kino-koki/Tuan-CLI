@@ -462,22 +462,24 @@ class SecurityAlerter:
         """
         # —— Notification hook 派发（按 owner 分桶）——
         try:
-            from ..hooks.triggers import hooks_for_owner
-            hooks = None
-            if record.owner:
-                hooks = hooks_for_owner(record.owner)
-            if hooks is None:
-                # 未设置 owner / 未注册 → 回落实例 hooks（构造时传入或
+            from ..hooks.triggers import hooks_for_owner, HookTrigger
+            _owner = getattr(record, "owner", "")
+            bucket_hooks = hooks_for_owner(_owner) if _owner else None
+            if bucket_hooks is not None:
+                # owner 分桶命中 → owner 版（查表动态，不随其它会话漂移）。
+                _trig = HookTrigger(owner=_owner)
+            else:
+                # owner 未注册 / 未设置 → 回落实例 hooks（构造时传入或
                 # bind_session_hooks 回填）；不读单槽 default，避免笔误串台。
-                hooks = getattr(self, "hooks", None)
-            if hooks is not None:
-                from ..hooks.triggers import HookTrigger
-                HookTrigger(hooks).notification(
-                    title=record.title,
-                    body=record.message,
-                    severity=record.severity,
-                    source=record.source,
-                )
+                if getattr(self, "hooks", None) is None:
+                    return
+                _trig = HookTrigger(self.hooks)
+            _trig.notification(
+                title=record.title,
+                body=record.message,
+                severity=record.severity,
+                source=record.source,
+            )
         except Exception as exc:  # noqa: BLE001
             log.debug("Notification hook 派发异常: %s", exc)
         # —— 桌面通知 ——

@@ -283,27 +283,6 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def dump_yaml(data: Dict[str, Any], path: Path) -> None:
-    """写入 YAML 配置 (临时文件 + 原子替换, 崩溃不留下半截配置)。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                _yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(temp_name, path)
-        finally:
-            try:
-                Path(temp_name).unlink()
-            except FileNotFoundError:
-                pass
-    except Exception as exc:
-        log.warning("配置写入失败 (%s): %s", path, exc)
-        return False
-
-
 def _dump_yaml_impl(data: Dict[str, Any], path: Path) -> bool:
     """写入 YAML 配置核心实现 (原子写, 返回是否成功)。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -396,10 +375,15 @@ class Config:
             node = node.setdefault(k, {})
         node[keys[-1]] = value
         self.home.mkdir(parents=True, exist_ok=True)
-        dump_yaml(cfg, self.user_config_path)
+        # B3: 只在真正落盘成功时派发 ConfigChange，否则外部 hook 会误以为
+        # 配置已生效（实测：user_config_path 指向目录时 os.replace 抛错被吞，
+        # 磁盘无文件但 hook 仍收到「已变更」）。last_write_persisted 供诊断。
+        ok = dump_yaml_checked(cfg, self.user_config_path)
+        self.last_write_persisted = ok
         # 同步内存视图: 用 patch_replace 整值替换目标键 (保留同级默认字段)。
         self.data = patch_replace(self.data, {dotted: value})
-        self._fire_config_change("user_config", dotted)
+        if ok:
+            self._fire_config_change("user_config", dotted, origin="set_user")
 
     def delete_user(self, dotted: str) -> bool:
         """从用户层配置删除某个点路径键 (复位到内置默认值)。返回是否真的删掉了。
@@ -418,23 +402,26 @@ class Config:
             return False
         del node[leaf]
         self.home.mkdir(parents=True, exist_ok=True)
-        dump_yaml(cfg, self.user_config_path)
+        # B3: 删除命中但写盘未落盘时不派发（与 set_user 同一口径）。
+        ok = dump_yaml_checked(cfg, self.user_config_path)
+        self.last_write_persisted = ok
         # 刷新内存视图: 重建 默认 -> 用户(已删) -> Profile。
         self.data = copy.deepcopy(DEFAULT_CONFIG)
         if self.profile in PRESET_PROFILES:
             self.data = deep_merge(self.data, PRESET_PROFILES[self.profile])
         self.data = deep_merge(self.data, cfg)
         self.data = deep_merge(self.data, _load_yaml(self.profile_dir / "config.yaml"))
-        self._fire_config_change("user_config", dotted)
+        if ok:
+            self._fire_config_change("user_config", dotted, origin="delete_user")
         return True
 
-    def _fire_config_change(self, source: str, key: str) -> None:
+    def _fire_config_change(self, source: str, key: str, origin: str = "") -> None:
         """触发 ConfigChange hook（通知类，任何异常都吞掉）。"""
         if self.hooks is None:
             return
         try:
             from tuan_cli.hooks.triggers import HookTrigger
-            HookTrigger(self.hooks).config_change(source=source, key=key)
+            HookTrigger(self.hooks).config_change(source=source, key=key, origin=origin)
         except Exception:  # noqa: BLE001 - 通知失败不影响主流程
             pass
 

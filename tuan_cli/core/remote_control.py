@@ -389,23 +389,33 @@ def notify(
         from tuan_cli.hooks.triggers import (
             HookTrigger, current_session_owner, hooks_for_owner,
             current_session_hooks, get_default_hooks_provider,
+            resolve_session,
         )
         _h = hooks
-        if _h is None and owner:
-            _h = hooks_for_owner(owner)
-        if _h is None:
+        _owner = owner
+        if _h is None and _owner:
+            _h = hooks_for_owner(_owner)
+        if _h is None and not _owner:
             _o = current_session_owner()
             if _o:
+                _owner = _o
                 _h = hooks_for_owner(_o)
-        if _h is None and _notify_rc is not None:
-            _h = getattr(_notify_rc, "hooks", None)
+        # 实例 hooks（冻结于构造时）：优先单例 _rc，回退 current_session。
+        _rc = _notify_rc
+        if _h is None and _rc is not None:
+            _h = getattr(_rc, "hooks", None)
         if _h is None:
             _h = current_session_hooks()
         if _h is None:
             _p = get_default_hooks_provider()
             _h = _p() if callable(_p) else _p
         if _h is not None:
-            HookTrigger(_h).notification(title=title, body=body, kind=kind)
+            # 实例绑定：owner 分桶（会话确存时）→ owner 版；否则显式实例。
+            if _owner and resolve_session(_owner):
+                _trig = HookTrigger(owner=_owner)
+            else:
+                _trig = HookTrigger(_h)
+            _trig.notification(title=title, body=body, kind=kind)
     except Exception:  # noqa: BLE001 - 通知 hook 失败不影响主流程
         pass
     pushed = False
