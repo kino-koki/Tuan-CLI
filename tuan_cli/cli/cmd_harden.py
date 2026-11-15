@@ -3,10 +3,13 @@
 子命令
 ------
     tuan harden audit-export [--format cef|jsonl|syslog[,...]] [--from PATH] [--out DIR] [--push URL]
+    tuan harden audit-archive [--dir DIR]
     tuan harden sbom [--out sbom.spdx.json]
     tuan harden crypto-provider
+    tuan harden crypto-selftest
     tuan harden network-check --command "..." [--egress-cidr 10.0.0.0/8] [--one-way]
     tuan harden repro-lock [--out requirements.lock] [--verify]
+    tuan harden suggest --command "..."
 
 这些命令不声称"国防级/军工认证"; 它们把代码层「可对接、可验证、可审计」的安全能力做实。
 """
@@ -253,21 +256,157 @@ def _status(args: Any) -> int:
     return 0
 
 
+def _suggest(args: Any) -> int:
+    """给出危险命令的安全替代建议 (对接 safe_alternatives 规则库)。
+
+    此前仅注册 argparse 入口但分发落"用法"错误; 现接入已有规则引擎。
+    """
+    from ..harden.safe_alternatives import suggest_safe_alternatives
+
+    command = getattr(args, "command", None) or ""
+    if not command:
+        print("用法: tuan harden suggest --command \"<命令文本>\"")
+        return 2
+    hits = suggest_safe_alternatives(command)
+    if not hits:
+        print(f"[harden] 未命中安全替代规则: {command!r}")
+        print("         (命令在规则库外; 建议人工复核风险后再执行)")
+        return 0
+    print(f"[harden] {command!r} 的 {len(hits)} 条安全替代建议:")
+    for i, it in enumerate(hits, 1):
+        print(f"  {i}. [{it['category']}] {it['replacement']}")
+        print(f"     —— {it['why']}")
+    return 0
+
+
+def _crypto_selftest(args: Any) -> int:
+    """对可用的 CryptoProvider 后端做加解密/HMAC/篡改检测自检。
+
+    此前仅注册 argparse 入口但分发落"用法"错误; 现复用 crypto_provider 后端。
+    fail-closed: 任一自检失败即整体失败 (rc=1), 不静默通过。
+    """
+    from ..harden.crypto_provider import available_providers, get_crypto_provider
+
+    providers = available_providers() or ["software"]
+    all_ok = True
+    print(f"[harden] 可用 CryptoProvider 后端: {', '.join(providers)}")
+    for name in providers:
+        try:
+            prov = get_crypto_provider(name)
+            payload = b"tuan-crypto-selftest-payload-0123456789"
+            passphrase = "selftest-passphrase"
+            sealed = prov.seal(payload, passphrase)
+            opened = prov.open(sealed, passphrase)
+            if opened != payload:
+                raise AssertionError(f"seal/open 往返不一致: {opened!r} != {payload!r}")
+            # HMAC 恒定时间校验
+            key = prov.random_token(32).encode()
+            mac = prov.hmac_sign(payload, key)
+            if not prov.hmac_verify(payload, key, mac):
+                raise AssertionError("HMAC 校验失败")
+            if prov.hmac_verify(b"tampered", key, mac):
+                raise AssertionError("篡改数据竟通过 HMAC 校验")
+            # 错误口令必须失败 (fail-closed)
+            try:
+                prov.open(sealed, "wrong-passphrase")
+                raise AssertionError("错误口令未被拒绝")
+            except ValueError:
+                pass
+            print(f"  - {name}: seal/open OK, HMAC OK, 篡改拒绝 OK, 错误口令拒绝 OK")
+        except Exception as exc:  # noqa: BLE001
+            all_ok = False
+            print(f"  - {name}: 自检失败 -> {exc}")
+    if not all_ok:
+        print("[harden] crypto-selftest: 存在失败后端 (fail-closed)")
+        return 1
+    print("[harden] crypto-selftest: 全部后端自检通过")
+    return 0
+
+
+def _audit_archive(args: Any) -> int:
+    """体检审计导出目录: 统计事件数/严重度分布/轮转/时间跨度/权限。
+
+    此前仅注册 argparse 入口但分发落"用法"错误; 现扫描导出目录,
+    让"日志在落盘但没人看"变成可观测的归档态势。
+    """
+    import glob
+    import json
+    import os
+    from collections import Counter
+
+    out_dir = getattr(args, "dir", None) or os.path.expanduser("~/.tuan/audit-export")
+    if not os.path.isdir(out_dir):
+        print(f"[harden] 审计导出目录不存在: {out_dir}")
+        print("         (运行 `tuan harden audit-export --out <dir>` 生成后重试)")
+        return 0
+    files = sorted(glob.glob(os.path.join(out_dir, "audit_export.*")))
+    if not files:
+        print(f"[harden] 审计导出目录为空: {out_dir}")
+        return 0
+    total = 0
+    sev_count: Counter[str] = Counter()
+    timestamps: list[float] = []
+    sizes: list[int] = []
+    for path in files:
+        size = os.path.getsize(path)
+        sizes.append(size)
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    total += 1
+                    try:
+                        rec = json.loads(line)
+                        sev_count[rec.get("severity", "info")] += 1
+                        ts = rec.get("ts") or rec.get("timestamp")
+                        if isinstance(ts, (int, float)):
+                            timestamps.append(float(ts))
+                    except (ValueError, TypeError):
+                        sev_count["unparseable"] += 1
+        except OSError as exc:  # noqa: PERF203
+            print(f"  !! 读取 {path} 失败: {exc}")
+    print(f"[harden] 审计归档体检: {out_dir}")
+    print(f"  - 文件数        : {len(files)}")
+    print(f"  - 事件总数      : {total}")
+    if sev_count:
+        print(f"  - 严重度分布    : {dict(sorted(sev_count.items()))}")
+    if sizes:
+        print(f"  - 总大小        : {sum(sizes) / 1024:.1f} KiB")
+    if len(timestamps) >= 2:
+        span = max(timestamps) - min(timestamps)
+        if span >= 86400:
+            print(f"  - 时间跨度      : {span / 86400:.1f} 天")
+        elif span >= 3600:
+            print(f"  - 时间跨度      : {span / 3600:.1f} 小时")
+        else:
+            print(f"  - 时间跨度      : {span / 60:.1f} 分钟")
+    return 0
+
+
 def cmd_harden(args: Any) -> int:
     cmd = getattr(args, "harden_cmd", None) or "status"
     if cmd == "audit-export":
         return _audit_export(args)
+    if cmd == "audit-archive":
+        return _audit_archive(args)
     if cmd == "sbom":
         return _sbom(args)
     if cmd == "crypto-provider":
         return _crypto_provider(args)
+    if cmd == "crypto-selftest":
+        return _crypto_selftest(args)
     if cmd == "network-check":
         return _network_check(args)
     if cmd == "repro-lock":
         return _repro_lock(args)
+    if cmd == "suggest":
+        return _suggest(args)
     if cmd == "status":
         return _status(args)
     sys.stderr.write(
-        "用法: tuan harden <audit-export|sbom|crypto-provider|network-check|repro-lock|status>\n"
+        "用法: tuan harden <audit-export|audit-archive|sbom|crypto-provider|"
+        "crypto-selftest|network-check|repro-lock|suggest|status>\n"
     )
     return 1
