@@ -70,8 +70,68 @@ def cmd_safe(args: Any) -> int:
     elif safe_cmd == "suggest":
         return _cmd_suggest(args)
     else:
+        # 25 个扩展子命令 (safety_cli.py 注册但 dispatch 曾缺失, 全部落入
+        # "未知子命令"): 惰性路由到 safe/ 子模块的 _cmd_* handler。
+        rc = _dispatch_extended_safe(args, safe_cmd)
+        if rc is not None:
+            return rc
         console.print(f"[red]未知子命令: {safe_cmd}[/red]")
-        console.print("可用: status / list / allow / deny / blacklist / reduce / restore / update / bench / report")
+        console.print("可用: status / list / allow / deny / blacklist / reduce / restore / update / bench / report / suggest"
+                      " / audit / redteam / scan / integrity / path / rules / watch / guard / secrets / policy / trends"
+                      " / risk / fingerprint / correlator / learn / classify / eval / model / fence / auto / warn / check"
+                      " / alerts / summary")
+        return 1
+
+
+# 扩展子命令 dispatch 表: safe_cmd -> (模块, 函数名) (惰性 import)
+_EXTENDED_SAFE_DISPATCH: dict[str, tuple[str, str]] = {
+    "audit": (".safe.audit_view", "_cmd_audit"),
+    "alerts": (".safe.audit_view", "_cmd_alerts"),
+    "summary": (".safe.audit_view", "_cmd_summary"),
+    "redteam": (".safe.threat_scan", "_cmd_redteam"),
+    "scan": (".safe.threat_scan", "_cmd_scan"),
+    "integrity": (".safe.threat_scan", "_cmd_integrity"),
+    "guard": (".safe.threat_scan", "_cmd_guard"),
+    "secrets": (".safe.threat_scan", "_cmd_secrets"),
+    "path": (".safe.threat_scan", "_cmd_path"),
+    "rules": (".safe.threat_scan", "_cmd_rules"),
+    "watch": (".safe.observe_trend", "_cmd_watch"),
+    "policy": (".safe.observe_trend", "_cmd_policy"),
+    "trends": (".safe.observe_trend", "_cmd_trends"),
+    "risk": (".safe.observe_trend", "_cmd_risk"),
+    "fingerprint": (".safe.observe_trend", "_cmd_safe_fingerprint"),
+    "correlator": (".safe.observe_trend", "_cmd_safe_correlator"),
+    "learn": (".safe.learning", "_cmd_safe_learn"),
+    "classify": (".safe.learning", "_cmd_classify"),
+    "eval": (".safe.learning", "_cmd_eval"),
+    "model": (".safe.learning", "_cmd_safe_model"),
+    "fence": (".safe.learning", "_cmd_safe_fence"),
+    "auto": (".safe.learning", "_cmd_safe_auto"),
+    "warn": (".safe.learning", "_cmd_safe_warn"),
+    "check": (".safe.whitelist", "_cmd_whitelist_check"),
+    "update": (".safe.whitelist", "_cmd_update"),
+}
+
+
+def _dispatch_extended_safe(args: Any, safe_cmd: str) -> int | None:
+    """惰性路由 25 个扩展安全子命令到 safe/ 模块 handler (返回 None 表示未命中)。"""
+    entry = _EXTENDED_SAFE_DISPATCH.get(safe_cmd)
+    if entry is None:
+        return None
+    mod_name, func_name = entry
+    try:
+        import importlib
+        import inspect
+
+        mod = importlib.import_module(mod_name, __package__)
+        handler = getattr(mod, func_name)
+        # 部分 handler 为 0 参 (如 _cmd_update() 无需 args), 其余均接受 args
+        n_params = len(inspect.signature(handler).parameters)
+        if n_params == 0:
+            return handler()
+        return handler(args)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]子命令 {safe_cmd} 执行失败: {exc}[/red]")
         return 1
 
 

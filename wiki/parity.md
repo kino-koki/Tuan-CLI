@@ -32,5 +32,5 @@
 
 ## 局限
 
-- `docs/GAP-ANALYSIS-vs-ClaudeCode.md` **已过时**：宣称 slash 54 个（现 82）、fork/loop/review 未接线（已接线）、/agents 缺失（CLI 已存在，仅 slash 入口缺）。
+- `docs/GAP-ANALYSIS-vs-ClaudeCode.md` 已同步：slash 88 个、fork/loop/review 已接线、/agents CLI+slash 双入口（2026-11-15 核实）。
 - 矩阵 summary 当前 `b_waves_done == ["B1"]`、`superiority_criteria.external_adaptive_red_team is False`（部分领先标准未达标）。

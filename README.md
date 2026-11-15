@@ -37,7 +37,7 @@ The core idea: **the model does the thinking; the harness makes that thinking ru
 | The thing | Details |
 |---|---|
 | 🛡️ **Safety-first** | Four gates: static risk scoring, blast-radius pre-blocking, YOLO-redline floor, transactional ledger with exact `/undo` |
-| 🎯 **Developer experience** | Benign dev commands pass with zero confirmation, `/undo` has your back, 40+ slash commands, `tuan safe allow` for explicit opt-outs, YOLO to skip repeat prompts |
+| 🎯 **Developer experience** | Benign dev commands pass with zero confirmation, `/undo` has your back, 88 slash commands, `tuan safe allow` for explicit opt-outs, YOLO to skip repeat prompts |
 | 🔌 **Model-agnostic** | 58 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
 | 🧠 **Three main loops** | ReAct / Planner-Execute / DevLoop — pluggable; one kernel, different "thinking rhythms" |
 | 🔧 **Plugin Container** | One-line `@plugin`, service registry, append-only event bus, hook middleware |
@@ -142,7 +142,7 @@ tuan --print run "Hi, describe yourself in one sentence."
 
 ---
 
-## The command surface: 50 core subcommands + slash commands
+## The command surface: 93 core subcommands + 88 slash commands
 
 | Command | What it's for |
 |---|---|

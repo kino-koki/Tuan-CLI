@@ -16,8 +16,8 @@
 
 | 指标 | 值 |
 |---|---|
-| 顶层 CLI 子命令 | 156 |
-| 斜杠 `/` 命令 | 82 |
+| 顶层 CLI 子命令 | 93 |
+| 斜杠 `/` 命令 | 88 |
 | Python 文件（tuan_cli） | ~723 |
 | 代码行（tuan_cli） | ~172,000 |
 | 测试文件 | ~484 |
@@ -71,7 +71,7 @@
 - [会话与快照 (session)](session.md) —— 会话生命周期、断点恢复
 
 ### 命令面
-- [CLI 命令面 (cli)](cli.md) —— 156 子命令 + 82 斜杠命令
+- [CLI 命令面 (cli)](cli.md) —— 93 子命令 + 88 斜杠命令
 - [流式 I/O (stream_json)](stream-io.md) —— --input/--output-format stream-json 线协议
 - [Parity 与差距分析 (parity)](parity.md) —— 与 Claude Code 对齐/领先/差距矩阵
 

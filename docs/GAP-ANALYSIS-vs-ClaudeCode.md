@@ -7,7 +7,7 @@
 
 | 维度 | Claude Code v2.1.289 | Tuan-CLI（当前 0.4.2） | 结论 |
 |---|---|---|---|
-| Slash 命令 | ~80+（含 `/workflow` `/goal` `/design` `/code-review` 等） | 82 个（`SLASH_COMMAND_NAMES` 唯一命令，2026-11-15 去重后核实） | **已对齐** |
+| Slash 命令 | ~80+（含 `/workflow` `/goal` `/design` `/code-review` 等） | 88 个（`SLASH_COMMAND_NAMES` 唯一命令，2026-11-15 补 `/bg` `/distill` `/workflow-authoring` `/deep-research` `/code-review` `/auto-mode-setup` 后核实） | **已对齐** |
 | CLI 子命令 | `claude ...` 全量 | 43 核心 + 扩展 | 部分对齐 |
 | Subagent | 可递归 spawn（链深上限 5） | 链深已实现（`subagent_tool` 链深限制） | **已对齐** |
 | Dynamic Workflow | 数十~数百 subagent 后台编排 | `dynamic_workflow` 已存在 | 已具备，可增强 |
