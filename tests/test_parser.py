@@ -344,6 +344,49 @@ def test_reload_rebuilds_registry_and_keeps_gateway():
         parser._COMMAND_REGISTRY.update(saved)
 
 
+# ------------------------------------------------------ `python -m` 入口回归
+class TestModuleEntryDispatch:
+    """``python -m tuan_cli.cli.parser`` 下独立注册命令可分发。
+
+    回归背景: 以 `-m` 运行时代模块名是 ``__main__``, 但 ``cmd_*`` 模块里的
+    ``from .parser import _register_command`` 导入的是**真** ``parser`` 模块
+    (非 ``__main__``), 注册被写进真模块的 ``_COMMAND_REGISTRY``, 而
+    ``__main__._COMMAND_REGISTRY`` 始终为空 → ``tuan web audit`` /
+    ``tuan claude parity`` 解析时报 ``module '__main__' has no attribute``。
+    _resolve_func 修复后统一查真模块注册表, 此测试固化该行为。
+    """
+
+    @staticmethod
+    def _run_module(*argv):
+        import subprocess
+
+        env = {**__import__("os").environ}
+        return subprocess.run(
+            [sys.executable, "-m", "tuan_cli.cli.parser", *argv],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(Path(__file__).resolve().parent.parent),
+            env=env,
+        )
+
+    def test_web_audit_module_entry(self):
+        """`python -m ... web audit` 不再 AttributeError。"""
+        proc = self._run_module("web", "audit")
+        assert proc.returncode == 0, (
+            f"returncode={proc.returncode}\nstdout={proc.stdout}\nstderr={proc.stderr}"
+        )
+        assert "Web 工作台" in proc.stdout or "Web 会话" in proc.stdout
+
+    def test_claude_parity_module_entry(self):
+        """`python -m ... claude parity` 不再 AttributeError。"""
+        proc = self._run_module("claude", "parity")
+        assert proc.returncode == 0, (
+            f"returncode={proc.returncode}\nstdout={proc.stdout}\nstderr={proc.stderr}"
+        )
+        assert "Claude Code" in proc.stdout or "对照" in proc.stdout
+
+
 def test_cmd_ext_registered_to_independent_module():
     """cmd_ext 必须注册到 .ext_cli (独立注册模块)。
 

@@ -66,9 +66,28 @@ def _resolve_func(name: str) -> Any:
 
     对于 commands.py 的惰性路由命令，先检查全局注册表，未找到时从
     commands.py 惰性加载（保持向后兼容）。
+
+    注册表分裂修复: ``python -m tuan_cli.cli.parser`` 下本模块以 ``__main__``
+    身份加载, 但 ``cmd_*`` 模块里的 ``from .parser import _register_command``
+    导入的是**真** ``tuan_cli.cli.parser`` (非 __main__), 注册被写进真模块的
+    ``_COMMAND_REGISTRY``, 而 ``__main__._COMMAND_REGISTRY`` 始终为空 →
+    ``tuan web audit`` / ``tuan claude parity`` 解析时误报
+    ``module '__main__' has no attribute ...``。此处统一查真模块注册表。
     """
+    # 0. 注册表分裂修复: __main__ 与真 parser 共享同一注册表对象。
+    #    直接查 __main__ 的模块级 _COMMAND_REGISTRY 可能为空, 故回退到
+    #    import_module(__package__ + ".parser") 取真模块注册表。
+    registry = _COMMAND_REGISTRY
+    if __name__ == "__main__":
+        try:
+            import importlib as _il
+            _real = _il.import_module(f"{__package__}.parser")
+            if _real is not sys.modules[__name__]:
+                registry = _real._COMMAND_REGISTRY
+        except Exception:  # noqa: BLE001 - 回退到本地注册表, 不阻断
+            registry = _COMMAND_REGISTRY
     # 1. 先检查全局注册表
-    module_path = _COMMAND_REGISTRY.get(name)
+    module_path = registry.get(name)
     if module_path is None:
         # 2. 对于 commands.py 的惰性路由命令，尝试从 commands.py 加载
         # commands.py 使用 PEP 562 惰性路由，未导入时不会注册
@@ -83,7 +102,7 @@ def _resolve_func(name: str) -> Any:
                 pass
 
         # 3. 都没找到，抛出友好错误
-        available = sorted(set(_COMMAND_REGISTRY.keys()))
+        available = sorted(set(registry.keys()))
         raise AttributeError(
             f"module {__name__!r} has no attribute {name!r}\n"
             f"可能的命令名: {available}"
