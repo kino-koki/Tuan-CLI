@@ -151,6 +151,19 @@ _CMD_SOURCES = {
     "cmd_auto_mode": ".cmd_review_cli",
     # ---- cmd_evolve (阶段 A: 反思性自我进化闭环命令面) ----
     "cmd_evolve": ".cmd_evolve",
+    # ---- 分片命令 (subcommands/ 注册, 惰性路由到独立模块) ----
+    # 这些模块 docstring 声明经 _CMD_SOURCES 路由, 但映射曾缺失导致
+    # _resolve_func 解析失败 (分片注册 func 但 commands 门面找不到)。
+    "cmd_offline": ".cmd_offline",
+    "cmd_prompt": ".cmd_prompt",
+    "cmd_resilience": ".cmd_resilience",
+    "cmd_sandbox": ".cmd_sandbox",
+    "cmd_trust": ".cmd_trust",
+    "cmd_cost": ".cmd_cost",
+    "cmd_boundary": ".cmd_boundary",
+    # cmd_handoff: 分片声明但 handler 曾缺失, 现于 cmd_handoff.py 实现;
+    # 既注册进 _COMMAND_REGISTRY 也保留 commands 门面路由 (双轨可用)。
+    "cmd_handoff": ".cmd_handoff",
 }
 
 __all__ = sorted(_CMD_SOURCES) + ["ui"]

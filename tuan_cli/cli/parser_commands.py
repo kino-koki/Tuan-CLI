@@ -16,6 +16,60 @@ from typing import Any
 _DISPATCH_MODES = ("chat", "collaboration", "qwen_office", "gantong", "lingma", "boundless")
 
 
+class _DedupSub:
+    """拦截 add_parser, 已注册的同名命令则跳过 (返回独立 dummy, 不冲突)。
+
+    register_subcommands 先调用 subcommands/ 的 9 个分片 (完整命令面, 含
+    session compare/trend/replay 等增强子命令), 旧的内联注册代码随后以本
+    包装器执行: 与分片重叠的命令被跳过, 仅分片未覆盖的
+    evolve/team/teamlead 正常注册。避免 argparse 重复子解析器冲突。
+    """
+
+    def __init__(self, real: Any) -> None:
+        self._real = real
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
+
+    def add_parser(self, name: str, **kwargs: Any) -> "argparse.ArgumentParser":
+        if name in self._real.choices:
+            return argparse.ArgumentParser(prog=name, add_help=False)
+        return self._real.add_parser(name, **kwargs)
+
+
+def _register_subcommand_slices(sub: Any) -> None:
+    """调用 subcommands/ 的 9 个分片, 注册完整命令面。
+
+    分片覆盖旧内联注册的全部命令 (超集), 并新增 goal/loop/workflow/dag/
+    diff/image/fastindex/verify 等 39 个此前仅 slash 可达的顶层子命令,
+    以及 session compare/trend/replay 等增强子命令。
+    """
+    from .subcommands import (
+        agent_features,
+        core_runtime,
+        kernel_models,
+        ledger_ops,
+        misc_compat,
+        observe_verify,
+        safety_cli,
+        session_workspace,
+        trust_policy,
+    )
+
+    for _fn in (
+        core_runtime.register_core_runtime,
+        kernel_models.register_kernel_models,
+        agent_features.register_agent_features,
+        observe_verify.register_observe_verify,
+        safety_cli.register_safety_cli,
+        misc_compat.register_misc_compat,
+        ledger_ops.register_ledger_ops,
+        trust_policy.register_trust_policy,
+        session_workspace.register_session_workspace,
+    ):
+        _fn(sub)
+
+
 def _add_network_parser(sub: Any, name: str, help_text: str) -> "argparse.ArgumentParser":
     """注册 `tuan <name> <configuration|con|config> [action key? value?]`。
 
@@ -43,6 +97,11 @@ def _add_network_parser(sub: Any, name: str, help_text: str) -> "argparse.Argume
 
 def register_subcommands(sub: Any) -> None:
     """注册全部 tuan 子命令到 subparsers。"""
+
+    # 先注册完整命令面 (subcommands/ 分片, 超集); 旧内联代码随后以 _DedupSub
+    # 包装执行, 重叠命令被跳过, 仅分片未覆盖的 evolve/team/teamlead 补注册。
+    _register_subcommand_slices(sub)
+    sub = _DedupSub(sub)
 
     p = sub.add_parser(
         "acp",

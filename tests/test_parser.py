@@ -31,13 +31,13 @@ def _parse(*argv):
 def test_all_subcommands_have_func_default():
     """每个顶层子命令都必须注册 func, 否则 main() 无法分发。
 
-    ext/improve 例外: 它们是"必需子命令"父命令, func 由叶子子命令设置。
+    improve/evolve 例外: 它们是"必需子命令"父命令, func 由叶子子命令设置。
     """
     parser_obj = build_parser()
     sub_actions = [a for a in parser_obj._actions if isinstance(a, argparse._SubParsersAction)]
     assert len(sub_actions) == 1
     for name, sub in sub_actions[0].choices.items():
-        if name == "improve":
+        if name in ("improve", "evolve"):
             continue
         assert "func" in sub._defaults, f"子命令 {name} 缺少 func 默认值"
 
@@ -94,10 +94,16 @@ def test_improve_leaves_set_func():
     assert _parse("improve", "apply").func == "cmd_improve"
 
 
+def test_evolve_leaves_set_func():
+    """evolve 父命令无 func, 叶子子命令 (run/report) 负责设置。"""
+    assert _parse("evolve", "run", "--tasks", "T1").func == "cmd_evolve"
+    assert _parse("evolve", "report").func == "cmd_evolve"
+
+
 def test_nested_subcommands_required():
     """带嵌套子命令的父命令必须提供子命令 (models 例外: 无子命令进交互选择)。"""
     for parent in ["bg", "config", "plugin", "skill", "memory",
-                   "cron", "mcp", "hooks", "improve", "session"]:
+                   "cron", "mcp", "hooks", "improve", "session", "evolve"]:
         with pytest.raises(SystemExit):
             _parse(parent)
 

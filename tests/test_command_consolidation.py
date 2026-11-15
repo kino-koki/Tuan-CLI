@@ -24,7 +24,8 @@ def _parse(*argv):
 DELETED = [
     "arch", "ext", "others", "code-edit", "impact",
     "open", "replay", "trajectory", "compact", "bench", "codedev",
-    "sessions",  # v0.4.0: 合并入 `session` (list/delete)
+    # "sessions" 曾于 v0.4.0 合并入 `session` (list/delete), 但 subcommands/ 分片
+    # 以独立精简命令恢复 (C-4.4/C-4.5: list 最近 20 条 / rm 删除), 故移入保留列表。
 ]
 # 注: "mode" 曾于 2026-09-27 一并删除, 2026-10-23 起以五模式语义重新加回
 # (tuan_cli.cli.cmd_mode: list / current / show / switch), 故移入下方保留列表。
@@ -43,7 +44,7 @@ def test_deleted_commands_rejected(cmd):
     "mcp", "hooks", "undo", "improve", "session", "usercmd", "agents",
     "rewind", "project", "chat", "worktree", "safe", "gh", "tutorial",
     "harden", "migrate", "network", "net", "help", "upgrade", "permissions",
-    "mode",
+    "mode", "sessions",  # 分片以独立精简命令恢复 (C-4.4/C-4.5)
 ])
 def test_kept_commands_present(cmd):
     # 这些命令必须仍注册在 parser 中 (用 --help 触发 SystemExit 0, 而非 invalid choice 2)

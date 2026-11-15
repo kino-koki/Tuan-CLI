@@ -15,6 +15,8 @@ from typing import Any
 from ..paths import default_workspace
 
 import os
+import json
+import sys
 from pathlib import Path
 
 from ..config import Config, home_dir
@@ -78,3 +80,85 @@ def cmd_chat_handoff(args: Any) -> int:
 from .parser import _register_command  # noqa: E402
 
 _register_command("cmd_chat_handoff", ".cmd_handoff")
+
+
+def cmd_handoff(args: Any) -> int:
+    """``tuan handoff`` 会话交接历史可观测 (只读): 清单/详情/配置。
+
+    分片 ``subcommands/ledger_ops.register_ledger_ops`` 声明了 ``handoff``
+    子命令面 (list/show/config), 但 handler 从未实现。本函数补齐该缺口,
+    复用 :meth:`ChatHandoff.list_handoffs` 读取 ``.tuan/handoffs.json``。
+    """
+    import sys as _sys  # noqa: F401 (保留, 供 JSON 分支输出; 兼容旧调用方)
+    from ..core.chat_handoff import ChatHandoff
+
+    sub = getattr(args, "handoff_cmd", None) or "list"
+    workspace = getattr(args, "workspace", None) or default_workspace()
+    json_mode = bool(getattr(args, "json", False))
+    config = Config(profile=getattr(args, "profile", "default"),
+                    patch_file=getattr(args, "patch", None))
+    handoff = ChatHandoff(workspace, config)
+    records = handoff.list_handoffs()
+
+    if sub == "list":
+        if json_mode:
+            _sys.stdout.write(json.dumps(records, ensure_ascii=False, indent=2) + "\n")
+            return 0
+        console.print("\n[bold]=== 会话交接历史 ===[/bold]\n")
+        if not records:
+            console.print("  [dim]暂无交接记录 (执行 `tuan chat handoff <session_id>` 生成)[/dim]")
+            return 0
+        for i, rec in enumerate(records, 1):
+            console.print(f"  [cyan]{i:>3}[/cyan] {rec.get('old_session_id', '?')}"
+                          f"  →  {rec.get('new_session_id', '?')}")
+            if rec.get("project_id"):
+                console.print(f"        [dim]project={rec['project_id']}[/dim]")
+            preview = str(rec.get("summary", ""))[:60]
+            if preview:
+                console.print(f"        [dim]{preview}{'…' if len(str(rec.get('summary', ''))) > 60 else ''}[/dim]")
+        return 0
+
+    if sub == "show":
+        index = getattr(args, "index", None)
+        try:
+            idx = int(index) - 1 if index is not None else 0
+        except (TypeError, ValueError):
+            console.print("[red]用法: tuan handoff show <序号>[/red]")
+            return 1
+        if not (0 <= idx < len(records)):
+            console.print(f"[red]交接序号 {index} 超出范围 (共 {len(records)} 条)[/red]")
+            return 1
+        rec = records[idx]
+        if json_mode:
+            _sys.stdout.write(json.dumps(rec, ensure_ascii=False, indent=2) + "\n")
+            return 0
+        console.print(f"\n[bold]=== 交接 #{idx + 1} ===[/bold]\n")
+        console.print(f"  旧会话: [cyan]{rec.get('old_session_id', '?')}[/cyan]")
+        console.print(f"  新会话: [cyan]{rec.get('new_session_id', '?')}[/cyan]")
+        console.print(f"  归档:   {rec.get('archived', True)}")
+        if rec.get("project_id"):
+            console.print(f"  项目:   {rec['project_id']}")
+        console.print(f"\n[dim]交接摘要:[/dim]")
+        for line in str(rec.get("summary", "")).splitlines():
+            console.print(f"    {line}")
+        return 0
+
+    if sub == "config":
+        threshold = config.get("chat.auto_handoff_threshold", 0.8)
+        enabled = config.get("chat.auto_handoff_enabled", True)
+        cfg = {
+            "enabled": bool(enabled),
+            "threshold": float(threshold),
+            "data_file": str(Path(home_dir()) / "handoffs.json"),
+        }
+        if json_mode:
+            _sys.stdout.write(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
+            return 0
+        console.print("\n[bold]=== 会话交接配置 ===[/bold]\n")
+        console.print(f"  [cyan]enabled[/cyan]  {cfg['enabled']}")
+        console.print(f"  [cyan]threshold[/cyan] {cfg['threshold']}")
+        console.print(f"  [cyan]data_file[/cyan] {cfg['data_file']}")
+        return 0
+
+    console.print(f"[red]未知子命令:[/red] {sub} (可用: list / show / config)")
+    return 1

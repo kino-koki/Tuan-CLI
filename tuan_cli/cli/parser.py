@@ -152,6 +152,20 @@ def _auto_register() -> None:
     importlib.import_module(".cmd_skills", __package__)
     importlib.import_module(".cmd_team", __package__)  # 团组 (v0.4.2)
     importlib.import_module(".cmd_teamlead", __package__)  # 专家团 (v0.4.2)
+    # ---- 分片命令模块 (subcommands/ 注册的独立 handler, 自动 _register_command) ----
+    # 这些模块此前从未被 import, 顶部 _register_command 未触发 → _resolve_func
+    # 解析失败 (test_every_subcommand_func_is_resolvable 暴露 38 个 AttributeError)。
+    for _cmd_mod in (
+        ".cmd_fastindex", ".cmd_kernel", ".cmd_superagent", ".cmd_safety",
+        ".cmd_auditstore", ".cmd_webcache", ".cmd_artifact", ".cmd_todo",
+        ".cmd_image", ".cmd_goal", ".cmd_loop", ".cmd_workflow", ".cmd_dag",
+        ".cmd_aggregate", ".cmd_verify", ".cmd_obs", ".cmd_collab",
+        ".cmd_subagent", ".cmd_remote", ".cmd_msg", ".cmd_checkpoint",
+        ".cmd_handoff", ".cmd_ledger", ".cmd_integrity", ".cmd_alerts",
+        ".cmd_storage", ".cmd_posture", ".cmd_telemetry", ".cmd_roles",
+        ".cmd_diff", ".cmd_plan",
+    ):
+        importlib.import_module(_cmd_mod, __package__)
     # 导入 commands.py，它会通过 PEP 562 惰性路由注册所有命令
     importlib.import_module(".commands", __package__)
     # 注意: commands.py 内的 _CMD_SOURCES 已经覆盖所有已注册 func。
