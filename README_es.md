@@ -1,7 +1,7 @@
 ﻿# Tuan-CLI
 
 > **«Model + Harness = Agent.»** — separa «cómo pensar» de «cómo ejecutarlo a salvo» y te entrega las dos llaves.
-> Un harness de agentes de IA en Python puro, seguro por diseño y sin ataduras a ningún modelo. `v0.3.4` · MIT · Python ≥ 3.10
+> Un harness de agentes de IA en Python puro, seguro por diseño y sin ataduras a ningún modelo. `v0.4.2` · MIT · Python ≥ 3.10
 
 > ### Posicionamiento: un agente safety-first — sin sacrificar la experiencia del desarrollador
 >
@@ -86,11 +86,11 @@ class MyTool(Plugin):
 
 ## Número de versión
 
-**¿Por qué `0.3.4` y no `1.0`?** Semántica [SemVer](https://semver.org/) honesta: **una versión `0.x` significa que la API pública (superficie CLI, esquema de configuración, protocolo de herramientas, contrato de plugins) aún no está congelada** y puede cambiar entre lanzamientos. Tuan-CLI ya trae un amplio conjunto de funciones — control de seguridad / rollback transaccional, hot-swap modelo-neutro (58 proveedores + Ollama local), tres bucles principales, arquitectura de contenedor de plugins, memoria de tres niveles, interoperabilidad de ecosistemas (MCP / ACP / puente Claude Code / Hermes), subagentes y Swarm, cron y tareas en segundo plano, modo Goal y permisos precisos — todo cubierto por pruebas. Pero **el número de versión refleja la estabilidad de la interfaz, no la completitud de funciones**: un conjunto completo de funciones no significa que la API deba congelarse. `1.0` se reserva para cuando la API pública sea verdaderamente estable y podamos prometer compatibilidad hacia atrás. Hasta entonces: los cambios disruptivos suben MINOR dentro de `0.x` (con pistas de migración), funciones compatibles suben MINOR, correcciones suben PATCH (ver [VERSION_POLICY.md](VERSION_POLICY.md)).
+**¿Por qué `0.4.2` y no `1.0`?** Semántica [SemVer](https://semver.org/) honesta: **una versión `0.x` significa que la API pública (superficie CLI, esquema de configuración, protocolo de herramientas, contrato de plugins) aún no está congelada** y puede cambiar entre lanzamientos. Tuan-CLI ya trae un amplio conjunto de funciones — control de seguridad / rollback transaccional, hot-swap modelo-neutro (58 proveedores + Ollama local), tres bucles principales, arquitectura de contenedor de plugins, memoria de tres niveles, interoperabilidad de ecosistemas (MCP / ACP / puente Claude Code / Hermes), subagentes y Swarm, cron y tareas en segundo plano, modo Goal y permisos precisos — todo cubierto por pruebas. Pero **el número de versión refleja la estabilidad de la interfaz, no la completitud de funciones**: un conjunto completo de funciones no significa que la API deba congelarse. `1.0` se reserva para cuando la API pública sea verdaderamente estable y podamos prometer compatibilidad hacia atrás. Hasta entonces: los cambios disruptivos suben MINOR dentro de `0.x` (con pistas de migración), funciones compatibles suben MINOR, correcciones suben PATCH (ver [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Semántica de versión | Significado |
 |---|---|
-| `0.3.4` (actual) | **API aún no congelada**: `0.x` permite ajustes disruptivos, anunciados con pistas de migración; no se promete compatibilidad hacia atrás |
+| `0.4.2` (actual) | **API aún no congelada**: `0.x` permite ajustes disruptivos, anunciados con pistas de migración; no se promete compatibilidad hacia atrás |
 | `1.0` (reservado) | Se habilita cuando la API pública se congele y se prometa compatibilidad hacia atrás; solo entonces los cambios disruptivos suben MAJOR (`2.0`) |
 
 ---
@@ -258,7 +258,7 @@ tuan --print run "Hola. Una línea."  # humo
 ```
 
 - **Disciplina i18n**: README_zh-CN es el maestro autoritativo; cada idioma es una localización viva, sin deriva — **nada de traducción mecánica.**
-- **Versión**: `v0.3.4` (una línea `0.x` — la API aún no está congelada); los ajustes disruptivos llegan con aviso previo + notas de migración, y `1.0` está reservado para el congelamiento de la API.
+- **Versión**: `v0.4.2` (una línea `0.x` — la API aún no está congelada); los ajustes disruptivos llegan con aviso previo + notas de migración, y `1.0` está reservado para el congelamiento de la API.
 - **A fondo**: firmas de los motores y un paseo paso a paso de herramienta nueva viven en el apéndice de `README_zh-CN.md`.
 
 ---

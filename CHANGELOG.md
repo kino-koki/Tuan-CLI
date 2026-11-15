@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [0.4.2] - 2026-11-15 (小更新 · 团组 TeamGroup + AgentCapability 能力矩阵 + 安全加固波次)
+
+### 新增
+- **团组 (TeamGroup)** — 最多 100 人纯本地团队：供应商/模型授权互通（key 所有者签名 + 时限 ≤90 天 + 无云端传 key）；`tuan team` CLI（create/show/add-member/register/issue/verify/revoke-grant/revoke-member/audit/invite/import-invite）；团组审计日志 `team_audit.jsonl`（追加链不可篡改）；跨机邀请令牌 `export_invite`/`import_invite`；web 团组面板。
+- **AgentCapability 统一能力门面** — 融合各家 Agent 核心理念为可插拔能力矩阵。
+- **B2/B3 安全加固波次** — 写路径硬边界 `write_boundary`（`blockWritesOutsideWorkingDirectories` + `/add-dir` 可写授权）、egress 域名白名单与网络代理、MCP `run_shell` 过 `assess_command`、背景侧门堵漏、`safe_exception_text` 控制字符剥离、hooks 扩展 / 会话事务 / 触发器 / 生命周期。
+- **差距分析** — `docs/GAP-ANALYSIS-vs-ClaudeCode.md`（46 aligned / 26 gap / 9 partial / 8 N/A）。
+- **可复现锁定** — `requirements.lock`（带 lock-hash 的可复现依赖锁）。
+
+### 修复 / 治理
+- `core/background_shell.py`：`stream=None` 时 `readline` 崩溃。
+- `test_b2su_write_boundary`：Windows 下系统关键目录判定（`/etc` → `G:\etc` 走「目录不存在」分支漏判）。
+
+## [0.4.1] - 2026-11-14 (小更新 · web 团队协作 + 代码动画工作台)
+
+### 新增
+- **web 团队协作页** — GitHub 设备流登录 + 协作黑板。
+- **MotionHarness 代码动画节点工作台**（`/web` ComfyUI 风格）。
+
 ## [0.4.0] - 2026-11-13 (大更新 · 安全防线多路完善 + Qwen 协作 + CLI 简化)
 
 ### 概述

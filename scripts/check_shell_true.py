@@ -8,14 +8,15 @@
 设计要点
 --------
 1. 纯 stdlib, **不 import 项目包** —— 保证 CI 无安装环境也能跑.
-2. 白名单以 (相对路径, 行号, 内容锚点, 理由) 元组形式硬编码在本文件里,
-   便于 review; 白名单**条目数 == 当前实测 25 处**, 覆盖当前全部匹配行
-   (含注释里的 ``shell=True`` 文字常量 —— 例如 ``ext/ast_scan.py`` 的正则
-   字符串常量在扫描用户的 ``shell=True``, 它不是真调用, 但会命中正则,
-   所以也需要列入白名单).
-3. 白名单里未匹配的条目会给出 WARNING (说明条目已过期), 但不 fail; 只有
-   **扫描出来但白名单里没有** 才 fail. 这样白名单可以安全地按行号漂动,
-   不会因为无关重构导致门禁红.
+2. 白名单以 (相对路径, 内容锚点, 理由) 元组形式硬编码在本文件里,
+   便于 review. 元组仍保留行号字段仅为**文档性提示** (写白名单时的定位线索),
+   匹配时**不使用** —— 见下条.
+3. 匹配**只按 (相对路径 + 内容锚点)**, 忽略行号. 这是本门禁的核心承诺:
+   白名单可以安全地按行号漂动, 任何无关重构 (增删行 / 文件搬迁) 都不会
+   导致门禁红. 若同一文件内同一锚点出现多次 (例如 plugin_sdk.py 的三处
+   ``shell=True,``), 按多重集逐个消耗, 数量不匹配才算失配.
+4. 白名单里未消耗的条目会给出 WARNING (说明条目已过期), 但不 fail; 只有
+   **扫描出来但白名单里没有** 才 fail.
 
 用法
 ----
@@ -55,6 +56,8 @@ SKIP_DIRS = {
 #     SAFE_FALLBACK - 已做 shlex 优先, 只在检测到 shell 元字符时才回退 shell=True.
 # ---------------------------------------------------------------------------
 WHITELIST: list[tuple[str, int, str, str]] = [
+    # 注意: 第 2 个字段 (行号) 仅作文档提示, 匹配时忽略 (见模块 docstring 第 3 条)。
+    # 匹配键 = (相对路径, 内容锚点)。锚点必须是该行 `shell=True` 附近的稳定子串。
     # ---------------------------------------
     # COMMENT / REGEX_CONST: 文字常量, 非真调用点
     # ---------------------------------------
@@ -73,14 +76,24 @@ WHITELIST: list[tuple[str, int, str, str]] = [
     ("ext/ast_scan.py", 194, '"shell=True"', "REGEX_CONST"),
     # code_review 里的正则字符串, 用于扫描**用户代码**是否用了 shell=True.
     ("tools/code_review.py", 94, "shell\\s*=\\s*True", "REGEX_CONST"),
+    # tui/codexkit 与 web 模块的文档注释: 描述"永不 shell=True"的设计约束,
+    # 属于对既有调用的反面声明, 不是自身调用点.
+    ("tui/codexkit/stream_exec.py", 13, "命令用 `shell=True` 拼接", "COMMENT"),
+    ("tui/codexkit/stream_exec.py", 288, "**永不** ``shell=True``", "COMMENT"),
+    ("tui/codexkit/__init__.py", 31, "命令 ``shell=True`` 拼接", "COMMENT"),
+    ("web/code_anim_render.py", 7, "永不 ``shell=True``", "COMMENT"),
+    ("web/mh_runner.py", 5, "永不使用 ``shell=True``", "COMMENT"),
+    # parity_claude/catalog.py: 差距分析文档里描述安全边界的长注释,
+    # 提及 shell=True 是叙述性文字, 非调用点.
+    ("parity_claude/catalog.py", 143, "MCP `run_shell` 是另一处 shell=True 入口", "COMMENT"),
 
     # ---------------------------------------
     # 真实调用点 (USER_INPUT / SHELL_META / PLUGIN_HOOK / SAFE_FALLBACK)
     # ---------------------------------------
     # 用户命令: `!`code` 语法预执行的 stdout, cmd 完全由用户在 prompt 里给出.
     ("cli/user_commands.py", 142, "shell=True, capture_output=True", "USER_INPUT"),
-    # 教程演示命令: 优先 shlex, 命令含 shell 元字符时才回退 shell=True.
-    ("cli/cmd_tutorial.py", 89, "shell=True, timeout=120", "SAFE_FALLBACK"),
+    # 教程演示命令的真实调用点: 优先 shlex, 命令含 shell 元字符时才回退 shell=True.
+    ("cli/cmd_tutorial.py", 90, "r = subprocess.run(cmd, shell=True, timeout=120)", "SAFE_FALLBACK"),
     # code_edit 验证循环: cmd 由 agent 生成的验证命令, 可能含管道/重定向.
     ("code_edit/verify_loop.py", 53, "shell=True, cwd=cwd", "USER_INPUT"),
     # core 验证循环: cmd 来自 agent/规划器, 可能是 shell 复合语句.
@@ -91,22 +104,37 @@ WHITELIST: list[tuple[str, int, str, str]] = [
     # 后台 shell 命令: 用户显式创建的 job 命令, 允许 pipe/redirect.
     ("core/background_shell.py", 269, "normalized, shell=True", "USER_INPUT"),
     # Web UI 的 shell 执行入口: 命令来自 HTTP body, 经安全评估 + 用户审批.
-    ("web/server.py", 607, "command, shell=True", "USER_INPUT"),
+    # (唯一真实调用点见下方 1092 行条目; 旧 607 行短锚点条目是同一调用点的
+    # 行号漂移冗余, 已随锚点匹配改造删除 —— 607 行现无 shell=True。) 
     # tools/shell.py 主入口: LLM/用户提供的 shell 命令, 显式 shell 语义.
-    ("tools/shell.py", 690, "shell=True,", "USER_INPUT"),
+    # (唯一真实调用点见下方 738 行条目; 旧 690 行 docstring 条目已随
+    # 锚点匹配改造移除 —— 690 行并无 shell=True, 是行号漂移残留。)
     # tools/code.py 的 run_tests/git_status: 命令由 LLM 生成, 允许组合.
     ("tools/code.py", 317, "command, shell=True", "USER_INPUT"),
     # MCP 沙箱本地执行: 命令由 MCP server 提供 (外部不可信), 必须 shell 语法.
     ("tools/mcp/sandbox.py", 229, "shell=True,", "USER_INPUT"),
     # MCP server 的 tuan_run 工具: 命令来自 MCP client (外部), 显式 shell.
-    ("ecosystem/mcp_server.py", 344, "command, shell=True", "USER_INPUT"),
+    # (唯一真实调用点见下方 376 行条目; 旧 344 行短锚点条目是同一调用点的
+    # 行号漂移冗余, 已删除 —— 344 行现无 shell=True。)
     # 沙箱管理器 local 后端: 命令来自被沙箱化的外部调用.
-    ("sandbox/manager.py", 280, "command, shell=True", "USER_INPUT"),
+    # (唯一真实调用点见下方 449 行条目; 旧 280 行短锚点条目是同一调用点的
+    # 行号漂移冗余, 已删除 —— 280 行现无 shell=True。)
     # 插件 SDK: hook_cmd / headersHelper.command 由插件 manifest 声明,
     # 视为外部用户输入 (插件作者).
     ("skills/plugin_sdk.py", 338, "shell=True,", "PLUGIN_HOOK"),
     ("skills/plugin_sdk.py", 364, "shell=True,", "PLUGIN_HOOK"),
     ("skills/plugin_sdk.py", 402, "shell=True,", "PLUGIN_HOOK"),
+    # tui/render.py: /statusline 自定义命令来自用户配置, 渲染线程后台跑.
+    ("tui/render.py", 117, "cmd, shell=True, capture_output=True", "USER_INPUT"),
+    # web/handler.py & web/server.py: shell 命令来自 HTTP body, 经安全评估+审批.
+    ("web/handler.py", 453, "command, shell=True, cwd=self._owner.workspace", "USER_INPUT"),
+    ("web/server.py", 1092, "command, shell=True, cwd=self._owner.workspace,", "USER_INPUT"),
+    # tools/shell.py 真实执行点 (normalize_shell_command 已 shlex 预解析).
+    ("tools/shell.py", 738, "shell=True,", "USER_INPUT"),
+    # sandbox/manager.py 真实执行点 (run_with_tree_kill 包 shell 复合命令).
+    ("sandbox/manager.py", 449, "command, shell=True, cwd=cwd,", "USER_INPUT"),
+    # ecosystem/mcp_server.py 真实执行点.
+    ("ecosystem/mcp_server.py", 376, "command, shell=True, capture_output=True,", "USER_INPUT"),
 ]
 
 
@@ -134,35 +162,41 @@ def scan() -> list[tuple[str, int, str]]:
 
 def main() -> int:
     hits = scan()
-    # 建白名单索引: (relpath, lineno) -> entry
-    wl_by_pos: dict[tuple[str, int], tuple[str, int, str, str]] = {}
-    for entry in WHITELIST:
-        wl_by_pos[(entry[0], entry[1])] = entry
+    # 按 (relpath, 锚点) 建立索引; 同一文件同一锚点可出现多次
+    # (如 plugin_sdk.py 的三处 `shell=True,`), 因此按**条目索引**逐条消耗,
+    # 而不是按 (relpath, 锚点) 键消耗 —— 否则同键第二条起全部误判为未授权。
+    wl_by_key: dict[tuple[str, str], list[int]] = {}
+    for idx, entry in enumerate(WHITELIST):
+        wl_by_key.setdefault((entry[0], entry[2]), []).append(idx)
 
     unauthorized: list[tuple[str, int, str]] = []
     authorized: list[tuple[str, int, str, str]] = []
-    consumed: set[tuple[str, int]] = set()
+    consumed: set[int] = set()
 
     for rel, lineno, text in hits:
-        key = (rel, lineno)
-        entry = wl_by_pos.get(key)
-        if entry is None:
+        # 锚点匹配: 找一条 (同 rel, 锚点是当前行子串) 的未消耗条目索引。
+        # 同一文件内若多条锚点都命中 (如 web/server.py 的 `command, shell=True`
+        # 是 `command, shell=True, cwd=...` 的前缀), 取**锚点最长**的那条 ——
+        # 更具体的锚点优先, 避免前缀子串抢配导致具体锚点被误报为 stale。
+        entry_idx = None
+        best_anchor_len = -1
+        for (file_key, anchor), bucket in wl_by_key.items():
+            if file_key != rel:
+                continue
+            for idx in bucket:
+                if idx in consumed:
+                    continue
+                if anchor and anchor in text and len(anchor) > best_anchor_len:
+                    entry_idx = idx
+                    best_anchor_len = len(anchor)
+        if entry_idx is None:
             unauthorized.append((rel, lineno, text))
         else:
-            consumed.add(key)
-            # 校验锚点是否仍匹配当前行内容 (防止行内内容漂移而没更新白名单)
-            anchor = entry[2]
-            if anchor and anchor not in text:
-                print(
-                    f"WARN anchor drift: {rel}:{lineno}\n"
-                    f"      whitelist anchor: {anchor!r}\n"
-                    f"      actual line     : {text!r}",
-                    file=sys.stderr,
-                )
-            authorized.append((rel, lineno, text, entry[3]))
+            consumed.add(entry_idx)
+            authorized.append((rel, lineno, text, WHITELIST[entry_idx][3]))
 
-    # 未匹配的白名单条目 (说明已过期, 不 fail, 只 warn)
-    unused = [e for e in WHITELIST if (e[0], e[1]) not in consumed]
+    # 未消耗的白名单条目 (说明已过期, 不 fail, 只 warn)
+    unused = [e for i, e in enumerate(WHITELIST) if i not in consumed]
 
     print(f"shell=True gate: scanned {len(hits)} hit(s), "
           f"authorized {len(authorized)}, unauthorized {len(unauthorized)}, "

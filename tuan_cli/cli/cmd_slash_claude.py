@@ -526,18 +526,30 @@ def cmd_loop(agent: Any, arg: str) -> None:
 
 # ---------------------------------------------------------------- /review /code-review
 def cmd_review(agent: Any, arg: str, *, security: bool = False) -> None:
-    """/review [/code-review] [文件|目录] —— 自动代码评审（correctness / security）。"""
+    """/review [/code-review] [文件|目录] —— 自动代码评审（correctness / security）。
+
+    ``security=True`` (/security-review) 时把评审类别收敛为仅 ``security``，
+    与 Claude Code 的 /security-review 语义对齐 —— 此前该参数只改了标题文案、
+    从未真正传给评审引擎，等于假接线。
+    """
     parts = arg.strip().split()
     fix = "--fix" in parts or "-f" in parts
+    # --security 也可在 /review 上显式指定, 等价于 /security-review
+    force_security = security or "--security" in parts or "-s" in parts
     target = next((p for p in parts if not p.startswith("-")), "")
     scope = target or getattr(getattr(agent, "ctx", None), "workspace", "") or os.getcwd()
-    ui.info(f"[{'安全' if security else '代码'}评审] 扫描 {scope} (fix={fix})…")
+    cats = "security" if force_security else "security,logic,style,complexity"
+    ui.info(f"[{'安全' if force_security else '代码'}评审] 扫描 {scope} "
+            f"(类别={cats}, fix={fix})…")
     try:
         from ..tools.code_review import code_review
-        result = code_review(agent.ctx, path=scope)
+        result = code_review(agent.ctx, path=scope, categories=cats)
         ui.answer_md(result)
         if fix:
-            ui.info("  (--fix 已请求：若评审发现可自动修复项，请用 /undo 回滚或手动复核。)")
+            # --fix: 评审是只读的, 但项目提供 git-undo 事务账本兜底 ——
+            # 修复必须显式走安全闸门的 edit/write, 此处只如实告知边界, 不偷偷改盘。
+            ui.info("  (--fix 为只读提示: 评审本身不改文件。"
+                    "自动改写请结合 /undo 事务账本回滚或手动复核。)")
     except Exception as exc:  # noqa: BLE001
         ui.error(f"评审失败: {exc}")
 

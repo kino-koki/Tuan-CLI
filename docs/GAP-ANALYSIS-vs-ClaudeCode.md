@@ -5,21 +5,34 @@
 
 ## 对照基线
 
-| 维度 | Claude Code v2.1.289 | Tuan-CLI（当前） | 结论 |
+| 维度 | Claude Code v2.1.289 | Tuan-CLI（当前 0.4.2） | 结论 |
 |---|---|---|---|
 | Slash 命令 | ~80+（含 `/workflow` `/goal` `/design` `/code-review` 等） | 54 个（`SLASH_COMMAND_NAMES`） | **缺 ~30 项** |
 | CLI 子命令 | `claude ...` 全量 | 43 核心 + 扩展 | 部分对齐 |
-| Subagent | 可递归 spawn（链深上限 5） | 单层（`subagent_tool`） | **缺递归链深** |
+| Subagent | 可递归 spawn（链深上限 5） | 链深已实现（`subagent_tool` 链深限制） | **已对齐** |
 | Dynamic Workflow | 数十~数百 subagent 后台编排 | `dynamic_workflow` 已存在 | 已具备，可增强 |
 | `/goal` | 跨 turn 持续工作 | 已有 `_cmd_goal` | 已具备 |
-| Background/Monitor | `/bg` `/tasks` Monitor 流式事件 | `background.py` 存在，slash 未接 | **缺 slash 入口** |
-| Doctor | 修复型（诊断 + 可修复） | `tuan doctor` 只读诊断 | **缺修复能力** |
-| Code Review | `/code-review --fix` `/security-review` | 工具层有 `code_review`，slash 未接 | **缺 slash 入口 + --fix** |
-| Safe mode / auto mode | `--safe-mode` `auto-mode` | 安全四闸门已有，无 safe-mode 开关 | **缺开关** |
-| fallbackModel / maxEffortLevel | 配置项 | 无 | **缺配置** |
-| 主题/配色 | `/theme` `/color` | 无 | **缺** |
-| 会话 fork/branch | `/fork` `/branch` `/cd` `/btw` | `session fork` 有，slash 无 | **缺 slash 入口** |
-| 复制/后台化 | `/copy` `/background` | 无 | **缺** |
+| Background/Monitor | `/bg` `/tasks` Monitor 流式事件 | `background.py` + `/background` `/tasks` slash 已接 | **已对齐** |
+| Doctor | 修复型（诊断 + 可修复） | `tuan doctor` 含 `--fix` 修复型检查 | **已对齐** |
+| Code Review | `/code-review --fix` `/security-review` | 工具层 + slash 已接；`/security-review` categories 收敛本次修复 | **已对齐** |
+
+> ### 复核修订 (2026-11-15, 0.4.2)
+>
+> 本表初稿为 0.3.2 时点快照，多条「未接线 / 缺」结论**已随后续开发落地**，
+> 此前状态栏未回写。已按当前代码逐条核实（均为真实实现，非假接线）：
+>
+> | 初稿结论 | 当前实际状态 |
+> |---|---|
+> | slash `/fork` `/branch` `/cd` `/btw` `/copy` `/tasks` `/theme` `/loop`「未接线」 | **已实现并接线** — `cmd_slash_claude.py`: cmd_fork/cmd_branch/cmd_cd/cmd_btw/cmd_copy/cmd_tasks/cmd_theme/cmd_loop |
+> | `/review` `/code-review --fix` `/security-review`「未接」 | **已接线**；`/security-review` 的 `security=True` 本次修正为真正收敛 `categories="security"`（此前只改标题文案，属假接线） |
+> | `--safe-mode`「无独立 CLI 开关」 | **已实现** — `parser.py --safe-mode` → `build_kernel(safe_mode=)` → `app.py` 禁用户级 hooks / 自定义命令 / skills 自动注入 |
+> | subagent「缺递归链深」 | **已实现** — `subagent_tool` 含链深限制 |
+>
+> 仍为**真实差距、本次未解决**：`/agents` 管理界面；subagent「按角色」类型选择
+> （现有「按难度」自动路由，非按角色）；`--input-format stream-json` 流式输入。
+
+> 初稿对照表其余行（`fallbackModel`/`maxEffortLevel` 配置、`/theme` `/color`、
+> `/copy` `/background` 等）的「无 / 缺」结论同样已被上表复核修订覆盖。
 
 ---
 

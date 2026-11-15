@@ -258,11 +258,23 @@ class BackgroundShellManager:
             self._jobs[job.job_id] = job
 
         def _read_stream(stream: Any, is_err: bool) -> None:
-            for line in iter(stream.readline, ""):
-                if not line:
-                    break
-                job._append(line)
-            stream.close()
+            # stream 可能为 None (Popen 失败回滚 / 句柄在取消与进程树终止的
+            # 竞争中被提前关闭), 也可能在读取中途被关闭 —— 两种情况都静默结束,
+            # 不让读线程抛 NoneType.readline 把 job 状态搞成 failed。
+            if stream is None:
+                return
+            try:
+                for line in iter(stream.readline, ""):
+                    if not line:
+                        break
+                    job._append(line)
+            except (ValueError, OSError, AttributeError):
+                return  # ValueError: I/O 操作在已关闭的文件上; OSError: 管道断开
+            finally:
+                try:
+                    stream.close()
+                except (AttributeError, OSError, ValueError):
+                    pass
 
         def _run() -> None:
             try:

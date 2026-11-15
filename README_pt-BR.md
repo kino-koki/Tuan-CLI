@@ -1,7 +1,7 @@
 ﻿# Tuan-CLI
 
 > **«Model + Harness = Agent.»** — separa o «como pensar» do «como executar com segurança» e entrega as duas chaves pra você.
-> Um harness de agentes de IA em Python puro, seguro por padrão e agnóstico de modelo. `v0.3.4` · MIT · Python ≥ 3.10
+> Um harness de agentes de IA em Python puro, seguro por padrão e agnóstico de modelo. `v0.4.2` · MIT · Python ≥ 3.10
 
 > ### Posicionamento: um agente safety-first — sem sacrificar a experiência do desenvolvedor
 >
@@ -86,11 +86,11 @@ class MyTool(Plugin):
 
 ## Número de versão
 
-**Por que `0.3.4` e não `1.0`?** Semântica [SemVer](https://semver.org/) honesta: **uma versão `0.x` significa que a API pública (superfície CLI, schema de configuração, protocolo de ferramentas, contrato de plugins) ainda não está congelada** e pode mudar entre releases. O Tuan-CLI já entrega um conjunto amplo de recursos — controle de segurança / rollback transacional, hot-swap agnóstico de modelo (58 provedores + Ollama local), três loops principais, arquitetura de contêiner de plugins, memória de três níveis, interoperabilidade de ecossistemas (MCP / ACP / ponte Claude Code / Hermes), subagentes e Swarm, cron e tarefas em segundo plano, modo Goal e permissões precisas — tudo coberto por testes. Mas **o número de versão reflete a estabilidade da interface, não a completude dos recursos**: um conjunto completo de recursos não significa que a API deva ser congelada. `1.0` fica reservado pra quando a API pública for realmente estável e pudermos prometer retrocompatibilidade. Até lá: mudanças que quebram sobem MINOR dentro de `0.x` (com dicas de migração), recursos compatíveis sobem MINOR, correções sobem PATCH (veja [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Por que `0.4.2` e não `1.0`?** Semântica [SemVer](https://semver.org/) honesta: **uma versão `0.x` significa que a API pública (superfície CLI, schema de configuração, protocolo de ferramentas, contrato de plugins) ainda não está congelada** e pode mudar entre releases. O Tuan-CLI já entrega um conjunto amplo de recursos — controle de segurança / rollback transacional, hot-swap agnóstico de modelo (58 provedores + Ollama local), três loops principais, arquitetura de contêiner de plugins, memória de três níveis, interoperabilidade de ecossistemas (MCP / ACP / ponte Claude Code / Hermes), subagentes e Swarm, cron e tarefas em segundo plano, modo Goal e permissões precisas — tudo coberto por testes. Mas **o número de versão reflete a estabilidade da interface, não a completude dos recursos**: um conjunto completo de recursos não significa que a API deva ser congelada. `1.0` fica reservado pra quando a API pública for realmente estável e pudermos prometer retrocompatibilidade. Até lá: mudanças que quebram sobem MINOR dentro de `0.x` (com dicas de migração), recursos compatíveis sobem MINOR, correções sobem PATCH (veja [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Semântica de versão | Significado |
 |---|---|
-| `0.3.4` (atual) | **API ainda não congelada**: `0.x` permite ajustes que quebram, anunciados com dicas de migração; retrocompatibilidade não é prometida |
+| `0.4.2` (atual) | **API ainda não congelada**: `0.x` permite ajustes que quebram, anunciados com dicas de migração; retrocompatibilidade não é prometida |
 | `1.0` (reservado) | Ativado quando a API pública for congelada e a retrocompatibilidade for prometida; só então mudanças que quebram sobem MAJOR (`2.0`) |
 
 ---
@@ -258,7 +258,7 @@ tuan --print run "Oi. Uma linha."  # smoke
 ```
 
 - **Disciplina i18n**: README_zh-CN é o mestre autoritativo; cada idioma é uma localização viva, sem deriva — **nada de tradução mecânica.**
-- **Versão**: `v0.3.4` (uma linha `0.x` — a API ainda não está congelada); ajustes que quebram vêm com aviso prévio + notas de migração, e `1.0` fica reservado pra o congelamento da API.
+- **Versão**: `v0.4.2` (uma linha `0.x` — a API ainda não está congelada); ajustes que quebram vêm com aviso prévio + notas de migração, e `1.0` fica reservado pra o congelamento da API.
 - **A fundo**: assinaturas dos motores e um tour de ferramenta nova moram no apêndice de `README_zh-CN.md`.
 
 ---

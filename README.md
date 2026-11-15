@@ -1,7 +1,7 @@
 ﻿# Tuan-CLI
 
 > **"Model + Harness = Agent."** — Split "how to think" from "how to run it safely," and hand you both keys.
-> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.3.4` · MIT · Python ≥ 3.10
+> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.4.2` · MIT · Python ≥ 3.10
 
 > ### Positioning: a safety-first agent — without sacrificing developer experience
 >
@@ -87,11 +87,11 @@ class MyTool(Plugin):
 
 ## Version number
 
-**Why `0.3.4` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (58 providers + local Ollama), three main loops, plugin container architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Why `0.4.2` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (58 providers + local Ollama), three main loops, plugin container architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Version semantics | Meaning |
 |---|---|
-| `0.3.4` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
+| `0.4.2` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
 | `1.0` (reserved) | Enabled once the public API is frozen and backward compatibility is promised; only then do breaking changes bump MAJOR (`2.0`) |
 
 **Git history note (open-source transparency):** This repository's Git commit history was **not "deliberately hidden/overwritten"** — the truth is simpler: **the project was not under Git version control in its early days; the code was developed on a different machine. That machine later failed, which caused some early records to be lost, and we rebuilt the Git history afterwards. Fortunately the disk was not damaged.** The current code is fully reviewable from architecture to implementation. So: **the unverifiable early Git history has no impact on virtually anyone** — the code is complete and reviewable; for feature evolution, rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We disclose this plainly — no polishing, no hiding — and we ask you **not to dwell on it**.
@@ -287,7 +287,7 @@ tuan --print run "Hi, one line."   # smoke
 ```
 
 - **i18n discipline**: README_zh-CN is the authoritative master; every locale is a vivid, zero-drift localization — **no mechanical translation.**
-- **Version**: `v0.3.4` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
+- **Version**: `v0.4.2` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
 - **Deep dive**: engine signatures & a step-by-step tool walkthrough live in the appendix of `README_zh-CN.md`.
 
 ---

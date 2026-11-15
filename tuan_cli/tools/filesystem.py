@@ -178,8 +178,27 @@ def _system_roots() -> list:
     return roots
 
 
+# POSIX 系统关键目录名 (与 _system_roots 的 POSIX 列表一致)。
+# 用途: 在 Windows 上识别「POSIX 风格路径落到盘符根下」的系统关键目录,
+# 例如 /etc → G:\etc (resolve 后), 其父级为盘符根。
+_SYSTEM_CRITICAL_NAMES = frozenset({
+    "etc", "bin", "sbin", "usr", "boot", "root", "dev", "proc", "sys",
+})
+
+
 def _is_system_critical(target: Path) -> bool:
-    """target 是否为文件系统根 (盘符根 / POSIX /) 或位于某个系统关键目录之内。"""
+    """target 是否为文件系统根 (盘符根 / POSIX /) 或位于某个系统关键目录之内。
+
+    检测分三路, 任一命中即为系统关键目录:
+
+    1. **文件系统根**: ``target == anchor`` (盘符根 ``C:\\`` 或 POSIX ``/``)。
+    2. **已知系统目录树**: 与 ``_system_roots()`` 中任一根做 ``relative_to``。
+    3. **POSIX 字面量 (盘符无关)**: Windows 上把 POSIX 风格路径 resolve 后
+       形如 ``G:\\etc`` (父级即盘符根), 其父级名命中 ``_SYSTEM_CRITICAL_NAMES``
+       即判定为系统关键目录。此路不依赖 ``SystemRoot`` / 具体盘符, 因此
+       临时目录盘符 (如 ``G:``) 下同样能拦下 ``/etc`` —— 避免安全判定被
+       盘符漂移绕过。子目录 (如 ``G:\\tmp\\etc``) 父级非盘符根, 不误判。
+    """
     try:
         if str(target) == str(target.anchor):
             return True
@@ -191,6 +210,16 @@ def _is_system_critical(target: Path) -> bool:
             return True
         except ValueError:
             continue
+    try:
+        parent = target.parent
+        if (
+            os.name == "nt"
+            and parent == Path(parent.anchor)
+            and target.name.lower() in _SYSTEM_CRITICAL_NAMES
+        ):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
     return False
 
 
