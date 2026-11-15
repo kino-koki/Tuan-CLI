@@ -380,6 +380,9 @@ def cmd_session(args: Any) -> int:
         from ..core.replay import load_trajectory
 
         sub = getattr(args, "traj_cmd", None)
+        if sub in ("analyze", "timeline", "fork", "snapshots"):
+            # 转发给专项 handler (原先静默降级为 show, 属错误行为)
+            return _session_traj_dispatch(sub, args)
         if sub == "export":
             traj = load_trajectory(args.session)
             if traj is None:
@@ -403,5 +406,459 @@ def cmd_session(args: Any) -> int:
         print(traj.summary())
         return 0
 
-    console.print("用法: tuan session list|resume|delete|export|clean|stats|fork|tree|ref|replay|trajectory")
+    # --- trajectory 子命令 (analyze/timeline/fork/snapshots 曾静默降级为 show) ---
+    if session_cmd == "trajectory":
+        sub = getattr(args, "traj_cmd", None)
+        if sub == "analyze":
+            return _session_traj_analyze(args)
+        if sub == "timeline":
+            return _session_traj_timeline(args)
+        if sub == "fork":
+            return _session_traj_fork(args)
+        if sub == "snapshots":
+            return _session_traj_snapshots(args)
+
+    # --- 跨会话差异对比 ---
+    if session_cmd == "compare":
+        return _session_compare(args)
+
+    # --- 跨会话指标聚合趋势 ---
+    if session_cmd == "trend":
+        return _session_trend(args)
+
+    # --- 事件溯源查询/统计 ---
+    if session_cmd == "events":
+        return _session_events(args)
+
+    # --- WireStore 上下文记录流只读体检 ---
+    if session_cmd == "wire":
+        return _session_wire(args, files)
+
+    # --- EventSourcer API 化查询 ---
+    if session_cmd == "query":
+        return _session_query(args, files)
+
+    # --- EventSourcer 内存态分叉/回放 ---
+    if session_cmd == "sourcer":
+        return _session_sourcer(args, files)
+
+    # --- 无 LLM 结构化摘要提取预览 ---
+    if session_cmd == "digest":
+        return _session_digest(args, files)
+
+    console.print("用法: tuan session "
+                  "list|resume|delete|export|clean|stats|fork|tree|ref|replay|trajectory|"
+                  "compare|trend|events|wire|query|sourcer|digest")
+    return 0
+
+
+# =====================================================================
+# session 组补充 handler (修复死子命令: 有 argparse 入口、无分发实现)
+# =====================================================================
+
+def _resolve_session_path(files: List[Path], target: str) -> Any:
+    """解析会话目标 (编号/ID/前缀/latest) 为单个文件, 找不到返回 None。"""
+    if target == "latest":
+        return files[0] if files else None
+    if target.isdigit():
+        idx = int(target) - 1
+        return files[idx] if 0 <= idx < len(files) else None
+    for f in files:
+        if f.stem.startswith(target):
+            return f
+    return None
+
+
+def _session_compare(args: Any) -> int:
+    """跨会话差异对比 (CrossSessionResolver.compare)。"""
+    from ..core.cross_session import CrossSessionResolver
+    res = CrossSessionResolver(home=home_dir())
+    result = res.compare(args.session_a, args.session_b)
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return 0
+    ma, mb = result["meta_a"], result["meta_b"]
+    print(f"跨会话差异对比: {result['session_a']}  vs  {result['session_b']}")
+    print(f"  会话A 事件总数: {result['events_a'].get('total', 0)}"
+          f"  标题: {ma.get('title') or '(无标题)'}")
+    print(f"  会话B 事件总数: {result['events_b'].get('total', 0)}"
+          f"  标题: {mb.get('title') or '(无标题)'}")
+    diff = result["event_count_diff"]
+    print(f"  事件数差: {diff:+d}  (A相对B{'多' if diff >= 0 else '少'})")
+    if result["tool_diff"]:
+        print("  工具使用差异 (仅非零):")
+        for k, v in sorted(result["tool_diff"].items(), key=lambda kv: abs(kv[1]), reverse=True):
+            print(f"    {k}: {v:+d}")
+    return 0
+
+
+def _session_trend(args: Any) -> int:
+    """跨会话指标聚合趋势 (逐会话 Trajectory.metrics 横向对比)。"""
+    from ..core.replay import list_sessions, load_trajectory
+    rows = list_sessions()
+    if not rows:
+        console.print("没有历史会话")
+        return 0
+    limit = getattr(args, "limit", 10)
+    rows = rows[:limit]
+    sort = getattr(args, "sort", "time")
+    series = []
+    for r in rows:
+        traj = load_trajectory(r["session_id"])
+        if traj is None:
+            continue
+        m = traj.metrics()
+        series.append({
+            "session_id": r["session_id"],
+            "mtime": r["mtime"],
+            "title": r.get("title") or "(无标题)",
+            "steps": m["steps"],
+            "user_turns": m["user_turns"],
+            "tool_calls": m["tool_calls"],
+            "tool_ok": m["tool_ok"],
+            "tool_failed": m["tool_failed"],
+            "tool_success_rate": m["tool_success_rate"],
+            "tool_time_ms": m["tool_time_ms"],
+            "total_tokens": m["total_tokens"],
+            "total_cost_usd": m["total_cost_usd"],
+        })
+    if sort == "success":
+        series.sort(key=lambda s: (s["tool_success_rate"] is None, -(s["tool_success_rate"] or 0)))
+    elif sort == "cost":
+        series.sort(key=lambda s: -s["total_cost_usd"])
+    elif sort == "tokens":
+        series.sort(key=lambda s: -s["total_tokens"])
+    else:
+        series.sort(key=lambda s: s["mtime"], reverse=True)
+    if getattr(args, "json", False):
+        print(json.dumps(series, ensure_ascii=False, indent=2, default=str))
+        return 0
+    print(f"跨会话指标趋势 (最近 {len(series)} 个会话, 排序: {sort})")
+    print(f"{'会话ID':<22} {'步骤':>4} {'工具':>4} {'成功率':>7} {'Token':>9} {'花费$':>8}  标题")
+    for s in series:
+        rate = f"{s['tool_success_rate'] * 100:.0f}%" if s["tool_success_rate"] is not None else "—"
+        print(f"{s['session_id']:<22} {s['steps']:>4} {s['tool_calls']:>4} "
+              f"{rate:>7} {s['total_tokens']:>9} {s['total_cost_usd']:>8.4f}  {s['title']}")
+    return 0
+
+
+def _session_events(args: Any) -> int:
+    """事件溯源: 查询/统计 (类型/单条事件)。"""
+    from ..core.trajectory_replay import TrajectoryReplay
+    session = getattr(args, "session", None)
+    if not session:
+        console.print("需要指定会话: tuan session events <会话ID|前缀>")
+        return 2
+    replay = TrajectoryReplay(session_dir=home_dir() / "sessions")
+    seq = getattr(args, "seq", None)
+    if seq is not None:
+        events = replay.replay(session)
+        for ev in events:
+            if ev.seq == seq:
+                if getattr(args, "json", False):
+                    print(json.dumps(ev.to_dict(), ensure_ascii=False, indent=2, default=str))
+                else:
+                    print(f"[#{ev.seq}] {ev.event_type}  {ev.status}  "
+                          f"工具={ev.tool_name or '-'}  来源={ev.source or '-'}")
+                    print(f"  {json.dumps(ev.payload, ensure_ascii=False, default=str)[:500]}")
+                return 0
+        console.print(f"未找到序号 {seq} 的事件")
+        return 1
+    events = replay.replay(session, filter_type=getattr(args, "kind", None))
+    limit = getattr(args, "limit", 30)
+    if getattr(args, "json", False):
+        print(json.dumps([ev.to_dict() for ev in events[-limit:]],
+                         ensure_ascii=False, indent=2, default=str))
+        return 0
+    print(f"会话 {session} 事件列表 (共 {len(events)} 条, 显示最后 {min(limit, len(events))} 条)")
+    for ev in events[-limit:]:
+        print(f"  [#{ev.seq}] {ev.event_type:<12} {ev.status:<8} "
+              f"工具={ev.tool_name or '-'}  来源={ev.source or '-'}")
+    return 0
+
+
+def _session_wire(args: Any, files: List[Path]) -> int:
+    """WireStore 上下文记录流只读体检 (类型分布/时间跨度/协议版本)。"""
+    from ..runtime.session.wire import WireStore
+    session = getattr(args, "session", None)
+    if not session:
+        # 默认取最近一个会话
+        if not files:
+            console.print("没有会话记录")
+            return 0
+        session = files[0].stem
+    sessions_dir = home_dir() / "sessions"
+    wire_path = sessions_dir / f"{session}.wire.jsonl"
+    store = WireStore(wire_path)
+    if not store.exists():
+        console.print(f"[wire] 没有上下文记录流: {wire_path}")
+        return 0
+    records = list(store.read_journal())
+    from collections import Counter
+    by_type: Counter = Counter()
+    timestamps: list = []
+    protocol = "?"
+    for rec in records:
+        by_type[rec.get("type", "unknown")] += 1
+        ts = rec.get("time")
+        if isinstance(ts, (int, float)):
+            timestamps.append(ts)
+        if rec.get("protocol_version"):
+            protocol = rec["protocol_version"]
+    span = ""
+    if len(timestamps) >= 2:
+        span = f"{ (max(timestamps) - min(timestamps)) / 1000:.1f}s"
+    if getattr(args, "json", False):
+        print(json.dumps({
+            "session": session, "records": len(records),
+            "by_type": dict(by_type), "protocol_version": protocol,
+            "span_ms": (max(timestamps) - min(timestamps)) if len(timestamps) >= 2 else 0,
+        }, ensure_ascii=False, indent=2, default=str))
+        return 0
+    print(f"[wire] 上下文记录流体检: {session}")
+    print(f"  - 记录总数   : {len(records)}")
+    print(f"  - 协议版本   : {protocol}")
+    print(f"  - 类型分布   : {dict(sorted(by_type.items()))}")
+    if span:
+        print(f"  - 时间跨度   : {span}")
+    return 0
+
+
+def _session_query(args: Any, files: List[Path]) -> int:
+    """EventSourcer API 化查询 (类型/时间窗/序号/标签多维过滤)。"""
+    from ..core.event_sourcer import EventSourcer
+    from ..memory.sessions import SessionStore
+    session = getattr(args, "session", None)
+    if not session:
+        console.print("需要指定会话: tuan session query <会话ID|前缀>")
+        return 2
+    sessions_dir = home_dir() / "sessions"
+    path = _resolve_session_path(files, session)
+    if path is None:
+        console.print(f"未找到会话: {session}")
+        return 1
+    store = SessionStore(home_dir())
+    store.dir = sessions_dir
+    store.file = path
+    store.session_id = path.stem
+    sourcer = EventSourcer(session_store=store)
+    tag = getattr(args, "tag", None)
+    events = sourcer.query(
+        kind=getattr(args, "kind", None),
+        since=getattr(args, "since", None),
+        until=getattr(args, "until", None),
+        since_seq=getattr(args, "since_seq", 0),
+        until_seq=getattr(args, "until_seq", 0),
+        tags=[tag] if tag else None,
+        limit=getattr(args, "limit", 1000),
+    )
+    if getattr(args, "count", False):
+        print(f"{len(events)}")
+        return 0
+    if getattr(args, "json", False):
+        print(json.dumps([ev.to_dict() for ev in events],
+                         ensure_ascii=False, indent=2, default=str))
+        return 0
+    print(f"会话 {path.stem} 查询命中 {len(events)} 条事件")
+    for ev in events:
+        print(f"  [#{ev.seq}] {ev.kind:<12} {ev.semantics:<8} "
+              f"tags={','.join(ev.tags) or '-'}  {json.dumps(ev.payload, ensure_ascii=False, default=str)[:160]}")
+    return 0
+
+
+def _session_sourcer(args: Any, files: List[Path]) -> int:
+    """EventSourcer 内存态分叉/回放 API (fork/list/get/replay/resume)。"""
+    from ..core.event_sourcer import EventSourcer
+    from ..memory.sessions import SessionStore
+    sub = getattr(args, "sourcer_cmd", None)
+    session = getattr(args, "session", None)
+    sessions_dir = home_dir() / "sessions"
+    if not session and files:
+        session = files[0].stem
+    path = _resolve_session_path(files, session or "")
+    if path is None:
+        console.print(f"未找到会话: {session}")
+        return 1
+    store = SessionStore(home_dir())
+    store.dir = sessions_dir
+    store.file = path
+    store.session_id = path.stem
+    sourcer = EventSourcer(session_store=store)
+    js = getattr(args, "json", False)
+    if sub == "fork":
+        fork_id = sourcer.fork(at_seq=getattr(args, "at", 0),
+                               reason=getattr(args, "reason", ""))
+        if js:
+            print(json.dumps({"fork_id": fork_id, "at_seq": args.at,
+                              "reason": args.reason}, ensure_ascii=False))
+        else:
+            console.print(f"[sourcer] 已在序号 {args.at} 创建分叉锚点: {fork_id} (内存态, 不落盘)")
+        return 0
+    if sub == "list":
+        forks = sourcer.list_forks()
+        if js:
+            print(json.dumps([f.to_dict() for f in forks], ensure_ascii=False, indent=2, default=str))
+        else:
+            print(f"[sourcer] {path.stem} 内存分叉点: {len(forks)} 个")
+            for f in forks:
+                print(f"  {f.fork_id}  @seq={f.at_seq}  原因={f.reason or '-'}")
+        return 0
+    if sub == "get":
+        fp = sourcer.get_fork(args.fork_id)
+        if fp is None:
+            console.print(f"[sourcer] 未知分叉点: {args.fork_id}")
+            return 1
+        if js:
+            print(json.dumps(fp.to_dict(), ensure_ascii=False, indent=2, default=str))
+        else:
+            print(f"[sourcer] {fp.fork_id}  source={fp.source_session} "
+                  f"@seq={fp.at_seq}  原因={fp.reason or '-'}")
+        return 0
+    if sub == "replay":
+        try:
+            replayed = sourcer.replay(args.fork_id,
+                                      to_seq=getattr(args, "to_seq", 0))
+        except ValueError as exc:
+            console.print(f"[sourcer] {exc}")
+            return 1
+        if js:
+            print(json.dumps([ev.to_dict() for ev in replayed],
+                             ensure_ascii=False, indent=2, default=str))
+        else:
+            print(f"[sourcer] 重放 {len(replayed)} 条事件 (分叉 {args.fork_id})")
+            for ev in replayed:
+                print(f"  [#{ev.seq}] {ev.kind}  {json.dumps(ev.payload, ensure_ascii=False, default=str)[:120]}")
+        return 0
+    if sub == "resume":
+        try:
+            messages = sourcer.resume_from(args.fork_id)
+        except ValueError as exc:
+            console.print(f"[sourcer] {exc}")
+            return 1
+        if js:
+            print(json.dumps(messages, ensure_ascii=False, indent=2, default=str))
+        else:
+            print(f"[sourcer] 从分叉 {args.fork_id} 恢复 {len(messages)} 条消息")
+            for m in messages:
+                who = "用户" if m.get("role") == "user" else "青小团"
+                print(f"  {who}: {str(m.get('content', ''))[:120]}")
+        return 0
+    console.print("用法: tuan session sourcer fork|list|get|replay|resume")
+    return 2
+
+
+def _session_digest(args: Any, files: List[Path]) -> int:
+    """无 LLM 的结构化摘要提取预览 (上下文压缩会保留哪些关键信息)。"""
+    from ..core.agent_helpers import summarize_messages
+    from ..memory.sessions import SessionStore
+    session = getattr(args, "session", None)
+    if not session:
+        console.print("需要指定会话: tuan session digest <会话ID|前缀>")
+        return 2
+    path = _resolve_session_path(files, session)
+    if path is None:
+        console.print(f"未找到会话: {session}")
+        return 1
+    messages = SessionStore.load_messages(path)
+    tail = getattr(args, "tail", 0)
+    if tail:
+        messages = messages[-tail:]
+    summary = summarize_messages(messages)
+    if getattr(args, "json", False):
+        print(json.dumps({"session": path.stem, "messages": len(messages),
+                          "summary": summary}, ensure_ascii=False, indent=2))
+        return 0
+    print(f"[digest] 会话 {path.stem} 摘要预览 ({len(messages)} 条消息):")
+    print(summary)
+    return 0
+
+
+def _session_traj_dispatch(sub: str, args: Any) -> int:
+    """trajectory 子命令分发器 (analyze/timeline/fork/snapshots)。"""
+    if sub == "analyze":
+        return _session_traj_analyze(args)
+    if sub == "timeline":
+        return _session_traj_timeline(args)
+    if sub == "fork":
+        return _session_traj_fork(args)
+    if sub == "snapshots":
+        return _session_traj_snapshots(args)
+    return _session_traj_analyze(args)
+
+
+def _session_traj_analyze(args: Any) -> int:
+    """轨迹分析: 工具延迟/状态/来源/安全事件统计。"""
+    from ..core.trajectory_replay import TrajectoryReplay
+    replay = TrajectoryReplay(session_dir=home_dir() / "sessions")
+    stats = replay.analyze(args.session)
+    if getattr(args, "json", False):
+        print(json.dumps(stats.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    print(f"轨迹分析 · {args.session}")
+    print(f"  - 总事件   : {stats.total_events}")
+    print(f"  - 总耗时   : {stats.total_duration_ms / 1000:.1f}s")
+    print(f"  - 类型分布 : {dict(sorted(stats.by_type.items()))}")
+    if stats.by_tool:
+        print(f"  - 工具分布 : {dict(sorted(stats.by_tool.items(), key=lambda kv: -kv[1]))}")
+    if stats.by_status:
+        print(f"  - 状态分布 : {dict(sorted(stats.by_status.items()))}")
+    if stats.by_source:
+        print(f"  - 来源分布 : {dict(sorted(stats.by_source.items(), key=lambda kv: -kv[1]))}")
+    if stats.tool_latencies:
+        avg = {k: sum(v) / len(v) for k, v in stats.tool_latencies.items()}
+        print(f"  - 工具均延迟: " + ", ".join(f"{k}={v:.0f}ms" for k, v in sorted(avg.items())))
+    print(f"  - 安全事件 : {stats.security_events}  拒绝: {stats.denied_events}  错误: {stats.error_events}")
+    return 0
+
+
+def _session_traj_timeline(args: Any) -> int:
+    """导出事件时间线 (Markdown)。"""
+    from ..core.trajectory_replay import TrajectoryReplay
+    replay = TrajectoryReplay(session_dir=home_dir() / "sessions")
+    text = replay.export_timeline(args.session, last_n=getattr(args, "limit", 50))
+    if getattr(args, "json", False):
+        events = replay.replay(args.session, last_n=getattr(args, "limit", 50))
+        print(json.dumps([ev.to_dict() for ev in events], ensure_ascii=False, indent=2, default=str))
+        return 0
+    print(text)
+    return 0
+
+
+def _session_traj_fork(args: Any) -> int:
+    """从断点分叉出新回放分支 (快照落盘)。"""
+    from ..core.trajectory_replay import TrajectoryReplay
+    replay = TrajectoryReplay(session_dir=home_dir() / "sessions")
+    try:
+        snap = replay.fork(args.session, at_seq=args.at, label=getattr(args, "label", ""))
+    except ValueError as exc:
+        console.print(f"[trajectory] {exc}")
+        return 1
+    if getattr(args, "json", False):
+        print(json.dumps({
+            "snapshot_id": f"{snap.session_id}_fork_{snap.fork_point}",
+            "session_id": snap.session_id,
+            "fork_point": snap.fork_point, "label": snap.label,
+            "events": len(snap.events),
+        }, ensure_ascii=False, indent=2, default=str))
+    else:
+        console.print(f"[trajectory] 已分叉 {snap.session_id} @seq={snap.fork_point} "
+                      f"-> 快照 {snap.session_id}_fork_{snap.fork_point} ({len(snap.events)} 事件)")
+    return 0
+
+
+def _session_traj_snapshots(args: Any) -> int:
+    """列出已保存的分叉快照。"""
+    from ..core.trajectory_replay import TrajectoryReplay
+    replay = TrajectoryReplay(session_dir=home_dir() / "sessions")
+    snaps = replay.list_snapshots()
+    if getattr(args, "json", False):
+        print(json.dumps(snaps, ensure_ascii=False, indent=2, default=str))
+    else:
+        if not snaps:
+            console.print("[trajectory] 没有已保存的快照")
+            return 0
+        print(f"[trajectory] 已保存 {len(snaps)} 个快照:")
+        for s in snaps:
+            print(f"  {s['id']}  {s['session_id']} @seq={s['fork_point']} "
+                  f"({s['event_count']} 事件)  标签={s.get('label') or '-'}")
     return 0
