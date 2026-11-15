@@ -164,6 +164,9 @@ _CMD_SOURCES = {
     # cmd_handoff: 分片声明但 handler 曾缺失, 现于 cmd_handoff.py 实现;
     # 既注册进 _COMMAND_REGISTRY 也保留 commands 门面路由 (双轨可用)。
     "cmd_handoff": ".cmd_handoff",
+    # cmd_chat_handoff: 独立薄封装 (cmd_chat_handoff.py), 供分片
+    # `chat handoff` 子命令路由; 经 _CMD_SOURCES 惰性加载避免启动 import。
+    "cmd_chat_handoff": ".cmd_chat_handoff",
 }
 
 __all__ = sorted(_CMD_SOURCES) + ["ui"]

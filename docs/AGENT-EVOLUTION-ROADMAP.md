@@ -106,9 +106,57 @@
 
 | 阶段 | 交付 | 状态 |
 |---|---|---|
-| A | 反思性自我进化闭环 | 未开始 |
-| B | 持久化多 Agent 编排与故障恢复 | 未开始 |
-| C | 人机协同审批增强 | 未开始 |
-| D | UX 双栈收敛 | 未开始 |
+| A | 反思性自我进化闭环 | ✅ 已完成（evaluator/regression_gate/evolution_loop/cmd_evolve，15 测试通过） |
+| B | 持久化多 Agent 编排与故障恢复 | ✅ 已完成（GroupState 持久化/DAG 断点恢复/失败回滚/Orchestrator，12 测试通过） |
+| C | 人机协同审批增强 | ✅ 已完成（审批树/审计联动/策略可配置，13 测试通过） |
+| D | UX 双栈收敛 | ✅ 已完成（主题 token 单一来源，17 新测试 + 90 渲染回归通过） |
 
 > 本路线图是活文档；每阶段完成后更新对应交付状态。
+>
+> **实现记录**（2026-11-15）：阶段 A/B/C/D 全部完成并通过回归验证。
+> - 阶段 A：`tuan_cli/self_improve/{evaluator,regression_gate,evolution_loop}.py` + `cli/cmd_evolve.py`
+> - 阶段 B：`tuan_cli/core/orchestrator.py`
+> - 阶段 C：`tuan_cli/ui/approval_policy.py`
+> - 阶段 D：`ui/theme.py` 主题 token 单一来源（`BRAND_PRIMARY`/`BRAND_SECONDARY` 唯一定义），`splash/mascot/kimi_modules/tui/common/tui/tui` 全部改 import token；新增 `tests/test_theme_consistency.py` 全库扫描确认无游离品牌色硬编码。
+> - 最终回归：193（核心）+ 59（kernel/swarm/self-improve）+ 90（渲染）= **342 passed**。
+
+---
+
+## 6. 最新开源卖点（2026-11-15）：ComfyUI 式多模型自动化视频工作台
+
+> 目标：调研 2026-11-15 最新开源项目卖点（代码制作动画视频等一切新颖卖点），
+> 把青小团从"Agent 宿主"推进到"**文本模型调用 → 自动化视频 AI 制作**"的闭环。
+
+### 调研发现（最新开源卖点）
+
+| 项目 | 卖点 | 青小团对齐 |
+|---|---|---|
+| HyperFrames (43.9k★) | HTML 即视频格式，可 diff/remix，Agent 原生 | `/web` 节点工作台 + tuan-video skill |
+| OpenMontage | 首个开源 agentic 视频生产系统，9 阶段流水线 + 12 管线 + 400 skill | `ModelGateway.call_intent` 意图路由流水线 |
+| givemotion | 相机跟随/路径运动/shape morph/25+ 转场/kinetic/粒子/音乐卡点 | `code_anim_render` 高级动效原语 |
+| Motion AI Kit | 官方 skill + MCP + Performance Doctor | MCP `codeanim_render`/`codeanim_frame` |
+| cinecode | three.js/Canvas2D 全帧渲染 + 音频混音 → MP4，无视频模型 | 纯 Python Pillow + ffmpeg 渲染器 |
+
+### 阶段实现（新增 12 阶段，85 项相关测试通过）
+
+| 阶段 | 交付 | 状态 |
+|---|---|---|
+| 1 | ComfyUI 类数据流节点图执行引擎（`web/dataflow_graph.py`：端口/连线/拓扑调度/缓存/失败传播） | ✅ 已完成（22 测试通过） |
+| 2 | 多模型网关（`runtime/gateway.py`：provider 目录 + 意图路由 + json_schema 结构化输出透传） | ✅ 已完成（17 测试通过） |
+| 3 | 高级代码动画原语（`code_anim_render.py`：transition/particles/kinetic/beat，frame-stable） | ✅ 已完成（21 测试通过） |
+| 4 | MCP 挂动画/视频工具 + 套件化 skill（`codeanim_render`/`codeanim_frame` + `tuan-video-suite` SKILL.md） | ✅ 已完成（2 测试通过） |
+| 5 | MCP 暴露多模型网关（`llm_call` 直调 `ModelGateway.generate` + `models_list` 模型目录） | ✅ 已完成（2 测试通过） |
+| 6 | /web 工作台接线 DataFlowGraph（`graph_api.py` 存储+套件执行器 + `/api/graph/*` 路由） | ✅ 已完成（10 测试通过） |
+| 7 | givemotion 式动效补全（shape_morph/camera/path_motion/hand_drawn 节点） | ✅ 已完成（4 测试通过） |
+| 8 | cinecode 式音频混音（`project_json.audio` 经 ffmpeg amix 混入 mp4） | ✅ 已完成（5 测试通过） |
+| 9 | OpenMontage 式流水线驱动（`VideoPipeline` 9 阶段 + `video_pipeline_run` MCP） | ✅ 已完成（7 测试通过） |
+| 10 | Motion AI Kit 性能分析（`render_video(profile=True)` 逐节点耗时 + `frame_series` 热力图） | ✅ 已完成（8 测试通过） |
+| 11 | 多语言叙事 TTS（`narration_tts` 确定性 WAV 合成 + 旁白轨并入 compose 混音 + `narration_tts` MCP） | ✅ 已完成（15 测试通过） |
+| 12 | 数据流图三栏工作台前端闭环（`graph_frontend.py` GRAPH_HTML + `/web/graph` + `/api/media` 媒体回放 + `media_rel` 前端拼预览） | ✅ 已完成（11 测试通过） |
+
+> **实现记录**（2026-11-15）：
+> - 阶段1：`tuan_cli/web/dataflow_graph.py` —— 纯数据流调度器，节点行为由调用方 `exec_fn` 注入（避免过度耦合）。
+> - 阶段2：`tuan_cli/runtime/gateway.py` —— 底层用 legacy 同步 `ModelAdapter`（与项目主调用路径一致）；`models/base.py`/`openai_compat.py` 扩展 `chat(response_format=...)`。
+> - 阶段3：`tuan_cli/web/code_anim_render.py` —— 新增 4 节点类型并同步 `_KNOWN_NODE_TYPES` 白名单；全变体 + frame-stable 断言。
+> - 阶段4：`ecosystem/mcp_server.py` 挂 2 个工具（非法项目 fail-closed 返回 `isError`）；`resources/skills/builtin/tuan-video-suite/SKILL.md` 内置套件技能。
+> - 全链路 **fail-closed**：未知节点类型跳过、结构化输出解析失败抛错、provider 未配置/未知意图拒绝调用、MCP 非法输入返回错误。

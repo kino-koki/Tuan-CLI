@@ -113,7 +113,10 @@ _HELP = """
   [...]/verify    编码验证闭环 (自动跑 test/typecheck/lint, 失败自修复)
   [...]/worktree  git worktree 并行实验 ( create/list/remove/switch )
   [...]/workflow  动态并行工作流管理 ( list/status <wf>/result <wf>/cancel <wf>/retry <wf> )
-  [...]/background  后台任务管理 ( create <任务>/list/status <id>/result <id>/cancel <id> )
+  [...]/workflow-authoring  工作流编排模式 ( /workflow-authoring <主题>; /workflow authoring 别名 )
+  [...]/deep-research  深度研究模式 ( /deep-research <主题>; /workflow deep-research 别名 )
+  [...]/background  后台任务管理 ( create <任务>/list/status <id>/result <id>/cancel <id>; /bg 别名 )
+  [...]/bg          后台任务管理 ( 同 /background; /bg create|list|status|result|cancel )
   [...]/branch    git 分支管理 ( create <名>/switch <名>/list/delete <名> )
   [...]/btw       发送前提醒 ( 在下次回复前附加一条提示 )
   [...]/cd        切换工作目录 ( /cd <路径>; 无参查看当前 )
@@ -122,9 +125,11 @@ _HELP = """
   [...]/copy      复制最后输出到剪贴板 ( /copy [all] )
   [...]/debug     调试开关 ( /debug on|off; 查看日志/跟踪 )
   [...]/doctor    环境健康诊断 ( 检查 Python/Node/git/网络, 可 --fix 修复 )
+  [...]/distill   知识蒸馏 ( 提炼会话洞察/经验; 需 self_improve 内核 )
   [...]/fork      分叉当前会话 ( /fork; 生成新会话副本继续 )
   [...]/loop      循环执行直到条件满足 ( /loop <目标> <条件> )
   [...]/review    代码审查 ( AI 审查工作区未提交变更 )
+  [...]/code-review  代码审查 ( 同 /review; 显式代码评审别名 )
   [...]/security-review  安全审查 ( 扫描依赖/路径/注入风险 )
   [...]/simplify  简化重构 ( 对指定文件做去重/去死代码 )
   [...]/tasks     任务管理 ( 后台任务列表/状态/取消 )
@@ -145,15 +150,15 @@ TUI 中: 输入 / 或 +/ 即会弹出命令补全菜单 (Tab 切换, 回车执�
 # 权威命令清单: 与 _handle_slash 的 elif 分支一一对应。
 # 供 TUI / REPL 的补全词表、命令发现、ACP/IDE 能力清单共用, 避免多处维护漂移。
 SLASH_COMMAND_NAMES: tuple = (
-    "/add-dir", "/agents", "/audit", "/background", "/blast", "/branch", "/btw", "/budget", "/cd", "/checkpoint",
+    "/add-dir", "/agents", "/audit", "/background", "/bg", "/blast", "/branch", "/btw", "/budget", "/cd", "/checkpoint",
     "/clear", "/new", "/clear-images", "/color", "/commands", "/compact", "/config",
-    "/context", "/copy", "/cost", "/debug", "/diff", "/doctor",
+    "/context", "/copy", "/cost", "/debug", "/diff", "/distill", "/doctor",
     "/effort", "/exit", "/export", "/fork", "/gh-borrow", "/goal",
     "/help", "/hooks", "/image", "/init", "/images", "/impact", "/import", "/log",
-    "/loop", "/mcp", "/mcp-tools", "/memory", "/mode", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/review", "/route", "/sandbox", "/security-review", "/session", "/simplify", "/skills", "/stats",
+    "/loop", "/mcp", "/mcp-tools", "/memory", "/mode", "/auto-mode-setup", "/model", "/more", "/offline", "/permissions", "/plan", "/provider", "/quit", "/resume", "/review", "/code-review", "/route", "/sandbox", "/security-review", "/session", "/simplify", "/skills", "/stats",
     "/status", "/subagent", "/superagent", "/swarm", "/tasks", "/theme", "/tools", "/undo", "/usage", "/verify",
     "/rewind", "/handoff", "/worktree",
-    "/web", "/workflow", "/code",
+    "/web", "/workflow", "/workflow-authoring", "/deep-research", "/code",
     "/personality",
     "/batch", "/dataviz", "/design", "/artifacts",
     "/language",

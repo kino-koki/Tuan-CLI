@@ -79,7 +79,10 @@ def cmd_chat_handoff(args: Any) -> int:
 # 注册本模块的命令函数到全局注册表
 from .parser import _register_command  # noqa: E402
 
-_register_command("cmd_chat_handoff", ".cmd_handoff")
+# 仅注册 cmd_handoff (历史可观测)。cmd_chat_handoff 归 cmd_chat_handoff.py,
+# 本模块不抢注 —— 否则与 cmd_chat_handoff.py::_register_command 异路径同名
+# 冲突 (parser._register_command 对异路径同名抛 AssertionError)。
+_register_command("cmd_handoff", ".cmd_handoff")
 
 
 def cmd_handoff(args: Any) -> int:
