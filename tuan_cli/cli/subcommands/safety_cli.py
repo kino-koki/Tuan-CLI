@@ -151,6 +151,8 @@ def register_safety_cli(sub: Any) -> None:
         "integrity", help="文件完整性监控: 关键文件防篡改 (快照/检测/报告)"
     )
     isub = sin.add_subparsers(dest="integrity_cmd", required=False)
+    istatus = isub.add_parser("status", help="完整性状态: 显示快照/最近变更 (默认子命令)")
+    istatus.set_defaults(safe_cmd="integrity")
     isnap = isub.add_parser("snapshot", help="对目录建完整性快照 (首次基准)")
     isnap.add_argument("target", help="要快照的目录")
     isnap.add_argument("--label", default="", help="快照标签 (区分不同目录)")
