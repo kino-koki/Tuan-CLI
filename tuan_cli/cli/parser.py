@@ -163,7 +163,7 @@ def _auto_register() -> None:
         ".cmd_subagent", ".cmd_remote", ".cmd_msg", ".cmd_checkpoint",
         ".cmd_handoff", ".cmd_ledger", ".cmd_integrity", ".cmd_alerts",
         ".cmd_storage", ".cmd_posture", ".cmd_telemetry", ".cmd_roles",
-        ".cmd_diff", ".cmd_plan",
+        ".cmd_diff", ".cmd_plan", ".cmd_web_audit", ".cmd_claude_parity",
     ):
         importlib.import_module(_cmd_mod, __package__)
     # 导入 commands.py，它会通过 PEP 562 惰性路由注册所有命令

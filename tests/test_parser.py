@@ -65,6 +65,91 @@ def test_every_subcommand_func_is_resolvable():
     assert not unresolvable, "无法解析的子命令: " + ", ".join(unresolvable)
 
 
+def test_all_leaf_subcommand_funcs_resolvable():
+    """递归遍历全部层级的叶子子命令, func 必须都能解析成可调用对象。
+
+    回归: 上面两条断言只遍历顶层 choices, 二级/三级叶子
+    (``tuan web audit sessions`` / ``tuan bg logs`` / ``tuan safe redteam``) 从未
+    被覆盖。cmd_web_audit 曾因此断裂: 模块 self-register 但无人 import,
+    ``tuan web audit`` 运行时抛 AttributeError 而测试全绿。
+
+    func 可由自身或任一祖先 set_defaults 提供: argparse 在父 parser 解析收尾时把
+    父级 ``_defaults`` 作为兜底填进 namespace (子命令没自己设才轮到父级)。
+    """
+    parser_obj = build_parser()
+    sub_actions = [a for a in parser_obj._actions
+                   if isinstance(a, argparse._SubParsersAction)]
+    assert len(sub_actions) == 1
+
+    leaves: list[tuple[list[str], object]] = []
+
+    def _choices(p):
+        sp = [a for a in p._actions
+              if isinstance(a, argparse._SubParsersAction)]
+        return dict(sp[0].choices) if sp else {}
+
+    def walk(sub, prefix, inherited):
+        inner = _choices(sub)
+        own = sub._defaults.get("func")
+        effective = own if own else inherited
+        if not inner:
+            leaves.append((prefix, effective))
+            return
+        for name, nxt in inner.items():
+            walk(nxt, prefix + [name], effective)
+
+    for name, sub in sub_actions[0].choices.items():
+        walk(sub, [name], None)
+
+    missing = [p for p, f in leaves if not f]
+    assert not missing, "叶子子命令无 func (任何层级): " + ", ".join(
+        "tuan " + " ".join(p) for p in missing)
+
+    bad = []
+    for path, func in leaves:
+        try:
+            resolved = parser._resolve_func(func)
+            assert callable(resolved), f"{' '.join(path)} 解析结果不可调用"
+        except Exception as exc:  # noqa: BLE001
+            bad.append(f"tuan {' '.join(path)} -> {func} "
+                       f"({exc.__class__.__name__})")
+    assert not bad, "无法解析的叶子子命令: " + ", ".join(bad)
+
+
+def test_no_self_registered_cmd_is_unreachable():
+    """self-register 的 cmd 模块必须真实可达 (注册表或 commands 门面之一)。
+
+    回归: cmd_web_audit / cmd_claude_parity 在模块底部调 _register_command,
+    但从未被 _auto_register 导入也不在 commands._CMD_SOURCES → func 永远
+    解析不到。cmd_chat_handoff / cmd_evolve 经 _CMD_SOURCES 门面路由可达,
+    属合法形态 (不导入才符合 main() 的惰性加载契约)。
+    """
+    import re
+
+    from tuan_cli.cli import commands
+    from tuan_cli.cli.parser import _COMMAND_REGISTRY
+
+    cli_dir = Path(__file__).resolve().parent.parent / "tuan_cli" / "cli"
+    parser_src = (cli_dir / "parser.py").read_text(encoding="utf-8")
+    body = parser_src[parser_src.index("def _auto_register"):
+                       parser_src.index("# 模块加载时自动注册")]
+    imported = set(re.findall(r'import_module\("(\.[a-z_0-9]+)"', body))
+    reachable = set(_COMMAND_REGISTRY) | set(commands._CMD_SOURCES)
+
+    orphan = []
+    for py in sorted(cli_dir.glob("*.py")):
+        if not py.stem.startswith("cmd_") and py.stem not in (
+                "ext_cli", "improve_cli"):
+            continue
+        text = py.read_text(encoding="utf-8")
+        for m in re.finditer(
+                r'_register_command\("([a-z_0-9]+)",\s*"(\.[a-z_0-9]+)"\)', text):
+            name, mod = m.group(1), m.group(2)
+            if mod not in imported and name not in reachable:
+                orphan.append(f"{name} ({mod})")
+    assert not orphan, "self-register 但不可达的 cmd 模块: " + ", ".join(orphan)
+
+
 def test_subcommand_func_values():
     cases = {
         "dev": ("cmd_dev", ["task"]),
