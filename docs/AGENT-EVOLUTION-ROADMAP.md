@@ -3,7 +3,7 @@
 > 目标：把青小团从"已融合 DeepSeek Harness / Kimi Code / Claude Code / Hermes / MCP / ACP 理念的成熟 Agent 宿主"，推进到"**最强多理念融合 Agent 系统**"。
 >
 > 作者：AI 协作会话 · 2026-11-15 · 版本：v1（草案，待评审后进入实现）
-> 关联：[CAPABILITY-MATRIX.md](CAPABILITY-MATRIX.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [ROADMAP.md](ROADMAP.md)
+> 关联：[CAPABILITY-MATRIX.md](parity/CAPABILITY-MATRIX.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [ROADMAP.md](ROADMAP.md)
 
 ---
 
@@ -90,7 +90,7 @@
 
 1. **单元/集成测试**：新增本阶段测试文件 + 全量回归（`pytest tests/ -q`）。
 2. **类型门控**：`mypy tuan_cli`（若环境可用）。
-3. **文档同步**：更新 `README.md` / `CAPABILITY-MATRIX.md` / `CHANGELOG.md` 对应条目。
+3. **文档同步**：更新 `README.md` / `docs/parity/CAPABILITY-MATRIX.md` / `CHANGELOG.md` 对应条目。
 4. **安全不降级**：阶段 A/B/C 涉及安全敏感路径时，跑 `tuan safe bench --quick` 确认无绕过回归。
 
 ## 4. 风险与约束

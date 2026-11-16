@@ -96,7 +96,7 @@ def check_version() -> str:
     #   WARN —— 出现了更旧的版本号 (可能是历史记录, 需人工扫一眼)。
     cur = pkg_ver
     cur_parts = tuple(int(x) for x in cur.split("."))
-    docs = sorted(ROOT.glob("README*.md")) + [ROOT / "CAPABILITY-MATRIX.md"]
+    docs = sorted(ROOT.glob("README*.md")) + [ROOT / "docs" / "parity" / "CAPABILITY-MATRIX.md"]
     docs = [d for d in docs if d.exists()]
     missing, newer, older = [], [], []
     for doc in docs:

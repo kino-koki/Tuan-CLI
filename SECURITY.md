@@ -313,7 +313,7 @@ Tuan 现有 `_render_confirm_card` / `_render_ask_card` 的盒子渲染器，不
 
 
 **TUI 对齐矩阵（2026-11-06，第 10 轮）**：目标「TUI 与 Codex 完全相同但保留本地化」
-已拆成可度量条目，见 `TUI_PARITY.md` 与 `tuan tui parity`。
+已拆成可度量条目，见 `docs/parity/TUI_PARITY.md` 与 `tuan tui parity`。
 
 - 新增 `tuan_cli/tui/parity/`：`upstream_spec.py`（165 模块树 / 布局常量 /
   键位规格规范化）、`keymap.py`（8 context / 82 动作 / 74 已绑定的 Codex
@@ -323,7 +323,7 @@ Tuan 现有 `_render_confirm_card` / `_render_ask_card` 的盒子渲染器，不
 - **键位改为 Codex 原生**：`y` 批准 / `a` 本会话 / `p` 前缀 / `d` 拒绝 /
   `n` 拒绝并说明 / `c` 中止；新增 `PREFIX` / `DECLINE` 决策。上一轮的
   `s` / `1` / `2` 等保留为本地化兼容别名。`Esc` 仍为 `ABORT`（比上游 exec
-  模式的 decline 更严格，`TUI_PARITY.md` §6 如实标注）。
+  模式的 decline 更严格，`docs/parity/TUI_PARITY.md` §6 如实标注）。
 - **布局常量逐值对齐**：`LIVE_PREFIX_COLS=2` / `MAX_POPUP_ROWS=8` /
   `MIN_LIST_WIDTH_FOR_SIDE=40` / `SIDE_CONTENT_GAP=2` /
   `MENU_SURFACE_HORIZONTAL_INSET=4` / `MAX_KEY_CHORD_STROKES=2`。
@@ -332,12 +332,12 @@ Tuan 现有 `_render_confirm_card` / `_render_ask_card` 的盒子渲染器，不
 - **当前指标（不虚报）**：aligned 14、localized 57、not_applicable 63、
   **pending 31**；宽口径 81.2%、严格对齐 43.0%、**逐值对齐仅 8.5%**；
   `fully_identical = false`。`tuan tui parity --gaps` 列出 31 个待办模块，
-  `TUI_PARITY.md` §5 给出第 11–15 轮清零路线。**不靠改状态定义凑数。**
+  `docs/parity/TUI_PARITY.md` §5 给出第 11–15 轮清零路线。**不靠改状态定义凑数。**
 - **本地化边界**：键位 / 布局 / 组件树 / 交互契约不改（这就是「完全相同」的
   锚点）；只改文案、模型、路径、配色、渲染后端与审批作用域语义。
 - 回归：`tests/test_tui_parity.py`（新增）+ 既有 `test_tui_approval_overlay.py`
   / `test_e1_e7_hardening.py` 已适配 Codex 键位，102 例通过。
-- 归属：`NOTICE` 第 10 条、`TUI_PARITY.md` §8；**仍未逐字复制任何 Rust 源码**。
+- 归属：`NOTICE` 第 10 条、`docs/parity/TUI_PARITY.md` §8；**仍未逐字复制任何 Rust 源码**。
 
 **输入/终端能力对齐层（2026-11-06，第 11 轮）**：`input_keymap` 组 7 个待办
 模块全部清零，`tuan tui parity` 指标更新为 aligned 21 / localized 57 /
@@ -361,7 +361,7 @@ n/a 63 / **pending 24**，宽口径 85.5%、严格 47.3%、**逐值对齐 12.7%*
   fail-closed。这补的是「终端解释 OSC 序列」这条攻击面。
 - **许可特别说明**：`custom_terminal.rs` 上游明确标注派生自
   `ratatui::Terminal`、采用 **MIT**（Florian Dehau / The Ratatui
-  Developers）。`NOTICE` 第 11 条与 `TUI_PARITY.md` §8 记录双重归属，
+  Developers）。`NOTICE` 第 11 条与 `docs/parity/TUI_PARITY.md` §8 记录双重归属，
   MIT 全文在 `THIRD_PARTY_LICENSES/Codex-NOTICE.txt`。
 - **本地化如实标注**：grapheme 分段用 stdlib `unicodedata` 的 UAX #29
   **近似**实现，不声称与 Rust `unicode-segmentation` 逐字节一致；kitty /

@@ -357,6 +357,6 @@ class TestAttribution:
 
     def test_parity_doc_exists(self):
         root = Path(__file__).resolve().parents[1]
-        doc = (root / "TUI_PARITY.md").read_text()
+        doc = (root / "docs" / "parity" / "TUI_PARITY.md").read_text()
         assert "1216" in doc and "492414" in doc
         assert "完全相同" in doc and "本地化" in doc

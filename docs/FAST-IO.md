@@ -170,7 +170,7 @@
 
 **3225 passed / 2 failed / 7 skipped（997.6s）**
 
-- 2 个失败均为**已知既有问题**（基线存在，非本轮改动，见 CAPABILITY-MATRIX.md 归因）：
+- 2 个失败均为**已知既有问题**（基线存在，非本轮改动，见 docs/parity/CAPABILITY-MATRIX.md 归因）：
   - `test_cli_safe_bench_report.py::test_cmd_bench_quick_with_fake_runners`（bench/ 残留临时文件致断言 `== []` 失败，历史遗留）
   - `test_version_policy.py::test_repo_versions_are_in_sync`（并发会话"版本号单一化"重构后 `check_version_policy.read_init_version` 未同步读 `version.py`，非本任务改动）
 - 本轮 32 个新测试 + 4 个稳定性修复测试全部通过；无 timeout、无新增失败。

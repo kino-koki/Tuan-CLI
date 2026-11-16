@@ -118,7 +118,7 @@
 - `/autofix-pr` `/ultrareview` `--advisor`（需 Anthropic 云审查）
 - Cowork（协作平台）
 
-这些在 `CAPABILITY-MATRIX.md` 中标注为"不适用（平台特定）"，不阻塞本轮目标。
+这些在 `docs/parity/CAPABILITY-MATRIX.md` 中标注为"不适用（平台特定）"，不阻塞本轮目标。
 
 ---
 

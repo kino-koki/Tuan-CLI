@@ -84,7 +84,7 @@
 ## 3. 如何阅读
 
 1. 想快速上手：`docs/QUICKSTART.md`
-2. 想了解能力边界：`docs/API_FREEZE.md`、`docs/CAPABILITY-MATRIX.md`
+2. 想了解能力边界：`docs/API_FREEZE.md`、`docs/parity/CAPABILITY-MATRIX.md`
 3. 想评估安全性：本 wiki 的 [四道安全闸门](safety.md)
 4. 想对比竞品：`docs/GAP-ANALYSIS-vs-ClaudeCode.md`、本 wiki 的 [Parity](parity.md)
 5. 想理解演进方向：`docs/AGENT-EVOLUTION-ROADMAP.md`、`docs/ROADMAP.md`

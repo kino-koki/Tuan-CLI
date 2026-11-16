@@ -382,7 +382,7 @@ not endorse" statement are in `NOTICE` section 9.
 
 **TUI parity matrix (2026-11-06, round 10):** the goal "TUI completely
 identical to Codex, with local localization" is now broken into measurable
-items; see `TUI_PARITY.md` and `tuan tui parity`.
+items; see `docs/parity/TUI_PARITY.md` and `tuan tui parity`.
 
   - New `tuan_cli/tui/parity/`: `upstream_spec.py` (165-module tree / layout
     constants / key-spec normalization), `keymap.py` (Codex
@@ -395,7 +395,7 @@ items; see `TUI_PARITY.md` and `tuan tui parity`.
     `p` for prefix / `d` deny / `n` decline / `c` cancel; new `PREFIX` and
     `DECLINE` decisions added. Previous `s` / `1` / `2` remain as localized
     compatibility aliases. `Esc` stays `ABORT` (stricter than upstream's
-    exec-mode decline; disclosed in TUI_PARITY.md section 6).
+    exec-mode decline; disclosed in docs/parity/TUI_PARITY.md section 6).
   - **Layout constants match value-for-value:** LIVE_PREFIX_COLS=2,
     MAX_POPUP_ROWS=8, MIN_LIST_WIDTH_FOR_SIDE=40, SIDE_CONTENT_GAP=2,
     MENU_SURFACE_HORIZONTAL_INSET=4, MAX_KEY_CHORD_STROKES=2.
@@ -406,7 +406,7 @@ items; see `TUI_PARITY.md` and `tuan tui parity`.
     not_applicable 63, **pending 31**; broad coverage 81.2%, strict
     alignment 43.0%, **value-for-value alignment only 8.5%**;
     `fully_identical = false`. `tuan tui parity --gaps` lists the 31
-    remaining modules and TUI_PARITY.md section 5 gives the round 11-15
+    remaining modules and docs/parity/TUI_PARITY.md section 5 gives the round 11-15
     plan to zero them. Status definitions are NOT loosened to inflate
     numbers.
   - **Localization boundary:** keys / layout / component tree / interaction
@@ -416,7 +416,7 @@ items; see `TUI_PARITY.md` and `tuan tui parity`.
   - Regression: new `tests/test_tui_parity.py` plus existing
     `test_tui_approval_overlay.py` / `test_e1_e7_hardening.py` adapted to
     Codex keys, 102 cases passing.
-  - Attribution: `NOTICE` section 10, `TUI_PARITY.md` section 8;
+  - Attribution: `NOTICE` section 10, `docs/parity/TUI_PARITY.md` section 8;
     **still no Rust source copied verbatim**.
 
   **Input / terminal capability alignment layer (2026-11-06, round 11):**
@@ -449,7 +449,7 @@ items; see `TUI_PARITY.md` and `tuan tui parity`.
   - **Special MIT attribution:** upstream `custom_terminal.rs` explicitly
     states it is derived from `ratatui::Terminal` under the MIT License
     (Florian Dehau / The Ratatui Developers). `NOTICE` section 11 and
-    TUI_PARITY.md section 8 record the dual attribution; the MIT text is
+    docs/parity/TUI_PARITY.md section 8 record the dual attribution; the MIT text is
     in THIRD_PARTY_LICENSES/Codex-NOTICE.txt.
   - **Localization disclosed honestly:** grapheme segmentation uses a
     stdlib `unicodedata` UAX #29 *approximation* and is NOT claimed
