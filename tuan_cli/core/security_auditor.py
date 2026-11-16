@@ -151,6 +151,11 @@ class SecurityAuditor:
         # → _on_security_event() → record() 是同线程重入路径, 非重入锁会死锁。
         self._lock = threading.RLock()
 
+        # 同线程重入深度守卫: record() → emit → _on_security_event → record()
+        # 若不拦截会无限递归 (每次 record 都 emit, 递归深度爆栈)。>1 层时
+        # 跳过关联分析 (不再 emit), 从源头切断自循环 —— 观测层不影响裁决。
+        self._reentrant_depth = threading.local()
+
         # 内存缓冲 (最近 N 条明文, 查询用)
         self._buffer: List[AuditRecord] = []
 
@@ -273,6 +278,32 @@ class SecurityAuditor:
         features: Optional[Dict[str, Any]] = None,
     ) -> AuditRecord:
         """记录一条安全决策, AEAD 加密落盘, 返回记录。"""
+        # 同线程重入守卫: 计数当前线程在 record 里的嵌套深度。
+        # 最外层 (depth==1) 才做关联分析并 emit; 重入层 (depth>1, 来自
+        # 自己总线订阅的回调) 跳过关联分析, 从源头切断 record→emit→
+        # _on_security_event→record 的自循环。
+        depth = getattr(self._reentrant_depth, "n", 0) + 1
+        self._reentrant_depth.n = depth
+        try:
+            return self._record_impl(
+                module, action, severity, input_summary,
+                reasons, context, features, do_correlation=(depth == 1),
+            )
+        finally:
+            self._reentrant_depth.n = depth - 1
+
+    def _record_impl(
+        self,
+        module: str,
+        action: str,
+        severity: str,
+        input_summary: str,
+        reasons: Optional[List[str]] = None,
+        context: Optional[Dict[str, Any]] = None,
+        features: Optional[Dict[str, Any]] = None,
+        do_correlation: bool = True,
+    ) -> AuditRecord:
+        """record 的实际实现 (与公开 record 分离以便重入守卫包裹)。"""
         with self._lock:
             self._seq_counter += 1
             rec = AuditRecord(
@@ -304,12 +335,14 @@ class SecurityAuditor:
 
             # E4: 关联分析放在写盘之后、且整体 try/except —— 观测层绝不能
             # 影响审计写入或上游安全裁决。告警只发到已存在的全局事件总线。
-            try:
-                alerts = self._correlator.assess(rec)
-                if alerts:
-                    self._publish_correlation_alerts(alerts)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("审计关联失败 (不影响裁决): %s", exc)
+            # do_correlation=False (同线程重入层) 时跳过, 切断自循环递归。
+            if do_correlation:
+                try:
+                    alerts = self._correlator.assess(rec)
+                    if alerts:
+                        self._publish_correlation_alerts(alerts)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("审计关联失败 (不影响裁决): %s", exc)
 
             return rec
 

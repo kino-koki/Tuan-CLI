@@ -233,3 +233,72 @@ class TestAuditExportRotation:
         ex.close()
         mode = stat.S_IMODE((tmp_path / "audit_export.jsonl").stat().st_mode)
         assert mode & 0o077 == 0, oct(mode)
+
+
+# ------------------------------------------------------------------ 自循环递归切断
+class TestAuditorReentrancyGuard:
+    """SecurityAuditor.record → _publish_correlation_alerts → bus.emit →
+    _on_security_event → record 是同线程自循环, 若不做重入守卫会无限递归
+    (每次 record 都 emit, 递归深度爆栈 / RecursionError)。
+
+    修复: record 用 threading.local 计数重入深度, 最外层才做关联分析并 emit,
+    重入层跳过关联分析 —— 从源头切断自循环, 观测层不影响裁决。
+    """
+
+    def test_subscribed_global_bus_does_not_recursively_emit(self, tmp_path, monkeypatch):
+        from tuan_cli.core import security_bus
+        from tuan_cli.core.security_auditor import SecurityAuditor
+        from tuan_cli.core.audit_correlation import CorrelationAlert
+
+        bus = security_bus.SecurityEventBus()
+        seen = []
+        bus.on("*", lambda e: seen.append(e))
+
+        saved = security_bus._global_bus
+        security_bus._global_bus = bus
+        try:
+            auditor = SecurityAuditor(home=tmp_path, passphrase="test-pass",
+                                      session_id="s1")
+            # 让关联器每次 record 都产出告警 (最严苛场景)。若无重入守卫,
+            # record → emit → _on_security_event → record → ... 会无限递归
+            # (RecursionError)。守卫必须在重入层切断 emit。
+            def _always_alert(_rec):
+                return [CorrelationAlert(
+                    kind="burst", fingerprint="fp-x", module="m", action="deny",
+                    severity="high", count=2, sessions=("s1",),
+                    message="恒产告警", first_ts=0.0, last_ts=0.0,
+                )]
+            monkeypatch.setattr(auditor._correlator, "assess", _always_alert)
+            auditor.subscribe_bus(bus)
+            for _ in range(5):
+                auditor.record(module="m", action="deny", severity="high",
+                               input_summary="rm -rf /tmp/x", reasons=["红线"])
+        finally:
+            security_bus._global_bus = saved
+
+        # 守卫切断自循环: 每层 record 落盘但不指数爆炸。
+        # 无守卫 → RecursionError; 有守卫 → 外层 5 条 + 每条触发 1 次重入回写,
+        # 总数应远小于指数爆炸 (<= 2*5=10)。
+        assert auditor.count() <= 10, f"递归未切断, count={auditor.count()}"
+        assert auditor.count() >= 5
+
+    def test_reentrant_layer_skips_correlation(self, tmp_path):
+        """直接验证: 在 record 内重入的 _record_impl(do_correlation=False)
+        不会再次 publish (从源头切断), 而最外层仍会。"""
+        from tuan_cli.core.security_auditor import SecurityAuditor
+
+        auditor = SecurityAuditor(home=tmp_path, passphrase="test-pass",
+                                  session_id="s1")
+        auditor._correlator.burst_threshold = 2
+        published = []
+        auditor._publish_correlation_alerts = staticmethod(  # type: ignore[method-assign]
+            lambda alerts: published.append(len(alerts))
+        )
+        # 前 2 条只累积, 第 3 条触发 burst 并在最外层 publish
+        for _ in range(3):
+            auditor.record(module="m", action="deny", severity="high",
+                           input_summary="x", reasons=["r"])
+        assert published, "最外层应 publish 关联告警"
+        # 重入层 (如果有) 不应再 publish; 但此测试里无总线订阅, 不会重入。
+        # 关键断言: published 数量有限 (等于 burst 触发次数, 不指数爆炸)。
+        assert len(published) <= 3
