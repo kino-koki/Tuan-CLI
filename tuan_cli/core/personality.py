@@ -20,6 +20,9 @@ import hashlib
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+import logging
+log = logging.getLogger(__name__)
+
 
 
 # ============================================================ 人设定义
@@ -254,7 +257,8 @@ def resolve_personality(
     if memory_store is not None:
         try:
             user_text = memory_store.read_user() or ""
-        except Exception:
+        except Exception as exc:
+            log.warning("resolve_personality(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     name = _extract_personality_from_user(user_text)
     if name:

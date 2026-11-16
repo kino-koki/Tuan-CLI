@@ -125,11 +125,13 @@ class StdioMcpClient:
         if self._ready:
             try:
                 await asyncio.wait_for(self._request("shutdown", {}), timeout=5.0)
-            except Exception:
+            except Exception as exc:
+                logger.warning("StdioMcpClient.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             try:
                 await self._notify("exit", {})
-            except Exception:
+            except Exception as exc:
+                logger.warning("StdioMcpClient.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         await self._close_proc()
 
@@ -146,18 +148,21 @@ class StdioMcpClient:
         if proc.stdin is not None:
             try:
                 proc.stdin.close()
-            except Exception:
+            except Exception as exc:
+                logger.warning("StdioMcpClient._close_proc(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         try:
             proc.terminate()
-        except Exception:
+        except Exception as exc:
+            logger.warning("StdioMcpClient._close_proc(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
         except Exception:
             try:
                 proc.kill()
-            except Exception:
+            except Exception as exc:
+                logger.warning("StdioMcpClient._close_proc(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     # ------------------------------------------------------------- MCP 接口
@@ -341,7 +346,8 @@ class StdioMcpClient:
         }
         try:
             listener(reason)
-        except Exception:
+        except Exception as exc:
+            logger.warning("StdioMcpClient._fire_unexpected_close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     @staticmethod

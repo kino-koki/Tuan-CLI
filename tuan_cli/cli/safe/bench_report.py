@@ -18,6 +18,9 @@ from typing import Any
 from .._ui_singleton import console
 from ._shared import _repo_root
 
+import logging
+log = logging.getLogger(__name__)
+
 
 _DRIFT_FIELDS = [
     ("adversarial", "block_recall", "拦截召回%", 1),
@@ -447,7 +450,8 @@ def _git_head_short(root: Path) -> str | None:
                            capture_output=True, text=True, errors="replace", timeout=10)
         out = (r.stdout or "").strip()
         return out or None
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_git_head_short(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 

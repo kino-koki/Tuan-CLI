@@ -8,6 +8,9 @@ falls back to a semantic comparison after parsing with :mod:`tomllib`.
 
 from __future__ import annotations
 
+import logging
+log = logging.getLogger(__name__)
+
 try:  # Python 3.11+
     import tomllib as _toml
 except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
@@ -66,7 +69,8 @@ def is_tui_stub_or_missing(tui_path: str) -> bool:
         return False
     try:
         parsed = _toml.loads(text)
-    except Exception:
+    except Exception as exc:
+        log.debug("is_tui_stub_or_missing(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False  # unparseable = user-modified, do not overwrite
 
     theme = parsed.get("theme")

@@ -180,7 +180,8 @@ def estimate_total_cost(config: Any, total_usage: Dict[str, int]) -> float:
             total_usage.get("prompt_tokens", 0),
             total_usage.get("completion_tokens", 0),
         ) or 0.0
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("estimate_total_cost(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return 0.0
 
 

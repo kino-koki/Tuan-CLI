@@ -28,6 +28,9 @@ from ..ui.format import Table
 # The ui object is accessed via module attribute to support test mocking
 from ._ui_singleton import ui, console
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ---- app 链惰性加载: 仅真正执行 dev/run/agent/bg/undo/impact 时才构建内核 ----
 def build_kernel(*a: Any, **k: Any) -> Any:
@@ -96,7 +99,8 @@ def _read_stdin_task() -> str:
     try:
         if not sys.stdin.isatty():
             return sys.stdin.read().strip()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_read_stdin_task(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return ""
 
@@ -121,7 +125,8 @@ class _NDJsonEmitter:
         try:
             sink.write(line + "\n")
             sink.flush()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_NDJsonEmitter._emit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def on_token(self, delta: str) -> None:
@@ -192,7 +197,8 @@ class _StreamJsonEmitter:
         try:
             sink.write(line + "\n")
             sink.flush()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_StreamJsonEmitter._emit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # ---- 累积: 把 token delta 折进 assistant 消息的 content blocks ----
@@ -326,7 +332,8 @@ def cmd_run(args: Any) -> int:
     try:
         from ..core.boundary_auto import ensure_project_context
         ensure_project_context(workspace, config=config, bare=bare)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("cmd_run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     agent = create_agent(kernel, workspace)
     # Auto 模式 (对标 Claude Code): 内部标记, 由 ToolExecutor 经分类器按风险分级决策。

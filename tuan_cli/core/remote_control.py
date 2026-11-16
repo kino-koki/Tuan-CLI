@@ -244,7 +244,8 @@ class RemoteControl:
         if callback:
             try:
                 callback(session_id, prompt)
-            except Exception:
+            except Exception as exc:
+                log.warning("RemoteControl.send_prompt(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return True
 
@@ -257,7 +258,8 @@ class RemoteControl:
         if callback:
             try:
                 callback(session_id, title, body, priority)
-            except Exception:
+            except Exception as exc:
+                log.warning("RemoteControl.send_notification(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return True
 
@@ -310,7 +312,8 @@ class RemoteControl:
                         device_type=info.get("device_type", ""),
                         push_enabled=info.get("push_enabled", False),
                     )
-            except Exception:
+            except Exception as exc:
+                log.warning("RemoteControl._load_sessions(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def generate_qr_data(self, pairing_info: Dict[str, Any]) -> str:
@@ -352,7 +355,8 @@ def _shared_rc() -> Optional["RemoteControl"]:
         rc._load_sessions()
         _notify_rc = rc
         return rc
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_shared_rc(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 
@@ -416,7 +420,8 @@ def notify(
             else:
                 _trig = HookTrigger(_h)
             _trig.notification(title=title, body=body, kind=kind)
-    except Exception:  # noqa: BLE001 - 通知 hook 失败不影响主流程
+    except Exception as exc:  # noqa: BLE001 - 通知 hook 失败不影响主流程
+        log.warning("notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     pushed = False
     try:
@@ -428,6 +433,7 @@ def notify(
             if rs.push_enabled and rs.is_active:
                 if rc.send_notification(sid, title, body, priority="high" if kind == "budget" else "normal"):
                     pushed = True
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return pushed

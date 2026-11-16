@@ -26,6 +26,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 # 与 SkillManager 同款 frontmatter 约定
 _FRONT_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
@@ -290,7 +293,8 @@ def _sync_ui_lists(table: Dict[str, UserCommand]) -> None:
         from ..ui import repl as _repl
         new = [n for n in names if n not in _repl._SLASH_COMMANDS]
         _repl._SLASH_COMMANDS.extend(new)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_sync_ui_lists(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     # /help 追加段落 (只在首次安装时拼一次, 用标记防重复)
     import tuan_cli.cli.commands as _cmds

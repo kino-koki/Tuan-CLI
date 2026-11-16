@@ -21,6 +21,9 @@ from typing import Any, Optional
 
 from ..config import home_dir
 
+import logging
+log = logging.getLogger(__name__)
+
 MARKER_NAME = ".tuan_onboarding_done"
 
 # 快速上手卡片: 从配置模型到开始使用
@@ -53,7 +56,8 @@ def is_first_run(home: Optional[Path] = None) -> bool:
             ob = data.get("onboarding") or {}
             if isinstance(ob, dict) and ob.get("enabled") is False:
                 return False
-    except Exception:  # noqa: BLE001 - 配置读失败不阻塞首次引导
+    except Exception as exc:  # noqa: BLE001 - 配置读失败不阻塞首次引导
+        log.warning("is_first_run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return True
 
@@ -69,7 +73,8 @@ def mark_onboarding_done(home: Optional[Path] = None) -> Path:
 def _is_interactive() -> bool:
     try:
         return bool(sys.stdin.isatty() and sys.stdout.isatty())
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_is_interactive(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 
@@ -112,7 +117,8 @@ def _detect_git_repo(workspace: Path) -> bool:
             timeout=5,
         )
         return r.returncode == 0 and r.stdout.strip() == "true"
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_detect_git_repo(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 

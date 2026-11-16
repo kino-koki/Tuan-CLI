@@ -27,6 +27,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .project_layer import ProjectInfo, ProjectLayer
+import logging
+log = logging.getLogger(__name__)
+
 
 
 # ------------------------------------------------------------------ 配置读取小工具
@@ -37,7 +40,8 @@ def _cfg(config: Any, key: str, default: Any) -> Any:
         return default
     try:
         return config.get(key, default)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_cfg(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return default
 
 
@@ -99,7 +103,8 @@ def try_run_isolated(agent: Any, user_input: str, config: Any = None,
         # 延迟导入避免 app -> tools -> core -> app 循环依赖
         from ..tools.subagent_tool import _run_subagent
         summary = _run_subagent(agent.ctx, task=user_input)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("try_run_isolated(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
     # 子代理内部失败时返回 "[子代理错误] ..." —— 视为失败, 回退主会话
     if not summary or str(summary).startswith("[子代理错误]"):

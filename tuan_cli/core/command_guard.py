@@ -103,5 +103,6 @@ def _emit(event_type: str, command: str, payload: dict) -> None:
             source="command_guard",
             severity=payload.get("severity", "info"),
         ))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # 审计尽力而为, 但失败必须留痕 (否则 command_guard 的拦截无审计可查)
+        log.warning("command_guard 审计事件落盘失败 (event=%s): %s", event_type, exc)

@@ -27,6 +27,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence
 
 from .kernel import Kernel
+import logging
+log = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -150,7 +153,8 @@ class SubAgentPool:
             try:
                 configured = float(config.get("subagent.timeout", 300))
                 default_timeout = configured
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("SubAgentPool.__init__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         self.default_timeout = default_timeout
         # 任务状态追踪 (/subagent status 用)
@@ -202,7 +206,8 @@ class SubAgentPool:
                         "elapsed": getattr(r, "elapsed", 0.0),
                         "error": getattr(r, "error", "") or "",
                     })
-                except Exception:
+                except Exception as exc:
+                    log.warning("SubAgentPool._run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
         # 把全局 model_overrides (如 herdr 弱模型) 写进每个子任务, 仅当任务本身未指定
@@ -394,14 +399,16 @@ class SubAgentPool:
                     try:
                         from ..config.loader import patch_replace
                         self.config.data = patch_replace(self.config.data, before)
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("SubAgentPool._worker(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
                     # 把切换前的适配器实例装回内核
                     try:
                         self.kernel.unprovide("model_adapter")
                         if prev_adapter is not None:
                             self.kernel.provide("model_adapter", prev_adapter, owner="model")
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("SubAgentPool._worker(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
 
         # 超时控制: 用线程包装, 超时则标记失败而非无限阻塞

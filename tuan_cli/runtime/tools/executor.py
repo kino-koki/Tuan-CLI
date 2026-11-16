@@ -33,6 +33,9 @@ from .contract import (
 )
 from .registry import ToolRegistry
 from .scheduler import SchedulerTask, ToolScheduler
+import logging
+log = logging.getLogger(__name__)
+
 
 TOOL_OUTPUT_EMPTY = "Tool output is empty."
 TOOL_OUTPUT_NON_TEXT = "Tool returned non-text content."
@@ -76,7 +79,8 @@ def _coerce(result: Any, tool_name: str) -> ExecutableToolResult:
         if isinstance(result, dict) and "output" in result:
             try:
                 return ExecutableToolResult(**result)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_coerce(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return make_error_result(
             f'Tool "{tool_name}" returned a malformed result (missing "output").'

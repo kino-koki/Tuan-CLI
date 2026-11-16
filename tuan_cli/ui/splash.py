@@ -13,6 +13,11 @@ import threading
 import time
 from typing import Any, Optional
 
+from .theme import BRAND_DIM, BRAND_PRIMARY, BRAND_SECONDARY, BRAND_TEXT
+
+import logging
+log = logging.getLogger(__name__)
+
 _HAS_PT = False
 try:
     from prompt_toolkit import Application
@@ -22,13 +27,14 @@ try:
     from prompt_toolkit.styles import Style
     from prompt_toolkit.output.base import DummyOutput
     _HAS_PT = True
-except Exception:
+except Exception as exc:
+    log.warning("模块顶层: 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
     pass
 
-_PRIMARY = "#4FA8FF"
-_ACCENT = "#5BC0BE"
-_DIM = "#888888"
-_TEXT = "#E0E0E0"
+_PRIMARY = BRAND_PRIMARY
+_ACCENT = BRAND_SECONDARY
+_DIM = BRAND_DIM
+_TEXT = BRAND_TEXT
 
 _SPLASH_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 _LOGO = [
@@ -60,7 +66,8 @@ class SplashTUI:
             try:
                 if not getattr(sys.stdout, "isatty", lambda: False)():
                     self._output = DummyOutput()
-            except Exception:
+            except Exception as exc:
+                log.warning("SplashTUI.__init__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def _ensure_app(self) -> None:
@@ -111,7 +118,8 @@ class SplashTUI:
             self._app.invalidate()
             try:
                 self._app.exit()
-            except Exception:
+            except Exception as exc:
+                log.warning("SplashTUI.set_kernel(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def set_error(self, error: str) -> None:
@@ -122,7 +130,8 @@ class SplashTUI:
             self._app.invalidate()
             try:
                 self._app.exit()
-            except Exception:
+            except Exception as exc:
+                log.warning("SplashTUI.set_error(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def set_progress(self, pct: int, status: str = "") -> None:

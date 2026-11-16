@@ -28,6 +28,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 MAX_NEST_DEPTH = 3  # 3 层嵌套
 
 
@@ -231,12 +234,14 @@ class SubAgent:
             if layer is not None:
                 try:
                     layer.remove_agent_worktree(wt_name)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("SubAgent.run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
             else:
                 try:
                     shutil.rmtree(wt, ignore_errors=True)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("SubAgent.run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         return result
 
@@ -249,7 +254,8 @@ class SubAgent:
                 if layer.is_git_repo():
                     info = layer.create_agent_worktree(self.spec.id)
                     return Path(info.path), layer, info.name
-            except Exception:  # noqa: BLE001  (非仓库/权限/命令失败 -> 降级)
+            except Exception as exc:  # noqa: BLE001  (非仓库/权限/命令失败 -> 降级)
+                log.warning("SubAgent._make_worktree(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return Path(tempfile.mkdtemp(prefix=f"tuan-wt-{self.spec.id}-")), None, None
 
@@ -465,9 +471,11 @@ def kernel_executor(
                     content = p.read_text(encoding="utf-8", errors="replace")
                     artifacts[rel] = content[:max_artifact_size]
                     file_count += 1
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("_exec(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_exec(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         _log_exec.debug(

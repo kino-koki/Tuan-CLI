@@ -28,6 +28,9 @@ from .events_map import (
     turn_end_reason_to_stop_reason,
 )
 from .protocol import AcpConn, agent_message_chunk, available_commands_update
+import logging
+log = logging.getLogger(__name__)
+
 
 
 class AgentProvider:
@@ -79,7 +82,8 @@ class AcpSession:
         if callable(fn):
             try:
                 return list(fn())
-            except Exception:
+            except Exception as exc:
+                log.debug("AcpSession.available_commands(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return []
         return []
 
@@ -88,8 +92,9 @@ class AcpSession:
             await self._conn.session_update(
                 available_commands_update(self._session_id, self.available_commands())
             )
-        except Exception:
+        except Exception as exc:
             # 通知失败不应中断主链路
+            log.warning("AcpSession.emit_available_commands_update(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # -------------------------------------------------------------- prompt 驱动
@@ -196,8 +201,9 @@ class AcpSession:
             return
         try:
             await self._conn.session_update(notification)
-        except Exception:
+        except Exception as exc:
             # 通知失败不应中断驱动流
+            log.warning("AcpSession._emit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # -------------------------------------------------------------- 取消/清理
@@ -208,7 +214,8 @@ class AcpSession:
         if self._current_turn_id is not None:
             try:
                 self._agent_provider.cancel(self._session_id, self._current_turn_id)
-            except Exception:
+            except Exception as exc:
+                log.warning("AcpSession.cancel(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def dispose(self) -> None:

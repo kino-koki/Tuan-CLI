@@ -20,6 +20,9 @@ from importlib import resources
 from pathlib import Path
 from typing import Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 # 三件套文件名（缺一不可；任一缺失即视为装配失败）
 _PROMPT_FILES: Tuple[str, ...] = ("system.md", "memory.md", "guard.md")
 
@@ -59,7 +62,8 @@ def _resolve_mode_prompts_dir(mode_id: str) -> Path:
                 candidates.append(Path(str(item)) / mode_id / "prompts")
         else:
             candidates.append(Path(str(res)) / mode_id / "prompts")
-    except Exception:
+    except Exception as exc:
+        log.warning("_resolve_mode_prompts_dir(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     candidates.append(
         Path(__file__).resolve().parent.parent / "resources" / "modes" / mode_id / "prompts"

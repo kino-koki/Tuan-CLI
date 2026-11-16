@@ -59,6 +59,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
+import logging
+log = logging.getLogger(__name__)
+
 HEADING_TEMPLATE_EN = "Codex just got an upgrade. Introducing {display}."
 RECOMMENDATION_EN = ("We recommend switching from {current} to {target}.")
 DESCRIPTION_FALLBACK_EN = (
@@ -301,7 +304,8 @@ class AltScreenGuard:
     def __enter__(self) -> "AltScreenGuard":
         try:
             self.tui.enter_alt_screen()
-        except Exception:  # noqa: BLE001 - 对齐上游 `let _ =`
+        except Exception as exc:  # noqa: BLE001 - 对齐上游 `let _ =`
+            log.warning("AltScreenGuard.__enter__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         self.entered = True
         return self
@@ -310,7 +314,8 @@ class AltScreenGuard:
                  tb: Optional[Any]) -> None:
         try:
             self.tui.leave_alt_screen()
-        except Exception:  # noqa: BLE001 - 异常路径也必须恢复
+        except Exception as exc:  # noqa: BLE001 - 异常路径也必须恢复
+            log.warning("AltScreenGuard.__exit__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         self.entered = False
         # 返回 None (等价 False): 不吞异常

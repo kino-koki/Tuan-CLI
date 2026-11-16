@@ -18,6 +18,9 @@ from ...config.loader import home_dir
 from .._ui_singleton import console
 from ._shared import _repo_root
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _cmd_redteam(args: Any) -> int:
     """红队自检: 用内置对抗载荷验证安全引擎拦截率 (只读, 不执行任何危险命令)。
@@ -325,7 +328,8 @@ def _cmd_guard(args: Any) -> int:
         try:
             raw = json.loads(allow_file.read_text(encoding="utf-8"))
             return [str(x) for x in raw] if isinstance(raw, list) else []
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("_load_allow(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
 
     def _save_allow(items: list[str]) -> None:
@@ -436,7 +440,8 @@ def _cmd_guard(args: Any) -> int:
             source="cmd_safe.guard",
             severity="high",
         ))
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_cmd_guard(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return 1
 
@@ -521,7 +526,8 @@ def _cmd_secrets(args: Any) -> int:
                         "line": fk.get("line"),
                         "env": env_name,
                     })
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_cmd_secrets(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
     exposed = bool(high_n or live_exposed)

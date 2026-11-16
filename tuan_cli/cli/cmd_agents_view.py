@@ -23,6 +23,9 @@ from ..config import home_dir
 from ..memory.sessions import SessionStore
 from ._ui_singleton import ui, console
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ------------------------------------------------------------ 会话状态采集
 
@@ -246,7 +249,8 @@ def kill_session(sessions_dir: Path, sid_prefix: str) -> Dict[str, Any]:
         except Exception:  # noqa: BLE001
             # 可能是交互式会话, 不在后台任务表里 —— 正常
             job_marked = False
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("kill_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return {
         "ok": True,

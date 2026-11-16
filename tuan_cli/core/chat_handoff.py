@@ -26,6 +26,9 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, cast
+import logging
+log = logging.getLogger(__name__)
+
 
 
 @dataclass
@@ -103,7 +106,8 @@ def build_summary(
             out = generate_fn(prompt)
             if out and out.strip():
                 return out.strip()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("build_summary(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return _heuristic_summary(messages)
 
@@ -163,7 +167,8 @@ class ChatHandoff:
             return default
         try:
             return self.config.get(key, default)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ChatHandoff._cfg(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return default
 
     def maybe_prompt(self, estimated_tokens: int, model_max_tokens: int) -> bool:

@@ -132,3 +132,61 @@ class TestSessionDispatchReachability:
         rc, out, err = _run("wire", tmp_path, session=None, json=False)
         # 无 wire.jsonl 时应优雅返回 0 而非崩溃
         assert rc in (0, 1), out
+
+    def test_sourcer_fork_get_replay_resume_chain(self, tmp_path):
+        """sourcer 子命令 fork→get→replay→resume 全链可达且行为正确。"""
+        sess = _make_session_dir(tmp_path)
+        sid = sess.glob("*.jsonl").__next__().stem
+        # fork (在序号 1 分叉)
+        rc, out, err = _run("sourcer", tmp_path, sourcer_cmd="fork",
+                            session=sid, at=1, reason="回归", json=True)
+        assert rc == 0, out
+        fork_id = json.loads(out)["fork_id"]
+        assert fork_id.startswith("fork-")
+        # list
+        rc, out, err = _run("sourcer", tmp_path, sourcer_cmd="list",
+                            session=sid, json=True)
+        assert rc == 0, out
+        forks = json.loads(out)
+        assert any(f["fork_id"] == fork_id for f in forks), out
+        # get
+        rc, out, err = _run("sourcer", tmp_path, sourcer_cmd="get",
+                            session=sid, fork_id=fork_id, json=True)
+        assert rc == 0, out
+        assert json.loads(out)["fork_id"] == fork_id
+        # replay
+        rc, out, err = _run("sourcer", tmp_path, sourcer_cmd="replay",
+                            session=sid, fork_id=fork_id, to_seq=0, json=True)
+        assert rc == 0, out
+        assert isinstance(json.loads(out), list)
+        # resume
+        rc, out, err = _run("sourcer", tmp_path, sourcer_cmd="resume",
+                            session=sid, fork_id=fork_id, json=True)
+        assert rc == 0, out
+        assert isinstance(json.loads(out), list)
+
+    def test_trajectory_analyze_timeline_fork_snapshots_chain(self, tmp_path):
+        """trajectory 子命令 analyze/timeline/fork/snapshots 全链可达。"""
+        sess = _make_session_dir(tmp_path)
+        sid = sess.glob("*.jsonl").__next__().stem
+        # analyze
+        rc, out, err = _run("trajectory", tmp_path, traj_cmd="analyze",
+                            session=sid, json=True)
+        assert rc == 0, out
+        stats = json.loads(out)
+        assert stats["total_events"] >= 3, out
+        # timeline
+        rc, out, err = _run("trajectory", tmp_path, traj_cmd="timeline",
+                            session=sid, limit=50, json=True)
+        assert rc == 0, out
+        assert isinstance(json.loads(out), list)
+        # fork
+        rc, out, err = _run("trajectory", tmp_path, traj_cmd="fork",
+                            session=sid, at=1, label="回归", json=True)
+        assert rc == 0, out
+        assert json.loads(out)["events"] >= 1
+        # snapshots
+        rc, out, err = _run("trajectory", tmp_path, traj_cmd="snapshots",
+                            json=True)
+        assert rc == 0, out
+        assert isinstance(json.loads(out), list)

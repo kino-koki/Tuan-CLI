@@ -80,7 +80,8 @@ def home_dir() -> Path:
         _HOME_MIGRATION_DONE = True
         try:
             migrate_legacy_home(target)
-        except Exception:  # noqa: BLE001 - 迁移属尽力而为, 绝不阻断启动
+        except Exception as exc:  # noqa: BLE001 - 迁移属尽力而为, 绝不阻断启动
+            log.warning("home_dir(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return target
 
@@ -422,7 +423,8 @@ class Config:
         try:
             from tuan_cli.hooks.triggers import HookTrigger
             HookTrigger(self.hooks).config_change(source=source, key=key, origin=origin)
-        except Exception:  # noqa: BLE001 - 通知失败不影响主流程
+        except Exception as exc:  # noqa: BLE001 - 通知失败不影响主流程
+            log.warning("Config._fire_config_change(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     @staticmethod

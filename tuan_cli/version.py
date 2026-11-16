@@ -38,4 +38,4 @@
 #         团组审计日志 (team_audit.jsonl, 追加链不可篡改);
 #         跨机邀请令牌 export_invite/import_invite (远程+局域网加入);
 #         web 团组面板 (成员/供应商/授权三列管理 + 能力矩阵展示)。
-__version__ = "0.4.2"
+__version__ = "0.4.4"

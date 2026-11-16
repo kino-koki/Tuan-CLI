@@ -20,6 +20,9 @@ from typing import Any, Callable, List, Optional, Tuple
 from .policy import Action, SafetyPolicy, classify, FORBIDDEN_HINT
 from .audit import append_event as audit_append
 
+import logging
+log = logging.getLogger(__name__)
+
 # gh 缺失时返回的退出码 (tuan 约定)。
 EXIT_FORBIDDEN = 3
 EXIT_NO_GH = 4
@@ -85,7 +88,8 @@ class NativeGH:
             return self._interactive
         try:
             return sys.stdin.isatty() and sys.stdout.isatty()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("NativeGH._is_interactive(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return False
 
     # ---- 后端探测 ----
@@ -156,14 +160,16 @@ class NativeGH:
             return
         try:
             self._blocked_log(list(argv), decision)
-        except Exception:  # noqa: BLE001 - 审计失败不影响安全拦截
+        except Exception as exc:  # noqa: BLE001 - 审计失败不影响安全拦截
+            log.warning("NativeGH._log_blocked(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def _emit(self, argv: List[str], decision: str, event: str, detail: str) -> None:
         """统一审计出口: 落盘 / 可观测。写盘失败不影响安全判定。"""
         try:
             self._audit_sink(list(argv), decision, event, detail)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("NativeGH._emit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # ---- 便捷只读方法 (无 gh 时走 REST 回退) ----

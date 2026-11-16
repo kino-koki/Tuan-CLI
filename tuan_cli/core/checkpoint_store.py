@@ -149,13 +149,15 @@ class CheckpointStore:
                 if stem not in cids:
                     try:
                         mdf.unlink()
-                    except Exception:
+                    except Exception as exc:
+                        log.warning("CheckpointStore._prune_expired(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
 
     def _remove_cp(self, cp: Dict[str, Any]) -> None:
         try:
             (self.dir / f"cp_{cp['id']}.md").unlink(missing_ok=True)
-        except Exception:
+        except Exception as exc:
+            log.warning("CheckpointStore._remove_cp(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # ---------------------------------------------------------------- API

@@ -20,6 +20,9 @@ from ..core.collaboration_protocol import (
 from ..core.kernel import Kernel, Plugin
 from .base import Tool, ToolContext, string_prop
 
+import logging
+log = logging.getLogger(__name__)
+
 # 保留发送者: 协议内部用作系统标识, 不作为团队成员列出
 _RESERVED_SENDER = "__system__"
 
@@ -163,7 +166,8 @@ def _format_msg(m: Any) -> str:
         rcpt = (getattr(m, "metadata", None) or {}).get("recipient")
         if rcpt and rcpt != "*":
             recipient = f" → {rcpt}"
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_format_msg(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return (
         f"[{ts}] {m.sender} ({m.msg_type.value}/{m.priority.value}"

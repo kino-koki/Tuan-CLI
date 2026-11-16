@@ -40,6 +40,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 # Codex 的 ApprovalRequest 有四种: Exec / Permissions / ApplyPatch /
 # McpElicitation。这里保留同样的 kind 分类，新增 mcp_trust 对应 E1。
 _REQUEST_KINDS = ("exec", "permissions", "file_change",
@@ -422,7 +425,8 @@ def stdin_read_line(prompt: str) -> Optional[str]:
             return None
         print(prompt, flush=True)
         return sys.stdin.readline()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("stdin_read_line(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 
@@ -468,7 +472,8 @@ def make_confirm_callable(ctx: Any) -> Tuple[Callable[[Dict[str, Any]], str],
                 return False
             try:
                 return bool(ui_confirm(text))
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("confirm_fn(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return False
         # headless: 重新渲染 (确定性) 并打印, 要求精确键入确认码
         return run_approval(req, stdin_read_line).granted

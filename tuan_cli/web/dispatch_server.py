@@ -34,6 +34,9 @@ from tuan_cli.agents.discovery import discover_agents
 from tuan_cli.agents.router import route
 from tuan_cli.version import __version__
 
+import logging
+log = logging.getLogger(__name__)
+
 # 桌面版本 (与 pyproject.toml 保持一致)
 DESKTOP_VERSION = __version__
 DESKTOP_BUILD = datetime.now().strftime("%Y%m%d")
@@ -77,7 +80,8 @@ def _audit(event: dict) -> None:
     except Exception as exc:  # noqa: BLE001
         try:
             sys.stderr.write(f"[dispatch] audit 落盘失败: {exc}\n")
-        except Exception:
+        except Exception as exc:
+            log.warning("_audit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -111,7 +115,8 @@ class DispatchSession:
         except Exception:
             try:
                 await self.ws.close()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("DispatchSession.send(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
 

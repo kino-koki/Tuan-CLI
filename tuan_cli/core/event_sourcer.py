@@ -41,6 +41,9 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+import logging
+log = logging.getLogger(__name__)
+
 
 
 class EventSemantics(str, Enum):
@@ -132,7 +135,7 @@ class EventSourcer:
             self._load_from_store()
 
     def _load_from_store(self) -> None:
-        """从 SessionStore 加载现有事件, 初始化序号计数器。"""
+        """从 SessionStore 加载现有事件, 初始化序号计数器与分叉点。"""
         if self._store is None:
             return
         try:
@@ -142,7 +145,23 @@ class EventSourcer:
                 if ev.seq > self._seq_counter:
                     self._seq_counter = ev.seq
                 self._events.append(ev)
-        except Exception:
+            # 从 session.fork 事件重建分叉点 (fork 状态跨实例持久化,
+            # 否则 fork→list/get 跨命令调用丢失)。
+            for ev in self._events:
+                if ev.kind == "session.fork":
+                    p = ev.payload
+                    fp = ForkPoint(
+                        fork_id=p.get("fork_id", "") or ev.fork_id,
+                        source_session=p.get("source_session", "")
+                        or getattr(ev, "session_id", ""),
+                        at_seq=p.get("at_seq", 0),
+                        reason=p.get("reason", ""),
+                        created_at=ev.ts,
+                    )
+                    if fp.fork_id:
+                        self._forks[fp.fork_id] = fp
+        except Exception as exc:
+            log.warning("EventSourcer._load_from_store(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # ---------------------------------------------------------- 写入
@@ -173,7 +192,8 @@ class EventSourcer:
         )
         self._events.append(ev)
 
-        # 同步写入 SessionStore (append-only)
+        # 同步写入 SessionStore (append-only)。契约: append(dict) —— 单参数
+        # dict (ContextEventLog 兼容); 完整 to_dict() 含 type/seq/ts 等。
         if self._store is not None:
             self._store.append(ev.to_dict())
 

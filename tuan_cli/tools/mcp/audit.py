@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ...core.security_utils import redact_nested
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def _default_path() -> Path:
@@ -47,7 +50,8 @@ class MCPAuditStore:
             line = json.dumps(redact_nested(entry), ensure_ascii=False, default=str)
             with self._lock, open(self._path, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("MCP 审计记录失败: %s", exc)
             pass
 
     def read(self, limit: int = 100) -> List[Dict[str, Any]]:

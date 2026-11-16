@@ -326,7 +326,8 @@ class AgentTurnMixin:
         if session_id and self.session is not None and hasattr(self.session, "rotate"):
             try:
                 self.session.rotate(session_id, meta={"task": (user_input or "")[:200]})
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("AgentTurnMixin._prepare_run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         self._session_append("session.update", status="initialized")
         self._session_append("task.update", status="running")

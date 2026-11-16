@@ -180,7 +180,8 @@ class EngineIsolation:
         for name, client in list(self._clients.items()):
             try:
                 client.close()
-            except Exception:
+            except Exception as exc:
+                log.warning("EngineIsolation.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             self._clients.pop(name, None)
 
@@ -223,11 +224,13 @@ def _load_config() -> dict:
         cfg = Config()
         if isinstance(cfg.data, dict):
             return cfg.data
-    except Exception:
+    except Exception as exc:
+        log.warning("_load_config(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     try:
         from tuan_cli.config.defaults import DEFAULT_CONFIG
 
         return DEFAULT_CONFIG if isinstance(DEFAULT_CONFIG, dict) else {}
-    except Exception:
+    except Exception as exc:
+        log.debug("_load_config(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {}

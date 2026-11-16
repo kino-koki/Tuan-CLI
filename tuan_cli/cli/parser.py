@@ -19,6 +19,9 @@ from typing import Any
 from .. import __version__
 from .parser_commands import register_subcommands
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # 命令注册表 (Command Registry)
@@ -418,7 +421,8 @@ def main() -> int:
         from ..core.error_handler import install_top_level_handler
 
         install_top_level_handler()
-    except Exception:  # noqa: BLE001 - 钩子安装失败不阻断启动
+    except Exception as exc:  # noqa: BLE001 - 钩子安装失败不阻断启动
+        log.warning("main(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     sys._tuan_friendly_errors = True  # type: ignore[attr-defined]
 
@@ -523,7 +527,8 @@ def _dispatch(parser: "argparse.ArgumentParser", args: Any) -> int:
                 rc = run_onboarding(Path.cwd())
                 if rc != 0:
                     return rc
-        except Exception:  # noqa: BLE001 - 引导失败绝不阻断启动
+        except Exception as exc:  # noqa: BLE001 - 引导失败绝不阻断启动
+            log.warning("_dispatch(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     # ---- C-4.2/C-4.3: 顶层 --continue / --resume <id> 续会话 ----
     # 把续接目标交给 _prepare_agent 里既有的 args.resume 恢复逻辑 (零新增路径)。

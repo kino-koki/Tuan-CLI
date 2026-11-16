@@ -86,7 +86,8 @@ class Router:
         for fn in self._listeners:
             try:
                 fn(name, payload)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Router._notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     # ---------------------------------------------------------- 事件处理
@@ -133,7 +134,8 @@ class Router:
             return 0
         try:
             items = store.load_context()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("Router.restore_context(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 0
         if not items:
             return 0
@@ -287,7 +289,8 @@ class Router:
                 base["would_accept"] = False
                 base["reason"] = obj.get("reason", "模型研判: 无需行动")
             return base
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("Router._model_assess(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return base
 
     @staticmethod

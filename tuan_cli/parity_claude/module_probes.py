@@ -33,6 +33,9 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 # A′ 自查修正：初版写了一个不存在的 ``exit_semantics_bridge`` 哨兵
 # import，模块刚加载就会 ImportError，两个探针一个都注册不上。改成
 # 全程延迟导入：包导入期不拉起 hooks / TUI 依赖链，注册时再取 depth。
@@ -674,6 +677,7 @@ def probe_hook_lifecycle_fail_closed() -> dict:
                             "WorktreeCreate 阻断/无 hook 放行/remove 报错真跑",
                 "problems": problems}
     except Exception as exc:  # noqa: BLE001
+        log.debug("probe_hook_lifecycle_fail_closed(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"ok": False, "checks": checks, "evidence": "raised",
                 "problems": ["%s: %s" % (type(exc).__name__, exc)]}
     finally:
@@ -749,7 +753,8 @@ def probe_hook_nonprocess_equivalence() -> dict:
                     try:
                         self.wfile.write(b"x"); self.wfile.flush()
                         time.sleep(0.3)
-                    except Exception:
+                    except Exception as exc:
+                        log.debug("H.do_POST(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         break
             elif m == "500":
                 self.send_response(500); self.end_headers()
@@ -927,6 +932,7 @@ def probe_hook_nonprocess_equivalence() -> dict:
                             "墙钟有界、净化与限长、failure_kind 保真",
                 "problems": problems}
     except Exception as exc:  # noqa: BLE001
+        log.debug("probe_hook_nonprocess_equivalence(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"ok": False, "checks": checks, "evidence": "raised",
                 "problems": ["%s: %s" % (type(exc).__name__, exc)]}
     finally:
@@ -1139,6 +1145,7 @@ def probe_hook_payload_context_gate() -> dict:
                             "入站净化与总长硬上界、通知留痕、入参类型面",
                 "problems": problems}
     except Exception as exc:  # noqa: BLE001
+        log.debug("probe_hook_payload_context_gate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"ok": False, "checks": checks, "evidence": "raised",
                 "problems": ["%s: %s" % (type(exc).__name__, exc)]}
     finally:
@@ -1152,7 +1159,8 @@ def XS_CHECK():
     try:
         from tuan_cli.hooks import exit_semantics as _xs
         return not _xs.validate()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("XS_CHECK(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 

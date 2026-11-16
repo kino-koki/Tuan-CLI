@@ -29,6 +29,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ============================================================ auto_review_denials
 class ReviewDecision(Enum):
@@ -99,6 +102,7 @@ class DenialLedger:
                 return {"allowed": False,
                         "reason": "decision_type:%s" % type(decision).__name__}
         except Exception as exc:  # noqa: BLE001
+            log.debug("DenialLedger.enforce(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"allowed": False,
                     "reason": "decision_invalid:%s" % type(exc).__name__}
         if d is ReviewDecision.DENY or d is ReviewDecision.ABSTAIN:

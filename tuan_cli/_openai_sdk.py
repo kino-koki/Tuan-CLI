@@ -21,6 +21,9 @@ from typing import Any, Dict, Iterator, List, Literal, Optional
 
 from . import _http
 
+import logging
+log = logging.getLogger(__name__)
+
 # OpenAI SDK 的 base_url 语义: 用户给 "https://api.openai.com/v1", SDK 在其后拼接
 # "/chat/completions"。这里保持一致, 不要替用户猜 /v1 是否存在。
 
@@ -161,7 +164,8 @@ def _status_error(resp: _http.Response) -> OpenAIError:
     text = ""
     try:
         text = resp.text[:400]
-    except Exception:  # noqa: BLE001 - 错误信息缺失不应掩盖原始状态码
+    except Exception as exc:  # noqa: BLE001 - 错误信息缺失不应掩盖原始状态码
+        log.warning("_status_error(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     detail = ""
     try:
@@ -175,7 +179,8 @@ def _status_error(resp: _http.Response) -> OpenAIError:
             detail = body["message"]
         elif isinstance(body.get("detail"), str):
             detail = body["detail"]
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_status_error(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     msg = detail or (text.strip()[:200] if text else "")
     return OpenAIError(
@@ -266,7 +271,8 @@ class OpenAI:
     def close(self) -> None:
         try:
             self._http.close()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("OpenAI.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def __enter__(self) -> "OpenAI":

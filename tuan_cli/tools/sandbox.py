@@ -25,6 +25,9 @@ from typing import Any, Dict, List, Optional
 from ..core.kernel import Kernel, Plugin
 from ..ext.safety_engine import is_redline as _engine_is_redline
 from .base import Tool, ToolContext, string_prop
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class SandboxManager:
@@ -46,7 +49,8 @@ class SandboxManager:
                 timeout=5,
             )
             return result.returncode == 0
-        except Exception:
+        except Exception as exc:
+            log.debug("沙箱工具异常(设计内降级): %s", exc)
             return False
     
     def _create_container(self, image: str = "python:3.11-slim") -> str:
@@ -150,7 +154,8 @@ class SandboxManager:
                     capture_output=True,
                     timeout=10,
                 )
-            except Exception:
+            except Exception as exc:
+                log.warning("沙箱工具异常(设计内降级): %s", exc)
                 pass
             self._container_name = None
         
@@ -158,7 +163,8 @@ class SandboxManager:
             import shutil
             try:
                 shutil.rmtree(self._working_dir)
-            except Exception:
+            except Exception as exc:
+                log.warning("沙箱工具异常(设计内降级): %s", exc)
                 pass
 
 

@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, parse_qs
 
 from .frontend import FRONTEND_HTML
+from .graph_frontend import GRAPH_HTML
 from .github_auth import (
     fetch_github_identity as _gh_fetch_identity,
     poll_once as _gh_poll_once,
@@ -32,6 +33,7 @@ from .github_auth import (
 )
 from . import mh_runner as _mh_runner
 from . import code_anim_render as _codeanim
+from . import graph_api as _graph_api
 from ..ports.oauth.constants import GITHUB_DEVICE_FLOW_CONFIG
 from .web_sessions_auth import (
     WebAuthStore as _WebAuthStore,
@@ -39,6 +41,9 @@ from .web_sessions_auth import (
     build_set_cookie_header as _build_set_cookie_header,
     parse_session_cookie as _parse_session_cookie,
 )
+
+import logging
+log = logging.getLogger(__name__)
 
 _ASSET_DIR = Path(__file__).resolve().parent / "assets"
 _ASSET_CACHE: Dict[str, bytes] = {}  # 读一次缓存, 静态资源体积小但读盘更省
@@ -91,6 +96,8 @@ def _sse(kind: str, data: Any) -> str:
 
 # ---------------------------------------------------------------- 安全引擎 (懒加载单例)
 _SAFETY_ENGINE: Any = None
+_GRAPH_STORE: Any = None          # 数据流图存储 (懒加载, 绑定 handler workspace)
+_RUN_LOG: Any = None              # 运行历史存储 (懒加载, 绑定 handler workspace)
 
 
 def safety_engine() -> Any:
@@ -103,11 +110,32 @@ def safety_engine() -> Any:
     return _SAFETY_ENGINE
 
 
+def _graph_store(workspace: Optional[str] = None) -> Any:
+    """懒加载数据流图持久化存储 (绑定指定 workspace)。"""
+    global _GRAPH_STORE
+    ws = workspace or "."
+    if _GRAPH_STORE is None or getattr(_GRAPH_STORE, "_workspace", None) != ws:
+        _GRAPH_STORE = _graph_api.GraphStore(ws)
+        _GRAPH_STORE._workspace = ws
+    return _GRAPH_STORE
+
+
+def _run_log(workspace: Optional[str] = None) -> Any:
+    """懒加载运行历史存储 (绑定指定 workspace)。"""
+    global _RUN_LOG
+    ws = workspace or "."
+    if _RUN_LOG is None or getattr(_RUN_LOG, "_workspace", None) != ws:
+        _RUN_LOG = _graph_api.RunLog(ws)
+        _RUN_LOG._workspace = ws
+    return _RUN_LOG
+
+
 def analyze_command(command: str) -> Dict[str, Any]:
     """对 shell 命令做安全评估 (与 CLI 同一引擎, 同一口径)。"""
     try:
         return safety_engine().score({"command": command, "type": "shell"}) or {}
     except Exception as exc:  # noqa: BLE001
+        log.debug("analyze_command(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"risk": "unknown", "score": 0, "block": False,
                 "reasons": [f"安全评估不可用: {exc}"], "suggestions": [],
                 "blast_radius": {"files": [], "services": [], "data": []}}
@@ -258,7 +286,8 @@ def web_strings() -> Dict[str, str]:
         mod = importlib.import_module(f"tuan_cli.i18n.locales.{code}")
         tr = getattr(mod, "TRANSLATIONS", {}) or {}
         return {k: v for k, v in tr.items() if k.startswith("web.")}
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("web_strings(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {}
 
 
@@ -336,7 +365,8 @@ class _WebHandler(BaseHTTPRequestHandler):
         try:
             data = json.loads(raw.decode("utf-8"))
             return data if isinstance(data, dict) else {}
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("_WebHandler._read_body(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {}
 
     def log_message(self, fmt: str, *args: Any) -> None:  # 静默访问日志
@@ -372,6 +402,9 @@ class _WebHandler(BaseHTTPRequestHandler):
             return
         if path == "/" or path == "/index.html":
             self._text(200, FRONTEND_HTML, "text/html; charset=utf-8")
+            return
+        if path == "/web/graph":
+            self._text(200, GRAPH_HTML, "text/html; charset=utf-8")
             return
         if path == "/api/sessions":
             with _SESSIONS_LOCK:
@@ -553,6 +586,12 @@ class _WebHandler(BaseHTTPRequestHandler):
             rel = (qs.get("path") or [""])[0]
             self._serve_mh_media(rel)
             return
+        # ============== 通用媒体 (graph codeanim 产物预览/导出) ==============
+        if path == "/api/media":
+            qs = parse_qs(parsed.query)
+            rel = (qs.get("path") or [""])[0]
+            self._serve_workspace_media(rel)
+            return
         # ============== Code-anim 渲染后端 (GET) ==============
         if path == "/api/codeanim/status":
             self._json(200, {"ok": True, **_codeanim.status()})
@@ -574,7 +613,119 @@ class _WebHandler(BaseHTTPRequestHandler):
             rel = (qs.get("path") or [""])[0]
             self._serve_codeanim_media(rel)
             return
+        # ============== 数据流图工作台 (阶段7, GET) ==============
+        if path == "/api/graph/list":
+            self._json(200, {"ok": True, "graphs": _graph_store(self._owner.workspace).list_graphs()})
+            return
+        if path == "/api/graph/presets":
+            from . import graph_presets
+            self._json(200, {"ok": True, "presets": graph_presets.list_presets()})
+            return
+        if path == "/api/graph/preset":
+            from . import graph_presets
+            qs = parse_qs(parsed.query)
+            pid = (qs.get("id") or [""])[0]
+            try:
+                pre = graph_presets.preset_graph(pid)
+            except ValueError as exc:
+                self._json(404, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": True, "preset": pre})
+            return
+        if path == "/api/graph/get":
+            qs = parse_qs(parsed.query)
+            gid = (qs.get("id") or [""])[0]
+            data = _graph_store(self._owner.workspace).load(gid)
+            if data is None:
+                self._json(404, {"ok": False, "error": "graph not found"})
+                return
+            self._json(200, {"ok": True, "graph": data})
+            return
+        if path == "/api/graph/models":
+            # 阶段22: 供 llm_call 参数面板的 provider_id 下拉, 检测本机已启动的本地模型网关
+            try:
+                from ..models.offline import detect_local_models
+                status = detect_local_models()
+                providers = []
+                for p in ("ollama", "llamacpp"):
+                    info = status.get(p) or {}
+                    for m in (info.get("models") or []):
+                        providers.append({"provider": f"{p}:{m}", "label": f"{p} · {m}"})
+                self._json(200, {"ok": True, "providers": providers})
+            except Exception as exc:  # noqa: BLE001
+                self._json(200, {"ok": True, "providers": [], "error": str(exc)})
+            return
+        if path == "/api/graph/validate":
+            qs = parse_qs(parsed.query)
+            gid = (qs.get("id") or [""])[0]
+            data = _graph_store(self._owner.workspace).load(gid)
+            if data is None:
+                self._json(404, {"ok": False, "error": "graph not found"})
+                return
+            try:
+                from .graph_api import build_runner
+                build_runner(data.get("data") or data)
+                self._json(200, {"ok": True, "valid": True})
+            except Exception as exc:  # noqa: BLE001
+                self._json(200, {"ok": True, "valid": False, "error": str(exc)})
+            return
+        # ============== 运行历史 (阶段20, GET) ==============
+        if path == "/api/graph/runs":
+            self._json(200, {"ok": True, "runs": _run_log(self._owner.workspace).list_runs()})
+            return
+        if path == "/api/graph/runlog":
+            qs = parse_qs(parsed.query)
+            rid = (qs.get("id") or [""])[0]
+            rec = _run_log(self._owner.workspace).load(rid)
+            if rec is None:
+                self._json(404, {"ok": False, "error": f"运行记录 {rid!r} 不存在"})
+                return
+            self._json(200, {"ok": True, "run": rec})
+            return
         self._json(404, {"ok": False, "error": "not found"})
+
+    # ---------------- 运行历史 (阶段20) ----------------
+    @staticmethod
+    def _summarize_run(out: Dict[str, Any]) -> Dict[str, Any]:
+        """从 run_graph 结果提取摘要 (节点状态 / 媒体产物 / 输出统计)。
+
+        节点状态以 ``out["logs"]`` (NodeLog, 权威) 为准; ``out["results"]``
+        是 node_id → 原始输出值 (可能为字符串/None), 不能据此判状态。
+        """
+        logs = out.get("logs") or []
+        node_states = {}
+        media = []
+        for lg in (logs if isinstance(logs, list) else []):
+            nid = lg.get("node_id")
+            st = lg.get("status") or ""
+            if nid:
+                node_states[str(nid)] = str(st)
+        # 媒体产物: results 里的 dict 值可能带 media_rel/out_path/png_data_url
+        results = out.get("results") or {}
+        for v in (results.values() if isinstance(results, dict) else []):
+            if isinstance(v, dict):
+                for key in ("media_rel", "out_path", "png_data_url"):
+                    if v.get(key):
+                        media.append(v[key])
+        return {
+            "node_states": node_states,
+            "ok_nodes": sum(1 for s in node_states.values()
+                            if s in ("ok", "completed")),
+            "err_nodes": sum(1 for s in node_states.values() if s == "failed"),
+            "media": media[:10],
+        }
+
+    def _safe_record_run(self, gid: str, gname: str, ok: bool,
+                         error: Optional[str], summary: Dict[str, Any],
+                         data: Dict[str, Any]) -> None:
+        """记录运行历史; 记录失败不阻断主流程 (best-effort)。"""
+        try:
+            _run_log(self._owner.workspace).record(
+                gid, gname, ok, error, summary,
+                {"nodes": data.get("nodes") or [], "edges": data.get("edges") or []})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_WebHandler._safe_record_run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            pass
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -856,7 +1007,8 @@ class _WebHandler(BaseHTTPRequestHandler):
             pj = body.get("project_json")
             res = self._owner.codeanim_render(
                 project_json=pj if isinstance(pj, dict) else {},
-                out=str(body.get("out") or ""))
+                out=str(body.get("out") or ""),
+                profile=bool(body.get("profile")))
             self._json(200 if res.get("ok") else 400, res)
             return
         if path == "/api/codeanim/contact":
@@ -867,6 +1019,40 @@ class _WebHandler(BaseHTTPRequestHandler):
                 project_json=pj if isinstance(pj, dict) else {},
                 times=times)
             self._json(200 if res.get("ok") else 400, res)
+            return
+        # ============== 数据流图工作台 (阶段7, POST) ==============
+        if path == "/api/graph/save":
+            body = self._read_body()
+            gid = str(body.get("id") or "")
+            if not gid:
+                self._json(400, {"ok": False, "error": "id 不能为空 (fail-closed)"})
+                return
+            try:
+                record = _graph_store(self._owner.workspace).save(gid, body.get("data") or body)
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": True, "graph": record})
+            return
+        if path == "/api/graph/run":
+            body = self._read_body()
+            data = body.get("data")
+            if not isinstance(data, dict):
+                self._json(400, {"ok": False, "error": "data 必须是对象 (fail-closed)"})
+                return
+            from .graph_api import run_graph
+            gid = str(body.get("graph_id") or "")
+            gname = str(body.get("name") or "")
+            try:
+                out = run_graph(data, force=bool(body.get("force")))
+            except Exception as exc:  # noqa: BLE001
+                # 阶段20: 失败也记录运行历史 (供诊断/复现)
+                self._safe_record_run(gid, gname, False, str(exc), {}, data)
+                self._json(200, {"ok": False, "error": str(exc)})
+                return
+            # 阶段20: 成功记录运行历史 (含结果摘要与媒体产物)
+            self._safe_record_run(gid, gname, True, None, self._summarize_run(out), data)
+            self._json(200, {"ok": True, **out})
             return
         self._json(404, {"ok": False, "error": "not found"})
 
@@ -907,6 +1093,50 @@ class _WebHandler(BaseHTTPRequestHandler):
         target = _mh_runner.resolve_media_path(self._owner.workspace, rel)
         if target is None:
             self._json(400, {"ok": False, "error": "path outside mh workspace"})
+            return
+        if not target.is_file():
+            self._json(404, {"ok": False, "error": "media not found"})
+            return
+        ext = target.suffix.lower()
+        ctype = ctype_by_ext.get(ext, "application/octet-stream")
+        try:
+            raw = target.read_bytes()
+        except (OSError, PermissionError) as exc:
+            self._json(500, {"ok": False, "error": f"读取媒体失败: {exc}"})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _serve_workspace_media(self, rel: str) -> None:
+        """流式回 workspace/media/ 下产物 (graph codeanim 整片/帧预览)。
+
+        路径护栏: 必须落在 ``<workspace>/media/`` 之下 (resolve + is_relative_to),
+        否则 400 拒绝; 文件缺失 404。用于 /web/graph 三栏工作台预览/导出。
+        """
+        ctype_by_ext = {
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".wav": "audio/wav",
+            ".mp3": "audio/mpeg",
+        }
+        if not rel or ".." in rel or "/" in rel and rel.split("/")[0] in ("", ".."):
+            # 拒绝空/父目录逃逸; 允许裸文件名 (graph_123.mp4) 或单层子路径
+            self._json(400, {"ok": False, "error": "media path must be a safe subpath"})
+            return
+        base = Path(self._owner.workspace or ".") / "media"
+        target = (base / rel).resolve()
+        try:
+            target.relative_to(base.resolve())
+        except ValueError:
+            self._json(400, {"ok": False, "error": "path outside media workspace"})
             return
         if not target.is_file():
             self._json(404, {"ok": False, "error": "media not found"})
@@ -1270,7 +1500,8 @@ class _WebHandler(BaseHTTPRequestHandler):
             # 跑完, 白烧 token 且占着会话锁堵住后续消息 ("容易中断" 的成因之一)。
             try:
                 agent.cancel()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_WebHandler._chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return
         self.wfile.write(_sse("done", {"text": "".join(text_parts)}).encode("utf-8"))
@@ -1360,7 +1591,8 @@ class WebServer:
                     _SESSIONS[sid] = s
                     loaded += 1
             return loaded
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.load_sessions(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 0
 
     def save_sessions(self) -> None:
@@ -1372,7 +1604,8 @@ class WebServer:
             tmp = self._session_file.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
             tmp.replace(self._session_file)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.save_sessions(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # ---------------- Web UI 设置持久化 (T-2.6) ----------------
@@ -1396,7 +1629,8 @@ class WebServer:
             tmp = self._settings_file.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
             tmp.replace(self._settings_file)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.save_settings(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def settings_snapshot(self) -> Dict[str, Any]:
@@ -1442,7 +1676,8 @@ class WebServer:
             return None
         try:
             return self.kernel.require("collaboration_protocol")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer._team_protocol(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
     # ---------------- 团组 (v0.4.2) ----------------
@@ -1483,6 +1718,7 @@ class WebServer:
         try:
             store.create_group(name, owner_member_id, owner_name=owner_name)
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.tg_create(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "group": store.export_public()}
 
@@ -1495,6 +1731,7 @@ class WebServer:
         try:
             info = store.add_member(member_id, display_name, role, actor=actor)
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.tg_add_member(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "member": info}
 
@@ -1507,6 +1744,7 @@ class WebServer:
         try:
             entry = store.register_provider_key(provider_id, key_fingerprint, owner=owner)
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.tg_register_provider(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "provider": entry}
 
@@ -1520,6 +1758,7 @@ class WebServer:
         try:
             grant = store.issue_grant(provider_id, member, days, model_scope=models, owner=owner)
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.tg_issue_grant(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "grant": grant}
 
@@ -1532,6 +1771,7 @@ class WebServer:
         try:
             verdict = store.verify_grant(grant_id, provider_id, model=model)
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.tg_verify_grant(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "verdict": verdict}
 
@@ -1543,6 +1783,7 @@ class WebServer:
         try:
             store.revoke_grant(grant_id, actor=actor)
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.tg_revoke_grant(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True}
 
@@ -1554,6 +1795,7 @@ class WebServer:
         try:
             store.revoke_member(member_id, actor=actor)
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.tg_revoke_member(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True}
 
@@ -1639,6 +1881,7 @@ class WebServer:
         except RuntimeError as exc:
             return {"ok": False, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.mh_create_project(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"脚手架异常: {exc}"}
         pid = created["project_id"]
         proj_dir = created["project_dir"]
@@ -1780,11 +2023,13 @@ class WebServer:
         return _mh_runner.preview(str(target), times or [], contact_sheet=contact_sheet)
 
     # ---------------- Code-anim 渲染后端 (WebServer 方法) ----------------
-    def codeanim_render(self, project_json: Dict[str, Any], out: str = "") -> Dict[str, Any]:
+    def codeanim_render(self, project_json: Dict[str, Any], out: str = "",
+                        profile: bool = False) -> Dict[str, Any]:
         """POST /api/codeanim/render: 启动后台渲染视频 job, 返回 job_id。
 
         project_json 必须通过 validate_project; out 仅接受文件名 (无路径分隔符),
         默认 ``render-<ts>.mp4``, 输出落在 ``<workspace>/.tuan/codeanim/`` 下。
+        profile=True 时渲染结果含逐节点/逐帧性能分析 (``perf``)。
         """
         err = _codeanim.validate_project(project_json)
         if err:
@@ -1806,7 +2051,8 @@ class WebServer:
         except ValueError:
             return {"ok": False, "error": "out 路径越界"}
         fps = int(project_json.get("fps") or 30)
-        job_id = _codeanim.start_render_job(project_json, str(out_abs), fps=fps)
+        job_id = _codeanim.start_render_job(project_json, str(out_abs),
+                                            fps=fps, profile=bool(profile))
         return {"ok": True, "job_id": job_id, "out_rel": safe_out}
 
     def codeanim_contact(self, project_json: Dict[str, Any], times: List[Any]) -> Dict[str, Any]:
@@ -1860,7 +2106,8 @@ class WebServer:
                 return {"available": False}
             data = json.loads(bench.read_text(encoding="utf-8"))
             return {"available": True, "benchmark": data}
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.security_info(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"available": False}
 
     # 四道闸门 (与 ToolExecutor._security_gate_check 的实际顺序一致)
@@ -1894,7 +2141,8 @@ class WebServer:
                                     "args": str(p.get("args") or "")[:200],
                                     "out": out[:300],
                                 })
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.security_detail(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return {
             "available": bool(info.get("available")),
@@ -1994,7 +2242,8 @@ class WebServer:
             # T-5.3: 复用 remote_control 推送通道 (日志落证 + 远程设备推送)
             from ..core.remote_control import notify as rc_notify
             rc_notify(title, body, kind="budget")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.check_budget_alert(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def mcp_status(self) -> List[Dict[str, Any]]:
@@ -2009,13 +2258,15 @@ class WebServer:
                         tl = getattr(c, "tools", None)
                         if isinstance(tl, (list, tuple)):
                             tools = [getattr(t, "name", str(t)) for t in tl][:40]
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("WebServer.mcp_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
                     out.append({"name": str(name), "connected": True,
                                 "tool_count": len(tools), "tools": tools})
             elif clients:
                 out.append({"name": "mcp_clients", "connected": True, "tool_count": 0, "tools": []})
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.mcp_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return out
 
@@ -2036,6 +2287,7 @@ class WebServer:
                     disconnect()
             return {"ok": True, "name": name, "enabled": enabled}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.mcp_toggle(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
     def mcp_connect(self, name: str) -> Dict[str, Any]:
@@ -2061,7 +2313,8 @@ class WebServer:
                 }
                 for s in skills
             ]
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.skills_list(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
 
     def skill_save(self, name: str, description: str, body: str) -> Dict[str, Any]:
@@ -2072,6 +2325,7 @@ class WebServer:
             sk = sm.save(name, description, body)
             return {"ok": True, "name": sk.name, "slug": getattr(sk, "slug", name)}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.skill_save(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
     def skill_delete(self, name: str) -> Dict[str, Any]:
@@ -2084,6 +2338,7 @@ class WebServer:
             f.unlink()
             return {"ok": True, "name": name}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.skill_delete(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
     def skill_search(self, query: str, limit: int) -> List[Dict[str, Any]]:
@@ -2091,7 +2346,8 @@ class WebServer:
             sm = self.kernel.require("skill_manager")
             results = sm.search(query, limit=max(1, min(limit, 20))) if hasattr(sm, "search") else []
             return [{"name": s.name, "description": s.description} for s in results]
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.skill_search(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
 
     def skill_read(self, name: str) -> Dict[str, Any]:
@@ -2103,6 +2359,7 @@ class WebServer:
             return {"ok": True, "name": sk.name, "description": sk.description, "body": sk.body,
                     "use_count": getattr(sk, "use_count", 0), "origin": getattr(sk, "origin", "user")}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.skill_read(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
     # ---------------- Agent Dispatch (Agent of Agents) ----------------
@@ -2157,7 +2414,8 @@ class WebServer:
                                 "role": "assistant",
                                 "content": f"已加载技能 {sname}, 继续任务。",
                             })
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("WebServer.dispatch_agent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
             # Agent.run 没有独立 timeout 参数 → 独立线程 + 硬超时
@@ -2189,6 +2447,7 @@ class WebServer:
                 answer = answer[:8000] + f"\n...[摘要截断, 完整输出 {len(answer)} 字符]"
             return {"ok": True, "result": answer}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.dispatch_agent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
     # ---------------- Model Router 状态 ----------------
@@ -2204,7 +2463,8 @@ class WebServer:
                 "last_route": last,
                 "available": router is not None,
             }
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.router_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"enabled": False, "auto_switch": True, "available": False}
 
     # ---------------- Agent Registry ----------------
@@ -2241,6 +2501,7 @@ class WebServer:
                     loop.close()
             return {"agents": items}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.agents_registry_list(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"agents": [], "error": str(exc)}
 
     # ---------------- Computer Use: 截屏 + OCR ----------------
@@ -2318,6 +2579,7 @@ class WebServer:
                 "bytes": len(png_bytes),
             }
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.take_screenshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"截屏失败: {exc}"}
 
     def run_ocr(self, image_b64: str) -> Dict[str, Any]:
@@ -2346,8 +2608,10 @@ class WebServer:
                     "hint": "pytesseract 未安装。视觉模型可直接看 base64 图；非视觉模型可先装 pip install pytesseract 并安装 Tesseract 可执行文件。",
                 }
             except Exception as exc:  # noqa: BLE001
+                log.debug("WebServer.run_ocr(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return {"ok": False, "error": f"OCR 失败: {exc}"}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.run_ocr(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"OCR 预处理失败: {exc}"}
 
     # ---------------- 插件 / 工具 热插拔 ----------------
@@ -2374,7 +2638,8 @@ class WebServer:
                         "enabled": t.name not in self._disabled_tools,
                         "locked": False,
                     })
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.plugins_snapshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         plugin_items: List[Dict[str, Any]] = []
@@ -2389,7 +2654,8 @@ class WebServer:
                     "enabled": name not in self._disabled_plugins,
                     "locked": False,
                 })
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.plugins_snapshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         return {"ok": True, "groups": [
@@ -2415,7 +2681,8 @@ class WebServer:
                 try:
                     self.kernel.unprovide(sname)
                     removed += 1
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("WebServer._unprovide_owned(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         return removed
 
@@ -2433,7 +2700,8 @@ class WebServer:
                 for a in agents:
                     if a is not None:
                         a.exclude_tools = set(self._disabled_tools)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("WebServer.toggle_plugin(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return {"ok": True, "kind": kind, "name": name, "enabled": enabled}
         if kind == "plugin":
@@ -2453,6 +2721,7 @@ class WebServer:
                     self._unprovide_owned(name)
                     self._disabled_plugins.add(name)
             except Exception as exc:  # noqa: BLE001
+                log.debug("WebServer.toggle_plugin(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             return {"ok": True, "kind": kind, "name": name, "enabled": enabled}
         return {"ok": False, "error": f"未知类型: {kind}"}
@@ -2489,7 +2758,8 @@ class WebServer:
         """取配置对象; 无 kernel 时返回 None (调用方自降级)。"""
         try:
             return self.kernel.require("config") if self.kernel is not None else None
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer._cfg(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
     def mode_effort(self) -> Dict[str, Any]:
@@ -2543,7 +2813,8 @@ class WebServer:
         if cfg is not None:
             try:
                 cfg.data.setdefault("mode", {})["current"] = resolved
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("WebServer.apply_mode(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         # 向后兼容: boundless → yolo=True, chat → plan_mode=True
         pm = resolved == "chat"
@@ -2561,7 +2832,8 @@ class WebServer:
                         a.ctx.yolo = yl
                     if hasattr(a, "effective_tool_set"):
                         a.effective_tool_set()
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("WebServer.apply_mode(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         return {"ok": True, "mode": resolved, "name": resolved, "reason": reason,
                 **self.mode_effort()}
@@ -2576,7 +2848,8 @@ class WebServer:
         if cfg is not None:
             try:
                 cfg.data.setdefault("agent", {})["effort"] = effort
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("WebServer.apply_effort(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return {"ok": True, "effort": effort, **self.mode_effort()}
 
@@ -2603,7 +2876,8 @@ class WebServer:
             return {"branch": None, "dirty": False, "repo": False}
         except subprocess.TimeoutExpired:
             return {"branch": None, "dirty": False, "repo": False}
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.git_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"branch": None, "dirty": False, "repo": False}
 
     def trust_status(self) -> Dict[str, Any]:
@@ -2613,7 +2887,8 @@ class WebServer:
             from ..core.workspace_trust import WorkspaceTrust
             wt = WorkspaceTrust(home_dir())
             return wt.get_project_info(self.workspace)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.trust_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"path": self.workspace, "trust_level": "unknown",
                     "needs_confirmation": True}
 
@@ -2639,17 +2914,20 @@ class WebServer:
                     if a is not None and getattr(a, "ctx", None) is not None:
                         try:
                             setattr(a.ctx, "workspace_trust_level", lvl)
-                        except Exception:  # noqa: BLE001
+                        except Exception as exc:  # noqa: BLE001
+                            log.warning("WebServer.set_trust_level(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                             pass
             return {"ok": True, "level": level, **self.trust_status()}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.set_trust_level(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     def slash_commands(self) -> List[Dict[str, str]]:
         """斜杠命令清单 (名称 + 描述), 供前端命令面板发现/补全 (与 TUI 共用同一权威清单)。"""
         try:
             from ..cli.cmd_slash import list_slash_commands, slash_command_meta
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.slash_commands(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
         meta = slash_command_meta()
         out = []
@@ -2861,7 +3139,8 @@ class WebServer:
                     "key_hint": p.key_hint, "api_key_env": env, "key_set": key_set,
                     "base_url": p.base_url, "models": ids[:80], "tags": tags,
                 })
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.config_snapshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         model = {}
         if cfg is not None:
@@ -2893,6 +3172,7 @@ class WebServer:
         try:
             cfg.set_user(key, coerced)
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.apply_setting(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         # 副作用: 模式/推理投入需实时翻转到会话 agent
         if key == "mode.default":
@@ -2943,6 +3223,7 @@ class WebServer:
                 cfg.set_user("model.base_url", base_url)
                 cfg.set_user("model.api_key_env", api_key_env or "CUSTOM_API_KEY")
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.apply_model(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         env = (preset.api_key_env if preset else api_key_env) or cfg.get("model.api_key_env")
         key_note = ""
@@ -2970,6 +3251,7 @@ class WebServer:
                         if a is not None and hasattr(a, "model"):
                             a.model = kernel.require("model_adapter")
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.apply_model(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"适配器重建失败: {exc}"}
         # 模型是运行期按 config 解析的, 无需重建会话; 这里只把新端点回显给前端
         return {"ok": True, "model": {"provider": provider, "model": model,
@@ -2990,6 +3272,7 @@ class WebServer:
             remove_api_key(env)
             return {"ok": True, "env": env, "set": False}
         except Exception as exc:  # noqa: BLE001
+            log.debug("WebServer.apply_apikey(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     # ---------------- 运行 ----------------
@@ -3019,7 +3302,8 @@ class WebServer:
                 agent.ctx.yolo = agent.yolo
             if me["effort"] in ("low", "medium", "high"):
                 self._cfg().data.setdefault("agent", {})["effort"] = me["effort"]
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.make_agent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return agent
 
@@ -3042,7 +3326,8 @@ class WebServer:
             for a in agents:
                 if a is not None and hasattr(a, "cancel"):
                     a.cancel()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("WebServer.cancel_current(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def serve_forever(self, banner: Optional[Callable[[str, str, str], None]] = None) -> None:

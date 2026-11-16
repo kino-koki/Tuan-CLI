@@ -2204,10 +2204,19 @@ class TestEventTypeGuard:
         期望的严格契约被绕过。
         """
         import inspect
+        from pathlib import Path as _P
+        import tuan_cli.tui as _pkg
         from tuan_cli.tui import tui as T
-        src = inspect.getsource(T.Tui._slogan_dispatch) if hasattr(T, "Tui") else ""
+        src = ""
+        if hasattr(T, "Tui"):
+            src = inspect.getsource(T.Tui._slogan_dispatch)
         if not src:
-            src = inspect.getsource(T)
+            # QxtTUI 已按域拆分为多个 mixin 模块 (_slogan_dispatch 在
+            # tuan_cli/tui/slogan.py): 在整个 tui 包内定位该契约。
+            pkg_dir = _P(_pkg.__file__).parent
+            src = "\n".join(
+                p.read_text(encoding="utf-8") for p in sorted(pkg_dir.glob("*.py"))
+            )
         assert "except mapping.UnboundSloganEvent" in src
         with pytest.raises(mapping.UnboundSloganEvent):
             mapping.pick_for_event(["a"], owner="t")

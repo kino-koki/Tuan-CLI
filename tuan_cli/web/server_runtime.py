@@ -20,6 +20,9 @@ from .handler import (
     _WebHTTPServer,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class ServerRuntimeMixin:
     # ---- 跨 mixin 共享实例状态 (纯声明; 由 WebServer.__init__ 初始化) ----
@@ -44,7 +47,8 @@ class ServerRuntimeMixin:
         """斜杠命令清单 (名称 + 描述), 供前端命令面板发现/补全 (与 TUI 共用同一权威清单)。"""
         try:
             from ..cli.cmd_slash import list_slash_commands, slash_command_meta
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ServerRuntimeMixin.slash_commands(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
         meta = slash_command_meta()
         out = []
@@ -80,7 +84,8 @@ class ServerRuntimeMixin:
                 agent.ctx.yolo = agent.yolo
             if me["effort"] in ("low", "medium", "high"):
                 self._cfg().data.setdefault("agent", {})["effort"] = me["effort"]
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerRuntimeMixin.make_agent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return agent
 
@@ -105,7 +110,8 @@ class ServerRuntimeMixin:
             for a in agents:
                 if a is not None and hasattr(a, "cancel"):
                     a.cancel()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerRuntimeMixin.cancel_current(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

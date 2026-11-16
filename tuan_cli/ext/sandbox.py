@@ -25,6 +25,9 @@ import shutil
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Dict, List, Optional
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class SandboxTier(IntEnum):
@@ -71,7 +74,8 @@ class SandboxProfile:
             try:
                 v = cfg.get(f"security.sandbox.{key}", default)
                 return default if v is None else v
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("沙箱辅助操作异常(设计内忽略): %s", exc)
                 return default
         return cls(
             cpu=int(g("cpu", 2)), memory_mb=int(g("memory_mb", 512)),

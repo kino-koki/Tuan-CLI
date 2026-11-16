@@ -22,6 +22,9 @@ from ...runtime.mcp.connection_manager import McpConnectionManager
 from ...runtime.mcp.naming import qualify_mcp_tool_name
 from ...runtime.mcp.types import MCPContentBlock, MCPToolResult
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def is_remote_server(cfg: Any) -> bool:
     """判断一个 server 配置是否走远程传输（http/sse）。
@@ -105,7 +108,8 @@ class MultiTransportMCP:
                 asyncio.run_coroutine_threadsafe(
                     self._manager.shutdown(), self._loop
                 ).result(self._timeout)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("MultiTransportMCP.shutdown(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         self._stop_loop()
 

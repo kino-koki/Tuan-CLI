@@ -18,6 +18,9 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 # Codex 原文（英文）与本地化译文。key 采用 ``域.动作`` 形式。
 PARITY_MESSAGES: Dict[str, Dict[str, str]] = {
     "en": {
@@ -124,7 +127,8 @@ def _current_lang() -> str:
     try:
         from ...i18n import get_language
         return str(get_language())
-    except Exception:  # noqa: BLE001 - i18n 不可用时不影响 parity 文案
+    except Exception as exc:  # noqa: BLE001 - i18n 不可用时不影响 parity 文案
+        log.debug("_current_lang(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return "zh-CN"   # 项目默认中文，与 i18n/__init__.py 一致
 
 
@@ -141,7 +145,8 @@ def pt(key: str, *, lang: Optional[str] = None, **kwargs: object) -> str:
         override = _t("parity." + key, **kwargs)
         if override and not override.startswith("parity."):
             return str(override)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("pt(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
     # 2) 内置表：当前语言 -> zh-CN -> en

@@ -22,7 +22,8 @@ def _sh_ok(args: List[str], timeout: float = 5.0) -> bool:
         proc = subprocess.run(args, stdout=subprocess.DEVNULL,
                               stderr=subprocess.DEVNULL, timeout=timeout)
         return proc.returncode == 0
-    except Exception:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover
+        log.debug("沙箱后端探测/执行异常(设计内降级): %s", exc)
         return False
 
 
@@ -37,7 +38,8 @@ def _bwrap_available() -> bool:
         return False
     try:
         return _sh_ok([shutil.which("bwrap"), "--ro-bind", "/", "/", "true"])
-    except Exception:
+    except Exception as exc:
+        log.debug("沙箱后端探测/执行异常(设计内降级): %s", exc)
         return False
 
 
@@ -78,7 +80,8 @@ def _jobobject_available() -> bool:
             return bool(ok)
         finally:
             k32.CloseHandle(job)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("沙箱后端探测/执行异常(设计内降级): %s", exc)
         return False
 
 
@@ -88,7 +91,8 @@ def _token_acl_available() -> bool:
     try:
         import ctypes
         return bool(ctypes.windll.shell32.IsUserAnAdmin() != 0)
-    except Exception:
+    except Exception as exc:
+        log.debug("沙箱后端探测/执行异常(设计内降级): %s", exc)
         return False
 
 
@@ -144,7 +148,8 @@ def pick_backend(prefer: str = "auto") -> Tuple[str, bool]:
         try:
             if probe is not None and probe():
                 return prefer, True
-        except Exception:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover
+            log.warning("沙箱后端探测/执行异常(设计内降级): %s", exc)
             pass
         # 显式指定的强后端不可用: 绝不静默降级到其它后端(尤其 local)。
         # 返回 (prefer, False) 交由 HardIsolationFilter 的 enforce 策略做 fail-closed 拒绝。
@@ -155,6 +160,7 @@ def pick_backend(prefer: str = "auto") -> Tuple[str, bool]:
         try:
             if probe():
                 return name, True
-        except Exception:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover
+            log.debug("沙箱后端探测/执行异常(设计内降级): %s", exc)
             continue
     return "local", True

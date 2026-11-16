@@ -247,7 +247,8 @@ def _show_quickstart() -> None:
         import importlib.resources
         pkg = importlib.resources.files("tuan_cli")
         candidates.append(Path(str(pkg)) / "docs" / "QUICKSTART.md")
-    except Exception:
+    except Exception as exc:
+        log.warning("_show_quickstart(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
     quickstart_path = None
@@ -304,5 +305,8 @@ def _show_quickstart() -> None:
 
 # 注册本模块的命令函数到全局注册表
 from .parser import _register_command
+
+import logging
+log = logging.getLogger(__name__)
 _register_command("cmd_help", ".cmd_help")
 

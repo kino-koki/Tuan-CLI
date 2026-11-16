@@ -33,7 +33,8 @@ class ServerOpsMixin:
                 return {"available": False}
             data = json.loads(bench.read_text(encoding="utf-8"))
             return {"available": True, "benchmark": data}
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.security_info(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"available": False}
 
 
@@ -69,7 +70,8 @@ class ServerOpsMixin:
                                     "args": str(p.get("args") or "")[:200],
                                     "out": out[:300],
                                 })
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerOpsMixin.security_detail(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return {
             "available": bool(info.get("available")),
@@ -172,7 +174,8 @@ class ServerOpsMixin:
             # T-5.3: 复用 remote_control 推送通道 (日志落证 + 远程设备推送)
             from ..core.remote_control import notify as rc_notify
             rc_notify(title, body, kind="budget")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerOpsMixin.check_budget_alert(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -188,13 +191,15 @@ class ServerOpsMixin:
                         tl = getattr(c, "tools", None)
                         if isinstance(tl, (list, tuple)):
                             tools = [getattr(t, "name", str(t)) for t in tl][:40]
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("ServerOpsMixin.mcp_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
                     out.append({"name": str(name), "connected": True,
                                 "tool_count": len(tools), "tools": tools})
             elif clients:
                 out.append({"name": "mcp_clients", "connected": True, "tool_count": 0, "tools": []})
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerOpsMixin.mcp_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return out
 
@@ -216,6 +221,7 @@ class ServerOpsMixin:
                     disconnect()
             return {"ok": True, "name": name, "enabled": enabled}
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.mcp_toggle(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
 
@@ -260,6 +266,7 @@ class ServerOpsMixin:
             sk = sm.save(name, description, body)
             return {"ok": True, "name": sk.name, "slug": getattr(sk, "slug", name)}
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.skill_save(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
 
@@ -273,6 +280,7 @@ class ServerOpsMixin:
             f.unlink()
             return {"ok": True, "name": name}
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.skill_delete(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
 
@@ -295,6 +303,7 @@ class ServerOpsMixin:
             return {"ok": True, "name": sk.name, "description": sk.description, "body": sk.body,
                     "use_count": getattr(sk, "use_count", 0), "origin": getattr(sk, "origin", "user")}
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.skill_read(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
 
@@ -350,7 +359,8 @@ class ServerOpsMixin:
                                 "role": "assistant",
                                 "content": f"已加载技能 {sname}, 继续任务。",
                             })
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("ServerOpsMixin.dispatch_agent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
             # Agent.run 没有独立 timeout 参数 → 独立线程 + 硬超时
@@ -382,6 +392,7 @@ class ServerOpsMixin:
                 answer = answer[:8000] + f"\n...[摘要截断, 完整输出 {len(answer)} 字符]"
             return {"ok": True, "result": answer}
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.dispatch_agent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": str(exc)}
 
 
@@ -398,7 +409,8 @@ class ServerOpsMixin:
                 "last_route": last,
                 "available": router is not None,
             }
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.router_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"enabled": False, "auto_switch": True, "available": False}
 
 
@@ -436,6 +448,7 @@ class ServerOpsMixin:
                     loop.close()
             return {"agents": items}
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.agents_registry_list(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"agents": [], "error": str(exc)}
 
 
@@ -514,6 +527,7 @@ class ServerOpsMixin:
                 "bytes": len(png_bytes),
             }
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.take_screenshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"截屏失败: {exc}"}
 
 
@@ -543,8 +557,10 @@ class ServerOpsMixin:
                     "hint": "pytesseract 未安装。视觉模型可直接看 base64 图；非视觉模型可先装 pip install pytesseract 并安装 Tesseract 可执行文件。",
                 }
             except Exception as exc:  # noqa: BLE001
+                log.debug("ServerOpsMixin.run_ocr(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return {"ok": False, "error": f"OCR 失败: {exc}"}
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.run_ocr(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"OCR 预处理失败: {exc}"}
 
 
@@ -572,7 +588,8 @@ class ServerOpsMixin:
                         "enabled": t.name not in self._disabled_tools,
                         "locked": False,
                     })
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerOpsMixin.plugins_snapshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         plugin_items: List[Dict[str, Any]] = []
@@ -587,7 +604,8 @@ class ServerOpsMixin:
                     "enabled": name not in self._disabled_plugins,
                     "locked": False,
                 })
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerOpsMixin.plugins_snapshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         return {"ok": True, "groups": [
@@ -614,7 +632,8 @@ class ServerOpsMixin:
                 try:
                     self.kernel.unprovide(sname)
                     removed += 1
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("ServerOpsMixin._unprovide_owned(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         return removed
 
@@ -633,7 +652,8 @@ class ServerOpsMixin:
                 for a in agents:
                     if a is not None:
                         a.exclude_tools = set(self._disabled_tools)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ServerOpsMixin.toggle_plugin(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return {"ok": True, "kind": kind, "name": name, "enabled": enabled}
         if kind == "plugin":
@@ -653,6 +673,7 @@ class ServerOpsMixin:
                     self._unprovide_owned(name)
                     self._disabled_plugins.add(name)
             except Exception as exc:  # noqa: BLE001
+                log.debug("ServerOpsMixin.toggle_plugin(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             return {"ok": True, "kind": kind, "name": name, "enabled": enabled}
         return {"ok": False, "error": f"未知类型: {kind}"}
@@ -681,7 +702,8 @@ class ServerOpsMixin:
             return {"branch": None, "dirty": False, "repo": False}
         except subprocess.TimeoutExpired:
             return {"branch": None, "dirty": False, "repo": False}
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.git_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"branch": None, "dirty": False, "repo": False}
 
 
@@ -692,7 +714,8 @@ class ServerOpsMixin:
             from ..core.workspace_trust import WorkspaceTrust
             wt = WorkspaceTrust(home_dir())
             return wt.get_project_info(self.workspace)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.trust_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"path": self.workspace, "trust_level": "unknown",
                     "needs_confirmation": True}
 
@@ -719,8 +742,10 @@ class ServerOpsMixin:
                     if a is not None and getattr(a, "ctx", None) is not None:
                         try:
                             setattr(a.ctx, "workspace_trust_level", lvl)
-                        except Exception:  # noqa: BLE001
+                        except Exception as exc:  # noqa: BLE001
+                            log.warning("ServerOpsMixin.set_trust_level(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                             pass
             return {"ok": True, "level": level, **self.trust_status()}
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerOpsMixin.set_trust_level(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}

@@ -168,5 +168,6 @@ class SecurityPlugin(Plugin):
         for svc in self.provides:
             try:
                 kernel.unprovide(svc)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("安全插件钩子异常(不影响主流程): %s", exc)
                 pass

@@ -44,7 +44,8 @@ class ProgramRule:
     def matches(self, trg: Trigger) -> bool:
         try:
             return bool(self.fn(trg))
-        except Exception:  # noqa: BLE001 - 规则异常按不命中处理
+        except Exception as exc:  # noqa: BLE001 - 规则异常按不命中处理
+            log.debug("ProgramRule.matches(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return False
 
 
@@ -184,7 +185,8 @@ class EventBus:
         for fn in listeners:
             try:
                 fn(trg, status)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("EventBus._notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def status_counts(self) -> Dict[str, int]:

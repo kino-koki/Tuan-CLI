@@ -200,7 +200,8 @@ class AutoDistiller:
                     data = json.load(f)
                 skill = DistilledSkill(**data)
                 self._skills[skill.name] = skill
-            except Exception:  # 损坏条目跳过, 不阻断加载
+            except Exception as exc:  # 损坏条目跳过, 不阻断加载
+                log.debug("AutoDistiller._load_distilled_skills(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
 
     def _save_distilled_skill(self, skill: DistilledSkill) -> None:
@@ -295,7 +296,8 @@ class AutoDistiller:
         try:
             records = self._store.read_all()
             return self._reflector.reflect(records)
-        except Exception:
+        except Exception as exc:
+            log.debug("AutoDistiller._extract_experiences(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
 
     @staticmethod

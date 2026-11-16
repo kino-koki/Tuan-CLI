@@ -25,6 +25,9 @@ from .types import (
     MCPToolResult,
     UnexpectedCloseReason,
 )
+import logging
+log = logging.getLogger(__name__)
+
 
 
 def _cfg(config: Any, key: str, default: Any = None) -> Any:
@@ -98,15 +101,18 @@ class HttpMcpClient:
         if self._ready:
             try:
                 await self._rpc("shutdown", {})
-            except Exception:
+            except Exception as exc:
+                log.warning("HttpMcpClient.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             try:
                 await self._rpc_notify("exit", {})
-            except Exception:
+            except Exception as exc:
+                log.warning("HttpMcpClient.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         try:
             await self._client.aclose()
-        except Exception:
+        except Exception as exc:
+            log.warning("HttpMcpClient.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # ------------------------------------------------------------- MCP 接口
@@ -181,7 +187,8 @@ class HttpMcpClient:
         body = {"jsonrpc": "2.0", "method": method, "params": params}
         try:
             await self._post(body, expect_response=False)
-        except Exception:
+        except Exception as exc:
+            log.warning("HttpMcpClient._rpc_notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     async def _post(self, body: Dict[str, Any], expect_response: bool = True) -> Any:

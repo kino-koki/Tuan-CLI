@@ -53,6 +53,7 @@ def _call(engine: str, method: str, params: dict, timeout: int = 30) -> Any:
 
         return get_isolation().call(engine, method, params, timeout=timeout)
     except Exception as exc:  # noqa: BLE001
+        logger.debug("_call(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
@@ -191,6 +192,7 @@ def safety_check(ctx: ToolContext, command: str) -> dict:
         return {"risk": "none", "block": False, "unavailable": True,
                 "reasons": [str(raw)], "safe_preview": []}
     except Exception as exc:  # noqa: BLE001
+        logger.debug("safety_check(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"risk": "none", "block": False, "unavailable": True,
                 "reasons": [f"安全引擎调用失败: {type(exc).__name__}: {exc}"],
                 "safe_preview": []}

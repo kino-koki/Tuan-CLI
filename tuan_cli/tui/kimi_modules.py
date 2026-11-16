@@ -33,6 +33,16 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import RadioList
 
+from tuan_cli.ui.theme import (
+    BRAND_DIM,
+    BRAND_PRIMARY,
+    BRAND_SECONDARY,
+    BRAND_TEXT,
+)
+
+import logging
+log = logging.getLogger(__name__)
+
 # 可选依赖: prompt_toolkit 缺失时降级 (仍可导入本模块, 仅渲染函数不可用)。
 try:
     from prompt_toolkit.widgets import RadioList as _PT_RadioList  # noqa: F401
@@ -42,12 +52,12 @@ except Exception:  # noqa: BLE001
 
 
 # Kimi 同款主题色 (取自 Kimi ui/theme.py, 供自绘面板配色复用)。
-_PRIMARY = "#4FA8FF"
-_TEXT = "#E0E0E0"
+_PRIMARY = BRAND_PRIMARY
+_TEXT = BRAND_TEXT
 _TEXT_STRONG = "#F5F5F5"
-_DIM = "#888888"
+_DIM = BRAND_DIM
 _BORDER = "#5A5A5A"
-_ACCENT = "#5BC0BE"
+_ACCENT = BRAND_SECONDARY
 _SUCCESS = "#4EC87E"
 _WARNING = "#E8A838"
 _ERROR = "#E85454"
@@ -340,7 +350,8 @@ def collect_sessions(home: Optional[Path] = None) -> List[SessionEntry]:
             except (OSError, ValueError):
                 continue
         return out
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("collect_sessions(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return []
 
 
@@ -373,7 +384,8 @@ def collect_tasks(home: Optional[Path] = None) -> List[TaskView]:
             except (OSError, ValueError):
                 continue
         return out
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("collect_tasks(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return []
 
 
@@ -408,7 +420,8 @@ def collect_mcp_servers() -> List[McpServerInfo]:
                 tools=int(spec.get("tools_count") or 0) or 0,
             ))
         return out
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("collect_mcp_servers(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return []
 
 

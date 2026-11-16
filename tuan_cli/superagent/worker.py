@@ -276,7 +276,8 @@ class WorkerPool:
             self.bus.unsubscribe(thread_id)
         try:
             self.bus.unregister_worker(worker_id)
-        except Exception:  # noqa: BLE001 - 注销失败不影响主流程
+        except Exception as exc:  # noqa: BLE001 - 注销失败不影响主流程
+            log.warning("WorkerPool._release_subscription(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def on_ticket_update(self, ticket_id: str, trg: Trigger) -> bool:

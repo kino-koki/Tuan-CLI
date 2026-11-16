@@ -64,20 +64,178 @@ def __getattr__(name: str) -> Any:
 # ===================================================================== cmd_plugin
 
 
+def _get_plugin_manager(config: Any = None) -> Any:
+    """惰性构建 PluginManager (基于 ~/.tuan/plugins)。"""
+    from ..skills.plugin_sdk import PluginManager
+
+    home = None
+    if config is not None:
+        try:
+            home = config.home
+        except Exception:  # noqa: BLE001
+            home = None
+    if home is None:
+        from ..paths import get_home  # 保守尝试
+
+        home = Path(get_home())  # type: ignore[misc]
+    return PluginManager(Path(home) / "plugins")
+
+
 def cmd_plugin(args: Any) -> int:
-    """插件管理。"""
+    """插件管理 (兼容 DSH 0.2+)。
+
+    子命令:
+      tuan plugin list                  列出已安装插件
+      tuan plugin install <path>        从本地目录安装
+      tuan plugin uninstall <name>      卸载
+      tuan plugin enable <name>         启用
+      tuan plugin disable <name>        禁用
+      tuan plugin info <name>           查看详情
+    """
+    plugin_cmd = getattr(args, "plugin_cmd", None) or "list"
+    config = Config(
+        profile=getattr(args, "profile", "default"),
+        patch_file=getattr(args, "patch", None),
+    )
+
     try:
-        kernel = build_kernel()
-    except Exception as exc:
-        console.print(f"启动失败: {exc}")
+        manager = _get_plugin_manager(config)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]插件管理器初始化失败:[/red] {exc}")
         return 1
-    console.print("插件列表")
-    for name, plugin in kernel.plugins.items():
-        provides = ", ".join(plugin.provides) if plugin.provides else "-"
-        console.print(f"  {name:<30s} provides: {provides}")
-    console.print("\n服务列表")
-    for svc in kernel.services.services:
-        console.print(f"  {svc}")
+
+    if plugin_cmd == "list":
+        return _plugin_cmd_list(manager)
+
+    if plugin_cmd == "install":
+        source = getattr(args, "path", "")
+        name = getattr(args, "name", None)
+        if not source:
+            console.print("[red]缺少插件源目录路径[/red]")
+            return 1
+        try:
+            info = manager.install_from_directory(Path(source).expanduser(), name=name)
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"[red]安装失败:[/red] {exc}")
+            return 1
+        console.print(
+            f"[green]已安装[/green] {info.manifest.name} v{info.manifest.version} "
+            f"({info.path})"
+        )
+        return 0
+
+    if plugin_cmd == "uninstall":
+        name = getattr(args, "name", "")
+        if manager.uninstall(name):
+            console.print(f"[green]已卸载[/green] {name}")
+            return 0
+        console.print(f"[yellow]未找到插件[/yellow] {name}")
+        return 1
+
+    if plugin_cmd == "enable":
+        name = getattr(args, "name", "")
+        if manager.enable(name):
+            console.print(f"[green]已启用[/green] {name}")
+            return 0
+        console.print(f"[yellow]未找到插件[/yellow] {name}")
+        return 1
+
+    if plugin_cmd == "disable":
+        name = getattr(args, "name", "")
+        if manager.disable(name):
+            console.print(f"[yellow]已禁用[/yellow] {name}")
+            return 0
+        console.print(f"[red]未找到插件[/red] {name}")
+        return 1
+
+    if plugin_cmd == "info":
+        name = getattr(args, "name", "")
+        return _plugin_cmd_info(manager, name)
+
+    console.print(f"[red]未知子命令[/red] plugin {plugin_cmd}")
+    return 1
+
+
+def _plugin_cmd_list(manager: Any) -> int:
+    """列出已安装插件 (含版本、状态、兼容性)。"""
+    plugins = manager.list_plugins()
+    if not plugins:
+        console.print(
+            f"没有插件 (目录: {manager.plugins_dir})\n"
+            "用 `tuan plugin install <path>` 安装"
+        )
+        return 0
+
+    dsh_version = manager.check_dsh_version()
+    if dsh_version:
+        console.print(f"[dim]DSH 版本: {dsh_version}[/dim]")
+    else:
+        console.print(
+            "[dim]DSH 未检测到 — 跳过 min_dsh_version 检查 "
+            "(可写入 ~/.tuan/dsh_version 或安装 dsh 命令)[/dim]"
+        )
+    console.print(f"{'名称':<28} {'版本':<10} {'状态':<8} {'格式':<8} 描述")
+    for info in plugins:
+        status = "[green]启用[/green]" if info.enabled else "[dim]禁用[/dim]"
+        fmt = info.manifest.format
+        desc = (info.manifest.description or "")[:40]
+        console.print(
+            f"{info.manifest.name:<28} {info.manifest.version:<10} "
+            f"{status:<8} {fmt:<8} {desc}"
+        )
+    return 0
+
+
+def _plugin_cmd_info(manager: Any, name: str) -> int:
+    """显示插件完整信息。"""
+    info = manager.get_plugin(name)
+    if info is None:
+        console.print(f"[red]未找到插件[/red] {name}")
+        return 1
+
+    m = info.manifest
+    console.print(f"[bold]{m.name}[/bold] v{m.version}   "
+                  f"{'[green]启用[/green]' if info.enabled else '[dim]禁用[/dim]'}")
+    if m.description:
+        console.print(f"  描述: {m.description}")
+    if m.author:
+        console.print(f"  作者: {m.author}")
+    if m.license:
+        console.print(f"  许可: {m.license}")
+    if m.repository:
+        console.print(f"  仓库: {m.repository}")
+    console.print(f"  路径: {info.path}")
+    console.print(f"  格式: {m.format}")
+
+    if m.skills:
+        console.print(f"\n[bold]技能 ({len(m.skills)})[/bold]")
+        for s in m.skills:
+            auto = " (auto)" if s.get("auto_invoke") else ""
+            console.print(f"  - {m.name}:{s.get('name', '?')}{auto}  "
+                          f"{s.get('description', '')}")
+
+    if m.hooks:
+        console.print("\n[bold]Hooks[/bold]")
+        for hook_name, hook_cmd in m.hooks.items():
+            console.print(f"  {hook_name:<10} {hook_cmd}")
+
+    if m.dependencies:
+        console.print("\n[bold]依赖[/bold]")
+        for dep_name, dep_ver in m.dependencies.items():
+            console.print(f"  {dep_name}: {dep_ver}")
+
+    if m.compatibility:
+        console.print("\n[bold]兼容性[/bold]")
+        for k, v in m.compatibility.items():
+            console.print(f"  {k}: {v}")
+        dsh_version = manager.check_dsh_version()
+        ok, reason = m.validate_dsh_compat(dsh_version)
+        if not ok:
+            console.print(f"  [red]DSH 兼容性: 不满足[/red] ({reason})")
+        elif reason:
+            console.print(f"  [yellow]DSH 兼容性:[/yellow] {reason}")
+        else:
+            console.print("  [green]DSH 兼容性: 满足[/green]")
     return 0
 
 

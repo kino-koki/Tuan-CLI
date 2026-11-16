@@ -171,7 +171,8 @@ def _execute_subtask(
         try:
             from ..hooks.triggers import close_agent_session
             close_agent_session(sub_agent)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_execute_subtask(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     return answer or "(无输出)"

@@ -109,7 +109,8 @@ class BackgroundJob:
         for ln in lines[-n * 3:]:
             try:
                 rec = json.loads(ln)
-            except Exception:
+            except Exception as exc:
+                log.debug("BackgroundJob.tail(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
             t = rec.get("type")
             if t == "user":

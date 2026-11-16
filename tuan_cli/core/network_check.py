@@ -19,6 +19,9 @@ import time
 import urllib.error
 import urllib.request
 from typing import Dict, List, Optional
+import logging
+log = logging.getLogger(__name__)
+
 
 #: 默认探测超时 (秒), 契约 C-5.1 固定 3s
 DEFAULT_TIMEOUT = 3.0
@@ -56,7 +59,8 @@ def _configured_base_url() -> Optional[str]:
         url = model.get("base_url")
         if isinstance(url, str) and url.startswith(("http://", "https://")):
             return url.rstrip("/")
-    except Exception:  # noqa: BLE001 - 配置读取失败不阻断网络检测
+    except Exception as exc:  # noqa: BLE001 - 配置读取失败不阻断网络检测
+        log.warning("_configured_base_url(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return None
 
@@ -164,6 +168,7 @@ def local_model_available() -> bool:
             return True
         if status.get("llamacpp", {}).get("available") and status["llamacpp"].get("models"):
             return True
-    except Exception:  # noqa: BLE001 - 探测失败按「无本地模型」处理
+    except Exception as exc:  # noqa: BLE001 - 探测失败按「无本地模型」处理
+        log.warning("local_model_available(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return False

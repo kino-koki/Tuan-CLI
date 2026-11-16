@@ -27,6 +27,9 @@ from typing import Any, Optional, Union
 from ..core.kernel import Kernel, Plugin
 from .base import Tool, ToolContext, string_prop
 
+import logging
+log = logging.getLogger(__name__)
+
 MAX_PAGE = 15000
 MAX_BODY = 2 * 1024 * 1024  # 响应体上限 2MB, 防止大页面拖垮 Agent
 _TAG_RE = re.compile(r"<(script|style)[\s\S]*?</\1>", re.IGNORECASE)
@@ -269,7 +272,8 @@ def _cache_dir(ctx: Any) -> Optional[Path]:
         return None
     try:
         return Path(os.path.expanduser(cfg))
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_cache_dir(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 
@@ -294,7 +298,8 @@ def _cache_load(ctx: Any, query: str, limit: int, engine: str, ttl: float,
         for r in results:
             r["snippet"] = _truncate(r.get("snippet", ""), snippet_max)
         return results  # type: ignore[no-any-return]  # 缓存数据为 Any
-    except Exception:  # noqa: BLE001 - 缓存损坏/不可读不影响主流程
+    except Exception as exc:  # noqa: BLE001 - 缓存损坏/不可读不影响主流程
+        log.debug("_cache_load(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 
@@ -314,7 +319,8 @@ def _cache_store(ctx: Any, query: str, limit: int, engine: str,
     except Exception:  # noqa: BLE001 - 缓存写入失败绝不影响搜索
         try:
             tmp.unlink(missing_ok=True)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_cache_store(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

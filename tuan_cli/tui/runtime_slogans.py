@@ -366,6 +366,9 @@ from ..ui.slogans._clean import (  # noqa: F401  (re-export, 保持旧 API)
     display_cols, sanitize_log_field, sanitize_verb,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 def slogan_bank(lang: str) -> Dict[str, Tuple[str, ...]]:
     """返回该语言的完整词库；未知语言回退英文（调用方负责显式选择语言）。"""
     return _BANK.get(lang, _BANK["en"])
@@ -806,6 +809,7 @@ class RuntimeSloganEngine:
             cfg = load_config(path)
             lang = _current_language()
         except Exception as exc:  # noqa: BLE001 - 重载失败绝不能掀掉 TUI
+            log.debug("RuntimeSloganEngine.reload(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return False, f"reload-failed:{type(exc).__name__}"
         if cfg.source.startswith("invalid:"):
             return False, cfg.source          # 保留旧配置，不静默吞掉错误配置
@@ -1073,5 +1077,6 @@ def _current_language() -> str:
     try:
         from ..i18n import get_language
         return get_language()
-    except Exception:  # noqa: BLE001 - i18n 不可用时不能让 TUI 崩
+    except Exception as exc:  # noqa: BLE001 - i18n 不可用时不能让 TUI 崩
+        log.debug("_current_language(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return "zh-CN"

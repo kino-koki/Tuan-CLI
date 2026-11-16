@@ -202,7 +202,8 @@ def _notify(job: Dict[str, Any], err: Optional[str]) -> None:
         else:
             title, message = f"⏰ 定时任务完成: {name}", "已执行完毕, 结果见会话流"
         NotifyEngine().notify({"title": title, "message": message})
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 

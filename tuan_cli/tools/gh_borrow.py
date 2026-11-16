@@ -21,6 +21,9 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
+import logging
+log = logging.getLogger(__name__)
+
 # 借鉴原则: 对外暴露, 任何返回结果都会携带, agent/skill 强制遵守。
 BORROW_PLEDGE = (
     "借鉴原则: 仅参考其实现思路 / 接口设计 / 边界处理, 绝不整段照搬; "
@@ -39,6 +42,7 @@ def _default_runner(args: List[str], timeout: int = 25) -> Tuple[int, str, str]:
         proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
         return proc.returncode, proc.stdout, proc.stderr
     except Exception as exc:  # noqa: BLE001
+        log.debug("_default_runner(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return 1, "", str(exc)
 
 
@@ -127,7 +131,8 @@ class GitHubClient:
                 data = self._gh_api(api)
                 if isinstance(data, dict) and data.get("content"):
                     return base64.b64decode(data["content"]).decode("utf-8", "replace")
-            except Exception:
+            except Exception as exc:
+                log.warning("GitHubClient.get_file_content(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         # 回退: raw.githubusercontent.com
         branch = ref or "main"
@@ -150,7 +155,8 @@ class GitHubClient:
             else:
                 data = self._rest(f"https://api.github.com/repos/{repo}/license")
             return (data.get("license") or {}).get("spdx_id") or "NOASSERTION"
-        except Exception:
+        except Exception as exc:
+            log.debug("GitHubClient.get_license(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return "?"
 
 

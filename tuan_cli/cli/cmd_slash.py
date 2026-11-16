@@ -48,6 +48,9 @@ from .cmd_slash_claude import (
     cmd_auto_mode_setup,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 
 _HELP = """
 可用斜杠命令 (Slash Commands)
@@ -303,7 +306,8 @@ def list_slash_commands() -> list:
             n = f"/{item['name']}"
             if n not in names:
                 names.append(n)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("list_slash_commands(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return names
 
@@ -384,7 +388,8 @@ def _cmd_status(agent: Any, config: Any) -> None:
         persona = resolve_personality(config, memory_store)
         info = get_personality_info(persona)
         ui.info(f"  人设: {info['name']} ({info['key']}) — {info['tagline']}")
-    except Exception:
+    except Exception as exc:
+        log.warning("_cmd_status(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass  # 人设模块不可用不影响状态显示
     ui.info(f"  会话消息: {len(agent.messages)} 条")
     st = agent.context_stats()
@@ -449,7 +454,8 @@ def _cmd_budget(agent: Any, config: Any, arg: str) -> None:
     try:
         spent = agent._estimate_total_cost()
         ui.info(f"  本会话估算已花费: ${spent:.4f}")
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_cmd_budget(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -515,7 +521,8 @@ def _cmd_add_dir(agent: Any, arg: str) -> None:
                 "writable": writable,
                 "session_only": True,
             })
-        except Exception:
+        except Exception as exc:
+            log.warning("_cmd_add_dir(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -727,7 +734,8 @@ def _cmd_team(agent: Any, arg: str) -> None:
             try:
                 lines = audit_path.read_text(encoding="utf-8").splitlines()
                 evts = [json.loads(l) for l in lines[-30:] if l.strip()]
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_cmd_team(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         if not evts:
             ui.info("  审计链为空。")
@@ -1074,7 +1082,8 @@ def _cmd_log(agent: Any, arg: str) -> None:
                     continue
                 try:
                     rec = json.loads(line)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("_cmd_log(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     continue
                 if rec.get("type") == "tool_call":
                     tool_events.append(rec)
@@ -1176,7 +1185,8 @@ def _cmd_language(agent: Any, config: Any, arg: str) -> None:
     try:
         if config is not None and hasattr(config, "set_user"):
             config.set_user("language", applied)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_cmd_language(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     info = available_languages().get(applied, {})
     ui.success(f"界面语言已切换为: {applied} ({info.get('native', '')})")

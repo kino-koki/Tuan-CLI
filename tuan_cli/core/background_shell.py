@@ -153,7 +153,8 @@ class ShellJob:
             log.debug("取消后台 shell 异常: %s", exc)
             try:
                 proc.kill()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("ShellJob._kill_tree(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return False
         return True
 
@@ -321,7 +322,8 @@ class BackgroundShellManager:
             return None
         try:
             obj = json.loads(meta.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("BackgroundShellManager._rehydrate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
         job = ShellJob(obj.get("job_id", job_id), obj.get("command", ""),
                        obj.get("cwd", ""), self.home, obj.get("started_at", 0.0))
@@ -458,7 +460,8 @@ class BackgroundShellManager:
                 obj = json.loads(meta.read_text(encoding="utf-8"))
                 if keep_running and obj.get("status") in ("queued", "running"):
                     continue
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("BackgroundShellManager.prune_disk(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
             try:
                 meta.unlink()

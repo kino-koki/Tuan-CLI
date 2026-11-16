@@ -34,6 +34,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 # 探针签名：返回 {"ok": bool, "checks": int, "evidence": str,
 #                 "problems": [str, ...]}。不许抛异常出门（由 run_probe 兜住）。
 ProbeFn = Callable[[], dict]
@@ -56,7 +59,8 @@ def _ensure_registry() -> None:
     try:
         import importlib
         importlib.import_module("tuan_cli.tui.codexkit")
-    except Exception:  # noqa: BLE001 - 导入失败由 missing 如实暴露
+    except Exception as exc:  # noqa: BLE001 - 导入失败由 missing 如实暴露
+        log.warning("_ensure_registry(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -180,5 +184,6 @@ for _pkg, _fn in (
         _m = _il.import_module(_pkg)
         if hasattr(_m, _fn):
             PROBE_REGISTRY["__package__:" + _pkg] = _wrap_package_probe(_pkg, _fn)
-    except Exception:  # noqa: BLE001 - 包不可导入时不注册，audit 会如实暴露
+    except Exception as exc:  # noqa: BLE001 - 包不可导入时不注册，audit 会如实暴露
+        log.warning("模块顶层: 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass

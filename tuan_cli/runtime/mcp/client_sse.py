@@ -21,6 +21,9 @@ from ... import _http as httpx  # 零依赖传输层 (stdlib 实现 httpx 表面
 from .client_http import HttpMcpClient
 from .errors import McpError
 from .types import UnexpectedCloseReason
+import logging
+log = logging.getLogger(__name__)
+
 
 
 class SseMcpClient(HttpMcpClient):
@@ -106,7 +109,8 @@ class SseMcpClient(HttpMcpClient):
                 if listener is not None:
                     try:
                         listener({"error": exc, "stderr": None})
-                    except Exception:
+                    except Exception as exc:
+                        log.warning("SseMcpClient._sse_listen(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
 
     def _dispatch_sse_event(self, event_type: str, data: str) -> None:

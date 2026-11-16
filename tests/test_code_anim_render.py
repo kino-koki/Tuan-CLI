@@ -68,6 +68,14 @@ def test_draw_frame_each_node_type():
         ("box", {"x": 10, "y": 10, "w": 60, "h": 40, "label": "L"}),
         ("dataflow", {"x1": 5, "y1": 5, "x2": 100, "y2": 60, "dash": True, "dot": True}),
         ("bg", {"type": "gradient"}),
+        # 阶段 3 高级动效原语
+        ("transition", {"type": "slide", "direction": "ltr",
+                        "from_color": "#000000", "to_color": "#ffffff"}),
+        ("particles", {"count": 30, "origin": "center", "spread": 60,
+                       "color": "#4fc3f7", "life": 1.0}),
+        ("kinetic", {"text": "Hello", "font_size": 20, "mode": "char",
+                     "stagger": 0.02}),
+        ("beat", {"bpm": 120, "kind": "border", "strength": 0.2}),
     ]
     for ntype, props in node_specs:
         pj = _base_project(nodes=[{"type": ntype, "start": 0.0, "end": 5.0,
@@ -84,6 +92,268 @@ def test_draw_frame_bg_grid_and_solid():
                                    "props": {"type": btype}}])
         img = car.draw_frame(pj, 0.5)
         assert img.size == (128, 72)
+
+
+# ---------------------------------------------------------------------------
+# 阶段 3 高级动效原语: 各 variant 渲染不报错 + frame-stable
+# ---------------------------------------------------------------------------
+
+def test_advanced_primitives_all_variants_render():
+    """transition/particles/kinetic/beat 各子类型在中段时间点均可渲染。"""
+    cases = [
+        # transition: 4 方向 + 4 类型
+        ({"type": "transition", "start": 0.0, "end": 2.0,
+          "props": {"type": "crossfade", "from_color": "#000", "to_color": "#fff"}}, 1.0),
+        ({"type": "transition", "start": 0.0, "end": 2.0,
+          "props": {"type": "slide", "direction": "ltr"}}, 1.0),
+        ({"type": "transition", "start": 0.0, "end": 2.0,
+          "props": {"type": "slide", "direction": "rtl"}}, 1.0),
+        ({"type": "transition", "start": 0.0, "end": 2.0,
+          "props": {"type": "slide", "direction": "ttb"}}, 1.0),
+        ({"type": "transition", "start": 0.0, "end": 2.0,
+          "props": {"type": "slide", "direction": "btt"}}, 1.0),
+        ({"type": "transition", "start": 0.0, "end": 2.0,
+          "props": {"type": "zoom"}}, 1.0),
+        ({"type": "transition", "start": 0.0, "end": 2.0,
+          "props": {"type": "wipe", "direction": "ltr"}}, 1.0),
+        # particles: 各 origin
+        ({"type": "particles", "start": 0.0, "end": 2.0,
+          "props": {"count": 20, "origin": "center"}}, 0.5),
+        ({"type": "particles", "start": 0.0, "end": 2.0,
+          "props": {"count": 20, "origin": "top"}}, 0.5),
+        ({"type": "particles", "start": 0.0, "end": 2.0,
+          "props": {"count": 20, "origin": "bottom", "gravity": 30}}, 0.5),
+        ({"type": "particles", "start": 0.0, "end": 2.0,
+          "props": {"count": 20, "origin": [64, 36]}}, 0.5),
+        # kinetic: 三种 mode
+        ({"type": "kinetic", "start": 0.0, "end": 2.0,
+          "props": {"text": "K", "mode": "char"}}, 0.5),
+        ({"type": "kinetic", "start": 0.0, "end": 2.0,
+          "props": {"text": "K", "mode": "scale"}}, 0.5),
+        ({"type": "kinetic", "start": 0.0, "end": 2.0,
+          "props": {"text": "K", "mode": "rotate"}}, 0.5),
+        # beat: 三种 kind
+        ({"type": "beat", "start": 0.0, "end": 2.0,
+          "props": {"bpm": 120, "kind": "bg"}}, 0.5),
+        ({"type": "beat", "start": 0.0, "end": 2.0,
+          "props": {"bpm": 120, "kind": "border"}}, 0.5),
+        ({"type": "beat", "start": 0.0, "end": 2.0,
+          "props": {"bpm": 120, "kind": "ring"}}, 0.5),
+    ]
+    for node, t in cases:
+        pj = _base_project(nodes=[node])
+        img = car.draw_frame(pj, t)
+        assert img is not None
+        assert img.size == (128, 72)
+        assert len(img.tobytes()) == 128 * 72 * 3
+
+
+def test_advanced_primitives_frame_stable():
+    """新原语 draw_frame 是纯函数: 同一 t 两次绘制结果一致。"""
+    pj = _base_project(nodes=[
+        {"type": "transition", "start": 0.0, "end": 2.0,
+         "props": {"type": "slide", "direction": "ltr"}},
+        {"type": "particles", "start": 0.0, "end": 2.0,
+         "props": {"count": 40, "origin": "center", "life": 1.5}},
+        {"type": "kinetic", "start": 0.0, "end": 2.0,
+         "props": {"text": "Frame Stable", "mode": "char", "stagger": 0.02}},
+        {"type": "beat", "start": 0.0, "end": 2.0,
+         "props": {"bpm": 90, "kind": "ring"}},
+    ])
+    a = car.draw_frame(pj, 0.8).tobytes()
+    b = car.draw_frame(pj, 0.8).tobytes()
+    assert a == b
+
+
+# ---------------------------------------------------------------------------
+# 阶段 8 givemotion 式动效补全: shape_morph / camera / path_motion / hand_drawn
+# ---------------------------------------------------------------------------
+
+def test_givemotion_all_variants_render():
+    """阶段 8 新节点各子类型在中段时间点均可渲染, 且进白名单。"""
+    assert "shape_morph" in car._KNOWN_NODE_TYPES
+    assert "camera" in car._KNOWN_NODE_TYPES
+    assert "path_motion" in car._KNOWN_NODE_TYPES
+    assert "hand_drawn" in car._KNOWN_NODE_TYPES
+    cases = [
+        # shape_morph: 多形状组合
+        ({"type": "shape_morph", "start": 0.0, "end": 2.0,
+          "props": {"from": "circle", "to": "square", "size": 40, "duration": 1.0}}, 0.5),
+        ({"type": "shape_morph", "start": 0.0, "end": 2.0,
+          "props": {"from": "triangle", "to": "hex", "outline": True}}, 0.5),
+        ({"type": "shape_morph", "start": 0.0, "end": 2.0,
+          "props": {"from": "star", "to": "circle"}}, 0.5),
+        # camera: 各缓动 + 跟随
+        ({"type": "camera", "start": 0.0, "end": 2.0,
+          "props": {"x1": 10, "y1": 10, "x2": 100, "y2": 60,
+                    "ease": "easeinout", "zoom_start": 1.0, "zoom_end": 1.5}}, 0.5),
+        ({"type": "camera", "start": 0.0, "end": 2.0,
+          "props": {"ease": "linear", "show_target": False}}, 0.5),
+        # path_motion: 各路径类型
+        ({"type": "path_motion", "start": 0.0, "end": 2.0,
+          "props": {"path": "line", "x1": 10, "y1": 10, "x2": 110, "y2": 60}}, 0.5),
+        ({"type": "path_motion", "start": 0.0, "end": 2.0,
+          "props": {"path": "poly", "points": [[10, 10], [60, 60], [110, 10]]}}, 0.5),
+        ({"type": "path_motion", "start": 0.0, "end": 2.0,
+          "props": {"path": "bezier", "points": [[10, 60], [40, 10], [80, 10], [110, 60]]}}, 0.5),
+        ({"type": "path_motion", "start": 0.0, "end": 2.0,
+          "props": {"path": "circle", "cx": 64, "cy": 36, "r": 30}}, 0.5),
+        ({"type": "path_motion", "start": 0.0, "end": 2.0,
+          "props": {"path": "spiral", "cx": 64, "cy": 36, "r0": 5, "r1": 40, "turns": 2}}, 0.5),
+        # path_motion: direction / pingpong
+        ({"type": "path_motion", "start": 0.0, "end": 2.0,
+          "props": {"path": "line", "direction": "reverse"}}, 0.5),
+        ({"type": "path_motion", "start": 0.0, "end": 2.0,
+          "props": {"path": "line", "direction": "pingpong"}}, 0.5),
+        # hand_drawn: 折线 + 闭合
+        ({"type": "hand_drawn", "start": 0.0, "end": 2.0,
+          "props": {"points": [[10, 10], [40, 50], [80, 20], [110, 60]],
+                    "jitter": 2.0, "width": 3}}, 0.5),
+        ({"type": "hand_drawn", "start": 0.0, "end": 2.0,
+          "props": {"points": [[10, 10], [60, 10], [60, 60], [10, 60]],
+                    "close": True, "jitter": 0.0}}, 0.5),
+    ]
+    for node, t in cases:
+        pj = _base_project(nodes=[node])
+        img = car.draw_frame(pj, t)
+        assert img is not None
+        assert img.size == (128, 72)
+        assert len(img.tobytes()) == 128 * 72 * 3
+
+
+def test_givemotion_frame_stable():
+    """阶段 8 新节点 draw_frame 是纯函数: 同一 t 两次绘制结果一致。"""
+    pj = _base_project(nodes=[
+        {"type": "shape_morph", "start": 0.0, "end": 2.0,
+         "props": {"from": "circle", "to": "star", "size": 40}},
+        {"type": "camera", "start": 0.0, "end": 2.0,
+         "props": {"x1": 10, "y1": 10, "x2": 100, "y2": 60}},
+        {"type": "path_motion", "start": 0.0, "end": 2.0,
+         "props": {"path": "bezier", "points": [[10, 60], [40, 10], [80, 10], [110, 60]]}},
+        {"type": "hand_drawn", "start": 0.0, "end": 2.0,
+         "props": {"points": [[10, 10], [40, 50], [80, 20], [110, 60]]}},
+    ])
+    a = car.draw_frame(pj, 0.9).tobytes()
+    b = car.draw_frame(pj, 0.9).tobytes()
+    assert a == b
+
+
+def test_givemotion_progress_motion():
+    """path_motion 物体位置随 progress 前进: 两端点位置应不同。"""
+    pj = _base_project(nodes=[
+        {"type": "path_motion", "start": 0.0, "end": 2.0,
+         "props": {"path": "line", "x1": 10, "y1": 36, "x2": 110, "y2": 36,
+                   "trail": 0.0, "size": 6}},
+    ])
+    # 在 start 处物体在 x1 附近, 在 end 处物体在 x2 附近 (采样像素列找亮点)
+    a = car.draw_frame(pj, 0.05)
+    b = car.draw_frame(pj, 1.95)
+    # 提取物体所在 x: 找非背景像素列
+    def _center_x(img):
+        w, h = img.size
+        rows = img.load()
+        best = None
+        for x in range(w):
+            col_has = any(rows[x, y] != (18, 20, 26) for y in range(h))
+            if col_has:
+                best = x
+                break
+        return best
+    xa = _center_x(a)
+    xb = _center_x(b)
+    assert xa is not None and xb is not None
+    assert xb > xa  # 物体向右移动
+
+
+def test_givemotion_invalid_params_no_crash():
+    """阶段 8 非法参数不崩溃 (fail-closed 静默绘制或跳过)。"""
+    cases = [
+        {"type": "shape_morph", "start": 0.0, "end": 2.0, "props": {"from": "nope", "to": "bad"}},
+        {"type": "camera", "start": 0.0, "end": 2.0, "props": {"ease": "bogus"}},
+        {"type": "path_motion", "start": 0.0, "end": 2.0, "props": {"path": "unknown"}},
+        {"type": "path_motion", "start": 0.0, "end": 2.0,
+         "props": {"path": "bezier", "points": [[0, 0]]}},  # 点数不足
+        {"type": "hand_drawn", "start": 0.0, "end": 2.0, "props": {"points": [[0, 0]]}},
+    ]
+    for node in cases:
+        pj = _base_project(nodes=[node])
+        img = car.draw_frame(pj, 0.5)
+        assert img is not None
+        assert img.size == (128, 72)
+
+
+# ---------------------------------------------------------------------------
+# 阶段 9 cinecode 式音频混音: 校验 + 混音执行
+# ---------------------------------------------------------------------------
+
+def test_audio_validation_contract():
+    """audio 字段的 fail-closed 校验 (不触网/不落盘)。"""
+    assert car.validate_project(_base_project(audio="track.wav")) is None
+    assert car.validate_project(_base_project(audio=[
+        {"path": "bgm.mp3", "start": 1.0, "volume": 0.5},
+        {"path": "voice.wav", "volume": 1.2},
+    ])) is None
+    # 非法 → 报错
+    assert car.validate_project(_base_project(audio="")) is not None
+    assert car.validate_project(_base_project(audio=123)) is not None
+    assert car.validate_project(_base_project(audio=[{"volume": 0.5}])) is not None
+    assert car.validate_project(_base_project(audio=[{"path": "x", "volume": 0}])) is not None
+    assert car.validate_project(_base_project(audio=[{"path": "x", "start": -1}])) is not None
+
+
+def test_audio_mix_no_audio_returns_noop():
+    """无 audio → _mix_audio_tracks 返回 no-op, 不执行 ffmpeg。"""
+    res = car._mix_audio_tracks("ffmpeg", _base_project(), "out.mp4", 1.0)
+    assert res == {"mixed": False, "tracks": 0}
+
+
+def test_audio_mix_missing_file_fail_closed():
+    """audio 路径不存在 → fail-closed RuntimeError (不产出无声假成功)。"""
+    import pytest
+    with pytest.raises(RuntimeError):
+        car._mix_audio_tracks("ffmpeg", _base_project(audio="ghost.mp3"), "out.mp4", 1.0)
+
+
+def test_audio_mix_invalid_type_fail_closed():
+    """audio 类型非法 → fail-closed。"""
+    import pytest
+    with pytest.raises(RuntimeError):
+        car._mix_audio_tracks("ffmpeg", _base_project(audio=123), "out.mp4", 1.0)
+
+
+def test_render_video_with_audio_mix(tmp_path):
+    """真实渲染: 视频 + 单音轨混音 (ffmpeg 可用时)。"""
+    import wave
+    import struct
+
+    if not car.ffmpeg_available():
+        import pytest
+        pytest.skip("ffmpeg 不可用")
+    # 生成 0.5s 静音 wav (44.1k 单声道)
+    wav = tmp_path / "silence.wav"
+    with wave.open(str(wav), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(44100)
+        w.writeframes(b"\x00\x00" * (22050 // 2))
+    pj = _base_project(audio=str(wav))
+    out = tmp_path / "audio_mix.mp4"
+    res = car.render_video(pj, str(out), fps=5)
+    assert out.exists()
+    assert res["audio"]["mixed"] is True
+    assert res["audio"]["tracks"] == 1
+    assert res["frames"] >= 1
+
+
+def test_transition_outside_range_no_effect():
+    """transition 在节点范围外不改变画面 (与仅背景相同)。"""
+    bg = {"type": "bg", "start": 0.0, "end": 5.0, "props": {"type": "solid"}}
+    trans = {"type": "transition", "start": 3.0, "end": 4.0,
+             "props": {"type": "wipe", "direction": "ltr"}}
+    # t=0.5 在 transition 范围外
+    base = car.draw_frame(_base_project(nodes=[bg]), 0.5)
+    with_trans = car.draw_frame(_base_project(nodes=[bg, trans]), 0.5)
+    assert base.tobytes() == with_trans.tobytes()
 
 
 # ---------------------------------------------------------------------------
@@ -336,3 +606,131 @@ def test_http_contact_route(server):
     assert job is not None
     assert job["status"] == "done", job.get("error")
     assert job["out_path"].endswith(".png")
+
+
+def test_http_render_profile_flag(server):
+    """POST /api/codeanim/render?profile=true → job 结果含 perf。"""
+    import urllib.request
+    base = f"http://127.0.0.1:{server.port}"
+    pj = _base_project(duration=0.5, fps=5, nodes=[
+        {"type": "bg", "start": 0.0, "end": 5.0, "props": {"type": "solid"}},
+    ])
+    req = urllib.request.Request(
+        base + "/api/codeanim/render",
+        data=json.dumps({"project_json": pj, "out": "prof_http.mp4",
+                         "profile": True}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        data = json.loads(r.read().decode())
+    assert data["ok"] is True
+    jid = data["job_id"]
+    job = None
+    for _ in range(50):
+        with urllib.request.urlopen(
+                f"{base}/api/codeanim/job?id={jid}", timeout=10) as r:
+            job = json.loads(r.read().decode())["job"]
+        if job and job.get("status") in ("done", "error"):
+            break
+        time.sleep(0.1)
+    assert job is not None
+    assert job["status"] == "done", job.get("error")
+    assert "perf" in job.get("result", {})
+
+
+# ---------------------------------------------------------------------------
+# 性能分析 (阶段 11, profiler): 逐节点耗时 + 帧时间序列热力图
+# ---------------------------------------------------------------------------
+
+def test_draw_frame_profiler_accumulates():
+    """draw_frame 传入 profiler 后逐节点耗时被累计, frame_ms 为数字。"""
+    pj = _base_project(nodes=[
+        {"type": "bg", "start": 0.0, "end": 5.0, "props": {"type": "solid"}},
+        {"type": "title", "start": 0.0, "end": 5.0, "props": {"text": "P"}},
+    ])
+    prof: dict = {}
+    img = car.draw_frame(pj, 0.0, profiler=prof)
+    assert img is not None
+    assert isinstance(prof["frame_ms"], (int, float))
+    assert "bg" in prof["nodes"]
+    assert "title" in prof["nodes"]
+    bg = prof["nodes"]["bg"]
+    assert bg["count"] == 1
+    assert bg["total_ms"] >= 0
+    assert bg["max_ms"] >= 0
+
+
+def test_draw_frame_profiler_inactive_node_not_counted():
+    """范围外的节点不渲染, 也不进入 profiler 统计。"""
+    pj = _base_project(nodes=[
+        {"type": "title", "start": 1.0, "end": 2.0, "props": {"text": "later"}},
+    ])
+    prof: dict = {}
+    car.draw_frame(pj, 0.0, profiler=prof)
+    assert "title" not in prof.get("nodes", {})
+
+
+def test_draw_frame_profiler_unknown_node_skipped():
+    """未知节点类型跳过且不进入 profiler (fail-closed)。"""
+    pj = _base_project(nodes=[
+        {"type": "nope_not_real", "start": 0.0, "end": 5.0, "props": {}},
+    ])
+    prof: dict = {}
+    car.draw_frame(pj, 0.0, profiler=prof)
+    assert prof.get("nodes", {}) == {}
+
+
+def test_profile_summary_aggregates():
+    """_profile_summary 聚合逐帧 profiler 为摘要 (nodes + frame_series)。"""
+    fps = [
+        {"frame_ms": 1.0, "nodes": {"bg": {"count": 1, "total_ms": 0.8, "max_ms": 0.8}}},
+        {"frame_ms": 2.0, "nodes": {"bg": {"count": 1, "total_ms": 1.2, "max_ms": 1.2},
+                                    "title": {"count": 1, "total_ms": 0.5, "max_ms": 0.5}}},
+    ]
+    s = car._profile_summary(fps, total_frames=2)
+    assert s["frames"] == 2
+    assert s["total_frames"] == 2
+    assert s["frame_ms"]["avg"] == 1.5
+    assert s["frame_ms"]["max"] == 2.0
+    assert s["frame_ms"]["p95"] == 2.0
+    assert s["frame_series"] == [1.0, 2.0]
+    assert s["nodes"]["bg"]["count"] == 2
+    assert abs(s["nodes"]["bg"]["avg_ms"] - 1.0) < 1e-6
+    assert s["nodes"]["title"]["count"] == 1
+
+
+def test_render_video_profile_returns_perf(tmp_path):
+    """render_video(profile=True) 返回 perf 摘要 (真实 ffmpeg)。"""
+    if not car.ffmpeg_available():
+        pytest.skip("ffmpeg 不可用")
+    pj = _base_project(duration=0.4, fps=5, nodes=[
+        {"type": "bg", "start": 0.0, "end": 5.0, "props": {"type": "solid"}},
+        {"type": "code", "start": 0.0, "end": 5.0,
+         "props": {"code": "x = 1", "language": "python"}},
+    ])
+    out = tmp_path / "prof.mp4"
+    res = car.render_video(pj, str(out), fps=5, profile=True)
+    assert os.path.isfile(out)
+    perf = res["perf"]
+    assert perf["frames"] == 2
+    assert "code" in perf["nodes"]
+    assert len(perf["frame_series"]) == 2
+
+
+def test_start_render_job_profile_flag(tmp_path):
+    """start_render_job 接受 profile 参数并透传 (job 结果含 perf)。"""
+    if not car.ffmpeg_available():
+        pytest.skip("ffmpeg 不可用")
+    pj = _base_project(duration=0.4, fps=5, nodes=[
+        {"type": "bg", "start": 0.0, "end": 5.0, "props": {"type": "solid"}},
+    ])
+    out = tmp_path / "jobprof.mp4"
+    jid = car.start_render_job(pj, str(out), fps=5, profile=True)
+    job = None
+    for _ in range(100):
+        job = car.get_job(jid)
+        if job and job.get("status") in ("done", "error"):
+            break
+        time.sleep(0.05)
+    assert job is not None
+    assert job["status"] == "done", job.get("error")
+    assert "perf" in job.get("result", {})

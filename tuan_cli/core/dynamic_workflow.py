@@ -25,6 +25,9 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, TYPE_CHECKING
+import logging
+log = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from .kernel import Kernel
@@ -542,7 +545,8 @@ class DynamicWorkflowEngine:
                     "steps": len(rec.get("steps", [])),
                     "ok_tasks": res.get("ok_tasks", 0),
                 })
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("DynamicWorkflowEngine._finish(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     # ------------------------------------------------------------ 池构造 (测试可注入)
@@ -635,7 +639,8 @@ def get_engine(home: Path, auto_resume: bool = True) -> DynamicWorkflowEngine:
             if auto_resume:
                 try:
                     eng.resume_all()
-                except Exception:  # noqa: BLE001 - 续跑失败不阻断引擎可用
+                except Exception as exc:  # noqa: BLE001 - 续跑失败不阻断引擎可用
+                    log.warning("get_engine(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         return eng
 

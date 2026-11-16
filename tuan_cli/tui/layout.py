@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from .common import *  # noqa: F401,F403
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class LayoutMixin:
     """布局/几何域: 视口、滚动、行高、裁剪、盒子尺寸计算。"""
@@ -234,7 +237,8 @@ class LayoutMixin:
         """
         try:
             lines = self._scrolled_lines(logic_only=True)
-        except Exception:
+        except Exception as exc:
+            log.debug("LayoutMixin._scroll_log(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return
         if not lines:
             return
@@ -262,7 +266,8 @@ class LayoutMixin:
         """(是否已上翻, 视口顶端, 内容总行, 视口高) —— 供底栏显示位置指示。"""
         try:
             lines = self._scrolled_lines(logic_only=True)
-        except Exception:
+        except Exception as exc:
+            log.debug("LayoutMixin._scroll_state(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return (False, 0, 0, self._viewport_rows())
         total, vp, max_top = self._scroll_bounds(lines)
         top = self._resolve_view_top(max_top)
@@ -273,7 +278,8 @@ class LayoutMixin:
         try:
             lines = self._scrolled_lines(logic_only=True)
             return len(lines)
-        except Exception:
+        except Exception as exc:
+            log.debug("LayoutMixin._current_line_count(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 0
 
 
@@ -285,11 +291,13 @@ class LayoutMixin:
                 w = self._app.output.get_size().columns
                 if w and w > 0:
                     return int(w)
-        except Exception:
+        except Exception as exc:
+            log.warning("LayoutMixin._term_width(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         try:
             return shutil.get_terminal_size((80, 24)).columns
-        except Exception:
+        except Exception as exc:
+            log.debug("LayoutMixin._term_width(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 80
 
     def _clip_parts(self, parts: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
@@ -355,11 +363,13 @@ class LayoutMixin:
                 w = self._app.output.get_size().columns
                 if w and w > 0:
                     return int(w)
-        except Exception:
+        except Exception as exc:
+            log.warning("LayoutMixin._box_width(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         try:
             return shutil.get_terminal_size((80, 24)).columns
-        except Exception:
+        except Exception as exc:
+            log.debug("LayoutMixin._box_width(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 80
 
     def _viewport_slice(self, screen: List[List[Tuple[str, str]]]) -> List[List[Tuple[str, str]]]:
@@ -470,7 +480,8 @@ class LayoutMixin:
             if os.path.normcase(norm).startswith(os.path.normcase(home_prefix)):
                 rel = os.path.normpath(norm[len(home_prefix):])
                 return "~" + os.sep + rel.replace(os.sep, "/")
-        except Exception:  # noqa: BLE001 - 目录格式化失败回退原路径
+        except Exception as exc:  # noqa: BLE001 - 目录格式化失败回退原路径
+            log.warning("LayoutMixin._format_home_dir(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return path
 

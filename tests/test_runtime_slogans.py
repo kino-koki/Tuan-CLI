@@ -817,8 +817,13 @@ class TestTuiDeepWiring:
     def test_animate_loop_never_refreshes_liveness(self):
         """D4 硬约束：动画循环里出现活性刷新 = 诊断退化成定时空转。"""
         from pathlib import Path as _P
-        import tuan_cli.tui.tui as _m
-        src = _P(_m.__file__).read_text(encoding="utf-8")
+        import tuan_cli.tui as _pkg
+        # QxtTUI 已按域拆分为多个 mixin 模块: 在整个 tui 包内定位 _animate,
+        # 不论它住在哪个模块, 不变式本身不变。
+        pkg_dir = _P(_pkg.__file__).parent
+        src = "\n".join(
+            p.read_text(encoding="utf-8") for p in sorted(pkg_dir.glob("*.py"))
+        )
         i = src.index("    def _animate(self)")
         j = src.index("    def ", i + 10)
         # 只检查**代码**：注释里提到方法名是允许的（本轮就写了解释性注释），

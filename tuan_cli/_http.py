@@ -62,6 +62,9 @@ from typing import (
     Union,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 __all__ = [
     "Timeout", "TimeoutException", "RequestError", "HTTPError",
     "HTTPStatusError", "ConnectError", "ConnectTimeout", "ReadTimeout",
@@ -382,11 +385,13 @@ def _open(
             # 先把旧响应读掉/关掉, 释放 socket
             try:
                 response.read()
-            except Exception:  # noqa: BLE001 - 重定向时尽力读完
+            except Exception as exc:  # noqa: BLE001 - 重定向时尽力读完
+                log.warning("_open(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             try:
                 conn.close()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_open(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             current_url = urllib.parse.urljoin(current_url, location)
             prev_origin = origin  # 记录来源源, 供下一跳跨源判定
@@ -535,7 +540,8 @@ class Response:
         finally:
             try:
                 gen.close()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Response.aiter_lines(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     # -- 生命周期 ----------------------------------------------------------- #
@@ -551,7 +557,8 @@ class Response:
                     conn.close()
                 else:
                     stream.close()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Response.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def __enter__(self) -> "Response":
@@ -586,7 +593,8 @@ def _maybe_decode(body: bytes, headers: Headers) -> bytes:
                 return zlib.decompress(body, -zlib.MAX_WBITS)
         if "br" in enc:
             return body  # brotli 需要额外库, 保持原样
-    except Exception:  # noqa: BLE001 - 解码失败退化为原文
+    except Exception as exc:  # noqa: BLE001 - 解码失败退化为原文
+        log.debug("_maybe_decode(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return body
     return body
 
@@ -684,7 +692,8 @@ class Client:
         if conn is not None:
             try:
                 conn.close()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Client.close_connection(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def post(self, url: str, **kw: Any) -> Response:
@@ -894,7 +903,8 @@ def request(
     headers_list = list(resp.getheaders())
     try:
         Client.close_connection(resp)
-    except Exception:  # noqa: BLE001 - 尽力关闭
+    except Exception as exc:  # noqa: BLE001 - 尽力关闭
+        log.warning("request(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return Response(resp.status, headers_list, url=final_url, body=body_bytes)
 

@@ -16,6 +16,9 @@ from typing import Any, List
 from ._ui_singleton import console
 from .parser import _register_command
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _build_registry() -> Any:
     """构建 LoopRegistry, 注册内置 LoopProvider (纯查询用, 不执行循环)。"""
@@ -159,7 +162,8 @@ def _safe_nudge(provider: Any) -> str:
             turn_count = 3  # 超过默认 interval 3, 应触发催促
 
         return "是" if provider.should_nudge(_StubAgent()) else "否"
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_safe_nudge(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return "否 (无法探测)"
 
 

@@ -36,6 +36,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 _FRONT_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 # 内置技能目录 (包内资源)
@@ -145,7 +148,8 @@ class SkillManager:
                 cc_enabled = bool(self.config.get("ecosystem.claude_code.enabled", True))
                 hermes_enabled = bool(self.config.get("ecosystem.hermes.enabled", True))
                 hermes_home = str(self.config.get("ecosystem.hermes.home", "") or "")
-            except Exception:  # noqa: BLE001 - 配置损坏时按默认开启
+            except Exception as exc:  # noqa: BLE001 - 配置损坏时按默认开启
+                log.warning("SkillManager._build_search_dirs(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         if cc_enabled:
             if self.workspace is not None:
@@ -172,6 +176,23 @@ class SkillManager:
                 extra = []
         for extra_str in extra:
             dirs.append((Path(extra_str), "extra"))
+        # 3.5 插件技能 (DSH 0.2 兼容): 启用的插件 <plugin>/skills/ 注入为 "plugin"
+        try:
+            from .plugin_sdk import PluginManager
+
+            plugins_dir = self.home / "plugins"
+            if plugins_dir.is_dir():
+                pm = PluginManager(plugins_dir)
+                for info in pm.list_plugins():
+                    if not info.enabled:
+                        continue
+                    skills_dir = info.path / "skills"
+                    if skills_dir.is_dir():
+                        dirs.append((skills_dir, "plugin"))
+        except Exception as exc:  # noqa: BLE001
+            log.debug(
+                "SkillManager._build_search_dirs(): 插件技能注入跳过: %s", exc,
+            )
         # 4. 内置级 (最低优先级)
         if _BUILTIN_DIR.exists():
             dirs.append((_BUILTIN_DIR, "builtin"))
@@ -390,7 +411,8 @@ class SkillManager:
         for slug, (path, origin) in self._discover().items():
             try:
                 skills.append(self._parse(path, origin=origin))
-            except Exception:
+            except Exception as exc:
+                log.debug("SkillManager.list_all(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
         return sorted(skills, key=lambda s: (s.use_count, s.updated_at), reverse=True)
 

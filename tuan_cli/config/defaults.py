@@ -15,6 +15,9 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Dict
 
+import logging
+log = logging.getLogger(__name__)
+
 APP_DIR_NAME = ".tuan"
 
 # 内置资源目录 (SOUL_FULL.md / SOUL_COMPACT.md / SOUL.md / skills 等):
@@ -32,7 +35,8 @@ def _resolve_resources_dir() -> Path:
                 candidates.append(Path(str(item)))
         else:
             candidates.append(Path(str(res)))
-    except Exception:
+    except Exception as exc:
+        log.warning("_resolve_resources_dir(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     candidates.append(Path(__file__).resolve().parent.parent / "resources")
     for cand in candidates:
@@ -53,13 +57,15 @@ def load_builtin_soul() -> str:
         from importlib import resources
 
         return (resources.files("tuan_cli.resources") / "SOUL.md").read_text(encoding="utf-8")
-    except Exception:
+    except Exception as exc:
+        log.warning("load_builtin_soul(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     try:
         soul_path = Path(__file__).resolve().parent / "resources" / "SOUL.md"
         if soul_path.is_file():
             return soul_path.read_text(encoding="utf-8")
-    except Exception:
+    except Exception as exc:
+        log.warning("load_builtin_soul(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return (
         "你是「青小团」, 用户终端里的 Agent。少客套多做事, 先查再问, "
@@ -74,13 +80,15 @@ def load_builtin_user_soul() -> str:
         from importlib import resources
 
         return (resources.files("tuan_cli.resources") / "USER_SOUL.md").read_text(encoding="utf-8")
-    except Exception:
+    except Exception as exc:
+        log.warning("load_builtin_user_soul(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     try:
         soul_path = Path(__file__).resolve().parent / "resources" / "USER_SOUL.md"
         if soul_path.is_file():
             return soul_path.read_text(encoding="utf-8")
-    except Exception:
+    except Exception as exc:
+        log.warning("load_builtin_user_soul(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return (
         "你是「青小团」, 运行在用户自己电脑上的个人 Agent, 直接服务于用户本人。\n"

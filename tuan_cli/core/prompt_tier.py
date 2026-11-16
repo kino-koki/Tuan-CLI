@@ -60,6 +60,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Tuple
+import logging
+log = logging.getLogger(__name__)
+
 
 # ============================================================ 档位常量
 
@@ -311,7 +314,8 @@ def _cfg_get(config: Any, dotted: str, default: Any = None) -> Any:
         try:
             val = getter(dotted)
             return default if val is None else val
-        except Exception:  # noqa: BLE001 - 配置对象形态各异, 读失败走默认
+        except Exception as exc:  # noqa: BLE001 - 配置对象形态各异, 读失败走默认
+            log.warning("_cfg_get(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return default
 

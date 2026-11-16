@@ -61,7 +61,8 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
         log.debug("进程树清理失败: %s", exc)
         try:
             proc.kill()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_kill_process_tree(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -125,7 +126,8 @@ def wait_with_tree_kill(proc: subprocess.Popen, timeout: float) -> Optional[int]
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("wait_with_tree_kill(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             proc.wait()
         return None

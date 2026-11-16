@@ -93,6 +93,9 @@ def _rel(ctx: ToolContext, p: Path) -> str:
 from ..core.write_boundary import recheck_write  # noqa: E402
 from ..core.write_boundary import WRITABLE_DIRS_ATTR  # noqa: E402
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _resolve_write(ctx: ToolContext, path: str, *,
                    op: str = "write") -> tuple:
@@ -152,7 +155,8 @@ def _system_roots() -> list:
     for p in ("/etc", "/bin", "/sbin", "/usr", "/boot", "/root", "/dev", "/proc", "/sys"):
         try:
             roots.append(Path(p))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_system_roots(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     # Windows: SystemRoot (通常 C:\Windows) 与 Program Files
     # (仅限 Windows, 避免在 POSIX 上产生无意义的相对路径)
@@ -160,12 +164,14 @@ def _system_roots() -> list:
         sysroot = os.environ.get("SystemRoot") or r"C:\Windows"
         try:
             roots.append(Path(sysroot))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_system_roots(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         for p in (r"C:\Program Files", r"C:\Program Files (x86)"):
             try:
                 roots.append(Path(p))
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_system_roots(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         # POSIX 风格路径在 Windows 上会被解析成盘符根下的同名目录
         # (例如 /etc → C:\etc)。把常见对应物也纳入关键目录, 跨平台拒绝一致。
@@ -173,7 +179,8 @@ def _system_roots() -> list:
                      "boot", "dev", "proc", "sys"):
             try:
                 roots.append(Path(os.path.join(Path(sysroot).anchor, name)))
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_system_roots(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
     return roots
 
@@ -202,7 +209,8 @@ def _is_system_critical(target: Path) -> bool:
     try:
         if str(target) == str(target.anchor):
             return True
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_is_system_critical(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     for root in _system_roots():
         try:
@@ -218,7 +226,8 @@ def _is_system_critical(target: Path) -> bool:
             and target.name.lower() in _SYSTEM_CRITICAL_NAMES
         ):
             return True
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_is_system_critical(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return False
 

@@ -32,6 +32,9 @@ from .retrieval import CodeIndex, RetrievalResult
 from .verify import Verifier, VerificationReport
 from .decompose import Decomposer, DevSpec, Subtask
 
+import logging
+log = logging.getLogger(__name__)
+
 # arch 编排（已有基础设施, 直接复用）。
 try:
     from ..arch.orchestration import Orchestrator, AgentSpec
@@ -103,14 +106,16 @@ class CodeDevEngine:
             idx = CodeIndex.load(path)
             if idx is not None and idx.is_fresh(root):
                 return idx
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("CodeDevEngine._load_disk_index(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return None
 
     def _save_disk_index(self, root: str, idx: CodeIndex) -> None:
         try:
             idx.save(self._disk_index_path(root))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("CodeDevEngine._save_disk_index(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def forge_context(self, task: str, top_k: int = 8, root: Optional[str] = None) -> RetrievalResult:

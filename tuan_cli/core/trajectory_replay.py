@@ -222,7 +222,8 @@ class TrajectoryReplay:
             for event in filtered:
                 try:
                     on_event(event)
-                except Exception:
+                except Exception as exc:
+                    log.warning("TrajectoryReplay.replay(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
         return filtered
@@ -309,7 +310,8 @@ class TrajectoryReplay:
                 created_at=data.get("created_at", 0),
                 label=data.get("label", ""),
             )
-        except Exception:
+        except Exception as exc:
+            log.debug("TrajectoryReplay.restore_snapshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
     def list_snapshots(self) -> List[Dict[str, Any]]:
@@ -328,7 +330,8 @@ class TrajectoryReplay:
                     "created_at": data.get("created_at", 0),
                     "event_count": len(data.get("events", [])),
                 })
-            except Exception:
+            except Exception as exc:
+                log.warning("TrajectoryReplay.list_snapshots(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return results
 
@@ -405,9 +408,11 @@ class TrajectoryReplay:
                             status=data.get("status", "ok"),
                         )
                         events.append(event)
-                    except Exception:
+                    except Exception as exc:
+                        log.debug("TrajectoryReplay._load_events(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         continue
-        except Exception:
+        except Exception as exc:
+            log.warning("TrajectoryReplay._load_events(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         self._cache[session_id] = events
@@ -427,11 +432,13 @@ class TrajectoryReplay:
                         meta["last_ts"] = ts
                         if first_ts == 0:
                             first_ts = ts
-                    except Exception:
+                    except Exception as exc:
+                        log.debug("TrajectoryReplay._read_session_meta(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         continue
             if first_ts > 0 and meta["last_ts"] > 0:
                 meta["duration_s"] = round(meta["last_ts"] - first_ts, 1)
-        except Exception:
+        except Exception as exc:
+            log.warning("TrajectoryReplay._read_session_meta(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return meta
 
@@ -450,5 +457,6 @@ class TrajectoryReplay:
         try:
             from .atomicio import atomic_write_text
             atomic_write_text(path, json.dumps(data, ensure_ascii=False, indent=2))
-        except Exception:
+        except Exception as exc:
+            log.warning("TrajectoryReplay._save_snapshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass

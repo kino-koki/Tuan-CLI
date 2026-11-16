@@ -87,6 +87,9 @@ from . import picker, universal, extra, extra_locales
 from .picker import UnknownSloganContext
 from .locales import LANGUAGES
 
+import logging
+log = logging.getLogger(__name__)
+
 __all__ = [
     "EventBinding", "SloganEntry", "AuditReport", "SloganDecision",
     "UnboundSloganEvent", "UnknownSloganContext",
@@ -533,7 +536,8 @@ def audit() -> AuditReport:
             from tuan_cli.tui import runtime_slogans as _rs  # noqa: PLC0415
             shared = _rs.sanitize_verb is s[0]
             src = "ui.slogans._clean (shared with runtime_slogans)" if shared else src
-        except Exception:  # noqa: BLE001 - tui 依赖缺失时报告未共享
+        except Exception as exc:  # noqa: BLE001 - tui 依赖缺失时报告未共享
+            log.warning("audit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     return AuditReport(

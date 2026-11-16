@@ -263,7 +263,8 @@ class FileIntegrityMonitor:
                 for change in changes:
                     try:
                         self._on_change(change)
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("FileIntegrityMonitor.check_directory(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
 
         return changes
@@ -386,7 +387,8 @@ class FileIntegrityMonitor:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return {k: FileSnapshot.from_dict(v) for k, v in data.items()}
-        except Exception:
+        except Exception as exc:
+            log.debug("FileIntegrityMonitor._load_snapshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {}
 
     def _classify_change(self, old: FileSnapshot, new: FileSnapshot) -> str:
@@ -458,5 +460,6 @@ class FileIntegrityMonitor:
             data = json.loads(path.read_text(encoding="utf-8"))
             with self._lock:
                 self._changes = [IntegrityChange(**d) for d in data[-self._MAX_CHANGES:]]
-        except Exception:
+        except Exception as exc:
+            log.warning("FileIntegrityMonitor._load_changes(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass

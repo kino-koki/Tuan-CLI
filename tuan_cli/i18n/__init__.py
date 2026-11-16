@@ -26,6 +26,9 @@ import sys
 from importlib import import_module
 from typing import Any, Dict, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 __all__ = [
     "DEFAULT_LANGUAGE", "LANGUAGES", "available_languages",
     "normalize_language", "get_language", "set_language", "t",
@@ -190,6 +193,7 @@ def ensure_language(config: Any = None) -> str:
     if config is not None:
         try:
             config.set_user("language", chosen)  # 写盘, 下次不再询问
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ensure_language(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return chosen

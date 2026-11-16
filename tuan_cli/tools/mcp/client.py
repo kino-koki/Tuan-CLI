@@ -24,6 +24,9 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 from .audit import MCPAuditStore
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # 敏感参数关键词 (匹配则记录审计但不阻断)
 _SENSITIVE_PARAM_PATTERNS = (
@@ -169,7 +172,8 @@ class MCPClient:
         """把审计记录落到磁盘 (默认存储 + 注入存储)。"""
         try:
             self._audit_log.append(entry)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("MCPClient._persist_audit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         if entry and (self._audit_store is not None or self.security_policy.audit_enabled):
             store = self._audit_store or _get_global_audit_store()
@@ -235,7 +239,8 @@ class MCPClient:
             try:
                 if self._proc is not None:
                     self._proc.terminate()
-            except Exception:
+            except Exception as exc:
+                log.warning("MCPClient.start(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             if self._loop is not None:
                 self._loop.call_soon_threadsafe(self._loop.stop)
@@ -272,7 +277,8 @@ class MCPClient:
             # 握手失败也要回收子进程, 否则成为孤儿进程。
             try:
                 self._proc.terminate()
-            except Exception:
+            except Exception as exc:
+                log.warning("MCPClient._boot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             raise
         self._tools = (result or {}).get("tools", [])
@@ -285,7 +291,8 @@ class MCPClient:
         if self._loop is not None:
             try:
                 asyncio.run_coroutine_threadsafe(self._shutdown_async(), self._loop).result(self.timeout)
-            except Exception:
+            except Exception as exc:
+                log.warning("MCPClient.stop(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             self._loop.call_soon_threadsafe(self._loop.stop)
         self._proc = None
@@ -302,24 +309,29 @@ class MCPClient:
             return
         try:
             await asyncio.wait_for(self._request("shutdown", {}), timeout=5.0)
-        except Exception:
+        except Exception as exc:
+            log.warning("MCPClient._shutdown_async(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         try:
             await self._send_notify("exit", {})
-        except Exception:
+        except Exception as exc:
+            log.warning("MCPClient._shutdown_async(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         if self._proc.stdin is not None:
             try:
                 self._proc.stdin.close()
-            except Exception:
+            except Exception as exc:
+                log.warning("MCPClient._shutdown_async(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         try:
             self._proc.terminate()
-        except Exception:
+        except Exception as exc:
+            log.warning("MCPClient._shutdown_async(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         try:
             await asyncio.wait_for(self._proc.wait(), timeout=5.0)
-        except Exception:
+        except Exception as exc:
+            log.warning("MCPClient._shutdown_async(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # ---------------------------------------------------------- 工具发现

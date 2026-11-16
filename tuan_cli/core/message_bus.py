@@ -84,7 +84,8 @@ class MessageBus:
                 info = json.loads(reg_file.read_text(encoding="utf-8"))
                 info["last_heartbeat"] = time.time()
                 atomic_write_text(reg_file, json.dumps(info, ensure_ascii=False))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("MessageBus.heartbeat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def unregister(self, session_id: str) -> None:
@@ -190,7 +191,8 @@ class MessageBus:
         for reg_file in self._registry_dir.glob("*.json"):
             try:
                 info = json.loads(reg_file.read_text(encoding="utf-8"))
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("MessageBus.list_agents(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
 
             if not include_self and info.get("session_id") == session_id:

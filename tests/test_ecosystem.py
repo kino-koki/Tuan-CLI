@@ -438,3 +438,138 @@ def test_mcp_server_dangerous_gated(tmp_path: Path):
                                                          "arguments": {"command": "shutdown -s -t 0"}}, 1)))
     assert call["result"]["isError"]
     assert "红线" in call["result"]["content"][0]["text"]
+
+
+def test_mcp_codeanim_frame_tool(tmp_path: Path):
+    """阶段 4: codeanim_frame 渲染单帧 PNG (含 data URL), 非法项目 fail-closed。"""
+    srv = McpToolServer(tmp_path)
+    names = [t["name"] for t in srv.tools()]
+    assert "codeanim_frame" in names and "codeanim_render" in names
+    pj = {"width": 64, "height": 36, "fps": 5, "duration": 1.0,
+          "nodes": [{"type": "title", "start": 0.0, "end": 1.0,
+                     "props": {"text": "Hello", "font_size": 12}}]}
+    call = json.loads(srv.handle_line(_rpc("tools/call",
+                                           {"name": "codeanim_frame",
+                                            "arguments": {"project_json": pj, "t": 0.5}}, 1)))
+    assert not call["result"]["isError"]
+    payload = json.loads(call["result"]["content"][0]["text"])
+    assert payload["width"] == 64 and payload["height"] == 36
+    assert payload["png_data_url"].startswith("data:image/png;base64,")
+    # 非法项目 → fail-closed 拒绝
+    bad = json.loads(srv.handle_line(_rpc("tools/call",
+                                          {"name": "codeanim_frame",
+                                           "arguments": {"project_json": {"nodes": []}}}, 2)))
+    assert bad["result"]["isError"]
+    assert "非法" in bad["result"]["content"][0]["text"]
+
+
+def test_mcp_codeanim_render_tool(tmp_path: Path):
+    """阶段 4: codeanim_render 渲染 mp4 (ffmpeg 可用时), 否则 fail-closed 报错。"""
+    from tuan_cli.web import code_anim_render as car
+
+    srv = McpToolServer(tmp_path)
+    pj = {"width": 64, "height": 36, "fps": 5, "duration": 0.4,
+          "nodes": [{"type": "bg", "start": 0.0, "end": 0.4,
+                     "props": {"type": "solid"}}]}
+    call = json.loads(srv.handle_line(_rpc("tools/call",
+                                           {"name": "codeanim_render",
+                                            "arguments": {"project_json": pj}}, 1)))
+    text = call["result"]["content"][0]["text"]
+    if not car.ffmpeg_available():
+        assert call["result"]["isError"]
+        assert "渲染失败" in text or "ffmpeg" in text
+    else:
+        assert not call["result"]["isError"]
+        payload = json.loads(text)
+        assert payload["frames"] >= 1
+        assert payload["out_path"].endswith(".mp4")
+
+
+# ---------------------------------------------------------------- 阶段 6: 多模型网关 MCP
+
+def test_mcp_models_list_tool(tmp_path: Path):
+    """阶段 6: models_list 返回模型目录 Provider 元数据 (不含密钥)。"""
+    srv = McpToolServer(tmp_path)
+    names = [t["name"] for t in srv.tools()]
+    assert "llm_call" in names and "models_list" in names
+    call = json.loads(srv.handle_line(_rpc("tools/call",
+                                           {"name": "models_list", "arguments": {}}, 1)))
+    assert not call["result"]["isError"]
+    payload = json.loads(call["result"]["content"][0]["text"])
+    providers = payload["providers"]
+    assert any(p["name"] == "deepseek" for p in providers)
+    # 不含密钥: 任何 provider 条目都不得出现 api_key / key 字段
+    for p in providers:
+        assert "api_key" not in p and "api_key_env" not in p
+
+
+def test_mcp_llm_call_fail_closed_contract(tmp_path: Path):
+    """阶段 6: llm_call 的 fail-closed 契约 (不触网)。"""
+    srv = McpToolServer(tmp_path)
+    # 空 prompt → 拒绝
+    bad = json.loads(srv.handle_line(_rpc("tools/call",
+                                          {"name": "llm_call",
+                                           "arguments": {"prompt": ""}}, 1)))
+    assert bad["result"]["isError"]
+    assert "prompt 不能为空" in bad["result"]["content"][0]["text"]
+    # json_schema 非 dict → 拒绝
+    bad2 = json.loads(srv.handle_line(_rpc("tools/call",
+                                           {"name": "llm_call",
+                                           "arguments": {"prompt": "x", "json_schema": "not-dict"}}, 2)))
+    assert bad2["result"]["isError"]
+    assert "json_schema 必须是 JSON 对象" in bad2["result"]["content"][0]["text"]
+    # 未知 provider_id 且无 base_url → 构造适配器即失败 fail-closed (不触网)
+    bad3 = json.loads(srv.handle_line(_rpc("tools/call",
+                                           {"name": "llm_call",
+                                           "arguments": {"prompt": "x", "provider_id": "nope:none"}}, 3)))
+    assert bad3["result"]["isError"]
+    assert "fail-closed" in bad3["result"]["content"][0]["text"]
+
+
+def test_mcp_video_pipeline_contract(tmp_path: Path):
+    """阶段 10: video_pipeline_run 契约 (fail-closed, 不触网)。"""
+    srv = McpToolServer(tmp_path)
+    names = [t["name"] for t in srv.tools()]
+    assert "video_pipeline_run" in names
+    # 空 brief → 拒绝
+    bad = json.loads(srv.handle_line(_rpc("tools/call",
+                                          {"name": "video_pipeline_run",
+                                           "arguments": {"brief": ""}}, 1)))
+    assert bad["result"]["isError"]
+    assert "brief 不能为空" in bad["result"]["content"][0]["text"]
+    # 非法 stages → 拒绝
+    bad2 = json.loads(srv.handle_line(_rpc("tools/call",
+                                           {"name": "video_pipeline_run",
+                                           "arguments": {"brief": "x", "stages": ["nope"]}}, 2)))
+    assert bad2["result"]["isError"]
+    assert "未知流水线阶段" in bad2["result"]["content"][0]["text"]
+    # 合法 brief 但网关未配置 → 第一段模型调用 fail-closed 报错
+    bad3 = json.loads(srv.handle_line(_rpc("tools/call",
+                                           {"name": "video_pipeline_run",
+                                           "arguments": {"brief": "x", "stages": ["brief"]}}, 3)))
+    assert not bad3["result"]["isError"]  # brief 是纯归一化, 不进模型
+    payload = json.loads(bad3["result"]["content"][0]["text"])
+    assert payload["stages"] == ["brief"]
+    assert payload["rendered"] is False  # 未到 render 阶段
+
+
+def test_mcp_narration_tts_contract(tmp_path: Path):
+    """阶段 12: narration_tts 契约 (fail-closed, 兜底合成 WAV)。"""
+    srv = McpToolServer(tmp_path)
+    names = [t["name"] for t in srv.tools()]
+    assert "narration_tts" in names
+    # 空文本 → 拒绝
+    bad = json.loads(srv.handle_line(_rpc("tools/call",
+                                          {"name": "narration_tts",
+                                           "arguments": {"text": "  "}}, 1)))
+    assert bad["result"]["isError"]
+    assert "text 不能为空" in bad["result"]["content"][0]["text"]
+    # 合法文本 → 兜底合成 WAV
+    ok = json.loads(srv.handle_line(_rpc("tools/call",
+                                         {"name": "narration_tts",
+                                          "arguments": {"text": "旁白旁白", "engine": "synth"}}, 2)))
+    assert not ok["result"]["isError"]
+    payload = json.loads(ok["result"]["content"][0]["text"])
+    assert payload["engine"] == "synth_wav"
+    assert payload["duration"] > 0
+    assert Path(payload["path"]).exists()

@@ -28,6 +28,9 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+import logging
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -284,6 +287,7 @@ class LandlockSandbox(SandboxProvider):
                 return {"available": True, "detail": f"bwrap 可用: {bwrap}"}
             return {"available": False, "detail": f"bwrap 执行失败 (exit={proc.returncode})"}
         except Exception as exc:
+            log.debug("沙箱 provider 异常(设计内降级): %s", exc)
             return {"available": False, "detail": f"bwrap 探测失败: {exc}"}
 
 
@@ -490,7 +494,8 @@ class WindowsTokenAclSandbox(SandboxProvider):
                      f"name={rule_name}"],
                     capture_output=True, timeout=10,
                 )
-        except Exception:
+        except Exception as exc:
+            log.warning("沙箱 provider 异常(设计内降级): %s", exc)
             pass  # 防火墙操作失败不应阻塞主流程
 
     def healthcheck(self) -> Dict[str, Any]:
@@ -504,4 +509,5 @@ class WindowsTokenAclSandbox(SandboxProvider):
                 return {"available": True, "detail": "Windows 管理员权限可用"}
             return {"available": False, "detail": "需要管理员权限创建受限令牌"}
         except Exception as exc:
+            log.debug("沙箱 provider 异常(设计内降级): %s", exc)
             return {"available": False, "detail": f"权限检测失败: {exc}"}

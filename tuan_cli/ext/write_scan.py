@@ -20,6 +20,9 @@ from typing import List, Tuple, Optional
 
 from .safety_patterns import _CRITICAL_PATTERNS
 
+import logging
+log = logging.getLogger(__name__)
+
 # 补充模式: CRITICAL_PATTERNS 未覆盖的写入场景常见危险命令。
 # 这些模式仅用于 write_scan, 不加入 CRITICAL_PATTERNS 以免影响 shell 引擎的精确 token 分析。
 _EXTRA_WRITE_PATTERNS: List[Tuple[str, str]] = [
@@ -106,5 +109,6 @@ def _resolve_path_for_warning(path: str) -> str:
             except ValueError:
                 return str(p)
         return path
-    except Exception:
+    except Exception as exc:
+        log.debug("_resolve_path_for_warning(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return path

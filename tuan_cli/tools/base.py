@@ -136,7 +136,8 @@ class ToolContext:
         if self.on_progress:
             try:
                 self.on_progress(tool_name, message)
-            except Exception:
+            except Exception as exc:
+                log.warning("ToolContext.heartbeat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
 
@@ -551,12 +552,14 @@ class ToolRegistry:
             try:
                 _LC.emit("PermissionDenied", {
                     "tool_name": name, "reason": "用户未批准该操作。"})
-            except Exception:  # noqa: BLE001 - 通知类吞异常
+            except Exception as exc:  # noqa: BLE001 - 通知类吞异常
+                log.warning("ToolRegistry._approve_dangerous(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             if ctx.ui is not None:
                 try:
                     ctx.ui.mascot_set("alert")
-                except Exception:
+                except Exception as exc:
+                    log.warning("ToolRegistry._approve_dangerous(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
             reason = "用户未批准该操作。"
             if getattr(ctx, "safety_advice", None):
@@ -622,7 +625,8 @@ class ToolRegistry:
                 try:
                     ledger.record(name, targets, _snaps,
                                   summary=_ledger_summary(name, args, targets or []))
-                except Exception:
+                except Exception as exc:
+                    log.warning("ToolRegistry._exec_and_record(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
             if self.cache is not None:
                 if tool.dangerous:
@@ -636,7 +640,8 @@ class ToolRegistry:
                 try:
                     hooks.run_post(name, args, ToolResult(
                         status="ok", content=out, tool_name=name, elapsed=elapsed))
-                except Exception:
+                except Exception as exc:
+                    log.warning("ToolRegistry._exec_and_record(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
             return ToolResult(status="ok", content=out, tool_name=name, elapsed=elapsed)
         except Exception as exc:  # noqa: BLE001
@@ -645,7 +650,8 @@ class ToolRegistry:
             if ledger is not None and _snaps is not None and _cfg_bool(cfg, "ledger.auto_rollback_on_error", True):
                 try:
                     ledger.restore(_snaps)
-                except Exception:
+                except Exception as exc:
+                    log.warning("ToolRegistry._exec_and_record(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
             self._emit_exec(ctx, name, "error", elapsed=elapsed, error_type=type(exc).__name__)
             # PostToolUseFailure：决策类，动作已发生（工具执行失败），只作反馈
@@ -654,7 +660,8 @@ class ToolRegistry:
                     "tool_name": name,
                     "error_type": type(exc).__name__,
                     "error": str(exc)})
-            except Exception:  # noqa: BLE001 - 通知类吞异常
+            except Exception as exc:  # noqa: BLE001 - 通知类吞异常
+                log.warning("ToolRegistry._exec_and_record(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return ToolResult(
                 status="error",
@@ -734,7 +741,8 @@ class ToolRegistry:
             if store is None:
                 return None
             return cast(Optional[dict], store.query(name, args))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ToolRegistry._query_learned(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
     def _emit_exec(self, ctx: ToolContext, name: str, status: str, elapsed: float = 0.0,
@@ -748,7 +756,8 @@ class ToolRegistry:
             if error_type:
                 payload["error_type"] = error_type
             kernel.emit("tool.executed", payload)
-        except Exception:
+        except Exception as exc:
+            log.warning("ToolRegistry._emit_exec(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -764,7 +773,8 @@ def _cfg_bool(cfg: Any, key: str, default: bool) -> bool:
         return default
     try:
         v = cfg.get(key, default)
-    except Exception:
+    except Exception as exc:
+        log.debug("_cfg_bool(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return default
     if isinstance(v, bool):
         return v
@@ -781,7 +791,8 @@ def _rel(ctx: ToolContext, path: str) -> str:
             p = Path(ctx.workspace) / p
         p = p.resolve()
         return str(p.relative_to(Path(ctx.workspace).resolve()))
-    except Exception:
+    except Exception as exc:
+        log.debug("_rel(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return path
 
 

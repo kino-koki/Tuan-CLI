@@ -14,6 +14,9 @@ from typing import Any
 
 from .patch_base import patch_impl, SKIP_ORIGINAL
 
+import logging
+log = logging.getLogger(__name__)
+
 # 本模块的补丁共享缓存: 由补丁实现读写, 不污染 i18n / retry 模块命名空间。
 _T_CACHE: dict = {}
 _T_CACHE_LANG: str = ""
@@ -86,7 +89,8 @@ def _resolve_adapter() -> Any:
     try:
         from ..models.openai_compat import OpenAICompatAdapter
         return OpenAICompatAdapter
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_resolve_adapter(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 

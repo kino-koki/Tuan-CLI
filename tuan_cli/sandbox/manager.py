@@ -245,7 +245,8 @@ class SandboxManager:
                                  "reason": verdict.reason},
                         source="sandbox", severity=verdict.severity,
                     ))
-        except Exception:  # noqa: BLE001 - 审计失败不影响主流程
+        except Exception as exc:  # noqa: BLE001 - 审计失败不影响主流程
+            log.warning("沙箱管理器操作异常(设计内降级): %s", exc)
             pass
 
     # ------------------------------------------------------------ 主评估
@@ -300,6 +301,7 @@ class SandboxManager:
             detected = self._detected_domains(command or "")
             decision = evaluate_claim(claim, detected)
         except Exception as exc:  # noqa: BLE001
+            log.debug("沙箱管理器操作异常(设计内降级): %s", exc)
             from ..core.security_utils import safe_exception_text
             return True, f"egress_allowlist fail-closed: {safe_exception_text(exc)}"
         self.last_allowlist = decision.to_audit_dict()
@@ -331,7 +333,8 @@ class SandboxManager:
             try:
                 if not confirm(f"[沙箱确认] {verdict.reason}\n请确认是否继续?"):
                     return True, f"[沙箱信任滤网] 用户拒绝: {verdict.reason}"
-            except Exception:
+            except Exception as exc:
+                log.debug("沙箱管理器操作异常(设计内降级): %s", exc)
                 return True, f"[沙箱信任滤网] 确认通道异常, fail-closed: {verdict.reason}"
         return False, ""
 
@@ -598,7 +601,8 @@ class SandboxManager:
                 sd = cfg.get("sandbox.allowed_domains", [])
                 if sd:
                     return list(sd)
-        except Exception:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover
+            log.warning("沙箱管理器操作异常(设计内降级): %s", exc)
             pass
         return None
 
@@ -608,7 +612,8 @@ class SandboxManager:
         auditor = None
         try:
             cfg = kernel.get("config")
-        except Exception:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover
+            log.warning("沙箱管理器操作异常(设计内降级): %s", exc)
             pass
         try:
             auditor = kernel.get("security_auditor")

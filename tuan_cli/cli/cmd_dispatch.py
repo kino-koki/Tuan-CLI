@@ -30,6 +30,9 @@ from ._ui_singleton import console, ui
 from ..agents.base import AgentInfo, EventType, TaskRequest
 from ..ui.format import Table
 
+import logging
+log = logging.getLogger(__name__)
+
 _MODES = ("chat", "collaboration", "gantong", "lingma", "boundless")
 
 
@@ -226,7 +229,8 @@ async def _run_task(task: TaskRequest, verbose: bool) -> int:
             _aclose = getattr(agen, "aclose", None)
             if _aclose is not None:
                 await _aclose()
-        except Exception:
+        except Exception as exc:
+            log.warning("_run_task(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return 1
 

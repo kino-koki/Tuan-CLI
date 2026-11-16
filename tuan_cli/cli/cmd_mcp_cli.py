@@ -10,6 +10,9 @@ from ..config import Config
 from ._ui_singleton import console
 from ..ui.format import Table
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def build_kernel(*a: Any, **k: Any) -> Any:
     """惰性构建内核: 仅实际执行 mcp 命令时才加载 app 链。"""
@@ -57,7 +60,8 @@ def _mcp_list(args: Any) -> int:
         try:
             for entry in mt.status():
                 remote_status[entry.name] = entry
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_mcp_list(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def _is_remote(s: dict) -> bool:

@@ -19,6 +19,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class OllamaModel:
@@ -158,7 +161,8 @@ class OllamaManager:
             proc.wait(timeout=300)  # 5分钟超时
             return proc.returncode == 0
             
-        except Exception:
+        except Exception as exc:
+            log.debug("OllamaManager.pull_model(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return False
     
     def list_available_models(self) -> List[str]:
@@ -204,6 +208,7 @@ def detect_llamacpp(base_url: str = "http://localhost:8080/v1", timeout: float =
         models = [m.get("id") for m in data.get("data", []) if isinstance(m, dict) and m.get("id")]
         return {"available": True, "models": models, "error": None}
     except Exception as exc:  # noqa: BLE001
+        log.debug("detect_llamacpp(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"available": False, "models": [], "error": str(exc)}
 
 

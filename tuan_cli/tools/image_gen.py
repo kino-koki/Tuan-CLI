@@ -107,10 +107,12 @@ def _generate_dalle(
         body_text = ""
         try:
             body_text = exc.read().decode("utf-8", errors="replace")[:500]
-        except Exception:
+        except Exception as exc:
+            log.warning("_generate_dalle(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return {"error": f"OpenAI API 错误 {exc.code}: {body_text}"}
     except Exception as exc:  # noqa: BLE001
+        log.debug("_generate_dalle(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"error": f"OpenAI 请求失败: {type(exc).__name__}: {exc}"}
 
 
@@ -164,10 +166,12 @@ def _generate_stability(
         body_text = ""
         try:
             body_text = exc.read().decode("utf-8", errors="replace")[:500]
-        except Exception:
+        except Exception as exc:
+            log.warning("_generate_stability(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return {"error": f"Stability API 错误 {exc.code}: {body_text}"}
     except Exception as exc:  # noqa: BLE001
+        log.debug("_generate_stability(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"error": f"Stability 请求失败: {type(exc).__name__}: {exc}"}
 
 
@@ -279,6 +283,9 @@ def list_generated(workspace: str, limit: int = 20) -> str:
 # ------------------------------------------------------------------ 插件注册
 
 from ..core.kernel import Plugin
+
+import logging
+log = logging.getLogger(__name__)
 
 
 class ImageGenPlugin(Plugin):

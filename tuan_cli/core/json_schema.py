@@ -68,6 +68,7 @@ def load_schema(spec: str) -> Tuple[Dict[str, Any], Optional[str]]:
         try:
             raw = p.read_text(encoding="utf-8")
         except Exception as exc:  # noqa: BLE001
+            log.debug("load_schema(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {}, f"读取 schema 文件失败: {exc}"
     else:
         raw = spec

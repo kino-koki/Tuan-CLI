@@ -21,6 +21,9 @@ import threading
 import weakref
 from typing import Any, Callable, Dict, List, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 
 _lock = threading.Lock()
 _ui_cache: Optional[Dict[str, Any]] = None
@@ -43,7 +46,8 @@ def _read_ui_section() -> Dict[str, Any]:
         data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
         ui = data.get("ui") if isinstance(data, dict) else None
         return dict(ui) if isinstance(ui, dict) else {}
-    except Exception:  # noqa: BLE001 - 偏好读取失败不应影响启动
+    except Exception as exc:  # noqa: BLE001 - 偏好读取失败不应影响启动
+        log.debug("_read_ui_section(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {}
 
 
@@ -82,7 +86,8 @@ def set_vim_mode(enabled: bool) -> None:
             continue
         try:
             cb(bool(enabled))
-        except Exception:  # noqa: BLE001 - 单个前端异常不影响其他前端
+        except Exception as exc:  # noqa: BLE001 - 单个前端异常不影响其他前端
+            log.warning("set_vim_mode(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

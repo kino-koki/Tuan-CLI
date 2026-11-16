@@ -36,9 +36,19 @@ def _render_model_error(exc: Exception) -> str:
         tmpl = friendly_for(exc)
         if tmpl is not None:
             return tmpl.render()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_render_model_error(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return str(exc)
+
+
+class _ModelTurnError(Exception):
+    """模型单回合调用失败。rendered 为用户可读文案, raw 为原始异常。"""
+
+    def __init__(self, rendered: str, raw: Exception) -> None:
+        super().__init__(rendered)
+        self.rendered = rendered
+        self.raw = raw
 
 
 # ================================================================ LoopProvider 基类
@@ -113,6 +123,55 @@ class LoopProvider(ABC):
             keep_vision = getattr(getattr(agent.model, "capabilities", None), "vision", False)
             agent._maybe_route_model(user_input, override=override, has_images=keep_vision)
 
+    def _chat_turn(
+        self,
+        agent: "Agent",
+        *,
+        stream: bool,
+        on_token: Optional[Callable[[str], None]],
+        on_reason: Optional[Callable[[str], None]],
+    ) -> Optional[Dict[str, Any]]:
+        """执行一次「调用模型 → usage 记账 → 解析 → 落消息」的完整回合。
+
+        ReAct / PlannerExecute 两个 Loop 的重复逻辑统一收口到这里, 避免双份漂移。
+        返回解析后的 assistant 消息 dict; 模型返回 None (重试中) 时返回 None;
+        模型调用失败抛 _ModelTurnError (文案已渲染为用户可读)。
+        """
+        try:
+            result = agent._chat_with_retry(
+                agent.messages, tools=agent._schemas(),
+                stream=stream, on_token=on_token, on_reason=on_reason,
+            )
+        except Exception as exc:
+            raise _ModelTurnError(_render_model_error(exc), exc) from exc
+        if result is None:
+            return None
+        usage = getattr(result, "usage", None)
+        if usage:
+            agent._accumulate_usage(usage)
+        msg_dict = agent._parse_assistant_message(result)
+        agent.messages.append(msg_dict)
+        agent._session_append("assistant", message=msg_dict)
+        return msg_dict
+
+    def _execute_tool_calls(
+        self,
+        agent: "Agent",
+        tool_calls: List[Any],
+        *,
+        on_tool: Optional[Callable[[str, str], None]],
+        on_tool_result: Optional[Callable[[str, str], None]],
+        on_token: Optional[Callable[[str], None]],
+    ) -> None:
+        """执行工具调用 + 验证回路 + 自动路由观察 (ReAct / PlannerExecute 共用)。"""
+        n_before = len(agent.messages)
+        agent._execute_tools(tool_calls, on_tool=on_tool, on_tool_result=on_tool_result)
+        agent._run_verify_loop(tool_calls, on_token=on_token)
+        agent._auto.observe_turn(
+            agent._route_session,
+            self._tool_messages_of_turn(agent.messages, n_before),
+        )
+
 
 # ================================================================ 默认: ReAct Loop
 
@@ -176,30 +235,19 @@ class ReActLoop(LoopProvider):
                 agent._notify_hook("PreCompact", {"trigger": "auto"})
             agent.messages, _ = agent.context_manager.compact_if_needed(agent.messages)
 
-            # 调用模型
+            # 调用模型 + 记账 + 解析 + 落消息 (与 PlannerExecute 共用)
             try:
-                result = agent._chat_with_retry(
-                    agent.messages, tools=agent._schemas(),
-                    stream=stream, on_token=on_token, on_reason=on_reason,
+                msg_dict = self._chat_turn(
+                    agent, stream=stream, on_token=on_token, on_reason=on_reason,
                 )
-            except Exception as exc:
-                err_msg = f"[模型错误] {exc}"
+            except _ModelTurnError as exc:
                 if on_error:
-                    on_error(_render_model_error(exc))
-                answer = err_msg
+                    on_error(exc.rendered)
+                answer = f"[模型错误] {exc.raw}"
                 break
 
-            if result is None:
+            if msg_dict is None:
                 continue
-
-            usage = getattr(result, "usage", None)
-            if usage:
-                agent._accumulate_usage(usage)
-
-            # 解析结果 (使用 Agent 的统一解析方法)
-            msg_dict = agent._parse_assistant_message(result)
-            agent.messages.append(msg_dict)
-            agent._session_append("assistant", message=msg_dict)
 
             tool_calls = msg_dict.get("tool_calls", [])
             if not tool_calls:
@@ -236,13 +284,10 @@ class ReActLoop(LoopProvider):
                 agent._awaiting_done = False
                 break
 
-            # 执行工具
-            n_before = len(agent.messages)
-            agent._execute_tools(tool_calls, on_tool=on_tool, on_tool_result=on_tool_result)
-            agent._run_verify_loop(tool_calls, on_token=on_token)
-            agent._auto.observe_turn(
-                agent._route_session,
-                self._tool_messages_of_turn(agent.messages, n_before),
+            # 执行工具 (与 PlannerExecute 共用)
+            self._execute_tool_calls(
+                agent, tool_calls, on_tool=on_tool, on_tool_result=on_tool_result,
+                on_token=on_token,
             )
 
         # 达到最大迭代
@@ -314,37 +359,25 @@ class PlannerExecuteLoop(LoopProvider):
             if agent.context_manager.needs_compact(agent.messages):
                 agent.messages, _ = agent.context_manager.compact_if_needed(agent.messages)
 
-            # 执行
+            # 调用模型 + 记账 + 解析 + 落消息 + 工具执行 (与 ReAct 共用)
             try:
-                result = agent._chat_with_retry(
-                    agent.messages, tools=agent._schemas(),
-                    stream=stream, on_token=on_token, on_reason=on_reason,
+                msg_dict = self._chat_turn(
+                    agent, stream=stream, on_token=on_token, on_reason=on_reason,
                 )
-            except Exception as exc:
+            except _ModelTurnError as exc:
                 if on_error:
-                    on_error(_render_model_error(exc))
-                answer = f"[步骤 {i+1} 失败] {exc}"
+                    on_error(exc.rendered)
+                answer = f"[步骤 {i+1} 失败] {exc.raw}"
                 break
 
-            if result is None:
+            if msg_dict is None:
                 continue
-
-            usage = getattr(result, "usage", None)
-            if usage:
-                agent._accumulate_usage(usage)
-
-            msg_dict = agent._parse_assistant_message(result)
-            agent.messages.append(msg_dict)
-            agent._session_append("assistant", message=msg_dict)
 
             tool_calls = msg_dict.get("tool_calls", [])
             if tool_calls:
-                n_before = len(agent.messages)
-                agent._execute_tools(tool_calls, on_tool=on_tool, on_tool_result=on_tool_result)
-                agent._run_verify_loop(tool_calls, on_token=on_token)
-                agent._auto.observe_turn(
-                    agent._route_session,
-                    self._tool_messages_of_turn(agent.messages, n_before),
+                self._execute_tool_calls(
+                    agent, tool_calls, on_tool=on_tool, on_tool_result=on_tool_result,
+                    on_token=on_token,
                 )
 
             answer = msg_dict.get("content", "")
@@ -369,7 +402,8 @@ class PlannerExecuteLoop(LoopProvider):
             elif isinstance(plan_result, dict):
                 return plan_result.get("content", task) if isinstance(plan_result.get("content"), str) else task
             return str(plan_result) if plan_result else task
-        except Exception:
+        except Exception as exc:
+            log.debug("PlannerExecuteLoop._plan(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return task  # 规划失败, 把原任务当单步执行
 
     @staticmethod

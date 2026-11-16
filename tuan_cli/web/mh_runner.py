@@ -28,6 +28,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # 常量 / 配置
 # ---------------------------------------------------------------------------
@@ -320,7 +323,8 @@ def _kill_tree(proc: "subprocess.Popen[Any]") -> None:
     except Exception:  # noqa: BLE001 - 杀进程失败不再抛, 避免阻塞收尾
         try:
             proc.kill()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_kill_tree(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

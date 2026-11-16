@@ -219,7 +219,12 @@ class TestStylesAndI18n:
             assert not missing, f"{lang} 缺少键: {missing}"
 
     def test_ctrl_d_bound(self):
-        import inspect
-
-        src = inspect.getsource(QxtTUI)
+        from pathlib import Path as _P
+        import tuan_cli.tui as _pkg
+        # QxtTUI 已按域拆分为多个 mixin 模块 (键位绑定在 interact.py):
+        # 在整个 tui 包内检索, 不变式不变。
+        pkg_dir = _P(_pkg.__file__).parent
+        src = "\n".join(
+            p.read_text(encoding="utf-8") for p in sorted(pkg_dir.glob("*.py"))
+        )
         assert '@kb.add("c-d")' in src, "应绑定 Ctrl+D"

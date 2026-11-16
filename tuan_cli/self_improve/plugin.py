@@ -176,7 +176,8 @@ class SelfImproveService:
         try:
             self._distiller.feedback(skill_name, success)
             return True
-        except Exception:
+        except Exception as exc:
+            log.debug("SelfImproveService.feedback(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return False
 
     def distilled_skills(self) -> List[Dict[str, Any]]:

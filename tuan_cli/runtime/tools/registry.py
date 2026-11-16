@@ -9,6 +9,9 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 
 from .contract import ExecutableTool, ToolInfo, ToolSource
+import logging
+log = logging.getLogger(__name__)
+
 
 
 class ToolRegistry:
@@ -33,7 +36,8 @@ class ToolRegistry:
         if entry.disposal is not None:
             try:
                 entry.disposal()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ToolRegistry.unregister(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return True
 

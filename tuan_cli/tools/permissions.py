@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 from urllib.parse import urlparse
 
+import logging
+log = logging.getLogger(__name__)
+
 # 长命令阈值 (对标 Claude Code 2.1.214: 10000 字符)
 _LONG_COMMAND_THRESHOLD = 10_000
 
@@ -63,7 +66,8 @@ def _engine_redline(command: str) -> bool:
     try:
         from ..ext.safety_engine import is_redline
         return bool(is_redline(command))
-    except Exception:  # noqa: BLE001 - 安全引擎不可用时保守视为红线 (降级确认)
+    except Exception as exc:  # noqa: BLE001 - 安全引擎不可用时保守视为红线 (降级确认)
+        log.debug("_engine_redline(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return True
 
 
@@ -239,7 +243,8 @@ class PermissionPolicy:
                     return PermissionDecision(
                         "allow",
                         f"Auto 模式自动批准: {assessment.reason}")
-            except Exception:  # noqa: BLE001 - 分类器异常时回退常规决策 (fail-safe)
+            except Exception as exc:  # noqa: BLE001 - 分类器异常时回退常规决策 (fail-safe)
+                log.warning("PermissionPolicy.decide(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
         if not getattr(tool, "dangerous", False):

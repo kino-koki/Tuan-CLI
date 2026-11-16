@@ -526,8 +526,9 @@ class SecurityClassifier:
             return bool(self._learner.observe(command, label=label,
                                               confidence=confidence,
                                               evidence=evidence or []))
-        except Exception:
+        except Exception as exc:
             # 学习反馈失败不影响主判定链; 记录但不中断。
+            log.debug("安全分类器降级: %s", exc)
             return False
 
     def classify(self, command: str) -> ClassificationResult:
@@ -549,7 +550,8 @@ class SecurityClassifier:
                     features={"benign_whitelist": True},
                     reasons=["命中良性开发命令白名单, 分类器直接放行(规则层优先)"],
                 )
-        except Exception:  # noqa: BLE001 - 分类器兜底绝不能因规则层异常而崩溃
+        except Exception as exc:  # noqa: BLE001 - 分类器兜底绝不能因规则层异常而崩溃
+            log.warning("安全分类器降级: %s", exc)
             pass
 
         # 1. 提取特征
@@ -611,8 +613,9 @@ class SecurityClassifier:
                     risk_score = learner_score
                     if learner_reasons:
                         reasons.append(f"学习器收紧: {learner_reasons[0]}")
-            except Exception:
+            except Exception as exc:
                 # 学习器故障 → 忽略其票, 绝不让故障放大权限。
+                log.warning("安全分类器降级: %s", exc)
                 pass
 
         # 4. 决策

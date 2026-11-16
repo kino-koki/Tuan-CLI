@@ -14,6 +14,9 @@ from typing import Any, AsyncIterator, Dict, Optional, Tuple
 
 from ... import _http as httpx  # 零依赖传输层 (stdlib 实现 httpx 表面)
 from ..contract import APIConnectionError, APIStatusError, APITimeoutError, classify_api_error
+import logging
+log = logging.getLogger(__name__)
+
 
 # NVIDIA 兼容端点的主机后缀（用于按 baseUrl 判定 nvidia，兼顾“OpenAI 兼容方式指向 NVIDIA”的情况）
 _NVIDIA_HOST_RE = re.compile(r"(^|\.)nvidia\.(com|net|io|ai)$", re.IGNORECASE)
@@ -35,7 +38,8 @@ def is_nvidia_provider(type_: Optional[str], base_url: Optional[str]) -> bool:
             host = urlparse(base_url).hostname or ""
             if _NVIDIA_HOST_RE.search(host):
                 return True
-        except Exception:  # noqa: BLE001 - 非法 URL 按非 nvidia 处理
+        except Exception as exc:  # noqa: BLE001 - 非法 URL 按非 nvidia 处理
+            log.debug("is_nvidia_provider(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return False
     return False
 

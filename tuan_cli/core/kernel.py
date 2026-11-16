@@ -158,12 +158,12 @@ class ServiceContainer:
             self._services[service] = impl
             self._factories.pop(service, None)  # 实例优先于工厂
             self._service_owner[service] = owner
-        # 触发 on_provide 钩子 (锁外)
+        # 触发 on_provide 钩子 (锁外); 单个钩子异常不影响服务注册, 记录后继续
         for hook in self._on_provide.get(service, []):
             try:
                 hook(service, impl)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                log.warning("on_provide 钩子异常 (service=%s): %s", service, exc)
 
     def provide_factory(
         self, service: str, factory: Callable[[], Any], owner: str = ""
@@ -181,6 +181,16 @@ class ServiceContainer:
             self._factories.pop(service, None)
             self._service_owner.pop(service, None)
             self._contributions.pop(service, None)
+
+    def has(self, service: str) -> bool:
+        """服务是否可获取 (已实例化或存在懒工厂)。"""
+        with self._lock:
+            return service in self._services or service in self._factories
+
+    def available_services(self) -> "set[str]":
+        """当前可获取的全部服务名 (含懒工厂; 不触发实例化)。"""
+        with self._lock:
+            return set(self._services) | set(self._factories)
 
     def extend_service(
         self, service: str, impl: Any, owner: str = "", placement: str = "post"
@@ -256,10 +266,7 @@ class ServiceContainer:
                 elif service in self._factories:
                     # 懒创建: 工厂抛异常时保留工厂以便重试, 不缓存失败结果
                     factory = self._factories[service]
-                    try:
-                        inst = factory()
-                    except Exception:
-                        raise
+                    inst = factory()
                     self._services[service] = inst
                     self._factories.pop(service, None)
                 else:
@@ -270,8 +277,8 @@ class ServiceContainer:
             for hook in hooks:
                 try:
                     hook(service, inst)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("on_require 钩子异常 (service=%s): %s", service, exc)
         return inst
 
     def require(self, service: str) -> Any:
@@ -503,26 +510,8 @@ class Kernel:
                 raise PluginError("插件依赖存在环, 无法激活")
             progressed = False
             for name, plugin in list(pending.items()):
-                # 检查依赖 (同时检查旧 _services 和新 self.services)
-                missing = []
-                for s in plugin.requires:
-                    if (s not in self.services._services
-                            and s not in self.services._factories
-                            and s not in self._plugins.get(name, Plugin()).provides):
-                        # 也检查是否由其它插件在本次循环中提供
-                        missing.append(s)
-                # 简化: 如果 require 的服务在任何已激活插件的 provides 中, 且该插件已激活
-                # 则认为已满足 (因为 activate 时会 provide)
-                truly_missing = []
-                for s in missing:
-                    found = False
-                    for aname, ap in self._plugins.items():
-                        if aname in activated and s in ap.provides:
-                            found = True
-                            break
-                    if not found:
-                        truly_missing.append(s)
-                if truly_missing:
+                # 依赖全部满足 (容器已有 / 已激活插件提供 / 自身提供) 才激活
+                if self._unsatisfied_requires(plugin, activated):
                     continue
                 plugin.activate(self)
                 activated.add(name)
@@ -530,12 +519,30 @@ class Kernel:
                 progressed = True
                 self.emit("plugin.activated", {"name": name})
             if not progressed:
-                available = set(self.services._services) | set(self.services._factories)
+                available = self.services.available_services()
                 detail = {
                     n: [s for s in p.requires if s not in available]
                     for n, p in pending.items()
                 }
                 raise PluginError(f"插件依赖无法满足: {detail}")
+
+    def _unsatisfied_requires(self, plugin: Plugin, activated: set[str]) -> List[str]:
+        """返回 plugin 尚未满足的依赖列表 (空列表 = 全部满足, 可以激活)。
+
+        满足条件 (任一即可):
+        - 容器里已有该服务 (实例或懒工厂);
+        - 某个已激活插件的 provides 声明了它 (activate 时会 provide);
+        - 插件自身 provides 声明了它 (自给自足)。
+        """
+        provided_by_activated: set[str] = set()
+        for name in activated:
+            provided_by_activated.update(self._plugins[name].provides)
+        return [
+            s for s in plugin.requires
+            if not self.services.has(s)
+            and s not in provided_by_activated
+            and s not in plugin.provides
+        ]
 
     def deactivate_all(self) -> None:
         for plugin in reversed(list(self._plugins.values())):
@@ -602,8 +609,8 @@ class Kernel:
                 if self._on_event_overflow is not None:
                     try:
                         self._on_event_overflow(evicted)
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("事件溢出回调异常: %s", exc)
                 # 收集溢出事件的 handlers (在锁内快照, 锁外派发, 避免递归 emit)
                 overflow_handlers = list(self._hooks.get("event.overflow", []))
                 overflow_handlers += list(self._hooks.get("*", []))

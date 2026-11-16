@@ -268,23 +268,8 @@ class CostTracker:
     def _estimate_cost(
         self, provider: str, model: str, prompt_tokens: int, completion_tokens: int
     ) -> float:
-        """估算调用成本 (USD)。"""
-        for preset in MODEL_PRESETS:
-            if preset.provider == provider and preset.model == model:
-                cost = (prompt_tokens / 1000 * preset.cost_per_1k_input +
-                        completion_tokens / 1000 * preset.cost_per_1k_output)
-                return round(cost, 6)
-        # 未知模型: 按 provider tier 提供合理默认价
-        pp = PROVIDER_BY_NAME.get(provider)
-        if pp is not None:
-            tier_costs = _TIER_DEFAULT_COST.get(pp.tier, _TIER_DEFAULT_COST["standard"])
-            return round(
-                prompt_tokens / 1000 * tier_costs["input"]
-                + completion_tokens / 1000 * tier_costs["output"],
-                6,
-            )
-        # 全局粗略兜底
-        return round((prompt_tokens + completion_tokens) / 1000 * 0.001, 6)
+        """估算调用成本 (USD)。委托给模块级 estimate_cost, 避免两份定价逻辑漂移。"""
+        return estimate_cost(provider, model, prompt_tokens, completion_tokens)
 
     @property
     def total_cost(self) -> float:
@@ -422,7 +407,11 @@ class ModelRouter:
         return best.provider, best.model
 
     def should_escalate(self, current_cost: float) -> bool:
-        """检查是否应该升级模型 (预算超限或任务太难)。"""
+        """检查预算是否接近上限 (≥80%), 到达时返回 True。
+
+        仅覆盖「预算」维度; 「任务太难」维度的升级判断由 AutoRouter
+        (core/auto_route.py) 的难度覆盖逻辑负责, 不在本方法内。
+        """
         if self.budget_limit > 0 and current_cost >= self.budget_limit * 0.8:
             return True
         return False
@@ -626,7 +615,8 @@ def _pick_local_model() -> str:
             return str(status["ollama"]["models"][0])
         if status.get("llamacpp", {}).get("models"):
             return str(status["llamacpp"]["models"][0])
-    except Exception:  # noqa: BLE001 - 探测失败按无本地模型处理
+    except Exception as exc:  # noqa: BLE001 - 探测失败按无本地模型处理
+        log.warning("_pick_local_model(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return ""
 
@@ -645,7 +635,8 @@ def apply_offline_fallback(decision: Dict[str, Any]) -> Dict[str, Any]:
         from ..core.network_check import is_offline
 
         offline = is_offline()
-    except Exception:  # noqa: BLE001 - 检测模块异常时按在线处理, 不干扰主流程
+    except Exception as exc:  # noqa: BLE001 - 检测模块异常时按在线处理, 不干扰主流程
+        log.debug("apply_offline_fallback(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return decision
 
     if not offline:

@@ -40,6 +40,9 @@ from .schema import (
     UserMessage,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 # 信封发射器: (envelope: dataclass|dict) -> None。由 headless 注入，
 # 内部已做线程锁 + encode_message + stdout flush。
 Emitter = Callable[[Any], None]
@@ -99,7 +102,8 @@ class StreamTranslator:
             try:
                 sys.stderr.write(f"[stream_json.translate] emit 失败: {exc!r}\n")
                 sys.stderr.flush()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("StreamTranslator._safe_emit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def _stream_event(self, event: Dict[str, Any],

@@ -31,6 +31,9 @@ from ..core.kernel import Kernel, Plugin
 from .base import Tool, ToolContext, string_prop
 from .web import _check_ssrf
 
+import logging
+log = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------- 常量
 
 INSTALL_HINT = (
@@ -51,7 +54,8 @@ def browser_use_available() -> bool:
     try:
         import importlib.util  # noqa: SIM107
         return importlib.util.find_spec("browser_use") is not None
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("browser_use_available(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 
@@ -286,7 +290,8 @@ def _format_report(history: Any, ctx: Optional[ToolContext]) -> str:
     )
     try:
         lines.append(f"步数: {history.number_of_steps()}")
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_format_report(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
     try:

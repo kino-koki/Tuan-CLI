@@ -10,6 +10,9 @@ import re
 import shlex
 import unicodedata
 from typing import Any, Iterator, List
+import logging
+
+log = logging.getLogger(__name__)
 
 # ------------------------------------------------------------ 致命红线判定 (token 化)
 # 正则容易被旗标顺序/写法变体绕过 (rm -r -f / git push -f / del /s /q),
@@ -430,7 +433,8 @@ def _try_decode_ps_encoded(text: str) -> str:
                 decoded = decoded_bytes.decode('utf-8', errors='replace')
         # 用解码后的命令替换整个 powershell -EncodedCommand ... 部分
         return text[:m.start()] + decoded + text[m.end():]
-    except Exception:  # noqa: BLE001 - Base64 解码失败则原样
+    except Exception as exc:  # noqa: BLE001 - Base64 解码失败则原样
+        log.debug("安全规范化降级: %s", exc)
         return text
 
 
@@ -651,7 +655,8 @@ def _resolve_symlinks(text: str) -> str:
             real = os.path.realpath(token)
             if real != token and os.path.exists(real):
                 return real
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("安全规范化降级: %s", exc)
             pass
         return token
 
@@ -797,7 +802,8 @@ def _bounded_glob(pattern: str) -> List[str]:
         try:
             import glob as _glob_mod
             return list(_glob_mod.glob(pattern))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("安全规范化降级: %s", exc)
             return []
     out: List[str] = []
     budget = {"left": _GLOB_MAX_ITERATIONS}
@@ -1074,7 +1080,8 @@ def _normalize(text: str) -> str:
                 if seq[:2].lower() == "\\x":
                     return chr(int(seq[2:], 16))
                 return chr(int(seq[1:], 8))
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("安全规范化降级: %s", exc)
                 return seq
         text = re.sub(r"\\x[0-9a-fA-F]{2}|\\[0-7]{3}", _unescape_seq, text)
         # 解码后可能重新形成 rm-rf 粘连 / 全角字符, 需再净化一次

@@ -243,6 +243,9 @@ class BaseAgentLoop:
 # 生产环境请使用 core.loop_provider 的版本; arch 版本仅用于单元测试和原型验证。
 import warnings as _warnings
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class LoopRegistry:
     """[已弃用] arch 层 Loop 注册表 (class-level dict, 仅测试用)。
@@ -449,7 +452,8 @@ class ToolPipeline:
             try:
                 self.hooks.run_post(call.name, call.args, outcome.result)
                 outcome.post_notes.append("hook:post")
-            except Exception:
+            except Exception as exc:
+                log.warning("ToolPipeline.run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
         self._audit(outcome, ctx, started)
@@ -481,7 +485,8 @@ class ToolPipeline:
                     "name": outcome.name, "status": "ok" if outcome.ok else "err",
                     "elapsed": outcome.elapsed, "error": outcome.error,
                 })
-            except Exception:
+            except Exception as exc:
+                log.warning("ToolPipeline._audit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
 
@@ -670,7 +675,8 @@ class LoopProviderBridge:
         self._last_errors = []
         try:
             agent._session_append("task.start", goal=user_input, loop=self.name)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("LoopProviderBridge.on_task_start(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def on_task_end(self, agent: Any, answer: Any, iteration: Any) -> None:
@@ -684,7 +690,8 @@ class LoopProviderBridge:
                 error_summary=self._last_errors[-3:] if self._last_errors else [],
                 loop=self.name,
             )
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("LoopProviderBridge.on_task_end(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def stats(self) -> Dict[str, Any]:

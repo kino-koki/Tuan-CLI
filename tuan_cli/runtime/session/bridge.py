@@ -17,6 +17,9 @@ from ...memory.sessions import SessionStore
 from .contracts import ContextMessage
 from .memory import ContextMemory, build_messages
 from .wire import WireStore, replay
+import logging
+log = logging.getLogger(__name__)
+
 
 
 class KernelSessionBridge:
@@ -45,7 +48,8 @@ class KernelSessionBridge:
                 continue
             try:
                 messages.append(ContextMessage.from_dict(raw))
-            except Exception:
+            except Exception as exc:
+                log.debug("KernelSessionBridge.sync_from_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
 
         # 重建上下文

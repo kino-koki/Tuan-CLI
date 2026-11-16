@@ -26,6 +26,9 @@ from typing import Any, Dict, List, Optional
 from ._ui_singleton import console
 from .parser import _register_command
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _resolve_cache_dir(home: Path) -> Path:
     """解析 web 搜索缓存目录 (与 tools/web.py _cache_dir 同源)。
@@ -55,7 +58,8 @@ def _ttl() -> float:
         from ..config import Config
         cfg = Config()
         return float(cfg.get("network.search_cache_ttl", 21600) or 21600)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_ttl(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return 21600.0
 
 
@@ -64,6 +68,7 @@ def _entry_row(path: Path, ttl: float) -> Optional[Dict[str, Any]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
+        log.debug("_entry_row(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {
             "file": path.name, "ts": 0.0, "age_sec": None, "expired": None,
             "query": "", "engine": "", "results": 0, "bytes": path.stat().st_size,

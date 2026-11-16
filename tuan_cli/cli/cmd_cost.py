@@ -25,6 +25,9 @@ from typing import Any, Dict, List
 from ..config.loader import home_dir
 from ._ui_singleton import console
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _load_history() -> List[Dict[str, Any]]:
     """读取成本历史 (JSONL)。文件不存在返回空。"""
@@ -39,9 +42,11 @@ def _load_history() -> List[Dict[str, Any]]:
                 continue
             try:
                 rows.append(json.loads(line))
-            except Exception:  # noqa: BLE001 - 坏行跳过
+            except Exception as exc:  # noqa: BLE001 - 坏行跳过
+                log.debug("_load_history(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_load_history(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return []
     return rows
 

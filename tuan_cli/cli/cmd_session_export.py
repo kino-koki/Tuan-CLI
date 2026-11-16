@@ -18,6 +18,9 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _read_records(src: Path) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
@@ -28,7 +31,8 @@ def _read_records(src: Path) -> List[Dict[str, Any]]:
                 continue
             try:
                 records.append(json.loads(line))
-            except Exception:  # noqa: BLE001 - 损坏行跳过
+            except Exception as exc:  # noqa: BLE001 - 损坏行跳过
+                log.debug("_read_records(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
     except OSError:
         pass
@@ -86,7 +90,8 @@ def export_session_zip(src: Path, dest: Path) -> Path:
             "base_url": cfg.get("model.base_url", ""),
             "note": "API 密钥已省略, 未导出",
         }
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("export_session_zip(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
     summary_lines = [

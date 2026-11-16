@@ -21,6 +21,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------- 路径常量
 
 CLAUDE_HOME_NAME = ".claude"
@@ -81,7 +84,8 @@ class EcosystemProbe:
         """查找可执行文件路径; 找不到返回 None (不抛异常)。"""
         try:
             return shutil.which(cmd)
-        except Exception:  # noqa: BLE001 - PATH 异常时静默降级
+        except Exception as exc:  # noqa: BLE001 - PATH 异常时静默降级
+            log.debug("EcosystemProbe._which(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
     @staticmethod
@@ -93,7 +97,8 @@ class EcosystemProbe:
                 [cmd, "--version"], capture_output=True, text=True, timeout=8,
             )
             return (out.stdout or out.stderr).strip().splitlines()[0][:80] if out.stdout or out.stderr else ""
-        except Exception:  # noqa: BLE001 - 版本探测失败不影响主流程
+        except Exception as exc:  # noqa: BLE001 - 版本探测失败不影响主流程
+            log.debug("EcosystemProbe._run_version(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return ""
 
     @classmethod
@@ -230,7 +235,8 @@ class EcosystemProbe:
                     data = json.loads(mcp_json.read_text(encoding="utf-8"))
                     servers = data.get("mcpServers", {}) if isinstance(data, dict) else {}
                     n += len(servers) if isinstance(servers, dict) else 0
-                except Exception:  # noqa: BLE001 - 畸形 JSON 只计 0
+                except Exception as exc:  # noqa: BLE001 - 畸形 JSON 只计 0
+                    log.warning("EcosystemProbe._count_claude_mcp(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         return n
 
@@ -245,7 +251,8 @@ class EcosystemProbe:
                     data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
                     servers = (data.get("mcp") or {}).get("servers", {}) if isinstance(data, dict) else {}
                     n += len(servers) if isinstance(servers, dict) else 0
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("EcosystemProbe._count_hermes_mcp(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         return n
 

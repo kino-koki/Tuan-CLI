@@ -19,6 +19,9 @@ from ..hooks import lifecycle as _LC
 from ._ui_singleton import ui
 from ..config import home_dir
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _ensure_background_runner(agent: Any) -> Any:
     """获取（或惰性创建）agent 上下文的后台运行器。"""
@@ -154,7 +157,8 @@ def cmd_cd(agent: Any, arg: str) -> None:
     # CwdChanged：通知类，payload 只带 cwd，不带正文
     try:
         _LC.emit("CwdChanged", {"cwd": target})
-    except Exception:  # noqa: BLE001 - 通知类吞异常
+    except Exception as exc:  # noqa: BLE001 - 通知类吞异常
+        log.warning("cmd_cd(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     ui.success(f"当前目录: {os.getcwd()}")
 
@@ -455,7 +459,8 @@ def cmd_theme(agent: Any, arg: str) -> None:
     if config is not None:
         try:
             config.set_user("ui.theme", name)
-        except Exception:
+        except Exception as exc:
+            log.warning("cmd_theme(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     ui.success(f"已切换主题: {name}")
 
@@ -477,7 +482,8 @@ def cmd_color(agent: Any, arg: str) -> None:
     if config is not None:
         try:
             config.set_user("ui.color", scheme)
-        except Exception:
+        except Exception as exc:
+            log.warning("cmd_color(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     ui.success(f"已切换配色: {scheme}")
 
@@ -515,7 +521,8 @@ def cmd_loop(agent: Any, arg: str) -> None:
         if config is not None:
             try:
                 config.set_user("loop.provider", name)
-            except Exception:
+            except Exception as exc:
+                log.warning("cmd_loop(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         # 若切换到 DevLoop，提示已就绪
         if name == "devloop":

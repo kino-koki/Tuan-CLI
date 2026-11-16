@@ -260,10 +260,11 @@ class SecurityAuditor:
                         self._buffer.append(rec)
                         if len(self._buffer) > self._IN_MEMORY_LIMIT:
                             self._buffer = self._buffer[-self._IN_MEMORY_LIMIT:]
-                    except Exception:
+                    except Exception as exc:  # noqa: BLE001 - 单行损坏跳过, 不中断恢复
+                        log.warning("审计恢复: 跳过无法解析的记录行: %s", exc)
                         continue
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("审计日志恢复失败, 以当前状态继续: %s", exc)
 
     # ---------------------------------------------------------- 写入
 
@@ -467,7 +468,9 @@ class SecurityAuditor:
                         plaintext = self._provider.open_raw(raw, self._crypto_key)
                         data = json.loads(plaintext)
                         records.append(AuditRecord.from_dict(data))
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("审计链校验: 第 %d 条记录无法解密 (文件损坏或被篡改): %s",
+                                    len(records) + 1, exc)
                         return {
                             "valid": False,
                             "checked": len(records),

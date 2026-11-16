@@ -27,6 +27,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
+import logging
+log = logging.getLogger(__name__)
+
 
 
 # ------------------------------------------------------------ 规则定义
@@ -243,7 +246,8 @@ def emit_findings(bus: Any, findings: List[SecretFinding]) -> int:
                 severity=f.severity,
             ))
             n += 1
-        except Exception:  # noqa: BLE001  总线异常不能炸掉扫描
+        except Exception as exc:  # noqa: BLE001  总线异常不能炸掉扫描
+            log.debug("emit_findings(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             continue
     return n
 

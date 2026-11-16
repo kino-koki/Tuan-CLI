@@ -10,6 +10,9 @@ from ._common import (
     _provider_model_ids,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class ServerConfigMixin:
     # ---- 跨 mixin 共享实例状态 (纯声明; 由 WebServer.__init__ 初始化) ----
@@ -24,7 +27,8 @@ class ServerConfigMixin:
         """取配置对象; 无 kernel 时返回 None (调用方自降级)。"""
         try:
             return self.kernel.require("config") if self.kernel is not None else None
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ServerConfigMixin._cfg(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
 
@@ -333,7 +337,8 @@ class ServerConfigMixin:
                     "key_hint": p.key_hint, "api_key_env": env, "key_set": key_set,
                     "base_url": p.base_url, "models": ids[:80], "tags": tags,
                 })
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerConfigMixin.config_snapshot(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         model = {}
         if cfg is not None:
@@ -366,6 +371,7 @@ class ServerConfigMixin:
         try:
             cfg.set_user(key, coerced)
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerConfigMixin.apply_setting(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         # 副作用: 模式/推理投入需实时翻转到会话 agent
         if key == "mode.default":
@@ -417,6 +423,7 @@ class ServerConfigMixin:
                 cfg.set_user("model.base_url", base_url)
                 cfg.set_user("model.api_key_env", api_key_env or "CUSTOM_API_KEY")
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerConfigMixin.apply_model(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         env = (preset.api_key_env if preset else api_key_env) or cfg.get("model.api_key_env")
         key_note = ""
@@ -444,6 +451,7 @@ class ServerConfigMixin:
                         if a is not None and hasattr(a, "model"):
                             a.model = kernel.require("model_adapter")
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerConfigMixin.apply_model(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"适配器重建失败: {exc}"}
         # 模型是运行期按 config 解析的, 无需重建会话; 这里只把新端点回显给前端
         return {"ok": True, "model": {"provider": provider, "model": model,
@@ -465,4 +473,5 @@ class ServerConfigMixin:
             remove_api_key(env)
             return {"ok": True, "env": env, "set": False}
         except Exception as exc:  # noqa: BLE001
+            log.debug("ServerConfigMixin.apply_apikey(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}

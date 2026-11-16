@@ -21,38 +21,51 @@ from __future__ import annotations
 
 import os
 
+import logging
+log = logging.getLogger(__name__)
+
 # ================================================================ 品牌元信息
 # 产品身份保留青小团, TUI 视觉令牌采用 Codex CLI 深色视觉语言。
+#
+# ─── 阶段 D (UX 双栈收敛): 主题 token 单一来源 ──────────────────────────────
+# 品牌色在此**唯一**定义, 其余模块 (splash/mascot/kimi_modules/配色方案)
+# 一律 import 这些 token, 不再各自硬编码 —— 将来主色变更只需改这一处。
+BRAND_PRIMARY = "#63A8F8"   # Codex 主强调蓝 (CHATGPT_BLUE_200) —— 唯一品牌色
+BRAND_ACCENT = BRAND_PRIMARY   # 辅助强调与主色同源
+BRAND_SECONDARY = "#5BC0BE"   # 青绿辅助强调 (splash/mascot/配色方案共用)
+BRAND_TEXT = "#E0E0E0"        # 正文
+BRAND_DIM = "#888888"         # 弱化文本
+
 BRAND = {
     "name": "青小团",
     "name_en": "Tuan-CLI",
     "tagline": "终端智能体 · 自主借鉴 · 安全可控",
-    "primary": "#63A8F8",   # Codex 主强调蓝 (CHATGPT_BLUE_200)
-    "accent": "#63A8F8",    # Codex 辅助强调同源
+    "primary": BRAND_PRIMARY,
+    "accent": BRAND_ACCENT,
 }
 
 # Codex 主强调蓝 (唯一品牌色)
-ACCENT_COLOR = BRAND["primary"]
+ACCENT_COLOR = BRAND_PRIMARY
 
 # ---------------------------------------------------------------- Rich 颜色名 (Codex 深色主题)
 # 保留 repl.py 已用的键名 (accent/dim/box/primary/text/muted/err/ok/warn),
 # 并补齐 Codex 角色色。
 C = {
-    "primary": "#63A8F8",
-    "accent": "#63A8F8",
-    "text": "#E0E0E0",
+    "primary": BRAND_PRIMARY,
+    "accent": BRAND_ACCENT,
+    "text": BRAND_TEXT,
     "textstrong": "#F5F5F5",
-    "textdim": "#888888",
+    "textdim": BRAND_DIM,
     "textmuted": "#6B6B6B",
-    "dim": "#888888",          # = textDim (repl.py 兼容别名)
-    "muted": "#6B6B6B",        # = textMuted (repl.py 兼容别名)
+    "dim": BRAND_DIM,           # = textDim (repl.py 兼容别名)
+    "muted": "#6B6B6B",         # = textMuted (repl.py 兼容别名)
     "border": "#5A5A5A",
     "borderfocus": "#E8A838",
-    "box": "#5A5A5A",          # 外框 (repl.py 用, = border)
+    "box": "#5A5A5A",           # 外框 (repl.py 用, = border)
     "ok": "#4EC87E",
     "warn": "#E8A838",
     "err": "#E85454",
-    "roleuser": "#63A8F8",     # 用户消息前缀强调 = Codex accent
+    "roleuser": BRAND_PRIMARY,  # 用户消息前缀强调 = Codex accent
     "shellmode": "#BD93F9",
 }
 
@@ -60,16 +73,16 @@ C = {
 # 仅标题/徽章/提示符用 primary 蓝, 其余无样式 (继承终端默认)。
 PT_STYLE = {
     "status": "",
-    "title": "#63A8F8",
+    "title": BRAND_PRIMARY,
     "panel": "",
     "log": "",
     "input": "",
     "bottom-toolbar": "",
-    "badge": "#63A8F8",
-    "badge-plan": "#63A8F8",
+    "badge": BRAND_PRIMARY,
+    "badge-plan": BRAND_PRIMARY,
     "badge-yolo": "#E8A838",
-    "prompt": "#63A8F8",
-    "text-area.prompt": "#63A8F8",
+    "prompt": BRAND_PRIMARY,
+    "text-area.prompt": BRAND_PRIMARY,
     "context-ok": "",
     "context-warn": "",
     "context-err": "",
@@ -90,12 +103,13 @@ def blank_pt_style() -> dict:
     """
     base = {k: _PT_RESET for k in PT_STYLE}
     for k in ("title", "badge", "badge-plan", "badge-yolo", "prompt", "text-area.prompt"):
-        base[k] = "#4FA8FF"
+        base[k] = BRAND_PRIMARY
     try:
         from prompt_toolkit.styles.defaults import default_ui_style
         for cls, _ in default_ui_style().style_rules:
             base.setdefault(cls, _PT_RESET)
-    except Exception:  # prompt_toolkit 不可用时退化为自定义键
+    except Exception as exc:  # prompt_toolkit 不可用时退化为自定义键
+        log.warning("blank_pt_style(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return base
 
@@ -181,7 +195,7 @@ DIFF_REMOVED_STRONG = "#F08585"  # 删除行 (高亮/选中) (diffRemovedStrong)
 DIFF_GUTTER = "#6B6B6B"         # 行号槽 (diffGutter)
 DIFF_META = "#888888"           # @@ hunk 元信息 (diffMeta)
 DIFF_CONTEXT = "#888888"        # 上下文行 (textDim)
-DIFF_HEADER = "#4FA8FF"         # diff 头 (取 primary, fullscreen 兼容)
+DIFF_HEADER = BRAND_PRIMARY    # diff 头 (取 primary, fullscreen 兼容)
 DIFF_HUNK = "#BD93F9"           # @@ hunk 标记 (取 shellMode, fullscreen 兼容)
 
 
@@ -218,8 +232,8 @@ _THEMES = {
 # 配色方案：覆盖 primary/accent 主色。
 _COLORS = {
     "brand": {},
-    "blue": {"primary": "#4FA8FF", "accent": "#5BC0BE"},
-    "green": {"primary": "#4EC87E", "accent": "#5BC0BE"},
+    "blue": {"primary": BRAND_PRIMARY, "accent": BRAND_SECONDARY},
+    "green": {"primary": "#4EC87E", "accent": BRAND_SECONDARY},
 }
 
 

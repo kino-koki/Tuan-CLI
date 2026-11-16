@@ -14,6 +14,9 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
+import logging
+
+log = logging.getLogger(__name__)
 
 _BACKENDS = ("auto", "local", "docker", "landlock", "seatbelt",
              "jobobject", "token-acl")
@@ -95,7 +98,8 @@ def validate_security_config(config: Any) -> Tuple[List[str], List[str]]:
     def get(key: str) -> Any:
         try:
             return config.get(key)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("安全配置 schema 校验降级: %s", exc)
             return None
 
     sb = get("sandbox")

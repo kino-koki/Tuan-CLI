@@ -113,7 +113,8 @@ class KernelAcpBridge:
         try:
             from ...hooks.triggers import current_session_owner
             return current_session_owner()
-        except Exception:  # noqa: BLE001 - 取不到 contextvar 就返回 None
+        except Exception as exc:  # noqa: BLE001 - 取不到 contextvar 就返回 None
+            logger.debug("KernelAcpBridge._resolve_owner(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
     # ----------------------------------------------------------- agent 惰性构建
@@ -162,7 +163,8 @@ class KernelAcpBridge:
                     self._request_permission(prompt), loop
                 )
                 return bool(fut.result(timeout=_PERMISSION_TIMEOUT_S))
-            except Exception:  # noqa: BLE001 - 超时/取消/RPC 失败一律拒绝
+            except Exception as exc:  # noqa: BLE001 - 超时/取消/RPC 失败一律拒绝
+                logger.debug("KernelAcpBridge._confirm(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return False
 
         return _confirm
@@ -220,7 +222,8 @@ class KernelAcpBridge:
                 d = _trigger.elicitation(server="acp", question=question)
                 if d is not None and getattr(d, "block", False):
                     return ""
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("KernelAcpBridge.ask_user(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         opts = [o for o in (options or []) if str(o).strip()]
         payload = [{"value": str(o), "label": str(o)} for o in opts]
@@ -228,7 +231,8 @@ class KernelAcpBridge:
             result = await conn.elicitation_create(
                 session_id=self._session_id, message=question, options=payload
             )
-        except Exception:  # noqa: BLE001 - 无法交互 -> 空串, 调用方降级
+        except Exception as exc:  # noqa: BLE001 - 无法交互 -> 空串, 调用方降级
+            logger.debug("KernelAcpBridge.ask_user(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return ""
         # 客户端回 {action: "accept", content: {"choice": "..."}} 或 cancel/decline
         if not isinstance(result, dict):
@@ -243,7 +247,8 @@ class KernelAcpBridge:
                     question=question)
                 if d2 is not None and getattr(d2, "block", False):
                     return ""
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("KernelAcpBridge.ask_user(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         if action not in ("accept", "acceptWithChanges"):
             return ""
@@ -274,7 +279,8 @@ class KernelAcpBridge:
                 )
                 try:
                     return str(fut.result(timeout=_PERMISSION_TIMEOUT_S) or "")
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("_AcpUIHandle.ask_user(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     return ""
 
         return _AcpUIHandle()
@@ -363,7 +369,8 @@ class KernelAcpBridge:
         if agent is not None and hasattr(agent, "cancel"):
             try:
                 agent.cancel()
-            except Exception:
+            except Exception as exc:
+                logger.warning("KernelAcpBridge.cancel(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def available_commands(self) -> List[Dict[str, Any]]:
@@ -371,7 +378,8 @@ class KernelAcpBridge:
             from ..cli.cmd_slash import list_slash_commands
 
             return [{"name": c.get("name", "")} for c in (list_slash_commands() or [])]
-        except Exception:
+        except Exception as exc:
+            logger.debug("KernelAcpBridge.available_commands(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
 
     def list_sessions(self) -> List[str]:
@@ -409,13 +417,15 @@ class KernelAcpBridge:
                     "from_model": getattr(self, "_model", None) or "",
                     "to_model": model_id}):
                 return
-        except Exception:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed
+        except Exception as exc:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed
+            logger.debug("KernelAcpBridge.set_model(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return
         self._model = model_id
         try:
             _LC.emit("PostModelSwitch", {
                 "session_id": session_id, "model_id": model_id})
-        except Exception:  # noqa: BLE001 - 通知类吞异常
+        except Exception as exc:  # noqa: BLE001 - 通知类吞异常
+            logger.warning("KernelAcpBridge.set_model(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

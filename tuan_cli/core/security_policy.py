@@ -319,7 +319,8 @@ class SecurityPolicyEngine:
                             last_mtime = mtime
                             self.reload()
                             log.debug("安全策略规则已热加载")
-                except Exception:
+                except Exception as exc:
+                    log.warning("安全策略评估降级: %s", exc)
                     pass
                 time.sleep(interval)
         t = threading.Thread(target=_watcher, daemon=True)
@@ -541,7 +542,8 @@ class SecurityPolicyEngine:
                 rule = PolicyRule.from_dict(item)
                 if rule.id and rule.action in ("deny", "ask", "allow"):
                     self._rules.append(rule)
-        except Exception:
+        except Exception as exc:
+            log.warning("安全策略评估降级: %s", exc)
             pass
 
 

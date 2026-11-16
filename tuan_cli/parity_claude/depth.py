@@ -35,6 +35,9 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from . import catalog
 
+import logging
+log = logging.getLogger(__name__)
+
 # 模块级运行时探针注册表。当前为空 —— 下一轮起每消一个 gap / partial
 # 就必须在这里注册一个真调代码的探针，否则不认「已验证」。
 MODULE_PROBES: Dict[str, Callable[[], dict]] = {}
@@ -55,7 +58,8 @@ def _ensure_probes() -> None:
     try:
         import importlib
         importlib.import_module("tuan_cli.parity_claude.module_probes").register_all()
-    except Exception:  # noqa: BLE001 - 注册失败由 probe_verified=0 如实暴露
+    except Exception as exc:  # noqa: BLE001 - 注册失败由 probe_verified=0 如实暴露
+        log.warning("_ensure_probes(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -178,7 +182,8 @@ def gap_queue() -> dict:
             try:
                 hits += (root / rel).read_text(
                     encoding="utf-8").count(m.name)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("gap_queue(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         items.append({
             "name": m.name, "domain": m.domain, "wave": m.wave,

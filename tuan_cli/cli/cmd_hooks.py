@@ -11,6 +11,9 @@ import os
 from ..hooks import HookManager, HOOK_EVENTS
 from ._ui_singleton import console, ui
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def build_kernel(*a: Any, **k: Any) -> Any:
     """惰性构建内核: 仅实际执行 hooks 命令时才加载 app 链。"""
@@ -127,7 +130,8 @@ def _lookup_tool_schema(kernel: Any, tool_name: str) -> dict | None:
         tool = registry.get(tool_name) if registry is not None else None
         params = getattr(tool, "parameters", None)
         return params if isinstance(params, dict) else None
-    except Exception:
+    except Exception as exc:
+        log.debug("_lookup_tool_schema(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 

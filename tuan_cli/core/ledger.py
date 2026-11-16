@@ -84,7 +84,8 @@ class MutationLedger:
         p = (self.workspace / rel)
         try:
             return p.resolve()
-        except Exception:
+        except Exception as exc:
+            log.debug("MutationLedger._resolve(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return p
 
     def _snap_file(self, src: Path, tag: str) -> Path:
@@ -105,7 +106,8 @@ class MutationLedger:
                     fp = Path(root) / f
                     try:
                         zf.write(fp, fp.relative_to(base))
-                    except Exception:
+                    except Exception as exc:
+                        log.debug("MutationLedger._snap_dir(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         continue
         return dst
 
@@ -209,7 +211,8 @@ class MutationLedger:
                             self._seq = max(self._seq, int(rid[1:]))
                         except ValueError:
                             pass
-        except Exception:
+        except Exception as exc:
+            log.debug("MutationLedger.load_journal(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 0
         # 内存有 max_records 上限, 但 journal 是 append-only、可能跨会话累积了远多于
         # 上限的记录。无上限地全量灌进内存会让长期运行的进程内存只增不减;

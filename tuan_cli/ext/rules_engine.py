@@ -16,6 +16,9 @@ from typing import Any, List
 
 from .. import _yaml as yaml  # 后端门面: 有 PyYAML 用 PyYAML, 否则用内置 stdlib 实现
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _glob_to_regex(glob: str) -> "re.Pattern":
     esc = re.escape(glob).replace(r"\*", ".*").replace(r"\?", ".")
@@ -310,7 +313,8 @@ class RuleEngine:
     def _parse_rules(text: str) -> list:
         try:
             data = yaml.safe_load(text) or []
-        except Exception:
+        except Exception as exc:
+            log.debug("RuleEngine._parse_rules(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
         if not isinstance(data, list):
             data = [data]

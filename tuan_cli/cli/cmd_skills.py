@@ -26,6 +26,9 @@ from .parser import _register_command  # noqa: E402
 from ..ui.plain_console import console  # noqa: E402
 from ..ecosystem import registry  # noqa: E402
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _user_skills_dir() -> Path:
     return Path.home() / ".tuan" / "skills"
@@ -43,7 +46,8 @@ def _find_skill_manager() -> Any:
 
         kernel_cfg = _cfg.ConfigManager.load()
         return SkillManager(kernel_cfg)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_find_skill_manager(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 

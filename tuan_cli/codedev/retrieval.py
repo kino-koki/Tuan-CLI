@@ -24,6 +24,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 # --------------------------------------------------------------------------- #
 # 索引构建
 # --------------------------------------------------------------------------- #
@@ -190,7 +193,8 @@ class CodeIndex:
     def _index_file(self, root: Path, path: Path) -> None:
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("CodeIndex._index_file(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return
         self.files_scanned += 1
         rel = str(path.relative_to(root))
@@ -403,7 +407,8 @@ class CodeIndex:
         try:
             path = Path(self.root or "") / sym.file
             lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("CodeIndex._snippet(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return ""
         lo = max(1, sym.start - ctx_lines)
         hi = min(len(lines), sym.end + ctx_lines)
@@ -461,7 +466,8 @@ class CodeIndex:
             self._remove_file_symbols(rel)
             try:
                 text = path.read_text(encoding="utf-8", errors="ignore")
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("CodeIndex.update_incremental(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
             self.files_scanned += 1
             self._file_meta[rel] = cur_mtime
@@ -548,7 +554,8 @@ class CodeIndex:
             )
             tmp.replace(target)
             return True
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("CodeIndex.save(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return False
 
     @classmethod
@@ -558,7 +565,8 @@ class CodeIndex:
 
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("CodeIndex.load(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
         if not isinstance(data, dict) or data.get("version") != 1:
             return None

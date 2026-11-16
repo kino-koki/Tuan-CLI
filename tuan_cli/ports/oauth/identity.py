@@ -20,6 +20,9 @@ from typing import Callable
 
 from .types import DeviceHeaders
 
+import logging
+log = logging.getLogger(__name__)
+
 KIMI_CODE_PLATFORM = "kimi_code_cli"
 
 KIMI_CODE_CUSTOM_HEADERS_ENV = "KIMI_CODE_CUSTOM_HEADERS"
@@ -146,8 +149,9 @@ def create_kimi_device_id(
     if on_first_launch is not None:
         try:
             on_first_launch(new_id)
-        except Exception:
+        except Exception as exc:
             # Telemetry callback must not affect device id creation.
+            log.warning("create_kimi_device_id(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return new_id
 

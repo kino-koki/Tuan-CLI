@@ -26,6 +26,9 @@ from typing import Any, Dict, List
 from ._ui_singleton import console
 from .parser import _register_command
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _get_rc() -> Any:
     from ..core.remote_control import RemoteControl
@@ -35,7 +38,8 @@ def _get_rc() -> Any:
     # 装载持久化会话 (__init__ 不自动加载, 独立查询需显式读盘)
     try:
         rc._load_sessions()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_get_rc(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return rc
 

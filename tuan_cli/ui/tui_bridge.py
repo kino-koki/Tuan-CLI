@@ -13,6 +13,9 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class TuiUI:
     """把 REPL UI 接口转发到 QxtTUI 日志区的桥接实现。
@@ -104,7 +107,8 @@ class TuiUI:
         """
         try:
             return str(self._tui.ask_user(question, options or []) or "")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("TuiUI.ask_user(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return ""
 
     # ------------------------------------------------------------ 交互确认

@@ -44,6 +44,9 @@ from . import session_config as SC
 from . import stream_exec as SE
 from . import selftest as ST
 
+import logging
+log = logging.getLogger(__name__)
+
 __all__ = [
     "approval_history", "session_config", "stream_exec", "selftest",
     "MODULES", "PROBES", "codexkit_report", "codexkit_validate",
@@ -86,7 +89,8 @@ try:
     for _m in MODULES:
         if _m not in _depth.PROBE_REGISTRY:
             _depth.register(_m)(lambda m=_m: _to_probe_result(m))
-except Exception:  # noqa: BLE001 - 注册失败由 depth_audit 如实暴露
+except Exception as exc:  # noqa: BLE001 - 注册失败由 depth_audit 如实暴露
+    log.warning("模块顶层: 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
     pass
 
 

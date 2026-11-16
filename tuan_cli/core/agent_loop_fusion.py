@@ -16,6 +16,9 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
+import logging
+log = logging.getLogger(__name__)
+
 
 # 瞬时错误判定用的关键字 (对齐 kernel step_retry 的 transient 分类思路)。
 _TRANSIENT_KEYWORDS = (
@@ -82,7 +85,8 @@ def _is_user_set(config: Any, dotted: str) -> bool:
                 node = node[key]
             else:
                 return True
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_is_user_set(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     # 2. 回退: data 视图值 != 内置默认 → 运行时已覆盖 (代码/测试/CLI 注入)
     try:
@@ -97,7 +101,8 @@ def _is_user_set(config: Any, dotted: str) -> bool:
         cur = _deep_get(config.data, dotted) if hasattr(config, "data") else None
         default = _deep_get(DEFAULT_CONFIG, dotted)
         return bool(cur != default)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_is_user_set(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 
@@ -132,7 +137,8 @@ def resolve_max_iterations(config: Any, explicit: Optional[int] = None) -> int:
             v = int(profile["loop_max_iter"])
             if v > 0:
                 return v
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("resolve_max_iterations(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     # 4. 兜底
     for key in ("agent.max_iterations", "fusion.agent_loop_max_iterations"):

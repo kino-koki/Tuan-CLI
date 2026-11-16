@@ -58,6 +58,9 @@ from typing import Any, Callable, Deque, Dict, Optional, Tuple
 from . import extra, extra_locales, universal
 from .locales import LANGUAGES, groups, normalize, patches
 
+import logging
+log = logging.getLogger(__name__)
+
 __all__ = [
     "CONTEXTS", "EXTRA_CONTEXTS", "STATE_MAP", "MIN_INTERVAL_S",
     "PoolEntry", "pick", "pick_strict", "pick_local_first", "for_state",
@@ -231,7 +234,8 @@ def resolve_lang(lang: Optional[str] = None) -> str:
         from tuan_cli.i18n import get_language  # noqa: PLC0415
 
         return normalize(get_language()) or "en"
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("resolve_lang(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return "en"
 
 

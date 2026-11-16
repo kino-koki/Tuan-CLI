@@ -25,6 +25,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ================================================================ 数据结构
 
@@ -111,7 +114,8 @@ def detect_format(file_path: Path) -> str:
         try:
             if detector(file_path):
                 return fmt
-        except Exception:
+        except Exception as exc:
+            log.debug("detect_format(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             continue
     return "unknown"
 
@@ -130,7 +134,8 @@ class FormatAdapter:
     def _read_text(self, path: Path) -> str:
         try:
             return path.read_text(encoding="utf-8")
-        except Exception:
+        except Exception as exc:
+            log.debug("FormatAdapter._read_text(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return ""
 
     def _parse_frontmatter(self, text: str) -> Tuple[Dict[str, str], str]:
@@ -448,7 +453,8 @@ def parse_skill_file(file_path: Path) -> Optional[SkillPackage]:
             result = adapter.parse(file_path)
             if result is not None:
                 return result
-        except Exception:
+        except Exception as exc:
+            log.debug("parse_skill_file(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             continue
     return None
 

@@ -20,6 +20,9 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Callable
 
+import logging
+log = logging.getLogger(__name__)
+
 DRIVE_COLON_RE = re.compile(r"^/([a-zA-Z]):(?:[\\/]|$)")
 CYGDRIVE_RE = re.compile(r"^/cygdrive/([a-zA-Z])(?:/|$)")
 DRIVE_RE = re.compile(r"^/([a-zA-Z])(?:/|$)")
@@ -113,7 +116,8 @@ class ShellPathBridge:
             output = self._deps.exec_file_sync(
                 exe, ("-w", "-C", "UTF8", "--", f"/{first_segment}")
             )
-        except Exception:
+        except Exception as exc:
+            log.debug("ShellPathBridge._resolve_root_segment(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
         # cygpath appends a newline and may emit a trailing separator (``D:\\``).
         trimmed = re.sub(r"\r?\n$", "", output)

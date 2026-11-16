@@ -22,6 +22,9 @@ from .config import (
 )
 from .errors import McpConnectionError, McpError, McpStartupError
 from .types import McpServerConfigLike, MCPClient, MCPToolDefinition
+import logging
+log = logging.getLogger(__name__)
+
 
 
 class McpConnectionManager:
@@ -180,7 +183,8 @@ class McpConnectionManager:
 
         try:
             client.on_unexpected_close(_listener)
-        except Exception:
+        except Exception as exc:
+            log.warning("McpConnectionManager._watch_unexpected_close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     async def _close_client(self, e: "_InternalEntry") -> None:
@@ -190,7 +194,8 @@ class McpConnectionManager:
             return
         try:
             await client.close()
-        except Exception:
+        except Exception as exc:
+            log.warning("McpConnectionManager._close_client(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def _emit(self, e: "_InternalEntry") -> None:
@@ -198,7 +203,8 @@ class McpConnectionManager:
         for listener in list(self._listeners):
             try:
                 listener(view)
-            except Exception:
+            except Exception as exc:
+                log.warning("McpConnectionManager._emit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
 

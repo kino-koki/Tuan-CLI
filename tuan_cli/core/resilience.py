@@ -62,7 +62,8 @@ class AgentResilience:
         if on is not None:
             try:
                 on("model.switched", self._on_model_switched)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("AgentResilience.__init__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     # ------------------------------------------------------------ 故障转移
@@ -89,7 +90,8 @@ class AgentResilience:
             from ..models.router import MODEL_PRESETS
             tiers = [p.tier for p in MODEL_PRESETS if p.provider == provider and p.model == model]
             return max(tiers) if tiers else 2
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("AgentResilience._preset_tier(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 2
 
     def _resolve_explicit_fallback(
@@ -174,7 +176,8 @@ class AgentResilience:
                 ),
                 prompt_cache=self.config.get("model.prompt_cache", True),
             )
-        except Exception:  # noqa: BLE001 - 显式 fallback 构建失败退回自动选备
+        except Exception as exc:  # noqa: BLE001 - 显式 fallback 构建失败退回自动选备
+            log.debug("AgentResilience._resolve_explicit_fallback(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
         return {"provider": fb_provider, "model": fb_model, "adapter": adapter}
 
@@ -203,7 +206,8 @@ class AgentResilience:
                 from ..models.anthropic import AnthropicAdapter as adapter_cls
             else:
                 from ..models.openai_compat import OpenAICompatAdapter as adapter_cls  # type: ignore[assignment]  # 与 anthropic 分支同名 import
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("AgentResilience._build_fallback_adapter(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
         avail = set(ModelRouter.available_provider_names())
@@ -352,7 +356,8 @@ class AgentResilience:
                 "reason": str(primary_exc)[:160],
                 "sticky_seconds": self._sticky_seconds,
             })
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("AgentResilience._failover(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         log.warning("模型故障转移: %s/%s → %s/%s (主模型故障: %s)",
                     self.config.get("model.provider"), self.config.get("model.model"),

@@ -114,14 +114,16 @@ def _read_instruction_capped(path: Path, max_bytes: int) -> str:
         try:
             _LC.emit("InstructionsLoaded", {
                 "path": str(path), "bytes": len(raw), "truncated": True})
-        except Exception:  # noqa: BLE001 - 通知类吞异常
+        except Exception as exc:  # noqa: BLE001 - 通知类吞异常
+            log.warning("_read_instruction_capped(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return out
     # 未截断：也派发（fired 但 body 不进 payload）
     try:
         _LC.emit("InstructionsLoaded", {
             "path": str(path), "bytes": len(raw), "truncated": False})
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_read_instruction_capped(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return raw.decode("utf-8", errors="replace").strip()
 
@@ -237,7 +239,8 @@ def _get_git_context(workspace: str) -> str:
         ).stdout.strip()
         if branch:
             parts.append(f"Branch={branch}")
-    except Exception:
+    except Exception as exc:
+        log.warning("_get_git_context(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     # 最近一次 commit
     try:
@@ -248,7 +251,8 @@ def _get_git_context(workspace: str) -> str:
         ).stdout.strip()
         if log_out:
             parts.append(f"LastCommit={log_out}")
-    except Exception:
+    except Exception as exc:
+        log.warning("_get_git_context(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     # 是否有未提交改动
     try:
@@ -262,7 +266,8 @@ def _get_git_context(workspace: str) -> str:
             parts.append(f"DirtyFiles={dirty_count}")
         else:
             parts.append("Clean=true")
-    except Exception:
+    except Exception as exc:
+        log.warning("_get_git_context(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return ", ".join(parts) if parts else ""
 
@@ -337,7 +342,8 @@ def _build_soul_block(
         try:
             from ..config.defaults import load_builtin_user_soul
             return load_builtin_user_soul()
-        except Exception:
+        except Exception as exc:
+            log.debug("_build_soul_block(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return _FALLBACK_SOUL
 
     # 按档位加载内置 SOUL (优先级: 档位专用 > home 目录 > 回退)
@@ -550,7 +556,8 @@ def _build_memory_notes_block(
             note += (f"\n…(笔记已达 {max_lines} 行上限并截断，"
                      "请用 memory_note_append 整理后再写新内容)")
         return note
-    except Exception:
+    except Exception as exc:
+        log.debug("_build_memory_notes_block(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return ""
 
 
@@ -617,7 +624,8 @@ def build_system_prompt_dynamic(
             persona_block = render_personality_block(persona_name)
             if persona_block:
                 parts.append(persona_block)
-        except Exception:
+        except Exception as exc:
+            log.warning("build_system_prompt_dynamic(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass  # 人设注入失败不应阻断提示词构建
 
     # 5. 长期记忆: 读全量但限长 (FTS5 结构化记忆; 上限由提示词分层预算决定)
@@ -668,7 +676,8 @@ def build_system_prompt_dynamic(
                     "技能注入: %d 个 (always=%d), 正文约 %d tokens",
                     len(top_skills), len(always_skills), estimate_tokens(rendered),
                 )
-            except Exception:  # noqa: BLE001 - 埋点失败不影响提示词构建
+            except Exception as exc:  # noqa: BLE001 - 埋点失败不影响提示词构建
+                log.warning("build_system_prompt_dynamic(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     # 9. 输出风格 (对标 Claude Code 的 Output Styles): default 不注入。
@@ -903,7 +912,8 @@ def build_task_context(
                 if hits:
                     mem = "\n".join(f"- {h['content']}" for h in hits)
                     blocks.append(f"[与任务相关的记忆]\n{mem}")
-        except Exception:
+        except Exception as exc:
+            log.warning("build_task_context(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     if skill_manager and task_hint:
         try:

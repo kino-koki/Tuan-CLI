@@ -8,6 +8,9 @@ import os
 import re
 from typing import Any, List, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 _LANG_MAP = {
     ".py": "python", ".js": "javascript", ".ts": "typescript",
     ".c": "c", ".h": "c", ".java": "java", ".go": "go",
@@ -109,7 +112,8 @@ class IndexEngine:
                 with open(path, "r", encoding="utf-8") as f:
                     content = f.read()
                 names, details = _extract_symbols(content, lang)
-            except Exception:
+            except Exception as exc:
+                log.warning("IndexEngine.index(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
             fp = self._fnv1a(path)

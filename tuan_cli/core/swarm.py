@@ -27,6 +27,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from .subagents import SubAgentPool, SubResult, SubTask
+import logging
+log = logging.getLogger(__name__)
+
 
 
 class Blackboard:
@@ -340,7 +343,8 @@ class Swarm:
         if agent is not None and hasattr(agent, "model"):
             try:
                 agent.model = self.kernel.require("model_adapter")
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Swarm._sync_main_agent_model(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def _strong_switch_on(self, phase: str) -> Any:
@@ -369,13 +373,15 @@ class Swarm:
         try:
             from ..config.loader import patch_replace
             self.config.data = patch_replace(self.config.data, before)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Swarm._strong_switch_off(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         try:
             self.kernel.unprovide("model_adapter")
             if prev_adapter is not None:
                 self.kernel.provide("model_adapter", prev_adapter, owner="model")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Swarm._strong_switch_off(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         self._sync_main_agent_model()
 

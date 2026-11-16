@@ -33,6 +33,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from .. import __version__
 from ..config import home_dir
 
+import logging
+log = logging.getLogger(__name__)
+
 # frontmatter 正则: 与 skills/manager.py 保持一致 (^---\n ... \n---\n)
 _FRONT_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
@@ -56,7 +59,8 @@ def _known_top_keys() -> set:
         from ..config.defaults import DEFAULT_CONFIG
 
         keys |= set(DEFAULT_CONFIG.keys())
-    except Exception:  # noqa: BLE001 - 导入失败退回兼容段
+    except Exception as exc:  # noqa: BLE001 - 导入失败退回兼容段
+        log.warning("_known_top_keys(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return keys | _LEGACY_TOP_KEYS
 
@@ -211,7 +215,8 @@ def _check_config(home: Path, fix: bool) -> List[Dict[str, Any]]:
                         path=str(cfg_path),
                     )
                 )
-        except Exception:  # noqa: BLE001 - packaging 可选 / 版本号解析失败
+        except Exception as exc:  # noqa: BLE001 - packaging 可选 / 版本号解析失败
+            log.warning("_check_config(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     return findings
@@ -560,7 +565,8 @@ def _check_network(home: Path) -> List[Dict[str, Any]]:
             data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
             model = data.get("model") or {}
             base_url = model.get("base_url") or ""
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_check_network(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     if not base_url:
         findings.append(_f("network", "warn", "未配置 model.base_url, 跳过网络探测"))

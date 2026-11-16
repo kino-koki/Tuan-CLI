@@ -45,7 +45,8 @@ def _is_mcp_dangerous(tool_name: str, fn_args: str) -> bool:
         for text in _iter_text_values(args):
             if (text or "").strip() and _engine_is_redline(text):
                 return True
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_is_mcp_dangerous(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return False
 
@@ -63,7 +64,8 @@ def _parse_args(fn_args: Any) -> Dict[str, Any]:
                 import json as _json
                 parsed = _json.loads(s)
                 return parsed if isinstance(parsed, dict) else {}
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("_parse_args(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return {}
     return {}
 
@@ -85,7 +87,8 @@ def _redline_in(text: str) -> bool:
     try:
         from ..ext.safety_engine import is_redline as _is_redline
         return bool(text) and _is_redline(text)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_redline_in(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 
@@ -332,7 +335,8 @@ class ToolExecutor:
             params = getattr(tool, "parameters", None) or getattr(tool, "input_schema", None)
             if isinstance(params, dict):
                 return params
-        except Exception:
+        except Exception as exc:
+            log.warning("ToolExecutor._resolve_tool_schema(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return None
 
@@ -400,7 +404,8 @@ class ToolExecutor:
                     f"[安全策略拦截] {policy_verdict.reason}",
                     [f"policy:{policy_verdict.rule_id}"],
                 )
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ToolExecutor._security_gate_check(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         if fn_name.startswith("mcp__"):
@@ -439,7 +444,8 @@ class ToolExecutor:
                             f"[安全拦截] MCP 工具 {fn_name} 参数注入检测: {threats}",
                             ["mcp_injection"],
                         )
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("ToolExecutor._security_gate_check(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
         elif fn_name == "run_shell":
@@ -463,7 +469,8 @@ class ToolExecutor:
                             f"[安全拦截] 命中致命红线, 禁止自动执行: {cmd}",
                             ["hard_redline"],
                         )
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("ToolExecutor._security_gate_check(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
         elif fn_name in ("write_file", "edit_file", "str_replace"):
@@ -488,7 +495,8 @@ class ToolExecutor:
                             f"[安全拦截] 路径安全校验失败: {pv.reason}",
                             pv.violations,
                         )
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("ToolExecutor._security_gate_check(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
             if gate is not None and content:
                 v = gate.decide("file_write", content, path=path)
@@ -529,7 +537,8 @@ class ToolExecutor:
                     reasons=list(denied[1]),
                     context={"tool": fn_name, "via_gate": gate is not None},
                 )
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ToolExecutor._security_gate_check(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
         if denied is not None:
@@ -579,7 +588,8 @@ class ToolExecutor:
                 if verdict.isolate:
                     try:
                         setattr(ctx, "_sandbox_verdict", verdict)
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("ToolExecutor._sandbox_gate_check(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
                 return None
             # 非 shell 工具: 全工具统一过意图+信任滤网 (堵文件写/MCP 侧门)
@@ -587,7 +597,8 @@ class ToolExecutor:
             if denied:
                 return (f"[沙箱拦截] {msg}", ["sandbox"])
             return None
-        except Exception:  # noqa: BLE001 - 沙箱评估异常不阻断, 由既有闸门兜底
+        except Exception as exc:  # noqa: BLE001 - 沙箱评估异常不阻断, 由既有闸门兜底
+            log.debug("ToolExecutor._sandbox_gate_check(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
     def execute_batch(
@@ -635,7 +646,8 @@ class ToolExecutor:
         try:
             from ..hooks import lifecycle as _LC
             _LC.emit("PostToolBatch", {"count": len(tool_calls)})
-        except Exception:  # noqa: BLE001 - 通知类吞异常（动作已发生）
+        except Exception as exc:  # noqa: BLE001 - 通知类吞异常（动作已发生）
+            log.warning("ToolExecutor.execute_batch(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # -------------------------------------------------------- 并行执行
@@ -730,7 +742,8 @@ class ToolExecutor:
         try:
             v = ctx.config("tools.rate_limits")
             return v if isinstance(v, dict) else {}
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ToolExecutor._rate_overrides(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {}
 
     def _execute_single(
@@ -818,7 +831,8 @@ class ToolExecutor:
                         diff = _make_diff_summary(fn_name, args_dict, str(result_text))
                         if diff:
                             self._on_write(file_path, diff)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ToolExecutor._execute_single(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass  # diff 生成失败不阻断主流程
 
         # 自动检查点: 写工具成功后, 若注册了 checkpoint_store 服务则自动落一个检查点
@@ -889,14 +903,16 @@ class ToolExecutor:
                 path = args_dict.get("path", args_dict.get("file_path", ""))
                 if path:
                     files.append(str(path))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ToolExecutor._auto_checkpoint(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         auto = getattr(store, "auto", True)
         if not auto:
             return None
         try:
             return store.auto_checkpoint(files, summary=f"自动: {fn_name} 修改 {', '.join(files) or '(未知文件)'}")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ToolExecutor._auto_checkpoint(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
 
 
@@ -919,7 +935,8 @@ def _make_diff_summary(fn_name: str, args: Dict[str, Any], result: str) -> Optio
             for line in new_lines:
                 diff_lines.append(f"+ {line}")
             return "\n".join(diff_lines[:30])  # 最多 30 行
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_make_diff_summary(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return None
 

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -24,6 +25,8 @@ from .safety_engine import (
     is_redline,
 )
 from ..core.workspace_trust import TrustLevel
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -344,8 +347,8 @@ class SecurityGate:
                 resolved = resolved.replace("\\", "/")
                 if resolved and resolved != path_norm:
                     candidates.append(resolved)
-            except Exception:  # noqa: BLE001 - realpath 失败不阻断 (原有判定继续)
-                pass
+            except Exception as exc:  # noqa: BLE001 - realpath 失败不阻断 (原有判定继续)
+                log.debug("realpath 解析失败, 按原路径继续: %s", exc)
             path_re = self._get_system_path_re()
             if raw_path and path_re:
                 hit = next((c for c in candidates if path_re.search(c)), None)
@@ -420,7 +423,8 @@ class SecurityGate:
                         "mode": self.mode,
                     },
                 )
-            except Exception:  # noqa: BLE001
-                pass  # 审计失败不应影响安全裁决
+            except Exception as exc:  # noqa: BLE001
+                # 审计失败不应影响安全裁决, 但必须留痕 (否则审计链静默断链)
+                log.warning("安全闸门审计落盘失败 (kind=%s): %s", kind, exc)
 
         return verdict

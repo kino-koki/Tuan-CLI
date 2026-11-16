@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import socket
 import time
@@ -29,6 +30,8 @@ try:
     from .. import __version__ as _TUAN_VERSION
 except Exception:  # pragma: no cover
     _TUAN_VERSION = "0.0.0"
+
+log = logging.getLogger(__name__)
 
 # 严重度 -> CEF 0-10
 _CEF_SEVERITY = {"critical": 10, "high": 8, "medium": 5, "low": 3, "info": 1, "none": 0}
@@ -159,8 +162,8 @@ class AuditExporter:
         if f is not None:
             try:
                 f.close()
-            except Exception:  # pragma: no cover
-                pass
+            except Exception as exc:  # pragma: no cover
+                log.debug("审计文件轮转关闭失败: %s", exc)
         oldest = self._path(fmt, self.backup_count)
         if self.backup_count > 0 and os.path.exists(oldest):
             try:
@@ -214,8 +217,8 @@ class AuditExporter:
         for f in self._files.values():
             try:
                 f.close()
-            except Exception:  # pragma: no cover
-                pass
+            except Exception as exc:  # pragma: no cover
+                log.debug("审计文件关闭失败: %s", exc)
         self._files.clear()
 
     # ---------------------------------------------------------- 推送
@@ -231,7 +234,9 @@ class AuditExporter:
         try:
             with urllib.request.urlopen(req, timeout=self.push_timeout) as resp:  # noqa: S310
                 return 200 <= resp.status < 300  # type: ignore[no-any-return]  # resp.status 推断为 Any
-        except Exception:  # noqa: BLE001 - 推送失败绝不能影响安全裁决
+        except Exception as exc:  # noqa: BLE001 - 推送失败绝不能影响安全裁决
+            # 但必须留痕: 推送断链意味着 SIEM 侧审计不完整
+            log.warning("审计推送失败 (url=%s): %s", self.push_url, exc)
             return False
 
     # ---------------------------------------------------------- 单条
@@ -280,7 +285,8 @@ class AuditExporter:
                         source=obj.get("source", ""),
                         severity=obj.get("severity", "info"),
                     )
-                except Exception:
+                except Exception as exc:  # noqa: BLE001 - 重放时跳过无法解析的行
+                    log.debug("审计重放: 跳过无法解析的行: %s", exc)
                     continue
                 self.emit(ev)
                 count += 1

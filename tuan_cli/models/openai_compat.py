@@ -93,6 +93,7 @@ class OpenAICompatAdapter(ModelAdapter):
         stream: bool = False,
         on_token: Optional[Callable[[str], None]] = None,
         on_reason: Optional[Callable[[str], None]] = None,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> ModelResponse:
         # 纵深防御: 统一补齐 assistant.tool_calls 的 type="function" 字段。
         # 这是所有 OpenAI 兼容端点的唯一出口, 在此规范化可保证无论上游哪个构造点
@@ -114,6 +115,10 @@ class OpenAICompatAdapter(ModelAdapter):
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
+        # 结构化输出 (json_schema): 透传 response_format; 仅当调用方显式提供才注入。
+        # 这是"文本模型→自动化视频 AI 制作"的关键: 约束模型输出为给定 schema。
+        if response_format:
+            kwargs["response_format"] = response_format
 
         if stream:
             return self._chat_stream(kwargs, on_token, on_reason)

@@ -30,6 +30,9 @@ from typing import (
 from .args import is_sensitive_file, matches_glob_rule_subject
 from .before_execute_event import BeforeToolExecuteEvent
 from .contract import ToolAccesses, ToolResourceAccess
+import logging
+log = logging.getLogger(__name__)
+
 
 # 权限上下文 == 执行前事件（含 tool_call / args / execution.accesses）
 PolicyContext = BeforeToolExecuteEvent
@@ -120,7 +123,8 @@ class AutoModeApprovePolicy:
             assessment = classifier.assess(
                 context.tool_call.name, dict(context.args) if context.args else {}
             )
-        except Exception:  # noqa: BLE001 - fail-safe: 分类器异常交给下一个策略
+        except Exception as exc:  # noqa: BLE001 - fail-safe: 分类器异常交给下一个策略
+            log.debug("AutoModeApprovePolicy.evaluate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
         if getattr(assessment, "needs_confirm", False):
             return PermissionPolicyResult(

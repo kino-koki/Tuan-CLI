@@ -21,6 +21,9 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 IS_WINDOWS = os.name == "nt" or sys.platform.startswith("win")
 IS_LINUX = sys.platform.startswith("linux")
 IS_MACOS = sys.platform == "darwin"
@@ -228,7 +231,8 @@ def _terminate_job_tree(kernel32: Any, job: Any, proc: Any,
     try:
         if kernel32.TerminateJobObject(job, 1):
             return "TerminateJobObject"
-    except Exception:
+    except Exception as exc:
+        log.warning("_terminate_job_tree(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     # 兜底 1: taskkill /T (整树) /F (强制), 不依赖 Job 句柄是否仍有效
     try:
@@ -239,12 +243,14 @@ def _terminate_job_tree(kernel32: Any, job: Any, proc: Any,
         )
         if done.returncode == 0:
             return "taskkill /T /F"
-    except Exception:
+    except Exception as exc:
+        log.warning("_terminate_job_tree(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     # 兜底 2: 至少杀掉直接子进程, 绝不返回"已清理"却留孤儿
     try:
         proc.kill()
-    except Exception:
+    except Exception as exc:
+        log.warning("_terminate_job_tree(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return "proc.kill (Job 终止失败)"
 
@@ -324,7 +330,8 @@ def _windows_job_object_sandbox(
     finally:
         try:
             kernel32.CloseHandle(job)
-        except Exception:
+        except Exception as exc:
+            log.warning("_windows_job_object_sandbox(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -352,7 +359,8 @@ def _linux_seccomp_sandbox(
         # 子进程: 安装过滤器后 exec
         try:
             os.setsid()  # type: ignore[attr-defined]  # 独立会话, 超时 killpg 只杀本子树, 不波及父进程组
-        except Exception:
+        except Exception as exc:
+            log.warning("_linux_seccomp_sandbox(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         try:
             f = seccomp.SyscallFilter(seccomp.DEF_ALLOW)
@@ -361,13 +369,15 @@ def _linux_seccomp_sandbox(
             for name in allow:
                 try:
                     f.add_rule(seccomp.ALLOW, name)
-                except Exception:
+                except Exception as exc:
+                    log.warning("_linux_seccomp_sandbox(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
             # 放行架构必需的几个
             for must in ("execve", "execveat", "arch_prctl", "prctl", "rt_sigreturn"):
                 try:
                     f.add_rule(seccomp.ALLOW, must)
-                except Exception:
+                except Exception as exc:
+                    log.warning("_linux_seccomp_sandbox(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
             f.load()
         except Exception:
@@ -455,8 +465,9 @@ def run_syscall_sandboxed(
                 ["unshare", "-n", "--"] + cmd, timeout=timeout,
                 allowlist=filtered_allowlist, env=env,
             )
-        except Exception:
+        except Exception as exc:
             # unshare 失败 -> 降级但仍然从白名单移除网络 syscall (兜底)
+            log.warning("run_syscall_sandboxed(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     if IS_WINDOWS:
@@ -505,11 +516,13 @@ def run_syscall_sandboxed(
                 try:
                     mb = memory_limit_mb * 1024 * 1024
                     resource.setrlimit(resource.RLIMIT_AS, (mb, mb))  # type: ignore[attr-defined]
-                except Exception:
+                except Exception as exc:
+                    log.warning("run_syscall_sandboxed(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
                 try:
                     os.setsid()  # type: ignore[attr-defined]  # 新会话: 超时 killpg 只杀本子树
-                except Exception:
+                except Exception as exc:
+                    log.warning("run_syscall_sandboxed(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
             lx_proc = subprocess.Popen(  # noqa: S603

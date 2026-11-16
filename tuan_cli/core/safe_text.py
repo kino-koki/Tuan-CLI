@@ -38,6 +38,9 @@ from typing import Any, Dict, Tuple
 
 from tuan_cli.core import security_utils as _SU
 from tuan_cli.ui.slogans import _clean as _CL
+import logging
+log = logging.getLogger(__name__)
+
 
 # A′（XIV 四次自查，全部保留）：
 # 1) ``\b`` 前边界让 ``xghp_<36 chars>``（token 与文本粘连）匹配不到；
@@ -77,7 +80,8 @@ def safe_hook_text(raw: Any, limit: int = 400) -> str:
             # cap-1 + 省略号，严格 <= cap；rstrip 只会更短。
             out = out[:max(0, cap - 1)].rstrip() + "…"
         return out
-    except Exception:  # noqa: BLE001 - 净化自身绝不让 hook 通道再抛
+    except Exception as exc:  # noqa: BLE001 - 净化自身绝不让 hook 通道再抛
+        log.debug("safe_hook_text(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return ""
 
 

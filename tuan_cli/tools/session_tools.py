@@ -17,6 +17,9 @@ from typing import Any, Dict, List
 from ..core.kernel import Kernel, Plugin
 from .base import Tool, ToolContext, string_prop
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _archive_plan(ctx: ToolContext, plan_text: str) -> str:
     """把经确认的实施计划落盘存档 (<workspace>/.tuan/plan.md), 供后续会话/审计恢复。
@@ -44,10 +47,12 @@ def _archive_plan(ctx: ToolContext, plan_text: str) -> str:
         # 事件溯源: 记录一次计划存档, 便于事后审计/恢复
         try:
             ctx.kernel.emit("plan_mode.saved", {"path": path, "len": len(plan_text)})
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_archive_plan(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return path
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_archive_plan(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return ""
 
 _TODO_STATUSES = ("pending", "in_progress", "completed")
@@ -60,11 +65,13 @@ def _set_plan_mode(ctx: ToolContext, on: bool) -> None:
     if agent is not None:
         try:
             agent.plan_mode = on
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_set_plan_mode(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     try:
         ctx.kernel.emit("plan_mode.changed", {"enabled": on})
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_set_plan_mode(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -90,7 +97,8 @@ def _todo_write_handler(ctx: ToolContext, todos: Any = None, **_kwargs: Any) -> 
     ctx.todos = cleaned
     try:
         ctx.kernel.emit("todos.updated", {"todos": list(cleaned)})
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_todo_write_handler(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     done = sum(1 for t in cleaned if t["status"] == "completed")
     return f"任务清单已更新 ({done}/{len(cleaned)} 完成)。"
@@ -172,7 +180,8 @@ def _fullscreen_tui_active() -> bool:
             return False
         app = getattr(tui, "_app", None)
         return bool(app is not None and getattr(app, "is_running", False))
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_fullscreen_tui_active(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 
@@ -204,7 +213,8 @@ def _ask_user_handler(ctx: ToolContext, question: Any = "", options: Any = None,
                 if d2.block:
                     return f"ElicitationResult Hook 阻断 ({d2.failure_kind or 'deny'}): 作废本次回答 {d2.reason or '（hook 未给原因）'}"
             return f"用户回答: {ans}" if ans else "用户未回答本次提问 (已跳过), 请基于现有信息继续并说明你的假设。"
-        except Exception:  # noqa: BLE001 - 钩子失效时走下面的安全分支
+        except Exception as exc:  # noqa: BLE001 - 钩子失效时走下面的安全分支
+            log.warning("_ask_user_handler(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # **安全阀**: 全屏 TUI 正在接管屏幕时, 绝不能 print()+input() —— 那会把文本

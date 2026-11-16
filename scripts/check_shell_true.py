@@ -124,6 +124,9 @@ WHITELIST: list[tuple[str, int, str, str]] = [
     ("skills/plugin_sdk.py", 338, "shell=True,", "PLUGIN_HOOK"),
     ("skills/plugin_sdk.py", 364, "shell=True,", "PLUGIN_HOOK"),
     ("skills/plugin_sdk.py", 402, "shell=True,", "PLUGIN_HOOK"),
+    # 0.4.4: _run_hook 的 docstring 里描述了 "直接 shell=True 执行" 的设计,
+    # 是文字常量不是调用点 (真实调用点由上面三条 PLUGIN_HOOK 覆盖).
+    ("skills/plugin_sdk.py", 532, "直接 shell=True 执行", "COMMENT"),
     # tui/render.py: /statusline 自定义命令来自用户配置, 渲染线程后台跑.
     ("tui/render.py", 117, "cmd, shell=True, capture_output=True", "USER_INPUT"),
     # web/handler.py & web/server.py: shell 命令来自 HTTP body, 经安全评估+审批.

@@ -17,6 +17,9 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+import logging
+
+log = logging.getLogger(__name__)
 
 _IGNORED = {".git", ".hg", ".svn", "__pycache__", ".venv", "venv",
             "node_modules", ".tuan-sandbox", ".idea", ".vscode"}
@@ -413,7 +416,8 @@ class IsolatedWorkdir:
     def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path, ignore_errors=True)
-        except Exception:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover
+            log.warning("沙箱隔离裁决异常(设计内降级): %s", exc)
             pass
 
 

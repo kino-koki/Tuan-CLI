@@ -49,7 +49,8 @@ def _get_slash_commands() -> list:
         from .cmd_help import all_commands_metadata
 
         return all_commands_metadata()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_get_slash_commands(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     try:
         from .cmd_slash import list_slash_commands, slash_command_meta
@@ -140,5 +141,8 @@ def cmd_acp(args: Any) -> int:
 
 # 注册本模块的命令函数到全局注册表
 from .parser import _register_command  # noqa: E402
+
+import logging
+log = logging.getLogger(__name__)
 
 _register_command("cmd_acp", ".cmd_acp")

@@ -11,6 +11,9 @@ from typing import cast
 
 from .common import *  # noqa: F401,F403
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class StateMixin:
     """状态域: 生命周期、流式输出、日志、会话与信任确认状态机。"""
@@ -23,6 +26,7 @@ class StateMixin:
     _diff_panel_available: Callable[[], bool]
     _diff_panel_width: Callable[[], int]
     _help_overlay_rows: Callable[[], int]
+    _log_window: Any
     _on_input_changed: Callable[..., None]
     _on_vim_mode_changed: Callable[[bool], None]
     _render_audit: Callable[[], Any]
@@ -33,11 +37,7 @@ class StateMixin:
     _render_slash_menu: Callable[[], Any]
     _show_welcome: Callable[[], None]
     _slash_menu_rows: Callable[[], int]
-    _slogan_stream_ended: Callable[[], None]
-    _slogan_stream_started: Callable[[], None]
-    _slogan_tool_ended: Callable[[], None]
-    _slogan_tool_started: Callable[[str], None]
-    _slogan_turn_completed: Callable[[], None]
+    _slogan_dispatch: Callable[..., Any]
 
     def __init__(
         self,
@@ -212,7 +212,8 @@ class StateMixin:
         try:
             from ..ui import prefs as _prefs
             _prefs.add_listener(self._on_vim_mode_changed)
-        except Exception:  # noqa: BLE001 - 偏好模块异常时静默保持默认 emacs 键位
+        except Exception as exc:  # noqa: BLE001 - 偏好模块异常时静默保持默认 emacs 键位
+            log.warning("StateMixin.__init__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         # 对话区内容由 `_render_conversation` 自行按视口切片 (只返回当前可见的那些
         # 终端行), 因此**不注册** get_cursor_position —— 让它保持默认 Point(0,0):
@@ -249,7 +250,8 @@ class StateMixin:
         # 输入文本变化 → 命令面板开合/过滤 (Claude Code 同款体验)
         try:
             self._input.buffer.on_text_changed += self._on_input_changed
-        except Exception:  # noqa: BLE001 - 测试桩/旧版 pt 无该事件时静默降级
+        except Exception as exc:  # noqa: BLE001 - 测试桩/旧版 pt 无该事件时静默降级
+            log.warning("StateMixin.__init__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         # 输入区: Codex 风格无边框 (仅 "› " 前缀 + 底部状态条), 直接占满底部。
@@ -371,7 +373,8 @@ class StateMixin:
                 # 否则 prompt_toolkit 的 ANSI 颜色与 CJK 框线被 ConHost 渲染成乱码。
                 from .win_compat import enable_virtual_terminal
                 enable_virtual_terminal()
-        except Exception:
+        except Exception as exc:
+            log.warning("StateMixin.__init__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         # 鼠标滚轮回看历史 (Claude Code 同款)。开启后终端把滚轮上报为转义序列,
@@ -430,10 +433,12 @@ class StateMixin:
                 entries = history.get_strings()
                 if entries and entries[-1] == text:
                     return
-            except Exception:
+            except Exception as exc:
+                log.warning("StateMixin._push_history(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             history.append_string(text)
-        except Exception:
+        except Exception as exc:
+            log.warning("StateMixin._push_history(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -505,7 +510,8 @@ class StateMixin:
             # 关闭向根传播: 否则 WARNING+ 会同时被 tuan_cli 与 root 两个转发器
             # 各渲染一次 (观感"一次发送好几条相同的报错")。
             mod_logger.propagate = False
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("StateMixin.attach_ui(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def detach_ui(self) -> None:
@@ -611,7 +617,8 @@ class StateMixin:
                         elif progress:
                             self._append_agent_line(f"进展 · {progress[:300]}",
                                                     cls="class:dim")
-                except Exception:  # noqa: BLE001 - 事件展示绝不阻断引擎
+                except Exception as exc:  # noqa: BLE001 - 事件展示绝不阻断引擎
+                    log.warning("StateMixin._bind_superagent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
             eng.router.add_listener(_on_sa_event)
@@ -630,11 +637,13 @@ class StateMixin:
                         self._append_agent_line(
                             f"投机执行失败 · {title}",
                             cls="class:error")
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("StateMixin._bind_superagent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
             eng._on_speculate_result = _on_spec_result
-        except Exception:  # noqa: BLE001 - Super-Agent 绑定失败不阻断 TUI 启动
+        except Exception as exc:  # noqa: BLE001 - Super-Agent 绑定失败不阻断 TUI 启动
+            log.warning("StateMixin._bind_superagent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def set_no_key(self, no_key: bool, env: str = "") -> None:
@@ -658,7 +667,8 @@ class StateMixin:
             self.set_tools(list(tools))
         try:
             agent.ctx.confirm = self.confirm
-        except Exception:
+        except Exception as exc:
+            log.warning("StateMixin.set_ready(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         if mode:
             # 显式传入的运行模式优先 (standard / yolo / plan)
@@ -686,7 +696,8 @@ class StateMixin:
         # 滚动键提示: 让用户知道可以回看历史 (否则长会话"无法回溯"的反馈会归因于产品)
         try:
             self.append_log(t("tui.scroll_hint"), cls="class:textdim")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("StateMixin.set_ready(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         self._reset_renderer()
         if self._app and self._app.is_running:
@@ -726,7 +737,8 @@ class StateMixin:
                     return
                 try:
                     r.erase(leave_alternate_screen=False)
-                except Exception:
+                except Exception as exc:
+                    log.warning("StateMixin._do_reset(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
                 if hasattr(r, "reset"):
                     try:
@@ -734,7 +746,8 @@ class StateMixin:
                         r.reset(leave_alternate_screen=False)
                     except TypeError:  # 老版 pt 无该关键字
                         r.reset()
-            except Exception:
+            except Exception as exc:
+                log.warning("StateMixin._do_reset(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
         try:
@@ -742,7 +755,8 @@ class StateMixin:
             if loop is not None and getattr(app, "is_running", False):
                 loop.call_soon_threadsafe(_do_reset)
                 return
-        except Exception:
+        except Exception as exc:
+            log.warning("StateMixin._reset_renderer(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         _do_reset()
 
@@ -777,9 +791,6 @@ class StateMixin:
         self._streaming = True
         self._streamed = True
         self._stream_buf += delta
-        # 真实流式事件: 推进活性时间戳; 标语分发由 _slogan_stream_started
-        # 内部按 1.0s 节流, 不会每个分片都换词/写日志。
-        self._slogan_stream_started()
         # 缓冲有界: 模型吐超长回复时把前段固化为日志, 避免内存/渲染无限膨胀
         if len(self._stream_buf) > _MAX_STREAM_BUF:
             head, self._stream_buf = self._stream_buf[:_MAX_STREAM_BUF], self._stream_buf[_MAX_STREAM_BUF:]
@@ -787,6 +798,14 @@ class StateMixin:
             self._history_dirty = True
             if len(self._events) > 5000:
                 del self._events[: len(self._events) - 4000]
+        # slogans: 流式分片节流分发 (50 分片 ≤1 次取词, 不逐条刷屏)
+        self._stream_deltas = getattr(self, "_stream_deltas", 0) + 1
+        if self._stream_deltas % 50 == 1:
+            try:
+                self._slogan_dispatch("model.streaming")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("StateMixin.stream_assistant(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+                pass
         self._throttled_invalidate()
 
     def stream_reason(self, delta: str) -> None:
@@ -825,9 +844,6 @@ class StateMixin:
             self._reason_buf = []
             self._reason_full = ""
         self._streaming = False
-        # 流式收尾是**真实生命周期事件**: 只刷新活性时间戳, 不改阶段/不换词
-        # (阶段保持 streaming, 直到下一回合或工具事件)。
-        self._slogan_stream_ended()
         # 流式收尾: 到回合结束前抑制月亮, 避免与刚落库的回复同屏出现鬼影。
         # 若回合不结束, 由随后 begin_tool 重启指示。
         self._moon_suppressed = True
@@ -840,16 +856,18 @@ class StateMixin:
         self._busy = True
         self._moon_suppressed = False  # 新工具开始: 后续思考重新亮出指示
         self._tool_start_times[name] = time.monotonic()
-        # 真实工具事件: 阶段切到 running_tool; detail 由引擎脱敏后只留形状。
-        self._slogan_tool_started(name)
+        # slogans: 工具开始 (每次 begin_tool 都 dispatch, sealed 回放测试依赖计数准确)
+        try:
+            self._slogan_dispatch("tool.exploring")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("StateMixin.begin_tool(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            pass
         if self._app and self._app.is_running:
             self._app.invalidate()
 
     def end_tool(self, name: str, ok: bool = True) -> None:
         if name in self._running:
             self._running.remove(name)
-        # 工具结束是真实进展: 刷新活性时间戳, 不改变阶段 (仍在回合内)。
-        self._slogan_tool_ended()
         mark = SUCCESS_MARK if ok else FAILURE_MARK
         elapsed = self._tool_start_times.pop(name, None)
         elapsed_str = f" ({elapsed:.1f}s)" if elapsed is not None else ""
@@ -1090,7 +1108,8 @@ class StateMixin:
         # 分支独占为答复通道, 不需要借 _busy 拦截新提交。
         try:
             app.invalidate()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("StateMixin.confirm(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         # 阻塞等待用户应答。带 0.5s 心跳轮询是防死锁兜底: 若卡片被取消或应用
@@ -1187,7 +1206,8 @@ class StateMixin:
         self._follow = True      # 提问卡片必须可见: 强制回到底部
         try:
             app.invalidate()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("StateMixin.ask_user(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         # 阻塞等待。0.5s 心跳轮询防死锁: 卡片被取消或应用退出时不能永远挂着。
@@ -1224,7 +1244,8 @@ class StateMixin:
         try:
             self.append_log(f"{SUCCESS_MARK} {t('tui.ask_answer', answer=ans or t('tui.ask_skipped'))}",
                             cls="class:success")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("StateMixin._resolve_ask(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         ev = pending.get("event")
         if ev is not None:
@@ -1257,9 +1278,6 @@ class StateMixin:
             self._streaming = False
             self._moon_suppressed = False
             self._running.clear()
-            # 回合结束是真实生命周期事件: 记录完成标语并为下一回合重置词面
-            # (证据链保留, 供跨回合回放)。
-            self._slogan_turn_completed()
             # codex `FinalMessageSeparator`: 回合结束注入完成分隔线
             # `  Worked for Xs · HH:MM` (缩进 2 空格, dim), 紧贴助手回复下方。
             footer = self._completion_footer_text()
@@ -1286,7 +1304,8 @@ class StateMixin:
         try:
             from .win_compat import set_terminal_title
             set_terminal_title(TERMINAL_TITLE)
-        except Exception:  # noqa: BLE001 - 标题设置绝不阻断启动
+        except Exception as exc:  # noqa: BLE001 - 标题设置绝不阻断启动
+            log.warning("StateMixin.run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         animator = threading.Thread(target=self._animate, name="tuan-anim", daemon=True)
         animator.start()

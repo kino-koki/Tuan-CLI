@@ -26,7 +26,8 @@ def _all_benign(texts: List[str]) -> bool:
     """texts 里每个有意义的命令串都判为良性。"""
     try:
         from ..ext.safety_engine import is_benign_dev_command
-    except Exception:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover
+        log.debug("沙箱过滤器处理异常(设计内降级): %s", exc)
         return False
     for t in texts:
         t = (t or "").strip()
@@ -35,7 +36,8 @@ def _all_benign(texts: List[str]) -> bool:
         try:
             if not is_benign_dev_command(t):
                 return False
-        except Exception:  # noqa: BLE001 - 无法评估按非良性处理
+        except Exception as exc:  # noqa: BLE001 - 无法评估按非良性处理
+            log.debug("沙箱过滤器处理异常(设计内降级): %s", exc)
             return False
     return True
 
@@ -53,7 +55,8 @@ def _scan_embedded_secrets(texts: List[str]) -> Optional[Verdict]:
     """
     try:
         from ..core.secret_scanner import scan_text
-    except Exception:  # pragma: no cover - secret_scanner 为标准库实现, 极少缺失
+    except Exception as exc:  # pragma: no cover - secret_scanner 为标准库实现, 极少缺失
+        log.debug("沙箱过滤器处理异常(设计内降级): %s", exc)
         return None
     findings: List[Any] = []
     for t in texts:
@@ -153,7 +156,8 @@ def _has_system_escape_intent(texts: List[str]) -> bool:
         try:
             from ..ext.safety_normalize import _strip_shell_comments
             t = _strip_shell_comments(t)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("沙箱过滤器处理异常(设计内降级): %s", exc)
             pass
         if not t.strip():
             continue

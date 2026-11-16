@@ -20,6 +20,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 from .evaluator import EvaluationResult, Evaluator
 
+import logging
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class RegressionVerdict:
@@ -123,7 +126,8 @@ class RegressionGate:
                 if callable(rollback):
                     try:
                         rollback()
-                    except Exception:  # noqa: BLE001 - 回滚失败不掩盖判定
+                    except Exception as exc:  # noqa: BLE001 - 回滚失败不掩盖判定
+                        log.warning("RegressionGate.evaluate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
 
         # 4) 判定

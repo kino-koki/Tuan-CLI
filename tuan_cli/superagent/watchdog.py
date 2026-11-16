@@ -115,7 +115,8 @@ class Watchdog:
                             "off_track", ticket_id, verdict.get("reason", "方向偏离目标")
                         )
                         findings.append(finding)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Watchdog.check_once(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         # 工单层面的异常状态巡检 (BLOCKED 长时间无人处理)
         if self.router is not None:

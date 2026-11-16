@@ -249,7 +249,8 @@ def get_sandbox_manager(ctx: Any) -> Optional[Any]:
         if kernel is None:
             return None
         return kernel.get("sandbox_manager")
-    except Exception:
+    except Exception as exc:
+        log.debug("get_sandbox_manager(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 
@@ -266,7 +267,8 @@ def should_auto_isolate(ctx: Any) -> bool:
             return False
         # 默认启用
         return bool(config.get("sandbox.auto_isolate_scripts", True))
-    except Exception:
+    except Exception as exc:
+        log.debug("should_auto_isolate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return True  # 默认启用
 
 
@@ -282,7 +284,8 @@ def get_isolation_timeout(ctx: Any) -> float:
         if config is None:
             return 60.0
         return float(config.get("sandbox.isolation_timeout", 60.0))
-    except Exception:
+    except Exception as exc:
+        log.debug("get_isolation_timeout(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return 60.0
 
 

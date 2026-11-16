@@ -30,6 +30,9 @@ from .. import __version__
 from .schema import ResultMessage, SystemInitMessage, encode_message, parse_input_line
 from .translate import StreamTranslator, make_callbacks
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # stdout 护栏
@@ -57,7 +60,8 @@ class _StdoutGuard:
                 return int(self.real.write(s))
             try:
                 return int(self.err.write(s))
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("_StdoutGuard.write(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return 0
 
     def writelines(self, lines: Any) -> None:
@@ -65,7 +69,8 @@ class _StdoutGuard:
             target = self.real if self._depth > 0 else self.err
             try:
                 target.writelines(lines)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_StdoutGuard.writelines(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def flush(self) -> None:
@@ -73,7 +78,8 @@ class _StdoutGuard:
             target = self.real if self._depth > 0 else self.err
             try:
                 target.flush()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_StdoutGuard.flush(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     # -- 协议写唯一通道：持锁、置位、直写真 stdout、flush、复位 --
@@ -164,7 +170,8 @@ class HeadlessDriver:
         real = sys.stdout
         try:
             real.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("HeadlessDriver._install_guard(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         self._guard = _StdoutGuard(real, sys.stderr)
         sys.stdout = self._guard
@@ -258,7 +265,8 @@ class HeadlessDriver:
         tools: List[str] = []
         try:
             tools = sorted(t.name for t in self._agent.registry.tools_for())
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("HeadlessDriver._send_init(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         slash_commands: List[str] = []
@@ -268,7 +276,8 @@ class HeadlessDriver:
             meta = all_commands_metadata()
             slash_commands = [str(c.get("name")) for c in meta
                               if isinstance(c, dict) and c.get("name")]
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("HeadlessDriver._send_init(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         self._emit(SystemInitMessage(
@@ -469,7 +478,8 @@ class HeadlessDriver:
             if agent is not None and hasattr(agent, "cancel"):
                 try:
                     agent.cancel()
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("HeadlessDriver.serve(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         finally:
             # EOF / 中断：在途 turn 的 result 必须 flush 完再退。
@@ -479,7 +489,8 @@ class HeadlessDriver:
             try:
                 from ..hooks.triggers import close_agent_session
                 close_agent_session(self._agent)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("HeadlessDriver.serve(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return 0
 

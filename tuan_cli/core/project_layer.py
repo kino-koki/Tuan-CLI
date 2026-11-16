@@ -29,6 +29,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
 from ..config import home_dir
+import logging
+log = logging.getLogger(__name__)
+
 
 
 TUAN_MD_TEMPLATE = """# 项目说明 (TUAN.md)
@@ -83,7 +86,8 @@ class ProjectLayer:
             return default
         try:
             return self.config.get(key, default)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ProjectLayer._cfg(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return default
 
     # ------------------------------------------------------------ 检测 / 初始化
@@ -175,7 +179,8 @@ class ProjectLayer:
                 return int(con.execute("SELECT COUNT(*) FROM memories").fetchone()[0])
             finally:
                 con.close()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ProjectLayer._memory_count(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 0
 
     def attach_session(self, session_id: str, task: str = "") -> None:

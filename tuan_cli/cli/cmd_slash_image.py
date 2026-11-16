@@ -9,6 +9,9 @@ from typing import Any
 
 from ._ui_singleton import ui
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _cmd_image(agent: Any, head: str, arg: str) -> None:
     """/image /images /clear-images /image generate: 多模态图片管理 + AI 生成。"""
@@ -98,7 +101,8 @@ def _cmd_image_generate(agent: Any, arg: str) -> None:
                 try:
                     agent.attach_image(m.group(1).strip())
                     ui.info("(已自动挂接, 视觉模型下轮可查看)")
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("_cmd_image_generate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
     except Exception as exc:  # noqa: BLE001
         ui.error(f"图片生成失败: {exc}")

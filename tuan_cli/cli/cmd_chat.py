@@ -193,7 +193,8 @@ def _preselect_language() -> None:
         chosen = choose_language_interactive()
         set_language_global(chosen)
         cfg.set_user("language", chosen)
-    except Exception:  # noqa: BLE001 - 语言预置绝不阻断 TUI 启动
+    except Exception as exc:  # noqa: BLE001 - 语言预置绝不阻断 TUI 启动
+        log.warning("_preselect_language(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -217,7 +218,8 @@ def _prepare_agent(args: Any, workspace: str, session_id: str, on_progress: Any 
         from ..core.boundary_auto import ensure_project_context
         ensure_project_context(
             workspace, config=None, bare=bool(getattr(args, "bare", False)))
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_prepare_agent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     if on_progress:
         on_progress(30, "构建内核…")
@@ -395,7 +397,8 @@ def cmd_chat(args: Any) -> int:
                     _real = int(_usage.get("prompt_tokens", 0) or 0)
                     _est = int(st.get("estimated_tokens", 0) or 0)
                     tui.set_context_used(_real if _real > 0 else _est)
-            except Exception:
+            except Exception as exc:
+                log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             # Super-Agent 融合 (观察, 非接单): 用户对话消息记录进 Router 的
             # 跨任务上下文。只记录不研判不开单 —— 用户消息已由主 Agent 处理,
@@ -405,7 +408,8 @@ def cmd_chat(args: Any) -> int:
                 _sa = getattr(agent, "_superagent", None)
                 if _sa is not None:
                     _sa.observe_text(text, sender="你", source="local")
-            except Exception:  # noqa: BLE001 - 观察失败不阻断对话
+            except Exception as exc:  # noqa: BLE001 - 观察失败不阻断对话
+                log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return answer or t("tui.no_output")
 
@@ -426,13 +430,15 @@ def cmd_chat(args: Any) -> int:
                 if not agent.plan_mode:
                     from ..modes.switcher import current_mode
                     tui.set_mode(current_mode())
-            except Exception:
+            except Exception as exc:
+                log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             # 若刚通过 /provider 设置密钥, 立即清除"未配置"横幅 (无需重启)
             try:
                 tui.set_no_key(not state["config"].api_key(),
                                    env=_no_key_env(state["config"]))
-            except Exception:
+            except Exception as exc:
+                log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return t("tui.cmd_done") if handled else t("tui.exiting")
 
@@ -490,7 +496,8 @@ def cmd_chat(args: Any) -> int:
                         if callable(_notify):
                             try:
                                 _notify(f"工作区信任已自动降级为 limited: {_decay_reason}")
-                            except Exception:  # noqa: BLE001
+                            except Exception as exc:  # noqa: BLE001
+                                log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                                 pass
                     if _level == TrustLevel.UNKNOWN:
                         def _on_trust(trusted: bool) -> None:
@@ -502,12 +509,14 @@ def cmd_chat(args: Any) -> int:
                                 )
                                 setattr(agent.ctx, "workspace_trust_level",
                                         TrustLevel.TRUSTED if trusted else TrustLevel.UNTRUSTED)
-                            except Exception:  # noqa: BLE001
+                            except Exception as exc:  # noqa: BLE001
+                                log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                                 pass
                         if hasattr(tui, "prompt_trust"):
                             tui.prompt_trust(workspace, on_confirm=_on_trust)
                     setattr(agent.ctx, "workspace_trust_level", _level)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
                 _finish_ready()
             except Exception as exc:
@@ -548,7 +557,8 @@ def cmd_chat(args: Any) -> int:
                                   state.get("mode", "standard"),
                                   state["config"].get("agent.effort", "high"),
                                   session_id=session_id)
-                except Exception:
+                except Exception as exc:
+                    log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
         finally:
             if state["agent"] is not None:
@@ -605,7 +615,8 @@ def _security_alerter(event: Any) -> None:
         reason = event.payload.get("reason") or etype
         msg = f"{reason}: {cmd}" if cmd else reason
         eng.notify({"title": "青小团 · 安全事件", "message": msg})
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_security_alerter(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -621,7 +632,8 @@ def _setup_security_alerts() -> None:
         get_security_bus(persist_path=home_dir() / "security-audit.jsonl", async_alerter=True).set_alerter(
             _security_alerter
         )
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_setup_security_alerts(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -694,7 +706,8 @@ def _run_turn(agent: Any, user_input: str, config: Config, stream: bool | None =
         wt = auto_create_parallel_worktree(_ws, user_input, config=config, bare=bare)
         if wt is not None:
             console.print(f"[四层边界] 检测到并行实验意图, 已为你创建 worktree: {wt.path}")
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_run_turn(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
     # ---- 四层边界 · Subagent 层: 重任务自动隔离执行; 失败回退主会话 ----
@@ -773,14 +786,16 @@ def _maybe_auto_handoff(agent: Any, config: Config, workspace: str,
         console.print(f"  新会话: {report.new_session_id}")
         console.print(f"  摘要预览: {report.preview(200)}")
         return report.new_session_id
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_maybe_auto_handoff(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 
 def _parse_args(a: Any) -> Any:
     try:
         return json.loads(a)
-    except Exception:
+    except Exception as exc:
+        log.debug("_parse_args(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return a
 
 
@@ -802,6 +817,9 @@ from .cmd_model import (  # noqa: F401
     _strip_model_label,
     cmd_model,
 )
+
+import logging
+log = logging.getLogger(__name__)
 
 # ===================================================================== cmd_doctor
 

@@ -23,6 +23,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
+
+log = logging.getLogger(__name__)
 
 
 # ================================================================ 信任级别
@@ -80,7 +83,8 @@ def consult_for_shell(level: str, command: str) -> "tuple[str, str]":
             from ..ext.safety_engine import is_benign_dev_command
             if not is_benign_dev_command(command):
                 return ("confirm", "工作区为 limited 信任, 非良性命令需确认")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("工作区信任评估降级: %s", exc)
             return ("confirm", "工作区为 limited 信任, 无法评估命令安全性, 需确认")
     return ("allow", "")
 

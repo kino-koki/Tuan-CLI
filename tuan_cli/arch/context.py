@@ -22,6 +22,9 @@ from typing import Any, Dict, List, Optional
 from ..core.event_sourcer import EventSourcer, SourcedEvent
 from ..hooks import lifecycle as _LC
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _estimate_tokens(text: str) -> int:
     """粗略 token 估算: 中文约 1.5 字/token, 英文约 4 字符/token; 这里取字符/4 近似。"""
@@ -85,7 +88,8 @@ class TieredContext:
                     "hot_entries": len(self.hot),
                     "total_tokens": total}):
                 return
-        except Exception:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed
+        except Exception as exc:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed
+            log.debug("TieredContext._maybe_compact(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return
         # 把一半最旧的 hot 压缩成 warm 摘要
         half = max(1, len(self.hot) // 2)
@@ -97,7 +101,8 @@ class TieredContext:
         try:
             _LC.emit("PostCompact", {"entries_compacted": len(to_compact),
                                      "summary_len": len(summary)})
-        except Exception:  # noqa: BLE001 - 通知类吞异常（动作已发生）
+        except Exception as exc:  # noqa: BLE001 - 通知类吞异常（动作已发生）
+            log.warning("TieredContext._maybe_compact(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     @staticmethod

@@ -121,11 +121,13 @@ class IpcClient:
         if proc is not None:
             try:
                 proc.kill()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("IpcClient._cleanup_partial(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             try:
                 proc.wait(timeout=3)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("IpcClient._cleanup_partial(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         thread, self._read_thread = self._read_thread, None
         if thread is not None and thread.is_alive():

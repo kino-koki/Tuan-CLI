@@ -154,7 +154,8 @@ class SuperAgent:
         for w in self.workers._workers.values():
             try:
                 w.stop()   # 请求 Worker 协作式终止 (run_fn 应检查 should_stop)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("SuperAgent.stop(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         self._started = False
 
@@ -234,7 +235,8 @@ class SuperAgent:
                         _throttle["last"] = now
                         try:
                             worker.report_progress(f"生成中… {worker._progress[-60:]}")
-                        except Exception:  # noqa: BLE001 - 进度上报失败不阻断任务
+                        except Exception as exc:  # noqa: BLE001 - 进度上报失败不阻断任务
+                            log.warning("SuperAgent._on_token(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                             pass
 
                 try:
@@ -313,7 +315,8 @@ class SuperAgent:
                 if cb is not None:
                     try:
                         cb(dict(entry))
-                    except Exception:  # noqa: BLE001 - 展示回调绝不阻断投机线程
+                    except Exception as exc:  # noqa: BLE001 - 展示回调绝不阻断投机线程
+                        log.warning("SuperAgent._run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
 
         t = threading.Thread(target=_run, name=f"superagent-spec-{spec_id}", daemon=True)

@@ -23,6 +23,9 @@
 from __future__ import annotations
 
 from typing import Callable, List, Optional
+import logging
+
+log = logging.getLogger(__name__)
 
 # 对齐上游事件名
 TRANSCRIPT_COPY_CLOSED = "TranscriptCopyClosed"
@@ -81,7 +84,8 @@ class CopyInputGuard:
     def __del__(self) -> None:  # pragma: no cover - 解释器退出时序不确定
         try:
             self.release()
-        except Exception:
+        except Exception as exc:
+            log.warning("剪贴板护栏降级: %s", exc)
             pass
 
     # ------------------------------------------------------------ 可观测

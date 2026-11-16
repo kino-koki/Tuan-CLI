@@ -56,6 +56,9 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, cast
 
 from .manager import HookDecision
 
+import logging
+log = logging.getLogger(__name__)
+
 _DEFAULT_PROVIDER: Optional[Callable[[], Any]] = None
 
 # B3 续轮 V: **重入守卫**。thread-local 而不是全局 set —— 不同线程并发
@@ -152,7 +155,8 @@ def _resolve_default() -> Any:
         return None
     try:
         return prov()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_resolve_default(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 
@@ -366,7 +370,8 @@ def bind_session_hooks(hooks: Any, *, owner: Optional[str] = None) -> bool:
             inst = getattr(m, _attr, None)
             if inst is not None:
                 inst.hooks = hooks
-        except Exception:  # noqa: BLE001 - 绑定不得掀翻会话启动
+        except Exception as exc:  # noqa: BLE001 - 绑定不得掀翻会话启动
+            log.warning("bind_session_hooks(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return ok
 
@@ -455,7 +460,8 @@ def activate_session(
         try:
             ctx.session_owner = owner
             ctx.session_handle = handle
-        except Exception:  # noqa: BLE001 - 只读 ctx 不掀翻会话启动
+        except Exception as exc:  # noqa: BLE001 - 只读 ctx 不掀翻会话启动
+            log.warning("activate_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return handle
 
@@ -476,7 +482,8 @@ def deactivate_session(handle: Any) -> bool:
         return False
     try:
         handle.closed = True
-    except Exception:  # noqa: BLE001 - 外来句柄对象也能安全处理
+    except Exception as exc:  # noqa: BLE001 - 外来句柄对象也能安全处理
+        log.warning("deactivate_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     owner = getattr(handle, "owner", None)
     token = getattr(handle, "token", None)
@@ -492,7 +499,8 @@ def deactivate_session(handle: Any) -> bool:
                 ctx.session_handle = None
                 if getattr(ctx, "session_owner", None) == owner:
                     ctx.session_owner = ""
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("deactivate_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return ok
 
@@ -534,7 +542,8 @@ def close_agent_session(agent: Any) -> bool:
         return False
     try:
         return deactivate_session(handle)
-    except Exception:  # noqa: BLE001 - 关闭路径不得掀翻宿主
+    except Exception as exc:  # noqa: BLE001 - 关闭路径不得掀翻宿主
+        log.debug("close_agent_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 
@@ -671,7 +680,8 @@ class HookTrigger:
             try:
                 run(event, payload)
                 return True
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("HookTrigger._notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return False
         finally:
             inflight.discard(event)

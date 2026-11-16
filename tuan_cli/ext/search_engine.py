@@ -9,6 +9,9 @@ import re
 from fnmatch import fnmatch
 from typing import Any
 
+import logging
+log = logging.getLogger(__name__)
+
 # 上下文行上限: 防止单条结果撑爆 IPC 响应
 _MAX_CONTEXT = 10
 
@@ -52,7 +55,8 @@ class SearchEngine:
             with open(filepath, "rb") as f:
                 chunk = f.read(1024)
                 return b"\x00" in chunk
-        except Exception:
+        except Exception as exc:
+            log.debug("SearchEngine._is_binary(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return True
 
     def _compile(self, pattern: str, ignore_case: bool) -> Any:
@@ -101,7 +105,8 @@ class SearchEngine:
                 try:
                     with open(filepath, "r", encoding="utf-8", errors="replace") as f:
                         lines = f.readlines()
-                except Exception:
+                except Exception as exc:
+                    log.debug("SearchEngine.search(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     continue
 
                 stop = False
@@ -160,7 +165,8 @@ class SearchEngine:
                 try:
                     with open(filepath, "r", encoding="utf-8", errors="replace") as f:
                         n = sum(1 for line in f if regex.search(line))
-                except Exception:
+                except Exception as exc:
+                    log.debug("SearchEngine.count(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     continue
                 if n:
                     files_out.append({"file": filepath, "matches": n})

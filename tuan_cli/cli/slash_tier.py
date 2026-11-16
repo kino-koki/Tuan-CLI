@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+import logging
+log = logging.getLogger(__name__)
+
 # 核心层 (≤20): / 菜单直接显示
 CORE_SLASH_COMMANDS: frozenset[str] = frozenset({
     "/help", "/model", "/mode", "/memory", "/clear",
@@ -70,6 +73,7 @@ def slash_command_tiers() -> dict[str, str]:
             n = f"/{item['name']}"
             if n not in tiers:
                 tiers[n] = "expert"
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("slash_command_tiers(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     return tiers

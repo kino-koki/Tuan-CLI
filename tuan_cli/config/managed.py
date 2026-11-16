@@ -22,6 +22,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, cast
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ================================================================ 设置源
 
@@ -114,7 +117,8 @@ class ManagedSettings:
             return {}
         try:
             return cast(Dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
-        except Exception:
+        except Exception as exc:
+            log.debug("ManagedSettings._load_json(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {}
 
     def _load_env(self) -> Dict[str, Any]:
@@ -235,5 +239,6 @@ class ManagedSettings:
                 from tuan_cli.hooks.triggers import HookTrigger
                 HookTrigger(self.hooks).config_change(
                     source="managed_settings", origin="reload")
-            except Exception:  # noqa: BLE001 - 通知失败不影响主流程
+            except Exception as exc:  # noqa: BLE001 - 通知失败不影响主流程
+                log.warning("ManagedSettings.reload(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass

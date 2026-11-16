@@ -23,6 +23,9 @@ from typing import Any, Dict, Optional
 
 from ..config.loader import home_dir
 from ._ui_singleton import console
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def cmd_trust(args: Any) -> int:
@@ -424,7 +427,8 @@ def _trust_status(trust: Any, all_: bool) -> None:
         try:
             ts = datetime.fromtimestamp(rec.last_used).strftime("%Y-%m-%d")
             console.print(f"    [dim]  最近使用: {ts}[/dim]")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("trust 命令辅助操作失败(不影响主流程): %s", exc)
             pass
 
     console.print("\n[dim]统计: " + ", ".join(

@@ -19,6 +19,9 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 # SPDXID 合法字符: 字母/数字/连字符/点
 _SPDX_ID_SAFE = re.compile(r"[^A-Za-z0-9.-]")
 
@@ -38,7 +41,8 @@ def _iter_installed() -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     try:
         dists = list(importlib.metadata.distributions())
-    except Exception:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover
+        log.debug("_iter_installed(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return out
     for dist in dists:
         name = dist.metadata.get("Name") or getattr(dist, "name", "") or ""  # type: ignore[attr-defined]  # typeshed 未声明 PackageMetadata.get

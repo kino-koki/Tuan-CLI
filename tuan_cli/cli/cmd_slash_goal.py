@@ -17,6 +17,9 @@ from typing import Any
 
 from ._ui_singleton import ui
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _build_engine(agent: Any) -> Any:
     """从 agent.workspace 构造 GoalEngine (注入可选配置)。"""
@@ -33,7 +36,8 @@ def _build_engine(agent: Any) -> Any:
             enabled = bool(cfg.get("goal.enabled", True))
             auto_continue = bool(cfg.get("goal.auto_continue", True))
             max_iter = int(cfg.get("goal.max_auto_iterations", 10) or 10)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_build_engine(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     return GoalEngine(workspace, max_auto_iterations=max_iter,
                       auto_continue=auto_continue, enabled=enabled)

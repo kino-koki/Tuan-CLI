@@ -31,6 +31,9 @@ from typing import Any, Dict, List, Optional, cast
 
 from ..version import __version__
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ---- 注册表地址 ----
 # 使用 raw.githubusercontent.com 直取 JSON, 避免 GitHub API 限频 & 无需鉴权。
@@ -82,7 +85,8 @@ def _fetch_json(url: str, *, ttl_seconds: int = 3600) -> Optional[Dict[str, Any]
         if now - age < ttl_seconds:
             try:
                 return cast(Dict[str, Any], json.loads(cache_file.read_text("utf-8")))
-            except Exception:
+            except Exception as exc:
+                log.warning("_fetch_json(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     try:
@@ -96,7 +100,8 @@ def _fetch_json(url: str, *, ttl_seconds: int = 3600) -> Optional[Dict[str, Any]
         if cache_file.exists():
             try:
                 return cast(Dict[str, Any], json.loads(cache_file.read_text("utf-8")))
-            except Exception:
+            except Exception as exc:
+                log.warning("_fetch_json(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return None
 
@@ -216,7 +221,8 @@ def install_via_zip(entry: RegistryEntry, dest: Path, *,
             shutil.rmtree(target)
         shutil.copytree(src_dir, target)
         return True
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("install_via_zip(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
     finally:
         try:

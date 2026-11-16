@@ -56,6 +56,9 @@ from .protocol import (
     SESSION_UPDATE,
 )
 from .session import AcpSession
+import logging
+log = logging.getLogger(__name__)
+
 
 # JSON-RPC 标准错误码
 METHOD_NOT_FOUND = -32601
@@ -116,7 +119,8 @@ class AcpServer(AcpConn):
         if callable(binder):
             try:
                 binder(self, "")
-            except Exception:  # noqa: BLE001 - 绑定失败不阻断启动（权限将走拒绝）
+            except Exception as exc:  # noqa: BLE001 - 绑定失败不阻断启动（权限将走拒绝）
+                log.warning("AcpServer.__init__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     # ============================================================ AcpConn 实现
@@ -346,7 +350,8 @@ class AcpServer(AcpConn):
             try:
                 sessions = list(fn())
                 return {"sessions": [{"sessionId": s} for s in sessions]}
-            except Exception:
+            except Exception as exc:
+                log.warning("AcpServer._h_session_list(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return {"sessions": [{"sessionId": s} for s in self._sessions.keys()]}
 
@@ -413,7 +418,8 @@ class AcpServer(AcpConn):
         if callable(fn):
             try:
                 fn()
-            except Exception:
+            except Exception as exc:
+                log.warning("AcpServer._h_logout(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         self._authenticated = False
         return {}
@@ -490,7 +496,8 @@ class AcpServer(AcpConn):
                 sid = fn(params)
                 if isinstance(sid, str) and sid:
                     return sid
-            except Exception:
+            except Exception as exc:
+                log.warning("AcpServer._call_new_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         return str(uuid.uuid4().hex)
 
@@ -515,7 +522,8 @@ class AcpServer(AcpConn):
             w.write(s.encode("utf-8"))
             try:
                 await w.drain()
-            except Exception:
+            except Exception as exc:
+                log.warning("AcpServer._write(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         else:
             w.write(s)
@@ -523,7 +531,8 @@ class AcpServer(AcpConn):
             if callable(flush):
                 try:
                     flush()
-                except Exception:
+                except Exception as exc:
+                    log.warning("AcpServer._write(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
 

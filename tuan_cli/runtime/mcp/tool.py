@@ -16,6 +16,9 @@ from .errors import (
 )
 from .output import result_to_output
 from .types import ExecutableTool, ExecutableToolContext, MCPClient, MCPToolDefinition
+import logging
+log = logging.getLogger(__name__)
+
 
 
 def create_mcp_tool(
@@ -77,7 +80,8 @@ async def _retry_after_reconnect(
         try:
             await client.ping()
             return await client.call_tool(tool_name, args or {}, signal)
-        except Exception:
+        except Exception as exc:
+            log.warning("_retry_after_reconnect(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass  # 探活失败，进入重连
 
     try:

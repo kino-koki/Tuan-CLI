@@ -24,6 +24,9 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from ..core.kernel import Kernel, Plugin
 from .base import Tool, ToolContext, string_prop
 
+import logging
+log = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from ..core.background import BackgroundRunner
 
@@ -57,7 +60,8 @@ def _read_from_offset(store: Any, offset: int) -> tuple[List[Dict[str, Any]], in
     """
     try:
         lines = store.file.read_text(encoding="utf-8").splitlines()
-    except Exception:  # noqa: BLE001 - 文件被清理/权限问题: 容错返回空
+    except Exception as exc:  # noqa: BLE001 - 文件被清理/权限问题: 容错返回空
+        log.debug("_read_from_offset(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return [], offset
     total = len(lines)
     out: List[Dict[str, Any]] = []

@@ -102,12 +102,12 @@ class DesktopNotifier:
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - 通知进程清理失败仅留痕
+                log.debug("桌面通知进程 kill 失败: %s", exc)
             try:
                 proc.wait(timeout=1.0)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                log.debug("桌面通知进程 wait 失败: %s", exc)
             return False
         return proc.returncode == 0  # type: ignore[no-any-return]  # returncode 为 Any
 
@@ -198,7 +198,8 @@ class AlertLogger:
                 if line:
                     results.append(json.loads(line))
             return results
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            log.warning("告警历史读取失败, 返回空列表: %s", exc)
             return []
 
 
@@ -301,8 +302,8 @@ class SecurityAlerter:
             _o = current_session_owner()
             if _o:
                 record.owner = _o
-        except Exception:  # noqa: BLE001 - 取 owner 失败不掀翻告警主路径
-            pass
+        except Exception as exc:  # noqa: BLE001 - 取 owner 失败不掀翻告警主路径
+            log.debug("会话 owner 获取失败, 告警记录不带 owner: %s", exc)
 
         # 速率限制检查
         rate_key = f"{severity}:{title}"

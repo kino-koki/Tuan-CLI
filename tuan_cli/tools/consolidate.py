@@ -20,6 +20,9 @@ from typing import Dict, List, Optional
 
 from ..core.kernel import Kernel, Plugin
 
+import logging
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class Family:
@@ -183,7 +186,8 @@ def apply_consolidation(kernel: Kernel) -> Dict[str, object]:
                 fam.name, fam.description, fam.ops,
                 group=fam.group, op_docs=fam.op_docs, hide_members=True,
             )
-        except Exception:  # noqa: BLE001 - 单个家族失败不应阻断启动
+        except Exception as exc:  # noqa: BLE001 - 单个家族失败不应阻断启动
+            log.debug("apply_consolidation(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             continue
         if tool is not None:
             applied[fam.name] = len(fam.ops)

@@ -36,6 +36,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class RiskLayer(str, Enum):
     """审批风险分层。"""
@@ -166,7 +169,8 @@ class ApprovalPolicyTree:
                         reason=reason,
                         needs_human=(rule.layer == RiskLayer.ASK),
                         audit_event=event)
-            except Exception:  # noqa: BLE001 - 规则解析失败 -> 保守不匹配
+            except Exception as exc:  # noqa: BLE001 - 规则解析失败 -> 保守不匹配
+                log.debug("ApprovalPolicyTree.decide(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
 
         event = self._audit(action, self._default_layer,

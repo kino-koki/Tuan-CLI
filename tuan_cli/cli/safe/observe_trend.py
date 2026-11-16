@@ -14,6 +14,9 @@ from typing import Any, Dict, List
 from ...config.loader import home_dir
 from .._ui_singleton import console
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _cmd_watch(args: Any) -> int:
     """实时安全事件流 (tail -f 式) —— 差异化: Claude Code 无安全事件流。
@@ -37,7 +40,8 @@ def _cmd_watch(args: Any) -> int:
             cfg_sev = (Config().get("security", {}) or {}).get("watch_min_severity")
             if cfg_sev:
                 min_sev = str(cfg_sev)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_cmd_watch(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
     min_sev = str(min_sev)
     json_mode = bool(getattr(args, "json", False))

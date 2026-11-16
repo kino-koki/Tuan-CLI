@@ -21,10 +21,13 @@ import time
 from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from tuan_cli.ui.theme import BRAND_PRIMARY
+
 _wcswidth_impl: Optional[Callable[..., int]] = None
 try:
     from wcwidth import wcswidth as _wcswidth_impl  # 终端显示宽度 (prompt_toolkit 同源依赖)
-except Exception:  # noqa: BLE001
+except Exception as exc:  # noqa: BLE001
+    log.warning("模块顶层: 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
     pass
 
 
@@ -61,6 +64,9 @@ def _display_width(s: str) -> int:
 
 from ..i18n import t
 from ..core.prompt_tier import PROVIDER_CONTEXT_WINDOWS
+
+import logging
+log = logging.getLogger(__name__)
 
 _HAS_PT = False
 try:
@@ -169,8 +175,8 @@ if _HAS_PT:
 #   语义色 status_style: success→green / failure→red / attention→yellow,
 #   secondary_text_style: 前景与背景 0.6 blend 的弱化文字。
 # 法定署名见仓库根 NOTICE。
-_PRIMARY = "#63A8F8"      # Codex 主强调蓝 (CHATGPT_BLUE_200): 选中/强调/输入提示符
-_BLUE_DIM = "#63A8F8"     # 次级蓝: 与主强调同源 (Codex accent 不加粗时弱化)
+_PRIMARY = BRAND_PRIMARY      # Codex 主强调蓝 (CHATGPT_BLUE_200): 选中/强调/输入提示符
+_BLUE_DIM = BRAND_PRIMARY     # 次级蓝: 与主强调同源 (Codex accent 不加粗时弱化)
 
 # 通用界面 (对话 / 输入 / 底栏) 的深色字号层次
 _TEXT = "#E0E0E0"
@@ -178,12 +184,12 @@ _TEXT_STRONG = "#F5F5F5"
 _DIM = "#888888"
 _MUTED = "#6B6B6B"
 _BORDER = "#4A4A4A"       # 弱化边框: 暗灰, 与面板背景区分但不抢眼 (OpenCode 克制边框)
-_ACCENT = "#63A8F8"       # 辅助强调统一为 Codex 蓝
+_ACCENT = BRAND_PRIMARY   # 辅助强调统一为 Codex 蓝
 _BG_PANEL = "#1E2836"     # 面板背景色 (补全菜单用，与 _BORDER 同色系)
 _SUCCESS = "#4EC87E"
 _WARNING = "#E8A838"
 _ERROR = "#E85454"
-_ROLEUSER = "#63A8F8"     # 用户消息前缀强调改为 Codex accent (原暖金 #FFCB6B 移除)
+_ROLEUSER = BRAND_PRIMARY  # 用户消息前缀强调改为 Codex accent (原暖金 #FFCB6B 移除)
 _SHELL = "#BD93F9"
 
 try:
@@ -325,7 +331,8 @@ try:  # pragma: no cover - 仅 import 期副作用
         _subs = _known_subcommands(_head)
         if _subs:
             _SLASH_SUBCMDS[_head] = [(s, _bm.get(_head, "")) for s in sorted(_subs)]
-except Exception:  # noqa: BLE001 - 派生失败不影响其余补全
+except Exception as exc:  # noqa: BLE001 - 派生失败不影响其余补全
+    log.warning("模块顶层: 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
     pass
 
 
@@ -499,7 +506,8 @@ class _MeasuredWindow(Window):
             w = int(getattr(write_position, "width", 0) or 0)
             if w > 0:
                 self.measured_width = w
-        except Exception:  # noqa: BLE001 - 测量失败不影响渲染
+        except Exception as exc:  # noqa: BLE001 - 测量失败不影响渲染
+            log.warning("_MeasuredWindow.write_to_screen(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         super().write_to_screen(screen, mouse_handlers, write_position,
                                 parent_style, erase_bg, z_index)
@@ -528,7 +536,8 @@ class _TuiLogHandler(logging.Handler):
                 self._tui.append_log(f"  ⚠ {msg}", cls="class:warning")
             else:
                 self._tui.append_log(msg, cls="class:textdim")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_TuiLogHandler.emit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

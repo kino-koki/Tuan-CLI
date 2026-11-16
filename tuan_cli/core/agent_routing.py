@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, cast
 import inspect
+import logging
+log = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from ..config import Config
@@ -70,7 +73,8 @@ class AgentRoutingMixin:
             model = ""
         try:
             return resolve_exposure(raw, model)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("AgentRoutingMixin._resolve_exposure(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return DEFAULT_EXPOSURE
 
 

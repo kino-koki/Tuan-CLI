@@ -23,7 +23,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any
+from typing import Any, Dict, cast
 
 from ..core.proc import normalize_shell_command
 from ..core.security_utils import safe_exception_text
@@ -239,130 +239,166 @@ def _get_confirmer() -> MultiStageConfirm:
         return _confirmer
 
 
-def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
-    """执行前安全拦截。返回 None 表示放行; 返回字符串表示拦截原因 (已拒绝)。
+def _ask_confirm(confirm_fn: Any, warning: str) -> "tuple[bool, bool]":
+    """安全调用一次确认通道。
 
-    v2.0 安全架构: 工作区信任 → 黑名单 → 白名单 → 多阶段确认 → 网络门控 → 分类器兜底。
-    v2.1 增强: 所有安全决策通过 SecurityEventBus 记录审计。
+    返回 (用户是否同意, 确认通道是否故障)。通道异常时按 fail-closed 语义
+    返回 (False, True), 由调用方决定拒绝文案; 异常本身在此记录留痕。
     """
-    # 安全事件总线: 记录本次安全决策
-    def _emitSecurityEvent(event_type: str, payload: dict) -> None:
-        try:
-            from ..core.security_bus import SecurityEvent, get_security_bus
-            bus = get_security_bus()
-            bus.emit(SecurityEvent(
-                event_type=event_type,
-                timestamp=time.time(),
-                payload={"command": command[:300], **payload},
-                source="shell_guard",
-                severity=payload.get("severity", "info"),
-            ))
-        except Exception:  # noqa: BLE001
-            pass
+    try:
+        return bool(confirm_fn(warning)), False
+    except Exception as exc:  # noqa: BLE001 - 确认通道故障 ≠ 安全, 一律视为未同意
+        log.error("确认通道异常, 按 fail-closed 处理: %s", exc)
+        return False, True
 
-    # ======== 0) 工作区信任级别 (fail-closed, 仅当 ctx 提供 trust_level 时生效) ========
-    # 已有工作区信任系统长期未被执行路径 consult, 此处补齐门禁:
-    #   untrusted -> 直接拒绝 shell; unknown -> 必须确认; limited -> 非良性命令确认。
+
+# 阶段裁决哨兵: 「直接放行, 跳过剩余阶段」。与 None (无意见, 继续下一阶段) 区分。
+_ALLOW: Any = object()
+
+# 阶段函数共享状态: 在阶段之间传递派生数据 (如 gate_verdict 的确认要求、
+# safety_check 的判定结果), 避免阶段函数互相依赖或污染 ctx。
+GuardState = Dict[str, Any]
+
+
+def _emit_guard_security_event(command: str, event_type: str, payload: dict) -> None:
+    """安全事件总线: 记录本次安全决策 (审计失败不阻断裁决, 但落日志留痕)。"""
+    try:
+        from ..core.security_bus import SecurityEvent, get_security_bus
+        bus = get_security_bus()
+        bus.emit(SecurityEvent(
+            event_type=event_type,
+            timestamp=time.time(),
+            payload={"command": command[:300], **payload},
+            source="shell_guard",
+            severity=payload.get("severity", "info"),
+        ))
+    except Exception as exc:  # noqa: BLE001
+        # 审计失败不应阻断命令裁决, 但绝不能无声: 落日志留痕
+        log.warning("安全审计事件落盘失败 (event=%s): %s", event_type, exc)
+
+
+def _guard_trust(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 0: 工作区信任级别 (fail-closed, 仅当 ctx 提供 trust_level 时生效)。
+
+    已有工作区信任系统长期未被执行路径 consult, 此处补齐门禁:
+      untrusted -> 直接拒绝 shell; unknown -> 必须确认; limited -> 非良性命令确认。
+    """
     trust_level = getattr(ctx, "workspace_trust_level", None)
-    if trust_level is not None:
-        try:
-            from ..core.workspace_trust import consult_for_shell
-            taction, treason = consult_for_shell(trust_level, command)
-        except Exception as exc:  # noqa: BLE001
-            taction, treason = "deny", (f"信任级别裁决异常, 保守拒绝: "
-                                        f"{safe_exception_text(exc)}")
-        if taction == "deny":
-            ctx.safety_severity = "high"
-            return f"[已拦截] {treason}: {command}"
-        if taction == "confirm":
-            confirm_fn = getattr(ctx, "confirm", None)
-            if confirm_fn is not None:
-                try:
-                    if not confirm_fn(f"⚠️ {treason}: {command}\n确认执行?"):
-                        return f"[已拦截] 用户拒绝在 {trust_level} 工作区执行: {command}"
-                except Exception:  # noqa: BLE001
-                    return f"[已拦截] 确认通道异常, {trust_level} 工作区禁止执行: {command}"
-            else:
-                return f"[已拦截] 无确认通道, {trust_level} 工作区禁止执行: {command}"
+    if trust_level is None:
+        return None
+    try:
+        from ..core.workspace_trust import consult_for_shell
+        taction, treason = consult_for_shell(trust_level, command)
+    except Exception as exc:  # noqa: BLE001
+        taction, treason = "deny", (f"信任级别裁决异常, 保守拒绝: "
+                                    f"{safe_exception_text(exc)}")
+    if taction == "deny":
+        ctx.safety_severity = "high"
+        return f"[已拦截] {treason}: {command}"
+    if taction == "confirm":
+        confirm_fn = getattr(ctx, "confirm", None)
+        if confirm_fn is None:
+            return f"[已拦截] 无确认通道, {trust_level} 工作区禁止执行: {command}"
+        agreed, channel_error = _ask_confirm(
+            confirm_fn, f"⚠️ {treason}: {command}\n确认执行?")
+        if channel_error:
+            return f"[已拦截] 确认通道异常, {trust_level} 工作区禁止执行: {command}"
+        if not agreed:
+            return f"[已拦截] 用户拒绝在 {trust_level} 工作区执行: {command}"
+    return None
 
-    # TOCTOU 修复: 检查脚本文件内容 (在命令级红线检测之前)
+
+def _guard_script_content(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """TOCTOU 修复: 检查脚本文件内容 (在命令级红线检测之前)。"""
     workspace = getattr(ctx, 'workspace', '') or ''
-    script_check = _check_script_content(command, workspace)
-    if script_check is not None:
-        return script_check
+    return _check_script_content(command, workspace)
 
-    # ======== 0.5) Python AST 静态扫描 (检测 subprocess/os.system/eval/socket 等) ========
-    # 在正则红线检测之前, 对 Python 脚本做 AST 级精确分析, 补全正则无法区分的场景
-    # (如 os.path.join 不误判, os.system("rm -rf /") 精确识别)。
+
+def _guard_ast_scan(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 0.5: Python AST 静态扫描 (检测 subprocess/os.system/eval/socket 等)。
+
+    在正则红线检测之前, 对 Python 脚本做 AST 级精确分析, 补全正则无法区分的场景
+    (如 os.path.join 不误判, os.system("rm -rf /") 精确识别)。
+    """
+    workspace = getattr(ctx, 'workspace', '') or ''
     ast_result = _ast_scan_command(command, workspace)
-    if ast_result is not None and ast_result.findings:
-        if ast_result.blocked:
-            # critical: 硬拦截, 但允许用户人工放行 (与 hard_redline 一致)
-            summary = ast_result.summary()
-            ctx.safety_severity = "critical"
-            suffix = "" if ctx.confirm is not None else "\n(当前无确认通道, 无法请求人工放行)"
-            # YOLO 也要问: critical 意味着脚本里有 os.system("rm -rf /") 这类调用,
-            # 「自动批准」不等于「剥夺人的知情权」。与硬红线同口径。
-            if ctx.confirm is not None:
-                warning = (
-                    f"⚠️ Python AST 扫描检测到致命危险调用:\n{command}\n{summary}\n"
-                    "安全引擎建议不要执行。确认要人工放行吗? (仅本次生效)"
-                )
-                try:
-                    if ctx.confirm(warning):
-                        return None
-                except Exception as exc:  # noqa: BLE001
-                    log.debug("AST critical 人工放行确认异常, 维持拦截: %s", exc)
-            return f"[已拦截] Python AST 扫描检测到致命危险调用:\n{command}\n{summary}{suffix}"
-
-        if ast_result.needs_confirmation and ctx.confirm is not None:
-            # high: 需确认
-            summary = ast_result.summary()
-            ctx.safety_severity = "high"
+    if ast_result is None or not ast_result.findings:
+        return None
+    if ast_result.blocked:
+        # critical: 硬拦截, 但允许用户人工放行 (与 hard_redline 一致)
+        summary = ast_result.summary()
+        ctx.safety_severity = "critical"
+        suffix = "" if ctx.confirm is not None else "\n(当前无确认通道, 无法请求人工放行)"
+        # YOLO 也要问: critical 意味着脚本里有 os.system("rm -rf /") 这类调用,
+        # 「自动批准」不等于「剥夺人的知情权」。与硬红线同口径。
+        if ctx.confirm is not None:
             warning = (
-                f"⚠️ Python AST 扫描检测到高风险调用:\n{command}\n{summary}\n"
-                "确认要执行吗? (仅本次生效)"
+                f"⚠️ Python AST 扫描检测到致命危险调用:\n{command}\n{summary}\n"
+                "安全引擎建议不要执行。确认要人工放行吗? (仅本次生效)"
             )
             try:
-                if not ctx.confirm(warning):
-                    return f"[已拦截] 用户拒绝 AST 高风险操作: {command}"
+                if ctx.confirm(warning):
+                    return _ALLOW
             except Exception as exc:  # noqa: BLE001
-                log.error("AST 确认通道异常, fail-closed 拒绝: %s", exc)
-                return f"[已拦截] 确认通道异常, 安全降级拒绝: {command}"
-        elif ast_result.needs_confirmation:
-            # 无确认通道: fail-closed
-            summary = ast_result.summary()
-            ctx.safety_severity = "high"
-            return f"[已拦截] Python AST 扫描检测到高风险调用 (无确认通道):\n{command}\n{summary}"
+                log.debug("AST critical 人工放行确认异常, 维持拦截: %s", exc)
+        return f"[已拦截] Python AST 扫描检测到致命危险调用:\n{command}\n{summary}{suffix}"
 
-    # ======== 0.6) 脚本隔离优先 (模型写入的脚本默认进沙箱) ========
-    # 对脚本文件执行命令, 若 AST 扫描发现 high 级调用, 强制隔离执行 (非仅确认)。
-    # 设置 ctx._sandbox_verdict, 由后续 _route_sandbox_isolation() 消费。
+    if ast_result.needs_confirmation and ctx.confirm is not None:
+        # high: 需确认
+        summary = ast_result.summary()
+        ctx.safety_severity = "high"
+        warning = (
+            f"⚠️ Python AST 扫描检测到高风险调用:\n{command}\n{summary}\n"
+            "确认要执行吗? (仅本次生效)"
+        )
+        agreed, channel_error = _ask_confirm(ctx.confirm, warning)
+        if channel_error:
+            return f"[已拦截] 确认通道异常, 安全降级拒绝: {command}"
+        if not agreed:
+            return f"[已拦截] 用户拒绝 AST 高风险操作: {command}"
+    elif ast_result.needs_confirmation:
+        # 无确认通道: fail-closed
+        summary = ast_result.summary()
+        ctx.safety_severity = "high"
+        return f"[已拦截] Python AST 扫描检测到高风险调用 (无确认通道):\n{command}\n{summary}"
+    return None
+
+
+def _guard_script_isolation(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 0.6: 脚本隔离优先 (模型写入的脚本默认进沙箱)。
+
+    对脚本文件执行命令, 若 AST 扫描发现 high 级调用, 强制隔离执行 (非仅确认)。
+    设置 ctx._sandbox_verdict, 由后续 _route_sandbox_isolation() 消费。
+    """
     isolation = _check_script_isolation(command, ctx)
-    if isolation is not None:
-        try:
-            from ..sandbox.verdict import Action, Verdict
-            from ..sandbox.manager import SandboxManager
-            manager = SandboxManager.from_kernel(getattr(ctx, "kernel", None)) \
-                if getattr(ctx, "kernel", None) is not None else SandboxManager()
-            # 获取可用后端
-            from ..sandbox.backends import pick_backend
-            backend_name, backend_available = pick_backend(manager.policy.get("backend", "auto"))
-            verdict = Verdict(
-                action=Action.ISOLATE,
-                layer="script_isolation",
-                reason=f"模型脚本隔离执行: {isolation['summary']}",
-                severity="high",
-                isolate=True,
-                backend=backend_name,
-                enforced=backend_available,
-                backend_available=backend_available,
-            )
-            setattr(ctx, "_sandbox_verdict", verdict)
-        except Exception as exc:  # noqa: BLE001
-            log.debug("脚本隔离裁决设置异常 (非致命, 回落本地执行): %s", exc)
+    if isolation is None:
+        return None
+    try:
+        from ..sandbox.verdict import Action, Verdict
+        from ..sandbox.manager import SandboxManager
+        manager = SandboxManager.from_kernel(getattr(ctx, "kernel", None)) \
+            if getattr(ctx, "kernel", None) is not None else SandboxManager()
+        # 获取可用后端
+        from ..sandbox.backends import pick_backend
+        backend_name, backend_available = pick_backend(manager.policy.get("backend", "auto"))
+        verdict = Verdict(
+            action=Action.ISOLATE,
+            layer="script_isolation",
+            reason=f"模型脚本隔离执行: {isolation['summary']}",
+            severity="high",
+            isolate=True,
+            backend=backend_name,
+            enforced=backend_available,
+            backend_available=backend_available,
+        )
+        setattr(ctx, "_sandbox_verdict", verdict)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("脚本隔离裁决设置异常 (非致命, 回落本地执行): %s", exc)
+    return None
 
-    # 网络出口门控: 网络命令需经 NetworkGuard 评估 (数据外泄/远程执行检测)
+
+def _guard_network(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """网络出口门控: 网络命令需经 NetworkGuard 评估 (数据外泄/远程执行检测)。"""
     try:
         from ..core.network_guard import get_network_guard
         net_guard = get_network_guard()
@@ -383,95 +419,109 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
                 f"检测到的域名: {', '.join(net_decision.detected_domains) or '(无)'}\n"
                 "确认要执行网络操作吗? (仅本次生效)"
             )
-            try:
-                if not ctx.confirm(warning):
-                    return f"[已拦截] 用户拒绝网络操作: {command}"
-            except Exception as exc:  # noqa: BLE001
+            agreed, channel_error = _ask_confirm(ctx.confirm, warning)
+            if channel_error:
                 # fail-closed: 确认通道故障 ≠ 安全, 拒绝网络操作
-                log.error("网络确认通道异常, fail-closed 拒绝: %s", exc)
                 return f"[已拦截] 网络确认通道异常, 安全降级拒绝: {command}"
+            if not agreed:
+                return f"[已拦截] 用户拒绝网络操作: {command}"
     except Exception as exc:  # noqa: BLE001
         # fail-closed: 网络门控不可用时, 涉及网络的命令必须被拒绝,
         # 而非静默放行 (否则被禁用的门控形同虚设)。
         log.error("网络门控异常, fail-closed 拒绝: %s", exc)
         return f"[已拦截] 网络出口门控不可用, 安全降级拒绝: {command}"
+    return None
 
-    # ======== 1) 硬红线 (最高优先级, 永远拦截, 含 YOLO 模式) ========
-    # 使用 is_hard_redline: 仅文件系统/OS 级毁灭操作永不自动执行;
-    # SQL 破坏性操作 (DROP/DELETE/TRUNCATE) 不在此列, 走下方 step3/step4 的极端确认流程。
+def _guard_redline(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 1: 硬红线 (最高优先级, 永远拦截, 含 YOLO 模式)。
+
+    使用 is_hard_redline: 仅文件系统/OS 级毁灭操作永不自动执行;
+    SQL 破坏性操作 (DROP/DELETE/TRUNCATE) 不在此列, 走 step3/step4 的极端确认流程。
+    """
     from ..ext.security_gate import SecurityGate
     gate_verdict = SecurityGate(
         yolo=bool(getattr(ctx, "yolo", False)),
     ).decide_shell(command, confirmable_redline=True)
-    if gate_verdict.blocks():
-        if not any("致命红线" in reason for reason in gate_verdict.reasons):
-            ctx.safety_severity = gate_verdict.severity
-            _emitSecurityEvent("security.command.blocked", {
-                "reason": "; ".join(gate_verdict.reasons) or "security_gate_denied",
-                "severity": gate_verdict.severity,
-            })
-            return f"[已拦截] 安全闸门拒绝执行: {command}\n原因: " + "; ".join(
-                gate_verdict.reasons
-            )
-        reasons: list[str] = []
-        previews: list[str] = []
-        svc = ctx.kernel.get("safety_check") if ctx.kernel else None
-        if svc is not None:
-            try:
-                verdict = svc.check(ctx, command)
-                reasons = verdict.get("reasons") or []
-                previews = verdict.get("safe_preview") or []
-            except Exception as exc:  # noqa: BLE001
-                log.debug("safety_check 调用失败 (红线拦截不受影响): %s", exc)
-        advice = _risk_to_advice(reasons, previews)
-        ctx.safety_severity = "critical"
-        # 「不自动执行」≠「不告诉人」。
-        # 红线命令在任何模式下都**不得自动执行**, 但只要有确认通道, 就必须把决定权
-        # 交回给人 —— 此前这里直接 return 掉, 用户连"我确认要执行"都说不出口,
-        # 于是表现为「开了 yolo 也被拦、而且没有任何选择」。安全性质不变:
-        # 无人确认时一律拒绝; YOLO 也不会让它自动跑。
-        if ctx.confirm is not None:
-            warning = (
-                "⚠️ 命中致命操作红线, 自动执行已被禁止。\n"
-                f"{command}\n{advice}\n"
-                "若确需执行 (确认文件系统/OS 已妥善备份), 可人工放行本次操作。"
-            )
-            try:
-                if ctx.confirm(warning):
-                    _emitSecurityEvent("security.command.blocked", {
-                        "reason": "hard_redline_released_by_human",
-                        "severity": "critical",
-                    })
-                    return None
-            except Exception as exc:  # noqa: BLE001 - 确认异常维持拦截 (fail-closed)
-                log.debug("硬红线人工放行确认异常, 维持拦截: %s", exc)
-            _emitSecurityEvent("security.command.blocked", {"reason": "hard_redline", "severity": "critical"})
-            return f"[已拦截] 用户未放行致命操作红线命令: {command}\n{advice}"
-        # 无确认通道 (headless / 无人值守): fail-closed, 且明确告知原因
-        _emitSecurityEvent("security.command.blocked", {"reason": "hard_redline", "severity": "critical"})
-        return (f"[已拦截] 命中致命操作红线, 任何模式下都不会自动执行: {command}\n"
-                + advice + "\n(当前无确认通道, 无法请求人工放行)")
-    gate_requires_confirmation = gate_verdict.needs_confirm()
+    if not gate_verdict.blocks():
+        state["gate_requires_confirmation"] = gate_verdict.needs_confirm()
+        return None
+    if not any("致命红线" in reason for reason in gate_verdict.reasons):
+        ctx.safety_severity = gate_verdict.severity
+        _emit_guard_security_event(command, "security.command.blocked", {
+            "reason": "; ".join(gate_verdict.reasons) or "security_gate_denied",
+            "severity": gate_verdict.severity,
+        })
+        return f"[已拦截] 安全闸门拒绝执行: {command}\n原因: " + "; ".join(
+            gate_verdict.reasons
+        )
+    reasons: list[str] = []
+    previews: list[str] = []
+    svc = ctx.kernel.get("safety_check") if ctx.kernel else None
+    if svc is not None:
+        try:
+            verdict = svc.check(ctx, command)
+            reasons = verdict.get("reasons") or []
+            previews = verdict.get("safe_preview") or []
+        except Exception as exc:  # noqa: BLE001
+            log.debug("safety_check 调用失败 (红线拦截不受影响): %s", exc)
+    advice = _risk_to_advice(reasons, previews)
+    ctx.safety_severity = "critical"
+    # 「不自动执行」≠「不告诉人」。
+    # 红线命令在任何模式下都**不得自动执行**, 但只要有确认通道, 就必须把决定权
+    # 交回给人 —— 此前这里直接 return 掉, 用户连"我确认要执行"都说不出口,
+    # 于是表现为「开了 yolo 也被拦、而且没有任何选择」。安全性质不变:
+    # 无人确认时一律拒绝; YOLO 也不会让它自动跑。
+    if ctx.confirm is not None:
+        warning = (
+            "⚠️ 命中致命操作红线, 自动执行已被禁止。\n"
+            f"{command}\n{advice}\n"
+            "若确需执行 (确认文件系统/OS 已妥善备份), 可人工放行本次操作。"
+        )
+        try:
+            if ctx.confirm(warning):
+                _emit_guard_security_event(command, "security.command.blocked", {
+                    "reason": "hard_redline_released_by_human",
+                    "severity": "critical",
+                })
+                return _ALLOW
+        except Exception as exc:  # noqa: BLE001 - 确认异常维持拦截 (fail-closed)
+            log.debug("硬红线人工放行确认异常, 维持拦截: %s", exc)
+        _emit_guard_security_event(command, "security.command.blocked", {"reason": "hard_redline", "severity": "critical"})
+        return f"[已拦截] 用户未放行致命操作红线命令: {command}\n{advice}"
+    # 无确认通道 (headless / 无人值守): fail-closed, 且明确告知原因
+    _emit_guard_security_event(command, "security.command.blocked", {"reason": "hard_redline", "severity": "critical"})
+    return (f"[已拦截] 命中致命操作红线, 任何模式下都不会自动执行: {command}\n"
+            + advice + "\n(当前无确认通道, 无法请求人工放行)")
 
-    # ======== 1.5) 会话级 disallowedTools (--disallowed-tools) ========
-    # 优先级高于白名单: 用户显式禁用的命令, 即便在白名单/YOLO 下也不放行。
+
+def _guard_disallowed(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 1.5: 会话级 disallowedTools (--disallowed-tools)。
+
+    优先级高于白名单: 用户显式禁用的命令, 即便在白名单/YOLO 下也不放行。
+    """
     _session_denied = getattr(ctx, "denied_tools", None)
     if _session_denied is not None \
             and getattr(_session_denied, "denies_bash", None) is not None \
             and _session_denied.denies_bash(command):
-        _emitSecurityEvent("security.command.blocked", {
+        _emit_guard_security_event(command, "security.command.blocked", {
             "reason": "disallowed_tools", "severity": "high"})
         return f"[已禁用] 命中本会话 disallowedTools, 不会执行: {command}\n" \
                f"作用域: {_session_denied.scopes_text()}"
+    return None
 
-    # ======== 2) 白名单检查 (Trae 模式: 用户同意后自动执行) ========
-    # 白名单优先级永远低于黑名单: 上面已经检查过红线, 能到这里说明不在红线中
+
+def _guard_whitelist(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 2: 白名单检查 (Trae 模式: 用户同意后自动执行)。
+
+    白名单优先级永远低于黑名单: 红线已在上游检查过, 能到这里说明不在红线中。
+    命中白名单且无高危模式 -> 返回 _ALLOW 直接放行 (跳过后续阶段)。
+    """
     wl_manager = _get_whitelist_manager()
     # 会话级 allowedTools (--allowedTools): 作为白名单的"额外加分", 优先级仍低于黑名单/红线。
     session_allowed = getattr(ctx, "allowed_tools", None)
     _session_match = bool(session_allowed is not None
                           and getattr(session_allowed, "allows_bash", lambda c: False)(command))
-    if not gate_requires_confirmation and (
+    if not state.get("gate_requires_confirmation", False) and (
             wl_manager.is_whitelisted(command) or _session_match):
         # 白名单命中, 但仍需检查是否包含危险子模式 (防御纵深)
         warning_level = get_warning_level(command)
@@ -485,41 +535,52 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
                     return f"[已拦截] 用户拒绝执行极高风险命令: {command}"
             else:
                 return f"[已拦截] 无确认通道, 极高风险命令无法自动执行: {command}"
-        return None  # 白名单命中且无高危模式 → 放行
+        return _ALLOW  # 白名单命中且无高危模式 → 放行
+    return None
 
-    # ======== 2.5) 严格模式兜底 (模型无关): 非良性 + 低/中危直接交给人工确认 ========
-    # 旧逻辑的洞: 一条「非红线、非白名单、warning_level 又偏低」的命令会一路走到
-    # return None 自动放行, 执行与否全凭模型判断 —— 弱模型(3B+)被注入/诱导时,
-    # 完全可能发出"从未见过但危险"的低危命令而被放行。这里把执行决定权从模型
-    # 挪到人手里: 非良性命令强制人工确认(仅本次), 无确认通道则 fail-closed 拒绝。
-    # 白名单命令已在 step2 放行跳过此处; 高危(>=3)仍走 step3 多级确认, 避免重复弹窗。
+
+def _guard_strict_mode(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 2.5: 严格模式兜底 (模型无关): 非良性 + 低/中危直接交给人工确认。
+
+    旧逻辑的洞: 一条「非红线、非白名单、warning_level 又偏低」的命令会一路走到
+    自动放行, 执行与否全凭模型判断 —— 弱模型(3B+)被注入/诱导时, 完全可能发出
+    "从未见过但危险"的低危命令而被放行。这里把执行决定权从模型挪到人手里:
+    非良性命令强制人工确认(仅本次), 无确认通道则 fail-closed 拒绝。
+    白名单命令已在 step2 放行跳过此处; 高危(>=3)仍走 step3 多级确认, 避免重复弹窗。
+    """
     warning_level_now = get_warning_level(command)
     # yolo 已预先授权 → 关闭严格兜底 (安全由红线 + 极高危硬拦 + 沙箱托底)
-    if _strict_shell_enabled(bool(getattr(ctx, "yolo", False))):
-        try:
-            benign = is_benign_dev_command(command)
-        except Exception:  # noqa: BLE001 - 无法评估按非良性处理 (fail-closed)
-            benign = False
-        if not benign:
-            # 非良性命令一律交给人工: 低/中危 (warning<3) 且当前那一步是最后的放行点,
-            # 弹 1 次确认; warning>=3 交由下方 step3 的多级确认兜底 (不在此重复弹窗)。
-            # 关键: 无确认通道 (无人值守/headless) 时对所有非良性命令直接 fail-closed 拒绝,
-            # 堵住旧洞 —— 高危非良性命令 (kill -9 / docker rm -f 等) 无通道时过去只是
-            # 「附建议即自动执行」, 弱模型(3B+)被诱导即可绕过。现在一律要求人类在场。
-            if ctx.confirm is None:
-                return (f"[已拦截] 严格模式(TUAN_STRICT_SHELL): 无确认通道, "
-                        f"非良性命令禁止自动执行:\n{command}")
-            if warning_level_now < 3:
-                try:
-                    if not ctx.confirm(
-                        f"⚠️ 严格模式(TUAN_STRICT_SHELL): 非良性命令需人工确认(仅本次):\n"
-                        f"{command}\n确认执行?"
-                    ):
-                        return f"[已拦截] 用户在严格模式拒绝非良性命令: {command}"
-                except Exception:  # noqa: BLE001
-                    return f"[已拦截] 严格模式确认通道异常, 保守拒绝执行: {command}"
+    if not _strict_shell_enabled(bool(getattr(ctx, "yolo", False))):
+        return None
+    try:
+        benign = is_benign_dev_command(command)
+    except Exception:  # noqa: BLE001 - 无法评估按非良性处理 (fail-closed)
+        benign = False
+    if benign:
+        return None
+    # 非良性命令一律交给人工: 低/中危 (warning<3) 且当前那一步是最后的放行点,
+    # 弹 1 次确认; warning>=3 交由下方 step3 的多级确认兜底 (不在此重复弹窗)。
+    # 关键: 无确认通道 (无人值守/headless) 时对所有非良性命令直接 fail-closed 拒绝,
+    # 堵住旧洞 —— 高危非良性命令 (kill -9 / docker rm -f 等) 无通道时过去只是
+    # 「附建议即自动执行」, 弱模型(3B+)被诱导即可绕过。现在一律要求人类在场。
+    if ctx.confirm is None:
+        return (f"[已拦截] 严格模式(TUAN_STRICT_SHELL): 无确认通道, "
+                f"非良性命令禁止自动执行:\n{command}")
+    if warning_level_now < 3:
+        agreed, channel_error = _ask_confirm(
+            ctx.confirm,
+            f"⚠️ 严格模式(TUAN_STRICT_SHELL): 非良性命令需人工确认(仅本次):\n"
+            f"{command}\n确认执行?")
+        if channel_error:
+            return f"[已拦截] 严格模式确认通道异常, 保守拒绝执行: {command}"
+        if not agreed:
+            return f"[已拦截] 用户在严格模式拒绝非良性命令: {command}"
+    return None
 
-    # ======== 3) 多阶段确认 (非白名单命令) ========
+
+def _guard_multistage_confirm(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 3: 多阶段确认 (非白名单命令)。"""
+    gate_requires_confirmation = state.get("gate_requires_confirmation", False)
     warning_level = get_warning_level(command)
     if warning_level >= 5:
         # 极高危: 一律要人工确认 —— **YOLO 也不例外**。
@@ -549,13 +610,16 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
                 return f"[已拦截] 用户在第3次警告中拒绝执行: {command}"
         elif gate_requires_confirmation:
             return f"[已拦截] 高风险操作需人工确认, 当前无确认通道: {command}"
+    return None
 
-    # ======== 4) 继续原来的 safety_check 流程 ========
+
+def _guard_safety_check(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 4: safety_check 流程 (kernel/safety_check 缺失或故障时 _ALLOW 短路)。"""
     if ctx.kernel is None:
-        return None
+        return _ALLOW
     svc = ctx.kernel.get("safety_check")
     if svc is None:
-        return None
+        return _ALLOW
     try:
         verdict = svc.check(ctx, command)
     except Exception as exc:  # noqa: BLE001
@@ -563,7 +627,8 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
         # strict_mode 已在上游挡住非良性命令, 但 safety_check 故障时
         # 仍应记录异常, 避免高危命令因安全组件故障而溜过。
         log.error("safety_check 异常 (不再静默放行): %s", exc)
-        return None
+        return _ALLOW
+    state["safety_verdict"] = verdict
     risk = (verdict.get("risk") or "none").lower()
     block = bool(verdict.get("block"))
     reasons = verdict.get("reasons") or []
@@ -578,7 +643,7 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
             )
             try:
                 if ctx.confirm(warning):
-                    return None
+                    return _ALLOW
             except Exception as exc:  # noqa: BLE001
                 log.debug("critical 人工放行确认异常, 维持拦截: %s", exc)
         suffix = "" if ctx.confirm is not None else "\n(当前无确认通道, 无法请求人工放行)"
@@ -587,9 +652,15 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
     if risk in ("high", "medium") and (reasons or previews):
         ctx.safety_severity = risk
         ctx.safety_advice = _risk_to_advice(reasons, previews)
+    return None
 
-    # ======== 5) 独立安全分类器兜底 (Claude Code 分类器架构) ========
-    # safety_engine 未拦截时, 由分类器做语义级评估, 捕获模式匹配遗漏的新型攻击
+
+def _guard_classifier(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 5: 独立安全分类器兜底 (Claude Code 分类器架构)。
+
+    safety_engine 未拦截时, 由分类器做语义级评估, 捕获模式匹配遗漏的新型攻击。
+    """
+    verdict = state["safety_verdict"]
     try:
         from ..core.security_classifier import get_classifier
         classifier = get_classifier()
@@ -615,31 +686,35 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
                     f"原因: {'; '.join(cls_result.reasons[:3])}\n"
                     "确认要执行吗? (仅本次生效)"
                 )
-                try:
-                    if not ctx.confirm(warning):
-                        return f"[已拦截] 用户拒绝分类器建议确认的操作: {command}"
-                except Exception as exc:  # noqa: BLE001
+                agreed, channel_error = _ask_confirm(ctx.confirm, warning)
+                if channel_error:
                     # fail-closed: 确认通道故障 ≠ 安全
-                    log.error("分类器确认通道异常, fail-closed 拒绝: %s", exc)
                     return f"[已拦截] 分类器确认通道异常, 安全降级拒绝: {command}"
+                if not agreed:
+                    return f"[已拦截] 用户拒绝分类器建议确认的操作: {command}"
     except Exception as exc:  # noqa: BLE001
         # fail-closed: 安全分类器是最后一道兜底防线, 其异常不应
         # 让命令静默通过 —— 记录异常并拒绝。
         log.error("安全分类器异常, fail-closed 拒绝: %s", exc)
         return f"[已拦截] 安全分类器不可用, 安全降级拒绝: {command}"
+    return None
 
-    # ======== 6) 污点追踪外泄检测器 (v0.4.0 新增, 多路防御第四路) ========
-    # 与规则引擎 / 语义分类器互补: 做**数据流分析**, 追踪「敏感源 → 外部汇」。
-    # 典型漏判被此路捕获: `cp id_rsa /tmp/` (本地外泄前落盘)、
-    # `curl -d @~/.ssh/id_rsa` (看似无管道实则上传)、`pbcopy < ~/.aws/credentials`。
-    # 设计: 本模块只收紧 (allow → confirm/deny), 不放行; detector 内部 fail-closed,
-    # 异常返回 confirm, 不会静默通过。
+
+def _guard_exfil(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 6: 污点追踪外泄检测器 (v0.4.0 新增, 多路防御第四路)。
+
+    与规则引擎 / 语义分类器互补: 做**数据流分析**, 追踪「敏感源 → 外部汇」。
+    典型漏判被此路捕获: `cp id_rsa /tmp/` (本地外泄前落盘)、
+    `curl -d @~/.ssh/id_rsa` (看似无管道实则上传)、`pbcopy < ~/.aws/credentials`。
+    设计: 本模块只收紧 (allow → confirm/deny), 不放行; detector 内部 fail-closed,
+    异常返回 confirm, 不会静默通过。
+    """
     from ..core.taint_exfil import detect_exfiltration as _detect_exfil
     exfil_verdict = _detect_exfil(command)
     if exfil_verdict.blocks():
         advice = "; ".join(exfil_verdict.reasons[:3])
         ctx.safety_severity = exfil_verdict.severity
-        _emitSecurityEvent("security.command.blocked", {
+        _emit_guard_security_event(command, "security.command.blocked", {
             "reason": "; ".join(exfil_verdict.reasons) or "taint_exfil_denied",
             "severity": exfil_verdict.severity,
         })
@@ -658,17 +733,54 @@ def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
                 f"疑似外泄路径: 源={list(exfil_verdict.sources)}, 汇={list(exfil_verdict.sinks)}\n"
                 "确认要执行吗? (仅本次生效)"
             )
-            try:
-                if not ctx.confirm(warning):
-                    _emitSecurityEvent("security.command.blocked", {
-                        "reason": "taint_exfil_rejected_by_human",
-                        "severity": exfil_verdict.severity,
-                    })
-                    return f"[已拦截] 用户拒绝污点追踪建议确认的操作: {command}"
-            except Exception as exc:  # noqa: BLE001
-                log.error("污点追踪确认通道异常, fail-closed 拒绝: %s", exc)
+            agreed, channel_error = _ask_confirm(ctx.confirm, warning)
+            if channel_error:
                 return f"[已拦截] 污点追踪确认通道异常, 安全降级拒绝: {command}"
+            if not agreed:
+                _emit_guard_security_event(command, "security.command.blocked", {
+                    "reason": "taint_exfil_rejected_by_human",
+                    "severity": exfil_verdict.severity,
+                })
+                return f"[已拦截] 用户拒绝污点追踪建议确认的操作: {command}"
+    return None
 
+
+# 执行前护栏的完整阶段流水线 (按优先级排序; 编号见各阶段 docstring)
+_GUARD_STAGES = (
+    _guard_trust,               # 阶段 0   工作区信任
+    _guard_script_content,      # TOCTOU  脚本内容检查
+    _guard_ast_scan,            # 阶段 0.5 AST 静态扫描
+    _guard_script_isolation,    # 阶段 0.6 脚本隔离裁决
+    _guard_network,             # 网络出口门控
+    _guard_redline,             # 阶段 1   硬红线
+    _guard_disallowed,          # 阶段 1.5 会话级 disallowedTools
+    _guard_whitelist,           # 阶段 2   白名单 (命中可 _ALLOW 短路)
+    _guard_strict_mode,         # 阶段 2.5 严格模式兜底
+    _guard_multistage_confirm,  # 阶段 3   多阶段确认
+    _guard_safety_check,        # 阶段 4   safety_check (缺失时 _ALLOW 短路)
+    _guard_classifier,          # 阶段 5   语义分类器兜底
+    _guard_exfil,               # 阶段 6   污点追踪外泄检测
+)
+
+
+def _pre_exec_guard(ctx: ToolContext, command: str) -> str | None:
+    """执行前安全拦截。返回 None 表示放行; 返回字符串表示拦截原因 (已拒绝)。
+
+    v2.0 安全架构: 工作区信任 → 黑名单 → 白名单 → 多阶段确认 → 网络门控 → 分类器兜底。
+    v2.1 增强: 所有安全决策通过 SecurityEventBus 记录审计。
+
+    实现按编号阶段拆分为独立函数 (见 _GUARD_STAGES): 任一阶段返回拦截字符串
+    即终止并拒绝; 返回 _ALLOW 哨兵即直接放行 (跳过剩余阶段); 返回 None 继续
+    下一阶段。阶段间派生状态经 state dict 传递, 不污染 ctx。
+    """
+    state: GuardState = {}
+    for stage in _GUARD_STAGES:
+        verdict = stage(ctx, command, state)
+        if verdict is _ALLOW:
+            return None
+        if verdict is not None:
+            # 阶段契约: 非 _ALLOW 的非空裁决必为拦截字符串
+            return cast(str, verdict)
     return None
 
 
@@ -693,7 +805,8 @@ def _kill_proc_tree(proc: subprocess.Popen) -> None:
     except Exception:  # noqa: BLE001
         try:
             proc.kill()
-        except Exception:
+        except Exception as exc:
+            log.warning("_kill_proc_tree(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

@@ -17,6 +17,9 @@ from typing import Any
 from ..core.kernel import Kernel, Plugin, plugin
 from . import ensure_builtin_loaded, patch_base
 
+import logging
+log = logging.getLogger(__name__)
+
 
 @plugin(
     "kernel_patch",
@@ -46,5 +49,6 @@ class KernelPatchPlugin(Plugin):
             mgr = patch_base.get_manager()
             reverted = mgr.revert_all()
             kernel.emit("patch.deactivated", {"name": self.name, "reverted": reverted})
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("KernelPatchPlugin.deactivate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass

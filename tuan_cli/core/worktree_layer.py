@@ -27,6 +27,9 @@ from typing import List, Optional
 
 from ..hooks import lifecycle as _LC
 from ..sandbox.worktree_boundary import assert_worktree_target, sanitize_git_env
+import logging
+log = logging.getLogger(__name__)
+
 
 
 # ---- OP-1: 子代理 ephemeral worktree 常量 ----------------------------------
@@ -184,7 +187,8 @@ class WorktreeLayer:
             return False
         try:
             r = self._git(["rev-parse", "--show-toplevel"], check=False)
-        except Exception:  # noqa: BLE001  (TimeoutExpired / FileNotFoundError 等)
+        except Exception as exc:  # noqa: BLE001  (TimeoutExpired / FileNotFoundError 等)
+            log.debug("WorktreeLayer.is_git_repo(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return False
         if r.returncode != 0:
             return False
@@ -193,7 +197,8 @@ class WorktreeLayer:
             return False
         try:
             return Path(toplevel).resolve() == self.workspace
-        except Exception:  # noqa: BLE001  (路径解析异常兜底)
+        except Exception as exc:  # noqa: BLE001  (路径解析异常兜底)
+            log.debug("WorktreeLayer.is_git_repo(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return False
 
     def _require_git(self) -> None:

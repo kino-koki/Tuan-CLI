@@ -19,6 +19,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 #: 默认缓存有效期 (秒) —— 契约 C-5.5 固定 1 小时
 DEFAULT_TTL = 3600.0
 
@@ -60,7 +63,8 @@ class ResponseCache:
             tmp = self.path.with_suffix(".tmp")
             tmp.write_text(json.dumps(self._mem, ensure_ascii=False), encoding="utf-8")
             tmp.replace(self.path)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ResponseCache._flush(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # ------------------------------------------------------------ 键生成

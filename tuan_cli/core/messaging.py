@@ -27,6 +27,9 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+import logging
+log = logging.getLogger(__name__)
+
 
 
 # ================================================================ 数据结构
@@ -271,7 +274,8 @@ class MessageBus:
                 except Exception:
                     remaining.append(line)
 
-        except Exception:
+        except Exception as exc:
+            log.debug("MessageBus.receive(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
 
         # 写回 (已标记已读的)
@@ -295,9 +299,11 @@ class MessageBus:
                     data = json.loads(line)
                     if not data.get("read", False):
                         count += 1
-                except Exception:
+                except Exception as exc:
+                    log.warning("MessageBus.unread_count(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
-        except Exception:
+        except Exception as exc:
+            log.warning("MessageBus.unread_count(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return count
 
@@ -310,7 +316,8 @@ class MessageBus:
         try:
             lines = queue_path.read_text(encoding="utf-8").splitlines()
             count = sum(1 for l in lines if l.strip())
-        except Exception:
+        except Exception as exc:
+            log.warning("MessageBus.discard_messages(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         from .atomicio import atomic_write_text
         atomic_write_text(queue_path, "")

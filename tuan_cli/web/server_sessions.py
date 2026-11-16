@@ -12,6 +12,9 @@ from ._common import (
     _serializable,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class ServerSessionsMixin:
     # ---- 跨 mixin 共享实例状态 (纯声明; 由 WebServer.__init__ 初始化) ----
@@ -36,7 +39,8 @@ class ServerSessionsMixin:
                     _SESSIONS[sid] = s
                     loaded += 1
             return loaded
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ServerSessionsMixin.load_sessions(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 0
 
 
@@ -49,7 +53,8 @@ class ServerSessionsMixin:
             tmp = self._session_file.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
             tmp.replace(self._session_file)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerSessionsMixin.save_sessions(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -75,7 +80,8 @@ class ServerSessionsMixin:
             tmp = self._settings_file.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
             tmp.replace(self._settings_file)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ServerSessionsMixin.save_settings(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

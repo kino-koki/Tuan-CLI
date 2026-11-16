@@ -24,6 +24,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..memory.sessions import SessionStore
+import logging
+log = logging.getLogger(__name__)
+
 
 # 白名单提及: `@session:<id>` / `@session:<id>#<n>` / `@#<num>` (空格/换行/结尾可选)
 _MENTION_RE = re.compile(
@@ -214,7 +217,8 @@ class CrossSessionResolver:
                 summary += "\n工具调用: " + json.dumps(
                     [{"name": tc.get("function", {}).get("name"), "args": tc.get("function", {}).get("arguments") or ""}
                      for tc in tcs], ensure_ascii=False)[:1200]
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("CrossSessionResolver._fill_message(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         mention.summary = summary
         mention.resolved = True
@@ -353,9 +357,11 @@ class CrossSessionResolver:
                                     content = str(msg.get("content", ""))
                                 if query_lower in content.lower():
                                     score += 1
-                            except Exception:
+                            except Exception as exc:
+                                log.debug("CrossSessionResolver.search(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                                 continue
-                except Exception:
+                except Exception as exc:
+                    log.warning("CrossSessionResolver.search(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
             if score > 0:
@@ -418,9 +424,11 @@ class CrossSessionResolver:
                         tool = data.get("name", data.get("tool_name", ""))
                         if tool:
                             by_tool[tool] = by_tool.get(tool, 0) + 1
-                    except Exception:
+                    except Exception as exc:
+                        log.debug("CrossSessionResolver._read_events_summary(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         continue
-        except Exception:
+        except Exception as exc:
+            log.warning("CrossSessionResolver._read_events_summary(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
         return {"total": total, "by_type": by_type, "by_tool": by_tool}

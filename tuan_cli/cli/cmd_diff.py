@@ -28,6 +28,9 @@ from typing import Any, Dict, List, Optional
 from ._ui_singleton import console
 from .parser import _register_command
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _resolve_workspace() -> Path:
     from ..config import home_dir
@@ -94,7 +97,8 @@ def _summarize(events: List[Dict[str, Any]]) -> Dict[str, Any]:
                 added += a
                 removed += r
                 files += f
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_summarize(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             bf = by_file.setdefault(path, {"edits": 0, "added": 0, "removed": 0})
             bf["edits"] += 1

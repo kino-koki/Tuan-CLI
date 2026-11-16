@@ -92,6 +92,9 @@ from tuan_cli.core.safe_text import (  # noqa: E402
 from . import exit_semantics as XS
 from . import triggers as TR
 
+import logging
+log = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------- 接线清单
 # **只列真正挂了生产代码的事件**。每加一行，必须在
 # tests/test_b3xiii_lifecycle.py 里有对应的端到端真跑验证（真跑真实
@@ -224,12 +227,14 @@ def _resolve_hooks(hooks: Any, owner: Optional[str]) -> Tuple[Any, str, Optional
             return None, "owner_not_registered", "owner_not_registered"
         try:
             h = TR.resolve_session(owner)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("_resolve_hooks(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None, "provider_error", "provider_error"
         if h is None:
             try:
                 TR._bump_owner_miss(owner)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_resolve_hooks(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return None, "owner_not_registered", "owner_not_registered"
         return h, "owner", None
@@ -241,7 +246,8 @@ def _resolve_hooks(hooks: Any, owner: Optional[str]) -> Tuple[Any, str, Optional
     try:
         provider = TR.get_default_hooks_provider()
         h = provider() if provider is not None else None
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_resolve_hooks(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None, "provider_error", "provider_error"
     if h is None:
         return None, "no_hooks", None

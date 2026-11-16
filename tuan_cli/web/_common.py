@@ -35,6 +35,9 @@ from urllib.parse import urlparse, parse_qs
 
 from .frontend import FRONTEND_HTML
 
+import logging
+log = logging.getLogger(__name__)
+
 _ASSET_DIR = Path(__file__).resolve().parent / "assets"
 
 _ASSET_CACHE: Dict[str, bytes] = {}  # 读一次缓存, 静态资源体积小但读盘更省
@@ -100,6 +103,7 @@ def analyze_command(command: str) -> Dict[str, Any]:
     try:
         return safety_engine().score({"command": command, "type": "shell"}) or {}
     except Exception as exc:  # noqa: BLE001
+        log.debug("analyze_command(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"risk": "unknown", "score": 0, "block": False,
                 "reasons": [f"安全评估不可用: {exc}"], "suggestions": [],
                 "blast_radius": {"files": [], "services": [], "data": []}}
@@ -243,7 +247,8 @@ def web_strings() -> Dict[str, str]:
         mod = importlib.import_module(f"tuan_cli.i18n.locales.{code}")
         tr = getattr(mod, "TRANSLATIONS", {}) or {}
         return {k: v for k, v in tr.items() if k.startswith("web.")}
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("web_strings(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {}
 
 def _list_dir(base: Path, target: Path, limit: int = 400) -> List[Dict[str, Any]]:

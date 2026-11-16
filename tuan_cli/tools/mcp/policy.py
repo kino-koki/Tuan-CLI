@@ -321,6 +321,7 @@ class MCPPolicyStore:
             decision = getattr(result, "decision", None) or ApprovalDecision.ABORT
             granted = bool(getattr(result, "granted", False))
         except Exception as exc:  # noqa: BLE001 - 通道异常 = 未获授权
+            log.debug("MCPPolicyStore.request_grant(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {
                 "granted": False, "server": server, "tier": tier,
                 "reason": f"审批通道异常 (fail-closed): {type(exc).__name__}: {exc}",
@@ -368,6 +369,7 @@ class MCPPolicyStore:
                 policy = self.get(server)
                 mode = "session_only"
         except Exception as exc:  # noqa: BLE001
+            log.debug("MCPPolicyStore.request_grant(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"granted": False, "server": server, "tier": tier,
                     "reason": f"授予失败 (fail-closed): {type(exc).__name__}: {exc}",
                     "card": req.to_dict()}
@@ -452,7 +454,8 @@ class MCPPolicyStore:
                     host = urlparse(v if "://" in v else "https://" + v).hostname
                     if host:
                         out.append(host.lower())
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("MCPPolicyStore._extract_domains(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     continue
             elif isinstance(v, dict):
                 out.extend(MCPPolicyStore._extract_domains(v))

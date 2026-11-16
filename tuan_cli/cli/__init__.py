@@ -14,6 +14,9 @@ from pathlib import Path
 
 from .parser import main as _parser_main
 
+import logging
+log = logging.getLogger(__name__)
+
 __all__ = ["main"]
 
 # 更名前的旧命令名 —— **已彻底废弃**, 不再是入口点 (见 pyproject [project.scripts])。
@@ -30,7 +33,8 @@ def _reject_legacy_command_name() -> None:
     """
     try:
         prog = os.path.basename(sys.argv[0] or "").lower()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_reject_legacy_command_name(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return
     if prog.endswith(".exe"):
         prog = prog[:-4]
@@ -63,7 +67,8 @@ def _enter_default_workspace(args: list) -> None:
         from ..paths import maybe_enter_default_workspace
 
         maybe_enter_default_workspace(args)
-    except Exception:  # noqa: BLE001 - 位置选择不可阻塞启动
+    except Exception as exc:  # noqa: BLE001 - 位置选择不可阻塞启动
+        log.warning("_enter_default_workspace(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 

@@ -14,6 +14,9 @@ from typing import Any
 
 from ._ui_singleton import ui
 
+import logging
+log = logging.getLogger(__name__)
+
 _MAX_PREVIEW_LINES = 40
 
 
@@ -69,7 +72,8 @@ def run_bang_command(agent: Any, text: str, *, display: bool = True) -> str:
                 f"$ {command}\n{result}"
             ),
         })
-    except Exception:  # noqa: BLE001 - 注入失败不应阻断命令本身的展示
+    except Exception as exc:  # noqa: BLE001 - 注入失败不应阻断命令本身的展示
+        log.warning("run_bang_command(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
     return f"$ {command}\n{result}"

@@ -10,6 +10,9 @@ import platform
 import subprocess
 from typing import Any, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _run_cmd(cmd: Any, timeout: Any = 5) -> Tuple[int, str]:
     """执行命令, 返回 (returncode, stderr 片段)。
@@ -40,11 +43,13 @@ def _run_cmd(cmd: Any, timeout: Any = 5) -> Tuple[int, str]:
                 except subprocess.TimeoutExpired:
                     try:
                         proc.kill()
-                    except Exception:
+                    except Exception as exc:
+                        log.warning("_run_cmd(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
                     try:
                         proc.wait(timeout=1.0)
-                    except Exception:
+                    except Exception as exc:
+                        log.warning("_run_cmd(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
                     return -1, f"timeout after {timeout}s"
                 out.flush()
@@ -54,6 +59,7 @@ def _run_cmd(cmd: Any, timeout: Any = 5) -> Tuple[int, str]:
         except (FileNotFoundError, OSError) as exc:
             return -1, str(exc)[:200]
     except Exception as e:
+        log.debug("_run_cmd(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return -1, str(e)[:200]
     finally:
         if tmp:
@@ -157,6 +163,7 @@ class NotifyEngine:
             result.setdefault("system", system)
             return result
         except Exception as e:
+            log.debug("NotifyEngine.notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"sent": False, "error": str(e), "system": system}
 
     def beep(self, params: Any) -> Any:
@@ -174,6 +181,7 @@ class NotifyEngine:
                 sys.stderr.flush()
             return {"played": True, "way": "beep"}
         except Exception as e:
+            log.debug("NotifyEngine.beep(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {"played": False, "error": str(e)}
 
     def handle(self, line: Any) -> str:

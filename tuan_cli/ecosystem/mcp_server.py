@@ -29,6 +29,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import __version__ as _eco_version
 
+import logging
+log = logging.getLogger(__name__)
+
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "tuan_cli-ecosystem"
 MAX_OUTPUT_CHARS = 4000          # 单工具文本输出上限 (防上下文膨胀)
@@ -94,7 +97,8 @@ class McpToolServer:
         if self._config is not None and hasattr(self._config, "get"):
             try:
                 return self._config.get(key, default)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("McpToolServer._cfg(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 return default
         return default
 
@@ -176,6 +180,100 @@ class McpToolServer:
             "读取当前项目上下文文件 (TUAN.md / AGENTS.md / CLAUDE.md) 与 SOUL.md 的存在情况。",
             {"type": "object", "properties": {}},
             self._h_context_files,
+        ))
+        # ---- 阶段 4: 动画/视频工具 (对齐最新开源卖点: 代码制作动画视频) ----
+        tools.append(_tool(
+            "codeanim_render",
+            "把 code-animation 项目 JSON 渲染为 mp4 视频 (纯 Python Pillow + ffmpeg, 零外部模型)。"
+            "project_json 需含 width/height/fps/duration/nodes; 未知节点类型跳过 (fail-closed)。"
+            "输出写入 workspace 的 media 目录, 返回文件路径与帧数。",
+            {
+                "type": "object",
+                "properties": {
+                    "project_json": _prop("渲染项目对象 (含 width/height/fps/duration/nodes)"),
+                    "fps": _prop("帧率 (默认取 project_json.fps, 缺省 30)", "integer"),
+                },
+                "required": ["project_json"],
+            },
+            self._h_codeanim_render,
+        ))
+        tools.append(_tool(
+            "codeanim_frame",
+            "渲染 code-animation 项目在时间 t 的单帧为 PNG (快速预览, 不出视频)。",
+            {
+                "type": "object",
+                "properties": {
+                    "project_json": _prop("渲染项目对象"),
+                    "t": _prop("时间点秒 (默认 0)", "number"),
+                },
+                "required": ["project_json"],
+            },
+            self._h_codeanim_frame,
+        ))
+        # ---- 阶段 6: 多模型网关直调 (外部 Agent 直接调 tuan 模型层做自动化视频) ----
+        tools.append(_tool(
+            "llm_call",
+            "通过青小团多模型网关 (ModelGateway) 调用任意已配置 Provider 生成文本。"
+            "支持 intent 意图路由 / 指定 provider_id (如 'deepseek:deepseek-chat') / "
+            "json_schema 结构化输出 (返回 JSON)。解析失败或 provider 未配置一律 fail-closed 报错。",
+            {
+                "type": "object",
+                "properties": {
+                    "prompt": _prop("用户提示 (必填)"),
+                    "system_prompt": _prop("系统提示 (可选)"),
+                    "intent": _prop("意图路由名 (可选, 如 plan/script/compose; 未注册则拒绝)"),
+                    "provider_id": _prop("provider_id (可选, 如 'deepseek:deepseek-chat'; 缺省用激活 provider)"),
+                    "json_schema": _prop("期望的结构化输出 JSON Schema (可选, dict)"),
+                    "max_tokens": _prop("最大生成 token (可选, 默认 8192)", "integer"),
+                    "temperature": _prop("采样温度 (可选, 默认 0.7)", "number"),
+                },
+                "required": ["prompt"],
+            },
+            self._h_llm_call,
+        ))
+        tools.append(_tool(
+            "models_list",
+            "列出青小团模型目录中已知的 Provider (名称/base_url/档位/免费额度/地区/推荐模型)。"
+            "不含密钥, 仅元数据, 供外部 Agent 选型。",
+            {"type": "object", "properties": {}},
+            self._h_models_list,
+        ))
+        tools.append(_tool(
+            "video_pipeline_run",
+            "OpenMontage 式 9 阶段自动化视频流水线: brief→research→script→scene→gate→"
+            "narration→music→compose→render。用 ModelGateway 按 intent 串联多模型, "
+            "质量闸门 (gate) 未通过或任一段失败一律 fail-closed 报错。"
+            "默认走 code_anim_render 出 mp4 (ffmpeg 可用时); 否则 rendered=false+reason。"
+            "可注入 stages 子集 (如 ['brief','compose','render'])。",
+            {
+                "type": "object",
+                "properties": {
+                    "brief": _prop("创作 brief (必填)"),
+                    "out_path": _prop("输出 mp4 路径 (可选, 默认 workspace/media/pipeline_<ts>.mp4)"),
+                    "stages": _prop("阶段子集 (可选 list, 默认全 9 阶段)"),
+                },
+                "required": ["brief"],
+            },
+            self._h_video_pipeline_run,
+        ))
+        tools.append(_tool(
+            "narration_tts",
+            "多语言叙事 TTS: 把旁白文本合成 WAV 音频轨, 供视频流水线混音。"
+            "自动探测 edge-tts / pyttsx3, 兜底内置确定性 WAV 合成器 (零外部依赖, 帧稳定)。"
+            "输出写入 workspace/media/narration_<ts>.wav; 返回 {path,duration,engine,lang}。"
+            "文本为空 → fail-closed 报错。",
+            {
+                "type": "object",
+                "properties": {
+                    "text": _prop("旁白文本 (必填)"),
+                    "lang": _prop("语言 (可选, 默认 zh; 影响音节切分)"),
+                    "voice": _prop("音色 (可选, 仅外部引擎用)"),
+                    "engine": _prop("引擎 (可选: auto/synth, 默认 auto)"),
+                    "out_path": _prop("输出 wav 路径 (可选, 默认 workspace/media/narration_<ts>.wav)"),
+                },
+                "required": ["text"],
+            },
+            self._h_narration_tts,
         ))
         if self.allow_dangerous_tools:
             tools.append(_tool(
@@ -325,6 +423,250 @@ class McpToolServer:
         soul = self.home / "SOUL.md"
         parts.append(f"== SOUL.md == {'存在 (' + str(soul.stat().st_size) + ' 字节)' if soul.exists() else '未配置'}")
         return _ok("\n\n".join(parts) or "(无上下文文件)")
+
+    def _h_codeanim_render(self, args: Dict[str, Any]) -> Tuple[str, bool]:
+        """渲染 code-animation 项目 JSON → mp4 (写入 workspace/media)。"""
+        import tempfile
+
+        from ..web import code_anim_render as car
+
+        pj = args.get("project_json")
+        if not isinstance(pj, dict):
+            return _err("project_json 必须是 JSON 对象 (fail-closed)")
+        err = car.validate_project(pj)
+        if err:
+            return _err(f"project_json 非法: {err} (fail-closed)")
+        fps = int(args.get("fps") or pj.get("fps") or 30)
+        if fps <= 0:
+            return _err("fps 必须 > 0")
+        # 输出目录: workspace/media (缺省用系统临时目录)
+        base = self.workspace if self.workspace else Path(tempfile.gettempdir())
+        media = base / "media"
+        try:
+            media.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return _err(f"创建 media 目录失败: {exc}")
+        out_path = media / f"codeanim_{int(__import__('time').time() * 1000)}.mp4"
+        try:
+            result = car.render_video(pj, str(out_path), fps=fps)
+        except RuntimeError as exc:
+            return _err(f"渲染失败: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"渲染异常: {exc}")
+        payload = {
+            "out_path": str(out_path),
+            "frames": result.get("frames", 0),
+            "fps": result.get("fps", fps),
+            "size_bytes": result.get("size_bytes", 0),
+            "elapsed": result.get("elapsed", 0),
+        }
+        return _ok(json.dumps(payload, ensure_ascii=False))
+
+    def _h_codeanim_frame(self, args: Dict[str, Any]) -> Tuple[str, bool]:
+        """渲染 code-animation 项目在时间 t 的单帧为 PNG (快速预览)。"""
+        import base64
+        import io
+        import tempfile
+
+        from ..web import code_anim_render as car
+
+        pj = args.get("project_json")
+        if not isinstance(pj, dict):
+            return _err("project_json 必须是 JSON 对象 (fail-closed)")
+        err = car.validate_project(pj)
+        if err:
+            return _err(f"project_json 非法: {err} (fail-closed)")
+        t = float(args.get("t") or 0.0)
+        try:
+            img = car.draw_frame(pj, t)
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"帧渲染异常: {exc}")
+        # 编码 PNG, 返回 data URL + 尺寸 (可写文件供外部取用)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        # 同时落盘 (供下载)
+        base = self.workspace if self.workspace else Path(tempfile.gettempdir())
+        media = base / "media"
+        try:
+            media.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        out_path = media / f"codeanim_{int(__import__('time').time() * 1000)}.png"
+        try:
+            img.save(str(out_path), format="PNG")
+            saved = str(out_path)
+        except OSError:
+            saved = ""
+        payload = {
+            "width": img.width,
+            "height": img.height,
+            "png_data_url": f"data:image/png;base64,{b64}",
+            "saved_path": saved,
+        }
+        return _ok(json.dumps(payload, ensure_ascii=False))
+
+    def _h_llm_call(self, args: Dict[str, Any]) -> Tuple[str, bool]:
+        """阶段 6: 通过 ModelGateway 直调模型 (intent 路由 / provider_id / json_schema)。"""
+        from ..runtime.gateway import ModelGateway
+
+        prompt = str(args.get("prompt", "")).strip()
+        if not prompt:
+            return _err("prompt 不能为空 (fail-closed)")
+        system_prompt = args.get("system_prompt")
+        if system_prompt is not None:
+            system_prompt = str(system_prompt)
+        intent = args.get("intent")
+        if intent is not None:
+            intent = str(intent) or None
+        provider_id = args.get("provider_id")
+        if provider_id is not None:
+            provider_id = str(provider_id) or None
+        json_schema = args.get("json_schema")
+        if json_schema is not None and not isinstance(json_schema, dict):
+            return _err("json_schema 必须是 JSON 对象 (fail-closed)")
+        max_tokens = args.get("max_tokens")
+        if max_tokens is not None:
+            max_tokens = int(max_tokens)
+        temperature = args.get("temperature")
+        if temperature is not None:
+            temperature = float(temperature)
+
+        gw = ModelGateway()
+        try:
+            result = gw.generate(
+                prompt,
+                system_prompt=system_prompt,
+                intent=intent,
+                provider_id=provider_id,
+                json_schema=json_schema,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        except ValueError as exc:
+            return _err(str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"LLM 调用异常: {exc}")
+        payload = {
+            "provider_id": result.get("provider_id"),
+            "model": result.get("model"),
+            "text": (result.get("text") or "")[:MAX_OUTPUT_CHARS],
+            "json": result.get("json"),
+            "tool_calls": result.get("tool_calls") or [],
+        }
+        return _ok(json.dumps(payload, ensure_ascii=False))
+
+    def _h_models_list(self, _: Dict[str, Any]) -> Tuple[str, bool]:
+        """阶段 6: 列出模型目录已知 Provider 元数据 (不含密钥, 紧凑行防超上限截断)。"""
+        try:
+            from ..models.provider_catalog import ALL_PROVIDERS
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"读取模型目录失败: {exc}")
+        # 先满字段; 若 JSON 超出 MAX_OUTPUT_CHARS 则逐级降字段 (截断会破坏 JSON, 必须避免)。
+        full = [
+            {
+                "name": p.name, "model": p.model, "tier": p.tier,
+                "free_tier": bool(p.free_tier), "region": p.region,
+                "category": p.category,
+                "recommended_models": list(p.recommended_models),
+                "docs_url": p.docs_url,
+            }
+            for p in ALL_PROVIDERS
+        ]
+        candidates = [
+            full,
+            [{k: v for k, v in r.items() if k not in ("docs_url", "category")} for r in full],
+            [{k: v for k, v in r.items() if k not in ("docs_url", "category", "recommended_models")}
+             for r in full],
+        ]
+        for rows in candidates:
+            text = json.dumps({"providers": rows}, ensure_ascii=False)
+            if len(text) <= MAX_OUTPUT_CHARS:
+                return _ok(text)
+        # 兜底: 仅核心字段; 若仍超上限则截断条目数并标记 (保证 JSON 完整合法)。
+        minimal = [
+            {"name": p.name, "model": p.model, "tier": p.tier,
+             "free_tier": bool(p.free_tier), "region": p.region}
+            for p in ALL_PROVIDERS
+        ]
+        rows: List[Dict[str, Any]] = minimal
+        text = json.dumps({"providers": rows}, ensure_ascii=False)
+        if len(text) > MAX_OUTPUT_CHARS:
+            # 逐条剔除尾部直到 JSON 落回上限内
+            while rows and len(json.dumps({"providers": rows}, ensure_ascii=False)) > MAX_OUTPUT_CHARS:
+                rows = rows[:-1]
+            text = json.dumps({"providers": rows, "truncated": True}, ensure_ascii=False)
+        return _ok(text)
+
+    def _h_video_pipeline_run(self, args: Dict[str, Any]) -> Tuple[str, bool]:
+        """阶段 10: OpenMontage 式 9 阶段视频流水线 (fail-closed)。"""
+        from ..web.video_pipeline import VideoPipeline, STAGE_NAMES
+
+        brief = str(args.get("brief", "")).strip()
+        if not brief:
+            return _err("brief 不能为空 (fail-closed)")
+        stages = args.get("stages")
+        if stages is not None:
+            if not isinstance(stages, list) or not all(isinstance(s, str) for s in stages):
+                return _err("stages 必须是字符串数组 (fail-closed)")
+            unknown = [s for s in stages if s not in STAGE_NAMES]
+            if unknown:
+                return _err(f"未知流水线阶段: {unknown} (fail-closed)")
+        out_path = args.get("out_path")
+        if out_path is None:
+            import time as _t
+            base = Path(self.workspace or ".") / "media"
+            base.mkdir(parents=True, exist_ok=True)
+            out_path = str(base / f"pipeline_{int(_t.time() * 1000)}.mp4")
+        else:
+            out_path = str(out_path)
+        try:
+            pipe = VideoPipeline(stages=list(stages) if stages else None)
+            result = pipe.run(brief, out_path=out_path)
+        except ValueError as exc:
+            return _err(str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"流水线异常: {exc}")
+        payload = {
+            "brief": result["brief"],
+            "rendered": result["rendered"],
+            "out_path": result.get("out_path"),
+            "frames": result.get("frames"),
+            "stages": list(result["stages"].keys()),
+        }
+        return _ok(json.dumps(payload, ensure_ascii=False))
+
+    def _h_narration_tts(self, args: Dict[str, Any]) -> Tuple[str, bool]:
+        """阶段 12: 多语言叙事 TTS (fail-closed)。"""
+        from ..web.narration_tts import synthesize_narration
+
+        text = str(args.get("text", "")).strip()
+        if not text:
+            return _err("text 不能为空 (fail-closed)")
+        lang = str(args.get("lang") or "zh")
+        voice = str(args.get("voice") or "")
+        engine = str(args.get("engine") or "auto")
+        out_path = args.get("out_path")
+        if out_path is None:
+            import time as _t
+            base = Path(self.workspace or ".") / "media"
+            base.mkdir(parents=True, exist_ok=True)
+            out_path = str(base / f"narration_{int(_t.time() * 1000)}.wav")
+        else:
+            out_path = str(out_path)
+        try:
+            res = synthesize_narration(text, out_path, voice=voice,
+                                       lang=lang, engine=engine)
+        except ValueError as exc:
+            return _err(str(exc))
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"TTS 异常: {exc}")
+        return _ok(json.dumps({
+            "path": res["path"],
+            "duration": res["duration"],
+            "engine": res["engine"],
+            "lang": res.get("lang", lang),
+        }, ensure_ascii=False))
 
     def _h_run_shell(self, args: Dict[str, Any]) -> Tuple[str, bool]:
         import subprocess

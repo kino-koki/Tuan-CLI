@@ -39,6 +39,9 @@ from .safety_patterns import (  # noqa: F401
     _MEDIUM_PATTERNS,
     _RAW_DISK,
 )
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def _check_rm_flags(parts: list[str]) -> bool:
@@ -550,7 +553,8 @@ def _label_suppressed(label: str) -> bool:
         return False
     try:
         return bool(fn(label))
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("红线判定降级: %s", exc)
         return False
 
 
@@ -896,7 +900,8 @@ def _try_decode_base64_segments(text: str) -> list[str]:
             if (all(c.isprintable() or c in '\n\r\t' for c in decoded_text)
                     and len(decoded_text) > 3):
                 decoded.append(decoded_text)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("红线判定降级: %s", exc)
             pass
 
     # 仅在命令整体含 base64 解码时才尝试, 避免对普通文本误解码

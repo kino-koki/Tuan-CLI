@@ -18,6 +18,9 @@ from typing import Any, Dict, List
 from ._ui_singleton import console
 from .parser import _register_command
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _get_kernel() -> Any:
     """取内核实例 (纯只读查询, 不激活插件、不触发副作用)。
@@ -28,7 +31,8 @@ def _get_kernel() -> Any:
     try:
         from ..app import build_kernel
         return build_kernel(bare=True)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_get_kernel(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     from ..core.kernel import Kernel
     return Kernel()

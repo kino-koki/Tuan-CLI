@@ -26,6 +26,9 @@ from .registry import (
     resolve_mode_id,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _is_downgrade(src_id: str, dst_id: str) -> bool:
     """判断目标模式是否为降级（权限等级降低）。"""
@@ -204,7 +207,8 @@ def switch_mode(
                 "force": force,
                 "platform": platform,
             })
-        except Exception:
+        except Exception as exc:
+            log.warning("switch_mode(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     # ---- 审计日志（best-effort） ----
@@ -219,7 +223,8 @@ def switch_mode(
                     "force": force,
                     "platform": platform,
                 })
-        except Exception:
+        except Exception as exc:
+            log.warning("switch_mode(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     return (True, reason)

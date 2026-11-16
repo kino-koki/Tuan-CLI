@@ -18,6 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .. import _yaml as yaml  # 后端门面: 有 PyYAML 用 PyYAML, 否则用内置 stdlib 实现
 
+import logging
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class McpImportResult:
@@ -63,7 +66,8 @@ def parse_hermes_config(path: Path) -> List[Dict[str, Any]]:
         return []
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("parse_hermes_config(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return []
     if not isinstance(data, dict):
         return []

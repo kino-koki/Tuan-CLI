@@ -44,7 +44,8 @@ def otel_available() -> bool:
         import opentelemetry.sdk  # noqa: F401
         import opentelemetry.exporter.otlp.proto.http.trace_exporter  # noqa: F401
         return True
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("otel_available(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 
@@ -250,14 +251,16 @@ class OtlpTransport(TelemetryTransport):
         if provider is not None:
             try:
                 provider.shutdown()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("OtlpTransport.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             self._provider = None
 
     def __del__(self) -> None:  # 兜底: 尽力关闭底层面板
         try:
             self.close()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("OtlpTransport.__del__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     async def send_metrics(self) -> bool:
@@ -294,7 +297,8 @@ class OtlpTransport(TelemetryTransport):
                         "properties": ev.properties,
                         "context": ev.context,
                     }) + "\n")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("OtlpTransport.save_to_disk(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     async def retry_disk_events(self) -> None:
@@ -337,7 +341,8 @@ def end_span() -> None:
     if otel_available():
         try:
             _emit_span(span)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("end_span(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

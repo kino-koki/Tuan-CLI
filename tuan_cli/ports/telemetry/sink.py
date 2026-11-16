@@ -22,6 +22,9 @@ from .types import (
     TelemetryPrimitive,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 DEFAULT_FLUSH_INTERVAL_MS = 30_000
 DEFAULT_FLUSH_THRESHOLD = 50
 
@@ -136,8 +139,9 @@ class EventSink:
         self._buffer = []
         try:
             self.transport.save_to_disk(events)
-        except Exception:
+        except Exception as exc:
             # Telemetry must never make shutdown fail.
+            log.warning("EventSink.flush_sync(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
     def _maybe_auto_flush(self) -> None:
@@ -154,7 +158,8 @@ class EventSink:
                 break
             try:
                 asyncio.run(self.flush())
-            except Exception:
+            except Exception as exc:
+                log.warning("EventSink._periodic_loop(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
 

@@ -38,6 +38,9 @@ from ...logging_conf import log
 from .client import MCPClient, MCPSecurityPolicy
 from ...tools.base import Tool
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _is_remote(server_config: Any) -> bool:
     """本地判断是否为远程传输 server（避免在本模块加载时引入融合层）。"""
@@ -221,7 +224,8 @@ def register_mcp_tool(
             if not param_check.safe:
                 threats = [t["description"] for t in param_check.threats[:3]]
                 return f"[MCP 安全拦截] 工具 {remote_name} 参数检测到注入: {', '.join(threats)}"
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("handler(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         # 如果需要确认, 检查上下文
         if needs_confirm:
@@ -366,19 +370,22 @@ class MCPPlugin(Plugin):
         for client in self._clients:
             try:
                 client.stop()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("MCPPlugin.deactivate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         if self._engine is not None:
             try:
                 registry = kernel.get("tool_registry")
                 if registry is not None:
                     registry.tool_search_engine = None
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("MCPPlugin.deactivate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             self._engine = None
         if self._mt is not None:
             try:
                 self._mt.shutdown()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("MCPPlugin.deactivate(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             self._mt = None

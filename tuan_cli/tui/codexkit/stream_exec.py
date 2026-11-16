@@ -22,6 +22,9 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ============================================================ streaming
 @dataclass(frozen=True)
@@ -326,6 +329,7 @@ def run_bounded(cmd: ExecCommand, runner: Any,
     except TimeoutError:
         return {"ok": False, "reason": "timeout"}
     except Exception as exc:  # noqa: BLE001
+        log.debug("run_bounded(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"ok": False, "reason": "runner:%s" % type(exc).__name__}
     text = raw if isinstance(raw, str) else str(raw)
     truncated = len(text) > max_output

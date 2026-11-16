@@ -292,7 +292,8 @@ def _read_package_json(ws: Path) -> Optional[Dict[str, Any]]:
         return None
     try:
         return cast(Dict[str, Any], json.loads(pkg_path.read_text(encoding="utf-8")))
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_read_package_json(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 

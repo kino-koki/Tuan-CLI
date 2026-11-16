@@ -57,6 +57,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Optional, Set
 
+import logging
+log = logging.getLogger(__name__)
+
 _FRONT_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
@@ -283,7 +286,8 @@ class EnhancedSkillManager:
             try:
                 s = self._parse(p)
                 skills[s.name] = s
-            except Exception:
+            except Exception as exc:
+                log.warning("EnhancedSkillManager.list_all(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         self._cache = skills
         self._cache_time = now
@@ -559,7 +563,8 @@ class EnhancedSkillManager:
                             break
                     if len(files) >= 200:
                         break
-            except Exception:
+            except Exception as exc:
+                log.warning("EnhancedSkillManager.detect_context(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
         ctx.detected_files = files[:200]

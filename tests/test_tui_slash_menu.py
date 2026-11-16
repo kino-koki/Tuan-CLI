@@ -330,16 +330,28 @@ class TestTerminalTitle:
 class TestSlashKeyBindings:
     def test_up_down_swallow_only_when_open(self):
         """面板关闭时 ↑↓ 必须走历史导航 (不再被吞)。"""
-        import inspect
+        from pathlib import Path as _P
+        import tuan_cli.tui as _pkg
         from tuan_cli.tui import tui as tui_mod
-        src = inspect.getsource(tui_mod)
+        # QxtTUI 已按域拆分为多个 mixin 模块 (键位绑定在 interact.py 等):
+        # 在整个 tui 包内检索, 不变式不变。
+        pkg_dir = _P(_pkg.__file__).parent
+        src = "\n".join(
+            p.read_text(encoding="utf-8") for p in sorted(pkg_dir.glob("*.py"))
+        )
         assert "b.auto_up" in src
         assert "b.auto_down" in src
 
     def test_escape_closes_only_when_open(self):
-        import inspect
+        from pathlib import Path as _P
+        import tuan_cli.tui as _pkg
         from tuan_cli.tui import tui as tui_mod
-        src = inspect.getsource(tui_mod)
+        # QxtTUI 已按域拆分为多个 mixin 模块 (键位绑定在 interact.py 等):
+        # 在整个 tui 包内检索, 不变式不变。
+        pkg_dir = _P(_pkg.__file__).parent
+        src = "\n".join(
+            p.read_text(encoding="utf-8") for p in sorted(pkg_dir.glob("*.py"))
+        )
         assert "_close_slash_menu" in src
 
 

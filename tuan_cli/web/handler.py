@@ -27,6 +27,9 @@ from ._common import (
     web_strings,
 )
 
+import logging
+log = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     # server.py 在运行期导入本模块 (handler), 这里只在类型检查期反向引用其 WebServer。
     from .server import WebServer
@@ -77,7 +80,8 @@ class _WebHandler(BaseHTTPRequestHandler):
         try:
             data = json.loads(raw.decode("utf-8"))
             return data if isinstance(data, dict) else {}
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("_WebHandler._read_body(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return {}
 
     def log_message(self, fmt: str, *args: Any) -> None:  # 静默访问日志
@@ -631,7 +635,8 @@ class _WebHandler(BaseHTTPRequestHandler):
             # 跑完, 白烧 token 且占着会话锁堵住后续消息 ("容易中断" 的成因之一)。
             try:
                 agent.cancel()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_WebHandler._chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return
         self.wfile.write(_sse("done", {"text": "".join(text_parts)}).encode("utf-8"))

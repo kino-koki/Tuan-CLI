@@ -469,6 +469,27 @@ def _resolve_session_path(files: List[Path], target: str) -> Any:
     return None
 
 
+class _EventStoreAdapter:
+    """EventSourcer 的单参 append(dict) 契约适配器。
+
+    真实 SessionStore.append(event_type, payload) 是双参, 而 EventSourcer
+    依赖单参 append(dict) (ContextEventLog 兼容契约)。适配器把 to_dict()
+    (含 type 字段) 拆成 (event_type, 其余 payload), 并透传 read_all/session_id。
+    """
+
+    def __init__(self, store: Any) -> None:
+        self._store = store
+        self.session_id = getattr(store, "session_id", "")
+
+    def append(self, d: dict) -> None:
+        d = dict(d)
+        ev_type = d.pop("type", "event")
+        self._store.append(ev_type, d)
+
+    def read_all(self) -> list:
+        return self._store.read_all()
+
+
 def _session_compare(args: Any) -> int:
     """跨会话差异对比 (CrossSessionResolver.compare)。"""
     from ..core.cross_session import CrossSessionResolver
@@ -683,7 +704,7 @@ def _session_sourcer(args: Any, files: List[Path]) -> int:
     store.dir = sessions_dir
     store.file = path
     store.session_id = path.stem
-    sourcer = EventSourcer(session_store=store)
+    sourcer = EventSourcer(session_store=_EventStoreAdapter(store))
     js = getattr(args, "json", False)
     if sub == "fork":
         fork_id = sourcer.fork(at_seq=getattr(args, "at", 0),

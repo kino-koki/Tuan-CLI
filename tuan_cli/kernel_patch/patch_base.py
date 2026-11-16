@@ -375,7 +375,8 @@ class KernelPatchManager:
             return
         try:
             self.kernel.emit(f"patch.{event}", {"name": name, **extra})
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("KernelPatchManager._emit(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -383,7 +384,8 @@ def _current_version() -> str:
     try:
         from .. import __version__
         return __version__
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_current_version(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return "0.0.0"
 
 

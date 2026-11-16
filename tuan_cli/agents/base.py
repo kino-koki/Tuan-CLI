@@ -20,6 +20,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class EventType(str, Enum):
     """事件种类。字符串值 = 协议 v1.0 的 kind 字段。"""
@@ -38,7 +41,8 @@ def _kill(proc: Any) -> None:
         proc.kill()
     except (ProcessLookupError, ValueError):
         pass
-    except Exception:
+    except Exception as exc:
+        log.warning("_kill(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -216,6 +220,7 @@ class AgentAdapter(ABC):
                 stderr=asyncio.subprocess.PIPE,
             )
         except Exception as e:
+            log.debug("AgentAdapter._probe_version(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None, f"{type(e).__name__}: {e}"
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout=5)
@@ -223,14 +228,16 @@ class AgentAdapter(ABC):
             proc.kill()
             try:
                 await proc.wait()
-            except Exception:
+            except Exception as exc:
+                log.warning("AgentAdapter._probe_version(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return None, "version probe timeout (5s)"
         except Exception as e:
             proc.kill()
             try:
                 await proc.wait()
-            except Exception:
+            except Exception as exc:
+                log.warning("AgentAdapter._probe_version(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             return None, f"{type(e).__name__}: {e}"
         # 有些 CLI 的 --version 输出在 stderr (如 codex)
@@ -381,5 +388,6 @@ class AgentAdapter(ABC):
             if prompt_file:
                 try:
                     os.unlink(prompt_file)
-                except Exception:
+                except Exception as exc:
+                    log.warning("AgentAdapter.run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass

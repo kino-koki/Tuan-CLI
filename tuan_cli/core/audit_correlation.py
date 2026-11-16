@@ -71,7 +71,8 @@ def fingerprint_of(rec: Any) -> str:
     def _get(name: str, default: str = "") -> str:
         try:
             return str(getattr(rec, name, default) or default)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("审计关联分析降级: %s", exc)
             return default
 
     reasons = getattr(rec, "reasons", None) or []

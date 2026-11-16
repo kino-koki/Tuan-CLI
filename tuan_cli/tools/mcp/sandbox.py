@@ -18,6 +18,9 @@ from typing import Any, Dict, List, Mapping, Optional
 
 
 from ...core.security_utils import sanitize_env as _sanitize_env  # noqa: F401,F811
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def _refuse_if_redline(command: str) -> Optional[Dict[str, Any]]:
@@ -32,7 +35,8 @@ def _refuse_if_redline(command: str) -> Optional[Dict[str, Any]]:
                 "stderr": f"[安全拦截] {verdict.reasons[0] if verdict.reasons else '命中红线'}",
                 "sandboxed": False,
             }
-    except Exception:  # noqa: BLE001 - 异常时放行给后续执行 (执行器自身也有护栏)
+    except Exception as exc:  # noqa: BLE001 - 异常时放行给后续执行 (执行器自身也有护栏)
+        log.warning("MCP 沙箱操作异常(设计内忽略): %s", exc)
         pass
     return None
 
@@ -86,7 +90,8 @@ class MCPSandbox:
                 if item.is_file():
                     try:
                         (dst / item.name).write_bytes(item.read_bytes())
-                    except Exception:
+                    except Exception as exc:
+                        log.warning("MCP 沙箱操作异常(设计内忽略): %s", exc)
                         pass
     
     def _copy_readwrite(self, src: str, dst: Path) -> None:
@@ -100,7 +105,8 @@ class MCPSandbox:
                 if item.is_file():
                     try:
                         (dst / item.name).write_bytes(item.read_bytes())
-                    except Exception:
+                    except Exception as exc:
+                        log.warning("MCP 沙箱操作异常(设计内忽略): %s", exc)
                         pass
     
     def execute_in_sandbox(
@@ -133,7 +139,8 @@ class MCPSandbox:
                 timeout=5,
             )
             return result.returncode == 0
-        except Exception:
+        except Exception as exc:
+            log.debug("MCP 沙箱操作异常(设计内忽略): %s", exc)
             return False
     
     def _execute_docker(
@@ -207,7 +214,8 @@ class MCPSandbox:
                 ["docker", "kill", name],
                 capture_output=True, timeout=10,
             )
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("MCP 沙箱操作异常(设计内忽略): %s", exc)
             pass
     
     def _execute_local(
@@ -247,6 +255,7 @@ class MCPSandbox:
                 "sandboxed": False,
             }
         except Exception as exc:
+            log.debug("MCP 沙箱操作异常(设计内忽略): %s", exc)
             return {
                 "exit_code": -1,
                 "stdout": "",
@@ -260,7 +269,8 @@ class MCPSandbox:
             import shutil
             try:
                 shutil.rmtree(self._temp_dir)
-            except Exception:
+            except Exception as exc:
+                log.warning("MCP 沙箱操作异常(设计内忽略): %s", exc)
                 pass
             self._temp_dir = None
 

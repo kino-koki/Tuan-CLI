@@ -233,8 +233,8 @@ class SecurityEventBus:
         # 统一敏感脱敏: 所有派发/落盘/导出的事件 payload 先抹掉真实密钥, 防止审计链泄露
         try:
             event.payload = redact_nested(event.payload)
-        except Exception:  # noqa: BLE001 - 脱敏失败不阻断审计
-            pass
+        except Exception as exc:  # noqa: BLE001 - 脱敏失败不阻断审计
+            log.warning("审计事件脱敏失败 (event=%s): %s", event.event_type, exc)
         with self._lock:
             self._events.append(event)
             # 保留最近 5000 条

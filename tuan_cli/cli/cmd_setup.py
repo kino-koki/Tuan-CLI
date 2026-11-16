@@ -24,6 +24,9 @@ from ..i18n import ensure_language, t
 from ..hooks import lifecycle as _LC
 from ._ui_singleton import console
 
+import logging
+log = logging.getLogger(__name__)
+
 
 # ---- app 链惰性加载: 仅真正执行 setup/bench 时才构建内核 ----
 def build_kernel(*a: Any, **k: Any) -> Any:
@@ -100,7 +103,8 @@ def cmd_setup(args: Any) -> int:
             from .cmd_onboarding import mark_onboarding_done
 
             mark_onboarding_done()
-        except Exception:  # noqa: BLE001 - 标记写失败不影响跳过语义
+        except Exception as exc:  # noqa: BLE001 - 标记写失败不影响跳过语义
+            log.warning("cmd_setup(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         console.print("  已跳过设置向导。可用 `tuan setup` 随时重跑。")
         return 0
@@ -108,7 +112,8 @@ def cmd_setup(args: Any) -> int:
     # Setup: 派发在最开头（A′#2：不在 build_kernel()/input() 之后）
     try:
         _LC.emit("Setup", {"quick": bool(getattr(args, "quick", False))})
-    except Exception:  # noqa: BLE001 - 通知类吞异常
+    except Exception as exc:  # noqa: BLE001 - 通知类吞异常
+        log.warning("cmd_setup(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
     kernel = build_kernel()
@@ -278,7 +283,8 @@ def _wizard_first_run(config: Any) -> int:
         from .cmd_onboarding import mark_onboarding_done
 
         mark_onboarding_done()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_wizard_first_run(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
     console.print(f"\n  ✅ 初始化完成! 供应商={provider}  模型={model_name}  模式={mode_picked}")

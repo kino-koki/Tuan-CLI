@@ -23,6 +23,9 @@ import os
 import secrets
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
+import logging
+
+log = logging.getLogger(__name__)
 
 # PBKDF2 迭代次数安全区间 (与 crypto_engine 一致)
 _MIN_ITERATIONS = 1000
@@ -445,7 +448,8 @@ def available_providers() -> List[str]:
         try:
             cls()
             out.append(name)
-        except Exception:
+        except Exception as exc:
+            log.debug("加密 provider 降级: %s", exc)
             continue
     return out
 

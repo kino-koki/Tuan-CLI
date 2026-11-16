@@ -38,6 +38,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
+import logging
+log = logging.getLogger(__name__)
+
 
 FLAG = "permissions.blockWritesOutsideWorkingDirectories"
 WRITABLE_DIRS_ATTR = "extra_writable_dirs"
@@ -66,7 +69,8 @@ class WriteDecision:
 def _cfg(ctx: Any, dotted: str, default: Any) -> Any:
     try:
         return ctx.config(dotted, default)
-    except Exception:  # noqa: BLE001 - 配置对象损坏时不掀翻裁决
+    except Exception as exc:  # noqa: BLE001 - 配置对象损坏时不掀翻裁决
+        log.debug("_cfg(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return default
 
 

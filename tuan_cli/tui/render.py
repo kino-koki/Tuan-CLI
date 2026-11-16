@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from .common import *  # noqa: F401,F403
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class RenderMixin:
     """渲染域: 对话/头部/底栏/面板/斜杠菜单/确认卡/markdown。"""
@@ -98,7 +101,8 @@ class RenderMixin:
         try:
             from ..ui import prefs as _prefs
             cmd = _prefs.statusline_command()
-        except Exception:  # noqa: BLE001 - 偏好不可用时不显示自定义段
+        except Exception as exc:  # noqa: BLE001 - 偏好不可用时不显示自定义段
+            log.debug("RenderMixin._statusline_segment(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return ""
         if not cmd:
             self._sl_text = ""
@@ -125,7 +129,8 @@ class RenderMixin:
                 if self._app is not None:
                     try:
                         self._app.invalidate()
-                    except Exception:  # noqa: BLE001 - 应用已退出
+                    except Exception as exc:  # noqa: BLE001 - 应用已退出
+                        log.warning("RenderMixin._statusline_segment(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                         pass
 
             self._sl_thread = threading.Thread(
@@ -193,8 +198,8 @@ class RenderMixin:
         self._sp_panel["rows"] = rows
 
     def _render_tb_rows(self) -> None:
-        from .kimi_modules import format_task_choice
         assert self._tb_panel is not None
+        from .kimi_modules import format_task_choice
         model = self._tb_panel["model"]
         rows: List[Tuple[str, str]] = []
         rows.append(("class:primary", " 后台任务"))
@@ -588,7 +593,8 @@ class RenderMixin:
         label = f"Worked for {elapsed}"
         try:
             label += f" · {time.strftime('%H:%M', time.localtime())}"
-        except Exception:  # noqa: BLE001 - 时钟失败绝不影响完成分隔线
+        except Exception as exc:  # noqa: BLE001 - 时钟失败绝不影响完成分隔线
+            log.warning("RenderMixin._completion_footer_text(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         return label
 
@@ -951,30 +957,8 @@ class RenderMixin:
             parts.append(("class:warning", f"? {t('tui.confirm_title')}"))
             return self._clip_parts(parts)
         if self._busy or self._running or self._streaming:
-            # 运行时标语: 只读引擎快照 (render 纯读, 不换词/不推进 seq)。
-            eng = getattr(self, "_slogans", None)
-            view = None
-            if eng is not None:
-                try:
-                    view = eng.render(busy=True)
-                except Exception:  # noqa: BLE001 - 标语引擎异常不阻断状态行
-                    view = None
-            if view is not None and view.stalled:
-                # 诊断态不再假装还在工作: 用短版诊断替代 Working 状态行,
-                # 装饰 (plan 徽标/长模型名) 让位, 窄终端也能完整读到秒数。
-                parts.append(("class:warning",
-                              " " + (view.headline or view.text)))
-                return self._clip_parts(parts)
             # codex 状态行: "• Working (Ns • esc to interrupt)" (替代旧月亮 + Processing)
             parts.extend(self._working_status_line())
-            if view is not None and view.text:
-                if view.state in ("stalled", "unknown"):
-                    slogan_cls = "class:warning"
-                elif view.state == "slow":
-                    slogan_cls = "class:textdim"
-                else:
-                    slogan_cls = "class:primary"
-                parts.append((slogan_cls, " · " + view.text))
         else:
             parts.append(("class:success", f"{SUCCESS_MARK} {t('fs.ready')}"))
         if self._plan_mode:
@@ -1028,7 +1012,8 @@ class RenderMixin:
             try:
                 from ..core.network_check import is_offline as _is_offline_impl
                 _is_offline = _is_offline_impl
-            except Exception:  # noqa: BLE001 - network_check 尚未就绪: 横幅暂不激活
+            except Exception as exc:  # noqa: BLE001 - network_check 尚未就绪: 横幅暂不激活
+                log.warning("RenderMixin._render_footer(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
             if _is_offline is not None:
                 try:
@@ -1040,7 +1025,8 @@ class RenderMixin:
                         offline_label = self._model_label or "ollama/qwen2.5:7b"
                         left.append(("class:warning",
                                      f"  ⚠ 离线模式 — 已切换至本地模型 {offline_label}"))
-                except Exception:  # noqa: BLE001 - 探测异常不阻断底栏渲染
+                except Exception as exc:  # noqa: BLE001 - 探测异常不阻断底栏渲染
+                    log.warning("RenderMixin._render_footer(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
             # Kimi 同款命令行提示: 仅当启用了命令补全且空闲时展示, 保持简短
@@ -1057,16 +1043,14 @@ class RenderMixin:
             elif self._booting:
                 status = t("tui.boot_starting")
                 status_cls = "class:textdim"
-            elif self._running:
-                # 真实工具优先于忙碌判定: begin_tool 同时置 busy=True,
-                # 旧顺序会让这个分支永远不可达 (底栏永远显示「Working」)。
-                tool = self._running[-1] if self._running else ""
-                status = tool if tool else t("fs.ready")
-                status_cls = "class:accent"
             elif self._busy or self._streaming:
                 # codex 同款: "Working (Ns · esc to interrupt)" 而非简单 "Thinking…"
                 status = self._working_status_text()
                 status_cls = "class:text"
+            elif self._running:
+                tool = self._running[-1] if self._running else ""
+                status = tool if tool else t("fs.ready")
+                status_cls = "class:accent"
             else:
                 status = t("fs.ready")
                 status_cls = "class:success"
@@ -1082,18 +1066,6 @@ class RenderMixin:
             if git_branch:
                 left.append(("class:shellmode", f" · {git_branch.replace(' ', '')}"))
 
-            # 自定义底栏 (/statusline <命令>): 命令输出, 后台刷新 + 15s 缓存,
-            # 渲染线程只读缓存, 慢命令不会冻结界面。
-            custom_status = self._statusline_segment()
-            if custom_status:
-                left.append(("class:textdim", f" · {custom_status}"))
-
-            # 安全学习器校准徽标: 仅在学习器有过在线更新时展示 (冷启动零视觉变化),
-            # 让「安全层正在按你的反馈自适应」对用户可见, 而不是隐形黑盒。
-            learner_seg = self._learner_footer_seg()
-            if learner_seg:
-                left.append(("class:textdim", learner_seg))
-
             # Super-Agent 活动提示: 绑定引擎有存活 Worker 或待人工处理项时,
             # 在底栏左端追加轻量徽标 (让"后台自主任务"对用户可见, 而非隐藏)。
             try:
@@ -1102,7 +1074,8 @@ class RenderMixin:
                     seg = self._superagent_footer_seg(sa)
                     if seg:
                         left.extend(seg)
-            except Exception:  # noqa: BLE001 - Super-Agent 提示绝不阻断底栏渲染
+            except Exception as exc:  # noqa: BLE001 - Super-Agent 提示绝不阻断底栏渲染
+                log.warning("RenderMixin._render_footer(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
         # 回卷位置指示: 一旦用户上翻离开底部就高亮提示 (Claude Code 同款),
@@ -1153,7 +1126,8 @@ class RenderMixin:
         """
         try:
             scrolled, top, total, vp = self._scroll_state()
-        except Exception:  # noqa: BLE001 - 指示器绝不阻断底栏渲染
+        except Exception as exc:  # noqa: BLE001 - 指示器绝不阻断底栏渲染
+            log.debug("RenderMixin._scroll_indicator(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
         if not scrolled or total <= vp:
             return []
@@ -1169,7 +1143,8 @@ class RenderMixin:
         try:
             active = sa.workers.active_count() if sa.workers else 0
             needs = len(sa.panel.needs_human()) if sa.panel else 0
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("RenderMixin._superagent_footer_seg(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return []
         seg: List[Tuple[str, str]] = []
         # OpenCode 风格: 后台自主任务徽标用独立青绿 (roleagent), 与用户蓝/助手灰区分。

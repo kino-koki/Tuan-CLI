@@ -25,6 +25,9 @@ from typing import Optional
 from ..core.kernel import Kernel, Plugin
 from ..tools.base import Tool, ToolContext, string_prop
 
+import logging
+log = logging.getLogger(__name__)
+
 # HTML 模板 (独立文件, 无外部依赖)
 _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -81,7 +84,8 @@ def _open_browser(path: Path) -> bool:
         else:
             subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_open_browser(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 

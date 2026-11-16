@@ -9,6 +9,9 @@ from __future__ import annotations
 import re
 import os
 from typing import Any, Dict, Mapping, Optional, Sequence
+import logging
+
+log = logging.getLogger(__name__)
 
 
 # 敏感环境变量名片段 (统一来源, 所有沙箱/安全模块从此处导入)
@@ -179,7 +182,8 @@ def safe_error_text(obj: Any, limit: Any = None) -> str:
         if not isinstance(obj, str):
             try:
                 return type(obj).__name__ or "object"
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("安全展示原语降级: %s", exc)
                 return "object"
 
         text = redact_sensitive(obj)
@@ -214,7 +218,8 @@ def safe_error_text(obj: Any, limit: Any = None) -> str:
             # 超了才追加「截断」标记。测试只断言 len<500 且含「截断」当超长。
             return text
         return text
-    except Exception:  # noqa: BLE001 - 展示原语绝不抛
+    except Exception as exc:  # noqa: BLE001 - 展示原语绝不抛
+        log.debug("安全展示原语降级: %s", exc)
         return "object"
 
 

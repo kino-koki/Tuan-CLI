@@ -84,7 +84,8 @@ def _reconfigure_stdio_utf8() -> None:
         try:
             if stream is not None and getattr(stream, "isatty", lambda: False)():
                 stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # TextIO abc 无 reconfigure, 实际 stream 均支持
-        except Exception:  # noqa: BLE001 - 非 TTY / 不支持 reconfigure 时忽略
+        except Exception as exc:  # noqa: BLE001 - 非 TTY / 不支持 reconfigure 时忽略
+            log.warning("_reconfigure_stdio_utf8(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 

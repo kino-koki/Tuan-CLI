@@ -48,8 +48,8 @@ def _override_path() -> Path:
     if home_dir is not None:
         try:
             return home_dir() / _OVERRIDE_FILE
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            log.debug("override 目录解析失败, 回退默认路径: %s", exc)
     return Path.home() / ".tuan" / _OVERRIDE_FILE
 
 
@@ -58,8 +58,8 @@ def _load_raw() -> dict:
         p = _override_path()
         if p.exists():
             return json.loads(p.read_text(encoding="utf-8")) or {}
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        log.warning("黑名单覆盖文件读取失败, 使用空覆盖: %s", exc)
     return {}
 
 

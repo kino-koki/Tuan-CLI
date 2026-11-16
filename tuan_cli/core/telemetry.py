@@ -295,7 +295,8 @@ class TelemetryCollector:
             return 0
         try:
             from ..ports.telemetry.types import EnrichedTelemetryEvent
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("TelemetryCollector.export_to_otlp(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return 0
 
         events = []

@@ -18,6 +18,9 @@ from .providers import (
     OpenAIResponsesChatProvider,
 )
 from .providers._http import is_nvidia_provider
+import logging
+log = logging.getLogger(__name__)
+
 
 # 各内置 provider 的默认 base_url（未知 openai-compatible 必须显式给 base_url）
 _DEFAULT_BASE_URLS: Dict[str, str] = {
@@ -201,7 +204,8 @@ class ProviderService:
         for cb in self._listeners:
             try:
                 cb()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ProviderService._notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     def build(self, provider_id: Optional[str] = None) -> ChatProvider:

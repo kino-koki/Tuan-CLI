@@ -28,6 +28,9 @@ from typing import Any, Dict, List
 
 from . import catalog, evidence, superiority
 
+import logging
+log = logging.getLogger(__name__)
+
 
 def _existing_security_wiring() -> Dict[str, Any]:
     """硬约束：B 线每一轮都必须验证没有重开前 13 轮修好的侧门。"""
@@ -38,6 +41,7 @@ def _existing_security_wiring() -> Dict[str, Any]:
                 "checks": dict(getattr(w, "checks", {}) or {}),
                 "problems": list(getattr(w, "problems", []) or [])}
     except Exception as exc:  # noqa: BLE001
+        log.debug("_existing_security_wiring(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return {"intact": False, "checks": {},
                 "problems": [f"接线校验不可用: {type(exc).__name__}: {exc}"]}
 

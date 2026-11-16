@@ -153,10 +153,23 @@
 | 10 | Motion AI Kit 性能分析（`render_video(profile=True)` 逐节点耗时 + `frame_series` 热力图） | ✅ 已完成（8 测试通过） |
 | 11 | 多语言叙事 TTS（`narration_tts` 确定性 WAV 合成 + 旁白轨并入 compose 混音 + `narration_tts` MCP） | ✅ 已完成（15 测试通过） |
 | 12 | 数据流图三栏工作台前端闭环（`graph_frontend.py` GRAPH_HTML + `/web/graph` + `/api/media` 媒体回放 + `media_rel` 前端拼预览） | ✅ 已完成（11 测试通过） |
+| 13 | llm_call 本地模型网关直连（`_make_adapter` 为已知 provider 自动补全预设 base_url，如 llamacpp→:8080/v1） | ✅ 已完成（3 测试通过） |
+| 14 | 一句话→动画视频（`VIDEO_GEN_SCHEMA` + llm_call 输出 `project_json` + codeanim 上游输入优先取 + `project_json` 端口连边） | ✅ 已完成（4 测试通过） |
+| 15 | 预置示例图 + 一键载入 + 拖拽连边（`graph_presets.py` 3 图 + `/api/graph/presets` + `载入示例` 按钮 + 端口拖拽连边/删除连线 + 幽灵节点清理 + collectGraph 边字段名修正） | ✅ 已完成（9+4+3 测试通过） |
+| 16 | 媒体导出下载 + 载入示例自动落盘（`下载产物` `<a download>` + `lastMedia` 经 `/api/media` 字节一致回放 + 载入示例后自动 `/api/graph/save` 落盘为自定义图，打通 presets→自定义图持久化闭环） | ✅ 已完成（2 测试通过） |
+| 17 | llm_call 默认 provider 本地回退（`ModelGateway.generate` 未指定 provider 且路由未配时回退 `_default_provider()` 探测本地 Ollama/llama.cpp + `_preset_base_url` 补全本地 base_url + 30s 缓存，免磁盘配置直连本地模型网关） | ✅ 已完成（7 测试通过） |
+| 18 | 运行历史持久化 + 前端运行历史面板（`RunLog` 持久化 `.tuan/runs/*.json` + `GET /api/graph/runs` + `GET /api/graph/runlog?id=` + `/api/graph/run` 成功/失败自动记录 + 前端「运行历史」按钮 + `#runsList` 下拉 + 点击条目 `applyGraph` 复现闭环） | ✅ 已完成（8 测试通过） |
+| 19 | 图导出/导入 JSON（`graph_frontend.py`「导出 JSON」用 `collectGraph()`→Blob→`<a download>` 下载 `${图名}.json`；「导入 JSON」读文件→`JSON.parse`→校验 `nodes`/`edges` 数组→`applyGraph` 填画布→提示「点「保存」落盘」；工作台图可移植/版本化） | ✅ 已完成（1 测试通过） |
+| 20 | llm_call provider_id 本地模型下拉（`server.py` `GET /api/graph/models` 检测本地 Ollama/llama.cpp 组装 provider 列表；`graph_frontend.py` llm_call 参数面板 `provider_id` 挂 `<datalist id="providerOptions">` + `refreshProviders()` 初始化填充；无本地模型空 datalist 为合法空状态） | ✅ 已完成（2 测试通过） |
+| 21 | 节点运行状态可视化（`graph_frontend.py` `nodeStatus` 映射按 `/api/graph/run` 的 `logs` 权威状态填充 ok→绿 `.ok`/failed→红 `.failed`；运行前清空；`render()` `classList.toggle` 上色；工作台从黑盒运行升级为可视化执行状态） | ✅ 已完成（1 测试通过） |
 
 > **实现记录**（2026-11-15）：
 > - 阶段1：`tuan_cli/web/dataflow_graph.py` —— 纯数据流调度器，节点行为由调用方 `exec_fn` 注入（避免过度耦合）。
 > - 阶段2：`tuan_cli/runtime/gateway.py` —— 底层用 legacy 同步 `ModelAdapter`（与项目主调用路径一致）；`models/base.py`/`openai_compat.py` 扩展 `chat(response_format=...)`。
 > - 阶段3：`tuan_cli/web/code_anim_render.py` —— 新增 4 节点类型并同步 `_KNOWN_NODE_TYPES` 白名单；全变体 + frame-stable 断言。
 > - 阶段4：`ecosystem/mcp_server.py` 挂 2 个工具（非法项目 fail-closed 返回 `isError`）；`resources/skills/builtin/tuan-video-suite/SKILL.md` 内置套件技能。
+> - 阶段18：`web/graph_api.py` `RunLog`（原子写 + 路径护栏 + 剪枝 100 条）；`web/server.py` 运行历史 GET 路由 + run 自动记录（`_summarize_run` 以 `logs` 权威状态提取，best-effort）；`web/graph_frontend.py`「运行历史」按钮 + `#runsList` + `refreshRuns()` + 点击复现。
+> - 阶段19：`web/graph_frontend.py`「导出 JSON」/「导入 JSON」按钮 + `#importFile`，`collectGraph` 契约序列化/校验/回填。
+> - 阶段20：`web/server.py` `GET /api/graph/models`；`web/graph_frontend.py` `#providerOptions` datalist + `refreshProviders()`。
+> - 阶段21：`web/graph_frontend.py` `nodeStatus` 映射 + `.ok`/`.failed` CSS + `render()` 上色（logs→nodeStatus→render 闭环）。
 > - 全链路 **fail-closed**：未知节点类型跳过、结构化输出解析失败抛错、provider 未配置/未知意图拒绝调用、MCP 非法输入返回错误。

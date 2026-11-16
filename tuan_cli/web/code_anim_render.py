@@ -28,6 +28,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import logging
+log = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # 常量 / 配置
 # ---------------------------------------------------------------------------
@@ -35,6 +38,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 #: 已知的 node type 白名单 (未知类型跳过, 不执行)。
 _KNOWN_NODE_TYPES = frozenset({
     "code", "title", "subtitle", "box", "dataflow", "bg",
+    # 阶段 3 高级动效原语 (transition / particles / kinetic / beat)
+    "transition", "particles", "kinetic", "beat",
+    # 阶段 8 givemotion 式动效补全 (shape_morph / camera / path_motion / hand_drawn)
+    "shape_morph", "camera", "path_motion", "hand_drawn",
 })
 
 #: 后台渲染硬超时 (秒)。
@@ -164,7 +171,8 @@ def _load_font(size: int, mono: bool = True) -> Any:
             return _FONT_CACHE[key]
     try:
         from PIL import ImageFont
-    except Exception:  # noqa: BLE001 - PIL 必须可用
+    except Exception as exc:  # noqa: BLE001 - PIL 必须可用
+        log.debug("_load_font(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
     for path in cands:
         if os.path.isfile(path):
@@ -172,12 +180,14 @@ def _load_font(size: int, mono: bool = True) -> Any:
             if key not in _FONT_CACHE:
                 try:
                     _FONT_CACHE[key] = ImageFont.truetype(path, size)
-                except Exception:  # noqa: BLE001 - 单个字体失败继续找
+                except Exception as exc:  # noqa: BLE001 - 单个字体失败继续找
+                    log.debug("_load_font(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     continue
             return _FONT_CACHE.get(key) or None
     try:
         return ImageFont.load_default()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_load_font(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
 
 
@@ -250,7 +260,8 @@ def _pillow_available() -> bool:
     try:
         from PIL import Image  # noqa: F401
         return True
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_pillow_available(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return False
 
 
@@ -273,6 +284,29 @@ def validate_project(project_json: Any) -> Optional[str]:
     nodes = project_json.get("nodes")
     if nodes is not None and not isinstance(nodes, list):
         return "project_json.nodes 必须是数组"
+    # 阶段 9: 音频混音轨 (cinecode 式) —— 路径或对象列表, 逐项校验, fail-closed
+    audio = project_json.get("audio")
+    if audio is not None:
+        if isinstance(audio, str):
+            if not audio.strip():
+                return "project_json.audio 路径不能为空"
+        elif isinstance(audio, list):
+            for idx, tr in enumerate(audio):
+                if not isinstance(tr, dict):
+                    return f"project_json.audio[{idx}] 必须是对象"
+                ap = tr.get("path")
+                if not isinstance(ap, str) or not ap.strip():
+                    return f"project_json.audio[{idx}].path 必须是非空字符串"
+                vol = tr.get("volume")
+                if vol is not None and (not isinstance(vol, (int, float))
+                                        or isinstance(vol, bool) or vol <= 0):
+                    return f"project_json.audio[{idx}].volume 必须是 > 0 的数字"
+                st = tr.get("start")
+                if st is not None and (not isinstance(st, (int, float))
+                                       or isinstance(st, bool) or st < 0):
+                    return f"project_json.audio[{idx}].start 必须 >= 0 的数字"
+        else:
+            return "project_json.audio 必须是路径字符串或对象数组"
     return None
 
 
@@ -477,7 +511,8 @@ def _render_code_node(draw: Any, node: Dict[str, Any], t: float,
             y1 = code_y + (el + 1) * line_h - 2
             try:
                 draw.rectangle([x + 2, y0, x + 6, y1], fill=accent)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_render_code_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
 
     for idx in range(total_lines):
@@ -502,7 +537,8 @@ def _render_code_node(draw: Any, node: Dict[str, Any], t: float,
         try:
             draw.text((x + pad + 6, code_y + idx * line_h), str(idx + 1),
                       font=font, fill=gutter_color)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_render_code_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         # 代码 (按 token 着色)
         _draw_colored_code(draw, font, code_x, code_y + idx * line_h, line_txt,
@@ -514,7 +550,8 @@ def _render_code_node(draw: Any, node: Dict[str, Any], t: float,
                     draw.rectangle([caret_x, code_y + idx * line_h,
                                     caret_x + font_size * 0.55,
                                     code_y + idx * line_h + font_size], fill=fg)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("_render_code_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
 
 
@@ -540,7 +577,8 @@ def _draw_colored_code(draw: Any, font: Any, x: float, y: float, line: str,
             color = _blend((0, 0, 0), color, alpha)
         try:
             draw.text((cx, y), text, font=font, fill=color)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_draw_colored_code(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         cx += _text_width(font, text)
 
@@ -584,7 +622,8 @@ def _render_title_node(draw: Any, node: Dict[str, Any], t: float,
         px -= (1.0 - _ease(fade)) * 60
     try:
         draw.text((px, y), text, font=font, fill=color)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_render_title_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -623,13 +662,15 @@ def _render_subtitle_node(draw: Any, node: Dict[str, Any], t: float,
         draw.rounded_rectangle([px - 20, y - font_size * 0.4,
                                 px + tw + 20, y + font_size * 1.4],
                                radius=8, fill=(bg[0], bg[1], bg[2]))
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_render_subtitle_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
     if fade < 1.0:
         color = _blend((0, 0, 0), color, fade)
     try:
         draw.text((px, y), shown, font=font, fill=color)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_render_subtitle_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
 
 
@@ -672,7 +713,8 @@ def _render_box_node(draw: Any, node: Dict[str, Any], t: float,
         lcolor = _hex_color(props.get("label_color"), (255, 255, 255))
         try:
             draw.text((x + 10, y + 8), str(label), font=lfont, fill=lcolor)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_render_box_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -717,7 +759,8 @@ def _render_dataflow_node(draw: Any, node: Dict[str, Any], t: float,
                 by = y1 + (y2 - y1) * b
                 try:
                     draw.line([ax, ay, bx, by], fill=color, width=width)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("_render_dataflow_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
     # 流动点
     if dot:
@@ -726,7 +769,8 @@ def _render_dataflow_node(draw: Any, node: Dict[str, Any], t: float,
         rad = max(3, width + 2)
         try:
             draw.ellipse([px - rad, py - rad, px + rad, py + rad], fill=color)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_render_dataflow_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
 
 
@@ -748,32 +792,707 @@ def _render_bg_node(draw: Any, node: Dict[str, Any], t: float,
             row = _blend(c1, c2, frac)
             try:
                 draw.line([0, yy, canvas_w, yy], fill=row, width=1)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("_render_bg_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 break
         else:
             pass
     elif btype == "grid":
         try:
             draw.rectangle([0, 0, canvas_w, canvas_h], fill=c1)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_render_bg_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         # 滚动网格线 (随 t 缓慢滚动)
         offset = int((t * 24) % grid_size)
         for gx in range(-offset, canvas_w + grid_size, grid_size):
             try:
                 draw.line([gx, 0, gx, canvas_h], fill=grid_color, width=1)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_render_bg_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
         for gy in range(-offset, canvas_h + grid_size, grid_size):
             try:
                 draw.line([0, gy, canvas_w, gy], fill=grid_color, width=1)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_render_bg_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
     else:  # solid
         try:
             draw.rectangle([0, 0, canvas_w, canvas_h], fill=c1)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_render_bg_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
+
+
+# ---------------------------------------------------------------------------
+# 高级动效原语 (阶段 3: 对齐 givemotion/Motion 卖点)
+#   * transition  场景转场 (crossfade / slide / zoom / wipe)
+#   * particles   粒子爆发 (发射/漂移/重力/消散)
+#   * kinetic     动能排版 (逐字弹入/缩放/旋转, kinetic typography)
+#   * beat        音乐卡点脉冲 (背景/边框随 BPM 脉冲)
+# 全部为纯函数 (只读 project_json + t), 无全局可变状态, 保持 frame-stable。
+# ---------------------------------------------------------------------------
+
+def _render_transition_node(draw: Any, node: Dict[str, Any], t: float,
+                            canvas_w: int, canvas_h: int) -> None:
+    """渲染 ``transition`` 节点: 场景转场遮罩。
+
+    props:
+      type: crossfade | slide | zoom | wipe
+      from_color / to_color: 转场主色 (默认黑/白)
+      direction: for slide/wipe, "ltr"/"rtl"/"ttb"/"btt" (默认 ltr)
+    """
+    props = node.get("props") or {}
+    if not isinstance(props, dict):
+        props = {}
+    ttype = str(props.get("type") or "crossfade")
+    c1 = _hex_color(props.get("from_color"), (0, 0, 0))
+    c2 = _hex_color(props.get("to_color"), (255, 255, 255))
+    direction = str(props.get("direction") or "ltr")
+    node_start = _num(node.get("start"), 0.0)
+    node_end = _num(node.get("end"), 1.0)
+    span = max(0.001, node_end - node_start)
+    progress = _ease(_clamp((t - node_start) / span))
+    if progress <= 0 or progress >= 1:
+        return
+    try:
+        if ttype == "slide":
+            # 用 to_color 滑入覆盖: 方向决定位移轴
+            if direction in ("ttb", "btt"):
+                shift = (progress * canvas_h) if direction == "ttb" else (-(1 - progress) * canvas_h)
+                draw.rectangle([0, shift, canvas_w, shift + canvas_h], fill=c2)
+            else:
+                shift = (progress * canvas_w) if direction == "ltr" else (-(1 - progress) * canvas_w)
+                draw.rectangle([shift, 0, shift + canvas_w, canvas_h], fill=c2)
+        elif ttype == "zoom":
+            # 以画面中心放大 to_color (矩形随 progress 收缩)
+            half_w = canvas_w * (1 - progress) / 2
+            half_h = canvas_h * (1 - progress) / 2
+            draw.rectangle([half_w, half_h, canvas_w - half_w, canvas_h - half_h],
+                           fill=c2)
+        elif ttype == "wipe":
+            if direction in ("ttb", "btt"):
+                cut = progress * canvas_h
+                if direction == "ttb":
+                    draw.rectangle([0, 0, canvas_w, cut], fill=c2)
+                else:
+                    draw.rectangle([0, canvas_h - cut, canvas_w, canvas_h], fill=c2)
+            else:
+                cut = progress * canvas_w
+                if direction == "ltr":
+                    draw.rectangle([0, 0, cut, canvas_h], fill=c2)
+                else:
+                    draw.rectangle([canvas_w - cut, 0, canvas_w, canvas_h], fill=c2)
+        else:  # crossfade: 混合黑/白遮罩, 透明度随 progress 变化
+            blend = _blend(c1, c2, progress)
+            # 半透明遮罩: 用 blend 色整屏覆盖 (Pillow 无 alpha 需手动混)
+            overlay = _blend(c1, c2, progress)
+            draw.rectangle([0, 0, canvas_w, canvas_h],
+                           fill=(overlay[0], overlay[1], overlay[2]))
+    except Exception as exc:  # noqa: BLE001 - 绘制失败静默 (frame 仍可渲染)
+        log.warning("_render_transition_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        pass
+
+
+def _render_particles_node(draw: Any, node: Dict[str, Any], t: float,
+                           canvas_w: int, canvas_h: int) -> None:
+    """渲染 ``particles`` 节点: 粒子爆发。
+
+    props:
+      color: 粒子颜色 (默认强调蓝)
+      count: 粒子数 (默认 60)
+      origin: "center" | "top" | "bottom" | (x,y)
+      spread: 扩散半径 (默认 120)
+      gravity: 重力 (默认 0, 正向下)
+      life: 生命周期秒 (默认 1.2)
+    """
+    props = node.get("props") or {}
+    if not isinstance(props, dict):
+        props = {}
+    color = _hex_color(props.get("color"), _DEFAULT_ACCENT)
+    count = max(1, _int(props.get("count"), 60))
+    spread = max(1.0, _num(props.get("spread"), 120.0))
+    gravity = _num(props.get("gravity"), 0.0)
+    life = max(0.1, _num(props.get("life"), 1.2))
+    origin = props.get("origin", "center")
+    node_start = _num(node.get("start"), 0.0)
+    node_end = _num(node.get("end"), 1.0)
+    # 粒子仅在节点激活期内发射; t 超出则整体淡出。
+    if t < node_start or t > node_end:
+        return
+    if isinstance(origin, (list, tuple)) and len(origin) >= 2:
+        ox, oy = _num(origin[0], canvas_w / 2), _num(origin[1], canvas_h / 2)
+    elif origin == "top":
+        ox, oy = canvas_w / 2, 0
+    elif origin == "bottom":
+        ox, oy = canvas_w / 2, canvas_h
+    else:
+        ox, oy = canvas_w / 2, canvas_h / 2
+    age = t - node_start
+    # 每颗粒子: 伪随机方向 (按 index 确定性), 位移 = 扩散 * 进度 + 重力
+    rng = _clamp(age / life)
+    # 整体透明度: 生命周期末端淡出
+    global_alpha = _fade_out(t, node_end, 0.2)
+    if global_alpha <= 0:
+        return
+    for i in range(count):
+        # 确定性伪随机角度/速度 (基于 i 的 hash, 保证 frame-stable)
+        seed = (i * 2654435761) & 0xFFFFFFFF
+        ang = (seed % 360) * math.pi / 180.0
+        speed = spread * (0.5 + ((seed >> 8) % 100) / 100.0)
+        dx = math.cos(ang) * speed * rng
+        dy = math.sin(ang) * speed * rng + gravity * rng * rng
+        px = ox + dx
+        py = oy + dy
+        # 粒子尺寸随生命衰减
+        size = max(1.0, 3.0 * (1.0 - rng))
+        alpha = (1.0 - rng) * global_alpha
+        c = _blend((0, 0, 0), color, alpha)
+        try:
+            draw.ellipse([px - size, py - size, px + size, py + size], fill=c)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_render_particles_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            pass
+
+
+def _render_kinetic_node(draw: Any, node: Dict[str, Any], t: float,
+                         canvas_w: int, canvas_h: int) -> None:
+    """渲染 ``kinetic`` 节点: 动能排版 (逐字弹入 / 缩放 / 旋转)。
+
+    props:
+      text: 文本
+      font_size: 字号 (默认 40)
+      color: 颜色
+      x / y: 中心位置
+      mode: "char" (逐字弹入, 默认) | "scale" (整体缩放) | "rotate" (旋转)
+      stagger: 逐字错峰 (默认 0.05s)
+    """
+    props = node.get("props") or {}
+    if not isinstance(props, dict):
+        props = {}
+    text = str(props.get("text") or "")
+    if not text:
+        return
+    font_size = max(12, _int(props.get("font_size"), 40))
+    color = _hex_color(props.get("color"), _DEFAULT_FG)
+    x = _num(props.get("x"), canvas_w * 0.5)
+    y = _num(props.get("y"), canvas_h * 0.5)
+    mode = str(props.get("mode") or "char")
+    stagger = max(0.0, _num(props.get("stagger"), 0.05))
+    font = _sans_font(font_size)
+    node_start = _num(node.get("start"), 0.0)
+    node_end = _num(node.get("end"), 1.0)
+    fade = _fade_in(t, node_start, 0.3) * _fade_out(t, node_end, 0.3)
+    if fade <= 0:
+        return
+    tw = _text_width(font, text)
+    if mode == "scale":
+        progress = _ease(_clamp((t - node_start) / 0.5))
+        scale = 0.5 + 0.5 * progress
+        _draw_scaled_text(draw, font, text, x, y, scale, color, fade, tw)
+        return
+    if mode == "rotate":
+        progress = _ease(_clamp((t - node_start) / 0.6))
+        angle = progress * 360.0
+        _draw_rotated_text(draw, font, text, x, y, angle, color, fade, tw)
+        return
+    # char 逐字弹入
+    char_w = _text_width(font, "M")
+    if char_w <= 0:
+        char_w = font_size * 0.6
+    start_x = x - tw / 2
+    for i, ch in enumerate(text):
+        if ch == " ":
+            continue
+        char_start = node_start + i * stagger
+        cf = _ease(_clamp((t - char_start) / 0.15))
+        if cf <= 0:
+            continue
+        c = _blend((0, 0, 0), color, cf * fade)
+        cx = start_x + i * char_w
+        # 逐字小幅上跳 + 缩放
+        jump = (1.0 - cf) * 12
+        size_scale = 0.7 + 0.3 * cf
+        try:
+            _draw_scaled_text(draw, font, ch, cx + char_w / 2, y - jump,
+                              size_scale, c, 1.0, char_w)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_render_kinetic_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            pass
+
+
+def _draw_scaled_text(draw: Any, font: Any, text: str, cx: float, cy: float,
+                      scale: float, color: Any, alpha: float, tw: float) -> None:
+    """以 (cx,cy) 为中心绘制缩放文本 (用字号近似缩放, Pillow 无原生 scale)。"""
+    try:
+        # 通过字号近似实现缩放 (避免图像缩放的开销与锯齿)
+        base = getattr(font, "size", 40)
+        scaled_font = _sans_font(max(8, int(base * max(0.1, scale))))
+        c = _blend((0, 0, 0), color, alpha)
+        w = _text_width(scaled_font, text)
+        draw.text((cx - w / 2, cy - base * scale / 2), text,
+                  font=scaled_font, fill=c)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_draw_scaled_text(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        pass
+
+
+def _draw_rotated_text(draw: Any, font: Any, text: str, cx: float, cy: float,
+                       angle: float, color: Any, alpha: float, tw: float) -> None:
+    """以中心绘制旋转文本 (用整帧旋转近似, 仅在角度显著时做)。"""
+    try:
+        if abs(angle) < 0.5:
+            c = _blend((0, 0, 0), color, alpha)
+            draw.text((cx - tw / 2, cy - 20), text, font=font, fill=c)
+            return
+        # 角度显著: 绘制到临时帧再旋转 (成本高, 但仅节点激活期内调用)
+        from PIL import Image
+        pad = 64
+        w = int(tw + pad * 2)
+        h = int(_text_width(font, "M") * 2 + pad * 2)
+        tmp = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        from PIL import ImageDraw
+        tdraw = ImageDraw.Draw(tmp)
+        tdraw.text((pad, pad), text, font=font,
+                   fill=(color[0], color[1], color[2], int(alpha * 255)))
+        tmp = tmp.rotate(angle, expand=True)
+        draw._image.paste(tmp, (int(cx - tmp.width / 2), int(cy - tmp.height / 2)), tmp)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_draw_rotated_text(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        pass
+
+
+def _render_beat_node(draw: Any, node: Dict[str, Any], t: float,
+                      canvas_w: int, canvas_h: int) -> None:
+    """渲染 ``beat`` 节点: 音乐卡点脉冲。
+
+    props:
+      bpm: 每分钟节拍 (默认 120)
+      color: 脉冲色 (默认强调蓝)
+      kind: "bg" (全屏底色脉冲) | "border" (边框脉冲) | "ring" (中心圆环)
+      strength: 脉冲强度 (默认 0.15)
+    """
+    props = node.get("props") or {}
+    if not isinstance(props, dict):
+        props = {}
+    bpm = max(1.0, _num(props.get("bpm"), 120.0))
+    color = _hex_color(props.get("color"), _DEFAULT_ACCENT)
+    kind = str(props.get("kind") or "bg")
+    strength = _clamp(_num(props.get("strength"), 0.15), 0.0, 1.0)
+    node_start = _num(node.get("start"), 0.0)
+    node_end = _num(node.get("end"), 1.0)
+    fade = _fade_in(t, node_start, 0.2) * _fade_out(t, node_end, 0.2)
+    if fade <= 0 or t < node_start or t > node_end:
+        return
+    # 心跳: 每个节拍一个尖峰 (用相位衰减模拟)
+    beat_interval = 60.0 / bpm
+    phase = (t - node_start) / beat_interval
+    frac = phase - math.floor(phase)  # 0..1 当前拍内位置
+    pulse = math.exp(-frac * 5.0) * strength * fade
+    if pulse <= 0.001:
+        return
+    c = _blend((0, 0, 0), color, pulse)
+    try:
+        if kind == "border":
+            bw = max(2, int(pulse * 24))
+            draw.rectangle([0, 0, canvas_w, canvas_h], outline=c, width=bw)
+        elif kind == "ring":
+            cx, cy = canvas_w / 2, canvas_h / 2
+            r = max(1.0, (canvas_w * 0.15) * (1.0 + pulse * 3))
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=c, width=4)
+        else:  # bg
+            # 全屏底色脉冲 (在节点激活时叠加)
+            base = _blend((0, 0, 0), c, 0.35)
+            draw.rectangle([0, 0, canvas_w, canvas_h], fill=base)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_render_beat_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        pass
+
+
+def _render_shape_morph_node(draw: Any, node: Dict[str, Any], t: float,
+                             canvas_w: int, canvas_h: int) -> None:
+    """渲染 ``shape_morph`` 节点: 形状渐变 (circle→square→triangle→hex, 逐顶点插值)。
+
+    对齐 givemotion "shape morphing" 卖点。通过把各形状参数化为单位圆上的
+    顶点序列 (圆=密采样圆, 正方形=4 角, 三角=3 角, 六边形=6 角, 星=10 角),
+    再按 ``progress`` 在两形状顶点序列间做线性插值, 得到连续形变。
+
+    props:
+      from / to: 形状名 (circle|square|triangle|hex|star) 默认 circle→square
+      color: 填充色 (默认强调蓝)
+      x / y: 中心 (默认画布中心)
+      size: 半径 (默认 80)
+      duration: 形变时长秒 (默认 1.0, 节点 start 起算)
+      outline: 仅描边 (默认 False)
+    """
+    props = node.get("props") or {}
+    if not isinstance(props, dict):
+        props = {}
+    from_shape = str(props.get("from") or "circle")
+    to_shape = str(props.get("to") or "square")
+    color = _hex_color(props.get("color"), _DEFAULT_ACCENT)
+    cx = _num(props.get("x"), canvas_w * 0.5)
+    cy = _num(props.get("y"), canvas_h * 0.5)
+    size = max(1.0, _num(props.get("size"), 80.0))
+    morph_dur = max(0.01, _num(props.get("duration"), 1.0))
+    outline = bool(props.get("outline"))
+    node_start = _num(node.get("start"), 0.0)
+    node_end = _num(node.get("end"), 1.0)
+    fade = _fade_in(t, node_start, 0.2) * _fade_out(t, node_end, 0.2)
+    if fade <= 0 or t < node_start or t > node_end:
+        return
+    progress = _ease(_clamp((t - node_start) / morph_dur))
+    pts_from = _shape_vertices(from_shape, size, 48)
+    pts_to = _shape_vertices(to_shape, size, 48)
+    # 线性插值对应顶点
+    pts = []
+    for i in range(48):
+        ax, ay = pts_from[i]
+        bx, by = pts_to[i]
+        pts.append((cx + ax + (bx - ax) * progress,
+                    cy + ay + (by - ay) * progress))
+    if fade < 1.0:
+        color = _blend((0, 0, 0), color, fade)
+    try:
+        if outline:
+            draw.polygon(pts, outline=color, width=max(2, _int(props.get("stroke_w"), 3)))
+        else:
+            draw.polygon(pts, fill=color)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_render_shape_morph_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        pass
+
+
+def _shape_vertices(name: str, size: float, n: int) -> List[Tuple[float, float]]:
+    """把形状参数化为 n 个顶点 (单位圆上极坐标, 返回相对中心的偏移)。
+
+    顶点数固定为 n 便于跨形状插值: 圆用 n 等分; 多边形按角数等分 + 顶点对齐;
+    星形用内外交替半径。全部相对中心 (0,0), 无绝对坐标。
+    """
+    import math as _m
+
+    name = (name or "circle").lower()
+    verts: List[Tuple[float, float]] = []
+    if name == "square":
+        # 4 角: 对角对齐 → 按 n 个采样取多边形边界近似 (简单法: 用 4 个主方向角)
+        corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+        for i in range(n):
+            # 均匀采样边: 4 段, 每段 n/4 个点
+            seg = int(n / 4)
+            c = corners[i // seg] if seg else corners[i % 4]
+            nxt = corners[(i // seg + 1) % 4] if seg else corners[(i + 1) % 4]
+            frac = (i % seg) / max(1, seg) if seg else 0.0
+            verts.append((size * (c[0] + (nxt[0] - c[0]) * frac),
+                          size * (c[1] + (nxt[1] - c[1]) * frac)))
+        return verts
+    if name == "triangle":
+        angs = [90, 210, 330]
+    elif name == "hex":
+        angs = [0, 60, 120, 180, 240, 300]
+    elif name == "star":
+        # 10 顶点: 内外交替
+        for i in range(n):
+            ang = 360.0 * i / n
+            rad = size if (i % 2 == 0) else size * 0.45
+            verts.append((rad * _m.cos(_m.radians(ang)),
+                          rad * _m.sin(_m.radians(ang))))
+        return verts
+    elif name == "circle":
+        angs = [360.0 * i / n for i in range(n)]
+    else:
+        angs = [360.0 * i / n for i in range(n)]
+    for i in range(n):
+        if name in ("triangle", "hex"):
+            # 多边形: 顶点落在对应角, 其余点在边间 (插值到最近角之间的边)
+            k = len(angs)
+            seg = n / k
+            idx = min(k - 1, int(i / seg))
+            nxt = (idx + 1) % k
+            frac = (i % seg) / max(1, seg)
+            a0 = _m.radians(angs[idx])
+            a1 = _m.radians(angs[nxt])
+            ang = a0 + (a1 - a0) * frac
+            verts.append((size * _m.cos(ang), size * _m.sin(ang)))
+        else:
+            ang = _m.radians(360.0 * i / n)
+            verts.append((size * _m.cos(ang), size * _m.sin(ang)))
+    return verts
+
+
+def _render_camera_node(draw: Any, node: Dict[str, Any], t: float,
+                        canvas_w: int, canvas_h: int) -> None:
+    """渲染 ``camera`` 节点: 相机跟随 (平移/缩放/旋转取景框, 叠加目标指示)。
+
+    对齐 givemotion "camera movement / follow" 卖点。绘制取景框 (viewport) 并
+    用十字/圆点标出相机中心, 随 t 沿 ``path`` (点列表) 运动, 支持缩放。
+    由于是纯函数单帧绘制, 相机框本身是**可视化叠加层** (真实变换由调用方
+    在合成阶段应用); 此处提供清晰的取景指示。
+
+    props:
+      x1,y1 / x2,y2: 起点/终点 (默认对角线)
+      t0 / t1: 运动起止时间比例 (默认 0→1, 相对节点寿命)
+      zoom_start / zoom_end: 取景缩放 (默认 1→1.2)
+      color: 取景框色 (默认强调蓝)
+      show_target: 显示目标十字 (默认 True)
+      ease: 缓动 (linear|easein|easeout|easeinout, 默认 easeinout)
+    """
+    props = node.get("props") or {}
+    if not isinstance(props, dict):
+        props = {}
+    x1 = _num(props.get("x1"), 0.0)
+    y1 = _num(props.get("y1"), 0.0)
+    x2 = _num(props.get("x2"), canvas_w)
+    y2 = _num(props.get("y2"), canvas_h)
+    color = _hex_color(props.get("color"), _DEFAULT_ACCENT)
+    show_target = bool(props.get("show_target", True))
+    ease_name = str(props.get("ease") or "easeinout")
+    node_start = _num(node.get("start"), 0.0)
+    node_end = _num(node.get("end"), 1.0)
+    fade = _fade_in(t, node_start, 0.2) * _fade_out(t, node_end, 0.2)
+    if fade <= 0 or t < node_start or t > node_end:
+        return
+    span = max(0.001, node_end - node_start)
+    raw = _clamp((t - node_start) / span)
+    eased = _ease_kind(raw, ease_name)
+    # 相机中心沿线段插值
+    cx = x1 + (x2 - x1) * eased
+    cy = y1 + (y2 - y1) * eased
+    if fade < 1.0:
+        color = _blend((0, 0, 0), color, fade)
+    # 取景框: 以相机为中心, 随 zoom 缩放
+    zoom_start = max(0.1, _num(props.get("zoom_start"), 1.0))
+    zoom_end = max(0.1, _num(props.get("zoom_end"), 1.2))
+    zoom = zoom_start + (zoom_end - zoom_start) * eased
+    vw = canvas_w * 0.4 / zoom
+    vh = canvas_h * 0.4 / zoom
+    try:
+        draw.rectangle([cx - vw, cy - vh, cx + vw, cy + vh],
+                       outline=color, width=max(2, _int(props.get("stroke_w"), 2)))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_render_camera_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        pass
+    if show_target:
+        cross = max(4, int(vw * 0.1))
+        try:
+            draw.line([cx - cross, cy, cx + cross, cy], fill=color, width=2)
+            draw.line([cx, cy - cross, cx, cy + cross], fill=color, width=2)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_render_camera_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            pass
+
+
+def _ease_kind(t: float, name: str) -> float:
+    """多种缓动 (0→1)。"""
+    t = _clamp(t)
+    n = (name or "linear").lower()
+    if n == "easein":
+        return t * t
+    if n == "easeout":
+        return 1 - (1 - t) * (1 - t)
+    if n == "easeinout":
+        return t * t * (3 - 2 * t)  # smoothstep
+    return t
+
+
+def _render_path_motion_node(draw: Any, node: Dict[str, Any], t: float,
+                             canvas_w: int, canvas_h: int) -> None:
+    """渲染 ``path_motion`` 节点: 物体沿路径运动 (贝塞尔/折线/圆/螺旋)。
+
+    对齐 givemotion "path-based motion" 卖点。支持路径类型:
+      line    直线 (x1,y1)→(x2,y2)
+      poly    折线 (points 列表)
+      bezier  三次贝塞尔 (p0,p1,p2,p3)
+      circle  圆 (cx,cy,r)
+      spiral  螺旋 (cx,cy,r0,r1,turns)
+    物体在路径上随 ``speed`` 前进; 绘制位置 + 尾迹。
+
+    props:
+      path: 路径类型 (默认 line)
+      points: 折线/贝塞尔控制点 (list of [x,y])
+      x1,y1,x2,y2: line 端点 (默认画布对角)
+      cx,cy,r / r0,r1,turns: 圆/螺旋参数
+      speed: 前进速度 (默认 1.0, 完整路径往返)
+      direction: "forward"|"reverse"|"pingpong" (默认 forward)
+      color: 物体色 (默认强调蓝)
+      trail: 尾迹长度 (0-1, 默认 0.15; 0=无)
+      size: 物体半径 (默认 10)
+    """
+    props = node.get("props") or {}
+    if not isinstance(props, dict):
+        props = {}
+    ptype = str(props.get("path") or "line")
+    color = _hex_color(props.get("color"), _DEFAULT_ACCENT)
+    speed = max(0.01, _num(props.get("speed"), 1.0))
+    direction = str(props.get("direction") or "forward")
+    trail = _clamp(_num(props.get("trail"), 0.15), 0.0, 1.0)
+    size = max(1.0, _num(props.get("size"), 10.0))
+    node_start = _num(node.get("start"), 0.0)
+    node_end = _num(node.get("end"), 1.0)
+    fade = _fade_in(t, node_start, 0.2) * _fade_out(t, node_end, 0.2)
+    if fade <= 0 or t < node_start or t > node_end:
+        return
+    span = max(0.001, node_end - node_start)
+    raw = _clamp((t - node_start) / span * speed) % 1.0
+    if direction == "reverse":
+        raw = 1.0 - raw
+    elif direction == "pingpong":
+        ph = (t - node_start) / span * speed
+        raw = 1.0 - abs(1.0 - (ph % 2.0))  # 0..1 往返
+    pos = _path_point(ptype, props, raw, canvas_w, canvas_h)
+    if pos is None:
+        return
+    px, py = pos
+    if fade < 1.0:
+        color = _blend((0, 0, 0), color, fade)
+    # 尾迹
+    if trail > 0:
+        steps = max(2, int(trail * 40))
+        for s in range(1, steps + 1):
+            back = _clamp(raw - (s / steps) * trail)
+            bp = _path_point(ptype, props, back, canvas_w, canvas_h)
+            if bp is None:
+                continue
+            alpha = fade * (1.0 - s / (steps + 1))
+            bc = _blend((0, 0, 0), color, alpha)
+            r = max(0.5, size * (1.0 - s / (steps + 1)))
+            try:
+                draw.ellipse([bp[0] - r, bp[1] - r, bp[0] + r, bp[1] + r], fill=bc)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_render_path_motion_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+                pass
+    try:
+        draw.ellipse([px - size, py - size, px + size, py + size], fill=color)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("_render_path_motion_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        pass
+
+
+def _path_point(ptype: str, props: Dict[str, Any], t: float,
+                canvas_w: int, canvas_h: int) -> Optional[Tuple[float, float]]:
+    """按路径类型计算 t∈[0,1] 处的点坐标; 非法参数返回 None。"""
+    import math as _m
+
+    ptype = (ptype or "line").lower()
+    if ptype == "line":
+        x1 = _num(props.get("x1"), 0.0)
+        y1 = _num(props.get("y1"), 0.0)
+        x2 = _num(props.get("x2"), canvas_w)
+        y2 = _num(props.get("y2"), canvas_h)
+        return (x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)
+    if ptype == "poly":
+        pts = props.get("points")
+        if not isinstance(pts, list) or len(pts) < 2:
+            return None
+        n_seg = len(pts) - 1
+        seg = min(n_seg - 1, int(t * n_seg))
+        frac = t * n_seg - seg
+        a = pts[seg]
+        b = pts[seg + 1]
+        if not (isinstance(a, (list, tuple)) and len(a) >= 2 and
+                isinstance(b, (list, tuple)) and len(b) >= 2):
+            return None
+        return (_num(a[0], 0) + (_num(b[0], 0) - _num(a[0], 0)) * frac,
+                _num(a[1], 0) + (_num(b[1], 0) - _num(a[1], 0)) * frac)
+    if ptype == "bezier":
+        pts = props.get("points")
+        if not isinstance(pts, list) or len(pts) < 4:
+            return None
+        p = [(_num(q[0], 0), _num(q[1], 0)) if isinstance(q, (list, tuple)) and len(q) >= 2 else (0, 0)
+             for q in pts[:4]]
+        u = 1 - t
+        x = (u ** 3 * p[0][0] + 3 * u * u * t * p[1][0]
+             + 3 * u * t * t * p[2][0] + t ** 3 * p[3][0])
+        y = (u ** 3 * p[0][1] + 3 * u * u * t * p[1][1]
+             + 3 * u * t * t * p[2][1] + t ** 3 * p[3][1])
+        return (x, y)
+    if ptype == "circle":
+        cx = _num(props.get("cx"), canvas_w * 0.5)
+        cy = _num(props.get("cy"), canvas_h * 0.5)
+        r = max(0.0, _num(props.get("r"), 100.0))
+        ang = 2 * _m.pi * t - _m.pi / 2
+        return (cx + r * _m.cos(ang), cy + r * _m.sin(ang))
+    if ptype == "spiral":
+        cx = _num(props.get("cx"), canvas_w * 0.5)
+        cy = _num(props.get("cy"), canvas_h * 0.5)
+        r0 = max(0.0, _num(props.get("r0"), 20.0))
+        r1 = max(0.0, _num(props.get("r1"), 180.0))
+        turns = max(0.1, _num(props.get("turns"), 2.0))
+        ang = 2 * _m.pi * turns * t - _m.pi / 2
+        r = r0 + (r1 - r0) * t
+        return (cx + r * _m.cos(ang), cy + r * _m.sin(ang))
+    return None
+
+
+def _render_hand_drawn_node(draw: Any, node: Dict[str, Any], t: float,
+                            canvas_w: int, canvas_h: int) -> None:
+    """渲染 ``hand_drawn`` 节点: 手绘自绘 (笔画渐进显现 + 轻微抖动)。
+
+    对齐 givemotion "hand-drawn / sketch reveal" 卖点。把折线/曲线路径按
+    ``progress`` 截断显示 (draw line segment), 并加确定性抖动模拟手绘质感。
+
+    props:
+      points: 折线顶点 list (必填, >=2)
+      color: 笔触色 (默认近白)
+      width: 笔触宽 (默认 3)
+      jitter: 抖动幅度 px (默认 1.5)
+      speed: 绘制速度 (默认 1.0, 相对节点寿命)
+      close: 闭合路径 (默认 False)
+    """
+    props = node.get("props") or {}
+    if not isinstance(props, dict):
+        props = {}
+    pts = props.get("points")
+    if not isinstance(pts, list) or len(pts) < 2:
+        return
+    pts = [(x, y) for x, y in
+           ((_num(q[0], 0), _num(q[1], 0)) if isinstance(q, (list, tuple)) and len(q) >= 2
+            else (0, 0) for q in pts)]
+    color = _hex_color(props.get("color"), (235, 240, 246))
+    width = max(1, _int(props.get("width"), 3))
+    jitter = max(0.0, _num(props.get("jitter"), 1.5))
+    speed = max(0.01, _num(props.get("speed"), 1.0))
+    close = bool(props.get("close"))
+    node_start = _num(node.get("start"), 0.0)
+    node_end = _num(node.get("end"), 1.0)
+    fade = _fade_in(t, node_start, 0.2) * _fade_out(t, node_end, 0.2)
+    if fade <= 0 or t < node_start or t > node_end:
+        return
+    if close and len(pts) > 2:
+        pts = pts + [pts[0]]
+    span = max(0.001, node_end - node_start)
+    progress = _ease(_clamp((t - node_start) / span * speed))
+    total_len = sum(math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+                    for i in range(len(pts) - 1))
+    if total_len <= 0:
+        return
+    # 确定性抖动 (基于顶点 index + t 帧, 保证 frame-stable)
+    def _jit(i: int) -> Tuple[float, float]:
+        if jitter <= 0:
+            return 0.0, 0.0
+        seed = (i * 2654435761 + int(t * 60) * 40503) & 0xFFFFFFFF
+        return (jitter * (((seed % 100) / 100.0) - 0.5),
+                jitter * ((((seed >> 8) % 100) / 100.0) - 0.5))
+
+    acc = 0.0
+    drawn = total_len * progress
+    if fade < 1.0:
+        color = _blend((0, 0, 0), color, fade)
+    for i in range(len(pts) - 1):
+        seg_len = math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+        if acc >= drawn:
+            break
+        seg_finish = min(1.0, max(0.0, (drawn - acc) / max(0.001, seg_len)))
+        ex = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * seg_finish
+        ey = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * seg_finish
+        jx, jy = _jit(i)
+        try:
+            draw.line([pts[i][0] + jx, pts[i][1] + jy, ex + jx, ey + jy],
+                      fill=color, width=width)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_render_hand_drawn_node(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            pass
+        acc += seg_len
 
 
 # 节点分发: type -> 渲染函数
@@ -784,6 +1503,16 @@ _NODE_RENDERERS: Dict[str, Callable[[Any, Dict[str, Any], float, int, int], None
     "box": _render_box_node,
     "dataflow": _render_dataflow_node,
     "bg": _render_bg_node,
+    # 阶段 3 高级动效原语
+    "transition": _render_transition_node,
+    "particles": _render_particles_node,
+    "kinetic": _render_kinetic_node,
+    "beat": _render_beat_node,
+    # 阶段 8 givemotion 式动效补全
+    "shape_morph": _render_shape_morph_node,
+    "camera": _render_camera_node,
+    "path_motion": _render_path_motion_node,
+    "hand_drawn": _render_hand_drawn_node,
 }
 
 
@@ -791,14 +1520,20 @@ _NODE_RENDERERS: Dict[str, Callable[[Any, Dict[str, Any], float, int, int], None
 # 帧绘制 (纯函数)
 # ---------------------------------------------------------------------------
 
-def draw_frame(project_json: Dict[str, Any], t: float) -> Any:
+def draw_frame(project_json: Dict[str, Any], t: float,
+               profiler: Optional[Dict[str, Any]] = None) -> Any:
     """绘制时间 t 的单帧。**纯函数**: 只读 project_json + t, 无全局可变状态。
 
     先画背景 (首个 bg 节点, 否则深色默认), 再按列表顺序渲染所有
     ``start <= t <= end`` 的节点; 范围外的节点跳过, 未知类型跳过 (记录日志)。
+
+    若提供 ``profiler`` dict, 会就地写入逐节点/整帧耗时 (毫秒):
+    ``{"frame_ms": float, "nodes": {ntype: {"count", "total_ms", "max_ms"}}}``。
+    未提供时行为与旧版完全一致 (零开销)。
     """
     from PIL import Image, ImageDraw
 
+    frame_start = time.perf_counter()
     width = max(1, _int(project_json.get("width"), 1280))
     height = max(1, _int(project_json.get("height"), 720))
     img = Image.new("RGB", (width, height), _DEFAULT_BG)
@@ -812,7 +1547,8 @@ def draw_frame(project_json: Dict[str, Any], t: float) -> Any:
                 if isinstance(n, dict) and str(n.get("type")) == "bg"]
     for n in bg_nodes:
         if _node_active(n, t):
-            _render_bg_node(draw, n, t, width, height)
+            _render_with_profiler(profiler, "bg", _render_bg_node,
+                                  draw, n, t, width, height)
     # 其余节点按顺序
     for n in nodes:
         if not isinstance(n, dict):
@@ -828,10 +1564,29 @@ def draw_frame(project_json: Dict[str, Any], t: float) -> Any:
         renderer = _NODE_RENDERERS.get(ntype)
         if renderer is not None:
             try:
-                renderer(draw, n, t, width, height)
-            except Exception:  # noqa: BLE001 - 单节点失败不影响整帧
+                _render_with_profiler(profiler, ntype, renderer,
+                                      draw, n, t, width, height)
+            except Exception as exc:  # noqa: BLE001 - 单节点失败不影响整帧
+                log.debug("draw_frame(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 continue
+    if profiler is not None:
+        profiler["frame_ms"] = round((time.perf_counter() - frame_start) * 1000, 3)
     return img
+
+
+def _render_with_profiler(profiler: Optional[Dict[str, Any]], ntype: str,
+                          renderer: Callable[..., Any], *args: Any) -> None:
+    """调用单个节点渲染器; 若传了 profiler, 记录该节点耗时。"""
+    start = time.perf_counter()
+    renderer(*args)
+    if profiler is not None:
+        ms = (time.perf_counter() - start) * 1000
+        slot = profiler.setdefault("nodes", {}).setdefault(
+            ntype, {"count": 0, "total_ms": 0.0, "max_ms": 0.0})
+        slot["count"] += 1
+        slot["total_ms"] += ms
+        if ms > slot["max_ms"]:
+            slot["max_ms"] = ms
 
 
 # ---------------------------------------------------------------------------
@@ -919,11 +1674,13 @@ def _probe_encoder(ffmpeg: str) -> Optional[str]:
 
 
 def render_video(project_json: Dict[str, Any], out_path: str, *,
-                 fps: int = 30, on_progress: Optional[Callable[[int, int], None]] = None) -> Dict[str, Any]:
+                 fps: int = 30, on_progress: Optional[Callable[[int, int], None]] = None,
+                 profile: bool = False) -> Dict[str, Any]:
     """同步渲染视频 (Pillow 逐帧 + ffmpeg rawvideo 管道编码)。
 
     返回 ``{"out_path","frames","fps","elapsed","size_bytes"}``。
-    ffmpeg 缺失时抛出 RuntimeError。
+    ``profile=True`` 时额外返回 ``perf`` (逐节点耗时 + 帧时间序列,
+    见 :func:`_profile_summary`)。ffmpeg 缺失时抛出 RuntimeError。
     """
     err = validate_project(project_json)
     if err:
@@ -962,28 +1719,35 @@ def render_video(project_json: Dict[str, Any], out_path: str, *,
                                 stderr=subprocess.PIPE, shell=False)
     except FileNotFoundError as exc:
         raise RuntimeError(f"ffmpeg 启动失败: {exc}") from exc
+    frame_profiles: List[Dict[str, Any]] = []
     try:
         for i in range(total_frames):
             t = i / fps
-            frame = draw_frame(project_json, t)
+            prof: Optional[Dict[str, Any]] = {} if profile else None
+            frame = draw_frame(project_json, t, profiler=prof)
+            if prof is not None:
+                frame_profiles.append(prof)
             if proc.stdin is not None:
                 proc.stdin.write(frame.tobytes())
             if on_progress and (i % max(1, total_frames // 10) == 0 or i == total_frames - 1):
                 try:
                     on_progress(i + 1, total_frames)
-                except Exception:  # noqa: BLE001 - 回调异常忽略
+                except Exception as exc:  # noqa: BLE001 - 回调异常忽略
+                    log.warning("render_video(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
     except Exception:
         try:
             proc.kill()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.warning("render_video(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         raise
     finally:
         if proc.stdin is not None:
             try:
                 proc.stdin.close()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.warning("render_video(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
     stderr_b = b""
     if proc.stderr is not None:
@@ -993,14 +1757,147 @@ def render_video(project_json: Dict[str, Any], out_path: str, *,
     if proc.returncode != 0:
         tail = stderr_b.decode("utf-8", errors="replace")[-_TAIL_BYTES:]
         raise RuntimeError(f"ffmpeg 编码失败 (exit={proc.returncode}): {tail}")
+    # 阶段 9: cinecode 式音频混音 —— 混入音轨 (若 project_json 含 audio)
+    audio_result = _mix_audio_tracks(ffmpeg, project_json, str(out), duration)
     size_bytes = out.stat().st_size if out.is_file() else 0
-    return {
+    result: Dict[str, Any] = {
         "out_path": str(out),
         "frames": total_frames,
         "fps": fps,
         "elapsed": round(elapsed, 3),
         "size_bytes": size_bytes,
+        "audio": audio_result,
     }
+    if profile:
+        result["perf"] = _profile_summary(frame_profiles, total_frames)
+    return result
+
+
+def _profile_summary(frame_profiles: List[Dict[str, Any]],
+                     total_frames: int) -> Dict[str, Any]:
+    """把逐帧 profiler 聚合为性能摘要 (逐节点耗时 + 帧时间序列热力图)。"""
+    agg: Dict[str, Dict[str, float]] = {}
+    frame_ms: List[float] = []
+    for prof in frame_profiles:
+        fms = float(prof.get("frame_ms") or 0.0)
+        frame_ms.append(fms)
+        for ntype, slot in (prof.get("nodes") or {}).items():
+            a = agg.setdefault(ntype, {"count": 0, "total_ms": 0.0, "max_ms": 0.0})
+            a["count"] += int(slot.get("count") or 0)
+            a["total_ms"] += float(slot.get("total_ms") or 0.0)
+            a["max_ms"] = max(a["max_ms"], float(slot.get("max_ms") or 0.0))
+    nodes = {}
+    for ntype, a in agg.items():
+        nodes[ntype] = {
+            "count": a["count"],
+            "total_ms": round(a["total_ms"], 3),
+            "avg_ms": round(a["total_ms"] / max(1, a["count"]), 3),
+            "max_ms": round(a["max_ms"], 3),
+        }
+    if frame_ms:
+        worst = max(frame_ms)
+        avg = sum(frame_ms) / len(frame_ms)
+        p95 = sorted(frame_ms)[min(len(frame_ms) - 1, int(len(frame_ms) * 0.95))]
+    else:
+        worst = avg = p95 = 0.0
+    return {
+        "nodes": nodes,
+        "frame_ms": {
+            "avg": round(avg, 3),
+            "p95": round(p95, 3),
+            "max": round(worst, 3),
+            "total": round(sum(frame_ms), 3),
+        },
+        "frame_series": [round(x, 3) for x in frame_ms],
+        "frames": len(frame_ms),
+        "total_frames": total_frames,
+    }
+
+
+def _mix_audio_tracks(ffmpeg: str, project_json: Dict[str, Any],
+                      video_path: str, duration: float) -> Dict[str, Any]:
+    """把 project_json 的 ``audio`` 音轨混入已编码视频 (cinecode 式)。
+
+    audio 支持两种形态:
+      * str:  单个音频文件路径 (起点 0, 音量 1.0)
+      * list: [{"path", "start"?, "volume"?, "loop"?}, ...]
+
+    用 ffmpeg 二次转码: 读视频 + N 条音频输入, amix 合并 (每条延迟 start,
+    缩放 volume), 输出临时 mp4 后原子替换。任何一步失败都 fail-closed
+    (抛 RuntimeError, 不产出无声假成功)。
+
+    返回 ``{"mixed": bool, "tracks": n, "audio_codec": ...}``; 无 audio 时返回
+    ``{"mixed": False, "tracks": 0}``。
+    """
+    audio = project_json.get("audio")
+    if audio is None:
+        return {"mixed": False, "tracks": 0}
+    if isinstance(audio, str):
+        tracks = [{"path": audio, "start": 0.0, "volume": 1.0}]
+    elif isinstance(audio, list):
+        tracks = list(audio)
+    else:
+        raise RuntimeError("audio 字段类型非法 (fail-closed)")
+    if not tracks:
+        return {"mixed": False, "tracks": 0}
+    # 逐条解析
+    resolved = []
+    for tr in tracks:
+        if not isinstance(tr, dict):
+            raise RuntimeError("audio 轨道必须是对象 (fail-closed)")
+        ap = tr.get("path")
+        if not isinstance(ap, str) or not ap.strip():
+            raise RuntimeError("audio 轨道缺 path (fail-closed)")
+        if not Path(ap).is_file():
+            raise RuntimeError(f"audio 文件不存在: {ap} (fail-closed)")
+        resolved.append({
+            "path": ap,
+            "start": max(0.0, _num(tr.get("start"), 0.0)),
+            "volume": max(0.01, _num(tr.get("volume"), 1.0)),
+            "loop": bool(tr.get("loop")),
+        })
+    tmp = video_path + ".audiotmp.mp4"
+    argv = [ffmpeg, "-y", "-i", video_path]
+    for tr in resolved:
+        argv += ["-i", tr["path"]]
+    n = len(resolved)
+    # 每个音频输入: 循环→延迟→音量
+    filters = []
+    for i in range(n):
+        tr = resolved[i]
+        pre = "aloop=loop=-1:size=2e9,atrim=duration=%.3f," % max(0.1, duration) if tr["loop"] else ""
+        filters.append(f"[{i+1}:a]{pre}adelay={int(tr['start']*1000)}|{int(tr['start']*1000)},"
+                       f"volume={tr['volume']:.4f}[a{i}]")
+    # 合并
+    amix_inputs = "".join(f"[a{i}]" for i in range(n))
+    filters.append(f"{amix_inputs}amix=inputs={n}:duration=longest:dropout_transition=0"
+                   f",aformat=sample_rates=44100:channel_layouts=stereo[aout]")
+    argv += [
+        "-filter_complex", ";".join(filters),
+        "-map", "0:v", "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+        "-movflags", "+faststart",
+        tmp,
+    ]
+    try:
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                shell=False)
+        _, errb = proc.communicate(timeout=_RENDER_TIMEOUT_SEC)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise RuntimeError("音频混音超时 (fail-closed)")
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"音频混音启动失败: {exc} (fail-closed)")
+    if proc.returncode != 0:
+        tail = errb.decode("utf-8", errors="replace")[-_TAIL_BYTES:]
+        raise RuntimeError(f"音频混音失败 (exit={proc.returncode}): {tail}")
+    try:
+        Path(tmp).replace(video_path)
+    except OSError as exc:
+        raise RuntimeError(f"音频混音输出替换失败: {exc} (fail-closed)")
+    return {"mixed": True, "tracks": n, "audio_codec": "aac"}
 
 
 def render_contact_sheet(project_json: Dict[str, Any], times: List[float],
@@ -1040,11 +1937,11 @@ def render_contact_sheet(project_json: Dict[str, Any], times: List[float],
 
 
 def start_render_job(project_json: Dict[str, Any], out_path: str,
-                     fps: int = 30) -> str:
-    """后台渲染视频; 返回 job_id。"""
+                     fps: int = 30, profile: bool = False) -> str:
+    """后台渲染视频; 返回 job_id。``profile=True`` 时结果含 ``perf``。"""
     return _start_render_job(
         "render",
-        lambda: render_video(project_json, out_path, fps=fps))
+        lambda: render_video(project_json, out_path, fps=fps, profile=profile))
 
 
 def start_contact_job(project_json: Dict[str, Any], times: List[float],

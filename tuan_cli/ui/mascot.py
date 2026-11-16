@@ -20,6 +20,8 @@ from __future__ import annotations
 import math
 import time
 
+from .theme import BRAND_PRIMARY, BRAND_SECONDARY
+
 # 状态常量
 IDLE = "idle"
 THINKING = "thinking"
@@ -30,8 +32,8 @@ DONE = "done"
 STATES = (IDLE, THINKING, WORKING, ALERT, DONE)
 
 # 配色 (dark palette)
-_PRIMARY = "#4FA8FF"
-_ACCENT = "#5BC0BE"
+_PRIMARY = BRAND_PRIMARY
+_ACCENT = BRAND_SECONDARY
 _SUCCESS = "#4EC87E"
 _WARNING = "#E8A838"
 _ERROR = "#E85454"

@@ -13,6 +13,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+import logging
+log = logging.getLogger(__name__)
+
 TUAN_MD_NAME = "TUAN.md"
 
 # 检测时跳过的目录 (依赖/产物/隐藏目录)
@@ -26,7 +29,8 @@ _SKIP_DIRS = {
 def _read_text_safe(path: Path, limit: int = 200_000) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="ignore")[:limit]
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_read_text_safe(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return ""
 
 
@@ -74,7 +78,8 @@ def detect_project(workspace: Path) -> Dict[str, Any]:
                     if any(p.suffix == ".py" for p in subdir.iterdir()):
                         has_py = True
                         break
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("detect_project(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
     if has_py:
         info["languages"].append("python")
