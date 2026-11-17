@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, cast, Callable, Dict, List, Optional, Set
 
 from .models import (
     EventStatus,
@@ -165,7 +165,7 @@ class EventBus:
             self._notify(trg, EventStatus.IGNORED)
             return EventStatus.IGNORED
         try:
-            status = router.on_event(trg)
+            status = cast(EventStatus, router.on_event(trg))
         except Exception:  # noqa: BLE001
             log.exception("router.on_event failed")
             status = EventStatus.IGNORED

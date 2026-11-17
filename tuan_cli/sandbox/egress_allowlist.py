@@ -25,9 +25,9 @@
 - :func:`evaluate_claim`：声明外域名一律拒绝；``strict`` 且检测不到域名
   时**也拒绝**（无法证明合规，防文本绕过），不是「没检测到就放行」。
 - :func:`claim_from_args`：从工具参数里取逐命令 ``allowed_domains``；
-  没有则回落全局配置，但明确标 ``source``，不假装是逐命令声明。
+  没有则回落全局配置，但明确标 ``source``，不是逐命令声明。
 
-**刻意不做**：不声称 bwrap / seatbelt 具备域名级 OS 过滤能力 —— 它们
+**刻意不做**：bwrap / seatbelt 无域名级 OS 过滤能力 —— 它们
 只有 network namespace / IP 级规则。域名强绑定的**真正强制点**是
 ``egress_proxy.py`` 的本地回环出网代理（CONNECT / 明文 HTTP 主机校验），
 本模块负责把 claim 一路送到那里，并写进 ``SandboxProfile`` 供后端参考。
@@ -189,7 +189,7 @@ def claim_from_args(fn_args: Any, *, fallback: Any = None,
     """优先取工具参数里的逐命令声明；没有则回落全局配置。
 
     ``fn_args`` 里 ``allowed_domains`` 就是 CC v2.1.271 的 per-command
-    ``allowed_domains`` 语义。回落时不假装是逐命令声明，``source`` 会写明。
+    ``allowed_domains`` 语义。回落时是逐命令声明，``source`` 会写明。
     """
     if isinstance(fn_args, Mapping):
         for key in ("allowed_domains", "allowedDomains", "claim_domains"):
@@ -246,7 +246,9 @@ def evaluate_claim(claim: NetworkClaim,
     unmatched = tuple(d for d in detected if not claim.allows_host(d))
     if unmatched:
         return AllowlistDecision(
-            False, "检测到声明外出网目标, 拒绝: " + ", ".join(unmatched[:5]),
+            False,
+            "检测到声明外出网目标但不在白名单 (逐命令域名声明), 拒绝: "
+            + ", ".join(unmatched[:5]),
             claim, tuple(detected), unmatched, False)
     if not detected:
         return AllowlistDecision(
@@ -279,6 +281,20 @@ def claim_from_verdict(verdict: Any) -> NetworkClaim:
     return c
 
 
-def profile_domains(claim: NetworkClaim) -> Tuple[str, ...]:
-    """给 ``SandboxProfile.allowed_domains`` 用的清单（已归一化、去重）。"""
-    return claim.required_domains
+def profile_domains(obj: Any) -> Tuple[str, ...]:
+    """给 ``SandboxProfile.allowed_domains`` 用的清单（已归一化、去重）。
+
+    B2: 支持两种输入 —— NetworkClaim (返回其声明域) 或 SandboxProfile
+    (读取其 ``allowed_domains`` 字段); 后者用于 manager → provider 传递。
+    """
+    if hasattr(obj, "required_domains"):
+        return obj.required_domains
+    raw = getattr(obj, "allowed_domains", None)
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out: List[str] = []
+    for x in raw:
+        n = normalize_domain(x)
+        if n and n not in out:
+            out.append(n)
+    return tuple(out)

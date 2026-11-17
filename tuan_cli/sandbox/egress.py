@@ -19,14 +19,14 @@ env**：
 - :func:`build_child_env`：保留非敏感变量，敏感键替换为 sentinel；
   脏输入（非 mapping / 非 str 键或值）fail-closed 不继承。
 - :func:`enforce_local_egress`：**local 后端 + 禁网 → 明确拒绝**，
-  绝不假装禁网成功。强后端有自己的网络隔离，不在此重复判定。
+  绝禁网成功。强后端有自己的网络隔离，不在此重复判定。
 
 **刻意不做的（决定 catalog 状态仍为 partial）**
 
 - 不实现真实 HTTP 转发代理进程，所以「出网代理注入真实密钥」未接线；
   :meth:`CredentialBroker.inject_headers` 是预留接口，默认 ``enabled=False``。
 - **不翻** ``deny_network_by_default`` 出厂默认（仍是 false）—— 那是
-  破坏性行为变更，前 13 轮明确承诺给迁移开关、不擅自翻。
+  破坏性行为变更，前 13 轮明确承诺给迁移开关、需要显式迁移开关。
 - 不把真实值写进日志 / repr / 异常 / 审计；只记键名与计数。
 
 许可与合规：纯本地实现，未复制任何 Anthropic 源码或资产。
@@ -37,9 +37,10 @@ import hashlib
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-SENTINEL_PREFIX = "tuan-egress-sentinel-v1:"
+# 单一真值: 占位符前缀由共享安全原语层定义, 本模块只复用。
+from ..core.security_utils import MASKED_PLACEHOLDER_PREFIX as SENTINEL_PREFIX
 
 # 环境变量**名字**匹配，不扫描值内容（值可能是任意二进制形态）。
 # 用白名单排除常见非敏感但含关键字的变量，避免误伤 PATH/HOME 等。
@@ -75,6 +76,11 @@ class EgressDecision:
     invalid_base: bool = False
     block_local_applied: bool = False
     broker: Optional["CredentialBroker"] = None
+    # B2: 出网代理与声明一致性 (由 manager 在 prepare 后填入)
+    proxy_enabled: bool = False
+    enforcement: str = "text-layer-only"  # "text-layer-only" | "network-proxy"
+    claim_consistent: bool = True
+    proxy_audit: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_audit_dict(self) -> Dict[str, Any]:
         """只记名字与计数，绝不记值。供 ``last_egress`` 可查询。"""
@@ -86,6 +92,10 @@ class EgressDecision:
             "dropped_count": len(self.dropped_names),
             "invalid_base": self.invalid_base,
             "block_local_applied": self.block_local_applied,
+            "proxy_enabled": self.proxy_enabled,
+            "enforcement": self.enforcement,
+            "claim_consistent": self.claim_consistent,
+            "proxy_audit": list(self.proxy_audit),
         }
 
 
@@ -176,7 +186,7 @@ def build_child_env(base: Any, *, broker: Optional[CredentialBroker] = None,
 
 def enforce_local_egress(verdict: Any, backend: str, *,
                          block_local_when_denied: bool = True) -> Tuple[bool, str, bool]:
-    """local 后端没有 OS 级网络隔离能力：禁网请求必须明确拒绝，不假装生效。
+    """local 后端没有 OS 级网络隔离能力：禁网请求必须明确拒绝，生效。
 
     返回 ``(allowed, reason, applied)``。强后端（docker/landlock/seatbelt/
     jobobject/token-acl）自带网络边界，这里不重复判定。

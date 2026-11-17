@@ -88,9 +88,9 @@ class TerminalResizeReflowConfig:
     """对齐上游配置结构。"""
 
     def __init__(self, mode: MaxRowsMode = MaxRowsMode.AUTO,
-                 limit: int = 0):
+                 limit_rows: int = 0):
         self.mode = mode
-        self.limit = limit
+        self.limit_rows = limit_rows
 
     @classmethod
     def auto(cls) -> "TerminalResizeReflowConfig":
@@ -141,7 +141,7 @@ def resize_reflow_max_rows_for(
     if config.mode is MaxRowsMode.DISABLED:
         return None
     if config.mode is MaxRowsMode.LIMIT:
-        n = config.limit
+        n = config.limit_rows
         if n < 0 or n > MAX_CONFIGURABLE_ROWS:
             # 本地化 fail-closed：非法上限退回保守 fallback，绝不无限重放
             return _fallback_rows
@@ -171,11 +171,11 @@ def cap_for(config: TerminalResizeReflowConfig,
     if config.mode is MaxRowsMode.DISABLED:
         return None, "用户显式禁用行数限制，保留全部行"
     if config.mode is MaxRowsMode.LIMIT:
-        if config.limit == 0:
+        if config.limit_rows == 0:
             return None, "Limit(0) 视为 Disabled"
-        if config.limit < 0 or config.limit > MAX_CONFIGURABLE_ROWS:
+        if config.limit_rows < 0 or config.limit_rows > MAX_CONFIGURABLE_ROWS:
             return _fallback_rows, "非法上限，fail-closed 回退 fallback"
-        return config.limit, "显式配置覆盖自动探测"
+        return config.limit_rows, "显式配置覆盖自动探测"
     if running_in_vscode_terminal:
         return VSCODE_RESIZE_REFLOW_MAX_ROWS, "VS Code 环境探测优先"
     if terminal_name in (TerminalName.VS_CODE, TerminalName.WINDOWS_TERMINAL,

@@ -269,14 +269,14 @@ class SuperAgent:
         return _factory
 
     def speculate(self, prompt: str, title: str = "",
-                  context: Dict[str, Any] = None) -> Dict[str, Any]:
+                  context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """投机执行: 后台提前尝试, 有价值再交付, 无价值直接放弃。
 
         对标 DeepSeek「静默复现并修复」: 收到会议邀约先查日程冲突/搜集背景/
         准备回复草稿; 群聊讨论问题时尝试复现故障、寻找修复方案。
         """
         spec_id = f"spec-{uuid.uuid4().hex[:8]}"
-        entry = {
+        entry: Dict[str, Any] = {
             "id": spec_id,
             "title": title or prompt[:50],
             "prompt": prompt,

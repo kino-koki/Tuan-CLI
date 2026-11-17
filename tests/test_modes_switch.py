@@ -25,7 +25,7 @@ from tuan_cli.modes.policy import get_mode_policy, ModePolicy
 
 
 def test_mode_ids_complete():
-    assert MODE_IDS == ("gantong", "lingma", "chat", "boundless", "collaboration")
+    assert MODE_IDS == ("gantong", "lingma", "chat", "boundless", "collaboration", "qwen_office")
 
 
 def test_mode_names_complete():
@@ -35,6 +35,7 @@ def test_mode_names_complete():
         "chat": "闲聊",
         "boundless": "无界",
         "collaboration": "协同",
+        "qwen_office": "Qwen办公2.0",
     }
 
 

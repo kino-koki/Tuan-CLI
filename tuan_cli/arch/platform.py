@@ -19,7 +19,7 @@ import platform
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import logging
 log = logging.getLogger(__name__)
@@ -291,7 +291,8 @@ def _windows_job_object_sandbox(
 
         proc = subprocess.Popen(  # noqa: S603
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, creationflags=0, cwd=cwd, env=env,
+            text=True, creationflags=0, cwd=cwd,
+            env=env,
         )
         # fail-closed: 挂不上 Job = 拿不到任何资源约束与进程树归属, 绝不放行。
         if not kernel32.AssignProcessToJobObject(job, int(proc._handle)):  # type: ignore[attr-defined]
@@ -382,12 +383,7 @@ def _linux_seccomp_sandbox(
         except Exception:
             os._exit(127)  # 过滤器安装失败, 直接失败 (fail-closed)
         try:
-            # 本轮: 传入脱敏后的环境, 不再让 seccomp 子进程继承父进程裸环境。
-            # env=None 时保持原 execvp 语义 (继承), 向后兼容所有既有调用点。
-            if env is not None:
-                os.execvpe(cmd[0], cmd, env)  # type: ignore[attr-defined]
-            else:
-                os.execvp(cmd[0], cmd)
+            os.execvpe(cmd[0], cmd, env or os.environ)
         except Exception:
             os._exit(127)
     else:
@@ -454,9 +450,6 @@ def run_syscall_sandboxed(
     - 禁网:        Linux 尝试 `unshare -n` 进入无网络命名空间 (需要权限, 失败则降级;
                    降级时从 seccomp 白名单中移除网络 syscall 作为兜底)
     - cwd:         子进程工作目录 (None = 继承父进程)
-    - env:         子进程环境 (None = 继承父进程). 本轮由 SandboxManager 传入
-                   EgressGuard 脱敏/sentinel 后的环境, 覆盖 Windows Job Object /
-                   Linux seccomp / 所有 fallback 路径; 旧调用点不传时行为不变。
     """
     # 如果禁网, 先构建过滤后的白名单 (移除网络 syscall)
     filtered_allowlist = list(allowlist) if allowlist is not None else None
@@ -483,7 +476,8 @@ def run_syscall_sandboxed(
                 cmd, timeout, memory_limit_mb=memory_limit_mb,
                 cpu_rate_pct=cpu_rate_pct,
                 active_process_limit=active_process_limit,
-                kill_timeout_seconds=kill_timeout_seconds, cwd=cwd, env=env,
+                kill_timeout_seconds=kill_timeout_seconds, cwd=cwd,
+                env=env,
             )
         except Exception as exc:
             # E3: Job Object 不可用 -> 普通子进程。必须显式标记 enforced=False,
@@ -533,7 +527,7 @@ def run_syscall_sandboxed(
 
             lx_proc = subprocess.Popen(  # noqa: S603
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, preexec_fn=_prep, cwd=cwd, env=env,
+                text=True, preexec_fn=_prep, cwd=cwd,
             )
             try:
                 out, err = lx_proc.communicate(timeout=timeout)
@@ -557,7 +551,7 @@ def run_syscall_sandboxed(
     try:
         proc = run_with_tree_kill(
             cmd, capture_output=True, text=True,
-            timeout=timeout, cwd=cwd, env=env,
+            timeout=timeout, cwd=cwd,
         )
         return SyscallResult(
             returncode=proc.returncode, stdout=proc.stdout or "",

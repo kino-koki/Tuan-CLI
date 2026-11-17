@@ -112,7 +112,7 @@ class TestNetworkClaim:
         assert c.source == "tool_args"
         c2 = claim_from_args({"command": "x"}, fallback=["evil.example"])
         assert c2.required_domains == ("evil.example",)
-        assert c2.source == "global_policy"  # 回落不假装是逐命令声明
+        assert c2.source == "global_policy"  # 回落来源是全局策略而非逐命令声明
 
     def test_evaluate_claim_fail_closed_matrix(self):
         c = claim_from_values(["api.github.com"])
@@ -265,7 +265,7 @@ class TestManagerWiring:
         v = m.assess_command("curl https://api.github.com/x", _Ctx())
         assert "network_claim" in v.extra
         assert claim_from_verdict(v).strict is False
-        # assess_tool 携带逐命令声明 → 结构进 verdict.extra 且来源如实标注
+        # assess_tool 携带逐命令声明 → 结构进 verdict.extra 且来源标注
         denied, _ = m.assess_tool("run_shell", {
             "command": "curl https://api.github.com/x",
             "allowed_domains": ["api.github.com"]}, _Ctx())
@@ -293,6 +293,7 @@ class TestManagerWiring:
     def test_proxy_default_off_no_env_change(self):
         m = SandboxManager()
         v = Verdict()
+        v.backend = "local"
         v.extra.update(claim_to_verdict_extra(claim_from_values(["api.github.com"])))
         with patch("tuan_cli.core.proc.run_with_tree_kill") as fake:
             fake.return_value.stdout = "ok"
@@ -301,9 +302,6 @@ class TestManagerWiring:
             m._execute_backend("echo hi", v, "/tmp", 5.0)
         env = fake.call_args.kwargs["env"]
         assert "HTTP_PROXY" not in env
-        # 本轮同步到统一 plan 契约（**不是放宽**）：旧实现根本不写
-        # last_egress.proxy_enabled（get 返回 None）；现在统一出口显式写
-        # False，并额外要求 enforcement 与 claim 一致性可核验。
         assert m.last_egress.get("proxy_enabled") is False
         assert m.last_egress.get("enforcement") == "text-layer-only"
         assert m.last_egress.get("claim_consistent") is True
@@ -311,6 +309,7 @@ class TestManagerWiring:
     def test_proxy_enabled_injects_env_and_always_stops(self):
         m = SandboxManager({"resource": {"egress_proxy_enabled": True}})
         v = Verdict()
+        v.backend = "local"
         v.extra.update(claim_to_verdict_extra(claim_from_values(["api.github.com"])))
         with patch("tuan_cli.core.proc.run_with_tree_kill") as fake:
             fake.return_value.stdout = "ok"
@@ -324,7 +323,8 @@ class TestManagerWiring:
 
     def test_proxy_not_enabled_without_strict_claim(self):
         m = SandboxManager({"resource": {"egress_proxy_enabled": True}})
-        v = Verdict()   # 无 claim → 不改写网络出口
+        v = Verdict()
+        v.backend = "local"
         with patch("tuan_cli.core.proc.run_with_tree_kill") as fake:
             fake.return_value.stdout = "ok"
             fake.return_value.stderr = ""

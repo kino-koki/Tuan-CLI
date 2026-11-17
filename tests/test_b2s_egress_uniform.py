@@ -349,6 +349,10 @@ class TestPlatformEnvThreading:
             P.run_syscall_sandboxed(["/bin/sh", "-c", "echo ok"], env=env)
         assert fake.call_args.kwargs["env"] is env
 
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="该用例真实执行 POSIX /bin/sh + libseccomp 回退路径; "
+               "Windows 上这两者都不存在, 无法构造该分支 (不是产品缺陷)")
     def test_real_subprocess_sees_provided_env(self):
         """真实 Popen 路径：脱敏 env 真的进了子进程，父进程密钥不可见。
 

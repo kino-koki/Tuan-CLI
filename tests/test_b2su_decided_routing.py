@@ -320,7 +320,7 @@ class TestSafeErrorText:
         assert "[REDACTED]" in safe_error_text("OPENAI_API_KEY=sk-abcdefghijklmnopqrst")
 
     def test_strips_terminal_controls(self):
-        out = safe_error_text("RuntimeError: \x1b]8;;https://evil\x07RLO\u202e中文")
+        out = safe_error_text("RuntimeError: \x1b]8，https://evil\x07RLO\u202e中文")
         assert "\x1b" not in out
         assert "\x07" not in out
         assert "\u202e" not in out
@@ -356,13 +356,13 @@ class TestSafeErrorText:
 # ================================================ 6 不该修的判定
 class TestNotChangedOnPurpose:
     def test_unterminated_osc_params_remain_readable(self):
-        """OSC 参数残留是如实边界，不是 bug。
+        """OSC 参数残留是边界，不是 bug。
 
-        ESC / BEL / RLO 已剥离，终端不会再解释它；残留 ``]8;;`` 只是
+        ESC / BEL / RLO 已剥离，终端不会再解释它；残留 ``]8，`` 只是
         可读性略差。彻底删掉会误伤合法文本，且错误文本不参与 UI 宽度
         判定，不与标语净化层构成重复真值。
         """
-        out = safe_error_text("\x1b]8;;https://evil.example\x07END")
+        out = safe_error_text("\x1b]8，https://evil.example\x07END")
         assert "\x1b" not in out and "END" in out
 
     def test_no_second_sanitization_at_route_exit(self):

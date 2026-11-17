@@ -62,11 +62,7 @@ class SandboxProfile:
     max_memory_mb: int = 0        # 内存上限 (0=不限)
     max_cpu_seconds: int = 0      # CPU 时间上限 (0=不限)
     env_allowlist: List[str] = field(default_factory=list)    # 允许传递的环境变量
-    # B2 收尾: 逐命令声明的允许主机（已归一化）。**如实说明**:
-    # bwrap / seatbelt 只有 network namespace / IP 级规则，没有域名级过滤，
-    # 所以这个字段是给后端参考的元数据；域名强绑定的真正强制点在
-    # sandbox/egress_proxy.py 的本地回环出网代理（CONNECT / 明文 HTTP 主机校验）。
-    allowed_domains: List[str] = field(default_factory=list)
+    allowed_domains: List[str] = field(default_factory=list)  # B2: 出网域名白名单
 
 
 class SandboxProvider(abc.ABC):
@@ -135,24 +131,9 @@ class SandboxProvider(abc.ABC):
 
     @staticmethod
     def _sanitize_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
-        """抹除敏感环境变量, 防止密钥泄漏到沙箱子进程。
-
-        本轮实测缺口：``sanitize_env`` 按**键名**把 ``OPENAI_API_KEY`` 等
-        置空串，于是上一轮 ``plan_egress`` 注入的
-        ``tuan-egress-sentinel-v1:<fp>`` 占位符也在接线处被抹成 ``''``。
-        强后端子进程因此拿不到任何可还原标记，出网代理的
-        ``inject_headers()`` 链路静默断裂 —— 又是「上层接好了、内层吃掉」。
-
-        占位符不是真实密钥，按下**值**原样保留；真实值仍按键名置空。
-        只改 provider 路径，不动 ``sanitize_env`` 全局语义。
-        """
-        from .security_utils import sanitize_env, is_masked_placeholder
-        cleaned = sanitize_env(env)
-        if isinstance(env, dict):
-            for k, v in env.items():
-                if isinstance(k, str) and is_masked_placeholder(v):
-                    cleaned[k] = v
-        return cleaned
+        """抹除敏感环境变量, 防止密钥泄漏到沙箱子进程。"""
+        from .security_utils import sanitize_env
+        return sanitize_env(env)
 
 
 # ================================================================ LocalSandbox
@@ -215,9 +196,6 @@ class LandlockSandbox(SandboxProvider):
             env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         profile = profile or SandboxProfile()
         sandbox_env = self._sanitize_env(env)
-        # 本轮: SECRET_HINTS 含 "TUAN_" 会抹掉 TUAN_WORKSPACE;
-        # LocalSandbox 原本补回，其余三个强后端此前没补，
-        # 子进程拿不到工作区指示。统一以 workspace 参数为准。
         sandbox_env["TUAN_WORKSPACE"] = workspace
 
         bwrap_cmd = self._build_bwrap_command(command, workspace, profile)
@@ -333,9 +311,6 @@ class SeatbeltSandbox(SandboxProvider):
             env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         profile = profile or SandboxProfile()
         sandbox_env = self._sanitize_env(env)
-        # 本轮: SECRET_HINTS 含 "TUAN_" 会抹掉 TUAN_WORKSPACE;
-        # LocalSandbox 原本补回，其余三个强后端此前没补，
-        # 子进程拿不到工作区指示。统一以 workspace 参数为准。
         sandbox_env["TUAN_WORKSPACE"] = workspace
 
         profile_content = self._generate_seatbelt_profile(workspace, profile)
@@ -449,9 +424,6 @@ class WindowsTokenAclSandbox(SandboxProvider):
             env: Any = None, timeout: Any = 120.0) -> SandboxResult:
         profile = profile or SandboxProfile()
         sandbox_env = self._sanitize_env(env)
-        # 本轮: SECRET_HINTS 含 "TUAN_" 会抹掉 TUAN_WORKSPACE;
-        # LocalSandbox 原本补回，其余三个强后端此前没补，
-        # 子进程拿不到工作区指示。统一以 workspace 参数为准。
         sandbox_env["TUAN_WORKSPACE"] = workspace
 
         if sys.platform != "win32":

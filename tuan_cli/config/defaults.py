@@ -437,6 +437,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
     },
     "permissions": {
+        # 写路径硬边界: 关闭时行为与既有完全一致 (write/edit/delete/move 仍走
+        # 危险确认 + Read-before-Edit); 开启后这些写操作一律 fail-closed 拒绝
+        # 越出工作区 + extra_dirs 的目标。默认关闭 = 不做破坏性默认变更。
+        "blockWritesOutsideWorkingDirectories": False,
         "shell": {
             "deny_patterns": [
                 r"\b(?:format|diskpart)\b",
@@ -446,11 +450,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "network": {
             "allow_domains": [],  # 空列表表示不限制域名
         },
-        # 工具层写路径硬边界 (对标 CC v2.1.314, 默认关闭以保持一致且不做
-        # 破坏性变更)。开启后: write/edit/move(dst)/delete 必须落在工作区或
-        # 显式 `/add-dir <path> --writable` 授权根内; 普通 /add-dir 只授读。
-        # 关闭时保留既有行为 (普通 /add-dir 授权目录也可写), 文档如实标注。
-        "blockWritesOutsideWorkingDirectories": False,
         # 用户自定义规则表 (对标 Claude Code 的 allow/deny/ask 规则):
         # 每条 {"tool": 工具名或通配符, "pattern": 可选参数通配符, "action": allow|deny|ask}
         # pattern 匹配文本: run_shell 取命令行, 其余优先 path/url, 兜底拼接参数值 (小写)。
@@ -692,17 +691,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "active_process_limit": 16,         # E3: Job 内最大存活进程数 (防 fork 炸弹)
             "kill_timeout_seconds": 5.0,        # E3: 整树击杀兜底超时 (0.5..60)
             "isolate_copy_threshold": "high",   # 高于等于该严重度(high/critical) 的写操作走副本→diff→apply
-            # B2: 子进程出网边界（默认开；显式关闭会被 config validate 报安全降级）。
-            "egress_credential_masking": True,       # 敏感环境变量替换为 sentinel, 子进程不持真实密钥
-            "egress_block_local_when_denied": True,  # local 后端收到禁网裁决时 fail-closed 拒绝, 不裸跑
-            # B2 收尾: 逐命令域名强绑定 + 本地回环出网代理。默认关是因为它会
-            # 改变所有子进程的网络出口(HTTP_PROXY/HTTPS_PROXY)，属行为变更；
-            # 仅在调用方显式声明了 allowed_domains 时才真正启用代理。
-            "egress_proxy_enabled": False,
-            # 本轮: 真正逐命令域名声明 + 强后端(无域名级过滤、回环代理不可达)
-            # 默认拒绝执行, 不假装强绑定生效。metadata_only 是显式降级逃生口,
-            # config validate / harden status 会报安全降级。
-            "strict_claim_strong_backend": "deny",
         },
     },
 }

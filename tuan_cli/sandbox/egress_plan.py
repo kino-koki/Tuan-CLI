@@ -41,7 +41,7 @@ copy_diff_apply  随下游        随下游        随下游        随下游
 - **逐命令域名**：若 ``claim.strict`` 且 ``claim.source == "tool_args"``
   （真正逐命令声明，而非全局白名单回落），则**必须**有出网代理能力；
   强后端没有域名级过滤、且 netns / seatbelt 隔离下宿主机回环代理不可达，
-  默认 **fail-closed 拒绝**，不假装强绑定生效。
+  默认 **fail-closed 拒绝**，强绑定生效。
 
 ``source`` 这个字段是上一轮 ``claim_from_args`` 刻意标注、但当时没被
 消费的：它在这里第一次真正决定行为。全局白名单回落（``global_policy``）
@@ -91,6 +91,7 @@ class EgressPlan:
     proxy_url: str = ""
     guard_audit: Dict[str, Any] = field(default_factory=dict)
     degraded: bool = False
+    claim_consistent: bool = True
     # EgressGuard 创建的凭据代理对象；代理转发时需要它来还原 sentinel。
     # 只在进程内内存，绝不进 to_audit_dict()。
     broker: Any = None
@@ -125,6 +126,7 @@ class EgressPlan:
             "proxy_enabled": self.wants_proxy,
             "degraded": self.degraded,
             "guard": dict(self.guard_audit),
+            "claim_consistent": self.claim_consistent,
         }
 
 
@@ -193,7 +195,7 @@ def plan_egress(verdict: Any, backend: str, policy: Any,
             claim, env=env, guard_audit=audit)
 
     # 其余：全局白名单回落 / 本地但代理未开启 → 沿用既有文本层语义。
-    # 上一轮已如实标注 undetectable 是标记不是证明，这里不重复放宽也不假装更强。
+    # undetectable 是标记不是证明，这里不重复放宽也更强。
     return EgressPlan(
         MODE_TEXT_ONLY, normalized_backend,
         "文本层强绑定 (source=%s, 代理未启用或非本地后端); "

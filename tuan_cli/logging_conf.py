@@ -10,11 +10,9 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 _KEY_RE = re.compile(r"(sk-[A-Za-z0-9]{8})[A-Za-z0-9]+")
 

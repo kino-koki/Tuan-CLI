@@ -390,7 +390,7 @@ D10 = (
       STATUS_ALIGNED, ("tuan_cli/tui/tui.py", "tuan_cli/ui/fullscreen.py"),
       "prompt_toolkit/rich 全屏 TUI 与审批覆盖层"),
     M("codex_tui_parity", "tui_interaction", "(none — CC TUI is proprietary, no public parity matrix)",
-      STATUS_AHEAD, ("tuan_cli/tui/parity/", "TUI_PARITY.md"),
+      STATUS_AHEAD, ("tuan_cli/tui/parity/", "docs/parity/TUI_PARITY.md"),
       "13 轮把 165 个 Codex TUI 模块做成可机器核验矩阵（键位/布局/组件树/文案），CC 无可对等的公开可核验对齐层",
       ahead_reason="把「与上游是否一致」变成 tuan tui parity --gaps 可查询、带派生一致性校验的事实，而非口号",
       ahead_dim="verifiable_parity"),

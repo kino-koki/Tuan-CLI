@@ -23,7 +23,7 @@ W3（假事务）           ``edit_files`` docstring 声称「任一失败 → �
                        已经变成 ``BBB``。返回文本与磁盘状态不一致。
 =====================  ========================================================
 
-**修复（如实，不夸大）**
+**修复**
 
 - 新增 ``core/write_boundary.py``：``recheck_write`` / ``decide_write``
   单一裁决出口；开关默认 ``False``（与 CC 出厂一致，**不做破坏性默认变更**）；
@@ -360,7 +360,7 @@ class TestNotChangedOnPurpose:
         assert "s = _resolve(ctx, src)" in mv  # 源是读，保持
 
     def test_artifact_and_worktree_write_inside_workspace_fixed_paths(self):
-        """如实边界：这两个模块不走 _resolve，但写的是 workspace/.tuan/...
+        """边界：这两个模块不走 _resolve，但写的是 workspace/.tuan/...
         内部固定路径，不是用户提供的任意路径。用源码扫描锁住结论。"""
         root = Path(FS.__file__).resolve().parent.parent
         art = (root / "tools/artifact_tool.py").read_text(encoding="utf-8")

@@ -548,9 +548,23 @@ def register_subcommands(sub: Any) -> None:
     s.add_argument("value")
     p.set_defaults(func="cmd_config")
 
-    p = sub.add_parser("plugin", help="插件管理")
+    p = sub.add_parser("plugin", help="插件管理 (兼容 DSH 0.2+)")
     psub = p.add_subparsers(dest="plugin_cmd", required=True)
     psub.add_parser("list", help="列出全部插件与服务")
+    # install/uninstall/enable/disable/info: cmd_plugin 已实现这些 handler,
+    # 但 argparse 此前只注册了 list —— `tuan plugin install <path>` 会因
+    # "invalid choice" 失败。补齐子命令注册, 让真实接口可达。
+    pin = psub.add_parser("install", help="从本地目录安装插件 (兼容 DSH 0.2 plugin.toml/plugin.json)")
+    pin.add_argument("path", help="插件源目录路径 (含 plugin.json / plugin.toml)")
+    pin.add_argument("--name", default=None, help="覆盖插件名 (默认取 manifest.name)")
+    pun = psub.add_parser("uninstall", help="卸载插件")
+    pun.add_argument("name", help="插件名")
+    pen = psub.add_parser("enable", help="启用插件")
+    pen.add_argument("name", help="插件名")
+    pdis = psub.add_parser("disable", help="禁用插件")
+    pdis.add_argument("name", help="插件名")
+    pif = psub.add_parser("info", help="查看插件详情 (含技能/钩子/依赖/DSH 兼容性)")
+    pif.add_argument("name", help="插件名")
     p.set_defaults(func="cmd_plugin")
 
     p = sub.add_parser("skill", help="技能管理")
