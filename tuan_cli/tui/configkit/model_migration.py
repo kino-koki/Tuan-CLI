@@ -310,15 +310,14 @@ class AltScreenGuard:
         self.entered = True
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc: Optional[BaseException],
-                 tb: Optional[Any]) -> None:
+    def __exit__(self, exc_type, exc, tb) -> bool:
         try:
             self.tui.leave_alt_screen()
         except Exception as exc:  # noqa: BLE001 - 异常路径也必须恢复
             log.warning("AltScreenGuard.__exit__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             pass
         self.entered = False
-        # 返回 None (等价 False): 不吞异常
+        return False  # 不吞异常
 
 
 def run_model_migration_prompt(

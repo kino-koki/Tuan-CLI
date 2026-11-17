@@ -3,19 +3,6 @@
 > **⚠️ 必读 / MANDATORY** — 本文件对 kino-koki、所有开发者、内部人员、PR提交者具有强制约束力。违反本策略的PR将被拒绝。
 > **This document is mandatory for all developers, contributors, and PR submitters. PRs violating this policy will be rejected.**
 
-> **🚀 v0.4.0 起 · 新增全局规则 (applies to all languages below)**
->
-> **(1) 1.0 门控于 STAR 数 / `1.0` is gated on GitHub STARs.**
-> 当前处于**永久磨合期迭代更新**。`1.0`（API 冻结）不会因时间或功能完成度而自动发布；
-> 它只有在项目达到 **GitHub STAR ≥ 1000** 时才发布。在达到 1000 STAR 之前，
-> 所有版本都停留在 `0.x` 磨合期，API 可持续演进调整（破坏性变更升 MINOR）。
->
-> **(2) API 冻结点 / API freeze point.**
-> `v0.4.0` 确立当前公共 API 为**冻结基线**（详见 `docs/API_FREEZE.md`）。
-> 冻结基线内的破坏性变更仍按 MINOR 升级并提前公告；越过 1.0 后破坏性变更才升 MAJOR。
->
-> **(3) The "1000-STAR gate" overrides any earlier wording that tied `1.0` to a date, a feature-completion milestone, or a platform-safety target.** The 1000-STAR threshold is the single authoritative trigger for publishing `1.0`.
-
 **Language / 语言:** [English](#english) · [简体中文](#简体中文) · [繁體中文](#繁體中文) · [日本語](#日本語) · [한국어](#한국어) · [Español](#español) · [Português](#português) · [Français](#français) · [Deutsch](#deutsch) · [Русский](#русский)
 
 ---

@@ -42,10 +42,12 @@ def _find_skill_manager() -> Any:
     """惰性 import, 避免 CLI 启动时加载重模块。"""
     try:
         from ..skills.manager import SkillManager
-        from ..core import config as _cfg
+        from ..config import Config
 
-        kernel_cfg = _cfg.ConfigManager.load()
-        return SkillManager(kernel_cfg)
+        # 与 cmd_ecosystem.py / app.py 一致: Config() 为默认 profile 的组合配置视图。
+        # 旧代码错误地引用不存在的 `..core.config.ConfigManager.load()`（死引用），
+        # 被 try/except 吞掉导致 _find_skill_manager() 恒为 None，技能命令静默失效。
+        return SkillManager(Config().home, config=Config())
     except Exception as exc:  # noqa: BLE001
         log.debug("_find_skill_manager(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None

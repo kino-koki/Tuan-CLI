@@ -1,81 +1,11 @@
-"""Español (es) 标语 — 50 条, 按 10 个上下文分组。
+"""历史兼容垫片 — 真正的数据与实现在 ``tuan_cli/ui/slogans/``。
 
-风格: refranes + habla cotidiana。
-分布: startup 3 · thinking 5 · explore 7 · error 3 · undo 4
-      done 7 · signoff 4 · together 4 · guard 6 · idle 7
+本包曾位于仓库根目录, 而它的 docstring 全写
+``from tuan_cli.ui.slogans import ...`` —— 那个路径当时不存在, 导致
+860 条标语**零真实接入点**。本轮把实现落到正确包路径后, 这里只保留
+re-export, 让旧引用不崩, 且词库只有一份、不会各自漂移。
 """
 
 from __future__ import annotations
 
-GROUPS: dict[str, tuple[str, ...]] = {
-    "startup": (
-        "Despacio, que tengo prisa.",
-        "Vísteme despacio, que tengo prisa.",
-        "A buen hambre no hay pan duro.",
-    ),
-    "thinking": (
-        "Del dicho al hecho hay gran trecho.",
-        "Buscar una aguja en un pajar.",
-        "Estar en ascuas.",
-        "Poco a poco.",
-        "Ahora mismo.",
-    ),
-    "explore": (
-        "En casa de herrero, cuchillo de palo.",
-        "Aunque la mona se vista de seda.",
-        "A río revuelto, ganancia de pescadores.",
-        "Tirar del hilo.",
-        "Ver la luz.",
-        "Caer del guindo.",
-        "Dar en el clavo.",
-    ),
-    "error": (
-        "Nadie es perfecto.",
-        "Errar es humano.",
-        "El que tropieza dos veces…",
-    ),
-    "undo": (
-        "Agua que no has de beber, déjala correr.",
-        "Borrón y cuenta nueva.",
-        "Agua pasada no mueve molino.",
-        "A lo hecho, pecho.",
-    ),
-    "done": (
-        "Coser y cantar.",
-        "Pan comido.",
-        "Está chupado.",
-        "Estar en la gloria.",
-        "Ya está.",
-        "Listo.",
-        "Hecho.",
-    ),
-    "signoff": (
-        "A otra cosa, mariposa.",
-        "Vete a dormir.",
-        "Mañana será otro día.",
-        "Hasta mañana.",
-    ),
-    "together": (
-        "Venga, vamos.",
-        "Echar una mano.",
-        "Tú mandas.",
-        "Yo sujeto la escalera.",
-    ),
-    "guard": (
-        "Más vale prevenir que curar.",
-        "Más vale pájaro en mano.",
-        "Perro ladrador, poco mordedor.",
-        "Con la mosca detrás de la oreja.",
-        "Cuidado, que pincha.",
-        "No toques eso.",
-    ),
-    "idle": (
-        "Más vale tarde que nunca.",
-        "No por mucho madrugar amanece más temprano.",
-        "Ojos que no ven, corazón que no siente.",
-        "Ni fu ni fa.",
-        "Sin prisa.",
-        "¿Un café?",
-        "Aquí estoy.",
-    ),
-}
+from tuan_cli.ui.slogans.locales.es import GROUPS  # noqa: F401

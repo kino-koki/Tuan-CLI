@@ -77,7 +77,6 @@ class TestLocalEgress:
         m = SandboxManager()
         v = Verdict()
         v.network = False
-        v.backend = "local"
         with patch("tuan_cli.core.proc.run_with_tree_kill") as fake:
             res = m._execute_backend("echo hi", v, "/tmp", 5.0)
         assert fake.call_count == 0
@@ -88,7 +87,6 @@ class TestLocalEgress:
     def test_manager_passes_sanitized_env_when_allowed(self):
         m = SandboxManager()
         v = Verdict()
-        v.backend = "local"
         with patch("tuan_cli.core.proc.run_with_tree_kill") as fake:
             fake.return_value.stdout = "ok"
             fake.return_value.stderr = ""

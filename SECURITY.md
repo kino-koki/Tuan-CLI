@@ -476,6 +476,45 @@ localized 57 / n/a 63 / **pending 10**，宽口径 93.9%、严格 55.8%、
 - 下一轮：`streaming_async` + `tools_exec` + `history_transcript`（5），
   再往后剩余 5 个清零，仍**保留现有安全接线**。
 
+**全模块超 Claude Code v2.1.319 计划 + B1（2026-11-07，第 14 轮）**
+
+- 新增 `CLAUDE_PARITY.md`：14 域 / 99 模块 / 12 轮次的详细计划，
+  上游锁定 **v2.1.319（2026-11-06）**。新增 `tuan_cli/parity_claude/`
+  （目录 / 证据 / 六维探针 / 矩阵）与 `tuan claude parity`。
+- **「超」有硬判据**：`fully_superior` 需同时满足 gap=0、六维运行时探针
+  全 OK、每维至少 1 个已证实领先、所有 B 轮完成、第三方自适应红队背书。
+  当前 **false**（26 个缺口、判据 5 项仅 2 项为真），判据写死不许放宽。
+  六个探针真调现有代码：注入不存在的 hook 二进制、篡改 HMAC、
+  喂畸形配置、写坏 MCP 策略看 locked、统计真实 i18n/README、
+  校验 165 模块 Codex 矩阵。
+- **B1 修两个真实 fail-open 侧门**（`hooks/manager.py`）：
+  1. 四种 hook 执行器失败时一律 `return None`，`run_pre` 直接
+     `continue` —— **安全 hook 自己挂了，命令照跑**。现在记录
+     `HookFailure` + `failures()`，`hooks.on_failure` **默认 `block`**，
+     阻断带结构化原因与 `failure_kind`；`allow` 是显式且留痕的逃生口。
+     看门狗超时由主线程补记（thread-local 否则会被跨线程绕过）。
+  2. `blocking` 默认 False → True：此前 hook 返回 `{"block": true}`
+     若未显式声明 `blocking: true` 会被吞掉。`blocking` 只管 hook
+     自身决策，不管执行失败的 fail-closed。
+- `config/security_schema.py` 新增 `hooks.on_failure` 枚举校验，
+  显式 `allow` 报安全降级。
+- **行为变更如实标注**：依赖「hook 挂了也放行」的部署需显式配
+  `hooks.on_failure: allow`；既有超时测试断言已更新并新增逃生口用例，
+  **没有为变绿放宽策略**。
+- **如实边界（最该看的一条）**：Tuan 仍缺 OS 级默认沙箱、网络默认拒、
+  子进程凭据代理注入、worktree 创建路径的隔离证明，
+  全部**明确列为 B2 缺口**，不因六维探针全绿而宣称安全边界已对齐。
+  `not_applicable` 8 项如实标不适用，不包装成领先。
+- **合规**：Claude Code 是 Anthropic 专有产品，本轮仅依据公开文档 /
+  changelog / release notes 做行为契约对标，**未复制任何源码或商标资产**，
+  Anthropic 不背书（`NOTICE` 第 14 条）。
+- **硬约束延续**：`matrix.validate()` 调用
+  `corekit.app.assert_wiring_intact()`，6 条既有安全接线全绿；
+  B 线不碰 A 线 `tui/parity` 文件。
+- 回归：`test_claude_parity.py` 58 例 + hooks 批次 27 例；
+  下一轮 B2 处理 OS 沙箱 / 网络默认拒 / 凭据注入 / worktree 逃逸。
+
+
 
 
 ---
@@ -730,4 +769,1905 @@ mcp:
 
 ---
 
+---
+
+## 13. 运行时标语（spinner verbs）与 TUI 状态口径修复
+
+新增 `tuan_cli/tui/runtime_slogans.py`，在顶部 HUD 的 Codex 风格 Working
+状态行旁挂 Claude Code 同款运行时标语（10 语言，中文保留「磨洋工 /
+腌制入味 / 看报纸中」梗）。安全相关要点：
+
+- **自定义词是终端输出，必须净化**：`sanitize_verb()` 去掉 OSC 8 超链接、
+  CSI 颜色/清屏序列、C0/C1/DEL 控制字符，按显示列宽（CJK 算 2 列，上限 40）
+  截断。这延续 `tui/inputkit/terminal_hyperlinks.py` 的教训 —— 终端会解释
+  执行 OSC/CSI，上游 `web()` 不校验目的地，标语走的是同一条输出通道。
+- **配置 fail-safe 而非 fail-closed**：`~/.tuan/settings.json` 的
+  `spinnerVerbs` 写错（非法 mode / verbs 非列表 / 数字越界 / JSON 损坏）一律
+  回落出厂配置并在 `source` 标注 `invalid:*`，不让 TUI 崩、也不静默生效。
+  这里不涉及安全裁决，故不需要 fail-closed 拒绝命令。
+- **文案由真实事件驱动**：只有 `submit` / 流式分片 / `begin_tool` 才推进；
+  `render()` 纯读。忙碌中超过 `stall_ms` 无事件显示「疑似摸鱼」诊断 —— 这是
+  **启发式可观测提示**，不是心跳、超时控制或安全闸门，不触发中断/重试，
+  也不改变任何裁决。
+- 顺带修 `_render_footer` 工具名死分支、统一两套宽度算法、修正
+  「wcwidth 是 C 实现」的错误注释。主线 `_line_heights` 已有高度缓存，
+  本地分叉副本的性能数字不适用于主线。详见 `RUNTIME_SLOGANS.md` §6。
+
+回归：`tests/test_runtime_slogans.py` 57 例全绿。合规：Claude Code 为专有产品，
+仅依据公开资料做行为对标，**未复制任何源码**（`NOTICE` 第 15 条，Anthropic
+不背书）。本轮**未新增 CLI 子命令**，`CLAUDE_PARITY.md` 的 99 模块基线与
+`fully_superior=false` 均未改动。
+
+---
+
+## 14. 深度轮：并发安全、证据脱敏与配置语义
+
+本轮不扩功能广度，只深化运行时标语（§13）。三点与安全直接相关：
+
+- **并发正确性**：`note_activity` 从 UI / 模型 / 工具线程并发进入，
+  `render` / `liveness` 从动画 invalidate 线程进入。上版五个可变字段
+  无锁复合读写，会出现「新 seq + 旧文案」撕裂与间隔判断读到半更新
+  时间戳；现在全部在 `RLock` 内线性化，并对乱序事件/时钟回拨做
+  单调化钳制。8 线程 × 2400 次并发用例以 `(seq, verb)` 配对抓撕裂。
+- **证据脱敏**：新增的环形证据链只记阶段、事件类型、`monotonic` 时间、
+  序号、当前已净化文案，以及 detail 的**长度与字符类别**；
+  **绝不记 detail 原文**（可能是工具参数、路径、token）。证据只在
+  进程内存，不落盘、不上传、不进审计日志。
+- **配置 fail-safe 语义收紧**：未知阶段键（如拼错 `stremaing`）整段拒绝
+  而非静默忽略 —— 用户以为收紧了预算、实际没变，是危险的假安全感。
+  另修一个真实缺陷：「没写 `mode`」旧逻辑一律当 `append` 又强制
+  `verbs` 非空，导致只配 `stall_ms` 的合法配置被判
+  `invalid:empty-verbs` 静默回落出厂值。现在按是否给了 `verbs` 推断。
+
+**边界不变**：`stall` 仍是启发式可观测提示，不是安全闸门、心跳或超时
+控制，不触发中断/重试、不改变任何裁决；`slow` 只是视觉降级；
+`reload()` 需显式调用、非法配置保留旧配置；`_animate` 明令禁止刷新
+活性时间戳。验证：93 例 pytest + 22 项纯 stdlib 独立验证全绿。
+
+---
+
+## 15. 深度轮 2：净化边界与宽度真值
+
+本轮不扩功能广度，只修运行时标语（§13–§14）的净化层与呈现层。
+安全相关四个点：
+
+- **bidi 覆写是真实攻击面**：旧 `sanitize_verb` 原样输出
+  `U+202E RLO` / `U+202D LRO` / `U+2066..2069` isolate 以及 ZWSP/ZWJ/
+  BOM/WJ/软连字符/私用区/未分配码点。终端会按 bidi 控制字符重排显示
+  方向，用户看到的文案与字符串内容不一致（Trojan Source 的 UI 版）。
+  现在按 Unicode 通用类别删 `Cc/Cf/Cs/Co/Cn`，并删除变体选择符。
+- **ESC 序列要整段剥**：旧版只删 ESC 字节，把 `ESC ( B` / `ESC c` /
+  `ESC 7` 的参数字符留在文案里。现在 OSC → CSI → 通用 ESC → C0/C1
+  四步完整消费，输出保证不含 ESC。
+- **净化幂等是构造出来的**：迭代到不动点，最多 3 轮，不收敛
+  fail-closed 返回空串；500 串 fuzz 0 例不幂等。
+- **内置诊断文案也曾是侧门**：上一轮文档说「header 只显示短文案」，
+  实际把约 52 列的完整 `_STALL_TEXT` 直接塞进单行 header，且绕过了
+  净化层的宽度/不可见字符约束。现在自定义 verbs 与内置诊断共用
+  `_fit_headline()` 单一出口（净化 + 40 列），完整信息留在
+  `Liveness.diagnostic`。
+
+另补配置层严格化：1 MiB 读取上限，拒绝 `bool` 冒充 `int`、字符串
+数字、浮点截断与 `NaN`/`Infinity`。自定义 verbs 与 10 语言内置词库
+共用同一套净化/列宽不变量并已自检。
+
+**边界不变**：`stall` 仍是启发式可观测提示，不是安全闸门、心跳或超时
+控制，不触发中断/重试、不改变任何裁决；证据链仍在进程内存且脱敏；
+`_animate` 仍禁止刷新活性。VS16 被删会让 emoji 呈现退化成文本样式，
+是「宽度可预测」的刻意取舍。验证：139 例 pytest + 20 项纯 stdlib
+独立验证全绿。
+
+---
+
+## 16. 每个标语都要对应的：严格分发与告警不降级
+
+本轮把用户提供的 860 条标语库接到真实运行时事件上。三点与安全直接相关:
+
+- **未知事件 fail-closed**: 旧 `pick("totally.unknown")` 静默返回
+  `'Here.'` —— 一条没有任何对应事件的标语被渲染。现在
+  `pick_for_event` 抛 `UnboundSloganEvent`, `pick_strict` 对未知上下文
+  抛异常; `audit()` 逐条核验 `orphan_slogans=0` /
+  `contexts_without_event=0` / `events_without_pool=0`。
+- **结构化告警不降级**: 用户库设计稿原文「不要动: 安全拦截的结构化
+  告警 (那是降级, 不是优化)」变成 `SECURITY_EVENTS` 的运行时契约 ——
+  6 类安全事件一律返回空文案 + `security-notice`,
+  `audit().unsafe_bindings` 断言它们绝不被绑上标语。
+  这是把一句注释变成了可执行边界。
+- **净化只有一份**: 前两轮 (§13–§15) 做成的净化层抽到
+  `tuan_cli/ui/slogans/_clean.py`, 活性引擎 re-export **同一函数对象**
+  (`sanitize_verb is _clean.sanitize_verb` → True)。1108 条词条全部
+  过同一出口, `audit().clipped_slogans=0` 且 `sanitizer_shared=True`;
+  不产生第三套宽度/净化真值。3 条超长内置文案 (会被截成半句)
+  显式换成语义完整的短版并留痕。
+
+另修 picker 的并发与配置缺陷: 裸 `dict` → `RLock` 线性化;
+`min_interval` 拒绝 `-1/NaN/Inf/"5"/True` (旧版 `Inf` 让 spinner 永不
+换词); 窗口改真 LRU 且尺寸变化保留历史。分发日志有界 64 条且脱敏,
+只记事件 / 上下文 / 原因 / 来源 / 序号。
+
+**边界不变**: `stall` 仍是启发式可观测提示, 不是安全闸门; TUI 只建立
+分发与留痕, 未替换既有 i18n 文案; 不是真机长跑; 第三方自适应红队仍未做。
+验证: 175 例 pytest + 26 项纯 stdlib 独立验证全绿。
+
+---
+
+## 17. 运行时闭环：错误不静默、留痕可反查、安全告警仍不降级
+
+本轮不改安全裁决，只把上一轮「每个标语都要对应的」在运行时做实。
+三点与安全直接相关：
+
+- **错误不再静默**：`_slogan_dispatch` 原本 `except Exception: return None`，
+  拼错事件时 `pick_for_event` 抛的 `UnboundSloganEvent` 被吃掉、日志零记录。
+  现在未知事件与库异常都走 `_slogan_error()` 记 `error:<kind>` 留痕，
+  `slogan_errors()` 可直接查；`strict=True` 时异常向上抛（开发/测试）。
+  生产默认不掀 UI，但**绝不静默吞掉** —— 静默失败是安全观察里最该避免的。
+- **留痕可反查且按会话隔离**：`_slogan_log` 现在带 `entry_id`，
+  `slogan_trace()` 可反查到「这条标语由哪个事件组触发」；日志按
+  `owner` 分桶并加 `RLock`，`reset_dispatch_log(owner)` 不再清掉
+  另一会话的记录。快照返回 `tuple` 而非内部可变对象。
+- **安全告警仍不降级**：6 类 `SECURITY_EVENTS` 依旧返回空 +
+  `security-notice`，`audit().unsafe_bindings` 仍为 0。
+  空串既表示「安全事件」也表示「出错」，现在靠 `slogan_trace().reason`
+  区分（`security-notice` vs `error:*`），不靠猜。
+
+另修两处性能/正确性热路径：`audit()` 的 O(n²) `ids.count(i)` →
+`Counter`，且 1695 条词条的净化检查挪到索引构建时缓存；
+`pick_for_event` 的线性反查 → `_BY_ID`/`_BY_TEXT` O(1) 索引。
+新增第 11 项不变量 `index_consistent`。`SloganEntry.events` 解决
+`model.streaming` / `turn.retry` 共享上下文时的归属歧义。
+`rng`/`now`/`owner` 注入使分发可确定性回放（注入 rng 时用一次性
+局部避重窗口，避免全局隐藏状态污染回放）。
+
+**如实边界**：`setswitchinterval(1e-6)` + 12 线程压测**未复现**日志长度
+超限，加锁是消除对 GIL 实现细节的依赖，不是修了已观测故障；
+20 次 `audit()` 仍有 355.6 ms 的 `pool_entries` 开销，未加第二层缓存
+（避免审计结果依赖缓存时间点）；`stall` 仍不是安全闸门；TUI 未替换
+既有 i18n 文案；不是真机长跑；第三方自适应红队仍未做。
+
+验证：194 例 pytest + 42 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
+---
+
+## 18. 闭环补漏：不可反查的标语不再显示，错误在两层都可见
+
+本轮不改任何安全裁决，只补上一轮刚修完的运行时对应关系里的漏洞。
+三点与安全直接相关：
+
+- **不可反查的标语 fail-closed**：上一轮 `_BY_TEXT` 用原始文案建索引、
+  分发却拿净化后文案反查。当前 `clipped=0` 让两者碰巧一致，注入一条
+  含 ZWSP 的词条后实测 `reason='ok'` 但 `entry_id=''` —— 对应关系
+  静默断裂。现在分发走 `_BY_CLEAN`（净化后索引），未命中即
+  `index-miss` + **空文案** + `_INDEX_MISSES` 计数，不渲染来源不明的
+  文案；净化后文案撞车也会被检测并记入 `_CLEAN_COLLISIONS`。
+- **错误在两层都可见**：上一轮 `_slogan_error()` 只写 TUI 实例日志，
+  实测 `mapping.dispatch_log()` 里错误相关 0 条。现在
+  `record_error()` 同步进全局日志，`slogan_errors()` 与
+  `dispatch_log(owner)` 一致。6 类 `SECURITY_EVENTS` 仍返回空 +
+  `security-notice`，`audit().unsafe_bindings` 仍为 0，**不与
+  `error:*` 混**；`strict=True` 抛异常时照样两层留痕。
+- **日志规模有界**：`_dispatch_log` 从「只限每桶长度」改为 LRU
+  `OrderedDict` + `_MAX_OWNERS=128`；`close()` 释放自己的桶；
+  `dispatch_log_stats()` 可核验桶数 / 决策总数 / 单桶峰值。
+  实测 2000 个会话后 `owners=128`。
+
+另修两处工程正确性：`_MAX_WINDOWS` 从 64 改为按真实 key 空间算的
+384（实测 64 会让 320 个 key 互相驱逐，避重失效）；
+`audit().index_consistent` 加严为三份索引全等、无撞车、运行时零
+miss、触发事件组完整；`AuditReport` 新增 `clean_collisions` /
+`runtime_index_misses` / `dispatch_stats` 并纳入 `ok`。
+
+**如实边界**：`index-miss` 的 fail-closed 只影响「显示不显示标语」，
+不改变任何裁决；`release_owner()` 只释放全局桶，实例内
+`_slogan_log` 仍随对象驻留；`_MAX_OWNERS=128` /
+`_MAX_WINDOWS=384` 是有界折中，最久未用历史仍会被淘汰；并发压测
+仍未复现 list 撕裂（同 §17）；不是真机长跑；分叉改动仍未合并；
+第三方自适应红队仍未做。冷/热态 `audit()` 的数字差异是测量口径，
+**不宣称性能提升**。
+
+验证：215 例 pytest + 52 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
+---
+
+## 19. 日志字段净化、自愈与证据保全
+
+本轮不改任何安全裁决，只补前三轮刚修完的运行时对应关系里的漏洞。
+四点与安全直接相关：
+
+- **日志字段不再是可注入通道**：`record_error()` 的 `event` / `kind` /
+  `context` 是 public API 入参。实测注入 5030 码点含 `ESC ]8;;` 超链接
+  与 `U+202E` RLO 的串，旧实现原样写进两层日志；异常消息还会进
+  traceback。现在 `_clean.sanitize_log_field()` 统一净化，与 UI 文案
+  共用 `_clean_once` 清理核心（不产生第二套净化真值），TUI 降级路径
+  也先过 `_clean` 再写。实测 5030 → 121 码点，ESC/RLO/OSC8 全清，
+  两层留痕的 `event` 完全一致。
+- **审计自愈但不丢证据**：上一轮 `audit().ok` 依赖累计
+  `_INDEX_MISSES`，一次已修复的历史 miss 让健康状态永久报不健康；
+  而唯一恢复手段 `reset_runtime_counters()` 强绑
+  `reset_dispatch_log()`（实测 `decisions: 21 → 0`）。现在区分
+  **连续**未处置 miss（fatal，一次成功反查即归零）与**累计**历史
+  证据（信息项，永不自动清零）；`acknowledge_runtime_misses()` 显式
+  确认且不动日志；`reset_runtime_counters()` 默认不清日志，
+  需显式 `include_dispatch_log=True`。
+- **会话退出证据保全**：`close()` 先记 `session.exit` 再删桶，
+  全局日志永远缺该事件。现在先把整桶快照封存到实例
+  `slogan_closed_trace()`，再释放全局桶（128 桶上界不变），
+  两层口径一致且桶数仍有界。
+- **LRU 读刷新**：只有写入刷新 LRU 时，高频只读的活跃会话会被当
+  最久未用淘汰。现在 `dispatch_log(owner)` 指定 owner 时刷新；
+  **无参全量读刻意不刷新**，否则一次全量读会刷活所有桶、淘汰策略失效。
+
+另修两处工程正确性：`clipped`（文案需净化）降为信息项，真正 fatal
+的是 `unrenderable`（净化后为空/仍超宽）与净化撞车；分发侧去掉
+二次按码点截断，与 `_BY_CLEAN` 索引共用 `sanitize_verb` 单一出口，
+避免超长词条静默 `index-miss`。
+
+**如实边界**：`unresolved_misses` 是连续语义，间歇性 miss 会被随后
+成功归零，累计值才是完整历史；`slogan_closed_trace()` 只保全
+`close()` 那一刻的快照；`sanitize_log_field` 按码点限长而非列宽
+（日志不参与终端渲染）；`index-miss` 的 fail-closed 只抑制标语显示、
+不改裁决；并发压测仍未复现 list 撕裂；不是真机长跑；分叉改动仍未
+合并；第三方自适应红队仍未做。
+
+验证：234 例 pytest + 64 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
+---
+
+## 20. owner 全链路归一、被动淘汰留痕、单一释放出口
+
+本轮不改任何安全裁决，只补前四轮刚修完的运行时对应关系里的漏洞。
+
+- **owner 不再是可注入通道**：`owner` 是 `pick_for_event` /
+  `record_error` 的 public 入参。实测注入 5033 码点含 `ESC ]8;;`
+  超链接与 `U+202E` RLO 的串，`SloganDecision.owner`、桶 key、
+  `slogan_trace()` 输出**全部原样带控制字符** —— D4 净化了
+  event/kind/context，偏偏漏了这一路。现在写入与查询共用
+  `norm_owner()`：干净输入零改动，脏串归一成定长
+  `owner:<sha1(raw)[:16]>`（22 码点，严格幂等，不同脏串不撞车）。
+  实测 5033 → 22 码点、ESC/RLO/OSC8 全清、`dispatch_log(evil)`
+  与 `dispatch_log(d.owner)` 命中同一桶。
+- **修净化时别把查询链路打断**：初版把 key 拼成 74 码点，
+  二次归一又被 64 上限截断并**重算指纹**，实测
+  `dispatch_log(evil)` 返回 0 而 `dispatch_log(d.owner)` 返回 1
+  —— 写入与查询静默分叉。改为定长指纹 key 后 `norm_owner`
+  严格幂等。这是本轮自己引入又自己抓回来的缺陷，如实记录。
+- **日志字段净化不再因脏配置崩溃**：`sanitize_log_field` 的
+  `limit` 旧实现直接 `int(limit)`，`None` / `nan` / `inf` 分别抛
+  TypeError / ValueError / OverflowError，`'5'` / `True` / `-1`
+  被悄悄接受。新增 `_coerce_log_limit()` 严格校验，脏值回落
+  默认 120 绝不抛异常，与 `load_config` 的类型口径一致。
+- **LRU 被动淘汰不再是无声黑洞**：D4 只给显式 `close()` 封存了
+  快照。实测第 129 个会话挤掉含 `turn.completed` 的整桶，查不到
+  且无任何痕迹。现在 `EvictionRecord`（owner / dropped /
+  last_reason / at_ms，**不含文案与 entry_id**）记入有界
+  `_EVICTED`（64），`evicted_owner_log()` 与
+  `dispatch_log_stats()['evicted_recent']` 可查。
+  **刻意不复活决策内容**（否则 128 桶上界失效）；`evicted_recent`
+  是观测项，**不参与 `audit().ok`**。
+- **单一释放出口 + 并发契约补全**：`close()` 从
+  「`dispatch_log` + `release_owner`」两步收敛到
+  `mapping.take_owner_log()`，消除两套实现的漂移面；
+  `_slogan_sealed` 写放进 `_slogan_lock`（读本来就有锁），
+  删掉 `slogan_closed_trace()` 未使用的 `keys` 变量。
+
+**如实边界**：脏 owner 归一为 `owner:<fp16>`，原串不进日志
+（可读性下降是明确取舍），干净 owner 零改动；淘汰记录只保留
+最近 64 次、更早淘汰仍不可查；`_slogan_sealed` 写加锁后仍只是
+实例内快照；并发压测仍未复现 list 撕裂（同 §17）；不是真机长跑；
+分叉改动仍未合并；第三方自适应红队仍未做。
+
+验证：256 例 pytest + 73 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
+---
+
+## 21. 先清理后截断、注入时钟贯穿、淘汰痕摘要
+
+本轮不改任何安全裁决，只补前五轮刚修完的运行时对应关系里的漏洞。
+
+- **先粗切导致合法内容不可达**：`sanitize_log_field` 旧实现
+  `raw[:lim*4]` 先截断再清理。实测 `' '*1000+'OK'`（limit=120）
+  只扫前 480 码点，前部垃圾吃满额度，清理后为空，尾部唯一合法
+  内容 `OK` 被整段丢弃。现在**先 `_clean_once` 迭代到不动点、再按
+  `lim` 截断**，并加 `_SCAN_CAP = 65536` 扫描上限
+  （实测 `_clean_once`：64KiB≈17ms / 1MiB≈0.32–0.37s / 2MiB≈0.66–0.68s）。
+  64KiB 以内保证语义正确；超出才粗切兜 DoS，**这是显式
+  fail-closed 边界**，实测 `' '*70000+'OK' -> ''`，不宣称
+  「任意长度都保真」。截断结果仍严格幂等。
+- **连续 ESC 串吞掉尾部字符**：修上一项后实测暴露
+  `''*900+'END' -> 'ND'`，最后一个 ESC 与 `E` 拼成 `ESC E`
+  (NEL) 被 `_ESC_SEQ_RE` 吞掉。新增 `_ESC_RUN_RE = {2,}`
+  排在 OSC/CSI **之后**（以 `[`/`]` 引导的真序列已先剥掉），
+  实测 `-> 'END'`，且 `'[31m' -> ''` 没误伤 CSI。
+  **单个** `'END'` 仍是 `'ND'`：ECMA-48 固有歧义，本轮
+  未改；ESC 已清除、不会回显控制序列，因此**无安全风险**，
+  只是保真度边界。
+- **孤立 ESC 候选实测不成立、未修**：怀疑 `_CTRL_RE` 不含
+  `0x1b`，实测 `sanitize_verb('abc') == 'abc'`、
+  `'' -> ''`。原因是字符类 `-` 覆盖 0x1b。
+  **没有为它改任何一行代码**，只加回归锁住既有正确行为。
+- **淘汰痕与 decision 共用注入时钟**：旧实现淘汰痕用
+  `time.monotonic()`，实测注入 `now=1000.0` 时
+  `decision.at_ms=1000000` 而 `EvictionRecord.at_ms=76564`，
+  可确定性回放断一半。现在 `_record(d, at_ms=...)` 接受调用方
+  时钟，`pick_for_event` 5 个分支与 `record_error` 全部传 `at`；
+  两次回放元数据完全一致。
+- **`reason_counts` 让错误信号不再被掩盖**：旧版只记
+  `last_reason`。实测桶内 `ok / error:boom / ok` 淘汰后
+  `last_reason='ok'`，运维看不出曾出错。现在
+  `EvictionRecord` 带按 reason 计数并排序的摘要
+  `('error:boom',1),('ok',2)`，`sum == dropped`；**不含文案与
+  entry_id**，不影响 `audit().ok`。
+- **口径精确化**：新增 `OWNER_LIMIT = 64`，docstring 改为
+  「干净且 ≤64 码点零改动」；实测 `'a'*64` 原样、
+  `'a'*65 -> owner:<fp16>`。功能零变化，加边界测试锁住。
+
+**如实边界**：`_SCAN_CAP` 之外仍先粗切；单个 ESC 的 ECMA-48
+歧义未解决（但无控制字符残留）；超长 owner 的全串 sha1 成本
+未修（实测 2 MiB ≈ 1.7 ms）。`reason_counts` 只汇总 reason，
+不复活决策内容；只保留最近 64 次淘汰；`evicted_recent` 不参与
+`audit().ok`。`tui.py` / `runtime_slogans.py` 文件零改动，但
+re-export 的 `sanitize_verb` 因共享 `_clean_once` 对连续 ESC
+输入更保真，其余行为不变。并发压测仍未复现 list 撕裂；不是
+真机长跑；分叉改动仍未合并；第三方自适应红队仍未做。
+
+验证：276 例 pytest + 80 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
+---
+
+## 22. ESC+ 引导、时钟严格化、有界摘要、累计淘汰证据
+
+本轮不改任何安全裁决，只补前六轮刚修完的运行时对应关系里的漏洞。
+
+- **上一轮 ESC_RUN 修复有覆盖缺口**：`]8;;evilOK`
+  旧版返回 `'K'`、`[31mRED` 返回 `'ED'`、
+  `[?25lHIDE` 返回 `'IDE'`。原因是 OSC/CSI 正则从 ESC 串的
+  **最后一个** ESC 开始匹配，前面留下孤立 ESC，被 `_ESC_SEQ_RE`
+  与尾部第一个可打印字符拼成假序列吞掉。上一轮只测了无尾巴的
+  `[31m -> ''` 就宣称覆盖。现在引导改为 `+`，整段
+  「连续 ESC 串 + 真序列」一次剥掉，实测五个 case 全部恢复尾部
+  原文；单 ESC 行为不变、全部幂等。**单个** `END -> 'ND'`
+  的 ECMA-48 固有歧义仍未改，但 ESC 已清除、不会回显控制序列，
+  无安全风险。
+- **public 时钟入参不再裸奔**：`now=nan` 曾抛 ValueError、
+  `now=inf` 抛 OverflowError、`now='1000'` 产出 4000 位天文数字
+  （字符串 `*1000` 放大）；`record_error(at_ms='1000')` 曾把
+  **字符串**存进 `SloganDecision.at_ms`，`True` 被当成 1。新增
+  `_coerce_ms(value, is_seconds)`：拒绝 bool / 非数值 / 非有限 /
+  负值 / 超上界，脏值回落真实单调时钟。三个入口统一，实测 9 种
+  脏值全部产出合法正 `int`、不抛异常、不放大。
+- **本轮自引入又抓回的缺陷**：初版写成
+  `_coerce_ms(...) or _fallback_ms()`，把**合法 0** 当 falsy 吞掉
+  （实测 `now=0 -> 1072138`）。改为显式 `ms is None` 判断后
+  `now=0 -> 0`、`now=1 -> 1000`、淘汰痕 `at_ms=0` 全部正确。
+  与 §20 的 A′ 同类教训，如实记录。
+- **owner 摘要有界**：旧版对整串做 UTF-8 编码 + sha1，无上界
+  （实测 1 MiB ≈ 12.7 ms，每次写入/查询都付）。新增
+  `OWNER_SCAN_CAP=4096`，超长串用「头 2048 + 总长 + 尾 2048」
+  参与摘要；实测仅尾部不同的两个 100k 串仍不撞、严格幂等，
+  64KiB→8MiB 归一耗时均 ≈12–14 ms（固定上限）。
+  **如实边界**：共享头尾与总长、仅中间不同的两个超长串会撞到
+  同一 key，不宣称零碰撞。
+- **淘汰累计证据**：新增 `evicted_total()` 与
+  `dispatch_log_stats()['evicted_total']`，与 `_INDEX_MISSES` 的
+  「连续 / 累计」双层口径对齐。环形缓冲只答最近 64 条，累计值
+  不因滚动丢失；**不参与 `audit().ok`**（淘汰是正常有界行为）。
+  只有显式 `reset_dispatch_log()` 全清才归零。
+
+**四个候选实测不成立、未修**：3 次不动点从未误杀正常文本、
+开头组合标记/GCG/ZWJ 已被清理、lone surrogate owner 不撞车且
+幂等、`record_error` 的 kind 已被净化。只加回归锁住既有正确行为，
+防止以后误「修」。
+
+**如实边界**：脏时钟注入回落真实时钟，**不保证这类调用可回放**；
+`_SCAN_CAP=65536` 之外仍先粗切；单个 ESC 的 ECMA-48 歧义未解决；
+`evicted_total` 是信息项，明细仍只保留 64 条、不复活决策内容。
+`tui.py` / `runtime_slogans.py` 文件零改动（本轮推送不含它们），
+但共享 `_clean_once` 的 `sanitize_verb` 对连续 ESC 更保真，
+139 例既有回归全绿。并发压测仍未复现 list 撕裂；不是真机长跑；
+分叉改动仍未合并；第三方自适应红队仍未做；**不宣称性能提升**。
+
+验证：300 例 pytest + 88 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
+---
+
+## 23. 裁剪证据与「不该修」的两个保真度候选
+
+本轮不改任何安全裁决，也不改净化层一行，只补一处可观测性缺口。
+
+- **桶内裁剪静默丢错误信号**：实测造一条 `error:boom` 后灌 84 条
+  决策，`dispatch_log('s0')` 里 error 消失，而 `evicted_recent=0`、
+  `evicted_total=0` —— **根本没有发生淘汰**。原因是
+  `_DISPATCH_CAP=64` 的 `del bucket[:-cap]`；上一轮的
+  `EvictionRecord.reason_counts` 只在淘汰时汇总「当前桶」，
+  覆盖不到这一层。现在 ``_record`` 裁剪前先取 `dropped`，累加
+  全局累计（``bucket_trims`` / ``trimmed_decisions`` /
+  ``trimmed_reasons``）与 per-owner 摘要；后者在会话被 LRU 淘汰时
+  随 `EvictionRecord.trimmed_dropped` / `trimmed_reason_counts`
+  一起带走。实测 `(('error:boom',1),('ok',21))` 从「完全不可见」
+  变成两处可查。新增 `bucket_trim_stats()`、累计决策数
+  `decisions_total`，`audit().as_dict()` 自动携带。
+  全部是**信息项**，不参与 `audit().ok`。
+- **本轮自引入又抓回的 off-by-one**：初版 reason 种类上限判断
+  让 64 个具体 reason + `<other>` 变成 **65** 个键；改成按「具体
+  reason 种类」计数，`<other>` 作为额外桶，总数恒 ≤ 65 且具体
+  种类 ≤ 64。
+
+**两个候选确认成立但判定「不该修」**，理由都是「修了会放宽安全
+边界，而收益实际为零」：
+
+1. **未终止 OSC 吞光整行**（`']8;;https://evil.example'+'OK'
+   -> ''`，`sanitize_verb` 同源）：ECMA-48 里无终止符时后续字节
+   规范上全属参数，整段删正确。实测尝试修（终止符必需 +
+   4096 上限）会让 **904 码点的参数残留文本**进入日志，反而放宽
+   净化；且 `sanitize_log_field` 按 120 码点截断后尾部 `END`
+   仍不可达。收益为零、风险为正。
+2. **ZWJ emoji 被 Cf 清理拆散**（`👩‍💻 -> 👩💻`）：核查
+   1695 条词条 **ZWJ / VS16 / ESC 全部为 0**；修它要放宽 Cf
+   清理（保留 ZWJ）并连带改 `_clusters` / `display_cols` /
+   500 串宽度交叉回归，而 bidi isolate / RLO / ZWSP 必须继续删。
+   实际标语零收益，安全与宽度真值风险为正。
+
+`test_A_attempted_fix_would_leak_osc_parameters` 与
+`test_B_registry_contains_no_zwj_variation_or_esc` 把这两条判断
+变成**可执行证据**，不只是文档辩解。
+
+**如实边界**：裁剪证据的 per-owner 摘要只在 **LRU 淘汰**时随
+`EvictionRecord` 带走；显式 `release_owner()` / `take_owner_log()`
+释放的会话不带走（全局累计仍保留）；全局摘要不归属具体 owner。
+`<other>` 合并尾部种类、不保留原始分布。未终止 OSC 的 ECMA-48
+歧义、ZWJ emoji 拆散、`_SCAN_CAP` 之外先粗切三者**未解决**，
+都有回归把当前正确行为锁住。`_clean.py` / `tui.py` /
+`runtime_slogans.py` 逐字节未改，均不在本轮推送清单。并发压测
+仍未复现 list 撕裂；不是真机长跑；分叉改动仍未合并；第三方
+自适应红队仍未做；**不宣称性能提升**（裁剪路径多了有界常数
+开销，未做基准对比）。
+
+验证：319 例 pytest + 97 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
+---
+
+## 24. public 入参类型面：event 守卫与脏 owner 隔离
+
+本轮不改任何安全裁决，也不改净化层一行，只补前八轮一直没扫到的
+**public 入参类型面**。
+
+- **N1 · `event` 查表前无类型守卫**：实测
+  `pick_for_event(['a'])` 抛底层 `TypeError: unhashable type: 'list'`
+  （`{'x':1}` 同理），与 `record_error` 先净化再结构化拒绝的口径
+  不一致。TUI `_slogan_dispatch` 的 `except UnboundSloganEvent`
+  接不住它，落到 `except Exception` 只记 `error:TypeError`，
+  `strict=True` 开发模式期望的严格契约被绕过。现在
+  `pick_for_event` 开头加 `isinstance` 守卫，非 str 一律走同一个
+  `UnboundSloganEvent`，消息用**固定占位** `<invalid-event>`，
+  刻意不调用 `str(raw)` —— 否则超长或带控制字符的外部串会进
+  traceback。九种非字符串输入（含不可 hash 的 list / dict /
+  tuple / frozenset）统一结构化拒绝，18 个合法事件零变化。
+- **N2 · 非字符串 `owner` 静默折叠成空 key**：旧
+  `norm_owner` 把 `None / 123 / True / bytes / list / dict / float`
+  全部折叠成 `''`。实测七个不同脏 owner 共用一个桶、污染
+  「不传 owner」调用方的默认桶；更糟的是 `dispatch_log(None)`
+  是「全量」语义而 `dispatch_log(123)` 查的是空桶，同一次运行
+  分别返回 **9 条和 8 条** —— 一个笔误就拿到完全错误的日志集合，
+  无报错、无留痕。现在 `None` 仍表示「无 owner」，其余非字符串
+  归到固定隔离桶 `owner:invalid`（干净、13 码点、严格幂等，
+  写入/查询自动对上），并由入口 `_coerce_owner()` 调
+  `_note_invalid_owner()` 留痕。类型名来自 public 可控的
+  `type(raw).__name__`，过同一份净化核心并限长 32、种类上限 32
+  （超出归 `<other>`）；实测自定义类名含 OSC8 + RLO + 500 个 A
+  时脱敏后只剩 33 码点且无控制字符。`dispatch_log_stats()` 新增
+  `invalid_owner_calls` / `invalid_owner_types`，`audit().as_dict()`
+  自动携带；计数只在两个入口发生，查询侧 20 轮调用后仍为 1。
+  全部是**信息项**，不参与 `audit().ok`。
+
+**四个候选判定「不该修」**：`lang` 非字符串静默回落默认语种
+（只影响选词语种，不影响分桶/裁决）、`record_error` 的
+event/kind 已被 D4 净化、`sanitize_log_field` / `sanitize_verb`
+非字符串返回空串（既有 fail-closed 契约）、`owner=None` 与 `''`
+同桶且 `dispatch_log(None)` 全量（文档明确的兼容契约）。
+本轮只把「非字符串脏值」与「无 owner」分开，不动后两条。
+
+**一条既有源码级断言因行为变更同步到新契约，不是放宽**：
+`t_d5_owner_normalization` 原断言 `owner = norm_owner(owner)`；
+入口改走 `_coerce_owner` 后改为同时检查 `def norm_owner` /
+`def _coerce_owner` / `owner = _coerce_owner(owner)` 与两处调用，
+并保留全部运行时断言。其余既有断言一条未动。
+
+**如实边界**：行为变更**仅针对错误用法** —— 非字符串 owner 从
+默认桶移到隔离桶，正常字符串 / `None` / `''` 零变化；依赖「传数字
+也进默认桶」的调用方需改传字符串。若真的把字符串
+`"owner:invalid"` 当 owner 用，会与脏值桶撞（固定键的固有碰撞面，
+已加回归锁住，不宣称零碰撞）。类型分布最多 32 种具体 + 1 个
+`<other>`，超长类名只保留前 32 码点 + 省略号。`_clean.py` /
+`tui.py` / `runtime_slogans.py` / `test_runtime_slogans.py` 逐字节
+未改，均不在本轮推送清单。并发压测仍未复现 list 撕裂；不是真机
+长跑；分叉改动仍未合并；第三方自适应红队仍未做；**不宣称性能
+提升**（入口多一次 isinstance 与有界 Counter 更新，未做基准对比）。
+本轮实测未发现需要回修的自引入缺陷，但 A′–E′ 五个边界都量过。
+
+验证：343 例 pytest + 105 项纯 stdlib 独立验证 + 22/20 项上轮脚本全绿。
+
+---
+
+## 25. 引擎本体 public 入参面：异常路径半更新与未净化诊断
+
+本轮不改任何安全裁决，也不改净化层一行（``_clean.py`` 逐字节未改）。
+前九轮几乎都在改 ``mapping.py``，本轮把「先实测再修」搬到
+**运行时标语引擎本体** ``tui/runtime_slogans.py``。
+
+**最毒的是异常路径的半更新（P1）**。D1 的 ``RLock`` 解决并发撕裂，
+防不住异常路径：``note_activity`` 先写状态、最后才在
+``_record_locked`` 里 ``int(at*1000)``。实测 ``now=math.nan`` 抛
+ValueError 之后，``_last_event_at=nan`` / ``_seq`` / ``_phase`` /
+``_current`` **全都已经写好了**，随后 ``liveness()`` 与
+``snapshot()`` 永久抛 ValueError —— 一个 public 时钟入参的脏值能让
+整个 TUI 渲染停摆。同路径还实测 ``now='1000'`` 抛底层 TypeError、
+``inf`` 抛 OverflowError、``True`` 被悄悄当成 1 秒、``1e308`` 是
+合法有限值却在 ``int(at*1000)`` 溢出成 inf、注入 ``clock`` 返回脏值
+或抛异常同样掀掉调用方。引擎侧从没做过深度轮 7 给 mapping 做过的
+严格校验。
+
+修复：新增统一时钟入口 ``_now(value)``。``_coerce_now_value`` 只
+接受有限实数秒，拒绝 ``bool`` / 非数值 / 非有限 / 负数 / 超过
+``_MAX_NOW_SECONDS=1e9``（夹上界是为 ``int(at*1000)`` 不溢出，
+不是业务上限）。优先级「合法 ``now`` > 合法注入 ``clock`` >
+``time.monotonic()``」；注入 clock 抛异常也接住。**校验在所有字段
+写入之前**完成，这是消除异常路径半更新的关键；``0`` 是合法零值，
+显式判 ``is None``（深度轮 7 踩过 ``or fallback()`` 吞零的坑）。
+``note_activity`` / ``note_progress`` / ``liveness`` / ``render`` /
+``snapshot`` 五个出口全部走它。
+
+**另外五个真缺陷**：
+
+| # | 实测 | 处置 |
+|---|---|---|
+| P2 | ``note_progress(kind=evil)`` 后 ``EventRecord.kind`` 原样保留 530 码点含 OSC 8 + U+202E RLO，经 ``Liveness.evidence`` 进诊断输出 | 过 ``sanitize_log_field(kind, 40)``，非法回落 ``"progress"``；与 ``_clean`` 同一真值，``mapping.record_error`` 早已如此 |
+| P3 | ``str(raw_mode)`` 把 settings.json 里 5000 码点含 ESC/RLO 的串原样拼进 ``source``，进 ``Liveness.source`` / ``snapshot()`` / ``render`` | 新增 ``_safe_source()`` 统一净化限长 120；``mode`` 非字符串直接拒绝、字符串净化限长 40；阶段键与 ``str(p)`` 同样净化；合法配置零变化 |
+| P4 | ``reset()`` 用真实时钟而 ``note_activity(now=..)`` 用注入时钟，证据链 ``[1000000,1001000,1000000]`` 倒退、真实 monotonic 下两套时间源 | ``reset()`` 优先沿用 ``_last_event_at``（对 nan/inf 残留做防御），**不改签名**；证据链单调同源，边界靠 ``kind="reset"`` 区分 |
+| P7 | ``detail=None/123`` 让 ``len(detail)`` 抛 TypeError；``detail=['a']`` 被 ``_detail_class`` 当字符串遍历得出误导性 ``class='ascii'`` | 非字符串收敛成 ``""``，与 D3「绝不记 detail 原文」一致 |
+| P8 | ``load_config(123)`` 直接抛底层 TypeError（``p = _settings_path(path)`` 在 ``try`` 之外），与 docstring「绝不因配置写错让 TUI 崩」矛盾 | 挪进 ``try``，脏 path 回落 ``builtin`` |
+
+**四个候选判定「不该修」**：``phase`` 为任意非 str / 未知 / 不可
+hash 一律兜底 ``waiting_model`` 且不抛（既有 fail-safe，phase 不进
+日志原文）；字符串 ``detail`` 只记长度+字符类别、不记原文（D3 脱敏
+契约，20 万码点也只留一个整数）；未知阶段键返回固定
+``invalid:budget-phase``（检查在 ``__post_init__`` 之前，原文进不了
+source）；``sanitize_verb(123)==''``（既有 fail-closed）。另把
+「``liveness`` / ``render`` / ``snapshot`` 仍是纯读」写成回归，
+防止从渲染循环记活性 —— 那正是 D4 反复反对的「定时空转装忙」。
+
+**如实边界**：行为变更**仅针对错误用法** —— 脏 ``now`` / 脏
+``clock`` / 非字符串 ``detail`` / 非字符串 ``kind`` / 脏 ``path``
+从「抛异常或带原文」变成「净化 / 回落 / 拒绝」；合法 ``now``、
+合法配置、合法 ``kind``、字符串 ``detail``、``reset()`` 签名零变化。
+``now`` 夹在 ``[0, 1e9]`` 秒，超出（含合法但极大的有限值）回落
+真实时钟，不宣称支持任意量级单调时钟。``reset()`` 与最后一条证据
+``at_ms`` 可能相同；不传 ``now`` 与注入时钟混用时保证**不倒退、
+不同源混写进同一条链**，但两套时钟的根因仍靠调用方自律。
+**本轮唯一改动的运行时代码是 ``runtime_slogans.py``**；
+``mapping.py`` / ``_clean.py`` / ``tui.py`` /
+``ui/slogans/__init__.py`` / ``test_slogan_mapping.py`` 逐字节未改，
+均不在本轮推送清单。既有断言一条未动、一条未放宽；本轮实测未发现
+需要回修的自引入缺陷（零值 / 极大有限值 / clock 抛异常 / 非 str
+kind / reset 残留 nan / ``Decimal`` 六个边界都量过），不写成
+「零缺陷」。并发压测仍未复现 list 撕裂；不是真机长跑；分叉改动
+仍未合并；第三方自适应红队仍未做；**不宣称性能提升**（入口多一次
+数值校验与净化调用，未做基准对比）。
+
+验证：376 例 pytest + 117 项纯 stdlib 独立验证 + 22/20 项上轮脚本
+全绿；独立验证脚本新增引擎检查，已实测屏蔽
+``pytest / rich / prompt_toolkit / wcwidth`` 后仍可导入（PEP 562
+惰性导出），不破坏纯 stdlib 约束。
+
+---
+
+## 26. 注入契约与配置切换锚点：同一个 seq 不能对应两个文案
+
+本轮不改任何安全裁决，也不改净化层一行（``_clean.py``
+逐字节未改）。**唯一改动的运行时代码仍是
+``tui/runtime_slogans.py``**。
+
+**D（最值钱）：`reload()` 打断 D1 的 `(seq, verb)` 撕裂检测锚点。**
+D1 用 `EventRecord` 的 `(seq, verb)` 配对当并发撕裂检测锚点：
+一个 seq 只能对应一个文案。旧 `reload()` 把 `_current = ""`
+却**不推进 seq、不记证据**，而 `render()` 在 `not _current` 时
+显示新词池首条。实测：
+
+```
+事件后    seq=1  current='正在刷屏'   evidence.verb='正在刷屏'
+reload 后 seq=1  current=''          evidence.verb='正在刷屏'
+render.text='重装后的词'   view.seq=1
+>>> 同一个 seq=1 对应两个文案
+```
+
+第二次 `reload()` 返回 `(False,"unchanged")` 却照样清空
+`current` 造成**静默换词**。现在把配置切换视作**可审计的状态
+转移**：`unchanged` 是真 no-op（不清 current / 不动 seq /
+不记证据 / 不碰缓存）；`changed` 时新文案取新词池首条
+（确定性、**不调 rng**，避免把配置重载伪装成随机 spinner
+事件）、推进 `seq`、记 `kind="reload"` 证据，其 `verb` 与屏幕
+显示严格相等；证据时间戳沿用 `_last_event_at`（与深度轮 10
+P4 的 `reset()` 同源），不混两套时间源。实测 `seq 1→2`、
+`current = evidence.verb = render.text = '重装后的词'`、连续
+5 次恒为词池首条、真实时钟下 `[1000000,1000000]`。**这不是
+D4 禁止的「从动画循环记活性」** —— reload 是显式配置事件，
+D4 反对的是定时空转装忙。
+
+**A：`__init__` 的 `or` 吞掉 falsy 但完全合法的注入对象。**
+旧 `config or load_config()` / `rng or random.Random()`。实测
+注入 `__bool__=False` 的配置子类与 `__len__=0` 的随机源：
+`config.source` 从 `INJECTED` 变 `builtin`、注入 `rng.choice`
+调用 0 次、两个同构引擎文案不同 —— 深度轮 4 的确定性回放
+契约被一个 `or` 吃掉。这是深度轮 7 A′（`or fallback()` 吞掉
+合法 `0`）的**第三次同源**。改成显式 `is None` 后注入对象原样
+保留、`rng.choice` 调用 1 次、两个同构引擎文案一致、`None`
+仍回落出厂值。**`lang` 刻意不改**：实测 `slogan_bank("")` 回落
+英文词库，改成 `is None` 会让 `lang=''` 从 zh-CN 变英文，是
+行为退化，判定「不该修」。
+
+**B：`load_config` 静默截断 205 → 200 条自定义词。** 旧
+`raw_verbs[:200]` 让第 205 条凭空消失，而 `source` 是正常路径、
+无任何提示 —— 与深度轮 10 P8「静默忽略是危险的假安全感」
+同类。200 是防 DoS 上限，但不该悄悄生效：超限**整段拒绝**
+`invalid:too-many-verbs`。200 条以内零变化。
+
+**C：`mode=default` 下自定义词全不可渲染时被静默忽略。** 实测
+`{"mode":"default","verbs":[123,None,['a'],{},True]}` 净化后
+一条不剩但 `source` 仍是正常路径 —— 用户以为自定义了标语，
+实际全用内置词库。现在「写了自定义词却一条都不可渲染」对
+**所有** mode 一律用既有 `invalid:empty-verbs` 拒绝（复用既有
+source，不改任何既有断言口径）；混合场景仍只保留可渲染的词。
+
+**四个候选判定「不该修」**（都有回归锁住）：`lang` 的 `or`
+（改它是行为退化）、`phase_budgets_ms` 的 `[:10]`（合法阶段键
+上限 5 < 10，**不可达代码**）、`snapshot()` 写 `_pools`
+（确定 / 幂等 / 纯内存的无害缓存）、`evidence_seq` 饱和语义
+（deque maxlen=16，兼容字段，名字像全局序号其实是窗口内条数）。
+**上一轮回归 `test_liveness_is_still_pure_read` 漏检了
+`_pools`**，「完全纯读」的说法其实不准确；本轮新增
+`test_snapshot_populates_pools_deterministically` 把事实锁成
+可执行断言 —— 这是补上一轮欠的口径，不是修 bug。
+
+**一条既有运行时断言 + 一条上轮独立脚本断言同步到新契约，
+不是放宽**：原 `snapshot()["current"] == ""` 改为同时要求
+`current == "新词条"`、池大小 1、`evidence[-1].kind == "reload"`、
+`verb == "新词条"`、`seq` 相等、`render(True).text == "新词条"`
+—— 断言更强。其余既有断言一条未动、一条未放宽。
+
+**如实边界**：两处行为变更都如实标注 —— (a) 超过 200 条
+`verbs` 从「静默生效前 200 条」变成整段拒绝
+`invalid:too-many-verbs`，依赖 201+ 条的部署需拆分或减词条；
+(b) `reload()` 成功后 `current` 从 `""` 变成新词池首条且
+`seq` +1、多一条 `kind="reload"` 证据，失败 / unchanged /
+合法 `now` / 正常 spinner 事件路径零变化。`mapping.py` /
+`_clean.py` / `tui.py` / `ui/slogans/__init__.py` /
+`test_slogan_mapping.py` 逐字节未改，均不在本轮推送清单；
+净化层连续两轮零改动。本轮实测未发现需回修的自引入缺陷
+（连续第三次），但 `lang=""`、200/201 边界、5 个合法 budget
+键、unchanged no-op、真实时钟 vs 注入时钟、全新引擎 reload、
+确定性首条七个边界都量过，不写成「零缺陷」。并发压测仍未
+复现 list 撕裂；不是真机长跑；TUI 仍未替换既有 i18n 文案；
+分叉改动仍未合并；第三方自适应红队仍未做；**不宣称性能
+提升**（入口多一次 `is None` 与长度检查，reload 多一次词池
+计算，未做基准对比）。
+
+验证：404 例 pytest + 126 项纯 stdlib 独立验证 + 22/20 项
+上轮脚本全绿；独立验证脚本新增 9 项引擎检查，仍保持屏蔽
+`pytest / rich / prompt_toolkit / wcwidth` 后可导入（PEP 562
+惰性导出），纯 stdlib 约束不破。
+
 *最后修订：2026-09-06 · 适用于：Tuan-CLI 所有版本*
+
+---
+
+## 27. B2：子进程出网边界与凭据 sentinel（完整复现见 `CLAUDE_PARITY.md` §12）
+
+**实测缺陷**：`SandboxManager._execute_backend` 算出
+`block_net = not verdict.network`，但 `local` 分支既不传 `block_net`
+也不传 `env`。两个后果：
+
+1. `verdict.network=False` 且后端落到 `local` 时命令仍以父进程完整
+   `os.environ` 裸跑 —— 禁网裁决在**唯一没有 OS 级出网隔离能力**的
+   后端上静默失效；L2 的命令文本识别可被零宽字符 / ANSI-C / 注释
+   换行绕过。
+2. `GITHUB_TOKEN` / `AWS_SECRET_ACCESS_KEY` 等真实凭据原样进入子进程，
+   与「子进程不持密钥」的宣称相反。
+
+**修复**：新增 `tuan_cli/sandbox/egress.py`，把边界放在**执行前**：
+
+| 组件 | 作用 |
+|---|---|
+| `CredentialBroker` | 真实值只在当前进程内存；子进程拿 `tuan-egress-sentinel-v1:<fp>`；`repr` / 审计 / 异常 / `to_audit_dict()` 不泄露 |
+| `build_child_env` | 保留 `PATH`/`HOME`/`LANG` 等非敏感变量；敏感键替换为 sentinel；脏输入（非 Mapping / 非 str 键值）**空环境**，绝不回退继承父进程 |
+| `enforce_local_egress` | local + 禁网 → **fail-closed 拒绝**，不假装禁网成功；强后端走自身边界 |
+| `EgressGuard` | 三者合成一次检查，`manager` 的 local 分支真调它并传 `env=` |
+
+**同轮另外两项**：`unattended.py` 落地
+`permissions.denyInsteadOfPrompting`（默认关；`denied=True` 是硬事实，
+`continue_turn` / `suppressed_prompt` 结构化写入 `verdict.extra` 与可查询
+审计；真接到 `assess_tool`）；`worktree_boundary.py` 真接到
+`worktree_layer.py` 的 `create` / `create_agent_worktree` / `_git`，
+断言解析后 target 在 workspace 内（含 symlink 祖先）、剥离
+`GIT_DIR` / `GIT_WORK_TREE` / `GIT_INDEX_FILE` 等重定向变量、拒绝
+`git -C` / `--git-dir` 越界 argv。
+
+**配置与行为变更（如实）**：
+`sandbox.resource.egress_credential_masking=true`、
+`egress_block_local_when_denied=true`（默认开是修复 fail-open，显式关闭
+由 `config validate` 报安全降级）；`permissions.denyInsteadOfPrompting`
+默认 false，开启报行为变更 warning。
+**`deny_network_by_default` 仍 false，没有翻** —— 兑现前 13 轮
+「翻 true 是破坏性变更、不擅自翻」的承诺。
+
+**如实边界**：`inject_headers()` 默认关闭、没有出网代理转发进程，
+所以 `credential_masking` 在 `catalog` 里只从 gap 改 **partial**，
+不宣称与 CC 的「sentinel + 代理注入」完整对等；`os_sandbox` 仍是
+**gap**（没把 OS 级隔离变成默认执行边界）；`network_default_deny`
+也是 partial（出厂默认未翻、逐命令 `allowed_domains` 强绑定仍缺）。
+`fully_superior` 仍 false（26 个缺口、B2 未全清、第三方自适应红队未做）。
+不是真机多平台验证：Windows Job Object / macOS Seatbelt 未实机跑。
+
+验证：34 例新回归 + 108 例 parity/CLI/headless + 353 例相关批次全绿；
+`matrix.validate() == []`、`security_wiring_intact=true`。
+两条既有计数断言同步到新基线，**不是放宽**。
+
+
+---
+
+## 28. B2 收尾：逐命令域名强绑定 + 本地回环出网代理（完整复现见 `CLAUDE_PARITY.md` §13）
+
+**实测缺口**：`SandboxProfile` 只有 `network: bool`；`_run_provider` 构造
+`SandboxProfile(network=verdict.network, ...)`；`assess_command(...)` 的
+`verdict.extra = {}` —— 执行层和出网路径上**完全没有域名概念**。
+`TrustFilter` 的全局白名单只在命令文本层生效（补测确认它确实会 DENY，
+纠正 §12 复现脚本把 `network`/`isolate` 误读成 `action` 的表述），而文本
+识别可被零宽字符 / ANSI-C / 注释换行 / 变量间接引用绕过。
+
+**修复（把强制点从文本层搬到出网路径）**：
+
+| 组件 | 作用 |
+|---|---|
+| `sandbox/egress_allowlist.py` | `normalize_domain` 严格归一化；`NetworkClaim` **逐命令**声明（工具参数 `allowed_domains` 优先、回落全局并如实标 `source`）；`evaluate_claim` 声明外拒绝、strict 未声明任何主机拒绝一切、检测不到域名标记 `undetectable` 而非悄悄当已证明合规 |
+| `sandbox/egress_proxy.py` | **真实可运行**的 stdlib 本地回环代理：`CONNECT` 按 claim 校验主机（声明外 403、允许则建隧道）；明文 HTTP 绝对 URI 同样校验，转发时 `CredentialBroker.inject_headers()` 把 sentinel 还原成真实值；`env_overrides` 注入 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`、清空 `NO_PROXY` |
+| `core/sandbox_provider.py` | `SandboxProfile` 新增 `allowed_domains`。**如实**：bwrap/seatbelt 只有 network namespace / IP 级规则，没有域名级过滤，这是元数据 |
+| `sandbox/manager.py` | claim 写进 `verdict.extra` → `SandboxProfile.allowed_domains`；local 分支 `try/finally` 管代理生命周期，超时/异常一定 `stop()` |
+| `config/security_schema.py` | `sandbox.resource.egress_proxy_enabled` 校验，开启报**行为变更** warning |
+
+**A′（本轮自己引入、自己抓回）**：初版 `normalize_domain` 用
+`str.encode("idna")`，U+200B ZWSP 被静默丢弃，
+`evil\u200b.example → evil.example` —— 插零宽字符的不同主机可能匹配上
+白名单声明。已加 ASCII 约束 + 逐字符白名单，非 ASCII 一律 `None`；脏声明
+记为 `invalid_values` 并 fail-closed。代价：不支持国际化域名。
+
+**配置**：`sandbox.resource.egress_proxy_enabled` 默认 **false**（开启会
+改写所有子进程代理环境变量，属行为变更）；只有显式开启 + `strict` 逐命令
+声明才构造代理。claim 的裁决层强绑定始终生效，所以「关闭」不算安全降级。
+**`deny_network_by_default` 仍 false，没翻**。
+
+**矩阵（不靠改口径凑数）**：`aligned 45 → 46`、`partial 10 → 9`、
+**gap 仍 26**（`network_strict_allowlist` 本来就是 partial 不是 gap）。
+`fully_superior` 仍 false，`b_waves_done` 仍 `["B1"]`。
+
+**如实边界**：
+1. `credential_masking` **仍 partial**：明文 HTTP 的 sentinel 注入已真接线
+   （真 socket 端到端验证，上游 `Authorization` 拿到真实值）；HTTPS 走
+   CONNECT 隧道后代理看不到 header，无法注入。覆盖需 TLS 中间人 +
+   本地 CA 信任，会显著扩大攻击面，本轮不做，不谎称完整对等。
+2. bwrap / seatbelt 没有域名级过滤，`allowed_domains` 只是元数据。
+3. `evaluate_claim` 的 `undetectable` 是**标记**不是证明：若命令显式
+   `--noproxy` 绕过 `env_overrides`，强绑定失效。本地 CLI 固有限制。
+4. `os_sandbox` 仍 gap、`block_writes_outside_wd` 仍 partial、未在本轮动。
+5. 不是真机多平台验证；A 线 10 个 pending、分叉改动、第三方自适应
+   红队仍未完成。标语引擎 / 净化层 / `mapping.py` / `tui.py` 逐字节未改。
+
+验证：43 例新回归（含真 socket 代理端到端）+ 合并批次全绿；
+`matrix.validate() == []`、`evidence.verify_evidence() == []`、
+`verify_doc_numbers.py problems == []`。两条既有计数断言同步到新基线，
+**不是放宽**（仍要求总和 99、逐项对应）。
+
+
+---
+
+## 29. 深度轮：所有执行分支共用一个出网/凭据出口（完整复现见 `CLAUDE_PARITY.md` §14）
+
+**§13 纠偏**：上一轮标 `network_strict_allowlist` 为 aligned 时说得太满，
+那套强绑定只接在 `_execute_backend` 的 **local 分支**。
+
+### 实测缺口
+
+| 分支 | EgressGuard | claim 检查 | 代理 env | `last_egress` |
+|---|---|---|---|---|
+| `local` | 有 | 有 | 有 | 有 |
+| `landlock`/`docker`/`seatbelt`/`bwrap` | **无** | 只传元数据 | **无** | **无** |
+| `jobobject` (`_run_syscall`) | **无** | **无** | **无** | **无** |
+
+- `SandboxProfile.allowed_domains` 在整个 `sandbox_provider.py` 里**只出现
+  1 次**（字段定义），**没有任何后端消费** → strict claim 在强后端完全失效。
+- `_run_provider` 不传 `env`，走 `sanitize_env`（置空）而非 sentinel 链路。
+- **最严重**：`run_syscall_sandboxed` **根本没有 `env` 参数**，所有
+  `Popen` / `run_with_tree_kill` / `os.execvp` 继承父进程完整环境 ——
+  Job Object / seccomp / fallback 路径真实密钥原样进子进程，连置空都没有。
+  **安全等级最高的路径，凭据保护反而是零。**
+
+### 修复
+
+| 模块 | 作用 |
+|---|---|
+| `sandbox/egress_plan.py`（新） | `plan_egress()` 分支前统一裁决；`plan_is_consistent_with_verdict()` 防审计/执行撕裂 |
+| `sandbox/manager.py` | 四条路径统一拿 `plan.env`、统一写 `last_egress`；`_run_provider`/`_run_syscall` 加 `env`；`_make_egress_proxy(plan)` 只认 `plan.wants_proxy` |
+| `arch/platform.py` | 三个入口全加 `env`，透传 Job Object `Popen`、`os.execvpe`、`unshare -n`、Linux fallback `Popen`、其它平台 fallback；`env=None` 保持继承语义 |
+| 配置三处 | 新键 `sandbox.resource.strict_claim_strong_backend`（`deny` 默认 / `metadata_only` 降级），schema 枚举阻断 + 降级 warning + `harden status` 待加固项 |
+
+**契约**：任何后端都拿 EgressGuard 脱敏 env；真正逐命令声明
+（`source=tool_args`）+ 强后端因无域名级过滤、回环代理在 netns/seatbelt
+下不可达而**默认 fail-closed 拒绝**。`source` 本轮第一次真正决定行为 ——
+全局白名单回落（`global_policy`）沿用既有文本层语义，既有部署不被打断。
+
+### A′（自己引入、自己抓回）
+1. 统一 `to_audit_dict()` 漏了 `allowed` 字段（B2 首轮既有可观测契约），
+   `test_b2_boundaries` 直接 `KeyError` —— 闸门锁紧了监控却看不到
+   `allowed=false`。批次 A 抓回，已补回。
+2. `_run_provider` 改签名后，**3 条既有断言同步且全部改强**（要求真拿到
+   脱敏 env），不是放宽。
+
+### 矩阵：一个状态没动
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`。catalog 两条 note 补了纠偏说明但 `status` /
+`evidence` 结构不变，`matrix.validate()` 与 `evidence.verify_evidence()`
+均空。新增回归把计数逐项钉死，**不许靠改口径凑数**。
+
+### 如实边界
+HTTPS CONNECT 隧道内 header 注入仍不可用（需 TLS MITM + 本地 CA，
+`credential_masking` 仍 partial）；bwrap/seatbelt/seccomp 无域名级过滤，
+`allowed_domains` 仍是元数据（立场是「做不到就拒绝」）；`metadata_only`
+是真实降级，schema warning + harden status 明示；`undetectable` 是标记
+不是证明；`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`block_writes_outside_wd` 仍 partial；不是真机多平台验证；
+`test_platform_portability.py` 长批次多次 502/超时只跑到约 51% 且零失败，
+**按未完整跑完如实报告**；`test_arch_security.py` 1 例失败上一轮
+baseline control 已证是既有环境行为，没为变绿改策略；A 线 10 pending、
+分叉改动、第三方自适应红队未做。标语引擎 / 净化层 / `mapping.py` /
+`tui.py` 逐字节未改。
+
+### 验证
+`test_b2s_egress_uniform.py` + `test_b2_egress_strict.py` **80 passed**；
+合并批次 A **341 passed**；逐文件 arch_platform 10 / arch_security_fixes 6 /
+proc 5 / risk_sandbox 14 passed；`matrix.validate() == []`、
+`evidence.verify_evidence() == []`、`verify_doc_numbers.py problems == []`。
+
+
+---
+
+## 30. 深度轮：终态拒绝不回落、内层不吃掉占位符（完整复现见 `CLAUDE_PARITY.md` §15）
+
+**§13/§14 纠偏**：前两轮把强绑定逐层接好，但这轮发现**拒绝结果本身
+没接好**，且内层又把占位符吃掉了。矩阵计数一个没动。
+
+### 四个实测断点
+
+| 编号 | 实测结果 |
+|---|---|
+| **R1** | `tools/shell.py::_route_sandbox_isolation` 只用 `verdict.enforced / backend_available` 判断是否采纳隔离结果；plan 拒绝结果**天然 `enforced=False`**，`enforce_required=false` 且无强后端时路由返回 `None` → `run_shell` 把**被拒命令在真实工作区裸跑一遍**。实测三种 verdict 配置之一确实回落 |
+| **R2** | `copy_diff_apply` 在拒绝后仍走 `build_diff_preview → make_confirm_callable → confirm_apply`：副本其实是空的，`error` 变成「denied + 预览」把合规拒绝伪装成用户主动拒绝，还无条件 `verdict.enforced=True` 宣称已隔离执行，并弹确认卡片要用户确认写回没发生的变更 |
+| **R3** | `SandboxProvider._sanitize_env` 按**键名**把 `OPENAI_API_KEY` 置空，把 `plan_egress` 注入的 `tuan-egress-sentinel-v1:<fp>` 也在接线内层抹成 `''` —— §14 验证的是**传给 provider.run 的参数**，不是子进程实际拿到的值。强后端拿不到可还原标记，`inject_headers()` 链路静默断裂 |
+| **R4** | `SECRET_HINTS` 含 `"TUAN_"`，`TUAN_WORKSPACE` 被抹空；只有 `LocalSandbox` 补回，另外三个强后端此前都没补 |
+
+**R3 如实说明**：当前默认配置下强后端 + 真正逐命令声明会被 §14 拒绝、
+不启代理，所以该断裂**不产生已观测的实际危害**；修的是接线一致性，
+防止未来放宽（如 `metadata_only` + host 网络代理）时静默失效，不夸大。
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `sandbox/manager.py` | `SandboxExecResult` 新增 `terminal_refusal: bool = False`，把「终态安全拒绝」与「隔离是否生效」**解耦**；`_execute_backend` 在 `not plan.allowed` 时置 True；`_execute_copy_diff_apply` 检测到它立刻返回（不建 diff、不要确认、不设 `verdict.enforced=True`） |
+| `tools/shell.py` | 路由**优先**检查 `res.terminal_refusal` → 无条件返回 `[错误] <拒绝原因>`，绝不回落；正常执行路径逻辑原样不动 |
+| `core/security_utils.py` | 新增 `MASKED_PLACEHOLDER_PREFIX` / `is_masked_placeholder()`（共享原语层，避免 `core → sandbox` 反向循环导入）；**不改** `sanitize_env` 全局语义 |
+| `core/sandbox_provider.py` | `_sanitize_env` 按**值**保留占位符（真实值仍按键名抹空）；四个后端统一以 `workspace` 参数为准补 `TUAN_WORKSPACE`，不信任外部 env 假路径 |
+
+**关键**：两处必须配合 —— 先堵回落才能去掉 `verdict.enforced=True`，
+否则「修语义谎言」会直接变成「放开裸跑」。`terminal_refusal` 是共享的
+单一契约。
+
+### A′（自己引入、自己抓回）
+写注释时用了带 `\n` 的错误文案示例，Python 三引号字符串把它解释成真实
+换行，写入源码后变成独立一行 `preview"),`，`py_compile` 直接
+`SyntaxError`（manager.py:496）。改成不含反斜杠的文案后恢复。
+
+### 四个「不该修」（都配可执行回归）
+`last_egress` 并发撕裂未复现（双线程 × 200 次 0 撕裂，GIL 兜住，本轮
+**不加锁**、不宣称线程安全）；`cmd_safe.py` 只查 `is_available()/.name`；
+`orchestration.py` 只挂 `agent.ctx.sandbox_provider`、全仓无 `.run()` 调用点
+（新增源码扫描回归，并标注未来若下游自己调 `ctx.sandbox_provider.run()`
+会绕过整套 `plan_egress`）；全局 `sanitize_env` 行为不变。
+
+### 矩阵：一个状态没动
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`。catalog 两条 note 补第三轮纠偏说明但 `status` /
+`evidence` 结构不变，`matrix.validate()` 与 `evidence.verify_evidence()`
+均空。新增回归把计数逐项钉死，**不许靠改口径凑数**。
+
+### 如实边界
+HTTPS CONNECT 隧道内 header 注入仍不可用（`credential_masking` 仍 partial）；
+bwrap/seatbelt/seccomp 无域名级过滤、`allowed_domains` 仍是元数据；
+`last_egress` 仍非线程安全；`undetectable` 是标记不是证明；`os_sandbox`
+仍 gap、`deny_network_by_default` 仍 false 未翻、
+`block_writes_outside_wd` 仍 partial；不是真机多平台验证，
+`test_platform_portability.py` 长批次上一轮只跑到约 51% 零失败、本轮
+未重跑，如实沿用「未完整跑完」；`test_arch_security.py` 1 例失败上一轮
+parent-blob baseline control 已证是既有环境行为，本轮复跑仍
+1 failed/6 passed，没为变绿改策略；A 线 10 pending、分叉改动、
+第三方自适应红队未做。标语引擎 / 净化层 / `mapping.py` / `tui.py`
+逐字节未改。
+
+### 验证（按分批报告）
+本轮 + 上两轮 **106 passed**；shell 路由影响面 **99 passed**；
+parity + 配置 + 安全回归 **170 passed**；sandbox/platform/proc 逐文件
+合计 **91 passed**（批次间有重叠，不累加）；`matrix.validate() == []`、
+`evidence.verify_evidence() == []`、`verify_doc_numbers.py problems == []`。
+
+
+---
+
+## 31. 深度轮：是否回落由结果自身决定（`decided` 单一契约）
+
+完整复现见 `CLAUDE_PARITY.md` §16。**§13–§15 第四轮纠偏**：上一轮用
+`terminal_refusal` 只堵了「plan 拒绝」一条分支，回落开关本身仍用错字段。
+矩阵计数一个没动。
+
+### G（最值钱）：降级部署里命令被双重执行
+
+`tools/shell.py::_route_sandbox_isolation` 用
+`verdict.enforced or verdict.backend_available` 判断是否采纳隔离结果，
+但这两个是**裁决字段**（用没用上强后端），不是「`execute_isolated`
+做没做事」。`enforce_required=false` 且无强后端时 local 分支**真实执行
+了命令**，路由却返回 `None`，`run_shell` 再 `subprocess.Popen` 跑第二遍
+—— 实测隔离层 1 次 + bare Popen 1 次，返回的是第二次的结果，隔离层的
+脱敏 env / 出网裁决 / `last_egress` 全部白做。任何有副作用的命令执行
+两次。**「隔离后端不可用」不等于「命令还没跑」**。
+
+### 另外五个实测断点
+
+| 编号 | 实测结果 |
+|---|---|
+| F1 | `_run_provider` 强后端抛异常 → 返回 `returncode=-1, enforced=False` → 同样回落裸跑 |
+| F2 | `subprocess.TimeoutExpired` → 同样回落裸跑 |
+| F3 | `copy_diff_apply` 的 `isolate_workdir` 抛异常 → 外层 `except` 返回 **`enforced=True` 宣称已隔离执行**（一个副本都没建），路由只看 `verdict.enforced`（仍 False）→ 同样回落；`res.enforced` 在路由里根本没被消费 |
+| F4 | `build_diff_preview` 失败时 `error` 直接拼 `str(exc)`，实测 `GITHUB_TOKEN=ghp_REAL_SECRET_VALUE` **原样回显**；OSC 8 / RLO 也进终端 |
+| F5 | `copy_diff_apply` 只拦 `terminal_refusal`；执行层超时 / 崩溃返回 `-1` 时仍走 diff → confirm，让用户确认写回一个根本没成功执行的副本 |
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `sandbox/manager.py` | `SandboxExecResult` 新增 `decided: bool = True`（**默认 fail-closed**）；唯一 `decided=False` 是 `not verdict.isolate` 分支。所有 `except` / 超时 / diff 失败分支改用 `safe_error_text(str(exc))` 并显式 `decided=True`；`copy_diff_apply` 对 `returncode < 0` 也立刻返回；外层异常如实 `enforced=False` |
+| `tools/shell.py` | 路由不再看 `verdict.enforced / backend_available`，只问 `res.decided`；自身 `except` 同样净化且返回终态错误文本 |
+| `core/security_utils.py` | 新增 `safe_error_text()`：非 str 只取类型名 → 剥离 Cc/Cf/bidi/OSC → 复用既有 `redact_sensitive()` 遮蔽密钥 → 限长 400；脏 `limit` 回落默认，绝不抛异常 |
+
+**净化在来源处做，出口不二次净化**：用户主动拒绝写回时 `res.error`
+含 diff 预览正文，用户必须能看见「本来要改什么」。新增源码级回归
+锁住「出口不调 `safe_error_text(res.error)`」。`safe_error_text` 不做
+grapheme 簇 / 显示宽度判定，不与标语轮 UI 净化层构成第三套宽度真值。
+
+### A′（自己引入、自己抓回）
+`test_no_second_sanitization_at_route_exit` 初版断言
+`count("safe_error_text") == 1`，实测是 **2**（同一个 except 分支里
+import + 调用）。断言改成「次数为 2 + 出口原样使用 `res.error` +
+不出现 `safe_error_text(res.error`」。测试断言写错，不是代码缺陷。
+
+### 三个「不该修」（都配可执行回归）
+未终止 OSC 参数残留（ESC/BEL/RLO 已剥离，终端不会再解释）；全局
+`redact_sensitive` 行为不变（避免影响审计日志 / MCP 审计 / 导出链路）；
+`cmd_safe.py` / `orchestration.py` 仍不是执行侧门（沿用 §15 源码扫描）。
+
+### 矩阵：一个状态没动
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`。catalog 两条 note 补第四轮纠偏指向但 `status` /
+`evidence` 结构不变，`matrix.validate()` 与 `evidence.verify_evidence()`
+均空。新增回归把计数逐项钉死，**不许靠改口径凑数**。
+
+### 如实边界
+HTTPS CONNECT 隧道内 header 注入仍不可用（`credential_masking` 仍
+partial）；bwrap/seatbelt/seccomp 无域名级过滤、`allowed_domains` 仍是
+元数据；**`decided` 默认 True 是行为变更**，依赖旧回落语义的第三方
+集成需核对；`safe_error_text` 只处理执行层异常消息，diff 预览正文仍
+原样回显；`last_egress` 仍非线程安全；`undetectable` 是标记不是证明；
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`block_writes_outside_wd` 仍 partial；不是真机多平台验证，
+`test_platform_portability.py` 长批次 §14 轮只跑到约 51% 零失败、
+本轮未重跑；`test_arch_security.py` 1 例失败已由 parent-blob baseline
+control 证明是既有环境行为，没为变绿改策略；A 线 10 pending、分叉
+改动、第三方自适应红队未做。标语引擎 / 净化层 / `mapping.py` /
+`tui.py` 逐字节未改。
+
+### 验证（按分批报告）
+本轮 + 上三轮 + boundaries + claude_parity **227 passed**；shell 路由
+影响面 **99 passed**；parity + 配置 + 安全回归 **170 passed**；
+sandbox/platform/proc/e1e7 逐文件合计 **130 passed**（批次间有重叠，
+不累加）；`matrix.validate() == []`、`evidence.verify_evidence() == []`、
+`verify_doc_numbers.py problems == []`。
+
+
+---
+
+## 深度轮（续）：两条执行侧门收口 —— 后台 `! cmd` 与对外 MCP `run_shell`
+
+> **章节编号纠偏**：本文件 §17 是「运行时闭环」，`CLAUDE_PARITY.md` §17
+> 是「自愈/证据保全」，`SECURITY_EN.md` §17 是「Owner Normalization」，
+> `SLOGAN_MAPPING.md` 另有一套 §17。上一轮后台分支代码注释引用的
+> 「本轮 §17」实际指向不存在。本轮改用**自足标题**，代码注释同步改自足
+> 描述，不做全局重编号。完整复现见 `CLAUDE_PARITY.md` 末尾。
+
+两轮合并推送。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+`fully_superior=false`、`b_waves_done=["B1"]`。
+
+### 实测缺口
+
+| 位置 | 实测结果 |
+|---|---|
+| 后台 `! cmd` | `run_shell` 里 `is_bg_command` 分支在 `_pre_exec_guard` **和** `_route_sandbox_isolation` 之前就 return。带 `isolate=True` 裁决时隔离层调用 **0 次**、bare `Popen` **1 次**、返回「后台已启动」。`decided` 契约只管主链路路由返回值，覆盖不到这里 |
+| 后台 env | `BackgroundShellManager.start` 的 Popen **不传 env**，子进程继承父进程完整环境，实测真实 `GITHUB_TOKEN` 原样进入不受出网管控的异步进程 |
+| MCP M1 | `ecosystem/mcp_server.py::_h_run_shell` 是全仓唯一「外部 Agent 直接给 `command` + `shell=True`」入口，只做 `is_hard_redline`/`is_redline` **文本判定**，不经过四层滤网 / `plan_egress`。fuzz 已证零宽字符 / ANSI-C / 注释换行可绕过 |
+| MCP M2 | `subprocess.run` 不传 env，实测 `GITHUB_TOKEN=ghp_REAL_SECRET_VALUE` 原样进子进程，与 §13/§15「子进程不持密钥」直接矛盾 |
+| MCP M3 | `str(exc)` 原样回显给外部 Agent：真实密钥串、OSC 8 / RLO 外泄（执行失败 + 安全判定失败两处） |
+| 全局 | 上一轮 `f"{type(exc).__name__}: {safe_error_text(str(exc))}"` 中 `str(exc)` 在**调用方**先执行；实测异常对象 `__str__` 抛错会掀翻整个 `except` 分支。`shell.py` 另有 5 处、`background_shell.py` 1 处、MCP 3 处裸 `{exc}` 回显 |
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `core/security_utils.py` | 新增 `safe_exception_text(exc)`：`str(exc)` 包进 try，异常时丢弃原文只留类型名；正常时复用 `safe_error_text`。**全部 12 处**错误出口统一走它 |
+| `tools/shell.py::_start_background` | 裁决 `isolate=True` → **fail-closed 拒绝**（异步路径套不上同步隔离执行器 / copy-diff-apply 确认，绝不假装隔离生效）；其余后台命令显式传 `sanitize_env()` 脱敏环境并补 `TUAN_WORKSPACE` |
+| `core/background_shell.py` | `start` / `run_in_background` 增加 `env` 形参（`None` 保持继承语义向后兼容），Popen 透传；后台线程异常终态净化 |
+| `ecosystem/mcp_server.py` | 接 `SandboxManager.assess_command`（DENY / CONFIRM / `isolate=True` 一律 fail-closed 拒绝）+ `plan_egress(verdict, "local", ...)`（`allowed=False` 拒绝，`plan.env` 脱敏值显式传给 `subprocess.run`）；所有异常出口净化；工具描述如实标注「没有 OS 级隔离 / 逐命令域名强绑定 / 副本确认」 |
+| `sandbox/manager.py` | 5 处 `safe_error_text(str(exc))` → `safe_exception_text(exc)` |
+
+**backend 固定 `local`**：MCP 本来就是同步裸 subprocess，绝不拿 verdict
+里的强后端名假装已隔离。默认 `allow_dangerous_tools=false` 行为不变。
+
+### 三个「不该修」（都配可执行回归）
+`ignored` 死字段与 `decided` 不冲突（全仓零构造点，保留做兼容）；
+`verdict.enforced` 全仓无消费点但**不删**（删除会改变 verdict 状态）；
+`artifact_tool.py` / `code.py` 的 Popen 打开编辑器/文件、不执行用户
+shell 命令，如实记录不动。
+
+### A′ ×2
+批量替换破坏两处多行 f-string 拼接 → `py_compile` SyntaxError，已改
+字符串 `+` 拼接；上一轮测试用固定 2600 字符窗口切片，注释变长后把
+except 分支挤出窗口，且实际代码是 `safe_exception_text` → 断言改用
+`inspect.getsource`。两处都是测试/替换脆弱性，不是代码回归。
+
+### 矩阵：一个状态没动
+`status` / `evidence` 结构不变，catalog 两条 note 补第五/六轮纠偏指向，
+`matrix.validate()` 与 `evidence.verify_evidence()` 均空。新增回归把计数
+逐项钉死，**不靠改口径凑数**。
+
+### 如实边界
+**MCP 通道仍没有 OS 级隔离 / 域名强绑定 / 副本确认**，本轮做的是
+fail-closed 拒绝 + 脱敏 env，**不是**把这些能力补上；`credential_masking`
+仍 `partial`（HTTPS CONNECT 隧道内 header 不可见）。后台/MCP 都是
+**行为变更**。`ctx` 无 `_sandbox_verdict` 时后台不拦（裁决链上游边界，
+本轮不伪造裁决、不靠文本猜高危）。`safe_exception_text` 只覆盖异常
+消息，diff 预览正文仍原样回显。`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`block_writes_outside_wd` 仍
+partial。不是真机多平台验证；长批次多次 502/超时按分批如实报告、
+不冒充全量单跑；`test_arch_security.py` 1 例失败已由 parent-blob
+baseline control 证明是既有环境行为，没为变绿改策略。A 线 10 pending、
+分叉改动、第三方自适应红队未做。标语引擎 / 净化层 / `mapping.py` /
+`tui.py` 逐字节未改。
+
+### 验证（按分批报告）
+本轮 + 并行线 + 上四轮 **276 passed**；shell/后台影响面 **82 passed**；
+parity + 配置 + 安全回归 **78 passed**；sandbox/platform/proc/e1e7
+逐文件 **130 passed**（沿用 §16 分批结果）；`verify_doc_numbers.py
+problems == []`。批次间有重叠，不累加。新增
+`tests/test_b2se_background_side_door.py`（约 24 例）与
+`tests/test_b2su_mcp_shell_gate.py`（约 25 例）。
+
+
+---
+
+## 深度轮（续二）：工具层写路径硬边界、`/add-dir` 口径纠偏、`edit_files` 真事务
+
+> 沿用**自足标题**约定，不新增数字章节编号（本文件、`CLAUDE_PARITY.md`、
+> `SECURITY_EN.md`、`SLOGAN_MAPPING.md` 各有 §17 且指代四个不同主题）。
+> 完整复现见 `CLAUDE_PARITY.md` 末尾。**矩阵计数一个没动**。
+
+### 实测缺陷
+
+| 编号 | 实测结果 |
+|---|---|
+| W1 | `permissions.blockWritesOutsideWorkingDirectories` 代码里 **0 命中**（只在 catalog 对标描述中出现）。`tools/filesystem.py::_resolve` 是读路径裁决且读写不分；CC v2.1.314 在 **Write/Edit/NotebookEdit 工具层**硬拒绝越界写 |
+| W2 | `/add-dir` 的 REPL 帮助、`authorize_extra_dir` docstring、模块注释三处都写「可读上下文 / 仅读; 写仍走既有守卫」。实测 `/add-dir /tmp/ext` 之后 `write_file` 真创建文件、`move_file` 改名、`delete_file` 删除，全部越界放行 —— **确认对话不是路径硬边界** |
+| W3 | `edit_files` 声称「任一失败 → 整体拒绝, 不写任何文件」，但危险内容扫描在**阶段 2 边写边扫**。实测 3 项里第 3 项含 `rm -rf /`：返回「已整体拒绝 (未写入任何文件)」，`f0/f1` 却已变成 `BBB` |
+
+W3 是这个仓库里少见的**正确性缺陷**（前十几轮多是安全 fail-open），
+而且返回文本主动说谎，会误导上层 Agent 以为可以安全重试。
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `core/write_boundary.py`（新增） | 单一裁决出口。开关默认 **`False`**（与 CC 出厂一致，**不做破坏性默认变更**）；配置值非 bool → **fail-closed 启用**（避免 `bool("false")` 静默放行）；开启后写目标须在 `工作区 ∪ 显式 writable 授权根` 内；写入点重新解析父目录链抓 symlink 替换型 TOCTOU |
+| `tools/filesystem.py` | 新增 `_resolve_write`，六处写操作统一改走它；`move_file` 源仍走 `_resolve`（读）；写入点再复检 |
+| `tools/filesystem.py` `authorize_extra_dir` | 新增 `writable=False`；普通 `/add-dir` 只授读，`--writable` 显式登记可写根（per-session 内存态，Agent 无自助授权工具），系统关键目录仍拒 |
+| `tools/filesystem.py` `edit_files` | 危险内容扫描**前移到阶段 1**；写入前对**全体**目标复检（必须在任何落盘之前）；阶段 2 循环内不再有拒绝分支 |
+| `config/defaults.py` / `security_schema.py` / `cli/cmd_harden.py` | 新增开关；非 bool 直接报错（不让运行时按 fail-closed 悄悄改写行为）、开启报「行为变更」warning；`harden status` 显示当前生效状态 |
+| `cli/cmd_slash.py` | `/add-dir` 帮助改如实，支持 `--writable`，无参列表区分可写/仅读 |
+| `parity_claude/catalog.py` | `block_writes_outside_wd` 的 note 补纠偏，**`status` 仍 `partial`**、`evidence` 结构不变 |
+
+### 为什么仍是 `partial` 不标 `aligned`
+1. **命令层重定向不在工具层约束内**：`echo x > /tmp/out` 由 shell 执行，
+   CC 靠 sandbox 规则覆盖命令层，Tuan 尚无对应能力。
+2. **出厂默认仍 `false`**（与 CC 一致，但两者都还不是默认强边界）。
+3. **TOCTOU 只做二次解析**：检查与 `os.replace` 之间仍有窗口；彻底消除
+   需 `O_NOFOLLOW` + `dir_fd` 系列，会改动既有原子写实现，本轮不做。
+
+### 三个「不该修」（都配可执行回归）
+读路径不受影响（`read_file` / `list_dir` / `glob` / `diff_preview` 对
+`/add-dir` 目录照常可读）；`artifact_tool.py` / `worktree_layer.py` 写的是
+`workspace/.tuan/artifacts` 与 `workspace/.tuan/worktrees` 固定内部路径、
+不是用户提供的任意路径，源码扫描锁住；`move_file` 源是读、目标是写，
+把源也当写会误拒「从授权只读目录搬进工作区」的合理操作。
+
+### A′
+`harden status` 初版给 `_CfgProbe` 写了 `get()`，但 `write_boundary` 读的是
+`ctx.config()`；且调用了依赖 `ctx.workspace` 的 `allowed_roots()`。自查后
+改为 `config()` 并去掉 workspace 依赖。测试里一段死代码已清理。
+
+### 矩阵：一个状态没动
+`aligned 46 / partial 9 / gap 26`、`fully_superior=false`、
+`b_waves_done=["B1"]`；`matrix.validate()` 与 `evidence.verify_evidence()`
+均空。新增回归把计数逐项钉死，**不靠改口径凑数**。
+
+### 如实边界
+**默认不改既有行为**：`false` 时 `/add-dir` 目录仍可写，文档已改成如实
+（旧文案是错的）。开启开关与 W3 修复都是**行为变更**：依赖「/add-dir
+可写」的部署需显式 `--writable` 或保持关闭；`edit_files` 现在危险内容
+命中时一个文件都不写（旧版会写前 N 个），上层若依赖「部分成功」需核对，
+但旧返回文本本就声称「未写入任何文件」，所以是让实现对齐承诺。
+`edit_files` 阶段 2 若因 OS 错误中途失败仍可能部分落盘 —— 不是本轮引入，
+也不谎称「完全事务」。`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`credential_masking` 仍 partial；
+A 线 10 pending、分叉改动、第三方自适应红队未做；不是真机多平台验证，
+Windows 路径未实测。标语引擎 / 净化层 / `mapping.py` / `tui.py` /
+`runtime_slogans.py` 逐字节未改。
+
+### 验证（按分批报告）
+本轮新回归 **38 passed**；路径/编辑/读守卫/工作区（6 文件）
+**119 passed / 1 skipped**；config / harden / slash / parity（7 文件）
+**114 passed**；`verify_doc_numbers.py problems == []`；8 个改动 Python
+文件 `py_compile` OK。端到端实测：开关关闭时既有 `/add-dir` 写行为不变；
+开启后 write / edit / move / delete / delete_dir 五类全部返回
+「写路径越出工作目录」且磁盘零变更，读仍可读；`--writable` 放行；
+W3 场景三个文件全部保持 `AAA`。批次间有重叠，不累加。
+
+
+---
+
+## B3 深度轮：Hooks 扩展事件引擎 / CC 原生协议 / `updatedInput` schema 校验
+
+> 沿用**自足标题**。完整复现见 `CLAUDE_PARITY.md` 末尾「深度轮（续三）」。
+> **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`。
+
+### 实测缺陷
+
+| 编号 | 实测结果 |
+|---|---|
+| R1 | `HookManager.__init__` 只遍历 8 个 `HOOK_EVENTS`；写 `DirectoryAdded` 或拼错 `PermissionRequest` 整段配置**静默丢弃**且零报错 |
+| R2 | 决策类事件若走 `run_notify`，stdout 被静默吞掉 —— 用户以为装了拦截器，实际什么都不做 |
+| R3 | `_parse_decision` 只认 `args`/`block`/`decision`，按 Claude Code 官方文档写的 `hookSpecificOutput` 输出被判 `None` 后 `continue`，既不阻断也不改参 |
+| R4 | hook 返回 `{"args":{"path":"ok","TOTALLY_UNKNOWN":"pwn"}}` 时旧版原样采纳，`tool.handler(ctx, **args)` 直接抛 `TypeError`（未知关键字 + 缺必需参数） |
+
+官方口径：CC v2.1.300 起 `updatedInput` **替换**整个 `tool_input`、
+未知键丢弃、缺 required / 类型不符的改参**拒绝该次调用**。
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `hooks/manager.py` | 事件表 8→15；未知事件键 `unknown_hook_event` 审计；4 个决策类事件独立 `run_decision()`（复用 B1 fail-closed），误走通知通道留痕拒绝；`_parse_decision` 支持 CC 原生 `hookSpecificOutput` + 本地旧格式，`ask` 无确认通道 fail-closed，advisory `additionalContext` 无注入通道只留痕 |
+| `hooks/input_validation.py`（新增） | 有 schema：按 `properties` 白名单丢未知键、校验 `required`/`type`/`enum`，不符 → deny（`run_pre` 转 `block=True` + `invalid_updated_input`）；无 schema：保守子集约束（不得引入原 args 新键），`enforced=False` 不包装成已校验 |
+| `tools/base.py` | 传 `tool_schema=tool.parameters`；危险审批前派发 `PermissionRequest`，**只允许收紧**（hook 的 `allow` 不能跳过 `ctx.confirm`，那是安全闸门而非 UX） |
+| `cli/cmd_slash.py` | `/add-dir` 授权**成功**后派发 `DirectoryAdded`（失败不触发），`--writable` 透传 |
+| `arch/execution.py` | `ToolCall` 加可选 `tool_schema` 并传给 `run_pre`；既有调用方不填时仍走保守子集 |
+
+### 为什么两个 B3 条目仍 `STATUS_GAP`
+`ConfigChange` / `WorktreeCreate` / `Elicitation` / `ElicitationResult`
+4 个事件 + `Notification` **没有本地生产触发点**（配置了也不触发）；
+官方 hooks 参考列出的事件远多于 7 个；`arch/execution.py` /
+`cmd_hooks.py` 两条旁路拿不到 schema。catalog note 补纠偏但
+`status`/`evidence` 结构不变，**不靠改口径凑数**。
+
+### 三处既有断言同步（不是放宽）
+事件表断言从 8 同步到 15 并新增扩展事件逐项枚举；两条「hook 可注入
+新键」断言改成「既有键改写生效 **且** 新键被丢弃」，更强更准。
+
+### A′
+`_parse_decision` 改实例方法时漏删上方 `@staticmethod`，12 条既有
+hooks 测试全部 `TypeError`；自查后删掉装饰器。替换脆弱性，不是代码回归。
+
+### 矩阵：一个状态没动
+`matrix.validate()` 与 `evidence.verify_evidence()` 均空；新增回归把
+计数逐项钉死。
+
+### 如实边界
+5 个扩展事件只有引擎无触发点；CC exit-code-2 → decline 未实现；
+无 schema 旁路只是保守子集；`PermissionRequest` 刻意比 CC 更严格；
+**行为变更**：hook 改参不再能注入原 args 没有的新键（此前会
+`TypeError`），旧 `{"args":...}` 格式同样走校验不留侧门；
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+### 验证（按分批报告）
+B3 新回归 + 5 个 hooks 既有文件 **83 passed**；parity / 写边界 /
+两条侧门 / B2 各轮 / config / slash **356 passed**；
+`verify_doc_numbers.py problems == []`；`py_compile` 全 OK。新增
+`tests/test_b3_hooks_extended.py`。批次间有重叠，不累加。
+
+
+---
+
+## B3 续轮：5 个扩展事件生产触发点 + 旁路契约
+
+> 沿用**自足标题**。完整复现见 `CLAUDE_PARITY.md` 末尾「深度轮（续四）」。
+> **矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`。
+
+### 四个实测缺陷
+
+| 编号 | 实测结果 |
+|---|---|
+| R1 | 5 个扩展事件全部注册成功，但跑真实操作后 hook 触发 **0 次**、源码扫描 5 个派发点 **0 命中** —— 配置能加载、引擎能裁决，但没有生产代码调用 |
+| R2 | `tuan hooks test --event PermissionRequest` 被 `decision_event_misrouted` 拒绝且静默不执行；4 个决策类事件的 CLI 测试入口全部失效 |
+| R3 | `cmd_hooks.run_pre` 不传 schema，手动测试入口改参只走保守子集 |
+| R4 | `ToolPipeline` **没有生产构造方**；强传 `tool_schema=` 让老式 hook mock 抛 `TypeError`，1 条既有回归失败 |
+
+### 修复
+
+| 位置 | 修复 |
+|---|---|
+| `hooks/triggers.py`（新增） | 5 个事件单一 `HookTrigger` 出口；通知类走 `run_notify`、决策类走 `run_decision`；**无 hooks 严格 no-op**、通知异常吞掉、用户配了 hook 但裁决通道炸了 → **fail-closed**；`set_default_hooks_provider()` 注入只读取值函数 |
+| `config/loader.py` / `config/managed.py` | `set_user` / `delete_user` / `reload` 成功后 → `ConfigChange`（失败不派发） |
+| `core/worktree_layer.py` | `create` / `create_agent_worktree` 在**任何 FS 改动之前** → `WorktreeCreate` 决策类，block 即拒绝创建；含 fast-resume 复用路径 |
+| `tools/session_tools.py` / `runtime/acp/bridge.py` | `Elicitation` / `ElicitationResult`：**可取消 / 作废，但绝不代答、绝不覆盖用户答案**（CC 允许代答，Tuan 刻意不等价）；headless 无真实响应不派发 Result |
+| `core/remote_control.py` / `core/security_alert.py` | `Notification` 放在所有返回路径之前 / 后台线程里，避免阻塞 `_pre_exec_guard` |
+| `cli/cmd_hooks.py` / `arch/execution.py` | 决策类改走 `run_decision`、`run_pre` 传 schema（取不到如实标 `enforced=False`）；`ToolPipeline` 加 `schema_resolver` 且只在有 schema 时传关键字 |
+| `app.py` / 两个 worktree 入口 | 注入 `lambda: agent.ctx.hooks`；`/worktree` 显式传 hooks |
+
+### 为什么两个 B3 条目仍 `STATUS_GAP`
+官方 hooks 参考的事件面远大于 7 个；CC exit-code-2 → decline 未实现；
+`Elicitation` 语义刻意不等价；`ToolPipeline` 无生产构造方、
+`schema_resolver` 只是契约补齐；`cmd_hooks` 取 schema 依赖 kernel 暴露
+`tool_registry`。catalog note 补纠偏但 `status`/`evidence` 结构不变，
+**不靠改口径凑数**。
+
+### 三处断言同步（不是放宽）
+「5 事件无触发点」断言改为逐一验证 5 个方法 + 11 处接线 + provider +
+分类不混淆（更强）；`test_arch_security_fixes.py` 既有 `FakeHooks` 测试
+**原样保留零修改**；其余计数/分类断言一条未动。
+
+### A′ ×2
+1. `remote_control.notify` 的 `rc is None: return False` 是**提前返回**，
+   初版把 Notification 派发放末尾会永远不触发 → 移到所有返回路径之前。
+2. `ToolPipeline` 强传 `tool_schema=` 让老式 hook mock 抛 `TypeError`
+   → 改成只在有 schema 时传。两处都是接线脆弱性，不是原有代码回归。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3 续轮 + 上一轮 B3 + 5 个 hooks 既有文件 **97 passed**；最终合并批次
+（见报告）；`matrix.validate()` / `evidence.verify_evidence()` /
+文档数字校验 / `py_compile` 全干净。新增 `tests/test_b3s_triggers.py`
+含真 git init + 真 `git worktree add` 的 5 事件端到端触发。
+
+### 如实边界
+7 个事件有触发点 ≠ 全事件对齐；`ToolPipeline` 无生产调用链；
+**行为变更**（WorktreeCreate 真能拒绝、Elicitation 能取消/作废、Config /
+notify 会派发已配 hook）；Notification 后台线程派发；`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`credential_masking` 仍 partial；
+A 线 10 pending、分叉改动、第三方自适应红队未做；不是真机多平台验证。
+标语引擎 / 净化层 / `mapping.py` / `tui.py` / `runtime_slogans.py`
+逐字节未改。
+
+
+---
+
+## B3 续轮 V：接线之后的第二层（写盘成败 / 重入递归 / 分类真值 / 串台可见性）
+
+> 自足标题。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续五）」。
+
+### 六个候选（4 修 / 2 不该修）
+
+| 编号 | 实测结果 | 判定 |
+|---|---|---|
+| C1 | `user_config_path` 指向目录 → `dump_yaml` 吞掉 `IsADirectoryError` 返回 `None`，`Config.set_user` 磁盘上**没有文件**却派发 `ConfigChange` | **修**。与上一轮 `ManagedSettings.reload` 的「失败不派发」契约直接矛盾 |
+| C2 | in-process hook 里再写配置 → 递归 **247 层**，`dump_yaml` 连 `RecursionError` 也吞掉，每层仍继续派发 | **修** |
+| C3 | 上一轮只查 `triggers.py` 字符串，没核对 `manager.py` 的 `_NOTIFY_EVENTS` / `_DECISION_EVENTS` 真值 | **不修代码**，补真值回归 |
+| C4 | 两次 `set_default_hooks_provider(A)/(B)` 后 A 零触发、B 代收 A 的事件 | **部分修** |
+| C5 | `ConfigChange` payload 只有 `source/key/origin`，不含配置值 | **不该修**，锁住 |
+| C6 | `delete_user` 返回 False 不派发 | **不该修**，锁住 |
+
+### 修复
+- `config/loader.py`：`dump_yaml` 拆出 `_dump_yaml_impl` + 新增
+  `dump_yaml_checked` 如实返回落盘成败；**`dump_yaml` 仍返回 `None`、
+  仍吞异常、行为逐值不变**。`set_user`/`delete_user` 只在 `ok` 时派发，
+  新增 `last_write_persisted`。刻意**不回读比对值**（序列化差异假阴性 +
+  避免文件系统时间点判定）。
+- `hooks/triggers.py`：**thread-local 重入守卫** —— 同线程同事件重入，
+  通知类跳过并计数、决策类 **fail-closed** 返回
+  `failure_kind="reentry_suppressed"`（绝不返回空决策放行）；
+  `try/finally` 清理，异常后同事件仍可派发；不同线程并发不抑制。
+  跨进程 command hook 靠进程边界天然不递归，如实标注。
+- `app.py`：显式回填 `config._hooks` 为本会话 hooks（C4 主链路）。
+- `set_default_hooks_provider(..., owner=...)` + `provider_diagnostics()`：
+  **串台没被消除，只变成可诊断**（owner / generation / overrides /
+  reentry）。模块级 `remote_control.notify` / `SecurityAlerter` 仍是全局
+  fallback；真正多会话隔离需上游显式传 owner，本轮不改 5 个子系统签名。
+
+### 为什么仍 `STATUS_GAP`
+官方事件面远大于 7 个、exit-code-2 未实现、Elicitation 语义不等价、
+`ToolPipeline` 无生产构造方、`cmd_hooks` 取 schema 依赖 kernel 暴露
+`tool_registry`。本轮修的是「已接线触发点的正确性」，不是覆盖面。
+`catalog.py` 零改动，**不靠改口径凑数**。
+
+### 断言同步（不是放宽）
+`tests/test_b3s_triggers.py` 与 `test_b3_hooks_extended.py` 一条未改；
+C3 升级为核对 `manager.py` 常量；矩阵计数逐项钉死。
+
+### A′ ×2（新写测试自身）
+1. 写盘失败 delete 用例把 path 指向目录，结果 `_load_yaml` 读不到键、
+   走 `return False` 分支根本没到写盘 → 改 monkeypatch 写盘出口。
+2. 子进程校验给 `c.home` 赋 `str`，`_load_yaml` 调 `path.exists()`
+   抛 `AttributeError` → 改 `Path(...)`。产品代码零回归。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3 续轮 V + 上一轮 B3 + 5 个 hooks 既有文件 + mixin + config 系列
+**182 passed**；宽合并批次见报告；`matrix.validate()` /
+`evidence.verify_evidence()` / 文档数字校验 / `py_compile` 全干净。
+新增 `tests/test_b3v_depth.py` 含**真子进程**验证不继承 thread-local、
+4 线程并发不抑制、决策类重入 fail-closed、单一实现扫描、矩阵钉死。
+
+### 如实边界
+C4 未完全修；跨进程 hook 不是靠守卫保证；写盘失败时内存视图仍更新
+（既有行为，重启后丢失）；不回读比对值、并发外部改写不在检测范围；
+**行为变更**（写盘失败不再派发 ConfigChange、app.py 回填
+`config._hooks`）；`os_sandbox` 仍 gap、`deny_network_by_default` 仍
+false 未翻、`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## B3 续轮 VI：C4 收尾（模块级入口的真正会话绑定）
+
+> 自足标题。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续六）」。
+
+### 五个候选（4 修 / 1 不该修）
+
+| 编号 | 实测 | 判定 |
+|---|---|---|
+| A | `HookTrigger._effective()` 每次派发才读全局 provider；A 构造的 trigger 在 B 覆盖后 → **A 零触发、B 代收** | **修** |
+| C | `SecurityAlerter` 后台线程现场 `HookTrigger()`；A 订阅、B 覆盖后 → **A 零触发、B 代收** | **修** |
+| D | `remote_control.notify()` 无 hooks 入参，归属取决于派发时刻 | **修** |
+| E | ACP `KernelAcpBridge.ask_user` 无 `self.hooks`，Elicitation 无绑定 | **修** |
+| B | `get_alerter()` 单例忽略第二次 `home`（`y._home == h1`） | **不该修**：重写单例架构超出本轮，回归如实锁住 `x is y` |
+
+### 修复
+- `hooks/triggers.py`：**构造时冻结** hooks + `owner=` 查 registry；
+  `_effective()` 不再读全局；现场构造仍绑定调用时刻（A2 验证）；
+  `owner` 查不到**不回落** default。
+- 新增按 owner 分桶的 **session registry**（64 上界**拒绝**而非 LRU
+  静默淘汰；`hooks=None` 合法、注销不靠 `pop` 判空）、
+  `current_session_hooks()` 构造时刻快照、
+  `bind_session_hooks()` 注册 + **回填**已存在的 `_global_alerter` /
+  `_notify_rc`（只改 `hooks` 属性，不改对象身份）。
+- 三个模块级消费者改为**实例级绑定**：`RemoteControl` /
+  `SecurityAlerter` / `KernelAcpBridge` 新增 `hooks` 参数，派发用
+  `self.hooks`；`remote_control.notify()` 加可选关键字 `hooks`。
+  全仓无参 `HookTrigger()` **代码**消费点降为 0。
+- `security_plugin.py` 传 `config._hooks`；`app.py` 在
+  `set_default_hooks_provider` **之后**调用 `bind_session_hooks`。
+
+### 三条上轮断言同步（全部改强，不是放宽）
+`test_overrides_are_visible_not_silent` 改为「A 收到、B 零」；
+`test_app_backfills...` 增加绑定与顺序断言；
+`test_module_level_notify_still_uses_global_fallback` 改名并断言
+全仓无参消费点为 0。
+
+### A′ ×1（新写测试自身）
+全仓源码扫描把**注释行**里的 `HookTrigger()` 算成消费点（两处行注释
+描述「上一版」行为），误报 2 条 → 改为只看非注释行。产品代码零回归。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3 续轮 VI + 上一轮 V + B3 两轮 + 5 个 hooks 既有文件 + mixin +
+config **185 passed**；宽合并批次见报告；`matrix.validate()` /
+`evidence.verify_evidence()` / 文档数字校验 / `py_compile` 全干净。
+新增 `tests/test_b3vi_session_binding.py` 含后台线程派发、
+`bind_session_hooks` 回填两个单例、`rc is None` 仍派发、
+64 上界拒绝而非淘汰、全仓源码扫描、矩阵钉死。
+
+### 如实边界
+`_global_alerter` / `_notify_rc` 仍是**进程级单例**，两个会话**并发
+并存**时共用同一实例 —— 未重写单例架构，**串行**切换已修好，不宣称
+「完全多会话隔离」。registry 上界拒绝只影响显式 `owner=` 查询，
+已绑定实例派发不受影响。**行为变更**：构造时冻结、三个构造函数新增
+`hooks`、`notify()` 新增可选关键字、`app.py` 多一次注册。
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## B3 续轮 VII：C4 最后一角（并发多会话的派发归属隔离）
+
+> 自足标题。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续七）」。
+
+### 五个候选（4 修 / 1 不该修）
+
+| 编号 | 实测 | 判定 |
+|---|---|---|
+| O1 | `bind_session_hooks(B)` 无条件回填单例 `hooks`；A 会话订阅的 `SecurityAlerter` 在 B 绑定后告警 → **A 零触发、B 代收** | **修** |
+| O2 | `remote_control.notify()` 同源：C 会话第二次通知落到 **D** | **修** |
+| O4 | `ContextVar` **不跨** `threading.Thread`（主线程 `"A"` / 子线程 `None`，实测） | **修**（由调用方烘进数据） |
+| O5 | 修 O1/O2 时自己引入：动态按 owner 查表后「owner 未注册」让决策类静默返回空决策放行 | **修**：fail-closed `owner_not_registered` |
+| O3 | `get_alerter()` 进程级单例 + `AlertLogger(home)` / bus 订阅 / 端口与会话文件 | **不该修**：按 owner 多实例会引入文件竞争、重复订阅与端口冲突，回归锁住 `x is y` |
+
+### 修复
+- `hooks/triggers.py`：新增 `ContextVar` 会话 owner
+  （`current_session_owner` / `set_session_owner` /
+  `reset_session_owner`）、`hooks_for_owner`、`owner_miss_stats`
+  （有界、`<other>` 归并、纯诊断）。`HookTrigger(owner=)` 改成
+  **冻结 owner、派发时按 owner 分桶查 registry** —— 动态但不漂移，
+  因为 registry 分桶而非单槽；`bind(B)` 不改 A 桶。无 `owner` 的
+  构造仍冻结值（VI 的 C4-A 修复不破）。`owner` 查不到不回落
+  default，决策类另加 fail-closed。
+- `core/security_alert.py`：`AlertRecord` 加 `owner: str = ""`
+  （**进程内路由字段，不进 `to_dict()`**，既有审计格式零变化）；
+  `alert()` 在调用线程捕获 owner 烘进记录；后台线程
+  `_notify_safely` 用它查分桶，绕开 O4。
+- `core/remote_control.py`：`notify()` 加可选关键字 `owner`；
+  优先级 **显式 hooks > 本会话 owner 分桶 > 实例冻结 hooks**；
+  未注册 owner 时只沿用实例既有绑定，行为零退化。
+- `runtime/acp/bridge.py`：`ask_user` 支持已注册 owner 分桶；
+  **owner 与 `session_id` 的映射由上层负责，本轮不自动派生**。
+- `app.py`：会话启动时 `set_session_owner(_session_owner)`，在
+  `set_default_hooks_provider` / `bind_session_hooks` 之后。
+
+### 一条上轮断言同步（改强，不是放宽）
+`test_module_level_notify_is_now_instance_bound` 增加 owner 分桶、
+`getattr(record, "owner", "")`、`AlertRecord.owner` 与
+`current_session_owner` 断言；VI 的三条既有断言全部保留。
+
+### A′ ×2（自己写错自己抓回）
+1. **O5** 是修 O1/O2 时自己引入的新风险，由新写回归抓回并改为
+   fail-closed。
+2. 新断言写 `"record.owner"`，实际代码用
+   `getattr(record, "owner", "")`（兼容旧记录），字面串对不上 →
+   改成检查真实写法。产品代码零回归。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3-VII + 上两轮 B3 + 5 个 hooks 既有文件 + mixin + config +
+alert/remote/plugin/bus/bridge/ACP 相关 **330 passed**；宽合并批次
+见报告；`matrix.validate()` / `evidence.verify_evidence()` /
+文档数字校验 / `py_compile` 全干净。新增
+`tests/test_b3vii_concurrent_sessions.py` 含后台线程并发、
+单槽回填仍在但派发不读它、`rc is None` 仍派发、contextvar 跨线程、
+owner 热替换、O5 fail-closed + miss 有界、O3 单例身份、矩阵钉死。
+
+### 如实边界
+**单例对象身份仍是进程级**（不创建多实例，避免文件竞争 / 重复 bus
+订阅 / 端口冲突）。隔离的是**派发归属**不是实例本身。
+`bind_session_hooks` 的**单槽回填仍在**（`al.hooks` 会被最后一次
+bind 覆盖），只是有 owner 上下文的派发走分桶表、不再读它；
+**未设置 owner 且未显式传 hooks** 的路径仍沿用最后一次 bind 的
+绑定（既有行为）—— **不宣称「完全多会话隔离」**。
+`owner_miss_stats` 纯诊断不参与裁决；决策类 fail-closed 只针对
+显式 `owner=` 却查不到的路径。ACP 的 `session_id` ↔ owner 映射由
+上层负责。**行为变更**：`HookTrigger(owner=)` 从冻结值改为冻结
+owner + 动态分桶、`notify()` 新增可选 `owner`、`AlertRecord` 新增
+字段、`app.py` 设置 contextvar。
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## B3 续轮 VIII：会话生命周期收口 + 跨线程 owner 句柄化
+
+> 自足标题。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续八）」。
+
+### 六个候选（5 修 / 1 不该修）
+
+| 编号 | 实测 | 判定 |
+|---|---|---|
+| P1 | `unregister_session` 生产零调用点；64 槽占满后新会话注册被拒且 `app.py` 不检查返回值 → 事件静默 no-op | **修** |
+| P2 | `set_session_owner` 从不复位，同线程复用残留到下一会话 | **修** |
+| P3 | `ContextVar` 不跨 `ThreadPoolExecutor`（实测）；bridge `ask_user` 运行时读 contextvar，executor 路径退化 | **修** |
+| P4 | `_bump_owner_miss` 锁外 TOCTOU（GIL 下未稳定复现越界）；上界语义含糊（实际 65） | **修** |
+| P5 | `bind_session_hooks` docstring「3 个模块级单例」实际 2 个 | **修**（口径） |
+| O3 | `get_alerter()` 进程级单例 | **不该修**：多实例会引入文件竞争 / 重复订阅 / 端口冲突 |
+
+### 修复
+- `hooks/triggers.py`：新增 `SessionHandle` / `activate_session` /
+  `deactivate_session`。四步收成单一入口，返回携带复位 token 的句柄；
+  `deactivate` 注销 registry + 复位 contextvar（刻意**不清** provider）。
+  注册被拒新增 `rejected` 计数并进 `provider_diagnostics()`。
+- `app.py`：改用 `activate_session`，`session_owner` / `session_handle`
+  挂到 `agent.ctx`；`active=False` 时 `logger.warning`，不再静默。
+- `runtime/acp/bridge.py`：新增 `owner` 参数与 `_resolve_owner()`
+  （显式 owner > `agent.ctx.session_owner` > `current_session_owner()`），
+  `ask_user` 改用显式句柄；仍不按 `session_id` 自动派生。
+- `_bump_owner_miss` 判定收进锁内，明确「64 具体 owner + 1 `<other>`
+  = 65」；`bind_session_hooks` docstring 改「2 个」。
+
+### 四条上轮断言同步（全部改强，不是放宽）
+四条 app.py 相关断言改为检查单一入口 + ctx 挂载 + `active` 失败可见 +
+API 导出 + 旧分散调用消失；bridge 断言补 `_resolve_owner`；
+`provider_diagnostics` 断言补 `rejected` 一致性。
+
+### A′ ×3（自己写错自己抓回）
+1. **产品代码真缺陷**：`reset_session_owner` 只吞 `ValueError/
+   TypeError`，但 `ContextVar.reset()` 对已用过 token 抛
+   `RuntimeError` → 重复 `deactivate_session` 掀翻关闭路径。新写回归
+   抓回，三类异常一律吞。
+2. 4 处源码扫描把**注释行**的历史说明算成调用 → 只看非注释行。
+3. `deactivate_session` 扫描把 `def` **定义行**算成宿主调用 → 排除
+   `def ` / `from ` 行。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3-VIII + 上三轮 B3 **131 passed**；既有 hooks/config/alert/remote/
+plugin/bus/bridge/ACP 相关 **233 passed**；宽合并批次见报告；
+`matrix.validate()` / `evidence.verify_evidence()` / 文档数字校验 /
+`py_compile` 全干净。新增 `tests/test_b3viii_session_lifecycle.py`。
+
+### 如实边界
+`deactivate_session` **没接到所有宿主**（项目无统一 close 钩子），只
+提供 API + ctx 句柄；未调用的长跑仍会占满槽位，但 `rejected` 可见且
+`app.py` warning，不再静默。**P3 修的是「消除对线程上下文的依赖」
+不是已观测 ACP 串台**（`ask_user` 跑在 loop 线程，多数场景原实现能
+拿到 contextvar）；**P4 锁内化未对应已复现越界**，是消除对 GIL
+实现细节的依赖。单例身份仍进程级、单槽回填仍在、
+`AlertRecord.owner` 仍不序列化、单 bridge 不按 `session_id` 自动
+派生。**行为变更**：`activate_session` 取代四个分散调用、bridge 新增
+`owner` 参数与 `_resolve_owner()`、`reset_session_owner` 多吞一类
+异常、`session_registry_diagnostics` 多 `rejected` 字段。
+`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## B3 续轮 IX：会话激活事务化 + owner 冲突拒绝 + CLI 主路径接线
+
+> 自足标题。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续九）」。
+
+### 六个候选（6 修 / 5 项「不该修」契约锁住）
+
+| 编号 | 实测 | 判定 |
+|---|---|---|
+| Q1 | 占满 64 槽后第 65 个会话注册返回 False，但 provider 已切到新会话 → 老会话无 owner 消费者派到被拒会话（A fired=0 / NEW=1） | **修** |
+| Q1b | 注册失败仍回填两个模块级单例（隐藏污染） | **修** |
+| Q2 | `id(agent)` 在 CPython 里会被新对象复用（实测），静默覆盖 + 旧句柄 ABA 误删 | **修（行为变更）** |
+| Q3 | bind 异常时 provider 已切、contextvar 已设、无句柄可复位 | **修** |
+| Q4 | deactivate 不清 `agent.ctx` 残留，bridge 仍返回已注销 owner | **修** |
+| Q5 | `SessionHandle` frozen 且无 `closed`，重复关闭靠反推 | **修** |
+| Q6 | `deactivate_session` 生产零调用点，registry 只增不减 | **修（接 CLI 主路径）** |
+
+**不该修**：`get_alerter()` 进程级单例、单 bridge 不按 `session_id`
+自动派生 owner、`deactivate` 不清 default provider、
+`AlertRecord.owner` 不序列化、ACP server / web / stream_json /
+TUI.close / `AcpSession.dispose` 仍未接线。
+
+### 修复
+- `hooks/triggers.py`：注册作为唯一事务边界。`bind_session_hooks`
+  失败立即 `return False` 不回填单例；`activate_session` 先 bind，
+  失败/异常返回 `active=False, closed=True` 零副作用句柄，成功才
+  注入 provider / 绑定 contextvar / 挂载 `ctx`，阶段 2 异常精确回滚。
+  `register_session` 对已存在 owner 拒绝并计数 `conflicts`；
+  `unregister_session(owner, *, expected=)` 按 hooks 对象身份精确注销。
+  `SessionHandle` 改可变 dataclass（加 `hooks`/`ctx`/`closed`），
+  `deactivate_session` 检查 closed、精确注销、仅清自己的 ctx 残留。
+  新增 `session_scope(...)` 上下文管理器。
+- `app.py`：改传 `ctx=agent.ctx`，删掉手动挂载。
+- `cli/cmd_chat.py`：新增 `_close_agent_session(agent)`，在两个
+  SessionEnd finally 中 `_run_session_hooks` **之后**调用（TUI + REPL
+  两个分支都接上）。
+
+### 11 处上轮断言同步（全部改强，不是放宽）
+四条 app.py 断言改查 `ctx=agent.ctx` 且不再手动挂载；事务化顺序改查
+`bind < provider < set_owner` 与失败早返回；热替换改查同 owner 拒绝
++ `conflicts` + 显式 unregister/register 动态查表；diagnostics 补
+`conflicts`；「未接宿主」改查「cmd_chat 恰好 1 处 + 其余逐一锁住」；
+lifecycle API 补 `session_scope`；rejected 文档补 `conflicts`；
+docstring 断言扩大窗口并补 Q1b 早返回。
+
+### A′ ×4（自己写错自己抓回）
+1. **产品代码语法错误**：`hooks/__init__.py` 反斜续行 import 新增
+   `session_scope` 时误加尾逗号，`py_compile` 直接 SyntaxError →
+   改续行反斜杠。
+2. 新写 docstring 里 ``HookTrigger()`` 字面串被 4 个既有全仓源码
+   扫描误判（只排除 `#` 行注释）→ 改成不含括号写法。
+3. Q1b 新测试用 `Rec.hooks.n`，但「零副作用」恰是属性不存在 →
+   改 `not hasattr` 并补成功对照避免恒真。
+4. 对照用例写 `unregister_session("filler-0")`，`fill()` 默认前缀
+   是 `f-0` → 改 `f-0`。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3-IX + 上四轮 B3 **196 passed**；既有 hooks/config/alert/remote/
+plugin/bus/bridge/ACP 相关 **203 passed**；宽回归 A **218 passed**；
+宽回归 B 见报告；`matrix.validate()` / `evidence.verify_evidence()` /
+文档数字校验 / 10 文件 `py_compile` 全干净。新增
+`tests/test_b3ix_session_transaction.py`。
+
+### 如实边界
+**Q2 是行为变更**：同 owner 二次注册从覆盖变拒绝，热替换需显式
+unregister + register。**Q3 是注入故障**不是线上已观测异常；**Q2 的
+id 复用**用同 owner 字符串模拟，不声称线上一定发生；**Q4 修的是
+归属信息残留**未对应已观测派发错误（ask_user 会先校验
+`resolve_session`）。**`deactivate` 只接 CLI 主路径**：ACP server /
+web / stream_json / TUI.close / `AcpSession.dispose` 仍未接线，
+`session_scope` 提供统一契约但未强制改造。`deactivate` 仍不清
+default provider；单例身份仍进程级、单槽回填仍在、
+`AlertRecord.owner` 仍不序列化、单 bridge 不按 `session_id` 自动
+派生。`os_sandbox` 仍 gap、`deny_network_by_default` 仍 false 未翻、
+`credential_masking` 仍 partial；A 线 10 pending、分叉改动、
+第三方自适应红队未做；不是真机多平台验证。标语引擎 / 净化层 /
+`mapping.py` / `tui.py` / `runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## B3 续轮 X：create_agent 真实会话生命周期（纠偏 + R1–R4）
+
+> 自足标题。**矩阵计数一个没动**：`aligned 46 / partial 9 / gap 26`、
+> `fully_superior=false`、`b_waves_done=["B1"]`；两个 B3 条目仍
+> `STATUS_GAP`，`catalog.py` 零改动。完整复现见
+> `CLAUDE_PARITY.md` 末尾「深度轮（续十）」。
+
+### 先纠偏：IX 的「5 个未接宿主」口径过宽
+实测 `tui.py` / `runtime/acp/session.py` / `runtime/acp/server.py` 的
+`create_agent` 调用点都是 **0**，它们不产生 `SessionHandle`，「没接
+deactivate」不是缺陷。真实泄漏面是 **9 个 `create_agent` 调用方**。
+
+### 四个候选（4 修 / 5 项「不该修」契约锁住）
+
+| 编号 | 实测 | 判定 |
+|---|---|---|
+| R1 | 每个子 agent 创建覆盖进程级单槽 provider；主会话新建无 owner 消费者派到子 agent（A fired=1 / B fired=1） | **修** |
+| R2 | provider lambda 闭包 cell 就是 `Agent`，最后一个 agent 永不 GC（删引用 + gc 后弱引用仍存活） | **修** |
+| R3 | 短命子 agent 不注销，70 次打满 64 槽（`rejected=6`），叠加 id 复用被 `conflicts` 拒绝 → 新会话静默失去 hooks | **修** |
+| R4 | 关闭子会话后单槽仍指向已注销会话 | **修** |
+
+**不该修**：`cli/cmd_acp.py` / `web/server.py` /
+`runtime/acp/bridge.py` 三个长驻宿主仍未接线；`core/_sandbox_entry.py`
+/ `core/background_worker.py` 是独立子进程，退出即清空；
+`get_alerter()` 进程级单例、单槽回填、`AlertRecord.owner` 不序列化、
+单 bridge 不按 `session_id` 自动派生、`deactivate` 不清 default
+provider —— 沿用前几轮契约。
+
+### 修复
+- `hooks/triggers.py`：新增 **`default_hooks_resolver()`**（模块级无
+  闭包函数，按 `current_session_owner()` 分桶查 registry；无 owner
+  回落最早存活会话；不持有 agent/ctx/hooks）与
+  **`close_agent_session(agent)`**（统一、幂等、异常隔离）。刻意
+  **不做 GC 终结器兜底**（槽位释放不依赖 GC 时机）。
+- `app.py`：`provider=default_hooks_resolver`，不再用 lambda 捕获 agent。
+- `cli/cmd_chat.py`：`_close_agent_session` 改调公共入口。
+- **5 处 `finally` 接线**：`cmd_chat.py`（TUI + REPL）、
+  `hooks/manager.py`、`tools/subagent_tool.py`、
+  `tools/workflow_tool.py`、`stream_json/headless.py`。
+
+### 6 处上轮断言同步（全部改强，不是放宽）
+4 条 `app.py` 的 `provider=lambda: getattr(` 改为共享 resolver 且
+`getattr(getattr(agent` 不再出现；`cmd_chat` 改查
+`close_agent_session(agent)`；`test_deactivate_wired_to_cmd_chat_only`
+整条重写为「5 处接线 + 3 个长驻宿主未接 + 2 个独立子进程不该修 +
+3 个伪宿主 0 调用点」。
+
+### A′ ×3（自己写错自己抓回）
+1. 新写 `default_hooks_resolver` docstring 里 `weakref.finalize` /
+   `weakref.ref` 字面串被「不做 GC 兜底」回归误判（2 次失败）→ 改
+   措辞，产品逻辑零改动。
+2. `owner_miss_stats()` 结构误判 `KeyError` → 改
+   `sum(stats.values()) >= 1`。
+3. 替换脚本嵌套引号 `SyntaxError`，首次重跑仍在用旧断言 → 重写生效。
+
+### 验证（按分批，批次间有重叠、不累加）
+B3-X + 上五轮 B3 **226 passed**；既有 hooks/config/alert/remote/
+plugin/bus/ACP/workflow/subagent/headless/stream_json 相关
+**285 passed**；宽回归 A **218 passed**；宽回归 B
+**185 passed / 1 failed**（4 个文件与 parent 逐字节一致，策略拒绝
+`/usr/bin/python3` 的既有环境行为，没为变绿动策略）；
+`matrix.validate()` / `evidence.verify_evidence()` / 文档数字校验 /
+14 文件 `py_compile` 全干净。新增
+`tests/test_b3x_agent_sessions.py`。
+
+### 如实边界
+子 agent 存活期间同线程 contextvar 指向子会话是同步作用域正常状态，
+本轮不改变；修复的是结束后不残留。后台线程无 owner 时回落「最早
+存活会话」**可能是子 agent**；R3 的 64 槽耗尽是模拟不是真跑 70 个
+LLM 子代理；R2 的 GC 实测在 CPython 引用计数下成立，其他实现不
+保证。**只接了 5 处**，三个长驻宿主仍未接线，不宣称全面覆盖。
+行为变更：provider 从每会话 lambda 变共享函数，
+`provider_diagnostics()["owner"]` 降为纯信息项；子 agent 调用方
+现在会在 `finally` 注销槽。`os_sandbox` 仍 gap、
+`deny_network_by_default` 仍 false 未翻、`credential_masking` 仍
+partial；A 线 10 pending、分叉改动、第三方自适应红队未做；不是
+真机多平台验证。标语引擎 / 净化层 / `mapping.py` / `tui.py` /
+`runtime_slogans.py` 逐字节未改。
+
+
+---
+
+## A 线续轮 XI：深度真实性判据 + Codex 侧 10 项清零
+
+> 自足标题。完整复现见 ``CLAUDE_PARITY.md`` 末尾「A 线续轮 XI」。
+> **B 线矩阵一个状态没动**：``aligned 46 / partial 9 / gap 26``、
+> ``fully_superior=false``、``b_waves_done=["B1"]``、
+> ``catalog.py`` 零改动。本轮只立深度基线，不堆功能。
+
+### 为什么加严
+此前 ``fully_identical`` 只看 ``pending == 0``，状态来自一张 note
+表 —— 一条 note 指向 .py 文件只证明「有代码」，证明不了「跑起来
+行为真的对」。现在：
+
+    fully_identical = (pending == 0) and depth_audit()["ok"]
+
+``tui/parity/depth.py`` 对每个 aligned/localized 真调一个注册探针、
+逐项断言并计时；**不缓存**（判定不依赖缓存时间点）、**不自动降级
+状态**（状态表与探针表是两张独立证据）。102 项里当前只 **10/102
+（9.8%）** 有探针，``depth_missing`` 如实列出 92 项。
+
+### A 线 10 项真实实现（``tui/codexkit/``，零 Rust 源码复制）
+审批拒绝（忽略即拒绝 / 去重 / 分桶 / 有界 ring）、历史插入
+（id 单调 / 越界拒绝 / 幂等 / backtrack 失效）、选区几何
+（CJK 列宽 / hit==render）、本地设置（三层优先级 / 严格类型 /
+不落盘）、时钟格式（注入 / 单调钳制 / 显式时区）、外部配置迁移
+（单次模板替换 / 未知键留痕）、流式装配（seq 单调 / done 拒绝 /
+ESC 序列剥离 / render 纯读）、异步问答（超时/取消/重复 /
+**绝不代答**）、命令类型化（argv 强制 / 元字符与间接执行器拒绝 /
+无 shell / 输出与超时上限）、纯 stdlib 自检 harness。
+合计 **127 条探针断言**，每项注册到 ``PROBE_REGISTRY``，
+``matrix.validate()`` 逐一执行，失败即自检不通过。
+
+### B 线只读深度基线（``parity_claude/depth.py``）
+实测 65 个非 gap 模块：**65/65 有 evidence 路径、65/65 有 note，
+但模块级运行时探针 0 个**。六维 ``superiority.probe_all()`` 是
+**聚合维度**探针（一个覆盖十几个模块），它绿不等于逐模块验证。
+``gap_queue()`` 给出 26 个 gap 的逐项证据 + wave 分组
+``B2:1 / B3:2 / B4:1 / B5:1 / B6:4 / B7:8 / B8:1 / B9:3 / B10:5``。
+**不改任何 B 线判据 / 状态。**
+
+### 一处真实联动缺陷（不是环境假阴性）
+加严 ``fully_identical`` 后，B 线六维 ``_probe_verifiable_parity()``
+硬编码「``pending==0`` ⇒ ``fully_identical=True``」，判「指标自相
+矛盾」并失败，连带 ``all_probes_ok=False`` / CLI ``UNVERIFIED`` /
+5 条回归红。已改为逐项核销**双口径自洽**（``all_modules_settled``
+与 pending、``fully_identical == settled and depth_strict_ok``、
+深度计数与 ``depth_missing`` 对账）—— **改强不是放宽**。
+CLI 两处硬编码「还剩 10 个 pending」改动态读。另同步 **9 条既有
+断言**到新基线，每条额外加 ``depth_verified==10`` 等深度断言。
+
+### A′ ×8（自查抓回）
+base_id 当 cell_id 单调下界 / 只删 ESC 字节留下 ``[31m`` 残片 /
+两条探针断言写反 / ``sh -c x`` 不含元字符却间接启用解释器 /
+重复自增 checks / harness 源码扫描自我引用 ×3 / ``depth_audit``
+不 import 实现包导致假报 0 / ``gap_queue`` 全仓扫描 18.8s→352ms。
+
+### 验证（分批，不累加）
+85 + 555 + 286 passed / **1 failed**（4 文件与 parent ``814c3231``
+逐字节一致，策略拒绝 ``/usr/bin/python3`` 的既有环境行为，没为
+变绿动策略）；纯 stdlib ``xi_verify.py`` **30/30**；
+``matrix.validate()`` / ``evidence.verify_evidence()`` /
+``verify_doc_numbers.py`` / 14 文件 ``py_compile`` 全干净。
+新增 ``tests/test_codexkit_depth.py``。
+
+### 如实边界
+A 线 ``pending=0`` 但 ``fully_identical=False``；92 个既有
+aligned/localized 仍无模块级探针。B 线 26 gap 一个未消，
+下一轮起按 ``gap_queue()`` 逐域补，**每消一个必须注册模块级
+探针**。``os_sandbox`` 仍 gap、``deny_network_by_default`` 仍
+false 未翻、``credential_masking`` 仍 partial；第三方自适应
+红队未做；不是真机多平台验证。``codexkit`` 不接 TUI 主循环、
+不替换任何既有运行时对象。标语引擎 / 净化层 / ``mapping.py`` /
+``tui.py`` / ``runtime_slogans.py`` 逐字节未改。
+
+
+---
+
+## B3 续轮 XII：hooks exit-code-2 深度真实性（状态一个没动）
+
+> 自足标题。完整复现见 ``CLAUDE_PARITY.md`` 末尾「B3 续轮 XII」。
+> **B 线矩阵一个状态没动**：``aligned 46 / partial 9 / gap 26``、
+> ``fully_superior=false``、``b_waves_done=["B1"]``，catalog status
+> 字段逐字节未改。本轮修真实缺陷，不刷数字。
+
+### H1：真实安全洞（先实测复现再修）
+
+```
+hook: exit 2
+  stderr = "BLOCKED: 禁止写 /etc"
+  stdout = '{"hookSpecificOutput":{"permissionDecision":"allow"}}'
+Tuan 旧行为: block=False, reason="", failure_kind=""
+CC 官方行为: 阻断工具调用，stderr 作为阻断原因，JSON allow 不能覆盖
+```
+
+旧 ``_exec_command`` 把 rc/stderr 埋进 ``failure.detail`` 字符串；
+调用方只要看到 stdout 非空就跳过失败判定，直接把 allow 当放行。
+**失败闭合被一行 stdout JSON 打穿，stderr 阻断原因彻底丢失。**
+
+### 修复清单
+| # | 缺陷 | 处置 |
+|---|---|---|
+| H1 | exit 2 + JSON allow 绕过 fail-closed | ``hooks/exit_semantics.py`` 33 事件真值表 + ``classify()``；``HookExit`` 结构化退出事实；``_exit_gate()`` 统一闸门 |
+| H2 | CC 官方 PR ``decision.behavior="deny"`` 静默放行 | ``_parse_decision`` 补官方格式 |
+| H3 | 官方 ``allow + updatedInput`` 不识别 | 解析并暴露 ``decision.args``；allow 缺 updatedInput 如实不生效 |
+| H4 | ``WorktreeCreate`` 非零 rc 被 JSON allow 绕过 | CC：任何非零 rc 都失败 |
+| H5 | 18 个官方事件配置 0 加载 | 事件表 15 → 33，真值表单一真值源 |
+| H6 | ``ToolPipeline`` 生产构造方 0 个 | ``ToolExecutor.__init__`` 真实构造 + ``_resolve_tool_schema()`` |
+| H7 | bridge 旁路直接 ``handler(ctx,**args)`` | 接 ``validate_updated_input`` |
+
+### 逐事件 exit-code-2 真值表
+官方 Hooks 参考 + 逐事件表交叉核对：16 个事件 exit 2 阻断；
+``PermissionRequest`` exit 2 **不生效**（只有 JSON decision 能 deny）；
+``PermissionDenied`` / ``StopFailure`` / ``InstructionsLoaded`` 完全忽略
+exit code；``WorktreeCreate`` / ``WorktreeRemove`` 任何非零都失败；
+PostToolUse 等动作已发生的事件 stderr 只作反馈；stderr 去向逐事件标注。
+
+**刻意保留的 Tuan 差异**：``on_failure=block`` 出厂默认比 CC 更严
+（CC 里 exit 1 是非阻断错误），B1 既有安全立场不因为对标就放宽；
+``compare_with_tuan_policy()`` 逐项列出差异。所有来源一致的硬规则：
+**allow 不能覆盖 exit 2**（``json_may_override`` 只在非 2 非零时为真）。
+
+### 深度：两个模块级探针
+``parity_claude/module_probes.py`` 给两条 B3 gap 各注册一个真调代码的
+探针（30 + 18 条断言）：真起 exit-2 子进程、真调 run_pre/run_decision、
+真解析 CC 官方协议、真跑 bridge asyncio、真构造生产 ToolPipeline。
+``depth.gap_probe_audit()`` → ``2/2 ok``；**刻意不混进**
+``module_depth.probe_verified``（仍如实 ``0/65``）。
+
+### 状态仍 GAP 的剩余硬理由
+新增 18 事件无生产触发点 / 无 JSON decision 通道；Elicitation 语义刻意
+不等价；``ToolPipeline`` 是可选通道、主链路仍 ``execute_batch``；
+HTTP/prompt/agent hook 类型未覆盖。catalog note 按实测收窄，
+status 字段逐字节未动，不靠改状态定义凑数。
+
+### A′ ×4（自查抓回）
+不存在的哨兵 import / rc=1 的 JSON reason 被吞（既有回归变红）/
+事件面断言 import 路径 / 审计文件残留复查。
+
+### 验证（分批，不累加）
+171 + 552 + 232 passed / **1 failed**（4 文件与 parent ``0fa1653c``
+逐字节一致，策略拒绝 ``/usr/bin/python3`` 的既有环境行为，没为变绿
+动策略）+ 67 + 纯 stdlib **32/32**；矩阵 / 证据 / 文档数字 /
+真值表 / 10 文件 py_compile 全干净。新增
+``tests/test_b3xii_exit_semantics.py``。
+
+### 如实边界
+26 gap 一个未消；``os_sandbox`` 仍 gap、``deny_network_by_default``
+仍 false、``credential_masking`` 仍 partial；A 线 92 个既有
+aligned/localized 仍无模块级探针；第三方自适应红队未做；不是真机
+多平台验证。事件面 33 项不宣称与某一 CC 发行版逐值相等。标语引擎 /
+净化层 / ``mapping.py`` / ``tui.py`` / ``runtime_slogans.py`` 逐字节未改。

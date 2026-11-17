@@ -20,7 +20,7 @@ M3        异常分支把 ``str(exc)`` 原样回显给外部 Agent：实测真�
           OSC / RLO 控制字符都会外泄（执行失败与安全判定失败两处）。
 =========  ==========================================================
 
-**修复**
+**修复（如实，不夸大）**
 
 - 接 ``SandboxManager.assess_command`` 四层滤网裁决：DENY / CONFIRM /
   ``isolate=True`` 一律 fail-closed 拒绝（MCP 无确认通道、套不上同步
@@ -29,8 +29,9 @@ M3        异常分支把 ``str(exc)`` 原样回显给外部 Agent：实测真�
   ``plan.env``（sentinel 脱敏）显式传给 subprocess，并补回
   ``TUAN_WORKSPACE``。
 - 所有异常出口过 ``safe_exception_text`` / ``safe_error_text``。
-- 工具描述中说明：**MCP 通道没有 OS 级隔离 / 逐命令域名强绑定 /
-  副本确认**；backend 固定 ``local``。
+- 工具描述如实标注：**MCP 通道没有 OS 级隔离 / 逐命令域名强绑定 /
+  副本确认**；backend 固定 ``local``，绝不拿 verdict 里的强后端名字
+  假装已隔离。
 - 默认 ``allow_dangerous_tools=false`` 仍不暴露该工具，行为不变。
 
 **顺带修的口径缺陷**：``tools/shell.py`` 后台分支注释曾引用一个章节
@@ -180,7 +181,7 @@ class TestErrorTextSanitization:
     def test_control_characters_stripped(self):
         text, _, _ = _call(
             _server(),
-            run_exc=OSError("x\x1b]8，https://evil\x07RLO\u202e中文"))
+            run_exc=OSError("x\x1b]8;;https://evil\x07RLO\u202e中文"))
         assert "\x1b" not in text and "\x07" not in text
         assert "\u202e" not in text
         assert "中文" in text
@@ -252,7 +253,7 @@ class TestToolExposure:
         assert "run_shell" in [t["name"] for t in s.tools()]
 
     def test_description_states_no_os_isolation(self):
-        """边界：绝不宣称 MCP 通道有 OS 级隔离。"""
+        """如实边界：绝不宣称 MCP 通道有 OS 级隔离。"""
         s = MS.McpToolServer(home=Path("/tmp/home"),
                              workspace=Path("/tmp/ws"),
                              allow_dangerous_tools=True)

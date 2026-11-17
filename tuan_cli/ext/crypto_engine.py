@@ -113,7 +113,7 @@ def _derive_key_aesgcm(passphrase: str, salt: bytes, iterations: int = 100000) -
         salt=salt,
         iterations=iterations,
     )
-    return kdf.derive(passphrase.encode())  # cryptography 返回 bytes, 无需 cast
+    return kdf.derive(passphrase.encode())  # cryptography 返回 Any
 
 
 def _seal_aesgcm(plaintext: bytes, key: bytes) -> tuple[bytes, bytes]:
@@ -142,7 +142,7 @@ def _open_aesgcm(ciphertext_with_tag: bytes, key: bytes, nonce: bytes) -> bytes:
     from cryptography.exceptions import InvalidTag
     aesgcm = AESGCM(key)
     try:
-        return aesgcm.decrypt(nonce, ciphertext_with_tag, None)  # cryptography 返回 bytes
+        return aesgcm.decrypt(nonce, ciphertext_with_tag, None)  # cryptography 返回 Any
     except InvalidTag:
         raise ValueError("AES-GCM 认证失败: 密码错误或密文被篡改")
 

@@ -3,9 +3,9 @@
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
   "name": "tuan_cli-sbom",
-  "documentNamespace": "https://kino-koki.github.io/sbom/tuan_cli-0.4.2-2026-11-16T13:46:39Z",
+  "documentNamespace": "https://kino-koki.github.io/sbom/tuan_cli-0.4.4-2026-11-17T07:18:03Z",
   "creationInfo": {
-    "created": "2026-11-16T13:46:39Z",
+    "created": "2026-11-17T07:18:03Z",
     "creators": [
       "Tool: tuan_cli-harden-sbom"
     ],
@@ -15,7 +15,7 @@
     {
       "SPDXID": "SPDXRef-Package-tuan-cli-0",
       "name": "tuan_cli",
-      "versionInfo": "0.4.2",
+      "versionInfo": "0.4.4",
       "supplier": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,

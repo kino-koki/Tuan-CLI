@@ -6,7 +6,7 @@ import json
 import re
 import shlex
 import sys
-from typing import Any, Dict
+from typing import Any
 
 from .safety_normalize import (
     _eval_is_unverifiable,
@@ -110,7 +110,7 @@ class SafetyEngine:
 
     @classmethod
     def _decode_ansi_c(cls, s: str) -> str:
-        def rep(m: "re.Match[str]") -> str:
+        def rep(m):
             if m.group(1):
                 return chr(int(m.group(1), 16))
             if m.group(2):
@@ -134,7 +134,7 @@ class SafetyEngine:
         out = text
         total_substitutions = 0
         for _ in range(max_rounds):
-            defs: Dict[str, str] = {}
+            defs = {}
             for m in cls._VAR_DEF.finditer(out):
                 name, val = m.group(1), m.group(2)
                 if val.startswith("$'"):

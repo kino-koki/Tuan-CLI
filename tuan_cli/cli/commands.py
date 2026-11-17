@@ -130,6 +130,7 @@ _CMD_SOURCES = {
     "cmd_safe": ".cmd_safe",
     "cmd_harden": ".cmd_harden",
     "cmd_tui_parity": ".cmd_tui_parity",
+    "cmd_claude_parity": ".cmd_claude_parity",
     "cmd_codedev": ".cmd_codedev",  # dev codedev 子命令组 (原顶级 tuan codedev)
     # ---- cmd_tutorial (任务驱动内置教程) ----
     "cmd_tutorial": ".cmd_tutorial",

@@ -317,6 +317,13 @@ infra             tests
 | 14 | `streaming_async` + `tools_exec` + `history_transcript`（5） | `streaming` / `async_question_reply` / `exec_command` / `rendered_selection` / `insert_history` |
 | 15 | 剩余 5 个 | `local_settings` / `clock_format` / `external_agent_config_migration` / `tests` / `auto_review_denials`，清零 `pending` |
 
+> **A/B 双线并行（2026-11-07 起）**：本节是 **A 线**（把 TUI 对齐
+> OpenAI Codex）。同日启动的 **B 线**是「全模块超 Claude Code v2.1.319」，
+> 见 `CLAUDE_PARITY.md` 与 `tuan claude parity`。两条线共享
+> `assert_wiring_intact()` 硬约束，但**互不修改对方文件**：A 线不碰
+> `tuan_cli/parity_claude/`，B 线不碰 `tuan_cli/tui/parity/`。A 线剩余
+> 10 个 pending 仍按本节 A14/A15 清零，不因 B 线启动而重排。
+
 每轮必须同时满足：① 新增模块状态有实现与测试指向；② 既有回归全绿；
 ③ `parity_validate()` 无问题；④ 文档指标同步。**不靠改状态定义凑数。**
 
@@ -397,3 +404,306 @@ argparse 前缀歧义。
   不是上游表达性内容的复制。
 - **OpenAI 不背书、不赞助本项目**（`NOTICE` 第 9 条明确声明）。
 - 规模数字的口径更正如实记录于 §2，不隐藏上一轮的低估。
+
+
+---
+
+## 增量：运行时标语与 TUI 状态口径修复（不占 Codex 对齐指标）
+
+本轮新增 `tuan_cli/tui/runtime_slogans.py`，在 Codex 风格 Working 状态行旁挂
+**Claude Code 同款**运行时标语（10 语言本地化，中文保留「磨洋工 / 腌制入味 /
+看报纸中」梗）。它是「与 Codex 完全相同**但有自己本地化**」这条 A 线约束的
+具体体现：**转圈机制、键位、布局数值、组件树一律不动**，只在文案层做本地化，
+且刻意比上游更诚实 —— 文案由真实事件驱动，忙碌无进展时显示「疑似摸鱼」
+诊断，而不是靠定时器空转装忙。详见 `RUNTIME_SLOGANS.md`。
+
+同时修两个实测缺陷，均**不改变任何 Codex 对齐指标**（`pending`、
+`fully_identical`、逐值对齐率保持原值，不靠改状态定义凑数）：
+
+| 编号 | 缺陷 | 修复 |
+|---|---|---|
+| B2 | `_render_footer` 判定顺序让 `_running` 分支成死代码，工具运行时显示 `Working (...)` | 工具名优先，状态与真实活动一致 |
+| B3 | `_disp_width` 与 `_display_width` 两套宽度算法，视口切片与单行裁剪口径分裂 | 统一到 `_display_width` 单一真值来源 |
+
+**B1 口径如实更正**：主线 `_line_heights` 已自带 `(width, text)` 高度缓存，
+本地分叉副本上实测的 16.2 → 0.39 ms/帧 **不适用于主线**；本轮在主线只修正
+「wcwidth 是 C 实现」的错误注释并加有界 LRU 作第二层保险，不宣称性能成果。
+
+回归 `tests/test_runtime_slogans.py` 57 例全绿（远端基线 + 本轮改动副本）。
+许可口径：该能力对标的是 Claude Code 的公开 UI 行为（专有产品，仅行为契约
+对标、未复制源码），归 `NOTICE` 第 15 条；**不与本文件 §6–§8 的
+Apache-2.0 / MIT Codex 归属混用**。
+
+
+---
+
+## 深度轮（不占任何 Codex 对齐指标）
+
+本轮只深化「运行时标语」这条线，**`pending` / `fully_identical` /
+逐值对齐率 / 宽口径覆盖率全部保持原值**，不靠改状态定义凑数：
+
+- 引擎在 `RLock` 内线性化（UI / 模型 / 工具线程并发进入，动画线程渲染）；
+- 单一 15s 阈值改为分阶段活性预算 + 三态；
+- `Liveness` 结构化快照 + 脱敏证据链 + 10 语言分类建议；
+- `note_progress` 补 `end_tool` / `end_stream` 生命周期事件，
+  并从源码层禁止在 `_animate` 刷新活性（否则诊断退化成定时空转）；
+- header 三态分级 warning / textdim / primary。
+
+**Codex 的键位、布局数值、组件树、交互契约一律未动** —— 这正是
+「完全相同但有自己本地化」的 A 线约束。93 例 pytest + 22 项纯 stdlib
+独立验证全绿。详见 `RUNTIME_SLOGANS.md` §10。
+
+
+---
+
+## 深度轮 2（仍不占任何 Codex 对齐指标）
+
+本轮只深化运行时标语的净化与 header 呈现，
+**`pending` / `fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- 净化层补齐 bidi/零宽/ESC 序列/变体选择符/组合标记开头，
+  grapheme 簇边界截断，构造性幂等；
+- `display_cols()` 与 `tui._display_width` 做 500 串交叉一致回归，
+  堵住 B3 漏掉的第三套宽度算法；
+- 诊断态 header 改用短版 `headline`，完整诊断留在 `diagnostic`；
+  **普通态的 Codex `Working (Ns • esc)` 状态行完全不动**，
+  键位、布局数值、组件树、交互契约一律未改。
+
+40 列窄终端、10 语言短文案、139 例 pytest + 20 项纯 stdlib 验证全绿。
+详见 `RUNTIME_SLOGANS.md` §11。
+
+
+---
+
+## 「每个标语都要对应的」（不占任何 Codex 对齐指标）
+
+本轮把用户提供的 15 文件标语库接到真实运行时事件上,
+**`pending` / `fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**:
+
+- 包落到正确路径 `tuan_cli/ui/slogans/`, 根目录历史包改薄垫片;
+- 18 事件 ↔ 16 上下文双向表 + 1695 条注册项 + 10 项 `audit()` 不变量;
+- 240 条补池消除 48 个跨语种英文组合, 5400 次分发 0 次落到兜底;
+- 净化层抽到 `_clean.py`, 活性引擎 re-export **同一函数对象**;
+- TUI 四个真实生命周期点分发并留痕, **不替换任何既有 i18n 文案**,
+  Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约一律未改。
+
+175 例 pytest + 26 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md`。
+
+
+---
+
+## 运行时留痕闭环（不占任何 Codex 对齐指标）
+
+本轮只把「事件 → 标语」的对应关系在运行时做实,
+**`pending` / `fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**:
+
+- TUI 留痕补 `entry_id`/`owner`/`at_ms`, `slogan_trace()` 可反查;
+- 未知事件由静默吞掉改为必留痕 (`strict=True` 才向上抛);
+- 日志按实例分域 + `RLock`, O(1) 索引, `Counter` 审计, rng/clock 回放;
+- **未新增任何生命周期事件**, `begin_tool`/`stream_assistant`/
+  完成/`close` 四个点不变; **未替换任何既有 i18n 文案**;
+  Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约一律未改。
+
+194 例 pytest + 42 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md` §11。
+
+
+---
+
+## 闭环补漏（不占任何 Codex 对齐指标）
+
+本轮只把上一轮的运行时对应关系补漏，**`pending` / `fully_identical` /
+逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `_BY_CLEAN` 净化后索引 + miss fail-closed；owner 桶 LRU 上界与
+  `close()` 释放；错误双层留痕；`_MAX_WINDOWS` 按真实 key 空间算；
+  `audit()` 不变量加严。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。
+
+215 例 pytest + 52 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md` §12。
+
+
+---
+
+## 自愈与证据保全（不占任何 Codex 对齐指标）
+
+本轮只把前三轮的运行时对应关系补漏，**`pending` / `fully_identical` /
+逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- 连续 miss 自愈且累计证据/日志不丢；`close()` 封存含 `session.exit`
+  的桶快照；`dispatch_log(owner)` 读刷新 LRU；日志字段统一净化；
+  `sanitized` 与 `unrenderable` 分离；分发与索引共用单一渲染出口。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。
+
+234 例 pytest + 64 项纯 stdlib 验证全绿。详见 `SLOGAN_MAPPING.md` §13。
+
+
+---
+
+## owner 归一与淘汰留痕（不占任何 Codex 对齐指标）
+
+本轮只把前四轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- public 入参 `owner` 全链路归一且严格幂等；`limit` 脏值不再抛
+  异常；LRU 被动淘汰留脱敏痕迹；`close()` 收敛到
+  `take_owner_log()` 单一出口；`_slogan_sealed` 写加锁。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。
+
+256 例 pytest + 73 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §14。
+
+
+---
+
+## 净化顺序与淘汰痕摘要（不占任何 Codex 对齐指标）
+
+本轮只把前五轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- 日志字段改为先清理后截断（带 64KiB 扫描上限）；连续 ESC 串
+  整体删，不再吞掉尾部合法字符；淘汰痕与 decision 共用注入时钟；
+  `EvictionRecord` 增 `reason_counts`；`OWNER_LIMIT` 口径精确化。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。`tui.py` 本轮文件零改动。
+
+276 例 pytest + 80 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §15。
+
+
+---
+
+## ESC+ 与时钟严格化（不占任何 Codex 对齐指标）
+
+本轮只把前六轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- OSC/CSI 允许 `ESC+` 引导；注入时钟严格类型校验且合法 0 不再被吞；
+  owner 用有界摘要；淘汰累计证据 `evicted_total`。
+- **未新增任何生命周期事件**，四个分发点不变；**未替换任何既有
+  i18n 文案**；Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  一律未改。`tui.py` 本轮文件零改动，**未包含在本轮推送清单**。
+
+300 例 pytest + 88 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §16。
+
+
+---
+
+## 裁剪证据（不占任何 Codex 对齐指标）
+
+本轮只把前七轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `mapping.py` 新增桶内裁剪留痕与累计决策数；净化层、TUI、
+  生命周期事件、i18n 文案、Codex 状态行 / 键位 / 布局数值 /
+  组件树 / 交互契约**一律未改**。
+- **`tui.py` 本轮逐字节未改，未包含在本轮推送清单。**
+
+319 例 pytest + 97 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §17。
+
+
+---
+
+## public 入参类型面（不占任何 Codex 对齐指标）
+
+本轮只把前八轮的运行时对应关系补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `mapping.py` 加 event 类型守卫与非字符串 owner 隔离留痕；
+  净化层、TUI、生命周期事件、i18n 文案、Codex 状态行 / 键位 /
+  布局数值 / 组件树 / 交互契约**一律未改**。
+- **`tui.py` 本轮逐字节未改，未包含在本轮推送清单。**
+  但 `_slogan_dispatch` 的 `except UnboundSloganEvent` 现在真的能
+  接住不可 hash 的 event（`strict=True` 契约不再被底层
+  `TypeError` 绕过），这是行为修复而非对齐改动。
+
+343 例 pytest + 105 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §18。
+
+
+---
+
+## 引擎入参面（不占任何 Codex 对齐指标）
+
+本轮只把引擎本体的 public 入参面补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `runtime_slogans.py` 加统一时钟入口、`kind` / `source` / `detail`
+  净化、`reset` 时钟同源、`path` 的 try 边界；
+  `mapping.py` / `_clean.py` / **TUI** / 生命周期事件 / i18n 文案 /
+  Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约**一律未改**。
+- **`tui.py` 本轮逐字节未改，未包含在本轮推送清单。**
+
+376 例 pytest + 117 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §19。
+
+
+---
+
+## 注入契约轮（不占任何 Codex 对齐指标）
+
+本轮只把引擎的注入契约与配置切换锚点补漏，**`pending` /
+`fully_identical` / 逐值对齐率 / 宽口径覆盖率全部保持原值**：
+
+- `runtime_slogans.py` 修 `__init__` 的 `or`、`load_config` 的
+  静默截断、全不可渲染 verbs 的静默忽略、`reload()` 的
+  `(seq, verb)` 锚点与 unchanged no-op；
+  `mapping.py` / `_clean.py` / **TUI** / 生命周期事件 / i18n
+  文案 / Codex 状态行 / 键位 / 布局数值 / 组件树 / 交互契约
+  **一律未改**。
+- **`tui.py` 本轮逐字节未改，未包含在本轮推送清单。**
+
+404 例 pytest + 126 项纯 stdlib 验证全绿。
+详见 `SLOGAN_MAPPING.md` §20。
+
+
+---
+
+## 续轮 XI：最后 10 个 pending 清零 + 深度真实性判据（自足标题）
+
+完整复现见 ``CLAUDE_PARITY.md`` 末尾「A 线续轮 XI」。
+
+- **状态**：``pending 10 → 0``、``aligned 35 → 45``、
+  ``localized 57`` / ``not_applicable 63`` 不变，
+  ``coverage 93.9% → 100.0%``、``aligned_pct 55.8% → 61.8%``、
+  ``aligned_only_pct 21.2% → 27.3%``，``all_modules_settled=True``。
+- **但 ``fully_identical`` 仍 False**：判据加严为
+  ``pending == 0 and depth_audit()["ok"]``。102 个 aligned/localized
+  里只有本轮 10 个有模块级运行时探针（**10/102，9.8%**），
+  ``depth_missing`` 如实列出 92 项 —— 不靠改状态定义凑数。
+- **10 个真实实现**落 ``tui/codexkit/``：``approval_history.py``
+  （3 模块）、``session_config.py``（3 模块）、``stream_exec.py``
+  （3 模块）、``selftest.py``（1 模块）+ ``__init__.py``。
+  合计 **127 条探针断言**，每项注册到 ``parity/depth.py``，
+  ``matrix.validate()`` 逐一执行。纯 Python，零 Rust 源码复制。
+- **9 条既有断言同步（改强）**：数字更新之外全部额外加
+  ``depth_verified == 10`` 等深度断言；``cmd_tui_parity`` 输出新增
+  「状态清零 / 深度探针」两行，gaps 空队列如实显示。
+- **A′ ×8** 自查抓回，详见 ``SECURITY_BASELINE.md`` R57。
+- **下一轮**：为其余 92 个 aligned/localized 补模块级探针；
+  B 线按 ``parity_claude/depth.py::gap_queue()`` 逐域消 26 gap，
+  每消一个必须注册模块级探针。
+
+验证：85 + 555 + 286/1 既有环境失败 + 30/30 纯 stdlib +
+文档/矩阵/py_compile 全干净。
+
+
+---
+
+## B 线联动说明（B3 续轮 XII，自足标题）
+
+本轮改动在 **B 线 hooks 域**，A 线矩阵状态``pending 0 / aligned 45 /
+localized 57 / na 63 / depth 10/102 / fully_identical=False`` 不变。
+联动点只有一处：六维 ``verifiable_parity`` 探针读 A 线双口径，本轮
+未改该契约，``claude_parity`` 全量回归仍全绿。B 线新增的两个模块级
+探针在 ``tuan_cli/parity_claude/module_probes.py``，与 A 线
+``tui/parity/depth.py`` 的 ``PROBE_REGISTRY`` 是**两张独立证据表**，
+不混算。完整复现见 ``CLAUDE_PARITY.md`` 末尾「B3 续轮 XII」。

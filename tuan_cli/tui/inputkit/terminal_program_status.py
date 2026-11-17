@@ -177,7 +177,7 @@ def _osc7501(status: ProgramStatus, detail: str,
 class _SessionStatusState:
     """进程级缓存（对齐上游静态单例 + Mutex）。"""
 
-    def __init__(self) -> None:
+    def __init__(self):
         self._lock = threading.RLock()
         self._status = CachedStatus.CLEARED
         self._detail = ""
@@ -245,7 +245,7 @@ def set_terminal_program_status(status: ProgramStatus,
     seq = _osc7501(status, clean, support.osc_21337)
 
     def emit() -> None:
-        _writer(seq)
+        _writer(seq)  # type: ignore[misc]
 
     return _SESSION_STATUS_STATE.update(CachedStatus.REPORTED, clean, emit)
 
@@ -260,7 +260,7 @@ def clear_terminal_program_status() -> bool:
         seq += "\x1b]21337;status=Idle;detail=\x07"
 
     def emit() -> None:
-        _writer(seq)
+        _writer(seq)  # type: ignore[misc]
 
     return _SESSION_STATUS_STATE.update(CachedStatus.CLEARED, "", emit)
 

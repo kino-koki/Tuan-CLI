@@ -1,12 +1,12 @@
 except Exception 盘点 (scripts/audit_except.py 生成)
-总计 1749; 分类 {'rethrow': 60, 'logged': 1010, 'silent': 0, 'fallback': 679}; 安全/审计 {'rethrow': 6, 'logged': 118, 'silent': 0, 'fallback': 88}
+总计 1819; 分类 {'rethrow': 62, 'logged': 1048, 'silent': 0, 'fallback': 709}; 安全/审计 {'rethrow': 6, 'logged': 115, 'silent': 0, 'fallback': 85}
 
 == 按文件汇总 (silent 降序) ==
 tuan_cli/_http.py: total=9 {'rethrow': 2, 'logged': 7, 'silent': 0, 'fallback': 0}
 tuan_cli/_openai_sdk.py: total=3 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 0}
 tuan_cli/acp/server.py: total=2 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 2}
 tuan_cli/agents/base.py: total=8 {'rethrow': 0, 'logged': 6, 'silent': 0, 'fallback': 2}
-tuan_cli/app.py: total=8 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 5}
+tuan_cli/app.py: total=10 {'rethrow': 0, 'logged': 5, 'silent': 0, 'fallback': 5}
 tuan_cli/app_desktop.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/arch/context.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
 tuan_cli/arch/execution.py: total=12 {'rethrow': 0, 'logged': 6, 'silent': 0, 'fallback': 6}
@@ -22,7 +22,7 @@ tuan_cli/cli/cmd_aggregate.py: total=1 {'rethrow': 1, 'logged': 0, 'silent': 0, 
 tuan_cli/cli/cmd_alerts.py: total=3 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 3}
 tuan_cli/cli/cmd_auditstore.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/cli/cmd_bang.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
-tuan_cli/cli/cmd_chat.py: total=34 {'rethrow': 0, 'logged': 18, 'silent': 0, 'fallback': 16}
+tuan_cli/cli/cmd_chat.py: total=32 {'rethrow': 0, 'logged': 18, 'silent': 0, 'fallback': 14}
 tuan_cli/cli/cmd_checkpoint.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/cli/cmd_claude_parity.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/cli/cmd_cost.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
@@ -35,7 +35,7 @@ tuan_cli/cli/cmd_gh.py: total=3 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallba
 tuan_cli/cli/cmd_handoff.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/cli/cmd_harden.py: total=7 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 7}
 tuan_cli/cli/cmd_help.py: total=2 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 1}
-tuan_cli/cli/cmd_hooks.py: total=5 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 4}
+tuan_cli/cli/cmd_hooks.py: total=5 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 5}
 tuan_cli/cli/cmd_integrity.py: total=4 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 4}
 tuan_cli/cli/cmd_kernel.py: total=2 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 1}
 tuan_cli/cli/cmd_loop.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
@@ -54,12 +54,12 @@ tuan_cli/cli/cmd_review_cli.py: total=4 {'rethrow': 0, 'logged': 0, 'silent': 0,
 tuan_cli/cli/cmd_safe.py: total=28 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 26}
 tuan_cli/cli/cmd_safety.py: total=5 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 5}
 tuan_cli/cli/cmd_sandbox.py: total=6 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 6}
-tuan_cli/cli/cmd_services.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
+tuan_cli/cli/cmd_services.py: total=3 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 3}
 tuan_cli/cli/cmd_session.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/cli/cmd_session_export.py: total=2 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 0}
 tuan_cli/cli/cmd_setup.py: total=10 {'rethrow': 0, 'logged': 4, 'silent': 0, 'fallback': 6}
 tuan_cli/cli/cmd_skills.py: total=2 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 1}
-tuan_cli/cli/cmd_slash.py: total=16 {'rethrow': 0, 'logged': 13, 'silent': 0, 'fallback': 3}
+tuan_cli/cli/cmd_slash.py: total=13 {'rethrow': 0, 'logged': 11, 'silent': 0, 'fallback': 2}
 tuan_cli/cli/cmd_slash_bridge.py: total=2 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 2}
 tuan_cli/cli/cmd_slash_claude.py: total=16 {'rethrow': 0, 'logged': 16, 'silent': 0, 'fallback': 0}
 tuan_cli/cli/cmd_slash_goal.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
@@ -94,8 +94,8 @@ tuan_cli/codedev/plugin.py: total=2 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fa
 tuan_cli/codedev/retrieval.py: total=5 {'rethrow': 0, 'logged': 5, 'silent': 0, 'fallback': 0}
 tuan_cli/codedev/verify.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/config/defaults.py: total=5 {'rethrow': 0, 'logged': 5, 'silent': 0, 'fallback': 0}
-tuan_cli/config/loader.py: total=8 {'rethrow': 0, 'logged': 7, 'silent': 0, 'fallback': 1}
-tuan_cli/config/managed.py: total=2 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 0}
+tuan_cli/config/loader.py: total=6 {'rethrow': 0, 'logged': 5, 'silent': 0, 'fallback': 1}
+tuan_cli/config/managed.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/config/security_schema.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/config/validate.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/context/fast_index.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
@@ -150,9 +150,9 @@ tuan_cli/core/personality.py: total=2 {'rethrow': 0, 'logged': 1, 'silent': 0, '
 tuan_cli/core/proc.py: total=3 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 0}
 tuan_cli/core/project_layer.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
 tuan_cli/core/prompt_tier.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
-tuan_cli/core/prompts.py: total=13 {'rethrow': 0, 'logged': 10, 'silent': 0, 'fallback': 3}
+tuan_cli/core/prompts.py: total=12 {'rethrow': 0, 'logged': 9, 'silent': 0, 'fallback': 3}
 tuan_cli/core/reflector.py: total=2 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 2}
-tuan_cli/core/remote_control.py: total=8 {'rethrow': 0, 'logged': 6, 'silent': 0, 'fallback': 2}
+tuan_cli/core/remote_control.py: total=7 {'rethrow': 0, 'logged': 6, 'silent': 0, 'fallback': 1}
 tuan_cli/core/resilience.py: total=9 {'rethrow': 3, 'logged': 6, 'silent': 0, 'fallback': 0}
 tuan_cli/core/retry.py: total=4 {'rethrow': 2, 'logged': 1, 'silent': 0, 'fallback': 1}
 tuan_cli/core/rewind.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
@@ -160,14 +160,14 @@ tuan_cli/core/safe_text.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fa
 tuan_cli/core/sandbox.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/core/sandbox_provider.py: total=7 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 4}
 tuan_cli/core/secret_scanner.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
-tuan_cli/core/security_alert.py: total=11 {'rethrow': 0, 'logged': 9, 'silent': 0, 'fallback': 2}
+tuan_cli/core/security_alert.py: total=9 {'rethrow': 0, 'logged': 8, 'silent': 0, 'fallback': 1}
 tuan_cli/core/security_auditor.py: total=8 {'rethrow': 0, 'logged': 8, 'silent': 0, 'fallback': 0}
 tuan_cli/core/security_bus.py: total=8 {'rethrow': 0, 'logged': 7, 'silent': 0, 'fallback': 1}
-tuan_cli/core/security_classifier.py: total=3 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 0}
+tuan_cli/core/security_classifier.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/core/security_learner.py: total=2 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 0}
 tuan_cli/core/security_plugin.py: total=10 {'rethrow': 0, 'logged': 9, 'silent': 0, 'fallback': 1}
 tuan_cli/core/security_policy.py: total=4 {'rethrow': 0, 'logged': 4, 'silent': 0, 'fallback': 0}
-tuan_cli/core/security_utils.py: total=4 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 2}
+tuan_cli/core/security_utils.py: total=2 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 1}
 tuan_cli/core/subagents.py: total=6 {'rethrow': 0, 'logged': 4, 'silent': 0, 'fallback': 2}
 tuan_cli/core/swarm.py: total=3 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 0}
 tuan_cli/core/taint_exfil.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
@@ -176,7 +176,7 @@ tuan_cli/core/team_group.py: total=2 {'rethrow': 1, 'logged': 1, 'silent': 0, 'f
 tuan_cli/core/team_lead.py: total=2 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 1}
 tuan_cli/core/team_security.py: total=2 {'rethrow': 1, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/core/telemetry.py: total=5 {'rethrow': 1, 'logged': 4, 'silent': 0, 'fallback': 0}
-tuan_cli/core/tool_executor.py: total=25 {'rethrow': 0, 'logged': 18, 'silent': 0, 'fallback': 7}
+tuan_cli/core/tool_executor.py: total=26 {'rethrow': 0, 'logged': 18, 'silent': 0, 'fallback': 8}
 tuan_cli/core/trajectory_replay.py: total=9 {'rethrow': 0, 'logged': 8, 'silent': 0, 'fallback': 1}
 tuan_cli/core/verify_loop.py: total=5 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 3}
 tuan_cli/core/whitelist.py: total=3 {'rethrow': 1, 'logged': 2, 'silent': 0, 'fallback': 0}
@@ -215,7 +215,7 @@ tuan_cli/harden/crypto_provider.py: total=6 {'rethrow': 3, 'logged': 1, 'silent'
 tuan_cli/harden/repro_build.py: total=2 {'rethrow': 1, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/harden/sbom.py: total=4 {'rethrow': 2, 'logged': 1, 'silent': 0, 'fallback': 1}
 tuan_cli/hooks/lifecycle.py: total=6 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 3}
-tuan_cli/hooks/manager.py: total=5 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 2}
+tuan_cli/hooks/manager.py: total=8 {'rethrow': 0, 'logged': 5, 'silent': 0, 'fallback': 3}
 tuan_cli/hooks/nonprocess.py: total=3 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 3}
 tuan_cli/hooks/triggers.py: total=10 {'rethrow': 0, 'logged': 7, 'silent': 0, 'fallback': 3}
 tuan_cli/i18n/__init__.py: total=3 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 2}
@@ -243,7 +243,7 @@ tuan_cli/ports/migration_legacy/stub_detect.py: total=1 {'rethrow': 0, 'logged':
 tuan_cli/ports/oauth/identity.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/ports/telemetry/otel.py: total=8 {'rethrow': 0, 'logged': 8, 'silent': 0, 'fallback': 0}
 tuan_cli/ports/telemetry/sink.py: total=2 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 0}
-tuan_cli/runtime/acp/bridge.py: total=13 {'rethrow': 0, 'logged': 11, 'silent': 0, 'fallback': 2}
+tuan_cli/runtime/acp/bridge.py: total=10 {'rethrow': 0, 'logged': 10, 'silent': 0, 'fallback': 0}
 tuan_cli/runtime/acp/interaction_bridge.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/runtime/acp/server.py: total=10 {'rethrow': 0, 'logged': 8, 'silent': 0, 'fallback': 2}
 tuan_cli/runtime/acp/session.py: total=5 {'rethrow': 0, 'logged': 4, 'silent': 0, 'fallback': 1}
@@ -271,7 +271,7 @@ tuan_cli/sandbox/egress_plan.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0
 tuan_cli/sandbox/egress_proxy.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/sandbox/filters.py: total=13 {'rethrow': 1, 'logged': 10, 'silent': 0, 'fallback': 2}
 tuan_cli/sandbox/isolation.py: total=4 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 3}
-tuan_cli/sandbox/manager.py: total=16 {'rethrow': 0, 'logged': 6, 'silent': 0, 'fallback': 10}
+tuan_cli/sandbox/manager.py: total=16 {'rethrow': 0, 'logged': 7, 'silent': 0, 'fallback': 9}
 tuan_cli/self_improve/auto_distiller.py: total=3 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 0}
 tuan_cli/self_improve/evaluator.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/self_improve/evolution_loop.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
@@ -279,10 +279,10 @@ tuan_cli/self_improve/plugin.py: total=3 {'rethrow': 0, 'logged': 3, 'silent': 0
 tuan_cli/self_improve/regression_gate.py: total=3 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 2}
 tuan_cli/self_improve/store.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/skills/enhanced.py: total=3 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 0}
-tuan_cli/skills/manager.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
-tuan_cli/skills/plugin_sdk.py: total=4 {'rethrow': 0, 'logged': 4, 'silent': 0, 'fallback': 0}
+tuan_cli/skills/manager.py: total=4 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 1}
+tuan_cli/skills/plugin_sdk.py: total=9 {'rethrow': 0, 'logged': 9, 'silent': 0, 'fallback': 0}
 tuan_cli/skills/universal_format.py: total=3 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 0}
-tuan_cli/stream_json/headless.py: total=12 {'rethrow': 0, 'logged': 8, 'silent': 0, 'fallback': 4}
+tuan_cli/stream_json/headless.py: total=11 {'rethrow': 0, 'logged': 8, 'silent': 0, 'fallback': 3}
 tuan_cli/stream_json/translate.py: total=7 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 5}
 tuan_cli/superagent/engine.py: total=6 {'rethrow': 2, 'logged': 3, 'silent': 0, 'fallback': 1}
 tuan_cli/superagent/events.py: total=4 {'rethrow': 0, 'logged': 4, 'silent': 0, 'fallback': 0}
@@ -291,13 +291,13 @@ tuan_cli/superagent/store.py: total=2 {'rethrow': 0, 'logged': 1, 'silent': 0, '
 tuan_cli/superagent/watchdog.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
 tuan_cli/superagent/worker.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
 tuan_cli/tools/artifact_tool.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
-tuan_cli/tools/base.py: total=20 {'rethrow': 0, 'logged': 12, 'silent': 0, 'fallback': 8}
+tuan_cli/tools/base.py: total=20 {'rethrow': 0, 'logged': 13, 'silent': 0, 'fallback': 7}
 tuan_cli/tools/browser.py: total=19 {'rethrow': 2, 'logged': 2, 'silent': 0, 'fallback': 15}
 tuan_cli/tools/consolidate.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/tools/dispatch.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/tools/dynamic_workflow_tool.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/tools/external.py: total=2 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 0}
-tuan_cli/tools/filesystem.py: total=10 {'rethrow': 1, 'logged': 6, 'silent': 0, 'fallback': 3}
+tuan_cli/tools/filesystem.py: total=8 {'rethrow': 1, 'logged': 4, 'silent': 0, 'fallback': 3}
 tuan_cli/tools/gh_borrow.py: total=4 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 1}
 tuan_cli/tools/image_gen.py: total=7 {'rethrow': 0, 'logged': 4, 'silent': 0, 'fallback': 3}
 tuan_cli/tools/mcp/audit.py: total=2 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 1}
@@ -313,13 +313,13 @@ tuan_cli/tools/permissions.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 
 tuan_cli/tools/pipeline.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/tools/sandbox.py: total=4 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 1}
 tuan_cli/tools/session_tools.py: total=7 {'rethrow': 0, 'logged': 7, 'silent': 0, 'fallback': 0}
-tuan_cli/tools/shell.py: total=20 {'rethrow': 0, 'logged': 13, 'silent': 0, 'fallback': 7}
-tuan_cli/tools/subagent_tool.py: total=4 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 1}
+tuan_cli/tools/shell.py: total=24 {'rethrow': 0, 'logged': 15, 'silent': 0, 'fallback': 9}
+tuan_cli/tools/subagent_tool.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
 tuan_cli/tools/task_tool.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/tools/team_tool.py: total=6 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 5}
-tuan_cli/tools/todo_tool.py: total=5 {'rethrow': 0, 'logged': 4, 'silent': 0, 'fallback': 1}
+tuan_cli/tools/todo_tool.py: total=4 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 1}
 tuan_cli/tools/web.py: total=7 {'rethrow': 0, 'logged': 4, 'silent': 0, 'fallback': 3}
-tuan_cli/tools/workflow_tool.py: total=3 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 2}
+tuan_cli/tools/workflow_tool.py: total=2 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 2}
 tuan_cli/tui/codexkit/__init__.py: total=3 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 2}
 tuan_cli/tui/codexkit/approval_history.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/tui/codexkit/selftest.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
@@ -339,7 +339,7 @@ tuan_cli/tui/kimi_modules.py: total=5 {'rethrow': 0, 'logged': 3, 'silent': 0, '
 tuan_cli/tui/layout.py: total=20 {'rethrow': 0, 'logged': 8, 'silent': 0, 'fallback': 12}
 tuan_cli/tui/lifecycle.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/tui/panels.py: total=8 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 6}
-tuan_cli/tui/parity/__init__.py: total=7 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 7}
+tuan_cli/tui/parity/__init__.py: total=9 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 9}
 tuan_cli/tui/parity/depth.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
 tuan_cli/tui/parity/i18n.py: total=2 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 0}
 tuan_cli/tui/render.py: total=14 {'rethrow': 0, 'logged': 8, 'silent': 0, 'fallback': 6}
@@ -347,7 +347,7 @@ tuan_cli/tui/runtime_slogans.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0
 tuan_cli/tui/slashmenu.py: total=7 {'rethrow': 0, 'logged': 7, 'silent': 0, 'fallback': 0}
 tuan_cli/tui/slogan.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/tui/state.py: total=29 {'rethrow': 2, 'logged': 20, 'silent': 0, 'fallback': 7}
-tuan_cli/tui/tui.py: total=9 {'rethrow': 1, 'logged': 4, 'silent': 0, 'fallback': 4}
+tuan_cli/tui/tui.py: total=84 {'rethrow': 3, 'logged': 45, 'silent': 0, 'fallback': 36}
 tuan_cli/tui/win_compat.py: total=6 {'rethrow': 0, 'logged': 5, 'silent': 0, 'fallback': 1}
 tuan_cli/ui/approval_overlay.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
 tuan_cli/ui/approval_policy.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
@@ -378,32 +378,32 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
 == silent 明细 (治理清单) ==
 
 == fallback 明细 ==
-      tuan_cli/acp/server.py:279 (Exception) except Exception as exc:  # noqa: BLE001  | body@280: self._task_update(status="failed", e
-      tuan_cli/acp/server.py:201 (Exception) except Exception as exc:  # noqa: BLE001  | body@202: self._write(build_response(
+      tuan_cli/acp/server.py:280 (Exception) except Exception as exc:  # noqa: BLE001  | body@281: self._task_update(status="failed", e
+      tuan_cli/acp/server.py:202 (Exception) except Exception as exc:  # noqa: BLE001  | body@203: self._write(build_response(
       tuan_cli/agents/base.py:307 (Exception) except Exception as e:  | body@308: seq = _next(seq)
       tuan_cli/agents/base.py:291 (Exception) except Exception:  | body@292: prompt_file = None
       tuan_cli/app.py:237 (Exception) except Exception:  # noqa: BLE001  | body@238: agent.ctx.checkpoint_store = None
-      tuan_cli/app.py:295 (Exception) except Exception:  # noqa: BLE001  | body@296: return Path(__file__).resolve().parent / "r
-      tuan_cli/app.py:354 (Exception) except Exception:  # noqa: BLE001 - 清单缺失/损坏都当作空, 退化为只播种  | body@355: manifest = {}
+      tuan_cli/app.py:338 (Exception) except Exception:  # noqa: BLE001  | body@339: return Path(__file__).resolve().parent / "r
+      tuan_cli/app.py:397 (Exception) except Exception:  # noqa: BLE001 - 清单缺失/损坏都当作空, 退化为只播种  | body@398: manifest = {}
       tuan_cli/app.py:208 (Exception) except Exception:  # noqa: BLE001  | body@209: indexer = None
       tuan_cli/app.py:270 (Exception) except Exception:  # noqa: BLE001  | body@271: agent.ctx.hooks = None
       tuan_cli/app_desktop.py:104 (Exception) except Exception as exc:  # noqa: BLE001  | body@105: sys.stderr.write(f"[tuan-desktop] ke
-      tuan_cli/arch/context.py:309 (Exception) except Exception:  | body@310: self._native_available = False
-      tuan_cli/arch/execution.py:442 (Exception) except Exception as exc:  | body@443: outcome.error = f"{type(exc).__name__}: {exc}"
-      tuan_cli/arch/execution.py:383 (Exception) except Exception as exc:  # 前置 stage 失败 = fail-closed 拦截  | body@384: outcome.error = f"pr
-      tuan_cli/arch/execution.py:421 (Exception) except Exception as exc:  # hooks 其它异常 -> hook 执行错误 (非阻断语义)  | body@422: outcome.error = f
-      tuan_cli/arch/execution.py:560 (Exception) except Exception as exc:  | body@561: self._error_count += 1
-      tuan_cli/arch/execution.py:626 (Exception) except Exception as exc:  | body@627: self._error_count += 1
-      tuan_cli/arch/execution.py:394 (Exception) except Exception:  | body@395: tool_schema = None
+      tuan_cli/arch/context.py:322 (Exception) except Exception:  | body@323: self._native_available = False
+      tuan_cli/arch/execution.py:440 (Exception) except Exception as exc:  | body@441: outcome.error = f"{type(exc).__name__}: {exc}"
+      tuan_cli/arch/execution.py:385 (Exception) except Exception as exc:  # 前置 stage 失败 = fail-closed 拦截  | body@386: outcome.error = f"pr
+      tuan_cli/arch/execution.py:419 (Exception) except Exception as exc:  # hooks 其它异常 -> hook 执行错误 (非阻断语义)  | body@420: outcome.error = f
+      tuan_cli/arch/execution.py:558 (Exception) except Exception as exc:  | body@559: self._error_count += 1
+      tuan_cli/arch/execution.py:624 (Exception) except Exception as exc:  | body@625: self._error_count += 1
+      tuan_cli/arch/execution.py:396 (Exception) except Exception:  # noqa: BLE001 - 解析失败 = 无 schema 保守子集  | body@397: call.tool_schema = N
       tuan_cli/arch/observability.py:133 (Exception) except Exception:  | body@134: return str(obj)
       tuan_cli/arch/orchestration.py:225 (Exception) except Exception as exc:  # noqa: BLE001  | body@226: result = SubAgentResult(
       tuan_cli/arch/orchestration.py:311 (Exception) except Exception as exc:  # noqa: BLE001  | body@312: spec = futures_map[fut]
-      tuan_cli/arch/platform.py:383 (Exception) except Exception:  | body@384: os._exit(127)  # 过滤器安装失败, 直接失败 (fail-closed)
-      tuan_cli/arch/platform.py:387 (Exception) except Exception:  | body@388: os._exit(127)
-      tuan_cli/arch/platform.py:482 (Exception) except Exception as exc:  | body@486: reason = f"Job Object 不可用, 降级为普通子进程: {type(exc).__na
-      tuan_cli/arch/platform.py:303 (Exception) except Exception:  | body@304: out, err = "", ""
-      tuan_cli/arch/platform.py:322 (Exception) except Exception:  | body@323: out, err = "", ""
-      tuan_cli/arch/platform.py:418 (Exception) except Exception:  | body@419: os.kill(pid, 9)
+      tuan_cli/arch/platform.py:382 (Exception) except Exception:  | body@383: os._exit(127)  # 过滤器安装失败, 直接失败 (fail-closed)
+      tuan_cli/arch/platform.py:391 (Exception) except Exception:  | body@392: os._exit(127)
+      tuan_cli/arch/platform.py:488 (Exception) except Exception as exc:  | body@492: reason = f"Job Object 不可用, 降级为普通子进程: {type(exc).__na
+      tuan_cli/arch/platform.py:302 (Exception) except Exception:  | body@303: out, err = "", ""
+      tuan_cli/arch/platform.py:321 (Exception) except Exception:  | body@322: out, err = "", ""
+      tuan_cli/arch/platform.py:422 (Exception) except Exception:  | body@423: os.kill(pid, 9)
 [SEC] tuan_cli/arch/security.py:243 (Exception) except Exception:  | body@244: return self._seal_fallback(data)
       tuan_cli/cli/cmd_acp.py:81 (Exception) except Exception as exc:  # noqa: BLE001  | body@82: sys.stderr.write(f"ACP server 启动失败: {
       tuan_cli/cli/cmd_acp.py:73 (Exception) except Exception:  # noqa: BLE001  | body@74: sys.stderr.write(
@@ -419,22 +419,20 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/cli/cmd_alerts.py:128 (Exception) except Exception as exc:  # noqa: BLE001  | body@129: console.print(f"[red]告警日志读取失败: {exc}
       tuan_cli/cli/cmd_alerts.py:159 (Exception) except Exception as exc:  # noqa: BLE001  | body@160: console.print(f"[red]告警日志读取失败: {exc}
 [SEC] tuan_cli/cli/cmd_auditstore.py:194 (Exception) except Exception as exc:  # noqa: BLE001  | body@195: console.print(f"[red]审计归档读取失败: {exc}
-      tuan_cli/cli/cmd_chat.py:700 (Exception) except Exception:  # noqa: BLE001  | body@701: _ws = os.getcwd()
-      tuan_cli/cli/cmd_chat.py:717 (Exception) except Exception:  # noqa: BLE001  | body@718: isolated = None
-      tuan_cli/cli/cmd_chat.py:862 (Exception) except Exception as exc:  # noqa: BLE001  | body@863: console.print(f"启动失败: {exc}")
-      tuan_cli/cli/cmd_chat.py:884 (Exception) except Exception:  # noqa: BLE001  | body@885: console.print("  ✗ 无法检测")
-      tuan_cli/cli/cmd_chat.py:944 (Exception) except Exception:  # noqa: BLE001  | body@945: console.print(f"  {mark('warn')} git 检测失败")
-      tuan_cli/cli/cmd_chat.py:960 (Exception) except Exception:  # noqa: BLE001  | body@961: console.print(f"  {mark('warn')} 无法检测磁盘空间")
+      tuan_cli/cli/cmd_chat.py:693 (Exception) except Exception:  # noqa: BLE001  | body@694: _ws = os.getcwd()
+      tuan_cli/cli/cmd_chat.py:710 (Exception) except Exception:  # noqa: BLE001  | body@711: isolated = None
+      tuan_cli/cli/cmd_chat.py:855 (Exception) except Exception as exc:  # noqa: BLE001  | body@856: console.print(f"启动失败: {exc}")
+      tuan_cli/cli/cmd_chat.py:877 (Exception) except Exception:  # noqa: BLE001  | body@878: console.print("  ✗ 无法检测")
+      tuan_cli/cli/cmd_chat.py:937 (Exception) except Exception:  # noqa: BLE001  | body@938: console.print(f"  {mark('warn')} git 检测失败")
+      tuan_cli/cli/cmd_chat.py:953 (Exception) except Exception:  # noqa: BLE001  | body@954: console.print(f"  {mark('warn')} 无法检测磁盘空间")
       tuan_cli/cli/cmd_chat.py:85 (Exception) except Exception as exc:  # noqa: BLE001  | body@86: return f"[错误] {exc}"
       tuan_cli/cli/cmd_chat.py:189 (Exception) except Exception:  # noqa: BLE001  | body@190: interactive = False
-      tuan_cli/cli/cmd_chat.py:267 (Exception) except Exception as exc:  # noqa: BLE001 - 单目录失败不阻断会话启动  | body@268: print(f"[warn] --add-
-      tuan_cli/cli/cmd_chat.py:778 (Exception) except Exception:  # noqa: BLE001  | body@779: proj_id = ""
-      tuan_cli/cli/cmd_chat.py:905 (Exception) except Exception as exc:  # noqa: BLE001  | body@906: console.print(f"  {mark('warn')} {ho
-      tuan_cli/cli/cmd_chat.py:926 (Exception) except Exception as exc:  # noqa: BLE001  | body@927: console.print(f"  {mark('warn')} {pr
-      tuan_cli/cli/cmd_chat.py:1063 (Exception) except Exception as exc:  # noqa: BLE001 - 单目录失败不阻断  | body@1064: print(f"[warn] settings 
-      tuan_cli/cli/cmd_chat.py:522 (Exception) except Exception as exc:  | body@523: import traceback as _tb
-      tuan_cli/cli/cmd_chat.py:470 (Exception) except Exception:  | body@471: _names = []
-      tuan_cli/cli/cmd_chat.py:550 (Exception) except Exception:  | body@551: console.print(
+      tuan_cli/cli/cmd_chat.py:771 (Exception) except Exception:  # noqa: BLE001  | body@772: proj_id = ""
+      tuan_cli/cli/cmd_chat.py:898 (Exception) except Exception as exc:  # noqa: BLE001  | body@899: console.print(f"  {mark('warn')} {ho
+      tuan_cli/cli/cmd_chat.py:919 (Exception) except Exception as exc:  # noqa: BLE001  | body@920: console.print(f"  {mark('warn')} {pr
+      tuan_cli/cli/cmd_chat.py:506 (Exception) except Exception as exc:  | body@507: import traceback as _tb
+      tuan_cli/cli/cmd_chat.py:454 (Exception) except Exception:  | body@455: _names = []
+      tuan_cli/cli/cmd_chat.py:534 (Exception) except Exception:  | body@535: console.print(
       tuan_cli/cli/cmd_checkpoint.py:70 (Exception) except Exception as exc:  # noqa: BLE001  | body@71: console.print(f"[red]检查点存储初始化失败: {exc
       tuan_cli/cli/cmd_claude_parity.py:86 (Exception) except Exception:  # noqa: BLE001 - 展示层不让 A 线异常掀翻报告  | body@87: print("  A 线并行: tuan tui p
       tuan_cli/cli/cmd_cost.py:216 (Exception) except Exception:  # noqa: BLE001  | body@217: budget = 0.0
@@ -445,18 +443,19 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/cli/cmd_gh.py:260 (Exception) except Exception as exc:  # noqa: BLE001  | body@261: console.print(f"[错误] REST 回退失败: {exc
       tuan_cli/cli/cmd_gh.py:378 (Exception) except Exception as exc:  # noqa: BLE001  | body@379: return f"[错误] 借鉴失败: {exc}"
       tuan_cli/cli/cmd_handoff.py:64 (Exception) except Exception:  # noqa: BLE001 - 项目层未初始化时不阻塞交接  | body@65: pid = ""
-      tuan_cli/cli/cmd_harden.py:62 (Exception) except Exception:  | body@63: home = Path.home() / ".tuan"
-      tuan_cli/cli/cmd_harden.py:178 (Exception) except Exception:  | body@179: home = Path.home() / ".tuan"
-      tuan_cli/cli/cmd_harden.py:191 (Exception) except Exception as exc:  # noqa: BLE001  | body@192: print(f"[harden] SBOM: 生成失败 ({exc})"
-      tuan_cli/cli/cmd_harden.py:202 (Exception) except Exception:  | body@203: print("[harden] 网络策略: 未加载到配置 (可用 tuan harden network-check 
-      tuan_cli/cli/cmd_harden.py:236 (Exception) except Exception as exc:  # noqa: BLE001  | body@237: print(f"[harden] 安全基线: 检查失败 ({exc})"
-      tuan_cli/cli/cmd_harden.py:254 (Exception) except Exception as exc:  # noqa: BLE001  | body@255: print(f"[harden] 安全配置 schema: 检查失败 (
-      tuan_cli/cli/cmd_harden.py:316 (Exception) except Exception as exc:  # noqa: BLE001  | body@317: all_ok = False
+      tuan_cli/cli/cmd_harden.py:42 (Exception) except Exception:  | body@43: home = Path.home() / ".tuan"
+      tuan_cli/cli/cmd_harden.py:158 (Exception) except Exception:  | body@159: home = Path.home() / ".tuan"
+      tuan_cli/cli/cmd_harden.py:171 (Exception) except Exception as exc:  # noqa: BLE001  | body@172: print(f"[harden] SBOM: 生成失败 ({exc})"
+      tuan_cli/cli/cmd_harden.py:182 (Exception) except Exception:  | body@183: print("[harden] 网络策略: 未加载到配置 (可用 tuan harden network-check 
+      tuan_cli/cli/cmd_harden.py:224 (Exception) except Exception as exc:  # noqa: BLE001  | body@225: print(f"[harden] 安全基线: 检查失败 ({exc})"
+      tuan_cli/cli/cmd_harden.py:242 (Exception) except Exception as exc:  # noqa: BLE001  | body@243: print(f"[harden] 安全配置 schema: 检查失败 (
+      tuan_cli/cli/cmd_harden.py:261 (Exception) except Exception as exc:  # noqa: BLE001  | body@262: print(f"[harden] 工具层写路径硬边界: 检查失败 ({e
       tuan_cli/cli/cmd_help.py:301 (Exception) except Exception as e:  | body@302: console.print(f"[red]读取快速上手指南失败: {e}[/red]")
-      tuan_cli/cli/cmd_hooks.py:50 (Exception) except Exception as exc:  # noqa: BLE001  | body@51: console.print(f"读取配置失败: {exc}")
-      tuan_cli/cli/cmd_hooks.py:64 (Exception) except Exception as exc:  | body@65: console.print(f"启动失败: {exc}")
-      tuan_cli/cli/cmd_hooks.py:92 (Exception) except Exception as exc:  | body@93: console.print(f"--json 不是合法 JSON: {exc}")
-      tuan_cli/cli/cmd_hooks.py:98 (Exception) except Exception as exc:  | body@99: console.print(f"启动失败: {exc}")
+      tuan_cli/cli/cmd_hooks.py:47 (Exception) except Exception as exc:  # noqa: BLE001  | body@48: console.print(f"读取配置失败: {exc}")
+      tuan_cli/cli/cmd_hooks.py:61 (Exception) except Exception as exc:  | body@62: console.print(f"启动失败: {exc}")
+      tuan_cli/cli/cmd_hooks.py:90 (Exception) except Exception as exc:  | body@91: console.print(f"--json 不是合法 JSON: {exc}")
+      tuan_cli/cli/cmd_hooks.py:96 (Exception) except Exception as exc:  | body@97: console.print(f"启动失败: {exc}")
+      tuan_cli/cli/cmd_hooks.py:114 (Exception) except Exception:  # noqa: BLE001  | body@115: schema = None
       tuan_cli/cli/cmd_integrity.py:82 (Exception) except Exception as exc:  # noqa: BLE001  | body@83: console.print(f"[red]变更历史读取失败: {exc}[
       tuan_cli/cli/cmd_integrity.py:110 (Exception) except Exception as exc:  # noqa: BLE001  | body@111: console.print(f"[red]统计读取失败: {exc}[/
       tuan_cli/cli/cmd_integrity.py:130 (Exception) except Exception as exc:  # noqa: BLE001  | body@131: console.print(f"[red]报告导出失败: {exc}[/
@@ -535,18 +534,19 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
 [SEC] tuan_cli/cli/cmd_sandbox.py:244 (Exception) except Exception as exc:  # noqa: BLE001  | body@245: console.print(f"[red]后端探测失败: {exc}[/
 [SEC] tuan_cli/cli/cmd_sandbox.py:306 (Exception) except Exception:  # noqa: BLE001 - 总线不可用回退审计  | body@307: try:
 [SEC] tuan_cli/cli/cmd_sandbox.py:321 (Exception) except Exception as exc:  # noqa: BLE001  | body@322: console.print(f"[red]读取沙箱裁决历史失败: {ex
-      tuan_cli/cli/cmd_services.py:71 (Exception) except Exception as exc:  | body@72: console.print(f"启动失败: {exc}")
+      tuan_cli/cli/cmd_services.py:103 (Exception) except Exception as exc:  # noqa: BLE001  | body@104: console.print(f"[red]插件管理器初始化失败:[/re
+      tuan_cli/cli/cmd_services.py:75 (Exception) except Exception:  # noqa: BLE001  | body@76: home = None
+      tuan_cli/cli/cmd_services.py:118 (Exception) except Exception as exc:  # noqa: BLE001  | body@119: console.print(f"[red]安装失败:[/red] {ex
       tuan_cli/cli/cmd_session.py:150 (Exception) except Exception as exc:  | body@151: console.print(f"启动失败: {exc}")
-      tuan_cli/cli/cmd_setup.py:187 (Exception) except Exception:  # noqa: BLE001 - 罕见无 tty 场景回退  | body@188: try:
-      tuan_cli/cli/cmd_setup.py:486 (Exception) except Exception as exc:  # noqa: BLE001  | body@487: console.print(f"启动失败: {exc}")
-      tuan_cli/cli/cmd_setup.py:569 (Exception) except Exception as exc:  # noqa: BLE001  | body@570: console.print(f"启动失败: {exc}")
-      tuan_cli/cli/cmd_setup.py:582 (Exception) except Exception as exc:  # noqa: BLE001  | body@583: console.print(f"适配器创建失败: {exc}")
-      tuan_cli/cli/cmd_setup.py:510 (Exception) except Exception as exc:  # noqa: BLE001  | body@511: errors += 1
-      tuan_cli/cli/cmd_setup.py:598 (Exception) except Exception as exc:  # noqa: BLE001  | body@599: errors += 1
+      tuan_cli/cli/cmd_setup.py:190 (Exception) except Exception:  # noqa: BLE001 - 罕见无 tty 场景回退  | body@191: try:
+      tuan_cli/cli/cmd_setup.py:489 (Exception) except Exception as exc:  # noqa: BLE001  | body@490: console.print(f"启动失败: {exc}")
+      tuan_cli/cli/cmd_setup.py:572 (Exception) except Exception as exc:  # noqa: BLE001  | body@573: console.print(f"启动失败: {exc}")
+      tuan_cli/cli/cmd_setup.py:585 (Exception) except Exception as exc:  # noqa: BLE001  | body@586: console.print(f"适配器创建失败: {exc}")
+      tuan_cli/cli/cmd_setup.py:513 (Exception) except Exception as exc:  # noqa: BLE001  | body@514: errors += 1
+      tuan_cli/cli/cmd_setup.py:601 (Exception) except Exception as exc:  # noqa: BLE001  | body@602: errors += 1
       tuan_cli/cli/cmd_skills.py:155 (Exception) except Exception as exc:  # noqa: BLE001  | body@156: console.print(f"[red]读取技能库失败: {exc}[
-      tuan_cli/cli/cmd_slash.py:782 (Exception) except Exception:  # noqa: BLE001 - 无团组则纯 TeamLead，不写审计  | body@783: store = None
-      tuan_cli/cli/cmd_slash.py:1122 (Exception) except Exception:  # noqa: BLE001  | body@1123: engine = None
-      tuan_cli/cli/cmd_slash.py:1370 (Exception) except Exception:  # noqa: BLE001  | body@1371: canonical = None
+      tuan_cli/cli/cmd_slash.py:940 (Exception) except Exception:  # noqa: BLE001  | body@941: engine = None
+      tuan_cli/cli/cmd_slash.py:1188 (Exception) except Exception:  # noqa: BLE001  | body@1189: canonical = None
       tuan_cli/cli/cmd_slash_bridge.py:217 (Exception) except Exception:  # noqa: BLE001 - 解析失败就退回"总是注入默认"策略  | body@218: return set()
       tuan_cli/cli/cmd_slash_bridge.py:194 (Exception) except Exception as exc:  # noqa: BLE001 - 桥不吞异常, 但给 TUI 一句可读提示  | body@195: buf.write(f"[
       tuan_cli/cli/cmd_slash_init.py:58 (Exception) except Exception:  # noqa: BLE001  | body@59: entries = []
@@ -611,7 +611,7 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/codedev/plugin.py:82 (Exception) except Exception:  # noqa: BLE001  | body@83: executor = None
       tuan_cli/codedev/plugin.py:115 (Exception) except Exception:  # noqa: BLE001  | body@116: if hasattr(kernel, "provide"):
       tuan_cli/codedev/verify.py:181 (Exception) except Exception as exc:  # noqa: BLE001  | body@182: blocked = f"[已拦截] 命令守卫不可用, 安全降级拒绝: {
-      tuan_cli/config/loader.py:326 (Exception) except Exception:  | body@327: return json.dumps(data, ensure_ascii=False, indent=2)
+      tuan_cli/config/loader.py:341 (Exception) except Exception:  | body@342: return json.dumps(data, ensure_ascii=False, indent=2)
       tuan_cli/config/validate.py:45 (Exception) except Exception:  # noqa: BLE001  | body@46: mode_ids = ("gantong", "lingma", "chat", "bo
       tuan_cli/context/fast_index.py:128 (Exception) except Exception:  # noqa: BLE001  符号提取失败不影响索引本体  | body@129: names = []
       tuan_cli/context/manager.py:257 (Exception) except Exception:  | body@258: summary = ""
@@ -640,7 +640,7 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/core/auto_mode.py:197 (Exception) except Exception:  # noqa: BLE001  | body@198: self._current_mode_id = "chat"
       tuan_cli/core/background.py:257 (Exception) except Exception as exc:  # noqa: BLE001  | body@258: job.status = "failed"
       tuan_cli/core/background.py:537 (Exception) except Exception as exc:  # noqa: BLE001  | body@538: self._store.update(job_id, status="f
-      tuan_cli/core/background_shell.py:310 (Exception) except Exception as exc:  # noqa: BLE001  | body@311: from .security_utils import safe_exc
+      tuan_cli/core/background_shell.py:314 (Exception) except Exception as exc:  # noqa: BLE001  | body@315: from .security_utils import safe_exc
       tuan_cli/core/background_worker.py:82 (Exception) except Exception as exc:  # noqa: BLE001  | body@83: error = f"{type(exc).__name__}: {exc}
 [SEC] tuan_cli/core/blacklist_override.py:39 (Exception) except Exception:  # noqa: BLE001  | body@40: home_dir = None  # type: ignore
       tuan_cli/core/boundary_auto.py:160 (Exception) except Exception:  # noqa: BLE001  | body@161: existing = set()
@@ -663,39 +663,37 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/core/orchestrator.py:241 (Exception) except Exception as e:  # noqa: BLE001 - 节点失败 -> 重试/回滚  | body@242: node.error = str(e)
       tuan_cli/core/personality.py:271 (Exception) except Exception:  | body@272: cfg_name = ""
       tuan_cli/core/project_layer.py:211 (Exception) except Exception:  # noqa: BLE001  | body@212: data = {"projects": []}
-      tuan_cli/core/prompts.py:291 (Exception) except Exception:  | body@292: try:
-      tuan_cli/core/prompts.py:925 (Exception) except Exception:  | body@926: skills = []
-      tuan_cli/core/prompts.py:295 (Exception) except Exception:  | body@296: resource_dir = None
+      tuan_cli/core/prompts.py:289 (Exception) except Exception:  | body@290: try:
+      tuan_cli/core/prompts.py:923 (Exception) except Exception:  | body@924: skills = []
+      tuan_cli/core/prompts.py:293 (Exception) except Exception:  | body@294: resource_dir = None
       tuan_cli/core/reflector.py:144 (Exception) except Exception as exc:  # noqa: BLE001  | body@145: blocked = f"[已拦截] 命令守卫不可用, 安全降级拒绝: {
       tuan_cli/core/reflector.py:175 (Exception) except Exception as exc:  | body@176: return VerificationResult(
       tuan_cli/core/remote_control.py:95 (Exception) except Exception:  # noqa: BLE001  | body@96: from ..ext.safety_engine import is_hard_redl
-      tuan_cli/core/remote_control.py:137 (Exception) except Exception:  # noqa: BLE001  | body@138: self.hooks = None
       tuan_cli/core/retry.py:78 (Exception) except Exception:  # pragma: no cover - errors 模块零依赖, 不会失败  | body@79: TuanCliError = None
       tuan_cli/core/rewind.py:74 (Exception) except Exception:  # noqa: BLE001  | body@75: max_snapshots = 20
 [SEC] tuan_cli/core/sandbox.py:158 (Exception) except Exception as exc:  # noqa: BLE401  | body@159: return SubResult(
-[SEC] tuan_cli/core/sandbox_provider.py:168 (Exception) except Exception as exc:  | body@169: return SandboxResult(
-[SEC] tuan_cli/core/sandbox_provider.py:230 (Exception) except Exception as exc:  | body@231: return SandboxResult(
-[SEC] tuan_cli/core/sandbox_provider.py:353 (Exception) except Exception as exc:  | body@354: return SandboxResult(
-[SEC] tuan_cli/core/sandbox_provider.py:474 (Exception) except Exception as exc:  | body@475: return SandboxResult(
-[SEC] tuan_cli/core/security_alert.py:250 (Exception) except Exception:  # noqa: BLE001  | body@251: try:
-[SEC] tuan_cli/core/security_alert.py:255 (Exception) except Exception:  # noqa: BLE001  | body@256: self.hooks = None
+[SEC] tuan_cli/core/sandbox_provider.py:187 (Exception) except Exception as exc:  | body@188: return SandboxResult(
+[SEC] tuan_cli/core/sandbox_provider.py:252 (Exception) except Exception as exc:  | body@253: return SandboxResult(
+[SEC] tuan_cli/core/sandbox_provider.py:378 (Exception) except Exception as exc:  | body@379: return SandboxResult(
+[SEC] tuan_cli/core/sandbox_provider.py:502 (Exception) except Exception as exc:  | body@503: return SandboxResult(
+[SEC] tuan_cli/core/security_alert.py:289 (Exception) except Exception:  # noqa: BLE001 - 路由信息不得掀翻告警主路径  | body@290: _owner = ""
 [SEC] tuan_cli/core/security_bus.py:507 (Exception) except Exception:  # noqa: BLE001  | body@508: persist_path = None
 [SEC] tuan_cli/core/security_plugin.py:133 (Exception) except Exception:  # noqa: BLE001  | body@134: _desktop_default = False
-[SEC] tuan_cli/core/security_utils.py:239 (Exception) except Exception:  # noqa: BLE001  | body@240: return (f"{type(exc).__name__} (异常消息不可用已丢弃)
-[SEC] tuan_cli/core/security_utils.py:211 (Exception) except Exception:  # noqa: BLE001  | body@212: mark = True
+[SEC] tuan_cli/core/security_utils.py:224 (Exception) except Exception:  # noqa: BLE001 - 损坏的 __str__ 不许掀翻错误路径  | body@225: return f"{name}: [异常
       tuan_cli/core/subagents.py:148 (Exception) except Exception:  # noqa: BLE001  | body@149: isolated_workdir = True
       tuan_cli/core/subagents.py:383 (Exception) except Exception as exc:  # noqa: BLE001  | body@384: return SubResult(
 [SEC] tuan_cli/core/taint_exfil.py:186 (Exception) except Exception:  # noqa: BLE001 - fail-closed  | body@187: return ExfilVerdict(
       tuan_cli/core/team_agents.py:254 (Exception) except Exception as exc:  # noqa: BLE001  | body@255: return WorkerResult(
       tuan_cli/core/team_agents.py:175 (Exception) except Exception as exc:  # noqa: BLE001  | body@176: pre_results[w.worker_id] = WorkerRes
       tuan_cli/core/team_lead.py:296 (Exception) except Exception as exc:  # noqa: BLE001  | body@297: status = "failed"
-      tuan_cli/core/tool_executor.py:869 (Exception) except Exception:  # noqa: BLE001  | body@870: args_dict = {}
-      tuan_cli/core/tool_executor.py:378 (Exception) except Exception:  # noqa: BLE001  | body@379: auditor = None
-      tuan_cli/core/tool_executor.py:388 (Exception) except Exception:  # noqa: BLE001  | body@389: gate = None
-      tuan_cli/core/tool_executor.py:561 (Exception) except Exception:  # noqa: BLE001 - 沙箱子系统故障不影响既有闸门  | body@562: self._sandbox = False
-      tuan_cli/core/tool_executor.py:894 (Exception) except Exception:  # noqa: BLE001  | body@895: store = None
-      tuan_cli/core/tool_executor.py:680 (Exception) except Exception as exc:  # noqa: BLE001  | body@681: result_text = f"[错误] {fn_name}: {exc
-      tuan_cli/core/tool_executor.py:708 (Exception) except Exception as exc:  # noqa: BLE001  | body@709: tc = futures[future]
+      tuan_cli/core/tool_executor.py:337 (Exception) except Exception:  # noqa: BLE001 - 构造失败不掀翻执行器初始化  | body@338: self.pipeline = None
+      tuan_cli/core/tool_executor.py:881 (Exception) except Exception:  # noqa: BLE001  | body@882: args_dict = {}
+      tuan_cli/core/tool_executor.py:386 (Exception) except Exception:  # noqa: BLE001  | body@387: auditor = None
+      tuan_cli/core/tool_executor.py:396 (Exception) except Exception:  # noqa: BLE001  | body@397: gate = None
+      tuan_cli/core/tool_executor.py:569 (Exception) except Exception:  # noqa: BLE001 - 沙箱子系统故障不影响既有闸门  | body@570: self._sandbox = False
+      tuan_cli/core/tool_executor.py:906 (Exception) except Exception:  # noqa: BLE001  | body@907: store = None
+      tuan_cli/core/tool_executor.py:692 (Exception) except Exception as exc:  # noqa: BLE001  | body@693: result_text = f"[错误] {fn_name}: {exc
+      tuan_cli/core/tool_executor.py:720 (Exception) except Exception as exc:  # noqa: BLE001  | body@721: tc = futures[future]
       tuan_cli/core/trajectory_replay.py:165 (Exception) except Exception:  | body@166: sessions.append({"session_id": sid, "file": str(f)})
       tuan_cli/core/verify_loop.py:310 (Exception) except Exception as exc:  # noqa: BLE001 - 守卫自身异常按拦截处理  | body@311: blocked = f"[已拦截] 命令守卫
       tuan_cli/core/verify_loop.py:336 (Exception) except Exception as exc:  # noqa: BLE001  | body@337: elapsed = time.monotonic() - t0
@@ -708,23 +706,23 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/ecosystem/mcp_import.py:114 (Exception) except Exception as exc:  # noqa: BLE001  | body@115: result.errors.append(f"读取当前 mcp.serv
       tuan_cli/ecosystem/mcp_import.py:134 (Exception) except Exception as exc:  # noqa: BLE001  | body@135: result.errors.append(f"写入配置: {exc}")
       tuan_cli/ecosystem/mcp_import.py:194 (Exception) except Exception:  # noqa: BLE001  | body@195: data = {}
-      tuan_cli/ecosystem/mcp_server.py:346 (Exception) except Exception as exc:  # noqa: BLE001  | body@347: return _err(f"记忆检索失败: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:364 (Exception) except Exception as exc:  # noqa: BLE001  | body@365: return _err(f"写入记忆失败: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:374 (Exception) except Exception as exc:  # noqa: BLE001  | body@375: return _err(f"读取技能失败: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:390 (Exception) except Exception as exc:  # noqa: BLE001  | body@391: return _err(f"读取技能失败: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:405 (Exception) except Exception as exc:  # noqa: BLE001  | body@406: return _err(f"读取 Agent 失败: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:454 (Exception) except Exception as exc:  # noqa: BLE001  | body@455: return _err(f"渲染异常: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:482 (Exception) except Exception as exc:  # noqa: BLE001  | body@483: return _err(f"帧渲染异常: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:548 (Exception) except Exception as exc:  # noqa: BLE001  | body@549: return _err(f"LLM 调用异常: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:563 (Exception) except Exception as exc:  # noqa: BLE001  | body@564: return _err(f"读取模型目录失败: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:628 (Exception) except Exception as exc:  # noqa: BLE001  | body@629: return _err(f"流水线异常: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:662 (Exception) except Exception as exc:  # noqa: BLE001  | body@663: return _err(f"TTS 异常: {exc}")
-      tuan_cli/ecosystem/mcp_server.py:687 (Exception) except Exception as exc:  # noqa: BLE001  | body@688: return _err(f"安全判定失败 (fail-closed): 
-      tuan_cli/ecosystem/mcp_server.py:697 (Exception) except Exception as exc:  # noqa: BLE001  | body@698: return _err(f"安全裁决失败 (fail-closed): 
-      tuan_cli/ecosystem/mcp_server.py:708 (Exception) except Exception as exc:  # noqa: BLE001  | body@709: return _err(f"出网计划失败 (fail-closed): 
-      tuan_cli/ecosystem/mcp_server.py:725 (Exception) except Exception as exc:  # noqa: BLE001  | body@726: return _err(f"执行失败: {safe_exception_
-      tuan_cli/ecosystem/mcp_server.py:781 (Exception) except Exception as exc:  # noqa: BLE001 - 工具异常必须回包而非崩溃  | body@782: return self._response
-      tuan_cli/ecosystem/mcp_server.py:808 (Exception) except Exception:  # noqa: BLE001 - 单行异常不中断服务  | body@809: resp = self._error_response(Non
+      tuan_cli/ecosystem/mcp_server.py:347 (Exception) except Exception as exc:  # noqa: BLE001  | body@348: return _err(f"记忆检索失败: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:365 (Exception) except Exception as exc:  # noqa: BLE001  | body@366: return _err(f"写入记忆失败: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:375 (Exception) except Exception as exc:  # noqa: BLE001  | body@376: return _err(f"读取技能失败: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:391 (Exception) except Exception as exc:  # noqa: BLE001  | body@392: return _err(f"读取技能失败: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:406 (Exception) except Exception as exc:  # noqa: BLE001  | body@407: return _err(f"读取 Agent 失败: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:455 (Exception) except Exception as exc:  # noqa: BLE001  | body@456: return _err(f"渲染异常: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:483 (Exception) except Exception as exc:  # noqa: BLE001  | body@484: return _err(f"帧渲染异常: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:549 (Exception) except Exception as exc:  # noqa: BLE001  | body@550: return _err(f"LLM 调用异常: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:564 (Exception) except Exception as exc:  # noqa: BLE001  | body@565: return _err(f"读取模型目录失败: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:629 (Exception) except Exception as exc:  # noqa: BLE001  | body@630: return _err(f"流水线异常: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:663 (Exception) except Exception as exc:  # noqa: BLE001  | body@664: return _err(f"TTS 异常: {exc}")
+      tuan_cli/ecosystem/mcp_server.py:708 (Exception) except Exception as exc:  # noqa: BLE001  | body@709: return _err(f"安全判定失败 (fail-closed): 
+      tuan_cli/ecosystem/mcp_server.py:725 (Exception) except Exception as exc:  # noqa: BLE001  | body@727: return _err(f"统一滤网裁决失败 (fail-closed)
+      tuan_cli/ecosystem/mcp_server.py:743 (Exception) except Exception as exc:  # noqa: BLE001  | body@744: return _err(f"出网/凭据裁决失败 (fail-closed
+      tuan_cli/ecosystem/mcp_server.py:762 (Exception) except Exception as exc:  # noqa: BLE001 - 兜住其它执行异常，不回显原文  | body@763: return _err(f"执行失败:
+      tuan_cli/ecosystem/mcp_server.py:818 (Exception) except Exception as exc:  # noqa: BLE001 - 工具异常必须回包而非崩溃  | body@819: return self._response
+      tuan_cli/ecosystem/mcp_server.py:845 (Exception) except Exception:  # noqa: BLE001 - 单行异常不中断服务  | body@846: resp = self._error_response(Non
       tuan_cli/ecosystem/memory_bridge.py:99 (Exception) except Exception as exc:  # noqa: BLE001  | body@100: result.errors.append(f"读取 {mem_file}
       tuan_cli/ecosystem/memory_bridge.py:115 (Exception) except Exception as exc:  # noqa: BLE001  | body@116: result.errors.append(f"读取 {user_file
       tuan_cli/ecosystem/memory_bridge.py:95 (Exception) except Exception as exc:  # noqa: BLE001  | body@96: result.errors.append(f"追加记忆失败: {exc}"
@@ -762,17 +760,18 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
 [SEC] tuan_cli/harden/crypto_provider.py:261 (Exception) except Exception:  # 非新格式 (12B nonce + AES-GCM) → 回退旧 CTR+HMAC blob  | body@262: return _a
       tuan_cli/harden/repro_build.py:119 (Exception) except Exception:  # pragma: no cover  | body@120: locked = []
       tuan_cli/harden/sbom.py:30 (Exception) except Exception:  # pragma: no cover  | body@31: _TUAN_VERSION = "0.0.0"
-      tuan_cli/hooks/lifecycle.py:360 (Exception) except Exception as exc:  # noqa: BLE001 - 绝不掀翻主流程  | body@361: _bump("errors_swallowed")
-      tuan_cli/hooks/lifecycle.py:448 (Exception) except Exception as exc:  # noqa: BLE001  | body@449: problems.append("_sanitize_payload 抛
-      tuan_cli/hooks/lifecycle.py:317 (Exception) except Exception:  # noqa: BLE001  | body@318: _bump("payload_rejected")
-      tuan_cli/hooks/manager.py:1065 (Exception) except Exception as exc:  # noqa: BLE001  | body@1066: self._audit(spec.event, spec.raw, "
-      tuan_cli/hooks/manager.py:1087 (Exception) except Exception as exc:  # noqa: BLE001  | body@1088: self._kill_tree(proc)
-      tuan_cli/hooks/nonprocess.py:241 (Exception) except Exception as exc:  # noqa: BLE001  | body@242: return _fail(spec.event, "url", "err
-      tuan_cli/hooks/nonprocess.py:378 (Exception) except Exception as exc:  # noqa: BLE001 - 执行器绝不掀翻 hook 流水线  | body@379: return _fail(even
-      tuan_cli/hooks/nonprocess.py:263 (Exception) except Exception as exc:  # noqa: BLE001  | body@264: box["exc"] = exc
+      tuan_cli/hooks/lifecycle.py:361 (Exception) except Exception as exc:  # noqa: BLE001 - 绝不掀翻主流程  | body@362: _bump("errors_swallowed")
+      tuan_cli/hooks/lifecycle.py:449 (Exception) except Exception as exc:  # noqa: BLE001  | body@450: problems.append("_sanitize_payload 抛
+      tuan_cli/hooks/lifecycle.py:318 (Exception) except Exception:  # noqa: BLE001  | body@319: _bump("payload_rejected")
+      tuan_cli/hooks/manager.py:1027 (Exception) except Exception as exc:  # noqa: BLE001  | body@1028: self._audit(spec.event, spec.raw, "
+      tuan_cli/hooks/manager.py:1084 (Exception) except Exception as exc:  # noqa: BLE001  | body@1085: d = f"{type(exc).__name__}: {exc}"
+      tuan_cli/hooks/manager.py:1108 (Exception) except Exception as exc:  # noqa: BLE001  | body@1109: self._kill_tree(proc)
+      tuan_cli/hooks/nonprocess.py:240 (Exception) except Exception as exc:  # noqa: BLE001  | body@241: return _fail(spec.event, "url", "err
+      tuan_cli/hooks/nonprocess.py:376 (Exception) except Exception as exc:  # noqa: BLE001 - 执行器绝不掀翻 hook 流水线  | body@377: return _fail(even
+      tuan_cli/hooks/nonprocess.py:261 (Exception) except Exception as exc:  # noqa: BLE001  | body@262: box["exc"] = exc
       tuan_cli/hooks/triggers.py:435 (Exception) except Exception:  # noqa: BLE001 - 会话启动不得被绑定异常掀翻  | body@436: active = False
       tuan_cli/hooks/triggers.py:448 (Exception) except Exception:  # noqa: BLE001 - 极窄；仍要精确回滚  | body@449: if token is not None:
-      tuan_cli/hooks/triggers.py:727 (Exception) except Exception as exc:  # noqa: BLE001  | body@728: return self._failed_closed(exc)
+      tuan_cli/hooks/triggers.py:722 (Exception) except Exception as exc:  # noqa: BLE001  | body@723: return self._failed_closed(exc)
       tuan_cli/i18n/__init__.py:187 (Exception) except Exception:  # noqa: BLE001  | body@188: interactive = False
       tuan_cli/i18n/__init__.py:181 (Exception) except Exception:  # noqa: BLE001  | body@182: configured = ""
       tuan_cli/kernel_patch/patch_base.py:235 (Exception) except Exception:  # noqa: BLE001  | body@236: wrapper.__name__ = getattr(original, "__nam
@@ -792,12 +791,10 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/parity_claude/superiority.py:178 (Exception) except Exception as exc:  # noqa: BLE001  | body@179: return ProbeResult(catalog.SUPERIORI
       tuan_cli/parity_claude/superiority.py:209 (Exception) except Exception as exc:  # noqa: BLE001  | body@210: return ProbeResult(catalog.SUPERIORI
       tuan_cli/parity_claude/superiority.py:231 (Exception) except Exception as exc:  # noqa: BLE001  | body@232: return ProbeResult(catalog.SUPERIORI
-      tuan_cli/parity_claude/superiority.py:276 (Exception) except Exception as exc:  # noqa: BLE001  | body@277: return ProbeResult(catalog.SUPERIORI
+      tuan_cli/parity_claude/superiority.py:274 (Exception) except Exception as exc:  # noqa: BLE001  | body@275: return ProbeResult(catalog.SUPERIORI
       tuan_cli/ports/migration_legacy/runner.py:163 (Exception) except Exception as exc:  # noqa: BLE001  | body@164: result.errors.append(f"report: {exc}
       tuan_cli/ports/migration_legacy/runner.py:168 (Exception) except Exception as exc:  # noqa: BLE001  | body@169: result.errors.append(f"marker: {exc}
       tuan_cli/ports/migration_legacy/runner.py:146 (Exception) except Exception as exc:  # noqa: BLE001  | body@147: result.mcp_written = False  # 拷贝失败: 
-      tuan_cli/runtime/acp/bridge.py:83 (Exception) except Exception:  # noqa: BLE001  | body@84: try:
-      tuan_cli/runtime/acp/bridge.py:88 (Exception) except Exception:  # noqa: BLE001  | body@89: self.hooks = None
       tuan_cli/runtime/acp/interaction_bridge.py:119 (Exception) except Exception:  | body@121: return ApprovalResponse(decision="rejected")
       tuan_cli/runtime/acp/server.py:264 (Exception) except Exception as exc:  # noqa: BLE001  | body@265: await self._write(encode_error(req_i
       tuan_cli/runtime/acp/server.py:338 (Exception) except Exception:  # noqa: BLE001 - fork 失败降级  | body@339: new_sid = None
@@ -811,42 +808,40 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/runtime/mcp/tool.py:47 (Exception) except Exception as error:  # 断线 -> 重试  | body@48: result = await _retry_after_reconnect(
       tuan_cli/runtime/providers/_http.py:149 (Exception) except Exception:  # noqa: BLE001  | body@150: body = response.text
       tuan_cli/runtime/tools/args.py:41 (Exception) except Exception as exc:  # noqa: BLE001  | body@42: return ParseToolArgsResult(data={}, p
-      tuan_cli/runtime/tools/bridge.py:169 (Exception) except Exception as exc:  # noqa: BLE001  | body@170: return ExecutableToolResult(
-      tuan_cli/runtime/tools/bridge.py:112 (Exception) except Exception:  | body@113: d = None
+      tuan_cli/runtime/tools/bridge.py:188 (Exception) except Exception as exc:  # noqa: BLE001  | body@189: return ExecutableToolResult(
+      tuan_cli/runtime/tools/bridge.py:131 (Exception) except Exception:  | body@132: d = None
       tuan_cli/runtime/tools/executor.py:261 (Exception) except Exception as exc:  # noqa: BLE001  | body@262: return PreparedTask(
       tuan_cli/runtime/tools/executor.py:197 (Exception) except Exception as exc:  # noqa: BLE001  | body@198: results.append(make_error_result(f"T
       tuan_cli/runtime/tools/executor.py:315 (Exception) except Exception as exc:  # noqa: BLE001  | body@316: return make_error_result(f'Tool "{pr
       tuan_cli/runtime/tools/permission.py:112 (Exception) except Exception:  # noqa: BLE001 - 分类器不可用时回退常规行为  | body@113: self._classifier = False
       tuan_cli/runtime/tools/scheduler.py:88 (Exception) except Exception as exc:  # noqa: BLE001  | body@89: if not scheduled.future.done():
 [SEC] tuan_cli/sandbox/backends.py:115 (Exception) except Exception:  # pragma: no cover  | body@116: ok = False
-[SEC] tuan_cli/sandbox/egress.py:198 (Exception) except Exception:  # noqa: BLE001 - 裁决对象异常时按最严处理  | body@199: network_allowed = False
-[SEC] tuan_cli/sandbox/egress_plan.py:153 (Exception) except Exception as exc:  # noqa: BLE001 - 闸门异常必须闭合  | body@154: return EgressPlan(
+[SEC] tuan_cli/sandbox/egress.py:188 (Exception) except Exception:  # noqa: BLE001 - 裁决对象异常时按最严处理  | body@189: network_allowed = False
+[SEC] tuan_cli/sandbox/egress_plan.py:151 (Exception) except Exception as exc:  # noqa: BLE001 - 闸门异常必须闭合  | body@152: return EgressPlan(
 [SEC] tuan_cli/sandbox/egress_proxy.py:104 (Exception) except Exception as exc:  # noqa: BLE001 - 闸门异常必须闭合  | body@105: proxy._audit(ProxyAuditRe
 [SEC] tuan_cli/sandbox/filters.py:310 (Exception) except Exception:  | body@311: cred_read_hard = None
 [SEC] tuan_cli/sandbox/filters.py:551 (Exception) except Exception:  # noqa: BLE001  | body@552: out = deny("extras", "扩展滤网异常, fail-closed",
 [SEC] tuan_cli/sandbox/isolation.py:346 (Exception) except Exception as exc:  # noqa: BLE001  | body@347: return ApplyResult(False, f"生成变更预览失败
 [SEC] tuan_cli/sandbox/isolation.py:352 (Exception) except Exception as exc:  # noqa: BLE001  | body@353: return ApplyResult(False, f"确认通道异常, 
 [SEC] tuan_cli/sandbox/isolation.py:363 (Exception) except Exception as exc:  # noqa: BLE001  | body@364: return ApplyResult(False, f"写回失败: {t
-[SEC] tuan_cli/sandbox/manager.py:417 (Exception) except Exception as exc:  # noqa: BLE001  | body@418: from ..core.security_utils import sa
-[SEC] tuan_cli/sandbox/manager.py:463 (Exception) except Exception as exc:  | body@464: from ..core.security_utils import safe_exception_tex
-[SEC] tuan_cli/sandbox/manager.py:523 (Exception) except Exception as exc:  # noqa: BLE001  | body@524: from ..core.security_utils import sa
-[SEC] tuan_cli/sandbox/manager.py:560 (Exception) except Exception as exc:  | body@561: from ..core.security_utils import safe_exception_tex
-[SEC] tuan_cli/sandbox/manager.py:584 (Exception) except Exception as exc:  | body@585: return SandboxExecResult(returncode=-1, backend=back
-[SEC] tuan_cli/sandbox/manager.py:620 (Exception) except Exception:  # pragma: no cover  | body@621: auditor = None
-[SEC] tuan_cli/sandbox/manager.py:627 (Exception) except Exception:  # pragma: no cover  | body@628: bus = None
-[SEC] tuan_cli/sandbox/manager.py:179 (Exception) except Exception:  | body@180: fn_args = {"command": fn_args}
-[SEC] tuan_cli/sandbox/manager.py:439 (Exception) except Exception:  | body@440: self.last_proxy_audit = []
-[SEC] tuan_cli/sandbox/manager.py:490 (Exception) except Exception as exc:  # noqa: BLE001  | body@491: from ..core.security_utils import sa
+[SEC] tuan_cli/sandbox/manager.py:192 (Exception) except Exception as exc:  # noqa: BLE001 - 检测异常必须闭合  | body@193: detected = []
+[SEC] tuan_cli/sandbox/manager.py:498 (Exception) except Exception as exc:  | body@501: return SandboxExecResult(
+[SEC] tuan_cli/sandbox/manager.py:575 (Exception) except Exception as exc:  # noqa: BLE001  | body@580: return SandboxExecResult(
+[SEC] tuan_cli/sandbox/manager.py:615 (Exception) except Exception as exc:  | body@616: return SandboxExecResult(
+[SEC] tuan_cli/sandbox/manager.py:638 (Exception) except Exception as exc:  | body@639: return SandboxExecResult(
+[SEC] tuan_cli/sandbox/manager.py:675 (Exception) except Exception:  # pragma: no cover  | body@676: auditor = None
+[SEC] tuan_cli/sandbox/manager.py:682 (Exception) except Exception:  # pragma: no cover  | body@683: bus = None
+[SEC] tuan_cli/sandbox/manager.py:250 (Exception) except Exception:  | body@251: fn_args = {"command": fn_args}
+[SEC] tuan_cli/sandbox/manager.py:543 (Exception) except Exception as exc:  # noqa: BLE001  | body@544: res.returncode = -1
       tuan_cli/self_improve/evaluator.py:189 (Exception) except Exception:  | body@191: dim_scores[dim] = 50.0
       tuan_cli/self_improve/evolution_loop.py:177 (Exception) except Exception as e:  # noqa: BLE001  | body@178: record.accepted = False
       tuan_cli/self_improve/regression_gate.py:110 (Exception) except Exception as e:  # noqa: BLE001 - 候选应用失败即回滚拒绝  | body@111: return self._reject(base
       tuan_cli/self_improve/regression_gate.py:121 (Exception) except Exception as e:  # noqa: BLE001  | body@122: return self._reject(base_total, base_d
       tuan_cli/self_improve/store.py:100 (Exception) except Exception:  | body@101: text = str(args)
       tuan_cli/skills/manager.py:175 (Exception) except Exception:  | body@176: extra = []
-      tuan_cli/stream_json/headless.py:368 (Exception) except Exception as exc:  # noqa: BLE001  | body@369: is_error = True
-      tuan_cli/stream_json/headless.py:376 (Exception) except Exception:  # noqa: BLE001  | body@377: cost = 0.0
-      tuan_cli/stream_json/headless.py:435 (Exception) except Exception as exc:  # noqa: BLE001  | body@436: sys.stderr.write(f"[headless] 启动失败: 
-      tuan_cli/stream_json/headless.py:203 (Exception) except Exception as exc:  # noqa: BLE001  | body@204: sys.stderr.write(
+      tuan_cli/stream_json/headless.py:344 (Exception) except Exception as exc:  # noqa: BLE001  | body@345: is_error = True
+      tuan_cli/stream_json/headless.py:352 (Exception) except Exception:  # noqa: BLE001  | body@353: cost = 0.0
+      tuan_cli/stream_json/headless.py:411 (Exception) except Exception as exc:  # noqa: BLE001  | body@412: sys.stderr.write(f"[headless] 启动失败: 
       tuan_cli/stream_json/translate.py:181 (Exception) except Exception as exc:  # noqa: BLE001  | body@182: sys.stderr.write(f"[translate.on_tok
       tuan_cli/stream_json/translate.py:198 (Exception) except Exception as exc:  # noqa: BLE001  | body@199: sys.stderr.write(f"[translate.on_rea
       tuan_cli/stream_json/translate.py:244 (Exception) except Exception as exc:  # noqa: BLE001  | body@245: sys.stderr.write(f"[translate.on_too
@@ -856,14 +851,13 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/superagent/store.py:64 (Exception) except Exception:  # noqa: BLE001  | body@65: self._outbox = []
       tuan_cli/superagent/watchdog.py:146 (Exception) except Exception as exc:  # noqa: BLE001  | body@147: entry["note"] = f"修复失败: {exc}"
       tuan_cli/superagent/worker.py:94 (Exception) except Exception as exc:  # noqa: BLE001  | body@95: self._error = f"{type(exc).__name__}:
-      tuan_cli/tools/base.py:586 (Exception) except Exception:  | body@587: _hd = None
-      tuan_cli/tools/base.py:828 (Exception) except Exception:  | body@829: exists = False
-      tuan_cli/tools/base.py:446 (Exception) except Exception:  | body@447: targets = None
-      tuan_cli/tools/base.py:523 (Exception) except Exception:  # noqa: BLE001 - hook 异常时安全降级, 不放行  | body@524: d = None
-      tuan_cli/tools/base.py:618 (Exception) except Exception:  | body@619: _snaps = None
-      tuan_cli/tools/base.py:852 (Exception) except Exception:  | body@853: exists = False
-      tuan_cli/tools/base.py:418 (Exception) except Exception:  # noqa: BLE001 - 分类器不可用时回退常规决策  | body@419: auto_classifier = False  # 
-      tuan_cli/tools/base.py:601 (Exception) except Exception:  | body@602: targets = None
+      tuan_cli/tools/base.py:573 (Exception) except Exception:  | body@574: _hd = None
+      tuan_cli/tools/base.py:815 (Exception) except Exception:  | body@816: exists = False
+      tuan_cli/tools/base.py:427 (Exception) except Exception:  | body@428: targets = None
+      tuan_cli/tools/base.py:605 (Exception) except Exception:  | body@606: _snaps = None
+      tuan_cli/tools/base.py:839 (Exception) except Exception:  | body@840: exists = False
+      tuan_cli/tools/base.py:399 (Exception) except Exception:  # noqa: BLE001 - 分类器不可用时回退常规决策  | body@400: auto_classifier = False  # 
+      tuan_cli/tools/base.py:588 (Exception) except Exception:  | body@589: targets = None
       tuan_cli/tools/browser.py:153 (Exception) except Exception:  # noqa: BLE001  | body@154: ChatBrowserUse = None
       tuan_cli/tools/browser.py:157 (Exception) except Exception:  # noqa: BLE001  | body@158: ChatOpenAI = None
       tuan_cli/tools/browser.py:161 (Exception) except Exception:  # noqa: BLE001  | body@162: ChatAnthropic = None
@@ -881,9 +875,9 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/tools/browser.py:112 (BaseException) except BaseException as exc:  # noqa: BLE001 - 要把真实原因带回主线程  | body@113: result["error"] = 
       tuan_cli/tools/dispatch.py:102 (Exception) except Exception:  # noqa: BLE001  | body@103: return SubAgentPool.aggregate(results, titl
       tuan_cli/tools/dynamic_workflow_tool.py:54 (Exception) except Exception as exc:  # noqa: BLE001  | body@55: return f"[错误] 创建工作流失败: {exc}"
-      tuan_cli/tools/filesystem.py:399 (Exception) except Exception as exc:  # noqa: BLE001 - 越界路径等, 都收敛进块内  | body@400: return f"{header}\n[
-      tuan_cli/tools/filesystem.py:688 (Exception) except Exception as exc:  # noqa: BLE001  | body@689: failures.append(f"{tag} ({path}): 路径
-      tuan_cli/tools/filesystem.py:466 (Exception) except Exception as exc:  # noqa: BLE001 - worker 理论上不抛, 兜底保整批不炸  | body@467: blocks.appen
+      tuan_cli/tools/filesystem.py:355 (Exception) except Exception as exc:  # noqa: BLE001 - 越界路径等, 都收敛进块内  | body@356: return f"{header}\n[
+      tuan_cli/tools/filesystem.py:650 (Exception) except Exception as exc:  # noqa: BLE001  | body@651: failures.append(f"{tag} ({path}): 路径
+      tuan_cli/tools/filesystem.py:422 (Exception) except Exception as exc:  # noqa: BLE001 - worker 理论上不抛, 兜底保整批不炸  | body@423: blocks.appen
       tuan_cli/tools/gh_borrow.py:213 (Exception) except Exception:  | body@214: snippet = ""
       tuan_cli/tools/image_gen.py:246 (Exception) except Exception as exc:  # noqa: BLE001  | body@247: return f"[image_gen] 图片解码失败: {exc}"
       tuan_cli/tools/image_gen.py:227 (Exception) except Exception:  # noqa: BLE001  | body@228: base_url = None
@@ -897,28 +891,30 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
 [SEC] tuan_cli/tools/mcp/sandbox.py:200 (Exception) except Exception as exc:  | body@201: self._kill_container(cname)
       tuan_cli/tools/mcp_tool_search.py:55 (Exception) except Exception:  # noqa: BLE001  | body@56: schema_or_text = str(schema_or_text)
       tuan_cli/tools/mcp_tool_search.py:88 (Exception) except Exception:  # noqa: BLE001  | body@89: cost = 1
-      tuan_cli/tools/permission_fusion.py:115 (Exception) except Exception as exc:  # noqa: BLE001  | body@118: store = _DenyAllMCPPolicy(
+      tuan_cli/tools/permission_fusion.py:114 (Exception) except Exception as exc:  # noqa: BLE001  | body@117: store = _DenyAllMCPPolicy(
       tuan_cli/tools/permissions.py:137 (Exception) except Exception:  # noqa: BLE001  | body@141: return PermissionDecision(
       tuan_cli/tools/pipeline.py:190 (Exception) except Exception as exc:  | body@191: return StepResult(
 [SEC] tuan_cli/tools/sandbox.py:221 (Exception) except Exception as exc:  | body@222: return f"[错误] 沙箱执行失败: {type(exc).__name__}: {exc}"
-      tuan_cli/tools/shell.py:292 (Exception) except Exception as exc:  # noqa: BLE001  | body@293: taction, treason = "deny", (f"信任级别裁决
-      tuan_cli/tools/shell.py:557 (Exception) except Exception:  # noqa: BLE001 - 无法评估按非良性处理 (fail-closed)  | body@558: benign = False
-      tuan_cli/tools/shell.py:831 (Exception) except Exception as exc:  # noqa: BLE001 - 隔离执行异常不外抛, 但也不回落  | body@832: from ..core.secur
-      tuan_cli/tools/shell.py:892 (Exception) except Exception as exc:  # noqa: BLE001  | body@893: from ..core.security_utils import sa
-      tuan_cli/tools/shell.py:932 (Exception) except Exception as exc:  # noqa: BLE001  | body@933: return f"[错误] 后台命令启动失败: {safe_except
-      tuan_cli/tools/shell.py:1012 (Exception) except Exception as exc:  # noqa: BLE001  | body@1013: return f"[错误] bg_shell 执行异常: {safe_
-      tuan_cli/tools/shell.py:879 (Exception) except Exception:  # noqa: BLE001  | body@880: out, err = "", ""
-      tuan_cli/tools/subagent_tool.py:223 (Exception) except Exception as exc:  # noqa: BLE001  | body@224: return f"[子代理错误] {type(exc).__name__
+      tuan_cli/tools/shell.py:667 (Exception) except Exception as exc:  # noqa: BLE001 - 隔离执行异常不外抛, 但也不回落  | body@668: return f"[错误] 沙箱隔
+      tuan_cli/tools/shell.py:737 (Exception) except Exception as exc:  # noqa: BLE001  | body@738: return f"[错误] shell 执行异常: {safe_exce
+      tuan_cli/tools/shell.py:789 (Exception) except Exception as exc:  # noqa: BLE001  | body@790: return f"[错误] 后台命令启动失败: {safe_except
+      tuan_cli/tools/shell.py:869 (Exception) except Exception as exc:  # noqa: BLE001  | body@870: return f"[错误] bg_shell 执行异常: {safe_e
+      tuan_cli/tools/shell.py:272 (Exception) except Exception as exc:  # noqa: BLE001  | body@273: taction, treason = ("deny",
+      tuan_cli/tools/shell.py:491 (Exception) except Exception:  # noqa: BLE001 - 无法评估按非良性处理 (fail-closed)  | body@492: benign = False
+      tuan_cli/tools/shell.py:284 (Exception) except Exception:  # noqa: BLE001  | body@285: return f"[已拦截] 确认通道异常, {trust_level} 工作区禁止执
+      tuan_cli/tools/shell.py:509 (Exception) except Exception:  # noqa: BLE001  | body@510: return f"[已拦截] 严格模式确认通道异常, 保守拒绝执行: {command
+      tuan_cli/tools/shell.py:724 (Exception) except Exception:  # noqa: BLE001  | body@725: out, err = "", ""
+      tuan_cli/tools/subagent_tool.py:226 (Exception) except Exception as exc:  # noqa: BLE001  | body@227: return f"[子代理错误] {type(exc).__name__
       tuan_cli/tools/team_tool.py:65 (Exception) except Exception as exc:  # noqa: BLE001  | body@66: return f"[错误] 共享笔记失败: {type(exc).__na
       tuan_cli/tools/team_tool.py:118 (Exception) except Exception as exc:  # noqa: BLE001  | body@119: return f"[错误] 发布更新失败: {type(exc).__n
       tuan_cli/tools/team_tool.py:161 (Exception) except Exception:  # noqa: BLE001  | body@162: ts = "?"
       tuan_cli/tools/team_tool.py:209 (Exception) except Exception as exc:  # noqa: BLE001  | body@210: return f"[错误] 读取更新失败: {type(exc).__n
       tuan_cli/tools/team_tool.py:261 (Exception) except Exception as exc:  # noqa: BLE001  | body@262: return f"[错误] 列出成员失败: {type(exc).__n
-      tuan_cli/tools/todo_tool.py:117 (Exception) except Exception as exc:  # noqa: BLE001  | body@118: return f"任务清单已更新 ({sum(1 for t in cl
+      tuan_cli/tools/todo_tool.py:126 (Exception) except Exception as exc:  # noqa: BLE001  | body@127: return f"任务清单已更新 ({sum(1 for t in cl
       tuan_cli/tools/web.py:109 (Exception) except Exception as exc:  # noqa: BLE001  | body@110: return f"[web_fetch] URL 校验失败: {type
       tuan_cli/tools/web.py:497 (Exception) except Exception as exc:  # noqa: BLE001  | body@498: return f"[web_fetch] 抓取失败: {type(exc
       tuan_cli/tools/web.py:344 (Exception) except Exception as exc:  # noqa: BLE001  | body@345: if not results:
-      tuan_cli/tools/workflow_tool.py:166 (Exception) except Exception as exc:  # noqa: BLE001  | body@167: answer = f"[子任务错误] {type(exc).__name
+      tuan_cli/tools/workflow_tool.py:168 (Exception) except Exception as exc:  # noqa: BLE001  | body@169: return f"[子任务错误] {type(exc).__name__
       tuan_cli/tools/workflow_tool.py:114 (Exception) except Exception as exc:  # noqa: BLE001  | body@115: result = f"[子任务超时/错误] {type(exc).__n
       tuan_cli/tui/codexkit/__init__.py:121 (Exception) except Exception as exc:  # noqa: BLE001  | body@122: problems.append("既有安全接线校验不可用: %s" % 
       tuan_cli/tui/codexkit/__init__.py:111 (Exception) except Exception as exc:  # noqa: BLE001  | body@112: problems.append("%s: raised %s" % (m
@@ -961,11 +957,13 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/tui/parity/__init__.py:26 (Exception) except Exception as exc:  # noqa: BLE001 - 报告不能因可选层失败而崩  | body@27: ik = {"error": f"{type
       tuan_cli/tui/parity/__init__.py:31 (Exception) except Exception as exc:  # noqa: BLE001  | body@32: ck = {"error": f"{type(exc).__name__}
       tuan_cli/tui/parity/__init__.py:36 (Exception) except Exception as exc:  # noqa: BLE001  | body@37: cfk = {"error": f"{type(exc).__name__
-      tuan_cli/tui/parity/__init__.py:58 (Exception) except Exception as exc:  # noqa: BLE001  | body@59: problems.append(f"keymap defaults 不可用
-      tuan_cli/tui/parity/__init__.py:66 (Exception) except Exception as exc:  # noqa: BLE001  | body@67: problems.append(f"inputkit 自检不可用: {ty
-      tuan_cli/tui/parity/__init__.py:71 (Exception) except Exception as exc:  # noqa: BLE001  | body@72: problems.append(f"corekit 自检不可用: {typ
-      tuan_cli/tui/parity/__init__.py:76 (Exception) except Exception as exc:  # noqa: BLE001  | body@77: problems.append(f"configkit 自检不可用: {t
-      tuan_cli/tui/parity/depth.py:112 (Exception) except Exception as exc:  # noqa: BLE001 - 探针异常即不通过  | body@113: return ProbeResult(module
+      tuan_cli/tui/parity/__init__.py:41 (Exception) except Exception as exc:  # noqa: BLE001  | body@42: cxk = {"error": f"{type(exc).__name__
+      tuan_cli/tui/parity/__init__.py:64 (Exception) except Exception as exc:  # noqa: BLE001  | body@65: problems.append(f"keymap defaults 不可用
+      tuan_cli/tui/parity/__init__.py:72 (Exception) except Exception as exc:  # noqa: BLE001  | body@73: problems.append(f"inputkit 自检不可用: {ty
+      tuan_cli/tui/parity/__init__.py:77 (Exception) except Exception as exc:  # noqa: BLE001  | body@78: problems.append(f"corekit 自检不可用: {typ
+      tuan_cli/tui/parity/__init__.py:82 (Exception) except Exception as exc:  # noqa: BLE001  | body@83: problems.append(f"configkit 自检不可用: {t
+      tuan_cli/tui/parity/__init__.py:88 (Exception) except Exception as exc:  # noqa: BLE001  | body@89: problems.append(f"codexkit 自检不可用: {ty
+      tuan_cli/tui/parity/depth.py:113 (Exception) except Exception as exc:  # noqa: BLE001 - 探针异常即不通过  | body@114: return ProbeResult(module
       tuan_cli/tui/render.py:228 (Exception) except Exception:  # noqa: BLE001  | body@229: rows = [("class:textdim", "  MCP 状态不可用")]
       tuan_cli/tui/render.py:534 (Exception) except Exception:  | body@535: label = mode
       tuan_cli/tui/render.py:540 (Exception) except Exception:  | body@541: level = ""
@@ -981,10 +979,42 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/tui/state.py:1398 (Exception) except Exception as exc:  # noqa: BLE001  | body@1399: self.append_log(f"[信任确认回调] {type(ex
       tuan_cli/tui/state.py:923 (Exception) except Exception:  | body@925: self._mode = "standard"
       tuan_cli/tui/state.py:1333 (BaseException) except BaseException:  | body@1334: _rt.print_exc()
-      tuan_cli/tui/tui.py:39 (Exception) except Exception:  # noqa: BLE001  | body@40: _wcswidth_impl = None  # type: ignore[assign
-      tuan_cli/tui/tui.py:96 (Exception) except Exception:  | body@100: _HAS_PT = False
-      tuan_cli/tui/tui.py:201 (Exception) except Exception:  # noqa: BLE001  | body@202: VERSION = "v?.?.?"  # import 失败兜底, 避免硬编码版本漂
-      tuan_cli/tui/tui.py:413 (Exception) except Exception:  | body@414: return len(text)
+      tuan_cli/tui/tui.py:26 (Exception) except Exception:  # noqa: BLE001  | body@27: _wcswidth_impl = None  # type: ignore[assign
+      tuan_cli/tui/tui.py:90 (Exception) except Exception:  | body@94: _HAS_PT = False
+      tuan_cli/tui/tui.py:195 (Exception) except Exception:  # noqa: BLE001  | body@196: VERSION = "v?.?.?"  # import 失败兜底, 避免硬编码版本漂
+      tuan_cli/tui/tui.py:1045 (Exception) except Exception as exc:  # noqa: BLE001  | body@1046: self._toast = f"复制失败: {exc}"
+      tuan_cli/tui/tui.py:1437 (Exception) except Exception as exc:  # noqa: BLE001 - 面板失败不能影响主界面  | body@1438: self._diff_error = t(
+      tuan_cli/tui/tui.py:1560 (Exception) except Exception as exc:  # noqa: BLE001  | body@1561: self._audit_log.append(("class:erro
+      tuan_cli/tui/tui.py:1622 (Exception) except Exception as exc:  # noqa: BLE001  | body@1623: self.append_log(f"[会话] 恢复失败: {exc}"
+      tuan_cli/tui/tui.py:1637 (Exception) except Exception as exc:  # noqa: BLE001  | body@1638: self._audit_log.append(("class:erro
+      tuan_cli/tui/tui.py:1695 (Exception) except Exception as exc:  # noqa: BLE001  | body@1696: model.flash_message(f"停止失败: {exc}")
+      tuan_cli/tui/tui.py:1748 (Exception) except Exception:  # noqa: BLE001  | body@1749: rows = [("class:textdim", "  MCP 状态不可用")]
+      tuan_cli/tui/tui.py:1764 (Exception) except Exception:  | body@1765: rows = 0
+      tuan_cli/tui/tui.py:1777 (Exception) except Exception:  | body@1778: cols = 0
+      tuan_cli/tui/tui.py:1795 (Exception) except Exception:  | body@1796: m = 0
+      tuan_cli/tui/tui.py:1801 (Exception) except Exception:  | body@1802: cols = 0
+      tuan_cli/tui/tui.py:1824 (Exception) except Exception:  | body@1825: rows = 0
+      tuan_cli/tui/tui.py:1857 (Exception) except Exception:  | body@1858: m = 0
+      tuan_cli/tui/tui.py:3323 (Exception) except Exception:  | body@3324: label = mode
+      tuan_cli/tui/tui.py:3329 (Exception) except Exception:  | body@3330: level = ""
+      tuan_cli/tui/tui.py:3384 (Exception) except Exception:  # noqa: BLE001  | body@3385: configured = None
+      tuan_cli/tui/tui.py:3553 (Exception) except Exception:  # noqa: BLE001 - 面板失败绝不影响 Agent 循环  | body@3554: self.append_log(
+      tuan_cli/tui/tui.py:3770 (Exception) except Exception as exc:  | body@3771: self.append_log(f"[错误] {type(exc).__name__}: {exc}"
+      tuan_cli/tui/tui.py:3870 (Exception) except Exception:  # noqa: BLE001  | body@3872: try:
+      tuan_cli/tui/tui.py:3967 (Exception) except Exception:  # noqa: BLE001  | body@3968: sealed = ()
+      tuan_cli/tui/tui.py:4056 (Exception) except Exception:  | body@4057: tokens = [(_PToken.Text, code)]
+      tuan_cli/tui/tui.py:4579 (Exception) except Exception:  | body@4580: self._git_branch_cache = ""
+      tuan_cli/tui/tui.py:1735 (Exception) except Exception:  # noqa: BLE001  | body@1736: self._mcp_servers = []
+      tuan_cli/tui/tui.py:1769 (Exception) except Exception:  | body@1770: rows = 24
+      tuan_cli/tui/tui.py:1782 (Exception) except Exception:  | body@1783: cols = 80
+      tuan_cli/tui/tui.py:1806 (Exception) except Exception:  | body@1807: cols = 80
+      tuan_cli/tui/tui.py:1829 (Exception) except Exception:  | body@1830: rows = 24
+      tuan_cli/tui/tui.py:1837 (Exception) except Exception:  | body@1838: budget -= _SLASH_MAX_VISIBLE + 1
+      tuan_cli/tui/tui.py:4632 (Exception) except Exception as exc:  # noqa: BLE001  | body@4633: self.append_log(f"[信任确认回调] {type(ex
+      tuan_cli/tui/tui.py:4829 (Exception) except Exception:  # noqa: BLE001 - 极端字符宽度探测失败按 1 列  | body@4830: w = 1
+      tuan_cli/tui/tui.py:3295 (Exception) except Exception:  | body@3297: self._mode = "standard"
+      tuan_cli/tui/tui.py:3877 (Exception) except Exception:  # noqa: BLE001  | body@3878: safe_event, kd = "<invalid-event>", "sanit
+      tuan_cli/tui/tui.py:3834 (BaseException) except BaseException:  | body@3835: _rt.print_exc()
       tuan_cli/tui/win_compat.py:24 (Exception) except Exception:  # pragma: no cover - 非 Windows / ctypes 不可用  | body@25: _HAVE_CTYPES = 
       tuan_cli/ui/approval_overlay.py:135 (Exception) except Exception:  # noqa: BLE001  | body@136: w += 1
       tuan_cli/ui/fullscreen.py:96 (Exception) except Exception:  | body@97: output = DummyOutput()
@@ -994,7 +1024,7 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/ui/repl.py:462 (Exception) except Exception:  | body@463: self._print_keymap_fallback()
       tuan_cli/ui/repl.py:469 (Exception) except Exception:  | body@470: self._print_keymap_fallback()
       tuan_cli/ui/repl.py:515 (Exception) except Exception:  | body@516: self._print_keymap_fallback()
-      tuan_cli/ui/slogans/picker.py:133 (Exception) except Exception:  # noqa: BLE001  | body@134: _MODULE_NAMES = {}
+      tuan_cli/ui/slogans/picker.py:132 (Exception) except Exception:  # noqa: BLE001  | body@133: _MODULE_NAMES = {}
       tuan_cli/ui/splash.py:106 (Exception) except Exception:  | body@107: self._app = None
       tuan_cli/ui/tui_bridge.py:121 (Exception) except Exception:  # noqa: BLE001  | body@122: from ..core.whitelist import interactive_co
       tuan_cli/web/code_anim_render.py:482 (Exception) except Exception:  # noqa: BLE001 - 旧 PIL 无 rounded_rectangle  | body@483: draw.rectangle(
@@ -1076,16 +1106,18 @@ tuan_cli/agents/base.py:231 (Exception) except Exception as exc:  | body@232: lo
 tuan_cli/agents/base.py:239 (Exception) except Exception as exc:  | body@240: log.warning("AgentAdapter._probe_version(): 非致命异常已忽略
 tuan_cli/agents/base.py:391 (Exception) except Exception as exc:  | body@392: log.warning("AgentAdapter.run(): 非致命异常已忽略(设计内降级, 不改控
 tuan_cli/app.py:165 (Exception) except Exception:  # noqa: BLE001 - 合并失败不影响核心可用  | body@166: logger.debug("工具合并失败", exc_in
+tuan_cli/app.py:285 (Exception) except Exception as exc:  # noqa: BLE001  | body@286: logger.warning("create_agent(): 非致命异
+tuan_cli/app.py:312 (Exception) except Exception as exc:  # noqa: BLE001  | body@313: logger.warning("create_agent(): 非致命异
 tuan_cli/app.py:144 (Exception) except Exception:  # noqa: BLE001 - 生态插件失败不影响核心启动  | body@145: logger.debug("EcosystemPlug
-tuan_cli/app.py:280 (Exception) except Exception as exc:  # noqa: BLE001  | body@281: logger.debug("自定义斜杠命令安装失败: %s", exc)
-tuan_cli/arch/context.py:91 (Exception) except Exception as exc:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed  | body@92: 
-tuan_cli/arch/context.py:104 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常（动作已发生）  | body@105: log.warning("TieredC
-tuan_cli/arch/execution.py:678 (Exception) except Exception as exc:  # noqa: BLE001  | body@679: log.warning("LoopProviderBridge.on_t
-tuan_cli/arch/execution.py:693 (Exception) except Exception as exc:  # noqa: BLE001  | body@694: log.warning("LoopProviderBridge.on_t
+tuan_cli/app.py:323 (Exception) except Exception as exc:  # noqa: BLE001  | body@324: logger.debug("自定义斜杠命令安装失败: %s", exc)
+tuan_cli/arch/context.py:94 (Exception) except Exception as exc:  # noqa: BLE001  | body@100: log.debug("TieredContext._maybe_comp
+tuan_cli/arch/context.py:117 (Exception) except Exception as exc:  # noqa: BLE001  | body@118: log.warning("TieredContext._maybe_co
+tuan_cli/arch/execution.py:676 (Exception) except Exception as exc:  # noqa: BLE001  | body@677: log.warning("LoopProviderBridge.on_t
+tuan_cli/arch/execution.py:691 (Exception) except Exception as exc:  # noqa: BLE001  | body@692: log.warning("LoopProviderBridge.on_t
 tuan_cli/arch/execution.py:112 (Exception) except Exception as exc:  # noqa: BLE001  | body@113: if len(self._middleware_errors) < se
 tuan_cli/arch/execution.py:136 (Exception) except Exception as exc:  # noqa: BLE001  | body@137: if len(self._handler_errors) < self.
-tuan_cli/arch/execution.py:455 (Exception) except Exception as exc:  | body@456: log.warning("ToolPipeline.run(): 非致命异常已忽略(设计内降级, 不改控
-tuan_cli/arch/execution.py:488 (Exception) except Exception as exc:  | body@489: log.warning("ToolPipeline._audit(): 非致命异常已忽略(设计内降级, 
+tuan_cli/arch/execution.py:453 (Exception) except Exception as exc:  | body@454: log.warning("ToolPipeline.run(): 非致命异常已忽略(设计内降级, 不改控
+tuan_cli/arch/execution.py:486 (Exception) except Exception as exc:  | body@487: log.warning("ToolPipeline._audit(): 非致命异常已忽略(设计内降级, 
 tuan_cli/arch/orchestration.py:430 (Exception) except Exception as exc:  # noqa: BLE001  | body@431: _log_exec.warning("kernel_executor: 
 tuan_cli/arch/orchestration.py:444 (Exception) except Exception as exc:  # noqa: BLE001  | body@445: _log_exec.warning("kernel_executor: 
 tuan_cli/arch/orchestration.py:477 (Exception) except Exception as exc:  # noqa: BLE001  | body@478: log.warning("_exec(): 非致命异常已忽略(设计内降级
@@ -1097,14 +1129,14 @@ tuan_cli/arch/orchestration.py:474 (Exception) except Exception as exc:  # noqa:
 tuan_cli/arch/platform.py:234 (Exception) except Exception as exc:  | body@235: log.warning("_terminate_job_tree(): 非致命异常已忽略(设计内降级, 
 tuan_cli/arch/platform.py:246 (Exception) except Exception as exc:  | body@247: log.warning("_terminate_job_tree(): 非致命异常已忽略(设计内降级, 
 tuan_cli/arch/platform.py:252 (Exception) except Exception as exc:  | body@253: log.warning("_terminate_job_tree(): 非致命异常已忽略(设计内降级, 
-tuan_cli/arch/platform.py:333 (Exception) except Exception as exc:  | body@334: log.warning("_windows_job_object_sandbox(): 非致命异常已忽略
-tuan_cli/arch/platform.py:362 (Exception) except Exception as exc:  | body@363: log.warning("_linux_seccomp_sandbox(): 非致命异常已忽略(设计内降
-tuan_cli/arch/platform.py:468 (Exception) except Exception as exc:  | body@470: log.warning("run_syscall_sandboxed(): 非致命异常已忽略(设计内降级
-tuan_cli/arch/platform.py:510 (Exception) except Exception:  | body@512: import resource
-tuan_cli/arch/platform.py:372 (Exception) except Exception as exc:  | body@373: log.warning("_linux_seccomp_sandbox(): 非致命异常已忽略(设计内降
-tuan_cli/arch/platform.py:379 (Exception) except Exception as exc:  | body@380: log.warning("_linux_seccomp_sandbox(): 非致命异常已忽略(设计内降
-tuan_cli/arch/platform.py:519 (Exception) except Exception as exc:  | body@520: log.warning("run_syscall_sandboxed(): 非致命异常已忽略(设计内降级
-tuan_cli/arch/platform.py:524 (Exception) except Exception as exc:  | body@525: log.warning("run_syscall_sandboxed(): 非致命异常已忽略(设计内降级
+tuan_cli/arch/platform.py:332 (Exception) except Exception as exc:  | body@333: log.warning("_windows_job_object_sandbox(): 非致命异常已忽略
+tuan_cli/arch/platform.py:361 (Exception) except Exception as exc:  | body@362: log.warning("_linux_seccomp_sandbox(): 非致命异常已忽略(设计内降
+tuan_cli/arch/platform.py:475 (Exception) except Exception as exc:  | body@477: log.warning("run_syscall_sandboxed(): 非致命异常已忽略(设计内降级
+tuan_cli/arch/platform.py:516 (Exception) except Exception:  | body@518: import resource
+tuan_cli/arch/platform.py:371 (Exception) except Exception as exc:  | body@372: log.warning("_linux_seccomp_sandbox(): 非致命异常已忽略(设计内降
+tuan_cli/arch/platform.py:378 (Exception) except Exception as exc:  | body@379: log.warning("_linux_seccomp_sandbox(): 非致命异常已忽略(设计内降
+tuan_cli/arch/platform.py:525 (Exception) except Exception as exc:  | body@526: log.warning("run_syscall_sandboxed(): 非致命异常已忽略(设计内降级
+tuan_cli/arch/platform.py:530 (Exception) except Exception as exc:  | body@531: log.warning("run_syscall_sandboxed(): 非致命异常已忽略(设计内降级
 tuan_cli/cli/__init__.py:36 (Exception) except Exception as exc:  # noqa: BLE001  | body@37: log.debug("_reject_legacy_command_nam
 tuan_cli/cli/__init__.py:70 (Exception) except Exception as exc:  # noqa: BLE001 - 位置选择不可阻塞启动  | body@71: log.warning("_enter_defa
 tuan_cli/cli/cmd_acp.py:52 (Exception) except Exception as exc:  # noqa: BLE001  | body@53: log.warning("_get_slash_commands(): 非
@@ -1122,22 +1154,22 @@ tuan_cli/cli/cmd_agents_view.py:252 (Exception) except Exception as exc:  # noqa
 tuan_cli/cli/cmd_bang.py:75 (Exception) except Exception as exc:  # noqa: BLE001 - 注入失败不应阻断命令本身的展示  | body@76: log.warning("run_ba
 tuan_cli/cli/cmd_chat.py:196 (Exception) except Exception as exc:  # noqa: BLE001 - 语言预置绝不阻断 TUI 启动  | body@197: log.warning("_pres
 tuan_cli/cli/cmd_chat.py:221 (Exception) except Exception as exc:  # noqa: BLE001  | body@222: log.warning("_prepare_agent(): 非致命异常
-tuan_cli/cli/cmd_chat.py:603 (Exception) except Exception as exc:  # noqa: BLE001 - 关闭失败不阻断 CLI 退出  | body@604: log.debug("会话注销失败 (
-tuan_cli/cli/cmd_chat.py:618 (Exception) except Exception as exc:  # noqa: BLE001  | body@619: log.warning("_security_alerter(): 非致
-tuan_cli/cli/cmd_chat.py:635 (Exception) except Exception as exc:  # noqa: BLE001  | body@636: log.warning("_setup_security_alerts(
-tuan_cli/cli/cmd_chat.py:709 (Exception) except Exception as exc:  # noqa: BLE001  | body@710: log.warning("_run_turn(): 非致命异常已忽略(设
-tuan_cli/cli/cmd_chat.py:789 (Exception) except Exception as exc:  # noqa: BLE001  | body@790: log.debug("_maybe_auto_handoff(): 非致
-tuan_cli/cli/cmd_chat.py:797 (Exception) except Exception as exc:  | body@798: log.debug("_parse_args(): 非致命异常已忽略(设计内降级, 不改控制流): %s
-tuan_cli/cli/cmd_chat.py:535 (BaseException) except BaseException as exc:  | body@536: import traceback as _tb2
-tuan_cli/cli/cmd_chat.py:590 (Exception) except Exception as exc:  # noqa: BLE001  | body@591: log.debug("会话钩子 %s 执行失败: %s", event,
-tuan_cli/cli/cmd_chat.py:400 (Exception) except Exception as exc:  | body@401: log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
-tuan_cli/cli/cmd_chat.py:411 (Exception) except Exception as exc:  # noqa: BLE001 - 观察失败不阻断对话  | body@412: log.warning("cmd_chat():
-tuan_cli/cli/cmd_chat.py:433 (Exception) except Exception as exc:  | body@434: log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
-tuan_cli/cli/cmd_chat.py:440 (Exception) except Exception as exc:  | body@441: log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
-tuan_cli/cli/cmd_chat.py:518 (Exception) except Exception as exc:  # noqa: BLE001  | body@519: log.warning("cmd_chat(): 非致命异常已忽略(设计
-tuan_cli/cli/cmd_chat.py:560 (Exception) except Exception as exc:  | body@561: log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
-tuan_cli/cli/cmd_chat.py:499 (Exception) except Exception as exc:  # noqa: BLE001  | body@500: log.warning("cmd_chat(): 非致命异常已忽略(设计
-tuan_cli/cli/cmd_chat.py:512 (Exception) except Exception as exc:  # noqa: BLE001  | body@513: log.warning("cmd_chat(): 非致命异常已忽略(设计
+tuan_cli/cli/cmd_chat.py:585 (Exception) except Exception as exc:  # noqa: BLE001 - 关闭路径不得掀翻 CLI 退出  | body@586: log.warning("_clos
+tuan_cli/cli/cmd_chat.py:611 (Exception) except Exception as exc:  # noqa: BLE001  | body@612: log.warning("_security_alerter(): 非致
+tuan_cli/cli/cmd_chat.py:628 (Exception) except Exception as exc:  # noqa: BLE001  | body@629: log.warning("_setup_security_alerts(
+tuan_cli/cli/cmd_chat.py:702 (Exception) except Exception as exc:  # noqa: BLE001  | body@703: log.warning("_run_turn(): 非致命异常已忽略(设
+tuan_cli/cli/cmd_chat.py:782 (Exception) except Exception as exc:  # noqa: BLE001  | body@783: log.debug("_maybe_auto_handoff(): 非致
+tuan_cli/cli/cmd_chat.py:790 (Exception) except Exception as exc:  | body@791: log.debug("_parse_args(): 非致命异常已忽略(设计内降级, 不改控制流): %s
+tuan_cli/cli/cmd_chat.py:519 (BaseException) except BaseException as exc:  | body@520: import traceback as _tb2
+tuan_cli/cli/cmd_chat.py:597 (Exception) except Exception as exc:  # noqa: BLE001  | body@598: log.debug("会话钩子 %s 执行失败: %s", event,
+tuan_cli/cli/cmd_chat.py:384 (Exception) except Exception as exc:  | body@385: log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
+tuan_cli/cli/cmd_chat.py:395 (Exception) except Exception as exc:  # noqa: BLE001 - 观察失败不阻断对话  | body@396: log.warning("cmd_chat():
+tuan_cli/cli/cmd_chat.py:417 (Exception) except Exception as exc:  | body@418: log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
+tuan_cli/cli/cmd_chat.py:424 (Exception) except Exception as exc:  | body@425: log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
+tuan_cli/cli/cmd_chat.py:502 (Exception) except Exception as exc:  # noqa: BLE001  | body@503: log.warning("cmd_chat(): 非致命异常已忽略(设计
+tuan_cli/cli/cmd_chat.py:544 (Exception) except Exception as exc:  | body@545: log.warning("cmd_chat(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
+tuan_cli/cli/cmd_chat.py:483 (Exception) except Exception as exc:  # noqa: BLE001  | body@484: log.warning("cmd_chat(): 非致命异常已忽略(设计
+tuan_cli/cli/cmd_chat.py:496 (Exception) except Exception as exc:  # noqa: BLE001  | body@497: log.warning("cmd_chat(): 非致命异常已忽略(设计
 tuan_cli/cli/cmd_cost.py:48 (Exception) except Exception as exc:  # noqa: BLE001  | body@49: log.debug("_load_history(): 非致命异常已忽略(
 tuan_cli/cli/cmd_cost.py:45 (Exception) except Exception as exc:  # noqa: BLE001 - 坏行跳过  | body@46: log.debug("_load_history(): 非致
 tuan_cli/cli/cmd_diff.py:100 (Exception) except Exception as exc:  # noqa: BLE001  | body@101: log.warning("_summarize(): 非致命异常已忽略(
@@ -1146,7 +1178,6 @@ tuan_cli/cli/cmd_doctor.py:62 (Exception) except Exception as exc:  # noqa: BLE0
 tuan_cli/cli/cmd_doctor.py:218 (Exception) except Exception as exc:  # noqa: BLE001 - packaging 可选 / 版本号解析失败  | body@219: log.warning
 tuan_cli/cli/cmd_doctor.py:568 (Exception) except Exception as exc:  # noqa: BLE001  | body@569: log.warning("_check_network(): 非致命异常
 tuan_cli/cli/cmd_help.py:250 (Exception) except Exception as exc:  | body@251: log.warning("_show_quickstart(): 非致命异常已忽略(设计内降级, 不改控
-tuan_cli/cli/cmd_hooks.py:133 (Exception) except Exception as exc:  | body@134: log.debug("_lookup_tool_schema(): 非致命异常已忽略(设计内降级, 不改
 tuan_cli/cli/cmd_kernel.py:34 (Exception) except Exception as exc:  # noqa: BLE001  | body@35: log.warning("_get_kernel(): 非致命异常已忽略(
 tuan_cli/cli/cmd_loop.py:165 (Exception) except Exception as exc:  # noqa: BLE001  | body@166: log.debug("_safe_nudge(): 非致命异常已忽略(设
 tuan_cli/cli/cmd_mcp_cli.py:63 (Exception) except Exception as exc:  # noqa: BLE001  | body@64: log.warning("_mcp_list(): 非致命异常已忽略(设计
@@ -1159,40 +1190,38 @@ tuan_cli/cli/cmd_safe.py:764 (Exception) except Exception as exc:  # noqa: BLE00
 tuan_cli/cli/cmd_safe.py:789 (Exception) except Exception as exc:  # noqa: BLE001  | body@790: log.debug("_cmd_report(): 非致命异常已忽略(设
 tuan_cli/cli/cmd_session_export.py:93 (Exception) except Exception as exc:  # noqa: BLE001  | body@94: log.warning("export_session_zip(): 非致
 tuan_cli/cli/cmd_session_export.py:34 (Exception) except Exception as exc:  # noqa: BLE001 - 损坏行跳过  | body@35: log.debug("_read_records(): 非
-tuan_cli/cli/cmd_setup.py:115 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常  | body@116: log.warning("cmd_setup(): 非
-tuan_cli/cli/cmd_setup.py:286 (Exception) except Exception as exc:  # noqa: BLE001  | body@287: log.warning("_wizard_first_run(): 非致
-tuan_cli/cli/cmd_setup.py:657 (Exception) except Exception as exc:  # noqa: BLE001  | body@658: log.debug("读取编辑器配置失败: %s", exc)
-tuan_cli/cli/cmd_setup.py:106 (Exception) except Exception as exc:  # noqa: BLE001 - 标记写失败不影响跳过语义  | body@107: log.warning("cmd_setu
+tuan_cli/cli/cmd_setup.py:118 (Exception) except Exception as exc:  # noqa: BLE001  | body@119: log.warning("cmd_setup(): 非致命异常已忽略(设
+tuan_cli/cli/cmd_setup.py:289 (Exception) except Exception as exc:  # noqa: BLE001  | body@290: log.warning("_wizard_first_run(): 非致
+tuan_cli/cli/cmd_setup.py:660 (Exception) except Exception as exc:  # noqa: BLE001  | body@661: log.debug("读取编辑器配置失败: %s", exc)
+tuan_cli/cli/cmd_setup.py:105 (Exception) except Exception as exc:  # noqa: BLE001 - 标记写失败不影响跳过语义  | body@106: log.warning("cmd_setu
 tuan_cli/cli/cmd_skills.py:49 (Exception) except Exception as exc:  # noqa: BLE001  | body@50: log.debug("_find_skill_manager(): 非致命
-tuan_cli/cli/cmd_slash.py:309 (Exception) except Exception as exc:  # noqa: BLE001  | body@310: log.warning("list_slash_commands(): 
-tuan_cli/cli/cmd_slash.py:391 (Exception) except Exception as exc:  | body@392: log.warning("_cmd_status(): 非致命异常已忽略(设计内降级, 不改控制流): 
-tuan_cli/cli/cmd_slash.py:457 (Exception) except Exception as exc:  # noqa: BLE001  | body@458: log.warning("_cmd_budget(): 非致命异常已忽略
-tuan_cli/cli/cmd_slash.py:586 (Exception) except Exception as exc:  # noqa: BLE001  | body@587: ui.error(f"Web 工作台启动失败: {exc}")
-tuan_cli/cli/cmd_slash.py:601 (Exception) except Exception as exc:  # noqa: BLE001  | body@602: ui.error(f"代码检索失败: {exc}")
-tuan_cli/cli/cmd_slash.py:680 (Exception) except Exception as exc:  # noqa: BLE001  | body@681: ui.error(f"/agents 失败: {exc}")
-tuan_cli/cli/cmd_slash.py:1090 (Exception) except Exception:  # noqa: BLE001  | body@1091: ui.info("  暂无工具调用记录。")
-tuan_cli/cli/cmd_slash.py:1188 (Exception) except Exception as exc:  # noqa: BLE001  | body@1189: log.warning("_cmd_language(): 非致命异常
-tuan_cli/cli/cmd_slash.py:337 (Exception) except Exception as exc:  # noqa: BLE001  | body@338: ui.error(f"  参数 JSON 解析失败: {exc}")
-tuan_cli/cli/cmd_slash.py:524 (Exception) except Exception as exc:  | body@525: log.warning("_cmd_add_dir(): 非致命异常已忽略(设计内降级, 不改控制流):
-tuan_cli/cli/cmd_slash.py:1209 (Exception) except Exception:  # noqa: BLE001 - 回退到静态帮助文本  | body@1210: ui.info(_HELP)
-tuan_cli/cli/cmd_slash.py:737 (Exception) except Exception as exc:  # noqa: BLE001  | body@738: log.warning("_cmd_team(): 非致命异常已忽略(设
-tuan_cli/cli/cmd_slash.py:1085 (Exception) except Exception as exc:  # noqa: BLE001  | body@1086: log.debug("_cmd_log(): 非致命异常已忽略(设计内
-tuan_cli/cli/cmd_slash_claude.py:160 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常  | body@161: log.warning("cmd_cd(): 非致命异
-tuan_cli/cli/cmd_slash_claude.py:177 (Exception) except Exception as exc:  # noqa: BLE001  | body@178: ui.error(f"旁问失败: {exc}")
-tuan_cli/cli/cmd_slash_claude.py:221 (Exception) except Exception as exc:  # noqa: BLE001  | body@222: ui.error(f"复制失败: {exc}")
-tuan_cli/cli/cmd_slash_claude.py:233 (Exception) except Exception as exc:  # noqa: BLE001  | body@234: ui.error(f"后台运行器不可用: {exc}")
-tuan_cli/cli/cmd_slash_claude.py:308 (Exception) except Exception as exc:  # noqa: BLE001  | body@309: ui.error(f"后台启动失败: {exc}")
-tuan_cli/cli/cmd_slash_claude.py:332 (Exception) except Exception as exc:  # noqa: BLE001  | body@333: ui.error(f"后台运行器不可用: {exc}")
-tuan_cli/cli/cmd_slash_claude.py:560 (Exception) except Exception as exc:  # noqa: BLE001  | body@561: ui.error(f"评审失败: {exc}")
-tuan_cli/cli/cmd_slash_claude.py:581 (Exception) except Exception as exc:  # noqa: BLE001  | body@582: ui.error(f"简化失败: {exc}")
-tuan_cli/cli/cmd_slash_claude.py:341 (Exception) except Exception as exc:  # noqa: BLE001  | body@342: ui.error(f"任务失败: {task[:40]} — {exc}
-tuan_cli/cli/cmd_slash_claude.py:417 (Exception) except Exception as exc:  # noqa: BLE001  | body@418: ui.error(f"参数解析失败: {exc} (示例: /auto-
-tuan_cli/cli/cmd_slash_claude.py:422 (Exception) except Exception as exc:  # noqa: BLE001  | body@423: ui.error(f"评估失败: {exc}")
-tuan_cli/cli/cmd_slash_claude.py:462 (Exception) except Exception as exc:  | body@463: log.warning("cmd_theme(): 非致命异常已忽略(设计内降级, 不改控制流): %s
-tuan_cli/cli/cmd_slash_claude.py:485 (Exception) except Exception as exc:  | body@486: log.warning("cmd_color(): 非致命异常已忽略(设计内降级, 不改控制流): %s
-tuan_cli/cli/cmd_slash_claude.py:601 (Exception) except Exception:  | body@602: ui.info("  kernel services: ?")
-tuan_cli/cli/cmd_slash_claude.py:640 (Exception) except Exception as exc:  # noqa: BLE001  | body@641: ui.error(f"设置失败: {exc}")
-tuan_cli/cli/cmd_slash_claude.py:524 (Exception) except Exception as exc:  | body@525: log.warning("cmd_loop(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
+tuan_cli/cli/cmd_slash.py:294 (Exception) except Exception as exc:  # noqa: BLE001  | body@295: log.warning("list_slash_commands(): 
+tuan_cli/cli/cmd_slash.py:376 (Exception) except Exception as exc:  | body@377: log.warning("_cmd_status(): 非致命异常已忽略(设计内降级, 不改控制流): 
+tuan_cli/cli/cmd_slash.py:442 (Exception) except Exception as exc:  # noqa: BLE001  | body@443: log.warning("_cmd_budget(): 非致命异常已忽略
+tuan_cli/cli/cmd_slash.py:574 (Exception) except Exception as exc:  # noqa: BLE001  | body@575: ui.error(f"Web 工作台启动失败: {exc}")
+tuan_cli/cli/cmd_slash.py:589 (Exception) except Exception as exc:  # noqa: BLE001  | body@590: ui.error(f"代码检索失败: {exc}")
+tuan_cli/cli/cmd_slash.py:908 (Exception) except Exception:  # noqa: BLE001  | body@909: ui.info("  暂无工具调用记录。")
+tuan_cli/cli/cmd_slash.py:1006 (Exception) except Exception as exc:  # noqa: BLE001  | body@1007: log.warning("_cmd_language(): 非致命异常
+tuan_cli/cli/cmd_slash.py:322 (Exception) except Exception as exc:  # noqa: BLE001  | body@323: ui.error(f"  参数 JSON 解析失败: {exc}")
+tuan_cli/cli/cmd_slash.py:1027 (Exception) except Exception:  # noqa: BLE001 - 回退到静态帮助文本  | body@1028: ui.info(_HELP)
+tuan_cli/cli/cmd_slash.py:512 (Exception) except Exception as exc:  # noqa: BLE001 - 通知失败不卡住 REPL  | body@513: log.warning("_cmd_add
+tuan_cli/cli/cmd_slash.py:903 (Exception) except Exception as exc:  # noqa: BLE001  | body@904: log.debug("_cmd_log(): 非致命异常已忽略(设计内降
+tuan_cli/cli/cmd_slash_claude.py:162 (Exception) except Exception as exc:  # noqa: BLE001  | body@163: log.warning("cmd_cd(): 非致命异常已忽略(设计内降
+tuan_cli/cli/cmd_slash_claude.py:179 (Exception) except Exception as exc:  # noqa: BLE001  | body@180: ui.error(f"旁问失败: {exc}")
+tuan_cli/cli/cmd_slash_claude.py:223 (Exception) except Exception as exc:  # noqa: BLE001  | body@224: ui.error(f"复制失败: {exc}")
+tuan_cli/cli/cmd_slash_claude.py:235 (Exception) except Exception as exc:  # noqa: BLE001  | body@236: ui.error(f"后台运行器不可用: {exc}")
+tuan_cli/cli/cmd_slash_claude.py:310 (Exception) except Exception as exc:  # noqa: BLE001  | body@311: ui.error(f"后台启动失败: {exc}")
+tuan_cli/cli/cmd_slash_claude.py:334 (Exception) except Exception as exc:  # noqa: BLE001  | body@335: ui.error(f"后台运行器不可用: {exc}")
+tuan_cli/cli/cmd_slash_claude.py:550 (Exception) except Exception as exc:  # noqa: BLE001  | body@551: ui.error(f"评审失败: {exc}")
+tuan_cli/cli/cmd_slash_claude.py:571 (Exception) except Exception as exc:  # noqa: BLE001  | body@572: ui.error(f"简化失败: {exc}")
+tuan_cli/cli/cmd_slash_claude.py:343 (Exception) except Exception as exc:  # noqa: BLE001  | body@344: ui.error(f"任务失败: {task[:40]} — {exc}
+tuan_cli/cli/cmd_slash_claude.py:419 (Exception) except Exception as exc:  # noqa: BLE001  | body@420: ui.error(f"参数解析失败: {exc} (示例: /auto-
+tuan_cli/cli/cmd_slash_claude.py:424 (Exception) except Exception as exc:  # noqa: BLE001  | body@425: ui.error(f"评估失败: {exc}")
+tuan_cli/cli/cmd_slash_claude.py:464 (Exception) except Exception as exc:  | body@465: log.warning("cmd_theme(): 非致命异常已忽略(设计内降级, 不改控制流): %s
+tuan_cli/cli/cmd_slash_claude.py:487 (Exception) except Exception as exc:  | body@488: log.warning("cmd_color(): 非致命异常已忽略(设计内降级, 不改控制流): %s
+tuan_cli/cli/cmd_slash_claude.py:591 (Exception) except Exception:  | body@592: ui.info("  kernel services: ?")
+tuan_cli/cli/cmd_slash_claude.py:630 (Exception) except Exception as exc:  # noqa: BLE001  | body@631: ui.error(f"设置失败: {exc}")
+tuan_cli/cli/cmd_slash_claude.py:526 (Exception) except Exception as exc:  | body@527: log.warning("cmd_loop(): 非致命异常已忽略(设计内降级, 不改控制流): %s"
 tuan_cli/cli/cmd_slash_goal.py:39 (Exception) except Exception as exc:  # noqa: BLE001  | body@40: log.warning("_build_engine(): 非致命异常已忽
 tuan_cli/cli/cmd_slash_image.py:51 (Exception) except Exception as exc:  # noqa: BLE001  | body@52: ui.error(f"挂接图片失败: {exc}")
 tuan_cli/cli/cmd_slash_image.py:107 (Exception) except Exception as exc:  # noqa: BLE001  | body@108: ui.error(f"图片生成失败: {exc}")
@@ -1241,14 +1270,11 @@ tuan_cli/config/defaults.py:83 (Exception) except Exception as exc:  | body@84: 
 tuan_cli/config/defaults.py:90 (Exception) except Exception as exc:  | body@91: log.warning("load_builtin_user_soul(): 非致命异常已忽略(设计内降级
 tuan_cli/config/loader.py:270 (Exception) except Exception as exc:  | body@271: log.debug("设置配置文件权限失败 (%s): %s", path, exc)
 tuan_cli/config/loader.py:282 (Exception) except Exception as exc:  # noqa: BLE001  | body@283: log.debug("YAML 配置加载失败 (%s): %s", pa
-tuan_cli/config/loader.py:309 (Exception) except Exception as exc:  | body@310: log.warning("配置写入失败 (%s): %s", path, exc)
-tuan_cli/config/loader.py:318 (Exception) except Exception as exc:  | body@319: log.warning("配置写入失败 (%s): %s", path, exc)
+tuan_cli/config/loader.py:312 (Exception) except Exception as exc:  | body@313: log.warning("配置写入失败 (%s): %s", path, exc)
 tuan_cli/config/loader.py:56 (Exception) except Exception as exc:  # noqa: BLE001 - 迁移失败不应阻断启动  | body@57: log.warning("配置目录迁移失败 (%
 tuan_cli/config/loader.py:83 (Exception) except Exception as exc:  # noqa: BLE001 - 迁移属尽力而为, 绝不阻断启动  | body@84: log.warning("home_d
-tuan_cli/config/loader.py:426 (Exception) except Exception as exc:  # noqa: BLE001 - 通知失败不影响主流程  | body@427: log.warning("Config._fi
 tuan_cli/config/managed.py:120 (Exception) except Exception as exc:  | body@121: log.debug("ManagedSettings._load_json(): 非致命异常已忽略(设计
-tuan_cli/config/managed.py:242 (Exception) except Exception as exc:  # noqa: BLE001 - 通知失败不影响主流程  | body@243: log.warning("ManagedSet
-tuan_cli/config/security_schema.py:101 (Exception) except Exception as exc:  # noqa: BLE001  | body@102: log.debug("安全配置 schema 校验降级: %s", ex
+tuan_cli/config/security_schema.py:98 (Exception) except Exception as exc:  # noqa: BLE001  | body@99: log.debug("安全路径静默吞已治理(补日志, 不改控制流): %s
 tuan_cli/core/agent.py:208 (Exception) except Exception as exc:  # noqa: BLE001  | body@209: log.debug("提示词分层解析失败, 回退 full 档: %s"
 tuan_cli/core/agent.py:239 (Exception) except Exception as exc:  # noqa: BLE001  | body@240: log.debug("SOUL 档位解析失败, 回退默认拼装: %s",
 tuan_cli/core/agent.py:313 (Exception) except Exception as exc:  # noqa: BLE001  | body@314: log.debug("codebase 地图后台构建失败, 系统提示不含
@@ -1286,8 +1312,8 @@ tuan_cli/core/background.py:70 (Exception) except Exception as exc:  # noqa: BLE
 tuan_cli/core/background.py:105 (Exception) except Exception as exc:  | body@106: log.debug("读取后台会话流失败 (%s): %s", self.store.file, exc
 tuan_cli/core/background.py:112 (Exception) except Exception as exc:  | body@113: log.debug("BackgroundJob.tail(): 非致命异常已忽略(设计内降级, 不改控
 tuan_cli/core/background_shell.py:152 (Exception) except Exception as exc:  # noqa: BLE001  | body@153: log.debug("取消后台 shell 异常: %s", exc)
-tuan_cli/core/background_shell.py:325 (Exception) except Exception as exc:  # noqa: BLE001  | body@326: log.debug("BackgroundShellManager._r
-tuan_cli/core/background_shell.py:463 (Exception) except Exception as exc:  # noqa: BLE001  | body@464: log.debug("BackgroundShellManager.pr
+tuan_cli/core/background_shell.py:329 (Exception) except Exception as exc:  # noqa: BLE001  | body@330: log.debug("BackgroundShellManager._r
+tuan_cli/core/background_shell.py:467 (Exception) except Exception as exc:  # noqa: BLE001  | body@468: log.debug("BackgroundShellManager.pr
 tuan_cli/core/background_shell.py:156 (Exception) except Exception as exc:  # noqa: BLE001  | body@157: log.debug("ShellJob._kill_tree(): 非致
 tuan_cli/core/blacklist_override.py:61 (Exception) except Exception as exc:  # noqa: BLE001  | body@62: log.warning("黑名单覆盖文件读取失败, 使用空覆盖: %s",
 tuan_cli/core/blacklist_override.py:106 (Exception) except Exception as exc:  # noqa: BLE001  | body@108: log.warning("写入黑名单抑制文件失败 (安全裁决不受影响):
@@ -1382,22 +1408,21 @@ tuan_cli/core/proc.py:129 (Exception) except Exception as exc:  # noqa: BLE001  
 tuan_cli/core/project_layer.py:89 (Exception) except Exception as exc:  # noqa: BLE001  | body@90: log.debug("ProjectLayer._cfg(): 非致命异常
 tuan_cli/core/project_layer.py:182 (Exception) except Exception as exc:  # noqa: BLE001  | body@183: log.debug("ProjectLayer._memory_coun
 tuan_cli/core/prompt_tier.py:317 (Exception) except Exception as exc:  # noqa: BLE001 - 配置对象形态各异, 读失败走默认  | body@318: log.warning("_cfg
-tuan_cli/core/prompts.py:125 (Exception) except Exception as exc:  # noqa: BLE001  | body@126: log.warning("_read_instruction_cappe
-tuan_cli/core/prompts.py:242 (Exception) except Exception as exc:  | body@243: log.warning("_get_git_context(): 非致命异常已忽略(设计内降级, 不改控
-tuan_cli/core/prompts.py:254 (Exception) except Exception as exc:  | body@255: log.warning("_get_git_context(): 非致命异常已忽略(设计内降级, 不改控
-tuan_cli/core/prompts.py:269 (Exception) except Exception as exc:  | body@270: log.warning("_get_git_context(): 非致命异常已忽略(设计内降级, 不改控
-tuan_cli/core/prompts.py:559 (Exception) except Exception as exc:  | body@560: log.debug("_build_memory_notes_block(): 非致命异常已忽略(设计内
-tuan_cli/core/prompts.py:117 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常  | body@118: log.warning("_read_instruct
-tuan_cli/core/prompts.py:345 (Exception) except Exception as exc:  | body@346: log.debug("_build_soul_block(): 非致命异常已忽略(设计内降级, 不改控制
-tuan_cli/core/prompts.py:627 (Exception) except Exception as exc:  | body@628: log.warning("build_system_prompt_dynamic(): 非致命异常已忽略
-tuan_cli/core/prompts.py:915 (Exception) except Exception as exc:  | body@916: log.warning("build_task_context(): 非致命异常已忽略(设计内降级, 不
-tuan_cli/core/prompts.py:679 (Exception) except Exception as exc:  # noqa: BLE001 - 埋点失败不影响提示词构建  | body@680: log.warning("build_sy
-tuan_cli/core/remote_control.py:358 (Exception) except Exception as exc:  # noqa: BLE001  | body@359: log.debug("_shared_rc(): 非致命异常已忽略(设计
-tuan_cli/core/remote_control.py:423 (Exception) except Exception as exc:  # noqa: BLE001 - 通知 hook 失败不影响主流程  | body@424: log.warning("noti
-tuan_cli/core/remote_control.py:436 (Exception) except Exception as exc:  # noqa: BLE001  | body@437: log.warning("notify(): 非致命异常已忽略(设计内降
-tuan_cli/core/remote_control.py:247 (Exception) except Exception as exc:  | body@248: log.warning("RemoteControl.send_prompt(): 非致命异常已忽略(设
-tuan_cli/core/remote_control.py:261 (Exception) except Exception as exc:  | body@262: log.warning("RemoteControl.send_notification(): 非致命异
-tuan_cli/core/remote_control.py:315 (Exception) except Exception as exc:  | body@316: log.warning("RemoteControl._load_sessions(): 非致命异常已忽
+tuan_cli/core/prompts.py:240 (Exception) except Exception as exc:  | body@241: log.warning("_get_git_context(): 非致命异常已忽略(设计内降级, 不改控
+tuan_cli/core/prompts.py:252 (Exception) except Exception as exc:  | body@253: log.warning("_get_git_context(): 非致命异常已忽略(设计内降级, 不改控
+tuan_cli/core/prompts.py:267 (Exception) except Exception as exc:  | body@268: log.warning("_get_git_context(): 非致命异常已忽略(设计内降级, 不改控
+tuan_cli/core/prompts.py:557 (Exception) except Exception as exc:  | body@558: log.debug("_build_memory_notes_block(): 非致命异常已忽略(设计内
+tuan_cli/core/prompts.py:117 (Exception) except Exception as exc:  # noqa: BLE001  | body@118: log.warning("_notice(): 非致命异常已忽略(设计内
+tuan_cli/core/prompts.py:343 (Exception) except Exception as exc:  | body@344: log.debug("_build_soul_block(): 非致命异常已忽略(设计内降级, 不改控制
+tuan_cli/core/prompts.py:625 (Exception) except Exception as exc:  | body@626: log.warning("build_system_prompt_dynamic(): 非致命异常已忽略
+tuan_cli/core/prompts.py:913 (Exception) except Exception as exc:  | body@914: log.warning("build_task_context(): 非致命异常已忽略(设计内降级, 不
+tuan_cli/core/prompts.py:677 (Exception) except Exception as exc:  # noqa: BLE001 - 埋点失败不影响提示词构建  | body@678: log.warning("build_sy
+tuan_cli/core/remote_control.py:348 (Exception) except Exception as exc:  # noqa: BLE001  | body@349: log.debug("_session_hooks_snapshot()
+tuan_cli/core/remote_control.py:364 (Exception) except Exception as exc:  # noqa: BLE001  | body@365: log.debug("_shared_rc(): 非致命异常已忽略(设计
+tuan_cli/core/remote_control.py:417 (Exception) except Exception as exc:  # noqa: BLE001  | body@418: log.warning("notify(): 非致命异常已忽略(设计内降
+tuan_cli/core/remote_control.py:243 (Exception) except Exception as exc:  | body@244: log.warning("RemoteControl.send_prompt(): 非致命异常已忽略(设
+tuan_cli/core/remote_control.py:257 (Exception) except Exception as exc:  | body@258: log.warning("RemoteControl.send_notification(): 非致命异
+tuan_cli/core/remote_control.py:311 (Exception) except Exception as exc:  | body@312: log.warning("RemoteControl._load_sessions(): 非致命异常已忽
 tuan_cli/core/resilience.py:93 (Exception) except Exception as exc:  # noqa: BLE001  | body@94: log.debug("AgentResilience._preset_ti
 tuan_cli/core/resilience.py:179 (Exception) except Exception as exc:  # noqa: BLE001 - 显式 fallback 构建失败退回自动选备  | body@180: log.debug("
 tuan_cli/core/resilience.py:209 (Exception) except Exception as exc:  # noqa: BLE001  | body@210: log.debug("AgentResilience._build_fa
@@ -1405,20 +1430,19 @@ tuan_cli/core/resilience.py:359 (Exception) except Exception as exc:  # noqa: BL
 tuan_cli/core/resilience.py:65 (Exception) except Exception as exc:  # noqa: BLE001  | body@66: log.warning("AgentResilience.__init__
 tuan_cli/core/resilience.py:435 (Exception) except Exception:  # noqa: BLE001  | body@436: self._sticky = None  # 备用也挂了 → 回到主路径 (主模型可能
 tuan_cli/core/retry.py:44 (Exception) except Exception as exc:  # pragma: no cover  | body@45: log.debug("classify_error(): 非致命异
-tuan_cli/core/safe_text.py:83 (Exception) except Exception as exc:  # noqa: BLE001 - 净化自身绝不让 hook 通道再抛  | body@84: log.debug("safe_h
-tuan_cli/core/sandbox_provider.py:289 (Exception) except Exception as exc:  | body@290: log.debug("沙箱 provider 异常(设计内降级): %s", exc)
-tuan_cli/core/sandbox_provider.py:497 (Exception) except Exception as exc:  | body@498: log.warning("沙箱 provider 异常(设计内降级): %s", exc)
-tuan_cli/core/sandbox_provider.py:511 (Exception) except Exception as exc:  | body@512: log.debug("沙箱 provider 异常(设计内降级): %s", exc)
+tuan_cli/core/safe_text.py:84 (Exception) except Exception as exc:  # noqa: BLE001 - 净化自身绝不让 hook 通道再抛  | body@85: log.debug("safe_h
+tuan_cli/core/sandbox_provider.py:311 (Exception) except Exception as exc:  | body@312: log.debug("沙箱 provider 异常(设计内降级): %s", exc)
+tuan_cli/core/sandbox_provider.py:525 (Exception) except Exception as exc:  | body@526: log.warning("沙箱 provider 异常(设计内降级): %s", exc)
+tuan_cli/core/sandbox_provider.py:539 (Exception) except Exception as exc:  | body@540: log.debug("沙箱 provider 异常(设计内降级): %s", exc)
 tuan_cli/core/secret_scanner.py:249 (Exception) except Exception as exc:  # noqa: BLE001  总线异常不能炸掉扫描  | body@250: log.debug("emit_findings
-tuan_cli/core/security_alert.py:185 (Exception) except Exception as exc:  # noqa: BLE001  | body@187: log.warning("安全告警日志写盘失败 (path=%s): %
-tuan_cli/core/security_alert.py:201 (Exception) except Exception as exc:  # noqa: BLE001  | body@202: log.warning("告警历史读取失败, 返回空列表: %s", e
-tuan_cli/core/security_alert.py:305 (Exception) except Exception as exc:  # noqa: BLE001 - 取 owner 失败不掀翻告警主路径  | body@306: log.debug("会话 o
-tuan_cli/core/security_alert.py:454 (Exception) except Exception as exc:  # noqa: BLE001  | body@455: log.debug("启动桌面通知线程失败: %s", exc)
-tuan_cli/core/security_alert.py:484 (Exception) except Exception as exc:  # noqa: BLE001  | body@485: log.debug("Notification hook 派发异常: %
-tuan_cli/core/security_alert.py:493 (Exception) except Exception as exc:  # noqa: BLE001  | body@494: log.debug("桌面通知派发异常: %s", exc)
-tuan_cli/core/security_alert.py:330 (Exception) except Exception as exc:  # noqa: BLE001  | body@332: log.debug("安全告警 on_alert 回调异常: %s", 
-tuan_cli/core/security_alert.py:105 (Exception) except Exception as exc:  # noqa: BLE001 - 通知进程清理失败仅留痕  | body@106: log.debug("桌面通知进程 kill
-tuan_cli/core/security_alert.py:109 (Exception) except Exception as exc:  # noqa: BLE001  | body@110: log.debug("桌面通知进程 wait 失败: %s", exc)
+tuan_cli/core/security_alert.py:487 (Exception) except Exception as exc:  # noqa: BLE001  | body@488: log.debug("安全路径静默吞已治理(补日志, 不改控制流): %
+tuan_cli/core/security_alert.py:190 (Exception) except Exception as exc:  # noqa: BLE001  | body@192: log.warning("安全告警日志写盘失败 (path=%s): %
+tuan_cli/core/security_alert.py:206 (Exception) except Exception as exc:  | body@207: log.debug("安全路径静默吞已治理(补日志, 不改控制流): %s", exc)
+tuan_cli/core/security_alert.py:446 (Exception) except Exception as exc:  # noqa: BLE001  | body@447: log.debug("启动桌面通知线程失败: %s", exc)
+tuan_cli/core/security_alert.py:473 (Exception) except Exception as exc:  # noqa: BLE001  | body@474: log.debug("桌面通知派发异常: %s", exc)
+tuan_cli/core/security_alert.py:322 (Exception) except Exception as exc:  # noqa: BLE001  | body@324: log.debug("安全告警 on_alert 回调异常: %s", 
+tuan_cli/core/security_alert.py:108 (Exception) except Exception as exc:  | body@109: log.warning("安全路径静默吞已治理(补日志, 不改控制流): %s", exc)
+tuan_cli/core/security_alert.py:113 (Exception) except Exception as exc:  | body@114: log.warning("安全路径静默吞已治理(补日志, 不改控制流): %s", exc)
 tuan_cli/core/security_auditor.py:183 (Exception) except Exception as exc:  # noqa: BLE001  | body@184: log.warning("审计关联历史重放失败: %s", exc)
 tuan_cli/core/security_auditor.py:192 (Exception) except Exception as exc:  # noqa: BLE001  | body@193: log.warning(
 tuan_cli/core/security_auditor.py:266 (Exception) except Exception as exc:  | body@267: log.warning("审计日志恢复失败, 以当前状态继续: %s", exc)
@@ -1434,9 +1458,7 @@ tuan_cli/core/security_bus.py:258 (Exception) except Exception as exc:  # noqa: 
 tuan_cli/core/security_bus.py:263 (Exception) except Exception as exc:  # noqa: BLE001  | body@264: log.debug("安全事件通配处理器异常: %s", exc)
 tuan_cli/core/security_bus.py:311 (Exception) except Exception as exc:  # noqa: BLE001  | body@312: log.warning("安全审计落盘失败 (path=%s): %s"
 tuan_cli/core/security_bus.py:290 (Exception) except Exception as exc:  # noqa: BLE001  | body@291: log.debug("安全告警回调异常: %s", exc)
-tuan_cli/core/security_classifier.py:529 (Exception) except Exception as exc:  | body@531: log.debug("安全分类器降级: %s", exc)
-tuan_cli/core/security_classifier.py:553 (Exception) except Exception as exc:  # noqa: BLE001 - 分类器兜底绝不能因规则层异常而崩溃  | body@554: log.warning("安全分
-tuan_cli/core/security_classifier.py:616 (Exception) except Exception as exc:  | body@618: log.warning("安全分类器降级: %s", exc)
+tuan_cli/core/security_classifier.py:519 (Exception) except Exception as exc:  # noqa: BLE001 - 分类器兜底绝不能因规则层异常而崩溃  | body@520: log.warning("安全路
 tuan_cli/core/security_learner.py:181 (Exception) except Exception:  # noqa: BLE001 - 规则层异常时退化为「非红线」  | body@182: log.debug("硬红线复核不可用, 按非红线继
 tuan_cli/core/security_learner.py:443 (Exception) except Exception:  # noqa: BLE001 - 规则层不可用时保持 None (未知)  | body@444: log.debug("护栏复核不可用, 解
 tuan_cli/core/security_plugin.py:51 (Exception) except Exception as exc:  # noqa: BLE001  | body@52: log.warning("安全分类器初始化失败 (降级跳过): %s", 
@@ -1444,16 +1466,15 @@ tuan_cli/core/security_plugin.py:76 (Exception) except Exception as exc:  # noqa
 tuan_cli/core/security_plugin.py:89 (Exception) except Exception as exc:  # noqa: BLE001  | body@90: log.warning("安全事件总线初始化失败 (降级跳过): %s",
 tuan_cli/core/security_plugin.py:104 (Exception) except Exception as exc:  # noqa: BLE001  | body@105: log.warning("MCP 安全加固器初始化失败 (降级跳过): 
 tuan_cli/core/security_plugin.py:122 (Exception) except Exception as exc:  # noqa: BLE001  | body@123: log.warning("安全审计溯源器初始化失败 (降级跳过): %s
-tuan_cli/core/security_plugin.py:145 (Exception) except Exception as exc:  # noqa: BLE001  | body@146: log.warning("安全告警器初始化失败 (降级跳过): %s",
-tuan_cli/core/security_plugin.py:154 (Exception) except Exception as exc:  # noqa: BLE001  | body@155: log.warning("文件完整性监控初始化失败 (降级跳过): %s
-tuan_cli/core/security_plugin.py:163 (Exception) except Exception as exc:  # noqa: BLE001  | body@164: log.warning("安全策略引擎初始化失败 (降级跳过): %s"
-tuan_cli/core/security_plugin.py:171 (Exception) except Exception as exc:  # noqa: BLE001  | body@172: log.warning("安全插件钩子异常(不影响主流程): %s", 
+tuan_cli/core/security_plugin.py:149 (Exception) except Exception as exc:  # noqa: BLE001  | body@150: log.warning("安全告警器初始化失败 (降级跳过): %s",
+tuan_cli/core/security_plugin.py:158 (Exception) except Exception as exc:  # noqa: BLE001  | body@159: log.warning("文件完整性监控初始化失败 (降级跳过): %s
+tuan_cli/core/security_plugin.py:167 (Exception) except Exception as exc:  # noqa: BLE001  | body@168: log.warning("安全策略引擎初始化失败 (降级跳过): %s"
+tuan_cli/core/security_plugin.py:175 (Exception) except Exception as exc:  # noqa: BLE001  | body@176: log.warning("安全插件钩子异常(不影响主流程): %s", 
 tuan_cli/core/security_policy.py:353 (Exception) except Exception as exc:  | body@354: log.error("YAML 解析失败: %s", exc)
 tuan_cli/core/security_policy.py:545 (Exception) except Exception as exc:  | body@546: log.warning("安全策略评估降级: %s", exc)
 tuan_cli/core/security_policy.py:377 (Exception) except Exception as exc:  | body@378: log.debug("规则解析失败: %s", exc)
 tuan_cli/core/security_policy.py:322 (Exception) except Exception as exc:  | body@323: log.warning("安全策略评估降级: %s", exc)
-tuan_cli/core/security_utils.py:221 (Exception) except Exception as exc:  # noqa: BLE001 - 展示原语绝不抛  | body@222: log.debug("安全展示原语降级: %s", 
-tuan_cli/core/security_utils.py:185 (Exception) except Exception as exc:  # noqa: BLE001  | body@186: log.debug("安全展示原语降级: %s", exc)
+tuan_cli/core/security_utils.py:203 (Exception) except Exception as exc:  # noqa: BLE001 - 净化自身绝不能让错误路径再抛  | body@204: log.debug("安全路径静默吞已
 tuan_cli/core/subagents.py:156 (Exception) except Exception as exc:  # noqa: BLE001  | body@157: log.warning("SubAgentPool.__init__()
 tuan_cli/core/subagents.py:209 (Exception) except Exception as exc:  | body@210: log.warning("SubAgentPool._run(): 非致命异常已忽略(设计内降级, 不改
 tuan_cli/core/subagents.py:402 (Exception) except Exception as exc:  # noqa: BLE001  | body@403: log.warning("SubAgentPool._worker():
@@ -1471,22 +1492,22 @@ tuan_cli/core/telemetry.py:330 (Exception) except Exception as exc:  # noqa: BLE
 tuan_cli/core/telemetry.py:383 (Exception) except Exception as exc:  | body@384: log.debug("Telemetry auto-export failed: %s", exc)
 tuan_cli/core/tool_executor.py:48 (Exception) except Exception as exc:  # noqa: BLE001  | body@49: log.warning("_is_mcp_dangerous(): 非致命
 tuan_cli/core/tool_executor.py:90 (Exception) except Exception as exc:  # noqa: BLE001  | body@91: log.debug("_redline_in(): 非致命异常已忽略(设计
-tuan_cli/core/tool_executor.py:938 (Exception) except Exception as exc:  # noqa: BLE001  | body@939: log.warning("_make_diff_summary(): 非
-tuan_cli/core/tool_executor.py:338 (Exception) except Exception as exc:  | body@339: log.warning("ToolExecutor._resolve_tool_schema(): 非致
-tuan_cli/core/tool_executor.py:407 (Exception) except Exception as exc:  # noqa: BLE001  | body@408: log.warning("ToolExecutor._security_
-tuan_cli/core/tool_executor.py:600 (Exception) except Exception as exc:  # noqa: BLE001 - 沙箱评估异常不阻断, 由既有闸门兜底  | body@601: log.debug("Tool
-tuan_cli/core/tool_executor.py:649 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常（动作已发生）  | body@650: log.warning("ToolExe
-tuan_cli/core/tool_executor.py:745 (Exception) except Exception as exc:  # noqa: BLE001  | body@746: log.debug("ToolExecutor._rate_overri
-tuan_cli/core/tool_executor.py:906 (Exception) except Exception as exc:  # noqa: BLE001  | body@907: log.warning("ToolExecutor._auto_chec
-tuan_cli/core/tool_executor.py:914 (Exception) except Exception as exc:  # noqa: BLE001  | body@915: log.debug("ToolExecutor._auto_checkp
+tuan_cli/core/tool_executor.py:950 (Exception) except Exception as exc:  # noqa: BLE001  | body@951: log.warning("_make_diff_summary(): 非
+tuan_cli/core/tool_executor.py:347 (Exception) except Exception as exc:  # noqa: BLE001 - 取不到 = 无 schema 保守子集  | body@348: log.debug("Too
+tuan_cli/core/tool_executor.py:415 (Exception) except Exception as exc:  # noqa: BLE001  | body@416: log.warning("ToolExecutor._security_
+tuan_cli/core/tool_executor.py:608 (Exception) except Exception as exc:  # noqa: BLE001 - 沙箱评估异常不阻断, 由既有闸门兜底  | body@609: log.debug("Tool
+tuan_cli/core/tool_executor.py:661 (Exception) except Exception as exc:  # noqa: BLE001  | body@662: log.warning("ToolExecutor.execute_ba
+tuan_cli/core/tool_executor.py:757 (Exception) except Exception as exc:  # noqa: BLE001  | body@758: log.debug("ToolExecutor._rate_overri
+tuan_cli/core/tool_executor.py:918 (Exception) except Exception as exc:  # noqa: BLE001  | body@919: log.warning("ToolExecutor._auto_chec
+tuan_cli/core/tool_executor.py:926 (Exception) except Exception as exc:  # noqa: BLE001  | body@927: log.debug("ToolExecutor._auto_checkp
 tuan_cli/core/tool_executor.py:67 (Exception) except Exception as exc:  # noqa: BLE001  | body@68: log.debug("_parse_args(): 非致命异常已忽略(设计
-tuan_cli/core/tool_executor.py:540 (Exception) except Exception as exc:  # noqa: BLE001  | body@541: log.warning("ToolExecutor._security_
-tuan_cli/core/tool_executor.py:834 (Exception) except Exception as exc:  # noqa: BLE001  | body@835: log.warning("ToolExecutor._execute_s
-tuan_cli/core/tool_executor.py:842 (Exception) except Exception:  # noqa: BLE001  | body@843: log.warning("自动检查点失败: %s", fn_name)
-tuan_cli/core/tool_executor.py:447 (Exception) except Exception as exc:  # noqa: BLE001  | body@448: log.warning("ToolExecutor._security_
-tuan_cli/core/tool_executor.py:472 (Exception) except Exception as exc:  # noqa: BLE001  | body@473: log.warning("ToolExecutor._security_
-tuan_cli/core/tool_executor.py:591 (Exception) except Exception as exc:  # noqa: BLE001  | body@592: log.warning("ToolExecutor._sandbox_g
-tuan_cli/core/tool_executor.py:498 (Exception) except Exception as exc:  # noqa: BLE001  | body@499: log.warning("ToolExecutor._security_
+tuan_cli/core/tool_executor.py:548 (Exception) except Exception as exc:  # noqa: BLE001  | body@549: log.warning("ToolExecutor._security_
+tuan_cli/core/tool_executor.py:846 (Exception) except Exception as exc:  # noqa: BLE001  | body@847: log.warning("ToolExecutor._execute_s
+tuan_cli/core/tool_executor.py:854 (Exception) except Exception:  # noqa: BLE001  | body@855: log.warning("自动检查点失败: %s", fn_name)
+tuan_cli/core/tool_executor.py:455 (Exception) except Exception as exc:  # noqa: BLE001  | body@456: log.warning("ToolExecutor._security_
+tuan_cli/core/tool_executor.py:480 (Exception) except Exception as exc:  # noqa: BLE001  | body@481: log.warning("ToolExecutor._security_
+tuan_cli/core/tool_executor.py:599 (Exception) except Exception as exc:  # noqa: BLE001  | body@600: log.warning("ToolExecutor._sandbox_g
+tuan_cli/core/tool_executor.py:506 (Exception) except Exception as exc:  # noqa: BLE001  | body@507: log.warning("ToolExecutor._security_
 tuan_cli/core/trajectory_replay.py:313 (Exception) except Exception as exc:  | body@314: log.debug("TrajectoryReplay.restore_snapshot(): 非致命异
 tuan_cli/core/trajectory_replay.py:414 (Exception) except Exception as exc:  | body@415: log.warning("TrajectoryReplay._load_events(): 非致命异常已
 tuan_cli/core/trajectory_replay.py:440 (Exception) except Exception as exc:  | body@441: log.warning("TrajectoryReplay._read_session_meta(): 
@@ -1500,8 +1521,8 @@ tuan_cli/core/verify_loop.py:402 (Exception) except Exception as exc:  # noqa: B
 tuan_cli/core/whitelist.py:129 (Exception) except Exception as exc:  # noqa: BLE001  | body@130: log.debug("白名单加载失败 (使用默认): %s", exc)
 tuan_cli/core/whitelist.py:154 (Exception) except Exception as exc:  # noqa: BLE001  | body@155: log.debug("白名单保存失败: %s", exc)
 tuan_cli/core/workspace_trust.py:86 (Exception) except Exception as exc:  # noqa: BLE001  | body@87: log.debug("工作区信任评估降级: %s", exc)
-tuan_cli/core/worktree_layer.py:190 (Exception) except Exception as exc:  # noqa: BLE001  (TimeoutExpired / FileNotFoundError 等)  | body@1
-tuan_cli/core/worktree_layer.py:200 (Exception) except Exception as exc:  # noqa: BLE001  (路径解析异常兜底)  | body@201: log.debug("WorktreeLayer
+tuan_cli/core/worktree_layer.py:187 (Exception) except Exception as exc:  # noqa: BLE001  (TimeoutExpired / FileNotFoundError 等)  | body@1
+tuan_cli/core/worktree_layer.py:197 (Exception) except Exception as exc:  # noqa: BLE001  (路径解析异常兜底)  | body@198: log.debug("WorktreeLayer
 tuan_cli/core/write_boundary.py:72 (Exception) except Exception as exc:  # noqa: BLE001 - 配置对象损坏时不掀翻裁决  | body@73: log.debug("_cfg(): 非致命
 tuan_cli/cron/daemon.py:77 (Exception) except Exception as exc:  # noqa: BLE001  | body@78: log.warning("cron 守护循环异常: %s", exc)
 tuan_cli/cron/runner.py:205 (Exception) except Exception as exc:  # noqa: BLE001  | body@206: log.warning("_notify(): 非致命异常已忽略(设计内
@@ -1550,19 +1571,21 @@ tuan_cli/harden/audit_export.py:220 (Exception) except Exception as exc:  # prag
 tuan_cli/harden/audit_export.py:288 (Exception) except Exception as exc:  # noqa: BLE001 - 重放时跳过无法解析的行  | body@289: log.debug("审计重放: 跳过无法解
 tuan_cli/harden/crypto_provider.py:451 (Exception) except Exception as exc:  | body@452: log.debug("加密 provider 降级: %s", exc)
 tuan_cli/harden/sbom.py:44 (Exception) except Exception as exc:  # pragma: no cover  | body@45: log.debug("_iter_installed(): 非致命
-tuan_cli/hooks/lifecycle.py:249 (Exception) except Exception as exc:  # noqa: BLE001  | body@250: log.debug("_resolve_hooks(): 非致命异常已忽
-tuan_cli/hooks/lifecycle.py:230 (Exception) except Exception as exc:  # noqa: BLE001  | body@231: log.debug("_resolve_hooks(): 非致命异常已忽
-tuan_cli/hooks/lifecycle.py:236 (Exception) except Exception as exc:  # noqa: BLE001  | body@237: log.warning("_resolve_hooks(): 非致命异常
-tuan_cli/hooks/manager.py:1156 (Exception) except Exception as exc:  # noqa: BLE001  | body@1158: try:
-tuan_cli/hooks/manager.py:1236 (Exception) except Exception as exc:  # noqa: BLE001  | body@1238: log.debug("hook.executed 审计事件发送失败: 
-tuan_cli/hooks/manager.py:1161 (Exception) except Exception as exc2:  # noqa: BLE001  | body@1163: log.warning("hook 进程树终止失败 (pid=%s)
+tuan_cli/hooks/lifecycle.py:250 (Exception) except Exception as exc:  # noqa: BLE001  | body@251: log.debug("_resolve_hooks(): 非致命异常已忽
+tuan_cli/hooks/lifecycle.py:231 (Exception) except Exception as exc:  # noqa: BLE001  | body@232: log.debug("_resolve_hooks(): 非致命异常已忽
+tuan_cli/hooks/lifecycle.py:237 (Exception) except Exception as exc:  # noqa: BLE001  | body@238: log.warning("_resolve_hooks(): 非致命异常
+tuan_cli/hooks/manager.py:317 (Exception) except Exception as exc:  | body@318: log.debug("HookManager._read_cfg(): 非致命异常已忽略(设计内降级, 
+tuan_cli/hooks/manager.py:973 (Exception) except Exception as exc:  # noqa: BLE001  | body@974: log.warning("HookManager._record_fai
+tuan_cli/hooks/manager.py:1154 (Exception) except Exception:  # noqa: BLE001  | body@1156: try:
+tuan_cli/hooks/manager.py:1296 (Exception) except Exception as exc:  # noqa: BLE001  | body@1298: log.debug("hook.executed 审计事件发送失败: 
+tuan_cli/hooks/manager.py:1159 (Exception) except Exception as exc:  # noqa: BLE001  | body@1160: log.warning("HookManager._kill_tree
 tuan_cli/hooks/triggers.py:158 (Exception) except Exception as exc:  # noqa: BLE001  | body@159: log.debug("_resolve_default(): 非致命异常
 tuan_cli/hooks/triggers.py:485 (Exception) except Exception as exc:  # noqa: BLE001 - 外来句柄对象也能安全处理  | body@486: log.warning("deactiva
-tuan_cli/hooks/triggers.py:545 (Exception) except Exception as exc:  # noqa: BLE001 - 关闭路径不得掀翻宿主  | body@546: log.debug("close_agent_
+tuan_cli/hooks/triggers.py:546 (Exception) except Exception as exc:  # noqa: BLE001 - 关闭路径不得掀翻宿主  | body@547: log.debug("close_agent_
 tuan_cli/hooks/triggers.py:373 (Exception) except Exception as exc:  # noqa: BLE001 - 绑定不得掀翻会话启动  | body@374: log.warning("bind_sessi
 tuan_cli/hooks/triggers.py:463 (Exception) except Exception as exc:  # noqa: BLE001 - 只读 ctx 不掀翻会话启动  | body@464: log.warning("activa
 tuan_cli/hooks/triggers.py:502 (Exception) except Exception as exc:  # noqa: BLE001  | body@503: log.warning("deactivate_session(): 非
-tuan_cli/hooks/triggers.py:683 (Exception) except Exception as exc:  # noqa: BLE001  | body@684: log.debug("HookTrigger._notify(): 非致
+tuan_cli/hooks/triggers.py:680 (Exception) except Exception as exc:  # noqa: BLE001  | body@681: log.debug("HookTrigger._notify(): 非致
 tuan_cli/i18n/__init__.py:196 (Exception) except Exception as exc:  # noqa: BLE001  | body@197: log.warning("ensure_language(): 非致命异
 tuan_cli/kernel_patch/builtin.py:92 (Exception) except Exception as exc:  # noqa: BLE001  | body@93: log.debug("_resolve_adapter(): 非致命异常已
 tuan_cli/kernel_patch/patch_base.py:387 (Exception) except Exception as exc:  # noqa: BLE001  | body@388: log.debug("_current_version(): 非致命异常
@@ -1584,11 +1607,11 @@ tuan_cli/modes/switcher.py:226 (Exception) except Exception as exc:  | body@227:
 tuan_cli/parity_claude/depth.py:61 (Exception) except Exception as exc:  # noqa: BLE001 - 注册失败由 probe_verified=0 如实暴露  | body@62: log.war
 tuan_cli/parity_claude/depth.py:185 (Exception) except Exception as exc:  # noqa: BLE001  | body@186: log.warning("gap_queue(): 非致命异常已忽略(设
 tuan_cli/parity_claude/matrix.py:43 (Exception) except Exception as exc:  # noqa: BLE001  | body@44: log.debug("_existing_security_wiring(
-tuan_cli/parity_claude/module_probes.py:679 (Exception) except Exception as exc:  # noqa: BLE001  | body@680: log.debug("probe_hook_lifecycle_fail
-tuan_cli/parity_claude/module_probes.py:934 (Exception) except Exception as exc:  # noqa: BLE001  | body@935: log.debug("probe_hook_nonprocess_equ
-tuan_cli/parity_claude/module_probes.py:1147 (Exception) except Exception as exc:  # noqa: BLE001  | body@1148: log.debug("probe_hook_payload_conte
-tuan_cli/parity_claude/module_probes.py:1162 (Exception) except Exception as exc:  # noqa: BLE001  | body@1163: log.debug("XS_CHECK(): 非致命异常已忽略(设计内
-tuan_cli/parity_claude/module_probes.py:756 (Exception) except Exception as exc:  | body@757: log.debug("H.do_POST(): 非致命异常已忽略(设计内降级, 不改控制流): %s",
+tuan_cli/parity_claude/module_probes.py:701 (Exception) except Exception as exc:  # noqa: BLE001  | body@702: log.debug("probe_hook_lifecycle_fail
+tuan_cli/parity_claude/module_probes.py:939 (Exception) except Exception as exc:  # noqa: BLE001  | body@940: log.debug("probe_hook_nonprocess_equ
+tuan_cli/parity_claude/module_probes.py:1129 (Exception) except Exception as exc:  # noqa: BLE001  | body@1130: log.debug("probe_hook_payload_conte
+tuan_cli/parity_claude/module_probes.py:1144 (Exception) except Exception as exc:  # noqa: BLE001  | body@1145: log.debug("XS_CHECK(): 非致命异常已忽略(设计内
+tuan_cli/parity_claude/module_probes.py:778 (Exception) except Exception as exc:  | body@779: log.debug("H.do_POST(): 非致命异常已忽略(设计内降级, 不改控制流): %s",
 tuan_cli/paths.py:102 (Exception) except Exception as exc:  # noqa: BLE001 - 位置解析不可阻塞启动  | body@103: log.debug("default_work
 tuan_cli/paths.py:110 (Exception) except Exception as exc:  # noqa: BLE001 - 位置解析不可阻塞启动  | body@111: log.debug("default_work
 tuan_cli/paths.py:137 (Exception) except Exception as exc:  # noqa: BLE001  | body@138: log.debug("default_workspace: home 目
@@ -1606,17 +1629,16 @@ tuan_cli/ports/telemetry/otel.py:344 (Exception) except Exception as exc:  # noq
 tuan_cli/ports/telemetry/otel.py:254 (Exception) except Exception as exc:  # noqa: BLE001  | body@255: log.warning("OtlpTransport.close(): 
 tuan_cli/ports/telemetry/sink.py:142 (Exception) except Exception as exc:  | body@144: log.warning("EventSink.flush_sync(): 非致命异常已忽略(设计内降级,
 tuan_cli/ports/telemetry/sink.py:161 (Exception) except Exception as exc:  | body@162: log.warning("EventSink._periodic_loop(): 非致命异常已忽略(设计
-tuan_cli/runtime/acp/bridge.py:116 (Exception) except Exception as exc:  # noqa: BLE001 - 取不到 contextvar 就返回 None  | body@117: logger.deb
-tuan_cli/runtime/acp/bridge.py:234 (Exception) except Exception as exc:  # noqa: BLE001 - 无法交互 -> 空串, 调用方降级  | body@235: logger.debug("Ke
-tuan_cli/runtime/acp/bridge.py:381 (Exception) except Exception as exc:  | body@382: logger.debug("KernelAcpBridge.available_commands(): 
-tuan_cli/runtime/acp/bridge.py:420 (Exception) except Exception as exc:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed  | body@421:
-tuan_cli/runtime/acp/bridge.py:427 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常  | body@428: logger.warning("KernelAcpBr
-tuan_cli/runtime/acp/bridge.py:166 (Exception) except Exception as exc:  # noqa: BLE001 - 超时/取消/RPC 失败一律拒绝  | body@167: logger.debug("Ker
-tuan_cli/runtime/acp/bridge.py:225 (Exception) except Exception as exc:  # noqa: BLE001  | body@226: logger.warning("KernelAcpBridge.ask_
-tuan_cli/runtime/acp/bridge.py:250 (Exception) except Exception as exc:  # noqa: BLE001  | body@251: logger.warning("KernelAcpBridge.ask_
-tuan_cli/runtime/acp/bridge.py:361 (Exception) except Exception as exc:  # noqa: BLE001  | body@362: logger.warning("agent.run raised aft
-tuan_cli/runtime/acp/bridge.py:372 (Exception) except Exception as exc:  | body@373: logger.warning("KernelAcpBridge.cancel(): 非致命异常已忽略(设
-tuan_cli/runtime/acp/bridge.py:282 (Exception) except Exception as exc:  # noqa: BLE001  | body@283: logger.debug("_AcpUIHandle.ask_user(
+tuan_cli/runtime/acp/bridge.py:36 (Exception) except Exception as exc:  # noqa: BLE001  | body@37: log.debug("_session_hooks_snapshot():
+tuan_cli/runtime/acp/bridge.py:116 (Exception) except Exception as exc:  # noqa: BLE001  | body@117: log.debug("KernelAcpBridge._resolve_
+tuan_cli/runtime/acp/bridge.py:232 (Exception) except Exception as exc:  # noqa: BLE001 - 无法交互 -> 空串, 调用方降级  | body@233: log.debug("Kerne
+tuan_cli/runtime/acp/bridge.py:372 (Exception) except Exception as exc:  | body@373: log.debug("KernelAcpBridge.available_commands(): 非致命
+tuan_cli/runtime/acp/bridge.py:408 (Exception) except Exception as exc:  # noqa: BLE001  | body@411: log.debug("KernelAcpBridge.set_model
+tuan_cli/runtime/acp/bridge.py:418 (Exception) except Exception as exc:  # noqa: BLE001  | body@419: log.warning("KernelAcpBridge.set_mod
+tuan_cli/runtime/acp/bridge.py:166 (Exception) except Exception as exc:  # noqa: BLE001 - 超时/取消/RPC 失败一律拒绝  | body@167: log.debug("Kernel
+tuan_cli/runtime/acp/bridge.py:351 (Exception) except Exception as exc:  | body@352: log.warning("KernelAcpBridge.agen(): 非致命异常已忽略(设计内降级,
+tuan_cli/runtime/acp/bridge.py:363 (Exception) except Exception as exc:  | body@364: log.warning("KernelAcpBridge.cancel(): 非致命异常已忽略(设计内降
+tuan_cli/runtime/acp/bridge.py:273 (Exception) except Exception as exc:  # noqa: BLE001  | body@274: log.debug("_AcpUIHandle.ask_user(): 
 tuan_cli/runtime/acp/server.py:277 (Exception) except Exception as exc:  | body@279: self.log.warning("notification %s handler failed: %s
 tuan_cli/runtime/acp/server.py:122 (Exception) except Exception as exc:  # noqa: BLE001 - 绑定失败不阻断启动（权限将走拒绝）  | body@123: log.warning("Acp
 tuan_cli/runtime/acp/server.py:353 (Exception) except Exception as exc:  | body@354: log.warning("AcpServer._h_session_list(): 非致命异常已忽略(设
@@ -1651,7 +1673,7 @@ tuan_cli/runtime/mcp/tool.py:83 (Exception) except Exception as exc:  | body@84:
 tuan_cli/runtime/provider_service.py:207 (Exception) except Exception as exc:  # noqa: BLE001  | body@208: log.warning("ProviderService._notify
 tuan_cli/runtime/providers/_http.py:41 (Exception) except Exception as exc:  # noqa: BLE001 - 非法 URL 按非 nvidia 处理  | body@42: log.debug("is_n
 tuan_cli/runtime/session/bridge.py:51 (Exception) except Exception as exc:  | body@52: log.debug("KernelSessionBridge.sync_from_session(): 非
-tuan_cli/runtime/tools/bridge.py:134 (Exception) except Exception as exc:  # noqa: BLE001 - hook 改参失败不阻断调用  | body@135: logger.warning("Too
+tuan_cli/runtime/tools/bridge.py:153 (Exception) except Exception as exc:  # noqa: BLE001 - hook 改参失败不阻断调用  | body@154: logger.warning("Too
 tuan_cli/runtime/tools/executor.py:82 (Exception) except Exception as exc:  # noqa: BLE001  | body@83: log.warning("_coerce(): 非致命异常已忽略(设计内降
 tuan_cli/runtime/tools/permission.py:126 (Exception) except Exception as exc:  # noqa: BLE001 - fail-safe: 分类器异常交给下一个策略  | body@127: log.debug(
 tuan_cli/runtime/tools/registry.py:39 (Exception) except Exception as exc:  # noqa: BLE001  | body@40: log.warning("ToolRegistry.unregister(
@@ -1672,12 +1694,13 @@ tuan_cli/sandbox/filters.py:279 (Exception) except Exception:  # pragma: no cove
 tuan_cli/sandbox/filters.py:331 (Exception) except Exception:  # pragma: no cover  | body@333: log.warning("网络红线判定异常, fail-closed 拒绝",
 tuan_cli/sandbox/filters.py:413 (Exception) except Exception:  # pragma: no cover  | body@415: log.warning("域名白名单校验异常, fail-closed 拒绝"
 tuan_cli/sandbox/isolation.py:419 (Exception) except Exception as exc:  # pragma: no cover  | body@420: log.warning("沙箱隔离裁决异常(设计内降级): %s
-tuan_cli/sandbox/manager.py:248 (Exception) except Exception as exc:  # noqa: BLE001 - 审计失败不影响主流程  | body@249: log.warning("沙箱管理器操作异常(
-tuan_cli/sandbox/manager.py:258 (Exception) except Exception as exc:  # noqa: BLE001 - 滤网自身故障必须 fail-closed  | body@259: log.error("沙箱
-tuan_cli/sandbox/manager.py:303 (Exception) except Exception as exc:  # noqa: BLE001  | body@304: log.debug("沙箱管理器操作异常(设计内降级): %s", ex
-tuan_cli/sandbox/manager.py:604 (Exception) except Exception as exc:  # pragma: no cover  | body@605: log.warning("沙箱管理器操作异常(设计内降级): %
-tuan_cli/sandbox/manager.py:615 (Exception) except Exception as exc:  # pragma: no cover  | body@616: log.warning("沙箱管理器操作异常(设计内降级): %
-tuan_cli/sandbox/manager.py:336 (Exception) except Exception as exc:  | body@337: log.debug("沙箱管理器操作异常(设计内降级): %s", exc)
+tuan_cli/sandbox/manager.py:154 (Exception) except Exception as exc:  # noqa: BLE001 - 审计失败绝不影响裁决  | body@155: log.warning("安全路径静默吞已治理
+tuan_cli/sandbox/manager.py:230 (Exception) except Exception as exc:  # noqa: BLE001 - 配置通道异常不能掀掉裁决  | body@231: log.warning("安全路径静默吞已
+tuan_cli/sandbox/manager.py:319 (Exception) except Exception as exc:  # noqa: BLE001 - 审计失败不影响主流程  | body@320: log.warning("安全路径静默吞已治理
+tuan_cli/sandbox/manager.py:329 (Exception) except Exception as exc:  # noqa: BLE001 - 滤网自身故障必须 fail-closed  | body@330: log.error("沙箱
+tuan_cli/sandbox/manager.py:659 (Exception) except Exception as exc:  # pragma: no cover  | body@660: log.warning("安全路径静默吞已治理(补日志, 不改控
+tuan_cli/sandbox/manager.py:670 (Exception) except Exception as exc:  # pragma: no cover  | body@671: log.warning("安全路径静默吞已治理(补日志, 不改控
+tuan_cli/sandbox/manager.py:391 (Exception) except Exception as exc:  | body@392: log.debug("安全路径静默吞已治理(补日志, 不改控制流): %s", exc)
 tuan_cli/self_improve/auto_distiller.py:299 (Exception) except Exception as exc:  | body@300: log.debug("AutoDistiller._extract_experiences(): 非致命
 tuan_cli/self_improve/auto_distiller.py:399 (Exception) except Exception:  # 注册失败不影响蒸馏主流程  | body@400: log.warning("蒸馏技能同步 SkillManager 失败", exc_i
 tuan_cli/self_improve/auto_distiller.py:203 (Exception) except Exception as exc:  # 损坏条目跳过, 不阻断加载  | body@204: log.debug("AutoDistiller._load_dist
@@ -1688,23 +1711,29 @@ tuan_cli/self_improve/regression_gate.py:129 (Exception) except Exception as exc
 tuan_cli/skills/enhanced.py:555 (Exception) except Exception:  | body@556: files = []
 tuan_cli/skills/enhanced.py:289 (Exception) except Exception as exc:  | body@290: log.warning("EnhancedSkillManager.list_all(): 非致命异常已
 tuan_cli/skills/enhanced.py:566 (Exception) except Exception as exc:  | body@567: log.warning("EnhancedSkillManager.detect_context(): 
+tuan_cli/skills/manager.py:192 (Exception) except Exception as exc:  # noqa: BLE001  | body@193: log.debug(
 tuan_cli/skills/manager.py:151 (Exception) except Exception as exc:  # noqa: BLE001 - 配置损坏时按默认开启  | body@152: log.warning("SkillManag
-tuan_cli/skills/manager.py:397 (Exception) except Exception as exc:  | body@398: log.debug("SkillManager.list_all(): 非致命异常已忽略(设计内降级, 
-tuan_cli/skills/plugin_sdk.py:347 (Exception) except Exception as exc:  | body@348: log.warning("PluginManager._run_hook(): 非致命异常已忽略(设计内
-tuan_cli/skills/plugin_sdk.py:393 (Exception) except Exception as exc:  | body@394: log.warning("HeadersHelper.resolve(): 非致命异常已忽略(设计内降级
-tuan_cli/skills/plugin_sdk.py:420 (Exception) except Exception as exc:  | body@421: log.warning("HeadersHelper.safe_resolve(): 非致命异常已忽略(
-tuan_cli/skills/plugin_sdk.py:199 (Exception) except Exception as exc:  | body@200: log.debug("PluginManager._scan(): 非致命异常已忽略(设计内降级, 不改
+tuan_cli/skills/manager.py:414 (Exception) except Exception as exc:  | body@415: log.debug("SkillManager.list_all(): 非致命异常已忽略(设计内降级, 
+tuan_cli/skills/plugin_sdk.py:235 (Exception) except Exception as exc:  # noqa: BLE001  | body@236: log.debug(
+tuan_cli/skills/plugin_sdk.py:255 (Exception) except Exception as exc:  # noqa: BLE001  | body@256: log.debug(
+tuan_cli/skills/plugin_sdk.py:558 (Exception) except Exception as exc:  | body@559: log.warning("PluginManager._run_hook(): 非致命异常已忽略(设计内
+tuan_cli/skills/plugin_sdk.py:596 (Exception) except Exception as exc:  # noqa: BLE001  | body@597: log.debug(
+tuan_cli/skills/plugin_sdk.py:644 (Exception) except Exception as exc:  | body@645: log.warning("HeadersHelper.resolve(): 非致命异常已忽略(设计内降级
+tuan_cli/skills/plugin_sdk.py:671 (Exception) except Exception as exc:  | body@672: log.warning("HeadersHelper.safe_resolve(): 非致命异常已忽略(
+tuan_cli/skills/plugin_sdk.py:307 (Exception) except Exception as exc:  # noqa: BLE001  | body@308: log.warning(
+tuan_cli/skills/plugin_sdk.py:347 (Exception) except Exception as exc:  | body@348: log.debug("PluginManager._scan(): 非致命异常已忽略(设计内降级, 不改
+tuan_cli/skills/plugin_sdk.py:289 (Exception) except Exception as exc:  # noqa: BLE001  | body@290: log.warning(
 tuan_cli/skills/universal_format.py:117 (Exception) except Exception as exc:  | body@118: log.debug("detect_format(): 非致命异常已忽略(设计内降级, 不改控制流): 
 tuan_cli/skills/universal_format.py:137 (Exception) except Exception as exc:  | body@138: log.debug("FormatAdapter._read_text(): 非致命异常已忽略(设计内降
 tuan_cli/skills/universal_format.py:456 (Exception) except Exception as exc:  | body@457: log.debug("parse_skill_file(): 非致命异常已忽略(设计内降级, 不改控制流
-tuan_cli/stream_json/headless.py:173 (Exception) except Exception as exc:  # noqa: BLE001  | body@174: log.warning("HeadlessDriver._install
-tuan_cli/stream_json/headless.py:268 (Exception) except Exception as exc:  # noqa: BLE001  | body@269: log.warning("HeadlessDriver._send_in
-tuan_cli/stream_json/headless.py:279 (Exception) except Exception as exc:  # noqa: BLE001  | body@280: log.warning("HeadlessDriver._send_in
+tuan_cli/stream_json/headless.py:168 (Exception) except Exception as exc:  # noqa: BLE001  | body@169: log.warning("HeadlessDriver._install
+tuan_cli/stream_json/headless.py:244 (Exception) except Exception as exc:  # noqa: BLE001  | body@245: log.warning("HeadlessDriver._send_in
+tuan_cli/stream_json/headless.py:255 (Exception) except Exception as exc:  # noqa: BLE001  | body@256: log.warning("HeadlessDriver._send_in
 tuan_cli/stream_json/headless.py:63 (Exception) except Exception as exc:  # noqa: BLE001  | body@64: log.debug("_StdoutGuard.write(): 非致命异
 tuan_cli/stream_json/headless.py:72 (Exception) except Exception as exc:  # noqa: BLE001  | body@73: log.warning("_StdoutGuard.writelines(
 tuan_cli/stream_json/headless.py:81 (Exception) except Exception as exc:  # noqa: BLE001  | body@82: log.warning("_StdoutGuard.flush(): 非致
-tuan_cli/stream_json/headless.py:492 (Exception) except Exception as exc:  # noqa: BLE001  | body@493: log.warning("HeadlessDriver.serve():
-tuan_cli/stream_json/headless.py:481 (Exception) except Exception as exc:  # noqa: BLE001  | body@482: log.warning("HeadlessDriver.serve():
+tuan_cli/stream_json/headless.py:468 (Exception) except Exception as exc:  # noqa: BLE001 - 退出路径不得被关闭动作掀翻  | body@469: log.warning("Headles
+tuan_cli/stream_json/headless.py:457 (Exception) except Exception as exc:  # noqa: BLE001  | body@458: log.warning("HeadlessDriver.serve():
 tuan_cli/stream_json/translate.py:101 (Exception) except Exception as exc:  # noqa: BLE001 - 翻译层故障不得打穿 turn  | body@102: try:
 tuan_cli/stream_json/translate.py:105 (Exception) except Exception as exc:  # noqa: BLE001  | body@106: log.warning("StreamTranslator._safe_
 tuan_cli/superagent/engine.py:157 (Exception) except Exception as exc:  # noqa: BLE001  | body@158: log.warning("SuperAgent.stop(): 非致命异
@@ -1725,29 +1754,28 @@ tuan_cli/superagent/watchdog.py:118 (Exception) except Exception as exc:  # noqa
 tuan_cli/superagent/worker.py:173 (Exception) except Exception:  # noqa: BLE001  | body@174: log.exception("report_callback failed")
 tuan_cli/superagent/worker.py:279 (Exception) except Exception as exc:  # noqa: BLE001 - 注销失败不影响主流程  | body@280: log.warning("WorkerPool
 tuan_cli/tools/artifact_tool.py:87 (Exception) except Exception as exc:  # noqa: BLE001  | body@88: log.debug("_open_browser(): 非致命异常已忽略(
-tuan_cli/tools/base.py:776 (Exception) except Exception as exc:  | body@777: log.debug("_cfg_bool(): 非致命异常已忽略(设计内降级, 不改控制流): %s",
-tuan_cli/tools/base.py:794 (Exception) except Exception as exc:  | body@795: log.debug("_rel(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
-tuan_cli/tools/base.py:647 (Exception) except Exception as exc:  # noqa: BLE001  | body@648: elapsed = time.monotonic() - started
-tuan_cli/tools/base.py:744 (Exception) except Exception as exc:  # noqa: BLE001  | body@745: log.debug("ToolRegistry._query_learn
-tuan_cli/tools/base.py:759 (Exception) except Exception as exc:  | body@760: log.warning("ToolRegistry._emit_exec(): 非致命异常已忽略(设计内
-tuan_cli/tools/base.py:139 (Exception) except Exception as exc:  | body@140: log.warning("ToolContext.heartbeat(): 非致命异常已忽略(设计内降级
-tuan_cli/tools/base.py:555 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常  | body@556: log.warning("ToolRegistry._
-tuan_cli/tools/base.py:561 (Exception) except Exception as exc:  | body@562: log.warning("ToolRegistry._approve_dangerous(): 非致命异
-tuan_cli/tools/base.py:628 (Exception) except Exception as exc:  | body@629: log.warning("ToolRegistry._exec_and_record(): 非致命异常已
-tuan_cli/tools/base.py:643 (Exception) except Exception as exc:  | body@644: log.warning("ToolRegistry._exec_and_record(): 非致命异常已
-tuan_cli/tools/base.py:663 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常  | body@664: log.warning("ToolRegistry._
-tuan_cli/tools/base.py:653 (Exception) except Exception as exc:  | body@654: log.warning("ToolRegistry._exec_and_record(): 非致命异常已
+tuan_cli/tools/base.py:763 (Exception) except Exception as exc:  | body@764: log.debug("_cfg_bool(): 非致命异常已忽略(设计内降级, 不改控制流): %s",
+tuan_cli/tools/base.py:781 (Exception) except Exception as exc:  | body@782: log.debug("_rel(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+tuan_cli/tools/base.py:634 (Exception) except Exception as exc:  # noqa: BLE001  | body@635: elapsed = time.monotonic() - started
+tuan_cli/tools/base.py:731 (Exception) except Exception as exc:  # noqa: BLE001  | body@732: log.debug("ToolRegistry._query_learn
+tuan_cli/tools/base.py:746 (Exception) except Exception as exc:  | body@747: log.warning("ToolRegistry._emit_exec(): 非致命异常已忽略(设计内
+tuan_cli/tools/base.py:132 (Exception) except Exception as exc:  | body@133: log.warning("ToolContext.heartbeat(): 非致命异常已忽略(设计内降级
+tuan_cli/tools/base.py:511 (Exception) except Exception as exc:  # noqa: BLE001 - hook 通道异常不得掀翻审批链  | body@512: log.warning("Tool
+tuan_cli/tools/base.py:551 (Exception) except Exception as exc:  # noqa: BLE001  | body@552: log.warning("ToolRegistry._approve_d
+tuan_cli/tools/base.py:537 (Exception) except Exception as exc:  | body@538: log.warning("ToolRegistry._approve_dangerous(): 非致命异
+tuan_cli/tools/base.py:615 (Exception) except Exception as exc:  | body@616: log.warning("ToolRegistry._exec_and_record(): 非致命异常已
+tuan_cli/tools/base.py:630 (Exception) except Exception as exc:  | body@631: log.warning("ToolRegistry._exec_and_record(): 非致命异常已
+tuan_cli/tools/base.py:650 (Exception) except Exception as exc:  # noqa: BLE001  | body@651: log.warning("ToolRegistry._exec_and_
+tuan_cli/tools/base.py:640 (Exception) except Exception as exc:  | body@641: log.warning("ToolRegistry._exec_and_record(): 非致命异常已
 tuan_cli/tools/browser.py:57 (Exception) except Exception as exc:  # noqa: BLE001  | body@58: log.debug("browser_use_available(): 非
 tuan_cli/tools/browser.py:293 (Exception) except Exception as exc:  # noqa: BLE001  | body@294: log.warning("_format_report(): 非致命异常
 tuan_cli/tools/consolidate.py:189 (Exception) except Exception as exc:  # noqa: BLE001 - 单个家族失败不应阻断启动  | body@190: log.debug("apply_cons
 tuan_cli/tools/external.py:55 (Exception) except Exception as exc:  # noqa: BLE001  | body@56: logger.debug("_call(): 非致命异常已忽略(设计内降级
 tuan_cli/tools/external.py:194 (Exception) except Exception as exc:  # noqa: BLE001  | body@195: logger.debug("safety_check(): 非致命异常已
-tuan_cli/tools/filesystem.py:212 (Exception) except Exception as exc:  # noqa: BLE001  | body@213: log.warning("_is_system_critical(): 
-tuan_cli/tools/filesystem.py:229 (Exception) except Exception as exc:  # noqa: BLE001  | body@230: log.warning("_is_system_critical(): 
+tuan_cli/tools/filesystem.py:184 (Exception) except Exception as exc:  # noqa: BLE001  | body@185: log.warning("_is_system_critical(): 
 tuan_cli/tools/filesystem.py:158 (Exception) except Exception as exc:  # noqa: BLE001  | body@159: log.warning("_system_roots(): 非致命异常已
 tuan_cli/tools/filesystem.py:167 (Exception) except Exception as exc:  # noqa: BLE001  | body@168: log.warning("_system_roots(): 非致命异常已
 tuan_cli/tools/filesystem.py:173 (Exception) except Exception as exc:  # noqa: BLE001  | body@174: log.warning("_system_roots(): 非致命异常已
-tuan_cli/tools/filesystem.py:182 (Exception) except Exception as exc:  # noqa: BLE001  | body@183: log.warning("_system_roots(): 非致命异常已
 tuan_cli/tools/gh_borrow.py:44 (Exception) except Exception as exc:  # noqa: BLE001  | body@45: log.debug("_default_runner(): 非致命异常已忽
 tuan_cli/tools/gh_borrow.py:158 (Exception) except Exception as exc:  | body@159: log.debug("GitHubClient.get_license(): 非致命异常已忽略(设计内降
 tuan_cli/tools/gh_borrow.py:134 (Exception) except Exception as exc:  | body@135: log.warning("GitHubClient.get_file_content(): 非致命异常已
@@ -1799,34 +1827,33 @@ tuan_cli/tools/session_tools.py:100 (Exception) except Exception as exc:  # noqa
 tuan_cli/tools/session_tools.py:183 (Exception) except Exception as exc:  # noqa: BLE001  | body@184: log.debug("_fullscreen_tui_active():
 tuan_cli/tools/session_tools.py:50 (Exception) except Exception as exc:  # noqa: BLE001  | body@51: log.warning("_archive_plan(): 非致命异常已忽
 tuan_cli/tools/session_tools.py:68 (Exception) except Exception as exc:  # noqa: BLE001  | body@69: log.warning("_set_plan_mode(): 非致命异常已
-tuan_cli/tools/session_tools.py:216 (Exception) except Exception as exc:  # noqa: BLE001 - 钩子失效时走下面的安全分支  | body@217: log.warning("_ask_us
+tuan_cli/tools/session_tools.py:221 (Exception) except Exception as exc:  # noqa: BLE001 - 钩子失效时走下面的安全分支  | body@222: log.warning("_ask_us
 tuan_cli/tools/shell.py:67 (Exception) except Exception as exc:  # noqa: BLE001  | body@68: log.debug("redline 引擎判定异常, 回退字面量: %s"
-tuan_cli/tools/shell.py:250 (Exception) except Exception as exc:  # noqa: BLE001 - 确认通道故障 ≠ 安全, 一律视为未同意  | body@251: log.error("确认
-tuan_cli/tools/shell.py:275 (Exception) except Exception as exc:  # noqa: BLE001  | body@277: log.warning("安全审计事件落盘失败 (event=%s): 
-tuan_cli/tools/shell.py:395 (Exception) except Exception as exc:  # noqa: BLE001  | body@396: log.debug("脚本隔离裁决设置异常 (非致命, 回落本地执行):
-tuan_cli/tools/shell.py:428 (Exception) except Exception as exc:  # noqa: BLE001  | body@431: log.error("网络门控异常, fail-closed 拒绝: %
-tuan_cli/tools/shell.py:625 (Exception) except Exception as exc:  # noqa: BLE001  | body@629: log.error("safety_check 异常 (不再静默放行):
-tuan_cli/tools/shell.py:695 (Exception) except Exception as exc:  # noqa: BLE001  | body@698: log.error("安全分类器异常, fail-closed 拒绝: 
-tuan_cli/tools/shell.py:805 (Exception) except Exception:  # noqa: BLE001  | body@806: try:
-tuan_cli/tools/shell.py:465 (Exception) except Exception as exc:  # noqa: BLE001  | body@466: log.debug("safety_check 调用失败 (红线拦截不受
-tuan_cli/tools/shell.py:487 (Exception) except Exception as exc:  # noqa: BLE001 - 确认异常维持拦截 (fail-closed)  | body@488: log.debug("
-tuan_cli/tools/shell.py:342 (Exception) except Exception as exc:  # noqa: BLE001  | body@343: log.debug("AST critical 人工放行确认异常, 维持
-tuan_cli/tools/shell.py:647 (Exception) except Exception as exc:  # noqa: BLE001  | body@648: log.debug("critical 人工放行确认异常, 维持拦截: 
-tuan_cli/tools/shell.py:808 (Exception) except Exception as exc:  | body@809: log.warning("_kill_proc_tree(): 非致命异常已忽略(设计内降级, 不改控制
+tuan_cli/tools/shell.py:394 (Exception) except Exception as exc:  # noqa: BLE001  | body@397: log.error("网络门控异常, fail-closed 拒绝: %
+tuan_cli/tools/shell.py:551 (Exception) except Exception as exc:  # noqa: BLE001  | body@555: log.error("safety_check 异常 (不再静默放行):
+tuan_cli/tools/shell.py:615 (Exception) except Exception as exc:  # noqa: BLE001  | body@618: log.error("安全分类器异常, fail-closed 拒绝: 
+tuan_cli/tools/shell.py:642 (Exception) except Exception:  # noqa: BLE001  | body@643: try:
+tuan_cli/tools/shell.py:260 (Exception) except Exception as exc:  # noqa: BLE001  | body@261: log.warning("_emitSecurityEvent(): 非
+tuan_cli/tools/shell.py:363 (Exception) except Exception as exc:  # noqa: BLE001  | body@364: log.debug("脚本隔离裁决设置异常 (非致命, 回落本地执行):
+tuan_cli/tools/shell.py:330 (Exception) except Exception as exc:  # noqa: BLE001  | body@331: log.error("AST 确认通道异常, fail-closed 拒
+tuan_cli/tools/shell.py:390 (Exception) except Exception as exc:  # noqa: BLE001  | body@392: log.error("网络确认通道异常, fail-closed 拒绝:
+tuan_cli/tools/shell.py:425 (Exception) except Exception as exc:  # noqa: BLE001  | body@426: log.debug("safety_check 调用失败 (红线拦截不受
+tuan_cli/tools/shell.py:447 (Exception) except Exception as exc:  # noqa: BLE001 - 确认异常维持拦截 (fail-closed)  | body@448: log.debug("
+tuan_cli/tools/shell.py:572 (Exception) except Exception as exc:  # noqa: BLE001  | body@573: log.debug("critical 人工放行确认异常, 维持拦截: 
+tuan_cli/tools/shell.py:645 (Exception) except Exception as exc:  | body@646: log.warning("_kill_proc_tree(): 非致命异常已忽略(设计内降级, 不改控制
+tuan_cli/tools/shell.py:315 (Exception) except Exception as exc:  # noqa: BLE001  | body@316: log.debug("AST critical 人工放行确认异常, 维持
+tuan_cli/tools/shell.py:611 (Exception) except Exception as exc:  # noqa: BLE001  | body@613: log.error("分类器确认通道异常, fail-closed 拒绝
 tuan_cli/tools/subagent_tool.py:102 (Exception) except Exception as exc:  # noqa: BLE001  | body@103: log.warning("_resolve_subagent_param
-tuan_cli/tools/subagent_tool.py:231 (Exception) except Exception as exc:  # noqa: BLE001  | body@232: log.warning("_run_subagent(): 非致命异常已
-tuan_cli/tools/subagent_tool.py:211 (Exception) except Exception as exc:  # noqa: BLE001  | body@212: log.debug("子代理技能加载失败 %s: %s", name, 
+tuan_cli/tools/subagent_tool.py:214 (Exception) except Exception as exc:  # noqa: BLE001  | body@215: log.debug("子代理技能加载失败 %s: %s", name, 
 tuan_cli/tools/task_tool.py:230 (Exception) except Exception as exc:  # noqa: BLE001  | body@231: log.warning("加载自定义 subagent 类型失败: %s
 tuan_cli/tools/team_tool.py:169 (Exception) except Exception as exc:  # noqa: BLE001  | body@170: log.warning("_format_msg(): 非致命异常已忽略
-tuan_cli/tools/todo_tool.py:47 (Exception) except Exception as exc:  # noqa: BLE001 - 损坏的清单不应阻断 Agent  | body@48: log.warning("load_d
-tuan_cli/tools/todo_tool.py:103 (Exception) except Exception as exc:  # noqa: BLE001 - emit_preventable 注入异常时 fail-closed  | body@104:
-tuan_cli/tools/todo_tool.py:121 (Exception) except Exception as exc:  # noqa: BLE001  | body@122: log.warning("_todo_write_handler(): 
-tuan_cli/tools/todo_tool.py:128 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常  | body@129: log.warning("_todo_write_ha
+tuan_cli/tools/todo_tool.py:46 (Exception) except Exception as exc:  # noqa: BLE001 - 损坏的清单不应阻断 Agent  | body@47: log.warning("load_d
+tuan_cli/tools/todo_tool.py:116 (Exception) except Exception as exc:  # noqa: BLE001  | body@120: log.debug("_todo_write_handler(): 非致
+tuan_cli/tools/todo_tool.py:130 (Exception) except Exception as exc:  # noqa: BLE001  | body@131: log.warning("_todo_write_handler(): 
 tuan_cli/tools/web.py:275 (Exception) except Exception as exc:  # noqa: BLE001  | body@276: log.debug("_cache_dir(): 非致命异常已忽略(设计
 tuan_cli/tools/web.py:301 (Exception) except Exception as exc:  # noqa: BLE001 - 缓存损坏/不可读不影响主流程  | body@302: log.debug("_cache_l
 tuan_cli/tools/web.py:319 (Exception) except Exception:  # noqa: BLE001 - 缓存写入失败绝不影响搜索  | body@320: try:
 tuan_cli/tools/web.py:322 (Exception) except Exception as exc:  # noqa: BLE001  | body@323: log.warning("_cache_store(): 非致命异常已忽
-tuan_cli/tools/workflow_tool.py:174 (Exception) except Exception as exc:  # noqa: BLE001  | body@175: log.warning("_execute_subtask(): 非致命
 tuan_cli/tui/codexkit/__init__.py:92 (Exception) except Exception as exc:  # noqa: BLE001 - 注册失败由 depth_audit 如实暴露  | body@93: log.warning(
 tuan_cli/tui/codexkit/approval_history.py:104 (Exception) except Exception as exc:  # noqa: BLE001  | body@105: log.debug("DenialLedger.enforce(): 非
 tuan_cli/tui/codexkit/stream_exec.py:331 (Exception) except Exception as exc:  # noqa: BLE001  | body@332: log.debug("run_bounded(): 非致命异常已忽略(设
@@ -1835,7 +1862,7 @@ tuan_cli/tui/common.py:334 (Exception) except Exception as exc:  # noqa: BLE001 
 tuan_cli/tui/common.py:509 (Exception) except Exception as exc:  # noqa: BLE001 - 测量失败不影响渲染  | body@510: log.warning("_MeasuredWi
 tuan_cli/tui/common.py:539 (Exception) except Exception as exc:  # noqa: BLE001  | body@540: log.warning("_TuiLogHandler.emit(): 
 tuan_cli/tui/configkit/model_migration.py:307 (Exception) except Exception as exc:  # noqa: BLE001 - 对齐上游 `let _ =`  | body@308: log.warning("AltScr
-tuan_cli/tui/configkit/model_migration.py:317 (Exception) except Exception as exc:  # noqa: BLE001 - 异常路径也必须恢复  | body@318: log.warning("AltScreenGu
+tuan_cli/tui/configkit/model_migration.py:316 (Exception) except Exception as exc:  # noqa: BLE001 - 异常路径也必须恢复  | body@317: log.warning("AltScreenGu
 tuan_cli/tui/inputkit/copy_input_guard.py:87 (Exception) except Exception as exc:  | body@88: log.warning("剪贴板护栏降级: %s", exc)
 tuan_cli/tui/interact.py:548 (Exception) except Exception as exc:  # noqa: BLE001 - 无 app 时忽略  | body@549: log.warning("InteractMix
 tuan_cli/tui/interact.py:145 (Exception) except Exception as exc:  # noqa: BLE001 - 输入框未就绪 (极早期启动)  | body@146: log.warning("Intera
@@ -1854,8 +1881,8 @@ tuan_cli/tui/layout.py:483 (Exception) except Exception as exc:  # noqa: BLE001 
 tuan_cli/tui/lifecycle.py:41 (Exception) except Exception as exc:  # noqa: BLE001  | body@42: log.warning("LifecycleMixin.close(): 
 tuan_cli/tui/panels.py:295 (Exception) except Exception as exc:  # noqa: BLE001  | body@296: log.warning("PanelsMixin._tb_stop():
 tuan_cli/tui/panels.py:343 (Exception) except Exception as exc:  # noqa: BLE001  | body@344: log.warning("PanelsMixin._toggle_hel
-tuan_cli/tui/parity/depth.py:62 (Exception) except Exception as exc:  # noqa: BLE001 - 导入失败由 missing 如实暴露  | body@63: log.warning("_en
-tuan_cli/tui/parity/depth.py:187 (Exception) except Exception as exc:  # noqa: BLE001 - 包不可导入时不注册，audit 会如实暴露  | body@188: log.warning(
+tuan_cli/tui/parity/depth.py:63 (Exception) except Exception as exc:  # noqa: BLE001 - 导入失败由 missing 如实暴露  | body@64: log.warning("_en
+tuan_cli/tui/parity/depth.py:188 (Exception) except Exception as exc:  # noqa: BLE001 - 包不可导入时不注册，audit 会如实暴露  | body@189: log.warning(
 tuan_cli/tui/parity/i18n.py:130 (Exception) except Exception as exc:  # noqa: BLE001 - i18n 不可用时不影响 parity 文案  | body@131: log.debug("
 tuan_cli/tui/parity/i18n.py:148 (Exception) except Exception as exc:  # noqa: BLE001  | body@149: log.warning("pt(): 非致命异常已忽略(设计内降级, 不
 tuan_cli/tui/render.py:104 (Exception) except Exception as exc:  # noqa: BLE001 - 偏好不可用时不显示自定义段  | body@105: log.debug("RenderMix
@@ -1866,7 +1893,7 @@ tuan_cli/tui/render.py:1015 (Exception) except Exception as exc:  # noqa: BLE001
 tuan_cli/tui/render.py:1077 (Exception) except Exception as exc:  # noqa: BLE001 - Super-Agent 提示绝不阻断底栏渲染  | body@1078: log.warnin
 tuan_cli/tui/render.py:1028 (Exception) except Exception as exc:  # noqa: BLE001 - 探测异常不阻断底栏渲染  | body@1029: log.warning("RenderMi
 tuan_cli/tui/render.py:132 (Exception) except Exception as exc:  # noqa: BLE001 - 应用已退出  | body@133: log.warning("RenderMixin._st
-tuan_cli/tui/runtime_slogans.py:1080 (Exception) except Exception as exc:  # noqa: BLE001 - i18n 不可用时不能让 TUI 崩  | body@1081: log.debug("_cu
+tuan_cli/tui/runtime_slogans.py:1076 (Exception) except Exception as exc:  # noqa: BLE001 - i18n 不可用时不能让 TUI 崩  | body@1077: log.debug("_cu
 tuan_cli/tui/runtime_slogans.py:811 (Exception) except Exception as exc:  # noqa: BLE001 - 重载失败绝不能掀掉 TUI  | body@812: log.debug("RuntimeSl
 tuan_cli/tui/slashmenu.py:53 (Exception) except Exception as exc:  # noqa: BLE001 - 输入框未就绪 (极早期启动)  | body@54: log.debug("SlashMenu
 tuan_cli/tui/slashmenu.py:205 (Exception) except Exception as exc:  # noqa: BLE001  | body@206: log.warning("SlashMenuMixin._record_
@@ -1895,10 +1922,51 @@ tuan_cli/tui/state.py:806 (Exception) except Exception as exc:  # noqa: BLE001  
 tuan_cli/tui/state.py:620 (Exception) except Exception as exc:  # noqa: BLE001 - 事件展示绝不阻断引擎  | body@621: log.warning("StateMixin
 tuan_cli/tui/state.py:640 (Exception) except Exception as exc:  # noqa: BLE001  | body@641: log.warning("StateMixin._bind_supera
 tuan_cli/tui/state.py:740 (Exception) except Exception as exc:  | body@741: log.warning("StateMixin._do_reset(): 非致命异常已忽略(设计内降级,
-tuan_cli/tui/tui.py:495 (Exception) except Exception as exc:  # noqa: BLE001 - 测量失败不影响渲染  | body@496: log.warning("_MeasuredWi
-tuan_cli/tui/tui.py:525 (Exception) except Exception as exc:  # noqa: BLE001  | body@526: log.warning("_TuiLogHandler.emit(): 
-tuan_cli/tui/tui.py:861 (Exception) except Exception as exc:  # noqa: BLE001 - 测试桩/旧版 pt 无该事件时静默降级  | body@862: log.warning("Q
-tuan_cli/tui/tui.py:984 (Exception) except Exception as exc:  | body@985: log.warning("QxtTUI.__init__(): 非致命异常已忽略(设计内降级, 不改控制
+tuan_cli/tui/tui.py:493 (Exception) except Exception as exc:  # noqa: BLE001 - 测量失败不影响渲染  | body@494: log.warning("_MeasuredWi
+tuan_cli/tui/tui.py:523 (Exception) except Exception as exc:  # noqa: BLE001  | body@524: log.warning("_TuiLogHandler.emit(): 
+tuan_cli/tui/tui.py:862 (Exception) except Exception as exc:  # noqa: BLE001 - 测试桩/旧版 pt 无该事件时静默降级  | body@863: log.warning("Q
+tuan_cli/tui/tui.py:985 (Exception) except Exception as exc:  | body@986: log.warning("QxtTUI.__init__(): 非致命异常已忽略(设计内降级, 不改控制
+tuan_cli/tui/tui.py:1701 (Exception) except Exception as exc:  # noqa: BLE001  | body@1702: log.warning("QxtTUI._tb_stop(): 非致命
+tuan_cli/tui/tui.py:1949 (Exception) except Exception as exc:  | body@1950: log.debug("QxtTUI._scroll_log(): 非致命异常已忽略(设计内降级, 不改
+tuan_cli/tui/tui.py:1978 (Exception) except Exception as exc:  | body@1979: log.debug("QxtTUI._scroll_state(): 非致命异常已忽略(设计内降级, 
+tuan_cli/tui/tui.py:1990 (Exception) except Exception as exc:  | body@1991: log.debug("QxtTUI._current_line_count(): 非致命异常已忽略(设
+tuan_cli/tui/tui.py:2053 (Exception) except Exception as exc:  | body@2054: log.warning("QxtTUI._push_history(): 非致命异常已忽略(设计内降级
+tuan_cli/tui/tui.py:2100 (Exception) except Exception as exc:  # noqa: BLE001 - 无 app 时忽略  | body@2101: log.warning("QxtTUI._mo
+tuan_cli/tui/tui.py:2113 (Exception) except Exception as exc:  | body@2114: log.warning("QxtTUI._term_width(): 非致命异常已忽略(设计内降级, 
+tuan_cli/tui/tui.py:2118 (Exception) except Exception as exc:  | body@2119: log.debug("QxtTUI._term_width(): 非致命异常已忽略(设计内降级, 不改
+tuan_cli/tui/tui.py:2135 (Exception) except Exception as exc:  # noqa: BLE001 - 输入框未就绪 (极早期启动)  | body@2136: log.debug("QxtTUI.
+tuan_cli/tui/tui.py:2287 (Exception) except Exception as exc:  # noqa: BLE001  | body@2288: log.warning("QxtTUI._record_slash_u
+tuan_cli/tui/tui.py:2299 (Exception) except Exception as exc:  | body@2300: log.debug("QxtTUI._arg_completions(): 非致命异常已忽略(设计内降
+tuan_cli/tui/tui.py:2357 (Exception) except Exception:  # noqa: BLE001 - 极端环境退回纯文本赋值  | body@2358: self._slash_accepting = Fals
+tuan_cli/tui/tui.py:2840 (Exception) except Exception as exc:  # noqa: BLE001  | body@2841: log.warning("QxtTUI.attach_ui(): 非致
+tuan_cli/tui/tui.py:2971 (Exception) except Exception as exc:  # noqa: BLE001 - Super-Agent 绑定失败不阻断 TUI 启动  | body@2972: log.wa
+tuan_cli/tui/tui.py:2996 (Exception) except Exception as exc:  | body@2997: log.warning("QxtTUI.set_ready(): 非致命异常已忽略(设计内降级, 不改
+tuan_cli/tui/tui.py:3025 (Exception) except Exception as exc:  # noqa: BLE001  | body@3026: log.warning("QxtTUI.set_ready(): 非致
+tuan_cli/tui/tui.py:3084 (Exception) except Exception as exc:  | body@3085: log.warning("QxtTUI._reset_renderer(): 非致命异常已忽略(设计内
+tuan_cli/tui/tui.py:3112 (Exception) except Exception as exc:  | body@3113: log.warning("QxtTUI._box_width(): 非致命异常已忽略(设计内降级, 不
+tuan_cli/tui/tui.py:3117 (Exception) except Exception as exc:  | body@3118: log.debug("QxtTUI._box_width(): 非致命异常已忽略(设计内降级, 不改控
+tuan_cli/tui/tui.py:3443 (Exception) except Exception as exc:  # noqa: BLE001 - 时钟失败绝不影响完成分隔线  | body@3444: log.warning("QxtTUI
+tuan_cli/tui/tui.py:3596 (Exception) except Exception as exc:  # noqa: BLE001  | body@3597: log.warning("QxtTUI.confirm(): 非致命异
+tuan_cli/tui/tui.py:3694 (Exception) except Exception as exc:  # noqa: BLE001  | body@3695: log.warning("QxtTUI.ask_user(): 非致命
+tuan_cli/tui/tui.py:3744 (Exception) except Exception as exc:  # noqa: BLE001  | body@3745: log.warning("QxtTUI._resolve_ask():
+tuan_cli/tui/tui.py:3808 (Exception) except Exception as exc:  # noqa: BLE001 - 标题设置绝不阻断启动  | body@3809: log.warning("QxtTUI.ru
+tuan_cli/tui/tui.py:4545 (Exception) except Exception as exc:  # noqa: BLE001 - 指示器绝不阻断底栏渲染  | body@4546: log.debug("QxtTUI._sc
+tuan_cli/tui/tui.py:4592 (Exception) except Exception as exc:  # noqa: BLE001  | body@4593: log.debug("QxtTUI._superagent_foote
+tuan_cli/tui/tui.py:4933 (Exception) except Exception as exc:  # noqa: BLE001 - 目录格式化失败回退原路径  | body@4934: log.warning("QxtTUI.
+tuan_cli/tui/tui.py:1089 (Exception) except Exception as exc:  # noqa: BLE001 - 输入框未就绪 (极早期启动)  | body@1090: log.warning("QxtTU
+tuan_cli/tui/tui.py:2049 (Exception) except Exception as exc:  | body@2050: log.warning("QxtTUI._push_history(): 非致命异常已忽略(设计内降级
+tuan_cli/tui/tui.py:2092 (Exception) except Exception as exc:  # noqa: BLE001 - 无 app 时忽略  | body@2093: log.warning("QxtTUI._mo
+tuan_cli/tui/tui.py:2269 (Exception) except Exception as exc:  # noqa: BLE001  | body@2270: log.warning("QxtTUI._close_slash_me
+tuan_cli/tui/tui.py:2372 (Exception) except Exception as exc:  # noqa: BLE001  | body@2373: log.warning("QxtTUI._accept_slash()
+tuan_cli/tui/tui.py:2622 (Exception) except Exception as exc:  # noqa: BLE001  | body@2623: log.warning("QxtTUI._toggle_help():
+tuan_cli/tui/tui.py:3075 (Exception) except Exception as exc:  | body@3076: log.warning("QxtTUI._do_reset(): 非致命异常已忽略(设计内降级, 不改
+tuan_cli/tui/tui.py:4447 (Exception) except Exception as exc:  # noqa: BLE001 - network_check 尚未就绪: 横幅暂不激活  | body@4448: log.wa
+tuan_cli/tui/tui.py:4512 (Exception) except Exception as exc:  # noqa: BLE001 - Super-Agent 提示绝不阻断底栏渲染  | body@4513: log.warnin
+tuan_cli/tui/tui.py:2361 (Exception) except Exception as exc:  | body@2362: log.warning("QxtTUI._accept_slash(): 非致命异常已忽略(设计内降级
+tuan_cli/tui/tui.py:2946 (Exception) except Exception as exc:  # noqa: BLE001 - 事件展示绝不阻断引擎  | body@2947: log.warning("QxtTUI._b
+tuan_cli/tui/tui.py:2966 (Exception) except Exception as exc:  # noqa: BLE001  | body@2967: log.warning("QxtTUI._bind_superagen
+tuan_cli/tui/tui.py:3066 (Exception) except Exception as exc:  | body@3067: log.warning("QxtTUI._do_reset(): 非致命异常已忽略(设计内降级, 不改
+tuan_cli/tui/tui.py:4460 (Exception) except Exception as exc:  # noqa: BLE001 - 探测异常不阻断底栏渲染  | body@4461: log.warning("QxtTUI._
 tuan_cli/tui/win_compat.py:62 (Exception) except Exception as exc:  # pragma: no cover - 句柄不可用的极边缘环境  | body@63: log.warning("VT ena
 tuan_cli/tui/win_compat.py:72 (Exception) except Exception as exc:  # pragma: no cover  | body@73: log.warning("code page 切换为 UTF-8(
 tuan_cli/tui/win_compat.py:87 (Exception) except Exception as exc:  # noqa: BLE001 - 非 TTY / 不支持 reconfigure 时忽略  | body@88: log.war
@@ -1911,8 +1979,8 @@ tuan_cli/ui/prefs.py:49 (Exception) except Exception as exc:  # noqa: BLE001 - �
 tuan_cli/ui/prefs.py:89 (Exception) except Exception as exc:  # noqa: BLE001 - 单个前端异常不影响其他前端  | body@90: log.warning("set_vim_
 tuan_cli/ui/repl.py:136 (Exception) except Exception as exc:  # noqa: BLE001  | body@137: log.debug("git 分支探测失败, 回退 main: %s",
 tuan_cli/ui/repl.py:146 (Exception) except Exception as exc:  # noqa: BLE001  | body@147: log.debug("git 工作区状态探测失败, 视为干净: %s",
-tuan_cli/ui/slogans/mapping.py:539 (Exception) except Exception as exc:  # noqa: BLE001 - tui 依赖缺失时报告未共享  | body@540: log.warning("audit(
-tuan_cli/ui/slogans/picker.py:237 (Exception) except Exception as exc:  # noqa: BLE001  | body@238: log.debug("resolve_lang(): 非致命异常已忽略(
+tuan_cli/ui/slogans/mapping.py:538 (Exception) except Exception as exc:  # noqa: BLE001 - tui 依赖缺失时如实报告未共享  | body@539: log.warning("audi
+tuan_cli/ui/slogans/picker.py:224 (Exception) except Exception as exc:  # noqa: BLE001  | body@225: log.debug("resolve_lang(): 非致命异常已忽略(
 tuan_cli/ui/splash.py:30 (Exception) except Exception as exc:  | body@31: log.warning("模块顶层: 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
 tuan_cli/ui/splash.py:69 (Exception) except Exception as exc:  | body@70: log.warning("SplashTUI.__init__(): 非致命异常已忽略(设计内降级, 不改
 tuan_cli/ui/splash.py:121 (Exception) except Exception as exc:  | body@122: log.warning("SplashTUI.set_kernel(): 非致命异常已忽略(设计内降级,

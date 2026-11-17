@@ -14,7 +14,7 @@ import fnmatch
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable
 from urllib.parse import urlparse
 
 import logging
@@ -338,12 +338,12 @@ class PermissionPolicy:
                         matched = False
             if matched:
                 hits.append({"index": i, "rule": rule})
-        resolved_action: Optional[str] = None
+        action = None
         for priority in ("deny", "ask", "allow"):
             if any(h["rule"].get("action") == priority for h in hits):
-                resolved_action = priority
+                action = priority
                 break
-        return {"action": resolved_action, "hits": hits}
+        return {"action": action, "hits": hits}
 
     @staticmethod
     def _rule_target(name: str, args: dict[str, Any]) -> str:

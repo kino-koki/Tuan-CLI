@@ -415,8 +415,9 @@ class Terminal:
     def __enter__(self) -> "Terminal":
         return self
 
-    def __exit__(self, *exc: object) -> None:
+    def __exit__(self, *exc) -> bool:
         self.close()
+        return False
 
 
 def draw(backend: TerminalBackend, commands: Iterable[DrawCommand]) -> None:

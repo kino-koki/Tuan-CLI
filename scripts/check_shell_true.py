@@ -138,6 +138,8 @@ WHITELIST: list[tuple[str, int, str, str]] = [
     ("sandbox/manager.py", 449, "command, shell=True, cwd=cwd,", "USER_INPUT"),
     # ecosystem/mcp_server.py 真实执行点.
     ("ecosystem/mcp_server.py", 376, "command, shell=True, capture_output=True,", "USER_INPUT"),
+    # 0.4.4 合并: _h_run_shell 的 docstring 描述 (文字常量, 非调用点).
+    ("ecosystem/mcp_server.py", 676, "用 ``shell=True`` 执行", "COMMENT"),
 ]
 
 
