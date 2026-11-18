@@ -175,7 +175,8 @@ def _print_dsh_plugin_skills() -> int:
     try:
         from ..skills.plugin_sdk import DshPluginLoader
         from ..skills.plugin_sdk import PluginManager
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - DSH SDK 不可用时按 0 个列出
+        log.debug("DSH plugin_sdk 导入失败: %s", exc)
         return 0
     try:
         pm = PluginManager(Path.home() / ".tuan" / "plugins")
@@ -189,7 +190,8 @@ def _print_dsh_plugin_skills() -> int:
                 continue
             try:
                 skills = loader.list_skills(path)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 - 单个插件失败不掀翻列表
+                log.debug("列出插件技能失败 %s: %s", path, exc)
                 continue
             for s in skills:
                 total += 1
@@ -197,7 +199,8 @@ def _print_dsh_plugin_skills() -> int:
                     f"  {s.get('name', '?'):<22} [dsh-plugin]  {getattr(plugin, 'name', '?')}"
                 )
         return total
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 列举失败不掀翻 skills 命令
+        log.debug("列举 DSH 插件技能失败: %s", exc)
         return 0
 
 

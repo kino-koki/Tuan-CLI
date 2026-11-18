@@ -71,6 +71,7 @@ fail-closed。通知类 9 处保持吞异常（动作已发生，不该回滚）
 from __future__ import annotations
 
 import json
+import logging
 import math
 import threading
 from dataclasses import dataclass
@@ -92,6 +93,8 @@ from tuan_cli.core.safe_text import (  # noqa: E402
 
 from . import exit_semantics as XS
 from . import triggers as TR
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------- 接线清单
 # **只列真正挂了生产代码的事件**。每加一行，必须在
@@ -225,13 +228,14 @@ def _resolve_hooks(hooks: Any, owner: Optional[str]) -> Tuple[Any, str, Optional
             return None, "owner_not_registered", "owner_not_registered"
         try:
             h = TR.resolve_session(owner)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - 归因 provider_error, 决策类会 fail-closed
+            log.warning("按 owner 查会话 hooks 抛异常: %s", exc)
             return None, "provider_error", "provider_error"
         if h is None:
             try:
                 TR._bump_owner_miss(owner)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001 - 诊断计数失败不影响裁决
+                log.debug("owner miss 计数失败: %s", exc)
             return None, "owner_not_registered", "owner_not_registered"
         return h, "owner", None
     # A′（XIV 自查 F2）：``TR.current_session_hooks()`` →
@@ -242,7 +246,8 @@ def _resolve_hooks(hooks: Any, owner: Optional[str]) -> Tuple[Any, str, Optional
     try:
         provider = TR.get_default_hooks_provider()
         h = provider() if provider is not None else None
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 归因 provider_error, 决策类会 fail-closed
+        log.warning("hooks provider 调用抛异常: %s", exc)
         return None, "provider_error", "provider_error"
     if h is None:
         return None, "no_hooks", None

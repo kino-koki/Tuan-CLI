@@ -314,7 +314,8 @@ class HookManager:
                 v = config.get("hooks", None)
             else:
                 v = config.get("hooks") if isinstance(config, dict) else None
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - 配置对象异常按未配置处理
+            log.debug("读取 config.hooks 失败, 视为未配置: %s", exc)
             return None
         if v is None:
             return {}
@@ -969,8 +970,8 @@ class HookManager:
         )
         try:
             self._tls.last_failure = rec
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 - tls 记录失败不影响失败登记
+            log.debug("记录 last_failure 到 tls 失败: %s", exc)
         self._failures.append(rec)
         if len(self._failures) > self._max_failures:
             self._failures = self._failures[-self._max_failures:]
@@ -1149,13 +1150,14 @@ class HookManager:
                     os.killpg(os.getpgid(pid), signal.SIGKILL)  # type: ignore[attr-defined]  # POSIX-only: killpg/getpgid/SIGKILL
                 except ProcessLookupError:
                     pass  # Process group already gone
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - killpg 不可用/失败时降级
             # Fallback: try to kill just the main process
+            log.debug("killpg 终止进程组失败, 降级为单进程 kill: %s", exc)
             try:
                 if proc.poll() is None:
                     proc.kill()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc2:  # noqa: BLE001 - 进程可能已自行退出
+                log.debug("单进程 kill 也失败(进程可能已退出): %s", exc2)
 
     # B3 XV: ``_exec_http`` / ``_exec_prompt`` / ``_exec_subagent`` 三个
     # 重复执行器已删除，权威实现只有 ``hooks/nonprocess.execute()`` 一份。

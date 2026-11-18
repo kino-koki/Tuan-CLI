@@ -49,12 +49,15 @@ Notification            ``remote_control.notify`` /    纯通知
 from __future__ import annotations
 
 import contextvars
+import logging
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from .manager import HookDecision
+
+log = logging.getLogger(__name__)
 
 _DEFAULT_PROVIDER: Optional[Callable[[], Any]] = None
 
@@ -152,7 +155,8 @@ def _resolve_default() -> Any:
         return None
     try:
         return prov()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - provider 异常一律当「没配 hooks」
+        log.debug("default hooks provider 调用失败, 视为未配置: %s", exc)
         return None
 
 
@@ -284,9 +288,9 @@ def reset_session_owner(token: Any) -> None:
     """
     try:
         _CURRENT_OWNER.reset(token)
-    except (ValueError, TypeError, RuntimeError):
+    except (ValueError, TypeError, RuntimeError) as exc:
         # 跨 Context 误用 / token 已用过 —— 不掀翻主路径，如实忽略
-        pass
+        log.debug("复位 session owner token 已忽略(幂等/跨 Context): %s", exc)
 
 
 def _bump_owner_miss(owner: str) -> None:
@@ -366,8 +370,8 @@ def bind_session_hooks(hooks: Any, *, owner: Optional[str] = None) -> bool:
             inst = getattr(m, _attr, None)
             if inst is not None:
                 inst.hooks = hooks
-        except Exception:  # noqa: BLE001 - 绑定不得掀翻会话启动
-            pass
+        except Exception as exc:  # noqa: BLE001 - 绑定不得掀翻会话启动
+            log.debug("回填 %s.%s 失败(不掀翻会话启动): %s", _mod, _attr, exc)
     return ok
 
 
@@ -455,8 +459,8 @@ def activate_session(
         try:
             ctx.session_owner = owner
             ctx.session_handle = handle
-        except Exception:  # noqa: BLE001 - 只读 ctx 不掀翻会话启动
-            pass
+        except Exception as exc:  # noqa: BLE001 - 只读 ctx 不掀翻会话启动
+            log.debug("挂载 session owner/handle 到 ctx 失败: %s", exc)
     return handle
 
 
@@ -476,8 +480,8 @@ def deactivate_session(handle: Any) -> bool:
         return False
     try:
         handle.closed = True
-    except Exception:  # noqa: BLE001 - 外来句柄对象也能安全处理
-        pass
+    except Exception as exc:  # noqa: BLE001 - 外来句柄对象也能安全处理
+        log.debug("设置 handle.closed 失败(外来句柄): %s", exc)
     owner = getattr(handle, "owner", None)
     token = getattr(handle, "token", None)
     hooks = getattr(handle, "hooks", _UNSET)
@@ -492,8 +496,8 @@ def deactivate_session(handle: Any) -> bool:
                 ctx.session_handle = None
                 if getattr(ctx, "session_owner", None) == owner:
                     ctx.session_owner = ""
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 - 清理 ctx 残留不掀翻关闭路径
+            log.debug("清理 ctx 会话残留失败: %s", exc)
     return ok
 
 
@@ -535,7 +539,8 @@ def close_agent_session(agent: Any) -> bool:
         return False
     try:
         return deactivate_session(handle)
-    except Exception:  # noqa: BLE001 - 关闭路径不得掀翻宿主
+    except Exception as exc:  # noqa: BLE001 - 关闭路径不得掀翻宿主
+        log.debug("会话关闭异常(不掀翻宿主): %s", exc)
         return False
 
 
@@ -668,7 +673,8 @@ class HookTrigger:
             try:
                 run(event, payload)
                 return True
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 - 通知类吞异常但留痕
+                log.debug("hook 通知派发失败 %s: %s", event, exc)
                 return False
         finally:
             inflight.discard(event)

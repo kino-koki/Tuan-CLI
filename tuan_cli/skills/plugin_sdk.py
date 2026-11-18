@@ -48,7 +48,8 @@ def _common_ancestor(paths: List[Path]) -> Optional[Path]:
             return None
         # common 已按深度降序 (parents[0] 最深); 取最深公共祖先
         return common[0]
-    except Exception:  # noqa: BLE001 - 路径解析异常时降级
+    except Exception as exc:  # noqa: BLE001 - 路径解析异常时降级
+        log.debug("公共祖先路径解析失败, 降级为 None: %s", exc)
         return None
 
 
@@ -1430,7 +1431,8 @@ class DshPluginLoader:
                         if isinstance(row, dict):
                             removes.append(row)
             return {"file": str(pfile), "insert": inserts, "remove": removes, "raw": raw}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - 单个 patch 解析失败不掀翻列表
+            log.warning("读取 DSH patch 失败 %s: %s", pfile, exc)
             return {"file": str(pfile), "error": str(exc), "insert": [], "remove": [], "raw": []}
 
     def apply_patch(
@@ -1469,7 +1471,8 @@ class DshPluginLoader:
                     doc = yaml.safe_load(fh) or {}
                 if isinstance(doc, dict) and isinstance(doc.get("services"), list):
                     services = doc["services"]
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 - 读取失败返回结构化错误
+                log.warning("读取 patch 目标失败 %s: %s", target, exc)
                 return {"ok": False, "error": f"读取目标失败: {exc}"}
 
         # remove: 按 id 或 name 匹配整行删除
@@ -1506,7 +1509,8 @@ class DshPluginLoader:
             target.parent.mkdir(parents=True, exist_ok=True)
             with open(target, "w", encoding="utf-8") as fh:
                 yaml.safe_dump(doc, fh, allow_unicode=True, sort_keys=False)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - 写入失败返回结构化错误
+            log.warning("写入 patch 目标失败 %s: %s", target, exc)
             return {"ok": False, "error": f"写入目标失败: {exc}"}
         return {"ok": True, "target": str(target), "inserted": inserted, "removed": removed}
 
