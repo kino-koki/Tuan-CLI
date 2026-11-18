@@ -277,6 +277,13 @@ class SafetyEngine:
                     or _match_any(_pt, _REDLINE_PATTERNS)
                     or _match_any(_mask_mentioned_literals(_normalize(_pt)), _REDLINE_PATTERNS)):  # _normalize 顶部已 import
                 critical.append("hard redline core (文件系统/OS级毁灭操作)")
+            # 审计 P1-15: 凭证读取/外泄 (cat /etc/shadow, cat ~/.ssh/id_rsa) 与
+            # 毁灭操作同级 —— is_hard_redline 已硬拒, 但只读 score() 的调用方
+            # (IPC analyze / 部分 CLI / 外部集成) 此前只判 high 会放行。
+            # 改测试期望值而非削弱生产判定: 与 is_hard_redline 口径统一为 critical。
+            from .safety_redline import _CRED_READ_RE_HARD
+            if _CRED_READ_RE_HARD.search(_pt):
+                critical.append("credential exfil (凭证读取/外泄)")
 
         # ---- V-01 补偿: 只读查看命令里「提及」危险语句, 不算执行 ----
         # grep -rn 'DROP TABLE' docs/ / grep -rn 'rm -rf /' README.md 这类命令只是

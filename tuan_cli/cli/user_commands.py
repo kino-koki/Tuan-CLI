@@ -66,8 +66,21 @@ def command_dirs(config: Any, workspace: str = "") -> List[Path]:
         home = home_dir()
     dirs.append(Path(home) / "commands")
     if workspace:
-        dirs.append(Path(workspace) / ".tuan" / "commands")
-        dirs.append(Path(workspace) / ".claude" / "commands")
+        # 审计 P1-08: 工作区级命令目录 (尤其 .claude/commands) 是
+        # 「仓库内可写内容 -> 代码执行」的注入面 (clone 恶意仓库 + 一个看似
+        # 无害的 slash 命令 = RCE), 默认**不加载**; 仅当用户显式开启
+        # (TUAN_LOAD_WORKSPACE_COMMANDS=1 或 config commands.load_workspace=true)
+        # 时才加载。用户级 <home>/commands 不受影响。
+        enabled = os.environ.get("TUAN_LOAD_WORKSPACE_COMMANDS", "") == "1"
+        if not enabled:
+            try:
+                enabled = bool(config.get("commands.load_workspace", False))
+            except Exception as exc:  # noqa: BLE001
+                log.debug("user_commands.command_dirs(): 非致命异常已忽略"
+                          "(设计内降级, 不改控制流): %s", exc)
+        if enabled:
+            dirs.append(Path(workspace) / ".tuan" / "commands")
+            dirs.append(Path(workspace) / ".claude" / "commands")
     return dirs
 
 

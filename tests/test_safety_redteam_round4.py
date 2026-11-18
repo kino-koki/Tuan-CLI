@@ -138,11 +138,11 @@ def test_benign_prefix_cannot_suppress_shared_risk_patterns():
         assert _ENGINE.score({"command": command})["risk"] == "critical", command
         assert get_warning_level(command) == 5, command
 
-    # 凭证外泄: 硬红线 = True 但 SafetyEngine risk = high (见 docstring)
+    # 凭证外泄: 审计 P1-15 后 SafetyEngine 与 is_hard_redline 口径一致 = critical
     cmd_cred = "cat ~/.ssh/id_rsa"
     assert not is_benign_dev_command(cmd_cred), cmd_cred
     assert is_hard_redline(cmd_cred), cmd_cred
-    assert _ENGINE.score({"command": cmd_cred})["risk"] == "high", cmd_cred
+    assert _ENGINE.score({"command": cmd_cred})["risk"] == "critical", cmd_cred
 
     assert is_benign_dev_command("echo 'chmod 777 / is dangerous'")
     assert _ENGINE.score({"command": "echo 'chmod 777 / is dangerous'"})["risk"] == "none"

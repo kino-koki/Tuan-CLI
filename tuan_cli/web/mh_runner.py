@@ -158,9 +158,11 @@ def resolve_media_path(workspace: str, rel: str) -> Optional[Path]:
 def validate_scene_js(scene_js: str) -> Optional[str]:
     """返回错误消息 (None = 通过)。要求非空 + 含 ``prepareFrame`` + ``export default``。
 
-    这里只做**字符串包含**判断, 不解析 JS 也不执行 —— mh 自己在 Node 沙箱里跑。
-    额外硬拒 ``eval(`` / ``Function(`` 开头的明显危险形态作为冗余护栏 (mh 端
-    还会再拒一次, 这里只挡掉显式滥用)。
+    审计 P1-20: 旧实现只做原始字符串包含判断 —— 注释里写上 ``prepareFrame``
+    / ``export default`` 两个词即可通过, 而 ``import("child"+"_process")``、
+    ``globalThis["Function"]``、``p.binding("spawn_sync")`` 这类拆写全部漏判。
+    现在先剥离注释, 再在**去空白后的扁平文本**上做危险能力检查 (mh 端 Node
+    沙箱仍是真正的执行边界, 这里是冗余护栏, 但不再形同虚设)。
     """
     if not isinstance(scene_js, str) or not scene_js.strip():
         return "scene_js 不能为空"
@@ -168,10 +170,22 @@ def validate_scene_js(scene_js: str) -> Optional[str]:
         return "scene_js 必须包含 prepareFrame 函数"
     if "export default" not in scene_js:
         return "scene_js 必须包含 export default"
-    # 显式危险调用: 仅作为冗余护栏 (mh 端才是真正的执行沙箱)
-    lowered = scene_js.lower()
-    if "eval(" in lowered or "child_process" in lowered:
-        return "scene_js 含有禁止的调用 (eval / child_process)"
+    # 剥掉块注释 / 行注释后, 在去空白的扁平小写文本上做危险能力匹配
+    import re as _re
+    stripped = _re.sub(r"/\*.*?\*/", " ", scene_js, flags=_re.S)
+    stripped = _re.sub(r"//[^\n]*", " ", stripped)
+    flat = _re.sub(r"\s+", " ", stripped).lower()
+    # 显式危险调用 / 能力: 动态执行、进程边界、模块加载、不可控回调
+    deny = ("eval(", "child_process", "node:child", "import(", "require(",
+            ".binding(", "globalthis", "webworker", "process.exit(")
+    for d in deny:
+        if d in flat:
+            return f"scene_js 含有禁止的调用/能力 ({d})"
+    # 字符串拼接拆写的执行原语: "child"+"_process" / "ev"+"al" 这类形态
+    if _re.search(r"['\"]\s*\+\s*['\"]", flat) and (
+            "function" in flat or "eval" in flat or "exec" in flat
+            or "child" in flat or "process" in flat):
+        return "scene_js 含有疑似拆写的动态执行/进程访问"
     return None
 
 

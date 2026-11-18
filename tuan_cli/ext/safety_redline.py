@@ -548,7 +548,12 @@ def _label_suppressed(label: str) -> bool:
 
     见 core/blacklist_override.py: 用户可在本地声明抑制某些模式 label 关键字。
     任何异常 (导入失败/读取失败) 一律视为「未抑制」, 保持默认拦截口径。
+
+    审计 P1-18: **硬红线 label 不可被抑制** —— 本地抑制文件本身可被 Agent
+    写入 (自我提权), 关键模式的抑制一律忽略, 保持默认拦截。
     """
+    if label in _CRITICAL_LABELS:
+        return False
     fn = _get_suppressed_fn()
     if fn is None:
         return False
@@ -1452,10 +1457,33 @@ _CRED_READ_RE_HARD = re.compile(
     re.IGNORECASE,
 )
 
+# 审计 P1-16 / P1-17 / P1-09: 服务级/集群级破坏、凭证转移与「配置注入 /
+# 间接执行」家族 —— 此前判 high 在 YOLO 下被放行, 现升为红线 (可确认关键级)。
+_P1_NEW_PATTERNS = [
+    (r"\biptables\b[^\n]*\s-F\b", "iptables flush (服务级网络防护破坏)"),
+    (r"\bsystemctl\b[^\n]*\bmask\b", "systemctl mask 系统服务"),
+    (r"\bsystemctl\b[^\n]*\b(?:stop|disable)\b[^\n]*\b(?:sshd|ssh\.service|firewalld|ufw|auditd|selinux)\b", "systemctl 停用安全服务"),
+    (r"\bkubectl\b[^\n]*\bdelete\b[^\n]*\b(?:ns|namespace|node|pv|secret)\b", "kubectl 删除集群关键资源"),
+    (r"\b(?:cp|mv|rsync|tar|zip)\b[^\n]*\.ssh/(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/\s]+_key)", "凭证转移 (SSH 私钥)"),
+    (r"\b(?:cp|mv|rsync|tar|zip)\b[^\n]*/etc/shadow\b", "凭证转移 (/etc/shadow)"),
+    (r"\bgit\b[^\n]*-c\s+core\.(?:hooksPath|fsmonitor|pager)\s*=", "git 配置注入 (hooksPath/fsmonitor/pager 间接执行)"),
+    (r"\bssh\b[^\n]*ProxyCommand\s*=", "ssh ProxyCommand 间接执行"),
+    (r"\bsed\b[^\n]*s[/|][^/\n|]*[/|][^/\n|]*[/|][a-zA-Z]*e\b", "sed s///e 替换执行"),
+    (r"\binstall\b[^\n]*-m\s*[24]755\b", "install SUID/SGID 后门"),
+    (r"\bchmod\b[^\n]*[24]755\b", "chmod SUID/SGID 后门"),
+]
+
+# 新增模式并入主 critical 模式库 (is_redline / is_hard_redline / score 共用)
+_CRITICAL_PATTERNS.extend(_P1_NEW_PATTERNS)
+
 _REDLINE_PATTERNS = [
     p for p in _CRITICAL_PATTERNS
     if not p[0].lstrip().upper().startswith(("DROP", "DELETE", "TRUNCATE"))
 ]
+
+# 审计 P1-18: 硬红线 label 不可被本地黑名单抑制 —— 抑制只用于非关键模式降噪,
+# 否则写一条 blacklist-override 就能把 curl|sh / fork bomb 从 critical 抑制成 none。
+_CRITICAL_LABELS: frozenset = frozenset(label for _, label in _REDLINE_PATTERNS)
 
 # V-11: 参数展开默认值 `${VAR:-default}` —— 与 safety_score._expand_var_defs 同口径,
 # 此处独立实现以避免 safety_score ↔ safety_redline 循环导入。展开后让危险词在
