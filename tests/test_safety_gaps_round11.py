@@ -87,7 +87,8 @@ _CONFIRM = [
     "ifconfig eth0 down",
     "route add default gw 10.0.0.1",
     "sysctl -w net.ipv4.ip_forward=1",
-    "systemctl mask sshd",
+    # 审计 P1-16: systemctl mask sshd 已升为 critical (服务级破坏),
+    # 移出「确认级不 critical」清单。
     "update-rc.d ssh disable",
 ]
 
