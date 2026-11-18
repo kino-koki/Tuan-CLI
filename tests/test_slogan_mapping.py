@@ -584,6 +584,11 @@ class TestIndexAndPerformance:
         src = inspect.getsource(mapping.pick_for_event)
         assert "for e in registry()" not in src
         assert "entry_for_clean(" in src
+        # 冷启动预热: 首次分发含索引懒构建, 慢盘/杀软扫描环境下会把计时
+        # 整体抬高 2-3 倍 (实测 145ms vs 稳态 57ms), 掩盖真实回归信号。
+        # 预热后计时只测稳态分发 —— 对 O(n) 退化仍是有效护栏。
+        for _ in range(500):
+            mapping.pick_for_event("tool.exploring", lang="ja", owner="warmup")
         t0 = _time.perf_counter()
         for _ in range(2000):
             mapping.pick_for_event("tool.exploring", lang="ja", owner="perf")
