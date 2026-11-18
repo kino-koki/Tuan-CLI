@@ -53,11 +53,14 @@ copy_diff_apply  随下游        随下游        随下游        随下游
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
 from .egress import EgressGuard
 from .egress_allowlist import NetworkClaim, claim_from_verdict
+
+log = logging.getLogger(__name__)
 
 # 有 OS 级网络隔离、但**没有域名级过滤**能力的后端。
 STRONG_BACKENDS = frozenset({
@@ -151,6 +154,7 @@ def plan_egress(verdict: Any, backend: str, policy: Any,
         decision = EgressGuard.from_policy(policy).prepare(
             verdict, normalized_backend, dict(base_env))
     except Exception as exc:  # noqa: BLE001 - 闸门异常必须闭合
+        log.debug("安全路径 fallback 降级: %s", exc)
         return EgressPlan(
             MODE_UNPROVABLE, normalized_backend,
             f"EgressGuard 异常 fail-closed: {type(exc).__name__}",

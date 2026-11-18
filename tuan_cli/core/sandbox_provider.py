@@ -166,6 +166,7 @@ class LocalSandbox(SandboxProvider):
                 sandbox_backend=self.name, enforced=False,
             )
         except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             return SandboxResult(
                 ok=False, error=f"{type(exc).__name__}: {exc}",
                 sandbox_backend=self.name, enforced=False,
@@ -228,6 +229,7 @@ class LandlockSandbox(SandboxProvider):
                 sandbox_backend=self.name, enforced=False,
             )
         except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             return SandboxResult(
                 ok=False, error=f"{type(exc).__name__}: {exc}",
                 sandbox_backend=self.name, enforced=True,
@@ -351,6 +353,7 @@ class SeatbeltSandbox(SandboxProvider):
                 sandbox_backend=self.name, enforced=True,
             )
         except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             return SandboxResult(
                 ok=False, error=f"{type(exc).__name__}: {exc}",
                 sandbox_backend=self.name, enforced=True,
@@ -472,6 +475,7 @@ class WindowsTokenAclSandbox(SandboxProvider):
                 sandbox_backend=self.name, enforced=True,
             )
         except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             return SandboxResult(
                 ok=False, error=f"{type(exc).__name__}: {exc}",
                 sandbox_backend=self.name, enforced=True,

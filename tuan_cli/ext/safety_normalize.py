@@ -220,7 +220,8 @@ def _scan_variants(text: str) -> Iterator[str]:
         src = _strip_shell_comments(src)
         try:
             segs = _segments(src)
-        except Exception:  # noqa: BLE001 - 归一化异常时至少保住原始文本
+        except Exception as exc:  # noqa: BLE001 - 归一化异常时至少保住原始文本
+            log.debug("安全路径 fallback 降级: %s", exc)
             segs = _segments(text)
         for seg in segs:
             if seg not in seen:
@@ -857,7 +858,8 @@ def _bounded_glob(pattern: str) -> List[str]:
         rel_parts = [p for p in rel.replace('\\', '/').split('/')
                      if p and p != '.']
         walk(base, rel_parts, 0)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         return [] if not out else out
     _dedup: dict[str, None] = {}
     for p in out:

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import logging
 import json
 import sys
 import traceback
@@ -22,6 +23,8 @@ from typing import Any, Dict
 from .atomicio import atomic_write_text
 
 
+
+log = logging.getLogger(__name__)
 def _main() -> int:
     if len(sys.argv) < 3:
         sys.stderr.write("usage: _sandbox_entry <req_path> <resp_path>\n")
@@ -33,6 +36,7 @@ def _main() -> int:
     try:
         req = json.loads(req_path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE401
+        log.debug("安全路径 fallback 降级: %s", exc)
         atomic_write_text(resp_path, json.dumps({"ok": False, "error": f"读取请求失败: {exc}"}, ensure_ascii=False))
         return 1
 
@@ -47,6 +51,7 @@ def _main() -> int:
         from ..app import build_kernel, create_agent
         from .agent import Agent  # noqa: F401 - 确保 Agent 可用
     except Exception as exc:  # noqa: BLE401
+        log.debug("安全路径 fallback 降级: %s", exc)
         atomic_write_text(resp_path, json.dumps(
             {"ok": False, "error": f"导入失败: {exc}\n{traceback.format_exc()}"}, ensure_ascii=False
         ))
@@ -87,6 +92,7 @@ def _main() -> int:
         atomic_write_text(resp_path, json.dumps(result, ensure_ascii=False))
         return 0
     except Exception as exc:  # noqa: BLE401
+        log.debug("安全路径 fallback 降级: %s", exc)
         atomic_write_text(resp_path, json.dumps(
             {"ok": False, "error": f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"},
             ensure_ascii=False,

@@ -33,6 +33,7 @@ env**：
 """
 from __future__ import annotations
 
+import logging
 import hashlib
 import os
 import re
@@ -41,6 +42,8 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 # 单一真值: 占位符前缀由共享安全原语层定义, 本模块只复用。
 from ..core.security_utils import MASKED_PLACEHOLDER_PREFIX as SENTINEL_PREFIX
+
+log = logging.getLogger(__name__)
 
 # 环境变量**名字**匹配，不扫描值内容（值可能是任意二进制形态）。
 # 用白名单排除常见非敏感但含关键字的变量，避免误伤 PATH/HOME 等。
@@ -195,7 +198,8 @@ def enforce_local_egress(verdict: Any, backend: str, *,
         return True, "", False
     try:
         network_allowed = bool(getattr(verdict, "network", True))
-    except Exception:  # noqa: BLE001 - 裁决对象异常时按最严处理
+    except Exception as exc:  # noqa: BLE001 - 裁决对象异常时按最严处理
+        log.debug("安全路径 fallback 降级: %s", exc)
         network_allowed = False
     if network_allowed:
         return True, "", False

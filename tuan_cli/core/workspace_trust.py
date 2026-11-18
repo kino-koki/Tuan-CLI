@@ -162,7 +162,8 @@ class WorkspaceTrust:
                 data = json.loads(self._trust_file.read_text(encoding="utf-8"))
                 for path, record in data.items():
                     self._records[path] = TrustRecord.from_dict(record)
-            except Exception:
+            except Exception as exc:
+                log.debug("安全路径 fallback 降级: %s", exc)
                 self._records = {}
 
     def _save(self) -> None:
@@ -177,7 +178,8 @@ class WorkspaceTrust:
         """规范化路径 (resolve symlinks, expanduser)。"""
         try:
             return str(Path(path).expanduser().resolve())
-        except Exception:
+        except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             return str(Path(path).resolve())
 
     def check_trust(self, path: str) -> str:
@@ -226,7 +228,8 @@ class WorkspaceTrust:
         if level == TrustLevel.TRUSTED:
             try:
                 fingerprint = self._compute_fingerprint(normalized)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("安全路径 fallback 降级: %s", exc)
                 fingerprint = ""
         record = TrustRecord(
             path=normalized,
@@ -394,6 +397,7 @@ class WorkspaceTrust:
             fingerprint = self._compute_fingerprint(normalized)
         except Exception as exc:  # noqa: BLE001
             # fail-closed: 无法证明工作区没变, 就不能继续按 trusted 放行。
+            log.debug("安全路径 fallback 降级: %s", exc)
             return (
                 f"无法校验工作区敏感面 ({type(exc).__name__}), fail-closed "
                 f"将 {normalized} 从 trusted 降为 limited, 请重新确认。"

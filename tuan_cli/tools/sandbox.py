@@ -219,6 +219,7 @@ def sandbox_run(ctx: ToolContext, command: str, timeout: int = 60,
     except subprocess.TimeoutExpired:
         return f"exit=-1\n(沙箱执行超时, 容器已保留: {sandbox._container_name})"
     except Exception as exc:
+        log.debug("安全路径 fallback 降级: %s", exc)
         return f"[错误] 沙箱执行失败: {type(exc).__name__}: {exc}"
 
 

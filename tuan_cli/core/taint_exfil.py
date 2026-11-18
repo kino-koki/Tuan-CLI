@@ -16,10 +16,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
+
+log = logging.getLogger(__name__)
 __all__ = [
     "ExfilVerdict",
     "detect_exfiltration",
@@ -183,7 +186,8 @@ def detect_exfiltration(command: str) -> ExfilVerdict:
             reasons=(f"污点追踪: 敏感数据被编码/复制/外传 ({detail}) —— 需确认是否外泄",),
             sources=tuple(sources), sinks=tuple(encode),
         )
-    except Exception:  # noqa: BLE001 - fail-closed
+    except Exception as exc:  # noqa: BLE001 - fail-closed
+        log.debug("安全路径 fallback 降级: %s", exc)
         return ExfilVerdict(
             action="confirm", severity="high",
             reasons=("污点追踪检测器异常, 保守要求人工确认",),

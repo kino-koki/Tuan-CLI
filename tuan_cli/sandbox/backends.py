@@ -139,7 +139,8 @@ def _probe_cached(name: str, probe: Callable[[], bool]) -> bool:
         return _PROBE_CACHE[name]
     try:
         ok = bool(probe())
-    except Exception:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover
+        log.debug("安全路径 fallback 降级: %s", exc)
         ok = False
     _PROBE_CACHE[name] = ok
     return ok

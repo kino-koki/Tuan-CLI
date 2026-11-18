@@ -344,12 +344,14 @@ def confirm_apply(wd: "IsolatedWorkdir", confirm: Optional[Callable[[str], bool]
         card_text = (card_renderer(preview.to_dict())
                      if card_renderer is not None else preview.to_text())
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         return ApplyResult(False, f"生成变更预览失败 (fail-closed): {type(exc).__name__}: {exc}")
     if confirm is None:
         return ApplyResult(False, "缺少确认通道, 按 fail-closed 拒绝写回", preview=preview)
     try:
         approved = confirm(card_text)
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         return ApplyResult(False, f"确认通道异常, 按 fail-closed 拒绝写回: {type(exc).__name__}: {exc}",
                            preview=preview)
     if approved is not True:
@@ -361,6 +363,7 @@ def confirm_apply(wd: "IsolatedWorkdir", confirm: Optional[Callable[[str], bool]
                                preview=preview)
         files = wd.apply()
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         return ApplyResult(False, f"写回失败: {type(exc).__name__}: {exc}", preview=preview)
     return ApplyResult(True, "用户已确认, 变更已写回", files=files, preview=preview)
 

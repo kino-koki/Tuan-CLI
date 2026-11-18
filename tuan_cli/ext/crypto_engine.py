@@ -10,6 +10,7 @@
 
 安装工业级加密: `pip install tuan_cli[crypto]` 或 `pip install cryptography`
 """
+import logging
 import json
 import sys
 import os
@@ -20,6 +21,8 @@ import secrets
 from typing import Any
 
 # PBKDF2 迭代次数下限: 低于此值视为配置错误而非兼容需求
+
+log = logging.getLogger(__name__)
 _MIN_ITERATIONS = 1000
 # 迭代次数上限: 防止恶意/失误的大迭代值拖垮 CPU (DoS)。
 # 100k 是默认值; 上限留 50 倍余量, 远超任何合理派生需求。
@@ -339,6 +342,7 @@ class CryptoEngine:
                 resp = {"id": req_id, "ok": False, "error": f"Unknown method: {method}"}
             return json.dumps(resp, ensure_ascii=False)
         except Exception as e:
+            log.debug("安全路径 fallback 降级: %s", e)
             resp = {"id": req_id, "ok": False, "error": str(e)}
             return json.dumps(resp, ensure_ascii=False)
 

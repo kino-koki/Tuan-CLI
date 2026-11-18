@@ -171,7 +171,8 @@ def decide_execution_tier(risk: Any, config: Any = None,
     if config is not None:
         try:
             enabled = bool(config.get("security.sandbox.enabled", False))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("安全路径 fallback 降级: %s", exc)
             enabled = False
     score = float(risk.composite())
 

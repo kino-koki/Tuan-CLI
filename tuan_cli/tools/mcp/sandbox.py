@@ -198,6 +198,7 @@ class MCPSandbox:
                 "sandboxed": True,
             }
         except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             self._kill_container(cname)
             return {
                 "exit_code": -1,

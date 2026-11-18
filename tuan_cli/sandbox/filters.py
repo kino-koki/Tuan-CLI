@@ -307,7 +307,8 @@ class IntentFilter:
         try:
             from ..ext.safety_redline import _CRED_READ_RE_HARD
             cred_read_hard = _CRED_READ_RE_HARD
-        except Exception:
+        except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             cred_read_hard = None
         if cred_read_hard is not None:
             for t in texts:
@@ -548,7 +549,8 @@ class SandboxFilterChain:
             else:
                 try:
                     out = filt.check(payload, v)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("安全路径 fallback 降级: %s", exc)
                     out = deny("extras", "扩展滤网异常, fail-closed", SEV["high"])
             if out is not None:
                 v = v.merged(out)

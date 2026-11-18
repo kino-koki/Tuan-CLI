@@ -30,6 +30,7 @@ TLS 中间人 + 本地 CA 信任，那会显著扩大攻击面，本轮**不做*
 """
 from __future__ import annotations
 
+import logging
 import http.client
 import select
 import socket
@@ -41,6 +42,8 @@ from urllib.parse import urlsplit
 
 from .egress import CredentialBroker, SENTINEL_PREFIX
 from .egress_allowlist import NetworkClaim, claim_matches
+
+log = logging.getLogger(__name__)
 
 _HOP_BY_HOP = frozenset({
     "proxy-connection", "proxy-authorization", "proxy-authenticate",
@@ -102,6 +105,7 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
             proxy._audit(ProxyAuditRecord("parse_error", "", 0, False,
                                           "连接异常, 已关闭而非放行"))
         except Exception as exc:  # noqa: BLE001 - 闸门异常必须闭合
+            log.debug("安全路径 fallback 降级: %s", exc)
             proxy._audit(ProxyAuditRecord("parse_error", "", 0, False,
                                           f"{type(exc).__name__}"))
 

@@ -78,7 +78,8 @@ def fingerprint_of(rec: Any) -> str:
     reasons = getattr(rec, "reasons", None) or []
     try:
         primary_reason = str(reasons[0]) if reasons else ""
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         primary_reason = ""
     raw = "|".join([
         _get("module"), _get("action"),

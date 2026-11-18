@@ -2,6 +2,7 @@
 
 对外暴露 score / analyze / handle / run, 供 IPC 引擎进程与包内工具共用。
 """
+import logging
 import json
 import re
 import shlex
@@ -25,6 +26,8 @@ from .safety_redline import (
     is_benign_dev_command,
     is_hard_redline,
 )
+
+log = logging.getLogger(__name__)
 
 
 class SafetyEngine:
@@ -399,6 +402,7 @@ class SafetyEngine:
                 resp = {"id": req_id, "ok": False, "error": f"Unknown method: {method}"}
             return json.dumps(resp, ensure_ascii=False)
         except Exception as e:
+            log.debug("安全路径 fallback 降级: %s", e)
             resp = {"id": req_id, "ok": False, "error": str(e)}
             return json.dumps(resp, ensure_ascii=False)
 

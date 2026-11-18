@@ -77,6 +77,7 @@ class CopyInputGuard:
             self._sender(TRANSCRIPT_COPY_CLOSED)
             self._events.append(TRANSCRIPT_COPY_CLOSED)
         except Exception as err:  # noqa: BLE001 - 析构路径绝不抛
+            log.debug("安全路径 fallback 降级: %s", err)
             self._last_error = repr(err)
             self._events.append(f"{TRANSCRIPT_COPY_CLOSED}:send_failed")
         return True

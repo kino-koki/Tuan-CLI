@@ -18,6 +18,7 @@ Claude Code 使用 Docker 沙箱 (--sandbox docker), 但**没有**第一等的�
 
 from __future__ import annotations
 
+import logging
 import json
 import os
 import sys
@@ -28,6 +29,8 @@ from ..config.loader import home_dir
 from ._ui_singleton import console
 
 
+
+log = logging.getLogger(__name__)
 def _build_sandbox() -> Any:
     """按配置构建 SandboxManager (生产工厂, 含审计/总线接线)。"""
     from ..sandbox.manager import SandboxManager
@@ -40,13 +43,15 @@ def _build_sandbox() -> Any:
         from ..core.security_auditor import SecurityAuditor
 
         auditor = SecurityAuditor(home=home_dir())
-    except Exception:  # noqa: BLE001 - 审计不可用不阻塞
+    except Exception as exc:  # noqa: BLE001 - 审计不可用不阻塞
+        log.debug("安全路径 fallback 降级: %s", exc)
         auditor = None
     try:
         from ..core.security_bus import get_security_bus
 
         bus = get_security_bus()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         bus = None
     return SandboxManager(policy, auditor=auditor, bus=bus)
 
@@ -177,6 +182,7 @@ def _sandbox_policy(args: Any) -> int:
         cfg = Config()
         raw_policy = cfg.get("sandbox", {}) or {}
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]读取配置失败: {exc}[/red]")
         return 1
 
@@ -242,6 +248,7 @@ def _sandbox_backends(args: Any) -> int:
     try:
         backend_list = detect_backends()
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]后端探测失败: {exc}[/red]")
         return 1
     available = [b["name"] for b in backend_list if b.get("available")]
@@ -303,7 +310,8 @@ def _sandbox_trace(args: Any) -> int:
                 "layer": payload.get("layer", ""),
                 "reason": payload.get("reason", ""),
             })
-    except Exception:  # noqa: BLE001 - 总线不可用回退审计
+    except Exception as exc:  # noqa: BLE001 - 总线不可用回退审计
+        log.debug("安全路径 fallback 降级: %s", exc)
         try:
             from ..core.security_auditor import SecurityAuditor
 
@@ -319,6 +327,7 @@ def _sandbox_trace(args: Any) -> int:
                     "reason": (rec.get("reasons") or [""])[0] if rec.get("reasons") else "",
                 })
         except Exception as exc:  # noqa: BLE001
+            log.debug("安全路径 fallback 降级: %s", exc)
             console.print(f"[red]读取沙箱裁决历史失败: {exc}[/red]")
             return 1
 

@@ -537,7 +537,8 @@ def _get_suppressed_fn() -> Any:
         try:
             from ..core.blacklist_override import is_suppressed
             _suppressed_fn = is_suppressed
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            log.debug("安全路径 fallback 降级: %s", exc)
             _suppressed_fn = None
     return _suppressed_fn
 

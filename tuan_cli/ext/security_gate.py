@@ -88,7 +88,8 @@ def _iter_text_values(obj: Any) -> Any:
         if stripped[:1] in ("{", "["):
             try:
                 parsed = json.loads(obj)
-            except Exception:  # noqa: BLE001 - 非 JSON, 按普通文本处理
+            except Exception as exc:  # noqa: BLE001 - 非 JSON, 按普通文本处理
+                log.debug("安全路径 fallback 降级: %s", exc)
                 parsed = None
             if parsed is not None:
                 yield from _iter_text_values(parsed)
@@ -180,7 +181,8 @@ class SecurityGate:
             shared_severity = "none"
             try:
                 shared_severity = SafetyEngine().score({"command": command})["risk"] or "none"
-            except Exception:  # noqa: BLE001 - 打分不可用时按低风险继续 (阶梯仍会兜底)
+            except Exception as exc:  # noqa: BLE001 - 打分不可用时按低风险继续 (阶梯仍会兜底)
+                log.debug("安全路径 fallback 降级: %s", exc)
                 shared_severity = "none"
 
             # 4. 信任级别检查
@@ -220,7 +222,8 @@ class SecurityGate:
                     )
 
             return GateVerdict(_ALLOW, shared_severity, ())
-        except Exception:  # noqa: BLE001 - fail-closed
+        except Exception as exc:  # noqa: BLE001 - fail-closed
+            log.debug("安全路径 fallback 降级: %s", exc)
             return GateVerdict(_DENY, _DENY_CRITICAL, ("安全闸门异常, 保守拒绝执行",))
 
     # ---------------------------------------------------------- mcp 工具
@@ -248,7 +251,8 @@ class SecurityGate:
                     )
 
             return GateVerdict(_ALLOW, "none", ())
-        except Exception:  # noqa: BLE001 - fail-closed
+        except Exception as exc:  # noqa: BLE001 - fail-closed
+            log.debug("安全路径 fallback 降级: %s", exc)
             return GateVerdict(_DENY, _DENY_CRITICAL, ("MCP 安全闸门异常, 保守拒绝调用",))
 
     # ---------------------------------------------------------- 远程 prompt
@@ -271,7 +275,8 @@ class SecurityGate:
                 return GateVerdict(_CONFIRM, "high",
                                    ("远程 prompt 非良性开发命令, 需用户确认",))
             return GateVerdict(_ALLOW, "none", ())
-        except Exception:  # noqa: BLE001 - fail-closed
+        except Exception as exc:  # noqa: BLE001 - fail-closed
+            log.debug("安全路径 fallback 降级: %s", exc)
             return GateVerdict(_DENY, _DENY_CRITICAL, ("远程 prompt 安全分类异常, 保守拒绝",))
 
     # 系统敏感路径: 写入这些路径默认需确认 (非 hard_redline, 但 defense-in-depth)
@@ -382,7 +387,8 @@ class SecurityGate:
                     )
 
             return GateVerdict(_ALLOW, "none", ())
-        except Exception:  # noqa: BLE001 - fail-closed
+        except Exception as exc:  # noqa: BLE001 - fail-closed
+            log.debug("安全路径 fallback 降级: %s", exc)
             return GateVerdict(_DENY, _DENY_CRITICAL, ("文件写安全闸门异常, 保守拒绝写入",))
 
     # ---------------------------------------------------------- 统一分发
@@ -403,7 +409,8 @@ class SecurityGate:
             else:
                 # 未知动作类型: fail-closed
                 verdict = GateVerdict(_DENY, _DENY_CRITICAL, (f"未知动作类型: {kind}",))
-        except Exception:  # noqa: BLE001 - fail-closed
+        except Exception as exc:  # noqa: BLE001 - fail-closed
+            log.debug("安全路径 fallback 降级: %s", exc)
             verdict = GateVerdict(_DENY, _DENY_CRITICAL, ("安全闸门分发异常, 保守拒绝",))
 
         # 安全溯源: 记录每条决策的完整 provenance

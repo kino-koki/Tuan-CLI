@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import logging
 import json
 import sys
 import time
@@ -14,6 +15,8 @@ from ...config.loader import home_dir
 from .._ui_singleton import console
 
 
+
+log = logging.getLogger(__name__)
 def _cmd_audit(args: Any) -> int:
     """安全审计可视入口: 完整性校验 / 关联告警 / 统计 / 导出。
 
@@ -49,6 +52,7 @@ def _cmd_audit(args: Any) -> int:
         from ...core.security_auditor import SecurityAuditor
         auditor = SecurityAuditor(home=Path(home_dir()))
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]安全审计器初始化失败: {exc}[/red]")
         return 1
 
@@ -79,6 +83,7 @@ def _cmd_audit(args: Any) -> int:
                 console.print(f"[red]未知导出格式: {fmt} (可选 md/json/jsonl)[/red]")
                 return 1
         except Exception as exc:  # noqa: BLE001
+            log.debug("安全路径 fallback 降级: %s", exc)
             console.print(f"[red]导出失败: {exc}[/red]")
             return 1
         # 状态行写到 stderr; console 是剥离标记的 PlainConsole, 等价纯文本输出。
@@ -106,6 +111,7 @@ def _cmd_audit(args: Any) -> int:
         console.print(f"[bold]关联[/bold]: {corr.get('total_alerts', 0)} 个告警, "
                       f"{corr.get('unique_signatures', 0)} 个模式")
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]统计读取失败: {exc}[/red]")
 
     # 最近关联告警
@@ -124,6 +130,7 @@ def _cmd_audit(args: Any) -> int:
         else:
             console.print("\n[dim]暂无关联告警 (会话内未触发安全事件)[/dim]")
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]关联告警读取失败: {exc}[/red]")
 
     # 最近明文记录
@@ -139,6 +146,7 @@ def _cmd_audit(args: Any) -> int:
         else:
             console.print("\n[dim]无匹配记录 (可加 --module/--severity 过滤)[/dim]")
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]记录查询失败: {exc}[/red]")
 
     console.print("\n[dim]提示: tuan safe audit --export md/json/jsonl 可导出; "

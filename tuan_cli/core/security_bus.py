@@ -534,7 +534,8 @@ def get_security_bus(
             try:
                 from ..config.loader import home_dir
                 persist_path = Path(home_dir()) / "security-audit.jsonl"
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("安全路径 fallback 降级: %s", exc)
                 persist_path = None
         _global_bus = SecurityEventBus(persist_path=persist_path, async_alerter=async_alerter)
         # 进程退出时自动刷盘, 确保审计日志完整

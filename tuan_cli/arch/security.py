@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 import hashlib
 import hmac
 import json
@@ -28,6 +29,8 @@ from . import platform as _plat
 from ..ext import crypto_engine as _crypto
 
 
+
+log = logging.getLogger(__name__)
 class PolicyViolation(Exception):
     """策略违反 / 策略完整性校验失败。"""
 
@@ -240,7 +243,8 @@ class CryptoVault:
     def seal_bytes(self, data: bytes) -> Dict[str, str]:
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        except Exception:
+        except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             return self._seal_fallback(data)
         nonce = secrets.token_bytes(12)
         aes = AESGCM(self._key)

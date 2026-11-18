@@ -130,7 +130,8 @@ class SecurityPlugin(Plugin):
             # 打爆系统通知服务 (Windows toast 并发饱和会拖垮安全告警链路自身)。
             try:
                 _desktop_default = bool(sys.stdout.isatty())
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("安全路径 fallback 降级: %s", exc)
                 _desktop_default = False
             alerter = SecurityAlerter(
                 home=config.home,

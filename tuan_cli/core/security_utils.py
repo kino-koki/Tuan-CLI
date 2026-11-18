@@ -208,7 +208,8 @@ def safe_error_text(obj: Any, limit: Any = None) -> str:
                     mark = True
                 else:
                     max_len = int(limit)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("安全路径 fallback 降级: %s", exc)
                 mark = True
 
         if len(text) > max_len:
@@ -236,7 +237,8 @@ def safe_exception_text(exc: BaseException, limit: Any = None) -> str:
         if out:
             return f"{type_name}: {out}"
         return type_name
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         return (f"{type(exc).__name__} (异常消息不可用已丢弃)")
 
 

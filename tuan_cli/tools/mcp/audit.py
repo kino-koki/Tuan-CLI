@@ -25,7 +25,8 @@ def _default_path() -> Path:
         from ...config.loader import home_dir
 
         return home_dir() / "mcp-audit.jsonl"
-    except Exception:  # noqa: BLE001 - 配置模块不可用时回退到 ~/.tuan
+    except Exception as exc:  # noqa: BLE001 - 配置模块不可用时回退到 ~/.tuan
+        log.debug("安全路径 fallback 降级: %s", exc)
         return Path(os.environ.get("TUAN_HOME", Path.home() / ".tuan")) / "mcp-audit.jsonl"
 
 

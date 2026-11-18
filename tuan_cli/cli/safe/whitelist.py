@@ -5,17 +5,21 @@
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from .._ui_singleton import console
 
 
+
+log = logging.getLogger(__name__)
 def _cmd_whitelist_list() -> int:
     try:
         from ...core.whitelist import WhitelistManager
         wl = WhitelistManager()
         entries = wl.list()
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]白名单读取失败: {exc}[/red]")
         return 1
 
@@ -51,6 +55,7 @@ def _cmd_whitelist_add(args: Any) -> int:
             console.print(f"[yellow]已在白名单中: {command}[/yellow]")
         return 0
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]添加失败: {exc}[/red]")
         return 1
 
@@ -69,6 +74,7 @@ def _cmd_whitelist_remove(args: Any) -> int:
             console.print(f"[yellow]不在白名单中: {command}[/yellow]")
         return 0
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]移除失败: {exc}[/red]")
         return 1
 
@@ -101,6 +107,7 @@ def _cmd_whitelist_check(args: Any) -> int:
         matched = entry["command"] if entry else None
         redline = is_redline(command)
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]判定失败: {exc}[/red]")
         return 1
 
@@ -139,6 +146,7 @@ def _cmd_blacklist() -> int:
         from ...core import blacklist_override
         from ...ext.safety_engine import SafetyEngine
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]黑名单读取失败: {exc}[/red]")
         return 1
 
@@ -186,6 +194,7 @@ def _cmd_reduce(args: Any) -> int:
         console.print(f"[yellow]关键字 '{keyword}' 已处于抑制状态, 无需重复操作[/yellow]")
         return 0
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]抑制失败: {exc}[/red]")
         return 1
 
@@ -203,6 +212,7 @@ def _cmd_restore(args: Any) -> int:
         console.print(f"[yellow]关键字 '{keyword}' 未被抑制, 无需恢复[/yellow]")
         return 0
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]恢复失败: {exc}[/red]")
         return 1
 
@@ -226,6 +236,7 @@ def _cmd_update() -> int:
         console.print("  4. 更新 CHANGELOG.md 与 SECURITY.md")
         return 0
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]更新检查失败: {exc}[/red]")
         return 1
 

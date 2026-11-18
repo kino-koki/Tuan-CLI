@@ -19,6 +19,7 @@ read_recent + FileIntegrityMonitor.get_changes + SecurityAuditor.query +
 
 from __future__ import annotations
 
+import logging
 import json
 import time
 from pathlib import Path
@@ -29,6 +30,8 @@ from .parser import _register_command
 
 
 # 严重度 → 扣分权重 (单条)
+
+log = logging.getLogger(__name__)
 _SEV_WEIGHT = {"critical": 8.0, "high": 4.0, "medium": 2.0, "low": 1.0}
 # 各线相对权重 (风险占比)
 _LINE_WEIGHT = {"events": 0.4, "alerts": 0.25, "integrity": 0.2, "audit": 0.15}
@@ -95,6 +98,7 @@ def _collect_line_scores(home: Path, window: float) -> List[Dict[str, Any]]:
             "detail": f"{len(ev_rows)} 条 (critical/high/medium/low 加权)",
         })
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         lines.append({"name": "events", "label": "安全事件流", "count": 0,
                       "raw": 0.0, "detail": f"跳过: {str(exc)[:60]}"})
 
@@ -110,6 +114,7 @@ def _collect_line_scores(home: Path, window: float) -> List[Dict[str, Any]]:
             "detail": f"{len(in_win_al)} 条 (AlertLogger 落盘)",
         })
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         lines.append({"name": "alerts", "label": "持久化告警", "count": 0,
                       "raw": 0.0, "detail": f"跳过: {str(exc)[:60]}"})
 
@@ -126,6 +131,7 @@ def _collect_line_scores(home: Path, window: float) -> List[Dict[str, Any]]:
             "detail": f"{len(in_win_int)} 处变更 (FileIntegrityMonitor)",
         })
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         lines.append({"name": "integrity", "label": "文件完整性", "count": 0,
                       "raw": 0.0, "detail": f"跳过: {str(exc)[:60]}"})
 
@@ -142,6 +148,7 @@ def _collect_line_scores(home: Path, window: float) -> List[Dict[str, Any]]:
             "detail": f"{len(in_win_aud)} 条 (AEAD 防篡改)",
         })
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         lines.append({"name": "audit", "label": "审计链", "count": 0,
                       "raw": 0.0, "detail": f"跳过: {str(exc)[:60]}"})
 
@@ -153,6 +160,7 @@ def cmd_safety(args: Any) -> int:
     try:
         home = _get_home(getattr(args, "home", None))
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]home 解析失败: {exc}[/red]")
         return 1
 

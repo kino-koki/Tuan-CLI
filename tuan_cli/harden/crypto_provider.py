@@ -37,7 +37,8 @@ try:
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes as _crypto_hashes
     _HAS_CRYPTOGRAPHY = True
-except Exception:  # pragma: no cover - import guard
+except Exception as exc:  # pragma: no cover - import guard
+    log.debug("安全路径 fallback 降级: %s", exc)
     _HAS_CRYPTOGRAPHY = False
 
 
@@ -258,7 +259,8 @@ class SoftwareProvider(CryptoProvider):
             ct = blob[12:]
             try:
                 return AESGCM(aes_key).decrypt(nonce, ct, None)  # cryptography stubs 未标注
-            except Exception:  # 非新格式 (12B nonce + AES-GCM) → 回退旧 CTR+HMAC blob
+            except Exception as exc:  # 非新格式 (12B nonce + AES-GCM) → 回退旧 CTR+HMAC blob
+                log.debug("安全路径 fallback 降级: %s", exc)
                 return _audit_decrypt(blob, key)
         return _audit_decrypt(blob, key)
 

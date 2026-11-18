@@ -256,12 +256,14 @@ class SecurityAlerter:
             try:
                 from ..hooks.triggers import current_session_hooks
                 self.hooks = current_session_hooks()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("安全路径 fallback 降级: %s", exc)
                 try:
                     from ..hooks.triggers import get_default_hooks_provider
                     _p = get_default_hooks_provider()
                     self.hooks = _p() if callable(_p) else None
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("安全路径 fallback 降级: %s", exc)
                     self.hooks = None
 
         # 通道

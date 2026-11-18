@@ -23,6 +23,7 @@ JSONL 一行一条, 超 20MB 轮转为 .1~.5) 暴露为跨进程只读查询。�
 
 from __future__ import annotations
 
+import logging
 import json
 import time
 from pathlib import Path
@@ -34,6 +35,8 @@ from .parser import _register_command
 
 # ---------------------------------------------------------------- 辅助
 
+
+log = logging.getLogger(__name__)
 def _get_home(home_raw: Optional[str]) -> Path:
     if home_raw:
         return Path(home_raw).expanduser().resolve()
@@ -192,6 +195,7 @@ def cmd_auditstore(args: Any) -> int:
         home = _get_home(getattr(args, "home", None))
         store = _open_store(home)
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]审计归档读取失败: {exc}[/red]")
         return 1
 

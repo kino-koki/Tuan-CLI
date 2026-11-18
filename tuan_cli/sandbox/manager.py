@@ -176,7 +176,8 @@ class SandboxManager:
             try:
                 import json as _json
                 fn_args = _json.loads(fn_args) if fn_args.strip().startswith(("{", "[")) else {"command": fn_args}
-            except Exception:
+            except Exception as exc:
+                log.debug("安全路径 fallback 降级: %s", exc)
                 fn_args = {"command": fn_args}
         if not isinstance(fn_args, dict):
             return []
@@ -415,6 +416,7 @@ class SandboxManager:
         try:
             plan = plan_egress(verdict, backend, self.policy, dict(os.environ))
         except Exception as exc:  # noqa: BLE001
+            log.debug("安全路径 fallback 降级: %s", exc)
             from ..core.security_utils import safe_exception_text
             return SandboxExecResult(
                 returncode=-1, backend=backend, enforced=False,
@@ -436,7 +438,8 @@ class SandboxManager:
             self._last_proxy = ep  # 供后续 stop / audit
             try:
                 self.last_proxy_audit = ep.audit()
-            except Exception:
+            except Exception as exc:
+                log.debug("安全路径 fallback 降级: %s", exc)
                 self.last_proxy_audit = []
 
         if backend in ("jobobject",) and os.name == "nt":
@@ -461,6 +464,7 @@ class SandboxManager:
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error="超时")
         except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             from ..core.security_utils import safe_exception_text
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=safe_exception_text(exc))
@@ -488,6 +492,7 @@ class SandboxManager:
             try:
                 preview = build_diff_preview(wd)
             except Exception as exc:  # noqa: BLE001
+                log.debug("安全路径 fallback 降级: %s", exc)
                 from ..core.security_utils import safe_exception_text
                 res.returncode = -1
                 res.error = (f"生成变更预览失败 (fail-closed, 不写回): "
@@ -521,6 +526,7 @@ class SandboxManager:
                          f"\n[E7] 用户已确认, 已写回 {len(outcome.files)} 个文件"
             return res
         except Exception as exc:  # noqa: BLE001
+            log.debug("安全路径 fallback 降级: %s", exc)
             from ..core.security_utils import safe_exception_text
             return SandboxExecResult(
                 returncode=-1, workspace_mode="copy_diff_apply", enforced=False,
@@ -558,6 +564,7 @@ class SandboxManager:
                                      returncode=res.returncode, backend=res.mechanism or backend,
                                      enforced=bool(res.enforced), error=note)
         except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             from ..core.security_utils import safe_exception_text
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=safe_exception_text(exc))
@@ -582,6 +589,7 @@ class SandboxManager:
                                      backend=backend, enforced=result.enforced,
                                      error=result.error)
         except Exception as exc:
+            log.debug("安全路径 fallback 降级: %s", exc)
             return SandboxExecResult(returncode=-1, backend=backend,
                                      enforced=False, error=safe_exception_text(exc))
 
@@ -617,14 +625,16 @@ class SandboxManager:
             pass
         try:
             auditor = kernel.get("security_auditor")
-        except Exception:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover
+            log.debug("安全路径 fallback 降级: %s", exc)
             auditor = None
         policy = cfg.get("sandbox", {}) if cfg is not None else {}
         bus = None
         try:
             from ..core.security_bus import get_security_bus
             bus = get_security_bus()
-        except Exception:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover
+            log.debug("安全路径 fallback 降级: %s", exc)
             bus = None
         return cls(policy, auditor=auditor, bus=bus)
 

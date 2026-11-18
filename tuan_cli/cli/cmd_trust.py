@@ -38,6 +38,7 @@ def cmd_trust(args: Any) -> int:
     try:
         from ..core.workspace_trust import TrustLevel, WorkspaceTrust
     except Exception as exc:  # noqa: BLE001
+        log.debug("安全路径 fallback 降级: %s", exc)
         console.print(f"[red]信任管理器初始化失败: {exc}[/red]")
         return 1
 

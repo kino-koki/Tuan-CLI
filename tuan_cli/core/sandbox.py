@@ -16,6 +16,7 @@ OS 级沙箱 (seccomp/bwrap/seatbelt/token-acl) 见 core.sandbox_provider。
 
 from __future__ import annotations
 
+import logging
 import json
 import os
 import shutil
@@ -31,6 +32,8 @@ from .subagents import SubResult, SubTask
 from .security_utils import sanitize_env as _sanitize_sandbox_env  # noqa: F401,F811
 
 
+
+log = logging.getLogger(__name__)
 def prepare_sandbox(
     workspace: str,
     task_id: str,
@@ -156,6 +159,7 @@ def run_in_sandbox(
             tool_calls=data.get("tool_calls", []) or [],
         )
     except Exception as exc:  # noqa: BLE401
+        log.debug("安全路径 fallback 降级: %s", exc)
         return SubResult(
             task_id=task.task_id, prompt=task.prompt, ok=False,
             output="", elapsed=time.time() - started,

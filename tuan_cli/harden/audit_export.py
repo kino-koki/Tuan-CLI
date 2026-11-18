@@ -28,7 +28,8 @@ from ..core.security_utils import redact_nested, redact_sensitive
 
 try:
     from .. import __version__ as _TUAN_VERSION
-except Exception:  # pragma: no cover
+except Exception as exc:  # pragma: no cover
+    log.debug("安全路径 fallback 降级: %s", exc)
     _TUAN_VERSION = "0.0.0"
 
 log = logging.getLogger(__name__)
@@ -82,7 +83,8 @@ def to_syslog(event: SecurityEvent, host: Optional[str] = None,
     if host is None:
         try:
             host = socket.gethostname() or "localhost"
-        except Exception:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover
+            log.debug("安全路径 fallback 降级: %s", exc)
             host = "localhost"
     msg = json.dumps({
         "event_type": event.event_type,

@@ -36,7 +36,8 @@ log = logging.getLogger(__name__)
 
 try:  # 延迟到运行时, 避免任何导入副作用
     from ..config.loader import home_dir
-except Exception:  # noqa: BLE001
+except Exception as exc:  # noqa: BLE001
+    log.debug("安全路径 fallback 降级: %s", exc)
     home_dir = None  # type: ignore
 
 _OVERRIDE_FILE = "blacklist-override.json"
