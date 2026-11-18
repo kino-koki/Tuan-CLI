@@ -33,6 +33,7 @@ from .picker import PickerPlugin
 from .tool_search import ToolSearchPlugin
 from .consolidate import ConsolidatePlugin
 from .browser import BrowserPlugin
+from .notebook import NotebookPlugin
 
 __all__ = [
     "Tool", "ToolContext", "ToolRegistry",
@@ -69,6 +70,7 @@ def builtin_tool_plugins() -> list[Any]:
         ToolSearchPlugin(),
         BrowserPlugin(),
         MonitorToolPlugin(),
+        NotebookPlugin(),
         # 必须最后: 在全部工具注册完之后做合并 (成员降级为隐藏别名)
         ConsolidatePlugin(),
     ]
