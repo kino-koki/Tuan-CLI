@@ -1,7 +1,7 @@
 ﻿# Tuan-CLI
 
 > **«Model + Harness = Agent.»** — separa «cómo pensar» de «cómo ejecutarlo a salvo» y te entrega las dos llaves.
-> Un harness de agentes de IA en Python puro, seguro por diseño y sin ataduras a ningún modelo. `v0.4.2` · MIT · Python ≥ 3.10
+> Un harness de agentes de IA en Python puro, seguro por diseño y sin ataduras a ningún modelo. `v0.4.5` · MIT · Python ≥ 3.10
 
 > ### Posicionamiento: un agente safety-first — sin sacrificar la experiencia del desarrollador
 >
@@ -258,7 +258,7 @@ tuan --print run "Hola. Una línea."  # humo
 ```
 
 - **Disciplina i18n**: README_zh-CN es el maestro autoritativo; cada idioma es una localización viva, sin deriva — **nada de traducción mecánica.**
-- **Versión**: `v0.4.2` (una línea `0.x` — la API aún no está congelada); los ajustes disruptivos llegan con aviso previo + notas de migración, y `1.0` está reservado para el congelamiento de la API.
+- **Versión**: `v0.4.5` (una línea `0.x` — la API aún no está congelada); los ajustes disruptivos llegan con aviso previo + notas de migración, y `1.0` está reservado para el congelamiento de la API.
 - **A fondo**: firmas de los motores y un paseo paso a paso de herramienta nueva viven en el apéndice de `README_zh-CN.md`.
 
 ---

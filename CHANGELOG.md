@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [0.4.5] - 2026-11-18 (小更新 · 安全审计修复轮 + 工具面真实接入补齐)
+
+本版本落地《0.4.4 完整安全审计总报告》的全部可修复发现 (P0 6/6、P1 12 项、P2 7 项)，
+并完成「真实接入」补齐 —— 详见 `docs/security_remediation_20261118.md`。
+
+### Security (P0 · 端到端可利用, 6/6)
+- **截断绕过 (P0-01/02/05)**: 超长命令不再「截断后判定」，改为必命中红线的 fail-closed 哨兵；`_match_any` 超长行滑窗全覆盖；`decide_mcp_tool` / MCP `run_shell` 增加不截断的 `score()` critical/block 判定 —— 同一命令在 shell/score/MCP 三个入口结论一致。
+- **Web 匿名 RCE/提权 (P0-03/04)**: `/api/*` 统一进程级随机令牌鉴权 (首页 Set-Cookie `HttpOnly; SameSite=Lax` 下发，兼容 `X-Tuan-Token` 头)；POST 增加同源校验；高危 shell 审批改为服务端一次性票据 (绑定命令/60s/用后即焚)，自报 `approved` 失效。
+- **团组明文密钥 (P0-06)**: HMAC secret 移出 `team_group.json`，改存独立 0600 侧文件；`/api/file` 拒绝读取 `.tuan/` 内部状态文件；`grant/issue` 不再接受请求体指定 owner。
+
+### Security (P1 · 12 项)
+- 工作区命令目录 (`.tuan/.claude commands`) 默认不加载，需显式开启 (P1-08)。
+- 配置注入/间接执行家族升红线: `git -c core.hooksPath/fsmonitor/pager`、`ssh ProxyCommand`、`sed s///e`、SUID (P1-09)。
+- egress 工具参数域名声明只与全局策略取交集，永不放宽 (P1-10)。
+- TTS / 视频流水线 `out_path` 必须 resolve 后落在工作区内 (P1-12/13)。
+- `apply_apikey` 环境变量名白名单 `*_API_KEY` (P1-14)。
+- 凭证读取 (`cat /etc/shadow`、`~/.ssh/id_rsa`) score() 升 critical，与硬红线口径一致 (P1-15)。
+- 服务级/集群级破坏 (`iptables -F`、`systemctl mask`、`kubectl delete` 关键资源) 升红线 (P1-16)。
+- 凭证转移 (`cp/mv/rsync` 私钥、/etc/shadow) 升红线 (P1-17)。
+- 硬红线 label 不可被本地黑名单抑制 (P1-18)。
+- Dispatch 配对码不进 WebSocket hello (仅本机 stderr 展示)；`list_agents`/`approval` 需已配对 (P1-19)。
+- scene_js 校验先剥注释再做危险能力匹配 (import/Function/binding/require/globalThis/拆写) (P1-20)。
+
+### Security (P2 · 7 项)
+- 学习器权重文件 HMAC-SHA256 签名 (0600 密钥文件)，篡改/越界拒绝载入 (P2-21)。
+- `observe()` 的 safe 标签仅接受 user_confirm/cli 来源 —— 在线投毒封死 (P2-22)。
+- 仅排除模式 (`!pattern`) 的 allow/ask 权限规则跳过并告警 (P2-24)。
+- `config.set_user` 落盘失败不再更新内存视图 (P2-26)。
+- `_guard_safety_check` 异常真 fail-closed (P2-28)。
+- MCP ctx 提供只读 config kernel 视图，egress 策略查询不再被吞失效 (P2-32)。
+- network_guard 云元数据正则补十进制/十六进制 IP 变体 (P2-27)。
+
+### 真实接入 (工具面补齐)
+- `ArtifactPlugin` / `MessagingPlugin` / `SubagentPlugin` / `WorkflowPlugin` 接入
+  `builtin_tool_plugins()` —— `create_artifact`、`send_message`、`receive_messages`、
+  `list_agents`、`subagent`、`subagent_resume`、`agents_list`、`workflow` 八个
+  Agent 工具首次真正可用 (此前仅有同名 CLI 命令)。
+- `DynamicWorkflowPlugin` 补 `version` 属性 (kernel plugin.registered 事件需要)。
+
+### 其他
+- shell 护栏新增阶段 1.7: 构建文件内容预扫描 —— make/npm/pytest 等良性前缀命令的
+  执行体在 Makefile/package.json/conftest.py 里，分块送红线引擎拦截 (P1-07)。
+- isolation/executor 的生产 assert 改显式异常 (P2-30)。
+
 ## [0.4.4] - 2026-11-15 (小更新 · 最新开源卖点：ComfyUI 式多模型自动化视频工作台)
 
 > 对齐 2026-11-15 最新开源卖点调研（HyperFrames「HTML as video」/ OpenMontage agentic 视频流水线 / givemotion 动效原语 / Motion AI Kit 性能分析 / cinecode 无模型全帧渲染），落地「文本模型调用 → 自动化视频 AI 制作」三层闭环。

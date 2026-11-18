@@ -38,4 +38,10 @@
 #         团组审计日志 (team_audit.jsonl, 追加链不可篡改);
 #         跨机邀请令牌 export_invite/import_invite (远程+局域网加入);
 #         web 团组面板 (成员/供应商/授权三列管理 + 能力矩阵展示)。
-__version__ = "0.4.4"
+# v0.4.5: 安全审计修复轮 —— 0.4.4 完整安全审计总报告的 P0 全部 6 项 + P1 12 项
+#         + P2 7 项修复 (截断 fail-closed、Web/MCP 统一鉴权与审批票据、egress
+#         交集收窄、out_path 边界、apikey 白名单、学习器 HMAC+投毒门、scene_js
+#         强化、服务级破坏升红线等); 「真实接入」补齐 (Notebook/Artifact/
+#         Messaging/Subagent/Workflow 五个工具插件接入 Agent 工具面);
+#         构建/测试文件内容预扫描 (P1-07)。
+__version__ = "0.4.5"
