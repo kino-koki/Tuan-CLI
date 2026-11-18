@@ -46,7 +46,9 @@ DEPLOY = (
 
 # ------------------------------------------------------------------ 加载与解析
 
-def test_load_two_levels_and_override(tuan_home, tmp_path):
+def test_load_two_levels_and_override(tuan_home, tmp_path, monkeypatch):
+    # 审计 P1-08: 工作区级命令目录默认不加载, 本测试显式开启
+    monkeypatch.setenv("TUAN_LOAD_WORKSPACE_COMMANDS", "1")
     _write_cmd(tuan_home, "deploy.md", DEPLOY)
     ws = tmp_path / "ws"
     proj = ws / ".tuan" / "commands"
@@ -66,8 +68,11 @@ def test_parse_name_fallback_and_body(tuan_home):
     assert "$ARGUMENTS" in uc.body
 
 
-def test_claude_commands_discovered_and_take_precedence(tuan_home, tmp_path):
+def test_claude_commands_discovered_and_take_precedence(tuan_home, tmp_path,
+                                                        monkeypatch):
     """Claude Code 标准位置 .claude/commands/*.md 被收录, 且优先级高于 .tuan/commands。"""
+    # 审计 P1-08: 工作区级目录需显式开启
+    monkeypatch.setenv("TUAN_LOAD_WORKSPACE_COMMANDS", "1")
     ws = tmp_path / "ws"
     (ws / ".tuan" / "commands").mkdir(parents=True)
     (ws / ".claude" / "commands").mkdir(parents=True)
@@ -82,8 +87,9 @@ def test_claude_commands_discovered_and_take_precedence(tuan_home, tmp_path):
     assert table["ship"].body.startswith(".claude:")
 
 
-def test_claude_commands_listing_order(tuan_home, tmp_path):
-    """command_dirs 输出: 用户级 → .tuan → .claude (优先级递增)。"""
+def test_claude_commands_listing_order(tuan_home, tmp_path, monkeypatch):
+    """command_dirs 输出: 用户级 → .tuan → .claude (优先级递增); 需显式开启。"""
+    monkeypatch.setenv("TUAN_LOAD_WORKSPACE_COMMANDS", "1")
     dirs = uc_mod.command_dirs("no-such-config", str(tmp_path / "ws"))
     assert len(dirs) == 3
     assert dirs[-1].name == "commands" and ".claude" in str(dirs[-1])
