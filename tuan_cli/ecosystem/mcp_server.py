@@ -621,6 +621,14 @@ class McpToolServer:
             out_path = str(base / f"pipeline_{int(_t.time() * 1000)}.mp4")
         else:
             out_path = str(out_path)
+            # 审计 P1-13: 同 narration_tts —— 输出路径必须落在工作区内。
+            try:
+                ws_root = Path(self.workspace or ".").resolve()
+                resolved = Path(out_path).resolve()
+                resolved.relative_to(ws_root)
+            except (ValueError, OSError):
+                return _err("out_path 越界: 必须位于工作区内 (fail-closed)")
+            out_path = str(resolved)
         try:
             pipe = VideoPipeline(stages=list(stages) if stages else None)
             result = pipe.run(brief, out_path=out_path)
@@ -655,6 +663,15 @@ class McpToolServer:
             out_path = str(base / f"narration_{int(_t.time() * 1000)}.wav")
         else:
             out_path = str(out_path)
+            # 审计 P1-12: out_path 必须落在工作区内 (resolve + relative_to),
+            # 否则外部 Agent 可把 TTS 输出写到工作区外的任意路径。
+            try:
+                ws_root = Path(self.workspace or ".").resolve()
+                resolved = Path(out_path).resolve()
+                resolved.relative_to(ws_root)
+            except (ValueError, OSError):
+                return _err("out_path 越界: 必须位于工作区内 (fail-closed)")
+            out_path = str(resolved)
         try:
             res = synthesize_narration(text, out_path, voice=voice,
                                        lang=lang, engine=engine)
@@ -727,15 +744,26 @@ class McpToolServer:
             return _err("安全引擎判定 critical/block (不截断全文扫描), MCP 通道拒绝执行。")
 
         # 与 tools/shell.py 主链路共用同一套四层滤网裁决（不再只看文本红线）。
-        class _McpCtx:
-            kernel = None
+        class _McpKernel:
+            """最小 kernel 视图: 只读 config, 供沙箱策略查询使用。"""
 
-            def __init__(self, ws: Optional[Path]) -> None:
+            def __init__(self, cfg: Any) -> None:
+                self._cfg = cfg
+
+            def get(self, name: str):
+                return self._cfg if name == "config" else None
+
+        class _McpCtx:
+            # 审计 P2-32: 旧实现 kernel=None, _allowed_domains 抛
+            # AttributeError 后被「设计内降级」吞掉 -> egress 策略层对 MCP
+            # 通道完全失效。这里提供只读 config 的最小 kernel 视图。
+            def __init__(self, ws: Optional[Path], cfg: Any) -> None:
                 self.workspace = str(ws) if ws else None
+                self.kernel = _McpKernel(cfg)
 
         try:
             manager = SandboxManager()
-            verdict = manager.assess_command(command, _McpCtx(self.workspace))
+            verdict = manager.assess_command(command, _McpCtx(self.workspace, self._config))
         except Exception as exc:  # noqa: BLE001
             # 裁决器异常一律拒绝，不回落裸跑（同 decided 契约）。
             return _err(f"统一滤网裁决失败 (fail-closed): {safe_exception_text(exc)}")

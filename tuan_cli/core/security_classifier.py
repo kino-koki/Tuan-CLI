@@ -523,9 +523,12 @@ class SecurityClassifier:
         if self._learner is None:
             return False
         try:
+            # 审计 P2-22: 该入口只服务「用户确认后的反馈」(CLI / 确认通道),
+            # 标记 source 让学习器放行 safe 标签; 程序化调用走不到这里。
             return bool(self._learner.observe(command, label=label,
                                               confidence=confidence,
-                                              evidence=evidence or []))
+                                              evidence=evidence or [],
+                                              source="user_confirm"))
         except Exception as exc:
             # 学习反馈失败不影响主判定链; 记录但不中断。
             log.debug("安全分类器降级: %s", exc)

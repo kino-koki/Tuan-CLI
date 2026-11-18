@@ -263,8 +263,10 @@ class PermissionPolicy:
 
         E6:
         - `exclude` / `pattern: "!glob"` 为负向排除: 目标匹配排除模式时该规则
-          **不生效**, 用于给宽泛 allow 规则开洞 (如允许 `git *` 但排除
-          `git push --force*`), 避免"永远允许"变成提权入口。
+          **不生效**。审计 P2-24 后收紧: 仅排除模式 (无正向 pattern) 的
+          **allow/ask 规则一律跳过并告警** —— 「除排除项外全部放行」等于把
+          参数级校验整个关掉 (实测 curl|sh 被放行); deny 规则不受影响
+          (deny 忽略排除, 保持 fail-closed)。
         - 为保持 fail-closed, **deny 规则忽略 exclude**: 拒绝规则不允许被
           排除条件放宽。
         - MCP 调用按 `mcp__<server>__<tool>` 规范化名参与 tool 匹配。
@@ -291,9 +293,18 @@ class PermissionPolicy:
                     continue
             else:
                 arg_pattern = str(rule.get("pattern", "")).strip()
-                # "!glob" 是排除模式, 不作为正向匹配条件
-                if arg_pattern and not arg_pattern.startswith("!") \
-                        and not fnmatch.fnmatch(target, arg_pattern.lower()):
+                if arg_pattern.startswith("!"):
+                    # 审计 P2-24: 仅排除模式 (!pattern) 不构成正向匹配条件 ——
+                    # 旧语义会让 allow/ask 规则退化成「除排除项外全部放行」,
+                    # 实测 curl|sh 这类命令都被 allow。allow/ask 必须给出
+                    # 显式正向 pattern, 否则规则跳过 (fail-closed);
+                    # deny 规则忽略排除、保持全量拒绝 (fail-closed 方向)。
+                    if action in ("allow", "ask"):
+                        log.warning(
+                            "权限规则 %s: 仅排除模式 (!pattern) 的 %s 规则已忽略"
+                            " —— 请给出显式正向 pattern", tool_pattern, action)
+                        continue
+                elif arg_pattern and not fnmatch.fnmatch(target, arg_pattern.lower()):
                     continue
             exclude = _rule_exclude(rule)
             if exclude and action != "deny":

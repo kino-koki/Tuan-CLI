@@ -272,7 +272,9 @@ def _cmd_safe_learn(args: Any) -> int:
         return 1
 
     learner = _attach_learner()
-    res = get_classifier().learn(str(command), str(label).lower())
+    # 审计 P2-22: 直接走学习器 observe (source="cli" = 用户显式 CLI 反馈)。
+    # 旧代码经 classifier.learn 返回 bool, 在 res.get() 处必然 AttributeError。
+    res = learner.observe(str(command), str(label).lower(), source="cli")
     if not res.get("attached", True):
         console.print("[red]学习器未挂载[/red]")
         return 1

@@ -105,11 +105,20 @@ class TestNetworkClaim:
         assert evaluate_claim(c, ["evil.example"]).allowed is True
 
     def test_claim_from_args_prefers_per_command(self):
+        # 审计 P1-10: 工具参数里的域名声明来自模型输出 (不可信来源), 只能与
+        # 全局策略取交集 —— 只收窄, 永不放宽。
         args = {"command": "curl https://api.github.com",
                 "allowed_domains": ["api.github.com"]}
-        c = claim_from_args(args, fallback=["evil.example"])
+        c = claim_from_args(args, fallback=["api.github.com"])
         assert c.required_domains == ("api.github.com",)
-        assert c.source == "tool_args"
+        assert c.source == "tool_args_intersect"
+        # 模型声明的域名不在全局策略内 -> 交集为空, 一律拒绝
+        c_evil = claim_from_args(
+            {"command": "x", "allowed_domains": ["evil.example"]},
+            fallback=["api.github.com"])
+        assert c_evil.required_domains == ()
+        assert c_evil.source == "tool_args_intersect"
+        # 无逐命令声明 -> 回落全局策略
         c2 = claim_from_args({"command": "x"}, fallback=["evil.example"])
         assert c2.required_domains == ("evil.example",)
         assert c2.source == "global_policy"  # 回落来源是全局策略而非逐命令声明
@@ -265,13 +274,22 @@ class TestManagerWiring:
         v = m.assess_command("curl https://api.github.com/x", _Ctx())
         assert "network_claim" in v.extra
         assert claim_from_verdict(v).strict is False
-        # assess_tool 携带逐命令声明 → 结构进 verdict.extra 且来源标注
+        # 配置全局策略 (用户配置) 后回落 claim 变 strict
+        m.policy["allowed_domains"] = ["api.github.com"]
+        v2 = m.assess_command("curl https://api.github.com/x", _Ctx())
+        assert claim_from_verdict(v2).strict is True
+        # assess_tool 携带逐命令声明 → 与全局策略取交集后进 verdict.extra
         denied, _ = m.assess_tool("run_shell", {
             "command": "curl https://api.github.com/x",
             "allowed_domains": ["api.github.com"]}, _Ctx())
         assert denied is False
-        assert m.last_allowlist["claim"]["source"] == "tool_args"
+        assert m.last_allowlist["claim"]["source"] == "tool_args_intersect"
         assert m.last_allowlist["claim"]["required_domains"] == ["api.github.com"]
+        # 模型自带的声明超出全局策略 -> 交集为空, 拒绝 (不能凭空造出网权限)
+        denied2, _ = m.assess_tool("run_shell", {
+            "command": "curl https://evil.example/x",
+            "allowed_domains": ["evil.example"]}, _Ctx())
+        assert denied2 is True
 
     def test_declared_outside_command_is_denied(self):
         m = SandboxManager()

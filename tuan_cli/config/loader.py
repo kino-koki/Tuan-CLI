@@ -381,9 +381,11 @@ class Config:
         # 磁盘无文件但 hook 仍收到「已变更」）。last_write_persisted 供诊断。
         ok = dump_yaml_checked(cfg, self.user_config_path)
         self.last_write_persisted = ok
-        # 同步内存视图: 用 patch_replace 整值替换目标键 (保留同级默认字段)。
-        self.data = patch_replace(self.data, {dotted: value})
+        # 审计 P2-26: 落盘失败时**不得**更新内存视图 —— 否则磁盘无痕迹但后续
+        # cfg.get() 的安全判定用新值, 进程重启后又变回去。
         if ok:
+            # 同步内存视图: 用 patch_replace 整值替换目标键 (保留同级默认字段)。
+            self.data = patch_replace(self.data, {dotted: value})
             self._fire_config_change("user_config", dotted, origin="set_user")
 
     def delete_user(self, dotted: str) -> bool:

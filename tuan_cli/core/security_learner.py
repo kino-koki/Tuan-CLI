@@ -19,8 +19,12 @@ Claude Code 的安全决策是**静态规则**: 权限/危险命令由固定模�
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
+import os
+import secrets
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,6 +43,36 @@ _DEFAULT_LR = 0.9           # 基础学习率 (高: 1~2 次反馈即跨过阈值
 # 与 security_classifier 的 ±_LEARNER_MAX_DELTA 校准带形成双保险。
 _WEIGHT_MIN = -60.0
 _WEIGHT_MAX = 200.0
+
+
+def _hmac_key_for(weights_path: Path) -> bytes:
+    """读取/生成本机学习器 HMAC 密钥 (<home>/security/.learner_hmac_key, 0600)。
+
+    审计 P2-21: 权重文件此前无任何完整性保护, 篡改后会被无校验载入 (实测
+    全权重改 -60 即可让学习器把 curl|sh 判成 allow)。密钥落在独立 0600 文件,
+    权重文件被改而密钥未动 -> 签名校验失败 -> 回退冷启动。
+    """
+    kp = weights_path.parent / ".learner_hmac_key"
+    try:
+        if kp.is_file():
+            key = kp.read_bytes().strip()
+            if key:
+                return key
+        key = secrets.token_hex(32).encode("ascii")
+        kp.parent.mkdir(parents=True, exist_ok=True)
+        kp.write_bytes(key)
+        try:
+            os.chmod(kp, 0o600)
+        except OSError:
+            pass
+        return key
+    except OSError as exc:
+        log.warning("学习器 HMAC 密钥不可用 (%s), 权重文件将不带签名", exc)
+        return b""
+
+
+def _sign_state_text(text: str, key: bytes) -> str:
+    return hmac.new(key, text.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 @dataclass
@@ -130,18 +164,45 @@ class SecurityLearner:
             return None
         try:
             data = json.loads(self._weights_path.read_text(encoding="utf-8-sig"))
-            return LearnerState.from_dict(data)
-        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        except (OSError, json.JSONDecodeError) as exc:
             log.warning("安全学习者权重加载失败 (%s), 回退冷启动", exc)
             return None
+        # 审计 P2-21: 校验 HMAC 签名 (密钥在本机 0600 密钥文件)。篡改/缺签名/
+        # 权重越界一律拒绝载入并回退冷启动静态权重 —— 学习器自身不得成为
+        # 持久化后门。
+        mac = data.pop("hmac", "") if isinstance(data, dict) else ""
+        key = _hmac_key_for(self._weights_path)
+        if not key:
+            return None
+        text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
+        expect = _sign_state_text(text, key)
+        if not (isinstance(mac, str) and hmac.compare_digest(mac, expect)):
+            log.warning("安全学习者权重签名校验失败 (可能被篡改), 回退冷启动")
+            return None
+        try:
+            st = LearnerState.from_dict(data)
+        except (TypeError, ValueError) as exc:
+            log.warning("安全学习者权重加载失败 (%s), 回退冷启动", exc)
+            return None
+        for v in st.weights.values():
+            if not (_WEIGHT_MIN <= v <= _WEIGHT_MAX):
+                log.warning("安全学习者权重越界, 拒绝载入 (回退冷启动)")
+                return None
+        return st
 
     def _save_state(self) -> None:
         if self._weights_path is None:
             return
         try:
             self._weights_path.parent.mkdir(parents=True, exist_ok=True)
+            key = _hmac_key_for(self._weights_path)
+            payload = self._state.to_dict()
+            if key:
+                text = json.dumps(payload, ensure_ascii=False, indent=2,
+                                  sort_keys=True)
+                payload["hmac"] = _sign_state_text(text, key)
             tmp = self._weights_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self._state.to_dict(), ensure_ascii=False,
+            tmp.write_text(json.dumps(payload, ensure_ascii=False,
                                       indent=2), encoding="utf-8")
             tmp.replace(self._weights_path)
         except OSError as exc:
@@ -220,7 +281,8 @@ class SecurityLearner:
 
     def observe(self, command: str, label: str,
                 confidence: float = 0.5,
-                evidence: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+                evidence: Optional[Sequence[str]] = None,
+                source: str = "") -> Dict[str, Any]:
         """在线学习一步。
 
         label: "danger" | "safe" —— 用户/审计对该命令的实际判定。
@@ -228,6 +290,9 @@ class SecurityLearner:
                     避免把已高度确信的判断被单一噪声反馈带偏。
         evidence: 本次反馈关联的护栏路径 (如 ``("hard_redline",)``), 只做审计记录;
                   硬红线保护不依赖调用方传值 —— 本方法内部会独立复核。
+        source: 反馈来源。审计 P2-22: ``safe`` 标签会**压低**风险分 (deny 降为
+                confirm), 是在线投毒的高价值方向 —— 只接受 ``user_confirm`` /
+                ``cli`` (用户显式操作) 来源; 程序化批量调用一律拒绝。
 
         多路护栏优先级: **护栏永远高于学习**。命中硬红线的命令不接受 ``safe``
         标签 (返回 ``hard_redline_immutable``), 因此学习器无法被训练成放行
@@ -255,6 +320,16 @@ class SecurityLearner:
                 "updated": False,
                 "reason": "hard_redline_immutable",
                 "detail": "命令命中硬红线, 不允许学习为 safe (护栏优先于学习)",
+            }
+
+        # 审计 P2-22: safe 标签只接受用户显式来源 (实测 ×60 程序化 safe 反馈
+        # 能把 cp ~/.ssh/id_rsa 从 deny 压到 confirm)。danger 方向是「加严」,
+        # 保持开放 (fail-safe 方向)。
+        if label == "safe" and source not in ("user_confirm", "cli"):
+            return {
+                "updated": False,
+                "reason": "untrusted_source",
+                "detail": "safe 标签仅接受用户确认/CLI 来源 (防在线投毒)",
             }
 
         vec = self._vectorize(command)
