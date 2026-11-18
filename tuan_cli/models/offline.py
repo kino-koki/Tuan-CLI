@@ -54,6 +54,39 @@ class OllamaStatus:
             self.models = []
 
 
+def _capture_cmd(cmd: List[str], timeout: float) -> tuple:
+    """运行命令并捕获 stdout; 输出重定向到**临时文件**而非管道。
+
+    事故背景 (Windows 实测): ollama CLI 拉起后台守护进程并继承
+    stdout/stderr 管道句柄, ``subprocess.run(capture_output=True)`` 超时
+    清理时永久阻塞在管道读线程 join 上, 挂死整条路由决策链路。临时文件
+    没有读线程, 超时清理即刻返回。
+
+    返回 (stdout 文本, 原因): 成功 reason 为 ""; 超时 "timeout";
+    命令不存在 "missing"; 其他失败文本为 None 并带简短原因。
+    """
+    import tempfile
+    try:
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8",
+                                    errors="replace") as out_f, \
+                tempfile.TemporaryFile(mode="w+", encoding="utf-8",
+                                       errors="replace") as err_f:
+            result = subprocess.run(cmd, stdout=out_f, stderr=err_f,
+                                    timeout=timeout)
+            if result.returncode != 0:
+                err_f.seek(0)
+                err_text = (err_f.read() or "").strip()
+                return None, f"exit {result.returncode}: {err_text[:200]}"
+            out_f.seek(0)
+            return out_f.read(), ""
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except FileNotFoundError:
+        return None, "missing"
+    except Exception as exc:  # noqa: BLE001 - 探测原语绝不抛
+        return None, f"{type(exc).__name__}: {exc}"
+
+
 class OllamaManager:
     """Ollama 管理器: 管理本地 Ollama 服务。"""
     
@@ -62,65 +95,49 @@ class OllamaManager:
         self._status: Optional[OllamaStatus] = None
     
     def check_status(self) -> OllamaStatus:
-        """检查 Ollama 服务状态。"""
-        try:
-            # 检查 Ollama 是否在运行
-            result = subprocess.run(
-                ["ollama", "list"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            
-            if result.returncode != 0:
-                self._status = OllamaStatus(
-                    available=False,
-                    error=f"Ollama 未运行或未安装: {result.stderr.strip()}"
-                )
-                return self._status
-            
-            # 解析已安装的模型
-            models = []
-            for line in result.stdout.strip().split("\n")[1:]:  # 跳过标题行
-                if not line.strip():
-                    continue
-                parts = line.split()
-                if len(parts) >= 3:
-                    name = parts[0]
-                    # 解析大小
-                    size_str = parts[2] if len(parts) > 2 else "0B"
-                    size = self._parse_size(size_str)
-                    models.append(OllamaModel(
-                        name=name,
-                        size=size,
-                        modified_at=parts[1] if len(parts) > 1 else "",
-                        digest=parts[3] if len(parts) > 3 else "",
-                    ))
-            
-            self._status = OllamaStatus(
-                available=True,
-                models=models,
-            )
-            return self._status
-            
-        except FileNotFoundError:
+        """检查 Ollama 服务状态 (CLI 输出走临时文件, 防继承句柄挂死)。"""
+        text, reason = _capture_cmd(["ollama", "list"], timeout=5)
+        if reason == "missing":
             self._status = OllamaStatus(
                 available=False,
                 error="Ollama 未安装。请访问 https://ollama.com 安装。"
             )
             return self._status
-        except subprocess.TimeoutExpired:
+        if reason == "timeout":
             self._status = OllamaStatus(
                 available=False,
                 error="Ollama 响应超时"
             )
             return self._status
-        except Exception as exc:
+        if text is None or not text.strip():
             self._status = OllamaStatus(
                 available=False,
-                error=f"检查 Ollama 状态失败: {exc}"
+                error=f"Ollama 未运行或未安装: {reason or '无输出'}"
             )
             return self._status
+
+        # 解析已安装的模型 (首行为标题行)
+        models = []
+        for line in text.strip().split("\n")[1:]:
+            if not line.strip():
+                continue
+            parts = line.split()
+            if len(parts) >= 3:
+                name = parts[0]
+                size_str = parts[2] if len(parts) > 2 else "0B"
+                size = self._parse_size(size_str)
+                models.append(OllamaModel(
+                    name=name,
+                    size=size,
+                    modified_at=parts[1] if len(parts) > 1 else "",
+                    digest=parts[3] if len(parts) > 3 else "",
+                ))
+
+        self._status = OllamaStatus(
+            available=True,
+            models=models,
+        )
+        return self._status
     
     def _parse_size(self, size_str: str) -> int:
         """解析大小字符串 (如 '4.7GB') 为字节数。"""

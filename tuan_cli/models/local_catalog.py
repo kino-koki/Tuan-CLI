@@ -92,11 +92,16 @@ def load_catalog(home: Optional[Path] = None) -> Optional[Dict[str, Any]]:
 
 
 def write_catalog(data: Dict[str, Any], home: Optional[Path] = None) -> Path:
-    """原子写本地目录 (tmp + rename), 返回写入路径。"""
+    """原子写本地目录 (tmp + rename), 返回写入路径。
+
+    ``generated_at`` 只在调用方未提供时才盖章 —— 写盘原语不得篡改调用方
+    显式构造的时间戳 (is_stale 依赖它判断目录新旧)。
+    """
     path = catalog_file(home)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(data)
-    payload["generated_at"] = _now_iso()
+    if not payload.get("generated_at"):
+        payload["generated_at"] = _now_iso()
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",

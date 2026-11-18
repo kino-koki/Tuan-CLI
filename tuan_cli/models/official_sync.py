@@ -57,6 +57,13 @@ def _parse_models(data: Any, spec: Dict[str, str]) -> List[str]:
 
     arr = data.get(list_key)
     if not isinstance(arr, list):
+        # 官方端点响应 schema 不一: 指定 key 缺失时尝试其他已知清单键
+        # (如 data[].id 端点实际返回 {"models": [...]})。两者都缺失才视为空。
+        for alt_key in ("models", "data"):
+            if alt_key != list_key and isinstance(data.get(alt_key), list):
+                arr = data[alt_key]
+                break
+    if not isinstance(arr, list):
         return []
 
     ids: List[str] = []
