@@ -35,17 +35,15 @@ class LifecycleMixin:
     def close(self) -> None:
             self._closed = True
             # slogans: close() 先记 session.exit → take_owner_log 取走 owner 桶
-            # (避免被记成被动淘汰) → 在锁内把实例留痕封存为 sealed 快照供回放。
+            # (避免被记成被动淘汰) → 在锁内把**全局桶返回的决策快照**封存为
+            # sealed (含 session.exit, 供 slogan_closed_trace 回放)。
             try:
                 self._slogan_dispatch("session.exit")
             except Exception as exc:  # noqa: BLE001
                 log.warning("LifecycleMixin.close(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                 pass
-            mapping.take_owner_log(self._slogan_owner)
-            keys = ("event", "context", "reason", "origin", "entry_id",
-                    "owner", "at_ms")
+            sealed = mapping.take_owner_log(self._slogan_owner)
             with self._slogan_lock:
-                sealed = tuple(dict(zip(keys, row)) for row in self._slogan_log)
                 self._slogan_sealed = sealed
             if self._app and self._app.is_running:
                 self._app.exit()

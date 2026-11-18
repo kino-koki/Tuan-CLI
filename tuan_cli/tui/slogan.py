@@ -95,8 +95,17 @@ class SloganMixin:
             return tuple((ev, "", r) for (_at, ev, r) in self._slogan_errors)
 
     def slogan_closed_trace(self) -> Tuple[Dict[str, Any], ...]:
-            """close() 时封存的完整决策痕 (含 session.exit, 供审计回放)。"""
-            return self._slogan_sealed
+            """close() 时从全局桶封存的决策快照 (含 session.exit, 供审计回放)。"""
+            with self._slogan_lock:
+                sealed = tuple(self._slogan_sealed)
+            out = []
+            for d in sealed:
+                out.append({
+                    "event": d.event, "context": d.context, "reason": d.reason,
+                    "origin": d.origin, "entry_id": d.entry_id,
+                    "owner": d.owner, "at_ms": d.at_ms,
+                })
+            return tuple(out)
 
     def _release_slogan_owner(self) -> None:
             """close() 路径专用: 取走 owner 桶 (不记被动淘汰) 并在锁内封存快照。"""
@@ -106,3 +115,46 @@ class SloganMixin:
             with self._slogan_lock:
                 self._slogan_sealed = tuple(
                     dict(zip(keys, row)) for row in self._slogan_log)
+
+    # ------------------------------------------------------------ B3 XVI 生命周期接线
+
+    def liveness(self):
+            """运行时活性快照 (调试/doctor 用), 透传 runtime_slogans 引擎。"""
+            engine = getattr(self, "_slogans", None)
+            return engine.liveness() if engine is not None else None
+
+    def _slogan_stream_started(self) -> None:
+            """流式开始/分片: 节流 1s; 同时推进映射桶与引擎阶段/活性。"""
+            now = time.monotonic()
+            if now - getattr(self, "_slogan_last_stream_at", 0.0) < 1.0:
+                return
+            self._slogan_last_stream_at = now
+            self._slogan_dispatch("model.streaming")
+            engine = getattr(self, "_slogans", None)
+            if engine is not None:
+                engine.note_activity("streaming")
+
+    def _slogan_tool_started(self, name: str = "") -> None:
+            """工具开始: 阶段切到 running_tool (detail 只留工具名)。"""
+            self._slogan_dispatch("tool.exploring")
+            engine = getattr(self, "_slogans", None)
+            if engine is not None:
+                engine.note_activity("running_tool", detail=name)
+
+    def _slogan_tool_ended(self) -> None:
+            """工具结束: 只刷新活性证据 (kind=tool_end), 不改阶段。"""
+            engine = getattr(self, "_slogans", None)
+            if engine is not None:
+                engine.note_progress(kind="tool_end")
+
+    def _slogan_stream_ended(self) -> None:
+            """流式收尾: 只刷新活性证据 (kind=stream_end), 阶段保持 streaming。"""
+            engine = getattr(self, "_slogans", None)
+            if engine is not None:
+                engine.note_progress(kind="stream_end")
+
+    def _slogan_turn_completed(self) -> None:
+            """回合完成: 记 turn_completed 证据 (供跨回合回放)。"""
+            engine = getattr(self, "_slogans", None)
+            if engine is not None:
+                engine.note_progress(kind="turn_completed")

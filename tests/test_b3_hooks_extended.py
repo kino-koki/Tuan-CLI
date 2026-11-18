@@ -23,7 +23,7 @@ R4     最严重：hook 返回 ``{"args":{"path":"ok","TOTALLY_UNKNOWN":"pwn"}}`
        会丢未知键、缺 required / 类型不符则**拒绝该次调用**。
 =====  =====================================================================
 
-**修复**
+**修复（如实，不夸大）**
 
 - 事件表 8 → 15（8 核心 + 7 扩展），未知事件键显式审计；
   决策类独立 ``run_decision`` 裁决出口，误走 ``run_notify`` 留痕拒绝。
@@ -31,16 +31,16 @@ R4     最严重：hook 返回 ``{"args":{"path":"ok","TOTALLY_UNKNOWN":"pwn"}}`
   格式；``updatedInput`` 按 CC 语义是**替换**整个 input。
 - 新增 ``hooks/input_validation.py``：有 schema 严格校验（丢未知键 /
   required / type / enum，不符即 deny）；无 schema 退化为保守子集
-  约束，``enforced=False`` 不标成「已通过校验」。
+  约束，``enforced=False`` 绝不包装成「已通过校验」。
 - 接线：``tools/base.py`` 传 ``tool.parameters``；``PermissionRequest``
   在危险工具审批前派发（**只允许收紧，不允许 hook 代答跳过确认**）；
   ``/add-dir`` 授权成功后派发 ``DirectoryAdded``。
 
-**边界**：官方最新 hooks 参考列出的事件远多于 7 个
+**如实边界**：官方最新 hooks 参考列出的事件远多于 7 个
 （PermissionDenied / PostToolBatch / TaskCompleted / FileChanged ...），
 本轮只补 catalog 已登记的 7 个；``ConfigChange`` / ``WorktreeCreate`` /
 ``Elicitation`` / ``ElicitationResult`` 引擎已就绪但**没有本地生产触发点**，
-全事件对齐；CC 的 exit-code-2 → decline 语义未实现。
+不假装全事件对齐；CC 的 exit-code-2 → decline 语义未实现。
 矩阵计数一个不动：``ahead 10 / aligned 46 / partial 9 / gap 26 /
 not_applicable 8``，``fully_superior=false``，``b_waves_done=["B1"]``。
 """
@@ -361,7 +361,7 @@ class TestUpdatedInputValidation:
         assert m.run_pre("write_file", {}).block is True
 
     def test_additional_context_no_channel_is_audited(self):
-        """CC advisory 无本地注入通道 → 留痕，已注入。"""
+        """CC advisory 无本地注入通道 → 留痕，不假装已注入。"""
         k = FakeKernel()
         m = _mgr({"enabled": True, "PreToolUse": [
             _hook({"hookSpecificOutput": {
@@ -503,7 +503,7 @@ class TestNotChangedOnPurpose:
         assert "unknown_notify_event" in k.statuses("unknown_notify_event")
 
     def test_exit_code_2_decline_not_claimed(self):
-        """边界：CC 的 rc=2 → decline 本轮未实现，源码里。"""
+        """如实边界：CC 的 rc=2 → decline 本轮未实现，源码里不假装。"""
         src = Path("tuan_cli/hooks/manager.py").read_text(encoding="utf-8")
         assert "exit-code-2" not in src or "未实现" in src
 

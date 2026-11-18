@@ -125,7 +125,7 @@ def validate(probes: Dict[str, superiority.ProbeResult] | None = None
     if len(superiority.PROBES) != len(catalog.SUPERIORITY_DIMENSIONS):
         problems.append("探针数与超越维度数不一致")
 
-    # ---- 领先必须经探针证实（未证实的列出，但不算错误：
+    # ---- 领先必须经探针证实（未证实的如实列出，但不算错误：
     #      探针失败是发现问题的信号，由 report 显式呈现）
     w = s["security_wiring"]
     if not w["intact"]:

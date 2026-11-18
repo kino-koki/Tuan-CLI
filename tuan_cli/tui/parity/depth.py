@@ -24,7 +24,8 @@
 - 不缓存探针结果。每次 ``depth_audit()`` 都重跑，判定不依赖缓存
   时间点；探针本身必须是纯内存、无文件 I/O、无网络的。
 - 不因为「探针没注册」就自动把模块降级成 pending。状态表与探针表
-  是两张独立证据：前者记「实现了什么」，后者记「验证到什么程度」。
+  是两张独立证据：前者记「实现了什么」，后者记「验证到什么程度」，
+  ``missing`` 如实列出，不许靠改状态定义凑数。
 
 许可：纯 Python 独立实现，零 Rust 源码复制；见 ``NOTICE``。
 """
@@ -32,7 +33,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import logging
 log = logging.getLogger(__name__)
@@ -112,7 +113,7 @@ def run_probe(module: str) -> ProbeResult:
     except Exception as exc:  # noqa: BLE001 - 探针异常即不通过
         return ProbeResult(module, False, 0,
                            "探针抛出 %s" % type(exc).__name__,
-                           ("probe_raised: %s: %s" % (type(exc).__name__, exc),),
+                           ("probe_raised: %s: %s" % (type(exc).__name__, exc)),
                            (time.perf_counter() - t0) * 1000)
 
 
@@ -121,11 +122,11 @@ def run_all() -> Dict[str, ProbeResult]:
     return {m: run_probe(m) for m in sorted(PROBE_REGISTRY)}
 
 
-def depth_audit() -> Dict[str, Any]:
+def depth_audit() -> dict:
     """对矩阵里全部 aligned / localized 逐项核验，返回可观测报告。
 
     ``ok`` 为 True 的充要条件：claimed 里每一项都有探针且探针通过。
-    ``missing`` 列出无探针或失败的模块，不自动改状态。
+    ``missing`` 如实列出无探针或失败的模块，**不自动改状态**。
     """
     _ensure_registry()
     from .matrix import parity_status, ALIGNED, LOCALIZED
@@ -145,7 +146,7 @@ def depth_audit() -> Dict[str, Any]:
     }
 
 
-def assert_depth_intact() -> Dict[str, Any]:
+def assert_depth_intact() -> dict:
     """供 ``validate()`` 调用：任一新增对齐项没探针/探针失败都算问题。"""
     _ensure_registry()
     from .matrix import NEW_DEPTH_MODULES

@@ -29,13 +29,13 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List
+from typing import Any, Callable, Dict, List
 
 from . import catalog, evidence
 
 
 @contextmanager
-def _quiet_logger(name: str) -> Iterator[None]:
+def _quiet_logger(name: str):
     """探针故意构造损坏策略/失败 hook；临时静音其告警，避免污染 CLI 输出。"""
     lg = logging.getLogger(name)
     old = lg.level
@@ -242,7 +242,7 @@ def _probe_verifiable_parity() -> ProbeResult:
         if problems:
             return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
                                f"parity_validate 有问题: {problems[:2]}", checks)
-        s: Dict[str, Any] = matrix.summary()
+        s = matrix.summary()
         checks.append(f"Codex TUI 模块树 {s['total_modules']} 个")
         if s["total_modules"] != 165:
             return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
@@ -253,11 +253,10 @@ def _probe_verifiable_parity() -> ProbeResult:
         # 现在逐项核销双口径自洽，任何一项不自洽都算探针失败。
         settled = s["pending"] == 0
         checks.append("all_modules_settled = (pending == 0)")
-        if bool(s.get("all_modules_settled")) is not settled:
+        if s.get("all_modules_settled") is not settled:
             return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
                                "all_modules_settled 与 pending 不自洽", checks)
         depth_ok = bool(s.get("depth_strict_ok"))
-        checks.append(f"depth_strict_ok = {depth_ok}")
         checks.append("fully_identical = settled 且 depth_strict_ok")
         if s["fully_identical"] is not (settled and depth_ok):
             return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
@@ -265,9 +264,8 @@ def _probe_verifiable_parity() -> ProbeResult:
         claimed = int(s.get("depth_claimed") or 0)
         verified = int(s.get("depth_verified") or 0)
         checks.append("depth_verified <= depth_claimed 且 missing 可对账")
-        missing = s.get("depth_missing") or []
         if not (0 <= verified <= claimed) or \
-                len(missing) != claimed - verified:
+                len(s.get("depth_missing") or []) != claimed - verified:
             return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
                                "深度探针计数不自洽", checks)
         return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], True,

@@ -398,10 +398,15 @@ class TestTuiWiring:
         assert "class:accent" in [cls for cls, _ in obj._render_footer()]
 
     def test_footer_still_shows_working_when_only_waiting(self):
+        """B3 XVI 去重后: Working 状态行只在顶栏, 底栏不再重复。"""
         obj = _tui()
         obj._busy = True
-        text = "".join(seg for _, seg in obj._render_footer())
-        assert "Working (" in text
+        footer = "".join(seg for _, seg in obj._render_footer())
+        assert "Working (" not in footer
+        header = "".join(seg for _, seg in obj._render_header())
+        # 顶栏仍有状态 HUD (Working 状态行/运行时标语/「疑似摸鱼」诊断)。
+        # 断言不钉具体文案: i18n 语言不同会让 Working 显示为本地化文案。
+        assert header.strip() != ""
 
     def test_begin_tool_and_stream_record_real_activity(self):
         obj = _tui()

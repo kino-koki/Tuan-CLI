@@ -532,10 +532,11 @@ class TestCorekitPackage:
         from tuan_cli.tui.parity import parity_report, parity_validate
         r = parity_report()
         assert r["corekit"]["modules"] == 9
-        # 第 13 轮 config_models + misc 清零后同步（pending 15 -> 10）
-        assert r["matrix"]["pending"] == 10
-        assert r["matrix"]["by_status"]["aligned"] == 35
-        assert r["matrix"]["coverage_pct"] == 93.9
+        # A 线续轮 XI 同步（pending 10 -> 0，aligned 35 -> 45）
+        assert r["matrix"]["pending"] == 0
+        assert r["matrix"]["by_status"]["aligned"] == 45
+        assert r["matrix"]["coverage_pct"] == 100.0
+        assert r["matrix"]["depth_verified"] == 10
         assert r["matrix"]["fully_identical"] is False
         assert r["configkit"]["modules"] == 5
         assert parity_validate() == []
@@ -547,4 +548,4 @@ class TestCorekitPackage:
                   "app_event_sender", "app_info", "chatwidget", "cli",
                   "resize_reflow_cap"):
             assert m not in gaps
-        assert len(gaps) == 10
+        assert len(gaps) == 0

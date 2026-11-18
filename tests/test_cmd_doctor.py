@@ -228,6 +228,50 @@ class TestRenderJson:
         assert data["exit_code"] == 0
 
 
+# ============================================================ DSH 原生插件
+
+
+class TestDshPlugins:
+    """_check_dsh_plugins: 官方 bundle 存在时全链路自检。"""
+
+    BUNDLE = Path(r"G:\Tuan-CLI-Official\plugins\tuan-skills-bundle")
+
+    @pytest.mark.skipif(not (BUNDLE / "lib" / "index.js").exists(),
+                        reason="缺少 tuan-skills-bundle")
+    def test_ok_when_bundle_present(self) -> None:
+        fs = P._check_dsh_plugins()
+        plugins = [f for f in fs if f["category"] == "plugins"]
+        assert len(plugins) == 1
+        assert plugins[0]["status"] == "ok"
+        assert "契约: tuan-skills-bundle" in plugins[0]["message"]
+        assert "Config 字段 6" in plugins[0]["message"]
+        assert "apply 技能" in plugins[0]["message"]
+        # get 契约 (DSH /skill 命令加载路径) 纳入自检
+        assert "get 定义" in plugins[0]["message"]
+        # observeHostMutation 接线纳入自检
+        assert "host mutation" in plugins[0]["message"]
+
+    def test_warn_when_bundle_missing(self, monkeypatch) -> None:
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *a, **k):
+            return real_import(name, *a, **k)
+
+        # 让 Path 指向不存在 bundle: 通过 monkeypatch 换掉模块级常量不可行,
+        # 直接验证缺失分支: 把 bundle 换成不存在路径
+        monkeypatch.setattr(
+            P.Path, "exists", lambda self: False, raising=False
+        )
+        # 注意: _check_dsh_plugins 用 bundle/entry 两个 Path; 都 exists=False
+        # 但 entry.exists() 是 bundle/lib/index.js, 需 bundle.exists() 也为 False。
+        # 这里直接调用即可 (entry.exists 也走 monkeypatch → False)。
+        fs = P._check_dsh_plugins()
+        plugins = [f for f in fs if f["category"] == "plugins"]
+        assert len(plugins) == 1
+        assert plugins[0]["status"] == "warn"
+
+
 # ============================================================ _render_rich
 
 

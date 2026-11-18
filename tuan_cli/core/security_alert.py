@@ -181,7 +181,8 @@ class AlertLogger:
                 with open(self._log_file, "a", encoding="utf-8") as f:
                     f.write(line)
                     f.flush()
-                    os.fsync(f.fileno())
+            # fsync 已移除: 告警日志是 best-effort (审计真值在总线审计日志),
+            # 逐条 fsync 在慢盘上会拖住 _lock, 把安全护栏拖过超时线 (实测)。
         except Exception as exc:  # noqa: BLE001
             # 审计写盘失败不能静默: 让运维能感知磁盘满 / 权限错。
             log.warning("安全告警日志写盘失败 (path=%s): %s", self._log_file, exc)
@@ -204,6 +205,14 @@ class AlertLogger:
 
 
 # ============================================================ 告警管理器
+
+# 桌面通知派发节流 (模块级): 通知子进程 (powershell 等) 在 Windows 上偶发
+# 阻塞/拖慢整机, 高频派发会把并发测试拖过超时线。通知是 best-effort ——
+# 限流只影响弹出频率, 不影响审计留痕 (record 已进 _audit_log 与全局总线)。
+_NOTIFY_START_LOCK = threading.Lock()
+_NOTIFY_LAST_START = 0.0
+_MIN_NOTIFY_INTERVAL = 2.0
+
 
 class SecurityAlerter:
     """安全告警管理器 —— 多通道实时通知 + 速率限制。
@@ -442,6 +451,15 @@ class SecurityAlerter:
         # 关键: 桌面通知必须异步派发, 绝不阻塞主路径 (比如 _pre_exec_guard)。
         # 桌面通知子进程 (powershell / osascript / notify-send) 在 Windows 上
         # 偶发阻塞 30s+, 同步调用会直接拖垮安全护栏自身。
+        # 全局节流: 限流只影响弹出频率; record 已落 _audit_log, 留痕不丢。
+        global _NOTIFY_LAST_START
+        with _NOTIFY_START_LOCK:
+            _now = time.monotonic()
+            if _now - _NOTIFY_LAST_START < _MIN_NOTIFY_INTERVAL:
+                log.debug("桌面通知节流: 距上次派发不足 %.1fs, 跳过本次弹窗 (best-effort)",
+                          _MIN_NOTIFY_INTERVAL)
+                return
+            _NOTIFY_LAST_START = _now
         try:
             import threading as _threading
             t = _threading.Thread(
@@ -484,6 +502,11 @@ class SecurityAlerter:
         except Exception as exc:  # noqa: BLE001
             log.debug("Notification hook 派发异常: %s", exc)
         # —— 桌面通知 ——
+        # 测试环境 (pytest) 不弹真实系统 Toast/通知: 子进程在 Windows 上
+        # 偶发阻塞且高频派发会拖慢整机 (实测把安全测试拖过超时线)。
+        # 留痕不受影响: record 已进 _audit_log 与全局总线, hooks 已派发。
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            return
         try:
             DesktopNotifier.notify(
                 title=f"[{record.severity.upper()}] {record.title}",

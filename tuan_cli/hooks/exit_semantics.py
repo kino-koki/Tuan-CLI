@@ -25,7 +25,7 @@ B3 主链路把 ``on_failure``（Tuan 的 fail-closed 出厂默认）当成**唯
    stderr 去向 / JSON 是否被忽略 / 走了哪条规则」全部显式化。
 3. ``OFFICIAL_EVENTS`` / ``NO_MATCHER_EVENTS`` 让事件面可核销。
 
-**刻意保留的 Tuan 差异**：
+**刻意保留的 Tuan 差异**（不伪装成逐值相等）：
 
 - Tuan 的 ``on_failure=block`` 出厂默认比 CC 更严：CC 里 exit 1 是
   非阻断错误、动作继续；Tuan 默认闭合。这是 B1 就确立的安全立场，
@@ -48,7 +48,7 @@ hooks-events-reference、Claude Wiki hooks-system）。CC 事件面随版本
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, FrozenSet, Optional
+from typing import Dict, FrozenSet, Optional
 
 # ---------------------------------------------------------------- 行为枚举
 # exit2 取值（官方逐事件表）:
@@ -91,7 +91,7 @@ class EventSemantics:
         return self.exit2.startswith("blocks") or self.any_nonzero_fails
 
 
-def _row(event: str, exit2: str, dest: str, **kw: Any) -> EventSemantics:
+def _row(event, exit2, dest, **kw) -> EventSemantics:
     return EventSemantics(event=event, exit2=exit2,
                           stderr_destination=dest, **kw)
 
@@ -298,9 +298,10 @@ def classify(event: str, rc: int, stderr: str = "",
     if not isinstance(rc, int) or isinstance(rc, bool):
         rc = 0
     sem = semantics_for(event)
+    known = sem is not None
     err = (stderr or "").strip()
 
-    if sem is None:
+    if not known:
         # 未知事件：Tuan 不静默放行，沿用既有 fail-closed。
         blocking = rc != 0 and tuan_policy in ("block", "ask")
         return ExitVerdict(event, rc, blocking,

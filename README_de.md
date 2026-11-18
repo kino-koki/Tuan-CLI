@@ -136,7 +136,7 @@ tuan --print run "Hallo, stell dich in einem Satz vor."
 
 ---
 
-## Kommandofläche: 50 Kern-Subcommands + Slash-Befehle
+## Kommandofläche: 92 Kern-Subcommands + Slash-Befehle
 
 | Befehl | Wofür |
 |---|---|

@@ -1,6 +1,7 @@
 """cmd_skills 单元测试 —— 技能/组件工坊 CLI。"""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -152,6 +153,21 @@ class TestListInstalled:
         mgr = SimpleNamespace(list_all=lambda: (_ for _ in ()).throw(RuntimeError("x")))
         monkeypatch.setattr(P, "_find_skill_manager", lambda: mgr)
         assert P._list_installed(_args()) == 1
+
+
+# ============================================================ _print_dsh_plugin_skills
+
+
+class TestPrintDshPluginSkills:
+    def test_no_plugins_dir_returns_zero(self, monkeypatch, tmp_path):
+        """无插件目录 (USERPROFILE 指向空 tmp): 安全返回 0, 不抛。"""
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        assert P._print_dsh_plugin_skills() == 0
+
+    def test_import_failure_returns_zero(self, monkeypatch):
+        """plugin_sdk 模块不可用 (sys.modules 置 None): 安全返回 0。"""
+        monkeypatch.setitem(sys.modules, "tuan_cli.skills.plugin_sdk", None)
+        assert P._print_dsh_plugin_skills() == 0
 
 
 # ============================================================ _clear_cache

@@ -23,7 +23,7 @@
   **没有**把 hook 的 stdout 当成用户答案的通道。CC 允许 Elicitation hook
   程序化代答，Tuan 刻意不等价 —— 那等于让模型自己答自己问。
 
-事件语义映射（差异点已记录）：
+事件语义映射（如实标注差异）：
 
 ======================  ==============================  =====================
 事件                    触发点                          与 CC 的差异
@@ -52,12 +52,9 @@ import contextvars
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterator, List, Optional, cast
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from .manager import HookDecision
-
-import logging
-log = logging.getLogger(__name__)
 
 _DEFAULT_PROVIDER: Optional[Callable[[], Any]] = None
 
@@ -71,8 +68,8 @@ _REENTRY_STATS: Dict[str, int] = {
 
 # B3 续轮 V: provider 是**进程级单会话假设**。实测两次
 # set_default_hooks_provider(A) / (B) 之后，先用 A 构造的 HookTrigger
-# 会拿到 B（A 零触发、B 收到 A 的事件）。这里把覆盖变成可诊断的：
-# generation / owner / overrides 全部可查。
+# 会拿到 B（A 零触发、B 收到 A 的事件）。这里不假装支持多会话，而是把
+# 覆盖变成可诊断的：generation / owner / overrides 全部可查。
 _PROVIDER_OWNER: Optional[str] = None
 _PROVIDER_GENERATION: int = 0
 _PROVIDER_OVERRIDES: int = 0
@@ -128,7 +125,7 @@ def set_default_hooks_provider(
     ``/worktree`` 显式传 ``agent.ctx.hooks``，``ask_user`` 用
     ``ctx.hooks``。B3 续轮 VI 起模块级入口也改成实例级绑定；本轮
     （VII）再补上按 owner 分桶的 contextvar 解析，让**并发**会话
-    不互相覆盖（单槽 provider 仍是单会话默认出口，保留）。
+    不互相覆盖（单槽 provider 仍是单会话默认出口，如实保留）。
     """
     global _DEFAULT_PROVIDER, _PROVIDER_OWNER, _PROVIDER_GENERATION
     global _PROVIDER_OVERRIDES
@@ -155,8 +152,7 @@ def _resolve_default() -> Any:
         return None
     try:
         return prov()
-    except Exception as exc:  # noqa: BLE001
-        log.debug("_resolve_default(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -370,8 +366,7 @@ def bind_session_hooks(hooks: Any, *, owner: Optional[str] = None) -> bool:
             inst = getattr(m, _attr, None)
             if inst is not None:
                 inst.hooks = hooks
-        except Exception as exc:  # noqa: BLE001 - 绑定不得掀翻会话启动
-            log.warning("bind_session_hooks(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        except Exception:  # noqa: BLE001 - 绑定不得掀翻会话启动
             pass
     return ok
 
@@ -460,8 +455,7 @@ def activate_session(
         try:
             ctx.session_owner = owner
             ctx.session_handle = handle
-        except Exception as exc:  # noqa: BLE001 - 只读 ctx 不掀翻会话启动
-            log.warning("activate_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        except Exception:  # noqa: BLE001 - 只读 ctx 不掀翻会话启动
             pass
     return handle
 
@@ -470,7 +464,7 @@ def deactivate_session(handle: Any) -> bool:
     """会话结束：精确注销 + 复位 contextvar + 清理 ctx 残留。
 
     刻意**不清** default provider —— 清掉会让仍在运行的其他会话突然
-    失去单槽 fallback（既有行为），保留。
+    失去单槽 fallback（既有行为），如实保留。
 
     B3 续轮 IX：
     - ``closed`` 标记让重复关闭直接返回 False（Q5）；
@@ -482,8 +476,7 @@ def deactivate_session(handle: Any) -> bool:
         return False
     try:
         handle.closed = True
-    except Exception as exc:  # noqa: BLE001 - 外来句柄对象也能安全处理
-        log.warning("deactivate_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+    except Exception:  # noqa: BLE001 - 外来句柄对象也能安全处理
         pass
     owner = getattr(handle, "owner", None)
     token = getattr(handle, "token", None)
@@ -499,8 +492,7 @@ def deactivate_session(handle: Any) -> bool:
                 ctx.session_handle = None
                 if getattr(ctx, "session_owner", None) == owner:
                     ctx.session_owner = ""
-        except Exception as exc:  # noqa: BLE001
-            log.warning("deactivate_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        except Exception:  # noqa: BLE001
             pass
     return ok
 
@@ -513,7 +505,8 @@ def session_scope(
 ) -> Iterator[SessionHandle]:
     """``with session_scope(...) as h:`` 自动 ``deactivate``（异常安全）。
 
-    提供统一关闭契约，不强制所有宿主都改用它 —— 哪些宿主已接线写在回归里。
+    提供统一关闭契约，不强制所有宿主都改用它 —— 哪些宿主已接线如实
+    写在回归里，不假装「全部宿主已覆盖」。
     """
     h = activate_session(owner=owner, hooks=hooks,
                          provider=provider, ctx=ctx)
@@ -542,8 +535,7 @@ def close_agent_session(agent: Any) -> bool:
         return False
     try:
         return deactivate_session(handle)
-    except Exception as exc:  # noqa: BLE001 - 关闭路径不得掀翻宿主
-        log.debug("close_agent_session(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+    except Exception:  # noqa: BLE001 - 关闭路径不得掀翻宿主
         return False
 
 
@@ -592,7 +584,6 @@ class HookTrigger:
     """
 
     __slots__ = ("_hooks", "_owner", "_kind")
-    _owner: Optional[str]
 
     def __init__(self, hooks: Any = None, *, owner: Optional[str] = None) -> None:
         """**冻结归属**，而不是一律冻结 hooks 值。
@@ -634,10 +625,9 @@ class HookTrigger:
         """
         if self._kind != "owner":
             return self._hooks
-        owner = cast(str, self._owner)
-        h = resolve_session(owner)
+        h = resolve_session(self._owner)
         if h is None:
-            _bump_owner_miss(owner)
+            _bump_owner_miss(self._owner)
         return h
 
     @staticmethod
@@ -661,12 +651,10 @@ class HookTrigger:
         而 ``dump_yaml`` 把 ``RecursionError`` 也吞掉 —— 表现为「配置写入
         失败」却仍在每一层派发 ConfigChange，既不报错也不停止。
         跨进程 command hook **不需要**守卫：子进程不继承父进程的
-        thread-local，天然不会形成这条递归链（覆盖面有限）。
+        thread-local，天然不会形成这条递归链（如实标注，不夸大覆盖面）。
         """
         hooks = self._effective()
-        # 只有 enabled **真的是 True** 才派发: 鸭子类型对象 / Mock 的
-        # enabled 是任意 truthy 值, 把它当"已启用"会凭空派发通知。
-        if hooks is None or getattr(hooks, "enabled", False) is not True:
+        if hooks is None or not getattr(hooks, "enabled", False):
             return False
         run = getattr(hooks, "run_notify", None)
         if run is None:
@@ -680,8 +668,7 @@ class HookTrigger:
             try:
                 run(event, payload)
                 return True
-            except Exception as exc:  # noqa: BLE001
-                log.debug("HookTrigger._notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            except Exception:  # noqa: BLE001
                 return False
         finally:
             inflight.discard(event)
@@ -703,9 +690,7 @@ class HookTrigger:
                 reason="会话 owner 未注册 hooks (fail-closed)",
                 failure_kind="owner_not_registered",
             )
-        # enabled 必须是真正的 True 才算启用 (见 _notify 的同一理由):
-        # 非 hooks 对象(如测试里的 Mock ctx.hooks)不该被当成决策源。
-        if hooks is None or getattr(hooks, "enabled", False) is not True:
+        if hooks is None or not getattr(hooks, "enabled", False):
             return self._no_decision()
         inflight = _in_flight_events()
         if event in inflight:
@@ -729,7 +714,7 @@ class HookTrigger:
             if d is None:
                 return self._failed_closed(
                     RuntimeError("run_decision 返回 None（契约违约）"))
-            return cast(HookDecision, d)
+            return d
         finally:
             inflight.discard(event)
 

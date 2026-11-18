@@ -20,7 +20,7 @@ Claude Code v2.1.300 起的行为是：``updatedInput`` **替换**整个
 改参**拒绝该次调用**（"The required parameter content is missing"）。
 本模块把这套语义做成单一裁决出口。
 
-**分层策略**
+**分层策略（如实，不夸大）**
 
 - 有工具 JSON Schema（``Tool.parameters``）：严格对齐 CC ——
   按 ``properties`` 白名单丢未知键、校验 ``required``、``type``、

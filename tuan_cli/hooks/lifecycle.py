@@ -71,6 +71,7 @@ fail-closed。通知类 9 处保持吞异常（动作已发生，不该回滚）
 from __future__ import annotations
 
 import json
+import math
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Optional, Tuple
@@ -91,9 +92,6 @@ from tuan_cli.core.safe_text import (  # noqa: E402
 
 from . import exit_semantics as XS
 from . import triggers as TR
-
-import logging
-log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------- 接线清单
 # **只列真正挂了生产代码的事件**。每加一行，必须在
@@ -120,7 +118,7 @@ LEGACY_WIRED_EVENTS: FrozenSet[str] = frozenset({
 WIRED_EVENTS: FrozenSet[str] = frozenset(
     LIFECYCLE_WIRED_EVENTS | LEGACY_WIRED_EVENTS)
 
-# 与 CC 的**显式语义差异**（不是缺口，也等价）。
+# 与 CC 的**显式语义差异**（不是缺口，也不假装等价）。
 SEMANTIC_DIFFERENCES: Dict[str, str] = {
     "ConfigChange": "Tuan 在写盘成功后派发（post-hoc 通知），CC 在变更前可阻断；"
                     "B3 V 的「写盘失败不派发」契约本轮零改动",
@@ -130,7 +128,7 @@ SEMANTIC_DIFFERENCES: Dict[str, str] = {
     "PermissionRequest": "Tuan 的 hook allow 不能跳过 ctx.confirm 安全闸门",
     "PostModelSwitch": "set_model 只记录偏好、不保证切换已完成；本轮按通知派发",
     "PreCompact": "Tuan 有 agent 层既有通知 + context 层可阻断执行两个派发点，"
-                  "CC 只有压缩前一个；如实登记双重触发，逐值等价",
+                  "CC 只有压缩前一个；如实登记双重触发，不假装逐值等价",
     "PostToolBatch": "CC 的 exit 2 会停止 agentic loop；Tuan 只派发并保留 reason，"
                      "不擅自替上层终止回合",
     "InstructionsLoaded": "payload 只带路径/字节数/是否截断，不带正文（凭据脱敏），"
@@ -227,14 +225,12 @@ def _resolve_hooks(hooks: Any, owner: Optional[str]) -> Tuple[Any, str, Optional
             return None, "owner_not_registered", "owner_not_registered"
         try:
             h = TR.resolve_session(owner)
-        except Exception as exc:  # noqa: BLE001
-            log.debug("_resolve_hooks(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        except Exception:  # noqa: BLE001
             return None, "provider_error", "provider_error"
         if h is None:
             try:
                 TR._bump_owner_miss(owner)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("_resolve_hooks(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            except Exception:  # noqa: BLE001
                 pass
             return None, "owner_not_registered", "owner_not_registered"
         return h, "owner", None
@@ -246,8 +242,7 @@ def _resolve_hooks(hooks: Any, owner: Optional[str]) -> Tuple[Any, str, Optional
     try:
         provider = TR.get_default_hooks_provider()
         h = provider() if provider is not None else None
-    except Exception as exc:  # noqa: BLE001
-        log.debug("_resolve_hooks(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+    except Exception:  # noqa: BLE001
         return None, "provider_error", "provider_error"
     if h is None:
         return None, "no_hooks", None
@@ -436,7 +431,7 @@ def validate() -> list:
                 "payload_rejected", "sanitized_fields", "fail_closed"):
         if key not in _STATS:
             problems.append("XIV 失败闭合计数键缺失: %s" % key)
-    probe = ("x\x1b]8，https://evil.example\x07\u202e" +
+    probe = ("x\x1b]8;;https://evil.example\x07\u202e" +
              "ghp_" + "A" * 36 + " GITHUB_TOKEN=ghp_" + "B" * 36)
     cleaned = _clean_str(probe)
     if "ghp_" in cleaned or "\x1b" in cleaned or "\u202e" in cleaned:

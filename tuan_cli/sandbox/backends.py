@@ -106,19 +106,43 @@ _BACKENDS: List[Tuple[str, Callable[[], bool]]] = [
 ]
 
 
+# 探测结果缓存 (进程级): 后端可用性是 OS 属性, 进程内不变。探测会起
+# 子进程, 安全护栏逐命令重复探测会拖慢整条链 (实测把审计密集测试拖过
+# 超时线) —— 首次探测后缓存, 测试用 monkeypatch 替换 pick_backend 时不受影响。
+_PROBE_CACHE: Dict[str, bool] = {}
+_DETECTED: Optional[List[Dict[str, object]]] = None
+
+
 def detect_backends() -> List[Dict[str, object]]:
-    """探测所有后端的可用性, 返回降序列表 (可靠, 不抛异常)。"""
+    """探测所有后端的可用性, 返回降序列表 (可靠, 不抛异常)。
+
+    结果按进程缓存 (后端可用性是 OS 属性, 进程内不变) —— 探测会起子进程,
+    逐命令重复探测会拖慢安全护栏 (实测把审计密集测试拖过超时线)。
+    """
+    global _DETECTED
+    if _DETECTED is not None:
+        return list(_DETECTED)
     out: List[Dict[str, object]] = []
     for name, probe in _BACKENDS:
-        try:
-            ok = bool(probe())
-        except Exception:  # pragma: no cover
-            ok = False
+        ok = _probe_cached(name, probe)
         out.append({"name": name, "available": ok,
                     # WSL2 docker 在提供强隔离的同时可能较慢, 并入候选中
                     "detail": _probe_detail(name, ok)})
     out.append({"name": "local", "available": True, "detail": "本地执行(无 OS 级隔离, 兜底)"})
-    return out
+    _DETECTED = out
+    return list(_DETECTED)
+
+
+def _probe_cached(name: str, probe: Callable[[], bool]) -> bool:
+    """单后端探测 (带进程级缓存)。"""
+    if name in _PROBE_CACHE:
+        return _PROBE_CACHE[name]
+    try:
+        ok = bool(probe())
+    except Exception:  # pragma: no cover
+        ok = False
+    _PROBE_CACHE[name] = ok
+    return ok
 
 
 def _probe_detail(name: str, ok: bool) -> str:
@@ -145,22 +169,14 @@ def pick_backend(prefer: str = "auto") -> Tuple[str, bool]:
     if prefer and prefer != "auto":
         # 显式指定: 必须存在且探测通过
         probe = dict(_BACKENDS).get(prefer)
-        try:
-            if probe is not None and probe():
-                return prefer, True
-        except Exception as exc:  # pragma: no cover
-            log.warning("沙箱后端探测/执行异常(设计内降级): %s", exc)
-            pass
+        if probe is not None and _probe_cached(prefer, probe):
+            return prefer, True
         # 显式指定的强后端不可用: 绝不静默降级到其它后端(尤其 local)。
         # 返回 (prefer, False) 交由 HardIsolationFilter 的 enforce 策略做 fail-closed 拒绝。
         log.warning("指定的沙箱后端 %r 不可用; 不回落, 交由上层 fail-closed 裁决", prefer)
         return prefer, False
 
     for name, probe in _BACKENDS:
-        try:
-            if probe():
-                return name, True
-        except Exception as exc:  # pragma: no cover
-            log.debug("沙箱后端探测/执行异常(设计内降级): %s", exc)
-            continue
+        if _probe_cached(name, probe):
+            return name, True
     return "local", True

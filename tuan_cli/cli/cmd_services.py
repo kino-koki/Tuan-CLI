@@ -8,6 +8,7 @@ cmd_hooks / cmd_session / cmd_usercmd。
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -108,13 +109,26 @@ def cmd_plugin(args: Any) -> int:
         return _plugin_cmd_list(manager)
 
     if plugin_cmd == "install":
-        source = getattr(args, "path", "")
+        source = getattr(args, "source", None) or getattr(args, "path", "")
         name = getattr(args, "name", None)
         if not source:
             console.print("[red]缺少插件源目录路径[/red]")
             return 1
+        # --config JSON 字符串 → 校验并持久化 (DSH 原生插件)
+        config = None
+        config_raw = getattr(args, "config", None)
+        if config_raw:
+            try:
+                config = json.loads(config_raw)
+                if not isinstance(config, dict):
+                    raise ValueError("config 必须是 JSON 对象")
+            except (json.JSONDecodeError, ValueError) as exc:
+                console.print(f"[red]config 解析失败:[/red] {exc}")
+                return 1
         try:
-            info = manager.install_from_directory(Path(source).expanduser(), name=name)
+            info = manager.install_from_directory(
+                Path(source).expanduser(), name=name, config=config
+            )
         except Exception as exc:  # noqa: BLE001
             console.print(f"[red]安装失败:[/red] {exc}")
             return 1
@@ -151,6 +165,12 @@ def cmd_plugin(args: Any) -> int:
     if plugin_cmd == "info":
         name = getattr(args, "name", "")
         return _plugin_cmd_info(manager, name)
+
+    if plugin_cmd == "run":
+        return _plugin_cmd_run(manager, args)
+
+    if plugin_cmd == "patch":
+        return _plugin_cmd_patch(manager, args)
 
     console.print(f"[red]未知子命令[/red] plugin {plugin_cmd}")
     return 1
@@ -207,6 +227,77 @@ def _plugin_cmd_info(manager: Any, name: str) -> int:
     console.print(f"  路径: {info.path}")
     console.print(f"  格式: {m.format}")
 
+    # DSH 原生 ESM 插件: 经 DshPluginLoader 展示注册 provider 能力 + patch 清单
+    try:
+        from ..skills.plugin_sdk import DshPluginLoader
+
+        loader = DshPluginLoader()
+        is_native = loader.is_dsh_native(info.path)
+        patch = loader.read_patch(info.path)
+        has_patch = bool(patch.get("file"))
+        if is_native or has_patch or m.format == "dsh_native" or m.metadata.get("dsh_native"):
+            if is_native:
+                meta = loader.describe(info.path)
+                if meta.get("name"):
+                    console.print(f"  [dim]DSH 原生: {meta['name']}[/dim]"
+                                  + (f"  inject={meta.get('inject')}" if meta.get("inject") else ""))
+                    # 注入依赖解析结果: 已知宿主服务 resolved=true, 其余 unknown
+                    inject_res = meta.get("injectResolved") or []
+                    if inject_res:
+                        parts = []
+                        for it in inject_res:
+                            mark = "[green]✓[/green]" if it.get("resolved") else "[red]?[/red]"
+                            parts.append(f"{it.get('service')} {mark}")
+                        console.print(f"  [dim]inject 依赖:[/dim] " + ", ".join(parts))
+                    # Config schema 字段类型映射
+                    fields = meta.get("configFields") or {}
+                    if fields:
+                        fstr = ", ".join(f"{k}:{v}" for k, v in fields.items())
+                        console.print(f"  [dim]Config 字段:[/dim] {fstr}")
+                    if meta.get("entry"):
+                        console.print(f"  [dim]入口:[/dim] {meta['entry']}")
+                    # install --config 持久化的生效配置 (cordis.config.json)
+                    cfg_file = info.path / "cordis.config.json"
+                    if cfg_file.is_file():
+                        try:
+                            cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
+                            if isinstance(cfg, dict):
+                                console.print(f"  [dim]生效配置:[/dim] "
+                                              f"{json.dumps(cfg, ensure_ascii=False)[:200]}")
+                        except (json.JSONDecodeError, OSError):
+                            pass
+                skills = loader.list_skills(info.path)
+                if skills:
+                    console.print(f"\n[bold]DSH Provider 技能 ({len(skills)})[/bold]")
+                    for s in skills[:50]:
+                        console.print(f"  - {s.get('name', '?')}  "
+                                      f"{s.get('description', '')[:50]}")
+                    if len(skills) > 50:
+                        console.print(f"  ... 另 {len(skills) - 50} 个")
+                # observeHostMutation 接线自检: 派发 fs/observed 事件, 观察 host 是否转调
+                try:
+                    mut = loader.emit_mutation(info.path, actor="edit")
+                    mut_n = mut.get("mutationCount", 0)
+                    if mut_n >= 1:
+                        console.print("  [green]host mutation 观测: ✓[/green] "
+                                      "(fs/observed → observeHostMutation 链路可用)")
+                    else:
+                        console.print("  [dim]host mutation 观测: 未接线[/dim]")
+                except Exception:  # noqa: BLE001
+                    console.print("  [dim]host mutation 观测: 未接线[/dim]")
+            if has_patch:
+                console.print(f"\n[bold]cordis.patch.yml[/bold]")
+                console.print(f"  [dim]文件: {patch['file']}[/dim]")
+                for row in patch.get("insert", []):
+                    cfg = row.get("config")
+                    cfg_s = json.dumps(cfg, ensure_ascii=False) if isinstance(cfg, (dict, list)) else str(cfg)
+                    console.print(f"  insert {row.get('id', row.get('name', '?'))}  "
+                                  f"[dim]{cfg_s[:60]}[/dim]")
+                for row in patch.get("remove", []):
+                    console.print(f"  remove {row.get('id', row.get('name', '?'))}")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"  [dim]DSH 原生加载失败: {exc}[/dim]")
+
     if m.skills:
         console.print(f"\n[bold]技能 ({len(m.skills)})[/bold]")
         for s in m.skills:
@@ -237,6 +328,100 @@ def _plugin_cmd_info(manager: Any, name: str) -> int:
         else:
             console.print("  [green]DSH 兼容性: 满足[/green]")
     return 0
+
+
+def _plugin_cmd_run(manager: Any, args: Any) -> int:
+    """运行时执行 DSH 原生插件 apply() 并展示注册结果。"""
+    name = getattr(args, "name", "")
+    info = manager.get_plugin(name)
+    if info is None:
+        console.print(f"[red]未找到插件[/red] {name}")
+        return 1
+    try:
+        from ..skills.plugin_sdk import DshPluginLoader
+
+        config_raw = getattr(args, "config", None)
+        config = None
+        if config_raw:
+            try:
+                config = json.loads(config_raw)
+                if not isinstance(config, dict):
+                    raise ValueError("config 必须是 JSON 对象")
+            except (json.JSONDecodeError, ValueError) as exc:
+                console.print(f"[red]config 解析失败:[/red] {exc}")
+                return 1
+        loader = DshPluginLoader()
+        if not loader.is_dsh_native(info.path):
+            console.print(f"[yellow]{name} 不是 DSH 原生插件, 无可执行 apply[/yellow]")
+            return 0
+        r = loader.apply_plugin(info.path, config)
+        if not r.get("applied"):
+            console.print(f"[red]apply 失败:[/red] {r.get('error')}")
+            return 1
+        console.print(f"[bold]插件 {name} apply 完成[/bold]")
+        console.print(f"  Provider 注册: [green]{r.get('providerCount', 0)}[/green]")
+        console.print(f"  事件订阅: [green]{r.get('eventCount', 0)}[/green]")
+        skills = r.get("skills", [])
+        console.print(f"  技能: [green]{len(skills)}[/green]")
+        for s in skills[:50]:
+            console.print(f"  - {s.get('name', '?')}  "
+                          f"{s.get('description', '')[:50]}")
+        if len(skills) > 50:
+            console.print(f"  ... 另 {len(skills) - 50} 个")
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]run 失败:[/red] {exc}")
+        return 1
+
+
+def _plugin_cmd_patch(manager: Any, args: Any) -> int:
+    """读取插件 cordis.patch.yml 并应用到目标 YAML 的 services 段 (DSH 原生)。"""
+    name = getattr(args, "name", "")
+    target = getattr(args, "target", "")
+    info = manager.get_plugin(name)
+    if info is None:
+        console.print(f"[red]未找到插件[/red] {name}")
+        return 1
+    try:
+        from pathlib import Path
+
+        from ..skills.plugin_sdk import DshPluginLoader
+
+        config_raw = getattr(args, "config", None)
+        config = None
+        if config_raw:
+            try:
+                config = json.loads(config_raw)
+                if not isinstance(config, dict):
+                    raise ValueError("config 必须是 JSON 对象")
+            except (json.JSONDecodeError, ValueError) as exc:
+                console.print(f"[red]config 解析失败:[/red] {exc}")
+                return 1
+        loader = DshPluginLoader()
+        patch = loader.read_patch(info.path)
+        if patch.get("error"):
+            console.print(f"[red]patch 解析失败:[/red] {patch['error']}")
+            return 1
+        if not patch.get("insert") and not patch.get("remove"):
+            console.print(f"[yellow]{name} 无 cordis.patch.yml 条目[/yellow]")
+            return 0
+        # --config 覆盖: 替换 insert 行的 config
+        if config is not None:
+            for row in patch.get("insert", []):
+                if isinstance(row, dict):
+                    row["config"] = config
+        r = loader.apply_patch(patch, Path(target).expanduser())
+        if not r.get("ok"):
+            console.print(f"[red]patch 应用失败:[/red] {r.get('error')}")
+            return 1
+        console.print(f"[bold]插件 {name} patch 已应用[/bold]")
+        console.print(f"  目标: {r.get('target')}")
+        console.print(f"  Insert: [green]{', '.join(r.get('inserted', [])) or '(无)'}[/green]")
+        console.print(f"  Remove: [yellow]{', '.join(r.get('removed', [])) or '(无)'}[/yellow]")
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]patch 失败:[/red] {exc}")
+        return 1
 
 
 # ===================================================================== cmd_skill

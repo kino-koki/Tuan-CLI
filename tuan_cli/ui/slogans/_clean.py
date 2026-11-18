@@ -39,7 +39,7 @@ from typing import List
 # 先被剥掉」。实测覆盖缺口: 连续 ESC 串后跟一个**真** CSI/OSC 序列时,
 # 正则从 ESC 串的**最后一个** ESC 开始匹配, 前面的 ESC 被留下成孤立
 # ESC, 随后被 ``_ESC_SEQ_RE`` 与尾部第一个可打印字符拼成假序列吞掉:
-#   '\x1b\x1b]8，evil\x07OK' -> 'K'      (丢了 O)
+#   '\x1b\x1b]8;;evil\x07OK' -> 'K'      (丢了 O)
 #   '\x1b\x1b[31mRED'         -> 'ED'     (丢了 R)
 #   '\x1b\x1b[?25lHIDE'       -> 'IDE'    (丢了 H)
 # 允许 ``ESC+`` 引导后整段被一次剥掉, 实测全部恢复尾部原文。
@@ -122,9 +122,6 @@ def _clusters(s: str) -> List[str]:
     return out
 
 
-#: 有界缓存: 分发链路对同一批固定词条/owner 反复净化, 每次 5 条正则 +
-#: 逐码点 unicodedata 是纯重复劳动。输入仍是 str, 缓存只影响耗时。
-@lru_cache(maxsize=2048)
 def _clean_once(raw: str) -> str:
     """**纯清理核心**：去 ANSI/OSC/CSI/ESC 序列、控制字符、bidi 覆写、
     isolate、零宽/格式字符、私用区与未分配码点、组合标记开头。
@@ -188,9 +185,8 @@ def _fit_headline(s: str) -> str:
     return "".join(kept).strip()
 
 
-@lru_cache(maxsize=4096)
-def sanitize_verb(raw: object) -> str:
-    """把任意用户输入净化成可安全渲染的标语；非法输入返回空串。
+def _sanitize_verb_impl(raw: object) -> str:
+    """净化核心: 把任意用户输入净化成可安全渲染的标语；非法输入返回空串。
 
     去掉 ANSI/OSC/CSI/其它 ESC 序列、C0/C1 控制字符、**bidi 覆写与
     isolate、零宽/格式字符、私用区与未分配码点**，拒绝组合标记开头，
@@ -200,11 +196,6 @@ def sanitize_verb(raw: object) -> str:
     最多 3 轮；不收敛就 fail-closed 返回空串，绝不输出可疑文案。
     净化函数若不满足 ``f(f(x)) == f(x)``，调用方（load_config 存词、
     reload 换词池）就会在不同路径上得到不同结果，这类隐性不一致最难查。
-
-    ``@lru_cache`` 是**性能**层（词库随机抽取会让同串反复进入净化出口，
-    深度轮 5 实测 2000 次 dispatch 2000 次 ``_sanitize_once`` 占满 budget）；
-    结果是纯函数（只依赖输入），缓存不改变行为；函数对象仍是同一个，
-    ``audit().sanitizer_shared`` 的 identity 断言不受影响。
     """
     if not isinstance(raw, str):
         return ""
@@ -215,6 +206,24 @@ def sanitize_verb(raw: object) -> str:
             return s
         s = nxt
     return ""   # 不收敛：拒绝，而不是把半成品送进终端
+
+
+@lru_cache(maxsize=4096)
+def _sanitize_verb_cached(raw: object) -> str:
+    return _sanitize_verb_impl(raw)
+
+
+def sanitize_verb(raw: object) -> str:
+    """净化入口: 带有界缓存; 不可哈希输入 (list/dict) 回退直接净化。
+
+    缓存是**性能**层 (分发链路对同串反复净化; 深度轮 5 实测 2000 次
+    dispatch 会被未缓存的净化出口拖出预算)。结果是纯函数 (只依赖输入),
+    缓存不改变行为; 不可哈希输入走 TypeError 回退, 行为一致。
+    """
+    try:
+        return _sanitize_verb_cached(raw)
+    except TypeError:
+        return _sanitize_verb_impl(raw)
 
 
 #: 日志字段码点上限。刻意**不是**显示列宽 —— 日志不参与终端渲染,
@@ -263,7 +272,7 @@ def sanitize_log_field(raw: object, limit: int = LOG_FIELD_LIMIT) -> str:
 
     实测复现的必要性：``record_error(event, ...)`` 的 ``event`` 是
     public API 入参，``slogan_for(event)`` 拼错时会把整个字符串写进
-    留痕。实测注入 5030 码点含 ``ESC ]8，`` + ``U+202E`` RLO 的串，
+    留痕。实测注入 5030 码点含 ``ESC ]8;;`` + ``U+202E`` RLO 的串，
     旧实现原样存下 —— 控制字符可被日志查看器/终端解释。
 
     同样迭代到不动点；不收敛或非字符串输入返回空串（fail-closed）。
@@ -288,7 +297,7 @@ def sanitize_log_field(raw: object, limit: int = LOG_FIELD_LIMIT) -> str:
     # 只扫前 480 码点 —— 实测 ``'\x00'*1000 + 'OK'`` 前部垃圾吃满
     # 额度，清理后为空，尾部唯一合法内容 'OK' 被整段丢弃；ESC 序列
     # 被切断也会留下半截。现在改为**先清理后截断**，仅对超过
-    # ``_SCAN_CAP`` 的异常超长输入才粗切（DoS 防护）。
+    # ``_SCAN_CAP`` 的异常超长输入才粗切（DoS 防护，如实标注）。
     scan = raw if len(raw) <= _SCAN_CAP else raw[:_SCAN_CAP]
     s = scan
     for _ in range(3):

@@ -232,7 +232,7 @@ def paint(focused: bool, area: Rect, ids: Sequence[Any],
     footer_y = area.bottom - 1
     row_width = body_row(area, area.y).width
 
-    def add_row(y: int, text: str, row_style: str = "", kind: str = "choice") -> None:
+    def add_row(y: int, text: str, row_style: str = "", kind: str = "choice"):
         if y < footer_y:
             plan["rows"].append(PaintedRow(y, text, row_style, kind))
 

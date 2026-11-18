@@ -176,19 +176,23 @@ class SkillManager:
                 extra = []
         for extra_str in extra:
             dirs.append((Path(extra_str), "extra"))
-        # 3.5 插件技能 (DSH 0.2 兼容): 启用的插件 <plugin>/skills/ 注入为 "plugin"
+        # 3.5 插件技能 (DSH 0.2 兼容): 经 PluginManager.inject_skills_to_skill_manager
+        # 统一注入 <plugin>/skills 子目录 + 声明式绝对路径技能的共同祖先根。
+        # 该方法把插件目录插到 builtin 之前 (plugin > builtin), 保证同名技能不被
+        # builtin 抢占。tuan-skills-bundle 这类 DSH 原生插件的技能根在插件目录外
+        # (如 G:/Tuan-CLI-Official/skills), 只有经此注入才能被 _discover 发现。
         try:
             from .plugin_sdk import PluginManager
 
             plugins_dir = self.home / "plugins"
             if plugins_dir.is_dir():
                 pm = PluginManager(plugins_dir)
-                for info in pm.list_plugins():
-                    if not info.enabled:
-                        continue
-                    skills_dir = info.path / "skills"
-                    if skills_dir.is_dir():
-                        dirs.append((skills_dir, "plugin"))
+                injected = pm.inject_skills_to_skill_manager(self, dirs)
+                if injected:
+                    log.debug(
+                        "SkillManager._build_search_dirs(): 注入插件技能目录 %d 个",
+                        injected,
+                    )
         except Exception as exc:  # noqa: BLE001
             log.debug(
                 "SkillManager._build_search_dirs(): 插件技能注入跳过: %s", exc,

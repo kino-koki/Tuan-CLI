@@ -3,9 +3,9 @@
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
   "name": "tuan_cli-sbom",
-  "documentNamespace": "https://kino-koki.github.io/sbom/tuan_cli-0.4.4-2026-11-17T07:18:03Z",
+  "documentNamespace": "https://kino-koki.github.io/sbom/tuan_cli-0.4.4-2026-11-18T04:04:15Z",
   "creationInfo": {
-    "created": "2026-11-17T07:18:03Z",
+    "created": "2026-11-18T04:04:15Z",
     "creators": [
       "Tool: tuan_cli-harden-sbom"
     ],
@@ -243,7 +243,17 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-pip-23",
+      "SPDXID": "SPDXRef-Package-pillow-23",
+      "name": "pillow",
+      "versionInfo": "13.0.0",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pip-24",
       "name": "pip",
       "versionInfo": "26.3",
       "supplier": "NOASSERTION",
@@ -253,7 +263,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-pluggy-24",
+      "SPDXID": "SPDXRef-Package-pluggy-25",
       "name": "pluggy",
       "versionInfo": "1.7.0",
       "supplier": "NOASSERTION",
@@ -263,7 +273,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-prompt-toolkit-25",
+      "SPDXID": "SPDXRef-Package-prompt-toolkit-26",
       "name": "prompt_toolkit",
       "versionInfo": "3.0.53",
       "supplier": "NOASSERTION",
@@ -273,7 +283,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-pydantic-26",
+      "SPDXID": "SPDXRef-Package-pydantic-27",
       "name": "pydantic",
       "versionInfo": "2.14.3",
       "supplier": "NOASSERTION",
@@ -283,7 +293,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-pydantic-core-27",
+      "SPDXID": "SPDXRef-Package-pydantic-core-28",
       "name": "pydantic_core",
       "versionInfo": "2.50.4",
       "supplier": "NOASSERTION",
@@ -293,7 +303,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-Pygments-28",
+      "SPDXID": "SPDXRef-Package-Pygments-29",
       "name": "Pygments",
       "versionInfo": "2.21.0",
       "supplier": "NOASSERTION",
@@ -303,7 +313,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-pytest-29",
+      "SPDXID": "SPDXRef-Package-pytest-30",
       "name": "pytest",
       "versionInfo": "9.2.0",
       "supplier": "NOASSERTION",
@@ -313,7 +323,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-pytest-asyncio-30",
+      "SPDXID": "SPDXRef-Package-pytest-asyncio-31",
       "name": "pytest-asyncio",
       "versionInfo": "1.5.0",
       "supplier": "NOASSERTION",
@@ -323,7 +333,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-pytest-timeout-31",
+      "SPDXID": "SPDXRef-Package-pytest-timeout-32",
       "name": "pytest-timeout",
       "versionInfo": "2.4.0",
       "supplier": "NOASSERTION",
@@ -333,7 +343,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-PyYAML-32",
+      "SPDXID": "SPDXRef-Package-PyYAML-33",
       "name": "PyYAML",
       "versionInfo": "6.0.3",
       "supplier": "NOASSERTION",
@@ -343,7 +353,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-rich-33",
+      "SPDXID": "SPDXRef-Package-rich-34",
       "name": "rich",
       "versionInfo": "15.0.0",
       "supplier": "NOASSERTION",
@@ -353,7 +363,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-sniffio-34",
+      "SPDXID": "SPDXRef-Package-sniffio-35",
       "name": "sniffio",
       "versionInfo": "1.3.1",
       "supplier": "NOASSERTION",
@@ -363,7 +373,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-truststore-35",
+      "SPDXID": "SPDXRef-Package-truststore-36",
       "name": "truststore",
       "versionInfo": "0.10.5",
       "supplier": "NOASSERTION",
@@ -373,7 +383,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-typing-extensions-36",
+      "SPDXID": "SPDXRef-Package-typing-extensions-37",
       "name": "typing_extensions",
       "versionInfo": "4.16.0",
       "supplier": "NOASSERTION",
@@ -383,7 +393,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-typing-inspection-37",
+      "SPDXID": "SPDXRef-Package-typing-inspection-38",
       "name": "typing-inspection",
       "versionInfo": "0.4.5",
       "supplier": "NOASSERTION",
@@ -393,7 +403,7 @@
       "copyrightText": "NOASSERTION"
     },
     {
-      "SPDXID": "SPDXRef-Package-wcwidth-38",
+      "SPDXID": "SPDXRef-Package-wcwidth-39",
       "name": "wcwidth",
       "versionInfo": "0.9.4",
       "supplier": "NOASSERTION",
@@ -516,82 +526,87 @@
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-pip-23",
+      "relatedSpdxElement": "SPDXRef-Package-pillow-23",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-pluggy-24",
+      "relatedSpdxElement": "SPDXRef-Package-pip-24",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-prompt-toolkit-25",
+      "relatedSpdxElement": "SPDXRef-Package-pluggy-25",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-pydantic-26",
+      "relatedSpdxElement": "SPDXRef-Package-prompt-toolkit-26",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-pydantic-core-27",
+      "relatedSpdxElement": "SPDXRef-Package-pydantic-27",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-Pygments-28",
+      "relatedSpdxElement": "SPDXRef-Package-pydantic-core-28",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-pytest-29",
+      "relatedSpdxElement": "SPDXRef-Package-Pygments-29",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-pytest-asyncio-30",
+      "relatedSpdxElement": "SPDXRef-Package-pytest-30",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-pytest-timeout-31",
+      "relatedSpdxElement": "SPDXRef-Package-pytest-asyncio-31",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-PyYAML-32",
+      "relatedSpdxElement": "SPDXRef-Package-pytest-timeout-32",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-rich-33",
+      "relatedSpdxElement": "SPDXRef-Package-PyYAML-33",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-sniffio-34",
+      "relatedSpdxElement": "SPDXRef-Package-rich-34",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-truststore-35",
+      "relatedSpdxElement": "SPDXRef-Package-sniffio-35",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-typing-extensions-36",
+      "relatedSpdxElement": "SPDXRef-Package-truststore-36",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-typing-inspection-37",
+      "relatedSpdxElement": "SPDXRef-Package-typing-extensions-37",
       "relationshipType": "DEPENDS_ON"
     },
     {
       "spdxElementId": "SPDXRef-Package-tuan-cli-0",
-      "relatedSpdxElement": "SPDXRef-Package-wcwidth-38",
+      "relatedSpdxElement": "SPDXRef-Package-typing-inspection-38",
+      "relationshipType": "DEPENDS_ON"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-tuan-cli-0",
+      "relatedSpdxElement": "SPDXRef-Package-wcwidth-39",
       "relationshipType": "DEPENDS_ON"
     }
   ]

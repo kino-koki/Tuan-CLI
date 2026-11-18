@@ -59,14 +59,32 @@ for path, st in sorted(stages.items()):
     Path(path).write_bytes(merged)
 print(f"[2] 文本级合并完成, 待人工/取远端 {len(manual)} 个")
 
-# 3) 非文档类冲突取远端 (B3 XVI 最终态); 文档类取我方 (0.4.4 较新)
-take_theirs = [p for p in manual if p not in hand]
+# 3) 逐文件解析: 深度探针/钩子/codexkit 簇取远端 (B3 XVI 最新), 其余取我方 (0.4.4 较新)
+THEIRS_SET = {
+    "tuan_cli/parity_claude/catalog.py", "tuan_cli/parity_claude/depth.py", "tuan_cli/parity_claude/matrix.py",
+    "tuan_cli/parity_claude/module_probes.py", "tuan_cli/parity_claude/superiority.py",
+    "tuan_cli/tui/parity/depth.py", "tuan_cli/tui/parity/matrix.py",
+    "tuan_cli/tui/codexkit/__init__.py", "tuan_cli/tui/codexkit/approval_history.py",
+    "tuan_cli/tui/codexkit/stream_exec.py", "tuan_cli/tui/runtime_slogans.py",
+    "tuan_cli/hooks/exit_semantics.py", "tuan_cli/hooks/input_validation.py", "tuan_cli/hooks/nonprocess.py",
+    "tuan_cli/hooks/manager.py", "tuan_cli/hooks/lifecycle.py", "tuan_cli/hooks/__init__.py",
+    "tuan_cli/hooks/triggers.py",
+    "tests/test_codexkit_depth.py", "tests/test_b2se_background_side_door.py",
+    "tests/test_b3xvi_payload_context_gate.py", "tests/test_b3_hooks_extended.py",
+    "tests/test_b3ix_session_transaction.py", "tests/test_b3s_triggers.py", "tests/test_b3v_depth.py",
+    "tests/test_b3vi_session_binding.py", "tests/test_b3vii_concurrent_sessions.py",
+    "tests/test_b3viii_session_lifecycle.py", "tests/test_b3x_agent_sessions.py",
+    "tests/test_b3xii_exit_semantics.py", "tests/test_b3xiii_lifecycle.py",
+    "tests/test_b3xiv_lifecycle_safety.py", "tests/test_b3xv_nonprocess_semantics.py",
+    "tests/test_hooks.py", "tests/test_hooks_events.py",
+}
+take_theirs = [p for p in manual if p in THEIRS_SET]
+take_mine = [p for p in manual if p not in THEIRS_SET]
 for f in take_theirs:
     subprocess.run(["git", "checkout", THEIRS, "--", f], check=True)
-for f in sorted(set(manual) & hand):
+for f in take_mine:
     subprocess.run(["git", "checkout", MINE, "--", f], check=True)
-print(f"[3] 取远端 {len(take_theirs)} 个, 取我方 {len(set(manual) & hand)} 个")
-
+print(f"[3] 取远端 {len(take_theirs)} 个 (parity/hooks/codexkit 簇), 取我方 {len(take_mine)} 个")
 # 4) 版本一致性: __init__.py 里 0.3.4 -> 0.4.4
 init = Path("tuan_cli/__init__.py")
 s = init.read_text(encoding="utf-8")

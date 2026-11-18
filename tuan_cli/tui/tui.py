@@ -34,38 +34,7 @@ from .panels import PanelsMixin
 from .slogan import SloganMixin
 from .lifecycle import LifecycleMixin
 
-try:
-    from wcwidth import wcswidth as _wcswidth_impl  # 终端显示宽度 (prompt_toolkit 同源依赖)
-except Exception:  # noqa: BLE001
-    _wcswidth_impl = None  # type: ignore[assignment]
-
-
-def _wcswidth(s: str) -> int:
-    """兼容包装: 有 wcwidth 用 wcwidth, 否则退化为逐字符估算。"""
-    if _wcswidth_impl is not None:
-        return _wcswidth_impl(s)
-    return sum(2 if ord(c) > 0x2E7F else 1 for c in s)
-
-
-def _display_width(s: str) -> int:
-    """整串的终端显示宽度 —— 宽度计算的热路径, 必须走一次 C 调用而不是逐字 Python 循环。
-
-    渲染每一帧都要给全部历史行算宽度 (见 `_line_heights`)。逐字符调用
-    ``_wcswidth`` 是 Python 层循环, 2000 行历史每帧要多跑几万次函数调用
-    (实测约 30ms/帧), 而流式输出时每帧都要重算, 直接表现为卡顿。
-    ``wcwidth.wcswidth`` 内部是 C 实现且自带组合字符/东亚宽字符处理, 整串调用
-    结果与逐字累加一致。
-
-    例外: 串里含**控制字符**时 ``wcswidth`` 返回 -1 (表示"无法计算"), 此时回退
-    逐字累加, 保持与旧实现一致的行为, 不能让 -1 变成 0 宽度而算错行高。
-    """
-    if not s:
-        return 0
-    if _wcswidth_impl is not None:
-        w = _wcswidth_impl(s)
-        if w >= 0:
-            return w
-    return sum(max(0, _wcswidth(ch)) for ch in s)
+from .common import _wcswidth, _display_width  # 宽度真值单一来源 (4096 有界缓存)
 
 from ..i18n import t
 from ..core.prompt_tier import PROVIDER_CONTEXT_WINDOWS
@@ -405,13 +374,7 @@ SUCCESS_MARK = "✓"
 FAILURE_MARK = "✗"
 
 
-def _disp_width(text: str) -> int:
-    """显示宽度 (CJK/绘图形字符按实际列宽), 用于对齐欢迎盒右边框。"""
-    try:
-        from prompt_toolkit.utils import get_cwidth
-        return sum(get_cwidth(ch) for ch in text)
-    except Exception:
-        return len(text)
+_disp_width = _display_width  # 同一宽度真值 (B3 回归: 视口行高与单行裁剪不得再用两套算法)
 
 
 def _env_flag(name: str) -> bool:

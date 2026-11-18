@@ -247,12 +247,16 @@ def create_agent(
         try:
             from .hooks.manager import HookManager
             from .hooks.triggers import activate_session, default_hooks_resolver
-            from .hooks.triggers import set_default_hooks_provider  # B3: 低级 API
+            from .hooks.triggers import set_default_hooks_provider
 
             agent.ctx.hooks = HookManager(config, workspace, kernel=kernel)
-            # B3 续轮 VIII: 把 hooks 收进事务化会话注册表 + 注入无闭包 default
-            # provider。注册失败/异常时 activate_session 内部 fail-closed，不掀翻会话。
-            # 先给 owner 一个本地变量名供日志/审计 (不写回 ctx 属性)。
+            # B3 续轮 IX: 事务化会话注册 —— 每次 create_agent 仅激活一次。
+            # 此前这里**连续两次** activate_session (VIII 的旧调用 + IX 的事务化
+            # 版本), 同一 owner 二次注册必计冲突: 70 次「建 agent -> 关闭」循环
+            # 累积 70 个 conflict (test_sub_agent_hooks_not_accumulated 实测)。
+            # 注册失败 fail-closed, 不掀翻会话; config._hooks 作为跨层传递点
+            # 供安全插件 (classifier 等在 create_agent 阶段才取到 hooks) 读取。
+            config._hooks = agent.ctx.hooks
             _session_owner = "agent:%x" % id(agent)
             _handle = activate_session(
                 owner=_session_owner,
@@ -263,12 +267,17 @@ def create_agent(
             if not _handle.active:  # 注册失败可见，不静默
                 logger.warning("会话 hooks 注册失败（owner=%s）: 上界或冲突",
                                _handle.owner)
-            # 把会话 hooks 挂到 config 供安全插件 (kernel 服务) 读取:
-            # plugin activate 时 config 先于 agent 就绪, 但 classifier 等子系统
-            # 在 create_agent 阶段才取到 hooks —— 用 config._hooks 做跨层传递点。
-            config._hooks = agent.ctx.hooks
         except Exception:  # noqa: BLE001
             agent.ctx.hooks = None
+    # B3 续轮: 注入「当前会话 hooks」取值函数。remote_control /
+    # SecurityAlerter 等模块级入口没有 agent.ctx 句柄，靠它拿 HookManager。
+    # 传 lambda 而不是对象：这些模块构造早于此处，且 hooks 可在会话内
+    # 被替换/置空。异常一律当 None（严格 no-op）。
+    try:
+        config._hooks = agent.ctx.hooks
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("create_agent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        pass
     # 自定义斜杠命令: 把 <home>/commands 与 <workspace>/.tuan/commands 挂进分发链
     # (运行期包装 _handle_slash, 幂等; 失败不影响主流程)。延迟导入避免 cli <-> app 环。
     # bare / safe_mode 模式下不安装用户自定义命令。

@@ -80,7 +80,7 @@ import unicodedata
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Deque, Dict, List, Optional, Sequence, Tuple
+from typing import Deque, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
     "PHASES", "LANGUAGES", "PHASE_BUDGET_MS", "LivenessState",
@@ -716,7 +716,7 @@ class RuntimeSloganEngine:
         lang: Optional[str] = None,
         *,
         rng: Optional[random.Random] = None,
-        clock: Callable[[], float] = time.monotonic,
+        clock=time.monotonic,
     ) -> None:
         self._lock = threading.RLock()
         # 深度轮 11 (A): 旧实现 ``config or load_config()`` /
@@ -848,11 +848,7 @@ class RuntimeSloganEngine:
             else:
                 pool = base
             seen = set()
-            uniq: Tuple[str, ...] = tuple(
-                v for v in pool if v and v not in seen
-            )
-            for v in uniq:
-                seen.add(v)
+            uniq = tuple(v for v in pool if v and not (v in seen or seen.add(v)))
             self._pools[phase] = uniq
             return uniq
 

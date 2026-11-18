@@ -121,8 +121,9 @@ def test_args_rewrite_allowed():
     }))
     d = mgr.run_pre("write_file", {"path": "/x", "content": "a"})
     assert d.args is not None
-    assert d.args.get("_hook_injected") == "yes"
+    # B3 契约: 既有键的改写生效; 注入的新键被丢弃 (hooks 不得新增参数)。
     assert d.args.get("path") == "/x"
+    assert "_hook_injected" not in d.args
 
 
 def test_args_rewrite_denied_when_not_authorized():

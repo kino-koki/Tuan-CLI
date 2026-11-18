@@ -31,7 +31,7 @@ note，但**模块级运行时探针 0 个**（六维聚合探针不等于模块
 - B 线 ``gap_queue()`` 初版扫全仓 1300+ .py 耗时 18.8s → 改为只
   核销每个模块自己声明的 evidence 文件（352ms）。
 
-**边界**：``fully_identical`` 仍 False；B 线 26 gap 一个未消、
+**如实边界**：``fully_identical`` 仍 False；B 线 26 gap 一个未消、
 ``b_waves_done=["B1"]``、``external_adaptive_red_team=False``；
 A 线 92 个既有 aligned/localized 仍无模块级探针（下一轮逐项补）；
 ``codexkit`` 不接 TUI 主循环、不替换任何既有运行时对象；纯 Python

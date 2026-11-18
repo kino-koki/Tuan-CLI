@@ -37,12 +37,12 @@ def test_hook_events_surface():
     钉住 8 核心事件必在 + HOOK_EVENTS 非空即可，避免每次扩展都改这里。
     """
     from tuan_cli.hooks.manager import CORE_HOOK_EVENTS
-    assert CORE_HOOK_EVENTS == {
+    assert set(CORE_HOOK_EVENTS) == {
         "PreToolUse", "PostToolUse", "UserPromptSubmit",
         "Stop", "SubagentStop", "PreCompact",
         "SessionStart", "SessionEnd",
     }
-    assert set(HOOK_EVENTS) >= CORE_HOOK_EVENTS
+    assert set(HOOK_EVENTS) >= set(CORE_HOOK_EVENTS)
     # 扩展事件确实已接入
     for ev in ("PermissionRequest", "Notification", "PreModelSwitch",
                "PostModelSwitch", "Elicitation", "WorktreeCreate"):

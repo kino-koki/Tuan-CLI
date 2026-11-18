@@ -594,6 +594,74 @@ def _check_network(home: Path) -> List[Dict[str, Any]]:
     return findings
 
 
+# ------------------------------------------------------------------ DSH 原生插件
+
+
+def _check_dsh_plugins() -> List[Dict[str, Any]]:
+    """DSH 0.2 原生插件系统自检: 官方 bundle 是否可识别/describe/apply 全链路。
+
+    category = plugins. 缺 bundle 时 warn (非故障, 官方生态可能未部署);
+    bundle 存在但加载/契约失败时 error (真实缺口, 需修复)。
+    """
+    findings: List[Dict[str, Any]] = []
+    bundle = Path(r"G:\Tuan-CLI-Official\plugins\tuan-skills-bundle")
+    entry = bundle / "lib" / "index.js"
+    if not entry.exists():
+        findings.append(
+            _f(
+                "plugins",
+                "warn",
+                "未找到 tuan-skills-bundle (DSH 原生插件), 跳过",
+                detail="部署官方生态后 `tuan doctor` 将验证 DSH 原生插件全链路。",
+            )
+        )
+        return findings
+    try:
+        from ..skills.plugin_sdk import DshPluginLoader
+
+        loader = DshPluginLoader(timeout=30)
+        if not loader.is_dsh_native(bundle):
+            findings.append(
+                _f("plugins", "error", "tuan-skills-bundle 未被识别为 DSH 原生插件")
+            )
+            return findings
+        meta = loader.describe(bundle)
+        if not meta.get("name"):
+            findings.append(
+                _f("plugins", "error", "DSH 原生插件 describe 失败",
+                   detail=meta.get("error", "无契约"))
+            )
+            return findings
+        # inject 依赖全部可解析?
+        inject_res = meta.get("injectResolved") or []
+        unresolved = [it for it in inject_res if not it.get("resolved")]
+        # Config schema 字段?
+        fields = meta.get("configFields") or {}
+        # apply 运行时执行?
+        applied = loader.apply_plugin(bundle, {"providerName": "tuan-skills", "rank": 300})
+        skill_count = len(applied.get("skills", [])) if applied.get("applied") else 0
+        # get 契约: 完整定义含 content (DSH /skill 命令实际加载路径)
+        get_skills = loader.get_skills(bundle)
+        get_count = len(get_skills)
+        get_with_content = sum(1 for s in get_skills if s.get("content"))
+        get_ok = get_count >= 1 and get_with_content == get_count
+        # observeHostMutation 接线: fs/observed 事件派发是否转调 host mutation 观测
+        mut = loader.emit_mutation(bundle, actor="edit")
+        mut_count = mut.get("mutationCount", 0)
+        mut_ok = mut_count >= 1
+        status = "ok" if (not unresolved and fields and skill_count >= 1 and get_ok and mut_ok) else "warn"
+        detail = (
+            f"契约: {meta.get('name')} | inject={len(inject_res)} "
+            f"(未解析 {len(unresolved)}) | Config 字段 {len(fields)} | "
+            f"apply 技能 {skill_count} | get 定义 {get_count} (含正文 {get_with_content}) | "
+            f"host mutation {mut_count}"
+        )
+        findings.append(_f("plugins", status, detail))
+    except Exception as exc:  # noqa: BLE001
+        findings.append(_f("plugins", "error", f"DSH 原生插件自检异常: {exc}"))
+    return findings
+
+
 # ------------------------------------------------------------------ 主编排
 
 
@@ -613,6 +681,7 @@ def run_checks(
     findings += _check_project_docs(workspace)
     findings += _check_env(home, workspace, fix)
     findings += _check_cache(home)
+    findings += _check_dsh_plugins()
     if network:
         findings += _check_network(home)
     return findings

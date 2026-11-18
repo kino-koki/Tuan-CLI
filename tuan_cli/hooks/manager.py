@@ -2,12 +2,54 @@
 
 设计目标: 把 Agent 变成"可编排的", 同时把安全边界钉死:
 - command 必须是 list(argv), 拒绝裸字符串 (无 shell 注入面)。
-- 超时强杀 (看门狗线程 + 进程树强杀), 异常 fail-safe (不阻断、只记录)。
-  Windows 上 subprocess.run 的 timeout 杀进程并不可靠 (sleep 类子进程无法被及时回收,
-  导致 communicate() 永远阻塞); 故改用独立看门狗线程在超时后强制 taskkill /T 整棵树。
-- PreToolUse 阻断 / 改写参数 需显式声明 (blocking / allow_edit_args),
-  全局 allow_blocking / allow_edit_args 可一键关闭。
+- 超时强杀 (看门狗线程 + 进程树强杀)。Windows 上 subprocess.run 的 timeout
+  杀进程并不可靠 (sleep 类子进程无法被及时回收, 导致 communicate() 永远阻塞);
+  故改用独立看门狗线程在超时后强制 taskkill /T 整棵树。
+- **故障默认闭合 (B1 / 超 Claude Code v2.1.319)**: hook 的 spawn 失败、
+  超时、异常、无模型/无内核、非零退出全部记入 ``failures()``；对
+  ``PreToolUse`` 默认 ``on_failure="block"`` 直接阻断并给出结构化原因。
+  对标 CC 的 ``onFailure:"block"`` —— 但在 CC 里那是**用户逐条 hook
+  显式配置**的选项, 旧行为是静默 fail-open；这里把它做成出厂默认。
+  可用 ``hooks.on_failure`` (全局) 或单条 hook 的 ``on_failure`` 覆盖为
+  ``ask`` / ``allow``，未知取值一律回退最严格档并记审计。
+- **阻断默认生效**: ``blocking`` 由 False 改为 True。此前 hook 返回
+  ``{"block": true}`` 时若未显式写 ``blocking: true`` 会被吞掉只记一条
+  ``block_denied``，是第二个配置侧门。仍可显式 ``blocking: false`` 关闭。
+  注意: ``blocking`` 只管 hook **自己返回的** block 决策，**不管**
+  执行失败的 fail-closed —— 失败阻断不受该开关影响。
+- 通知类事件 (PostToolUse / Stop / Session* / UserPromptSubmit) 没有
+  action 可阻断, 失败**只留痕不卡住主回合**；``failures()`` 可查询。
 - 所有调用写入审计事件 hook.executed (供 self-improve / 观测订阅)。
+
+**B3 续轮 XV**：url / prompt / subagent 三类**非进程 hook** 没有进程 rc，
+``_exit_gate`` 原先只读 ``last_exit``，于是逐事件 exit-code-2 真值表对
+它们完全不适用，且实测「HTTP 200 空 body → 零审计静默放行」「timeout
+配置 0.5s 实测 2.71s」「失败 detail 里的 ghp_ 明文与 OSC 8 原样回显」
+「302 静默跟随到另一主机」「prompt 返回 500000 字符 reason」。现在三类
+hook 统一走 ``hooks/nonprocess.execute()``：真墙钟有界、拒绝重定向、
+stdout 限长、detail/reason 过 ``core.safe_text`` 单一净化真值，
+``classify_channel()`` 把通道故障映射成等价 rc 后**复用**
+``exit_semantics.classify()``，33 个官方事件在两类通道上同裁决。
+command hook 路径逐字节零改动。
+
+**B3 续轮 XVI**：XV 把三类非进程 hook 收口到单一执行器后，仍留下
+**出站 / 入站两条侧门**（真起 HTTP server、真起 command 子进程复现）：
+- P1 ``manager`` 五条链路的 payload **全部原样**进 command hook 的
+  stdin 与 url hook 的 POST body，实测真实 ``ghp_`` 明文 + RLO +
+  OSC 8 原样交给第三方。XIV 只修了 lifecycle 通道，manager 侧完全漏。
+  现在 ``_exec`` 是**唯一**出站净化点，复用 XIV 搬到
+  ``core/safe_text.safe_payload`` 的同一份递归真值。
+- P2 ``run_user_prompt_submit`` 把 command hook 的 **stdout 原样**
+  注入模型 additionalContext（控制字符 + 伪造系统指令），且多 hook
+  拼接无上界（30 hooks 实测 30029 码点）。现在单一出口净化 +
+  总长 4000 上界 + 结构化留痕。
+- P3 ``run_post`` / ``run_notify`` / ``run_session`` 三条非裁决链路
+  原先只有 ``channel_failed`` / ``failed``，运维看不出「为什么这次
+  失败没有阻断」。现在统一写 ``channel_notification`` 留痕，docstring
+  也改成如实（**同步有界等待**，不改变动作裁决）。
+- P4 ``run_user_prompt_submit`` 的 ``prompt`` public 入参无类型守卫：
+  int / dict / bool 抛底层 TypeError，bytes 静默失败，三种不同行为。
+  现在非 str 一律回落空串并留痕，不抛异常。
 """
 
 from __future__ import annotations
@@ -20,20 +62,25 @@ import signal
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
-# B3 续轮 XVI：出站 payload / 入站 additionalContext 双侧门。
-# 模型侧的输入边界（语义级 prompt injection）不是本层职责，**不谎称**
-# 「防住 prompt injection」—— 净化只管控制字符 / 凭据 / 有界性。
-from tuan_cli.core.safe_text import (  # noqa: E402
+# hook 故障策略 (B1)。"block" 最严格且为出厂默认；"ask" 同样阻断但标注
+# 需人工确认；"allow" 是显式逃生口, 会记 failure_allowed 审计。
+from . import exit_semantics as _xs  # noqa: E402 - 逐事件 exit-code-2 真值表
+from . import nonprocess as _np       # noqa: E402 - XV 三类非进程 hook 等价故障闭合表
+from tuan_cli.core.safe_text import (  # noqa: E402 - 单一净化真值
     safe_hook_text, safe_payload)
-from tuan_cli.hooks import nonprocess as _np  # noqa: E402,F401
 
-# UserPromptSubmit 附加上下文的总长硬上界（分隔符一并计入）。
+# XVI P2：additionalContext 的硬上界。单 hook 1000（既有 docstring
+# 承诺），**总长** 4000 —— 修复前 30 个 hook 拼出 30029 码点无上界。
+MAX_PER_HOOK_CONTEXT = 1000
 MAX_ADDITIONAL_CONTEXT = 4000
+
+ON_FAILURE_POLICIES = ("block", "ask", "allow")
+DEFAULT_ON_FAILURE = "block"
 
 # 受支持的 hook 事件类型 (对标 Claude Code 的 hooks 事件面)
 # - PreToolUse / PostToolUse: 工具执行前后 (支持 matcher 过滤, Pre 可阻断/改参)
@@ -41,96 +88,126 @@ MAX_ADDITIONAL_CONTEXT = 4000
 # - Stop / SubagentStop: 主回合结束 / 子任务结束时通知
 # - PreCompact: 上下文压缩前通知
 # - SessionStart / SessionEnd: 会话级生命周期通知
-#
-# B3 续轮 XII: 事件面从 8 → 33，与 exit_semantics.OFFICIAL_EVENTS 同源。
-# 分层常量供测试核销（test_b3_hooks_extended / test_b3s_triggers / test_claude_parity）。
-import os as _os
-from typing import FrozenSet as _FrozenSet
-
-_CORE_HOOK_EVENTS = (
-    "PreToolUse",        # 工具执行前（matcher 过滤、可阻断/改参）
-    "PostToolUse",       # 工具执行后（matcher 过滤）
-    "UserPromptSubmit",  # 用户提交输入后
-    "Stop",              # 主回合结束
-    "SubagentStop",      # 子任务结束
-    "PreCompact",        # 上下文压缩前
-    "SessionStart",      # 会话开始
-    "SessionEnd",        # 会话结束
+CORE_HOOK_EVENTS = (
+    "PreToolUse",
+    "PostToolUse",
+    "UserPromptSubmit",
+    "Stop",
+    "SubagentStop",
+    "PreCompact",
+    "SessionStart",
+    "SessionEnd",
 )
 
-# 7 个扩展事件（B3 续轮接入的决策/通知类扩展）
-_EXTENDED_HOOK_EVENTS = (
-    "PermissionRequest",  # 权限请求（JSON decision 可 deny）
-    "Notification",       # 通知（纯通知）
-    "DirectoryAdded",     # 目录已添加
-    "ConfigChange",       # 配置变更（可阻断）
-    "WorktreeCreate",     # worktree 创建（任何非零 rc 都失败）
-    "Elicitation",        # MCP elicitation 请求（可取消）
-    "ElicitationResult",  # MCP elicitation 用户答案（可作废）
+# B3: Claude Code 扩展事件面 (7 个)。官方文档还列出更多事件
+# (PermissionDenied / PostToolBatch / TaskCompleted / FileChanged ...),
+# 本轮只补 catalog.py 已登记的这 7 个，不扩广度、不假装全事件对齐。
+EXTENDED_HOOK_EVENTS = (
+    "PermissionRequest",   # 权限弹窗前，可程序化 allow/deny
+    "Notification",        # 系统通知
+    "DirectoryAdded",      # /add-dir 注册工作目录后 (CC 2026-07-25)
+    "ConfigChange",        # 配置源变更后
+    "WorktreeCreate",      # worktree 创建前，可拒绝
+    "Elicitation",         # MCP server 请求用户输入，可拦截并代答
+    "ElicitationResult",   # 用户响应 elicitation 后，可覆盖
 )
 
-# 官方事件面中剩余的 18 个扩展事件（配置可加载、可派发，但本地无生产触发点）
-_OFFICIAL_EXTRA_EVENTS = (
-    "PermissionDenied",   # 权限被拒（exit code 忽略，retry 仍生效）
-    "PostToolUseFailure", # 工具已失败
-    "PostToolBatch",      # 下次模型调用前停止 agentic loop
-    "TaskCreated",        # 任务已创建
-    "TaskCompleted",      # 任务已完成
-    "SubagentStart",      # 子代理开始
-    "TeammateIdle",       # 队友空闲
-    "StopFailure",        # 停止失败（exit 完全忽略）
-    "InstructionsLoaded", # 指令已加载（observability-only）
-    "CwdChanged",         # 工作目录已切换
-    "FileChanged",        # 文件已变更（matcher 是字面文件名）
-    "WorktreeRemove",     # worktree 移除（任何非零 rc 都失败）
-    "PostCompact",        # 上下文压缩后
-    "PreModelSwitch",     # 模型切换前（可阻断）
-    "PostModelSwitch",    # 模型切换后
-    "Setup",              # 初始化（仅通知）
-    "MessageDisplay",     # 消息展示（TUI 渲染层）
-    "UserPromptExpansion",# 用户提示展开
-)
+# B3 续轮 XII：官方 hooks 参考的完整事件面。旧版只登记 15 个，实测
+# 18 个官方事件的配置**全部 0 加载**（只进 unknown_hook_event 审计）。
+# 现在以 exit_semantics.OFFICIAL_EVENTS 为**单一真值源**派生，避免两张表
+# 漂移；每个事件的 exit-code-2 / stderr 去向语义都在那张表里可核验。
+# 如实：事件面可配置 != 有生产触发点，也不等于 CC 全事件逐值对齐
+#（CC 持续新增事件；部分事件在本地 CLI 没有对应生命周期）。
+OFFICIAL_EXTRA_EVENTS: Tuple[str, ...] = tuple(sorted(
+    set(_xs.OFFICIAL_EVENTS) - set(CORE_HOOK_EVENTS)
+    - set(EXTENDED_HOOK_EVENTS)))
+HOOK_EVENTS = (CORE_HOOK_EVENTS + EXTENDED_HOOK_EVENTS
+               + OFFICIAL_EXTRA_EVENTS)
 
-HOOK_EVENTS = _CORE_HOOK_EVENTS + _EXTENDED_HOOK_EVENTS + _OFFICIAL_EXTRA_EVENTS
-
-CORE_HOOK_EVENTS: _FrozenSet[str] = frozenset(_CORE_HOOK_EVENTS)
-EXTENDED_HOOK_EVENTS: _FrozenSet[str] = frozenset(_EXTENDED_HOOK_EVENTS)
-OFFICIAL_EXTRA_EVENTS: _FrozenSet[str] = frozenset(_OFFICIAL_EXTRA_EVENTS)
+# 新增事件默认走通知通道（stdout 忽略），与官方「多数事件 stdout 只进
+# debug log」一致。**决策类仍只限下面 4 个**（既有契约不扩），新增事件
+# 若需要 JSON decision 裁决，需逐个接 run_decision —— 这是剩余硬理由，
+# 如实留在 catalog note 里，不假装已覆盖。
 
 # 仅通知类事件 (无 matcher、stdout 忽略), 由 run_notify 统一派发。
-# B3 续轮 XIII: 决策专用事件误入 run_notify 会留痕拒绝；
-# ConfigChange / Notification / DirectoryAdded / CwdChanged 同时属于
-# DECISION_CAPABLE_EVENTS，但走通知通道（stdout 忽略）不算误入。
-_DECISION_NOTIFY_EVENTS = ("Stop", "SubagentStop", "PreCompact", "SessionStart", "SessionEnd")
-# _NOTIFY_EVENTS: Notification, DirectoryAdded, ConfigChange 同时属于决策类但也走通知通道
-# 源码级契约检查字符串（test_five_events_have_production_triggers_now 断言）:
-#   "Notification", "DirectoryAdded", "ConfigChange" 必须按此顺序出现在下方元组里
-_NOTIFY_EVENTS = _DECISION_NOTIFY_EVENTS + (
-    "Notification", "DirectoryAdded", "ConfigChange", "CwdChanged",
-    # B3 XIII 新增通知类事件（exit_semantics.NOTIFY_ONLY_EVENTS）
-    "PostCompact", "PostModelSwitch", "InstructionsLoaded", "Setup")
-# 兼容别名: 决策通道事件 = 所有 HOOK_EVENTS - 通知类
-_DECISION_EVENTS = tuple(e for e in HOOK_EVENTS if e not in _NOTIFY_EVENTS)
+# B3 把三个纯通知扩展事件纳入；决策类事件**不在**这里 —— 它们必须用
+# run_decision，否则 hook 的 stdout 会被静默吞掉（见本轮 R4）。
+_NOTIFY_EVENTS = (
+    "Stop", "SubagentStop", "PreCompact", "SessionStart", "SessionEnd",
+    "Notification", "DirectoryAdded", "ConfigChange",
+) + OFFICIAL_EXTRA_EVENTS
 
-# on_failure 策略（B3 主链路：Tuan 出厂默认 fail-closed = block）
-ON_FAILURE_POLICIES = ("block", "ask", "allow")
-DEFAULT_ON_FAILURE = "block"
+# 决策类扩展事件：hook 的输出必须被解析成裁决，不能当通知忽略。
+_DECISION_EVENTS = frozenset({
+    "PermissionRequest", "WorktreeCreate", "Elicitation", "ElicitationResult",
+})
+
+# hooks 配置块里的非事件键（用于识别未知事件名，避免静默丢弃）
+_HOOK_CONFIG_KEYS = frozenset({
+    "enabled", "default_timeout", "allow_blocking", "allow_edit_args",
+    "audit_log", "on_failure",
+})
 
 
 @dataclass
 class HookDecision:
-    """PreToolUse / 扩展事件决策的统一返回。
+    """PreToolUse 的返回决策。
 
-    block=True 时主流程中止执行 (仅当 hook 声明 blocking 且全局允许)。
+    block=True 时主流程中止执行 (hook 自身决策需 blocking 且全局允许；
+    **执行失败导致的 fail-closed 不受该开关影响**)。
     args 非空时改写即将执行的工具参数 (仅当允许改参)。
-    failure_kind 非空时说明为何 fail-closed（触发层可查询用于审计）。
+    failure_kind 非空表示这次阻断来自 hook 故障而非 hook 主动 block。
     """
 
     block: bool = False
     reason: str = ""
     args: Optional[Dict[str, Any]] = None
     failure_kind: str = ""
-    retry: bool = False  # PermissionDenied hookSpecificOutput.retry (B3 XIII)
+    # B3 XIII: 官方 PermissionDenied 的
+    # ``hookSpecificOutput.retry: true`` —— 告诉模型可以重试被拒绝的
+    # 工具调用。旧版解析时把整个 hso 当成 no_decision 丢掉，装了事件
+    # 也没有真能力。新增字段向后兼容（默认 False）。
+    retry: bool = False
+
+
+@dataclass(frozen=True)
+class HookFailure:
+    """一次 hook 执行失败的结构化记录 (可查询、可审计、可回放)。"""
+
+    uid: str
+    event: str
+    hook_type: str
+    kind: str          # invalid_spec / spawn_error / timeout / error /
+                       # nonzero_rc / http_error / no_kernel / no_model
+    detail: str
+    tool_name: str = ""
+    ts: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"uid": self.uid, "event": self.event,
+                "hook_type": self.hook_type, "kind": self.kind,
+                "detail": self.detail, "tool_name": self.tool_name,
+                "ts": self.ts}
+
+
+@dataclass(frozen=True)
+class HookExit:
+    """一次 command hook 的进程退出事实（rc / stderr / stdout）。
+
+    B3 续轮 XII：**旧版把 rc 与 stderr 埋进 failure.detail 字符串**，
+    调用方拿不到结构化值，于是 exit 2 + stdout 一行 JSON allow 就能
+    把 fail-closed 打穿（实测 ``block=False, reason="", failure_kind=""``）。
+    现在 ``_exec_command`` 把它记到 thread-local，run_pre / run_decision
+    用 ``exit_semantics.classify()`` 做逐事件裁决。
+    """
+    rc: int
+    stderr: str
+    stdout: str
+    event: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"rc": self.rc, "stderr": self.stderr[:400],
+                "stdout": self.stdout[:400], "event": self.event}
 
 
 @dataclass
@@ -156,8 +233,7 @@ class _HookSpec:
     url: str = ""  # HTTP hook URL
     prompt_text: str = ""  # Prompt hook 的模板文本
     model_override: str = ""  # Prompt/Subagent hook 可覆盖模型
-    # B3: on_failure 策略 (block/ask/allow)，None = 使用全局默认
-    on_failure: str = ""
+    on_failure: str = ""      # 单条覆盖全局 hooks.on_failure；空 = 用全局
 
     @property
     def uid(self) -> str:
@@ -184,6 +260,11 @@ class HookManager:
         self.allow_edit_args = False
         self.audit_log = True
         self._specs: List[_HookSpec] = []
+        # B1: 故障闭合默认策略 + 有界失败记录 + 线程局部「最近一次失败」
+        self.on_failure = DEFAULT_ON_FAILURE
+        self._failures: List[HookFailure] = []
+        self._max_failures = 200
+        self._tls = threading.local()
 
         hooks_cfg = self._read_cfg(config)
         if hooks_cfg is None:
@@ -194,50 +275,38 @@ class HookManager:
         self.allow_blocking = bool(hooks_cfg.get("allow_blocking", True))
         self.allow_edit_args = bool(hooks_cfg.get("allow_edit_args", False))
         self.audit_log = bool(hooks_cfg.get("audit_log", True))
-        # B3: on_failure 策略（全局默认 fail-closed = block）
-        of = hooks_cfg.get("on_failure", DEFAULT_ON_FAILURE)
-        if of not in ON_FAILURE_POLICIES:
-            of = DEFAULT_ON_FAILURE
-        self._on_failure_global = of
-        # B3: 失败留痕（spawn_error / timeout / parse_error / nonzero_rc / ...）
-        self._failures: List[Dict[str, Any]] = []
-        self._failure_lock = threading.Lock()
-        # 同一线程单次派发的临时失败类型 (run_pre / run_decision 读它判定 on_failure 策略)
-        self._last_failure_kind: str = ""
-        # B3 续轮 XV：通道事实（_exec 写、调用方读，供测试断言 bounded / detached 等）
-        self._tls = threading.local()
-        # B3: 失败留痕上界（测试可覆盖以验证有界性）
-        self._max_failures: int = 256
+        raw_policy = str(hooks_cfg.get("on_failure", DEFAULT_ON_FAILURE)
+                         or DEFAULT_ON_FAILURE).strip().lower()
+        if raw_policy not in ON_FAILURE_POLICIES:
+            # 未知策略绝不静默接受 —— 回退最严格档并留痕
+            self._audit("config", {"on_failure": raw_policy},
+                        "invalid_on_failure",
+                        f"未知 on_failure={raw_policy!r}, 回退 {DEFAULT_ON_FAILURE}")
+            raw_policy = DEFAULT_ON_FAILURE
+        self.on_failure = raw_policy
 
-        known_event_keys = set(HOOK_EVENTS)
-        known_cfg_keys = {
-            "enabled", "default_timeout", "allow_blocking",
-            "allow_edit_args", "audit_log", "on_failure",
-        }
-        for key, val in hooks_cfg.items():
-            if key in known_cfg_keys:
-                continue
-            if key not in known_event_keys:
-                self._audit(
-                    key, {}, "unknown_hook_event",
-                    f"未知的 hook 事件名 {key!r}（已知事件共 {len(HOOK_EVENTS)} 个）",
-                )
-                continue
-            for item in val or []:
-                spec = self._parse_spec(key, item)
+        for evt in HOOK_EVENTS:
+            for item in hooks_cfg.get(evt, []) or []:
+                spec = self._parse_spec(evt, item)
                 if spec is not None:
                     self._specs.append(spec)
+
+        # B3 R1: 旧实现只遍历 HOOK_EVENTS，用户写了 `DirectoryAdded` 或把
+        # `PermissionRequest` 拼错成 `PermissionReqest`，整段配置被**静默
+        # 丢弃**且无任何报错。现在把未知事件名变成显式审计事件。
+        for key, val in hooks_cfg.items():
+            if key in _HOOK_CONFIG_KEYS or key in HOOK_EVENTS:
+                continue
+            if isinstance(val, (list, tuple)):
+                self._audit(key, {"raw": str(val)[:200]}, "unknown_hook_event",
+                            f"未知 hook 事件 {key!r}：该段配置不会被加载；"
+                            f"可用事件见 HookManager.HOOK_EVENTS ({len(HOOK_EVENTS)} 个)")
 
     # ------------------------------------------------------------------ 配置
 
     @staticmethod
     def _read_cfg(config: Any) -> Optional[Dict[str, Any]]:
-        """从 Config 对象或 dict 取出 hooks 块。
-
-        仅吞 AttributeError/TypeError (config 缺 get / 类型异常) — 其他异常
-        (如自定义 Config 实现缺陷抛的 RuntimeError) 向上传播，避免整个 hook
-        系统被静默识别为"用户没配 hook"。
-        """
+        """从 Config 对象或 dict 取出 hooks 块。"""
         if config is None:
             return None
         try:
@@ -245,7 +314,7 @@ class HookManager:
                 v = config.get("hooks", None)
             else:
                 v = config.get("hooks") if isinstance(config, dict) else None
-        except (AttributeError, TypeError):
+        except Exception:
             return None
         if v is None:
             return {}
@@ -300,18 +369,20 @@ class HookManager:
         except (TypeError, ValueError):
             timeout = self.default_timeout
 
-        # B3: per-hook on_failure 策略。空串 / 缺失 = 用全局默认；
-        # 未知值降级为空串 (调用方按 on_failure_policy() 取全局)。
-        per_of = str(item.get("on_failure", "") or "").strip().lower()
-        if per_of and per_of not in ON_FAILURE_POLICIES:
-            per_of = ""
+        # 单条 hook 可覆盖全局故障策略；未知值忽略并用全局, 不静默接受
+        per_hook = str(item.get("on_failure", "") or "").strip().lower()
+        if per_hook and per_hook not in ON_FAILURE_POLICIES:
+            self._audit(event, item, "invalid_on_failure",
+                        f"单条 hook 未知 on_failure={per_hook!r}, 忽略并用全局策略")
+            per_hook = ""
 
         return _HookSpec(
             event=event,
             matcher=str(item.get("matcher", "*") or "*"),
             command=cmd,
             timeout=max(0.1, timeout),
-            blocking=bool(item.get("blocking", True)),  # CC hooks 默认可阻断
+            # B1: 阻断默认生效。此前默认 False 会吞掉 hook 返回的 block。
+            blocking=bool(item.get("blocking", True)),
             allow_edit_args=bool(item.get("allow_edit_args", False)),
             description=str(item.get("description", "")),
             raw=item,
@@ -319,37 +390,8 @@ class HookManager:
             url=url,
             prompt_text=prompt_text,
             model_override=model_override,
-            on_failure=per_of,
+            on_failure=per_hook,
         )
-
-    # ------------------------------------------------------------------ 失败留痕
-
-    def failures(self) -> List[Dict[str, Any]]:
-        """返回 hook 失败留痕的快照（调用方可安全遍历，不受后续派发污染）。"""
-        with self._failure_lock:
-            return list(self._failures)
-
-    def clear_failures(self) -> None:
-        """清空失败留痕（测试 / 用户主动复位用）。"""
-        with self._failure_lock:
-            self._failures.clear()
-
-    def _record_failure(self, kind: str, event: str, spec: Any,
-                        reason: str = "") -> Dict[str, Any]:
-        """记录一次 hook 执行失败。留痕有上界（防长跑膨胀），超出丢最旧。"""
-        rec = {
-            "kind": kind,
-            "event": event,
-            "hook_type": getattr(spec, "hook_type", "command"),
-            "uid": getattr(spec, "uid", "") or "",
-            "ts": time.time(),
-            "reason": reason,
-        }
-        with self._failure_lock:
-            self._failures.append(rec)
-            if len(self._failures) > self._max_failures:
-                del self._failures[:len(self._failures) - self._max_failures]
-        return rec
 
     # ------------------------------------------------------------------ 匹配
 
@@ -382,12 +424,71 @@ class HookManager:
 
     # ------------------------------------------------------------------ 执行
 
-    def _effective_on_failure(self, spec: _HookSpec) -> str:
-        """取 per-hook on_failure 策略，缺失/非法时用全局默认。"""
-        of = getattr(spec, "on_failure", "") or ""
-        if of in ON_FAILURE_POLICIES:
-            return of
-        return self._on_failure_global
+    def _exit_gate(self, spec: "_HookSpec", policy: str):
+        """逐事件 exit-code-2 闸门。
+
+        返回 ``(verdict, skip_failure_block)``：
+        - ``verdict.block=True`` → 调用方**直接阻断且不得解析 stdout JSON**；
+        - ``skip_failure_block`` → CC 语义下这个 rc 不该被 Tuan 的
+          ``on_failure`` 叠加层再闭合一次（如 PermissionRequest 的
+          exit 2、exit_ignored 事件）。
+
+        这是修 H1 的关键：旧版只要 stdout 非空就跳过失败判定，直接把
+        ``permissionDecision:allow`` 当成放行。
+        """
+        # B3 XV: 三类非进程 hook 的等价故障闭合表。映射成等价 rc 后
+        # 复用同一份 exit_semantics.classify()，不新建第二套逐事件策略。
+        ch = getattr(self._tls, "last_channel", None)
+        if ch is not None:
+            v = _np.classify_channel(spec.event, ch, tuan_policy=policy)
+            self._tls.last_verdict = v
+            self._audit(
+                spec.event, spec.raw, "channel_semantics",
+                f"type={ch.hook_type} status={ch.status} "
+                f"kind={ch.failure_kind or '-'} eq_rc={ch.equivalent_rc} "
+                f"path={v.code_path} block={v.block} "
+                f"elapsed={ch.elapsed_ms}ms bounded={ch.bounded} "
+                f"detached={ch.detached} truncated={ch.truncated}")
+            if ch.status == "failure":
+                # A′（XV 宽回归抓回）：若直接把 ``v.block=True`` 交回
+                # 调用方，三条链路都会走 ``exit_code_blocked`` 分支并把
+                # ``failure_kind`` 写成 ``exit_1`` —— 真实故障种类
+                # （no_kernel / timeout / http_error）丢失，且
+                # ``on_failure=allow`` 的显式逃生口被绕过。实测 2 条
+                # 既有回归变红。这里把等价裁决**降级**为「交给
+                # failed_run」：由既有分支保留真实 kind 与 policy 语义，
+                # 逐事件语义通过 ``skip`` 表达。
+                # 唯一例外 ``any_nonzero_fails``（WorktreeCreate/Remove）：
+                # CC 明文「任何非零都失败」，必须强制阻断。
+                if v.code_path == "any_nonzero_fails":
+                    return v, False
+                v = replace(v, block=False, json_ignored=False,
+                            json_may_override=False)
+                return v, v.code_path == "exit_ignored"
+            if v.block:
+                return v, False
+            skip = v.code_path in (
+                "exit2_not_honored", "exit_ignored", "exit2_nonblocking_notice",
+                "exit2_stderr_only", "exit2_ignored",
+                "non2_nonzero_nonblocking_error", "exit0")
+            return v, skip
+        last = getattr(self._tls, "last_exit", None)
+        if last is None:
+            return None, False
+        v = _xs.classify(spec.event, last.rc, last.stderr,
+                         tuan_policy=policy)
+        self._tls.last_verdict = v
+        self._audit(spec.event, spec.raw, "exit_code_semantics",
+                    f"rc={v.rc} path={v.code_path} block={v.block} "
+                    f"stderr_dest={v.stderr_destination} "
+                    f"json_ignored={v.json_ignored}")
+        if v.block:
+            return v, False
+        skip = v.code_path in (
+            "exit2_not_honored", "exit_ignored", "exit2_nonblocking_notice",
+            "exit2_stderr_only", "exit2_ignored",
+            "non2_nonzero_nonblocking_error", "exit0")
+        return v, skip
 
     def run_pre(self, tool_name: str, args: Dict[str, Any],
                 dangerous: bool = False, impact: Optional[str] = None,
@@ -396,100 +497,349 @@ class HookManager:
 
         安全: 阻断仅当 hook.blocking 且全局 allow_blocking 均为 True;
               改参仅当 hook.allow_edit_args 或全局 allow_edit_args。
-              tool_schema 非空时对 hook 返回的改参做 validate_updated_input 校验,
-              缺 required / 类型不符 / 未知键 → deny (block=True, fail-closed)。
-              on_failure 策略: per-hook 覆盖全局；block/ask → block，allow → 放行。
-              exit_2 (rc=2) 无条件阻断（与 CC exit 2 语义对齐）。
+
+        B3: ``tool_schema`` 传工具的 JSON Schema (``Tool.parameters``)。
+        改参按 CC v2.1.300 语义校验 —— ``updatedInput`` 是**替换**整个
+        input、未知键丢弃、缺 required / 类型不符则**拒绝该次调用**。
+        无 schema 时退化为保守子集约束并在审计里标注 ``enforced=False``，
+        绝不把「没校验过」包装成「已通过校验」。
         """
         decision = HookDecision()
         if not self.enabled:
             return decision
-        from tuan_cli.hooks.input_validation import validate_updated_input
         for spec in self._specs:
             if spec.event != "PreToolUse":
                 continue
             if not self._match(spec.matcher, tool_name):
                 continue
-            out, kind, stderr, rc = self._exec(spec, {
+            out = self._exec(spec, {
                 "hook_event_name": "PreToolUse",
                 "tool_name": tool_name,
                 "tool_input": args,
                 "dangerous": dangerous,
                 "impact": impact,
             })
-
-            # ---- exit code 语义：exit 2 无条件阻断（stdout JSON 不覆盖） ----
-            if kind == "exit_2":
-                reason = (stderr or "").strip() or "hook exit 2 (blocked by CC-aligned policy)"
-                return HookDecision(
-                    block=True, reason=reason, failure_kind="exit_2",
-                )
-
-            # ---- spawn_error / timeout / no_kernel / no_model → 按 on_failure ----
-            if out is None:
-                policy = self._effective_on_failure(spec)
+            policy = spec.on_failure or self.on_failure
+            verdict, skip_failure_block = self._exit_gate(spec, policy)
+            if verdict is not None and verdict.block:
+                # A′：非 2 的非零 rc 下，CC 仍读取 stdout 的有效 JSON
+                # decision。先给 hook 自己写的 reason 一个机会（不改
+                # 既有行为），否则才落到 Tuan 的 on_failure 闭合。
+                # exit 2 / any_nonzero_fails 的 json_may_override=False，
+                # 绝不进这个分支 —— H1 的硬规则不因此松动。
+                if verdict.json_may_override and out:
+                    _p = self._parse_decision(out)
+                    if _p is not None and _p.get("block"):
+                        if self.allow_blocking and spec.blocking:
+                            decision.block = True
+                            decision.reason = str(
+                                _p.get("reason") or "hook 未提供原因")
+                            decision.failure_kind = ""
+                            self._audit("PreToolUse", spec.raw,
+                                        "non2_json_decision_honored",
+                                        f"rc={verdict.rc} 采纳 hook JSON reason")
+                            return decision
+                decision.block = True
+                decision.reason = verdict.reason
+                decision.failure_kind = "exit_%d" % verdict.rc
+                self._audit("PreToolUse", spec.raw, "exit_code_blocked",
+                            verdict.reason)
+                return decision
+            failure = getattr(self._tls, "last_failure", None)
+            failed_run = (out is None or
+                          (isinstance(out, str) and not out.strip()))                 and failure is not None and not skip_failure_block
+            if failed_run:
+                # B1: hook 故障默认闭合。CC 需逐条显式 onFailure:"block"。
+                # blocking 开关只影响 hook 自己返回的 block, 不影响这里。
+                reason = (
+                    f"hook 执行失败 (fail-closed, on_failure={policy}): "
+                    f"event={spec.event} hook={spec.uid} "
+                    f"kind={failure.kind} detail={failure.detail}")
+                if policy == "ask":
+                    reason += " [需人工确认]"
                 if policy in ("block", "ask"):
-                    hint = "需人工确认" if policy == "ask" else ""
-                    return HookDecision(
-                        block=True,
-                        reason=f"{kind} 失败 (fail-closed, on_failure={policy})"
-                               + (f": {hint}" if hint else ""),
-                        failure_kind=kind,
-                    )
-                # allow: 留痕放行
+                    decision.block = True
+                    decision.reason = reason
+                    decision.failure_kind = failure.kind
+                    self._audit("PreToolUse", spec.raw, "failure_blocked", reason)
+                    return decision
+                # policy == "allow": 显式逃生口, 必须留痕
+                self._audit("PreToolUse", spec.raw, "failure_allowed",
+                            f"on_failure=allow 放行 ({failure.kind})")
                 continue
-
+            if out is None:
+                continue
+            if verdict is not None and verdict.json_ignored:
+                # exit 2 / any_nonzero_fails 等：stdout 的 JSON **不能**
+                # 覆盖退出码语义（尤其 allow）。留痕后跳过解析。
+                self._audit("PreToolUse", spec.raw, "exit_json_ignored",
+                            f"rc={verdict.rc} path={verdict.code_path} "
+                            f"stdout={out[:120]!r}")
+                continue
             parsed = self._parse_decision(out)
             if parsed is None:
                 continue
-
-            # ---- 顶层 block + allow_blocking + spec.blocking ----
             if parsed.get("block"):
                 if self.allow_blocking and spec.blocking:
                     decision.block = True
                     decision.reason = str(parsed.get("reason", "hook 未提供原因"))
-                    return decision
+                    return decision  # 首个阻断即生效
+                # 配置不允许阻断 → 仅记录, 不阻断 (fail-safe)
                 self._audit("PreToolUse", spec.raw, "block_denied",
                             parsed.get("reason", ""))
-
-            # ---- 改参 + schema 校验 ----
             new_args = parsed.get("args")
             if isinstance(new_args, dict) and new_args:
                 if self.allow_edit_args or spec.allow_edit_args:
+                    from .input_validation import validate_updated_input
                     v = validate_updated_input(
                         new_args, args, tool_schema, tool_name=tool_name)
+                    self._audit("PreToolUse", spec.raw, "updated_input_validated",
+                                f"enforced={v.enforced} dropped={v.dropped} "
+                                f"deny={v.deny} {v.reason}")
                     if v.deny:
-                        return HookDecision(
-                            block=True,
-                            reason=v.reason or "hook 改参未通过 schema 校验",
-                            failure_kind="invalid_updated_input",
-                        )
-                    decision.args = v.sanitized if v.enforced else new_args
+                        # CC v2.1.300: 被拒绝的 input 拒绝该次调用。
+                        decision.block = True
+                        decision.reason = (
+                            f"hook 改参未通过 schema 校验 (fail-closed): {v.reason}")
+                        decision.failure_kind = "invalid_updated_input"
+                        return decision
+                    decision.args = v.sanitized
                 else:
                     self._audit("PreToolUse", spec.raw, "edit_args_denied",
                                 "hook 请求改写参数但未被授权")
         return decision
 
+    def run_event(self, event: str, payload: Optional[Dict[str, Any]] = None,
+                  tool_name: str = "") -> HookDecision:
+        """B3 续轮 XIII：**通用事件裁决出口**（给新增 18 个官方事件用）。
+
+        与 ``run_decision`` 的区别：后者硬编码 ``_DECISION_EVENTS`` 只有
+        4 个（既有 B3 契约，本轮**零改动**）；本方法以
+        ``exit_semantics.DECISION_CAPABLE_EVENTS`` 为白名单，让新增的
+        决策类事件也能解析 hook stdout，而不是被 ``run_notify`` 吞掉。
+
+        实测复现（D1）：上一轮 18 个新增事件全部塞进 ``_NOTIFY_EVENTS``，
+        而按官方真值表 ConfigChange / TaskCreated / TaskCompleted /
+        PreCompact / PreModelSwitch / Stop / PostToolBatch 等都是**可阻断 /
+        支持 JSON decision** 的事件 —— 走通知通道等于把裁决整个吞掉，
+        正是 B3 主链路 R2 修过的坑在新增事件上重现。
+
+        **block 的语义由调用方按事件解释**（``lifecycle`` 用
+        ``semantics_for(event).blocks_on_exit2`` 区分「可预防动作」与
+        「动作已发生、只作反馈」）。本方法只负责**不吞 stdout**。
+        """
+        decision = HookDecision()
+        if not self.enabled:
+            return decision
+        if not isinstance(event, str):
+            self._audit("lifecycle", {}, "invalid_event_type",
+                        "run_event 的 event 必须是字符串")
+            return decision
+        if event not in _xs.DECISION_CAPABLE_EVENTS:
+            self._audit(event, {}, "run_event_not_decision_capable",
+                        "%r 不是决策类事件；请走 run_notify/run_session" % event)
+            return decision
+        pl = dict(payload or {})
+        pl["hook_event_name"] = event
+        if tool_name:
+            pl.setdefault("tool_name", tool_name)
+        for spec in self._specs:
+            if spec.event != event:
+                continue
+            if tool_name and not self._match(spec.matcher, tool_name):
+                continue
+            out = self._exec(spec, pl)
+            policy = spec.on_failure or self.on_failure
+            verdict, skip_failure_block = self._exit_gate(spec, policy)
+            if verdict is not None and verdict.block:
+                if verdict.json_may_override and out:
+                    _p = self._parse_decision(out)
+                    if _p is not None and _p.get("block"):
+                        decision.block = True
+                        decision.reason = str(_p.get("reason") or "hook 未提供原因")
+                        self._audit(event, spec.raw,
+                                    "non2_json_decision_honored",
+                                    f"rc={verdict.rc} 采纳 hook JSON reason")
+                        return decision
+                decision.block = True
+                decision.reason = verdict.reason
+                decision.failure_kind = "exit_%d" % verdict.rc
+                self._audit(event, spec.raw, "exit_code_blocked", verdict.reason)
+                return decision
+            failure = getattr(self._tls, "last_failure", None)
+            failed_run = (out is None or
+                          (isinstance(out, str) and not out.strip()))                 and failure is not None and not skip_failure_block
+            if failed_run:
+                reason = (f"hook 执行失败 (fail-closed, on_failure={policy}): "
+                          f"event={spec.event} hook={spec.uid} "
+                          f"kind={failure.kind} detail={failure.detail}")
+                if policy in ("block", "ask"):
+                    decision.block = True
+                    decision.reason = reason
+                    decision.failure_kind = failure.kind
+                    self._audit(event, spec.raw, "failure_blocked", reason)
+                    return decision
+                self._audit(event, spec.raw, "failure_allowed",
+                            f"on_failure=allow 放行 ({failure.kind})")
+                continue
+            if out is None:
+                continue
+            if verdict is not None and verdict.json_ignored:
+                self._audit(event, spec.raw, "exit_json_ignored",
+                            f"rc={verdict.rc} path={verdict.code_path}")
+                continue
+            parsed = self._parse_decision(out)
+            if parsed is None:
+                continue
+            if parsed.get("block"):
+                if self.allow_blocking and spec.blocking:
+                    decision.block = True
+                    decision.reason = str(parsed.get("reason") or "hook 未提供原因")
+                    return decision
+                self._audit(event, spec.raw, "block_denied",
+                            parsed.get("reason", ""))
+            elif parsed.get("args") is not None:
+                decision.args = parsed["args"]
+            if parsed.get("retry"):
+                decision.retry = True
+        return decision
+
+    def run_decision(self, event: str, tool_name: str = "",
+                     payload: Optional[Dict[str, Any]] = None) -> HookDecision:
+        """B3: 决策类扩展事件的**统一裁决出口**。
+
+        与 ``run_notify`` 不同，这里会解析 hook 的 stdout。支持 CC 原生
+        ``hookSpecificOutput.permissionDecision`` (deny / allow / ask)，
+        以及旧 ``decision:"block"`` / ``block:true`` 格式。沿用 B1 的
+        fail-closed：hook 执行失败时按 on_failure 策略阻断。
+
+        **刻意不做的**：决策类事件不允许改写工具参数（``args`` 一律
+        忽略并留痕）—— 它们的语义是「批准/拒绝一个动作」，不是改参。
+        Elicitation/ElicitationResult 的 exit-code-2 → decline 语义本轮
+        未实现（见如实边界）。
+        """
+        decision = HookDecision()
+        if not self.enabled:
+            return decision
+        if event not in _DECISION_EVENTS:
+            self._audit(event, {}, "unknown_decision_event",
+                        f"{event!r} 不是决策类事件，run_decision 已忽略")
+            return decision
+        pl = dict(payload or {})
+        pl["hook_event_name"] = event
+        if tool_name:
+            pl.setdefault("tool_name", tool_name)
+        for spec in self._specs:
+            if spec.event != event:
+                continue
+            if tool_name and not self._match(spec.matcher, tool_name):
+                continue
+            out = self._exec(spec, pl)
+            policy = spec.on_failure or self.on_failure
+            verdict, skip_failure_block = self._exit_gate(spec, policy)
+            if verdict is not None and verdict.block:
+                if verdict.json_may_override and out:
+                    _p = self._parse_decision(out)
+                    if _p is not None and _p.get("block"):
+                        if self.allow_blocking and spec.blocking:
+                            decision.block = True
+                            decision.reason = str(
+                                _p.get("reason") or "hook 未提供原因")
+                            decision.failure_kind = ""
+                            self._audit(event, spec.raw,
+                                        "non2_json_decision_honored",
+                                        f"rc={verdict.rc} 采纳 hook JSON reason")
+                            return decision
+                decision.block = True
+                decision.reason = verdict.reason
+                decision.failure_kind = "exit_%d" % verdict.rc
+                self._audit(event, spec.raw, "exit_code_blocked",
+                            verdict.reason)
+                return decision
+            failure = getattr(self._tls, "last_failure", None)
+            failed_run = (out is None or
+                          (isinstance(out, str) and not out.strip()))                 and failure is not None and not skip_failure_block
+            if failed_run:
+                reason = (f"hook 执行失败 (fail-closed, on_failure={policy}): "
+                          f"event={spec.event} hook={spec.uid} "
+                          f"kind={failure.kind} detail={failure.detail}")
+                if policy in ("block", "ask"):
+                    decision.block = True
+                    decision.reason = reason
+                    decision.failure_kind = failure.kind
+                    self._audit(event, spec.raw, "failure_blocked", reason)
+                    return decision
+                self._audit(event, spec.raw, "failure_allowed",
+                            f"on_failure=allow 放行 ({failure.kind})")
+                continue
+            if out is None:
+                continue
+            if verdict is not None and verdict.json_ignored:
+                self._audit(event, spec.raw, "exit_json_ignored",
+                            f"rc={verdict.rc} path={verdict.code_path} "
+                            f"stdout={out[:120]!r}")
+                continue
+            parsed = self._parse_decision(out)
+            if parsed is None:
+                continue
+            if (parsed.get("args") is not None
+                    and parsed.get("source") != "cc_permission_request"):
+                self._audit(event, spec.raw, "decision_args_ignored",
+                            "决策类事件不支持改参，updatedInput/args 已忽略")
+            elif parsed.get("args") is not None:
+                # CC PermissionRequest 官方协议：allow 必须带
+                # updatedInput 才生效。解析结果暴露给调用方，不静默丢弃。
+                decision.args = parsed["args"]
+            if parsed.get("block"):
+                if self.allow_blocking and spec.blocking:
+                    decision.block = True
+                    decision.reason = str(parsed.get("reason", "hook 未提供原因"))
+                    return decision
+                self._audit(event, spec.raw, "block_denied",
+                            parsed.get("reason", ""))
+        return decision
+
+    def _exec_notify(self, spec: _HookSpec, pl: Dict[str, Any],
+                     label: str) -> None:
+        """B3 XVI P3：非裁决链路的**单一**执行 + 结构化留痕出口。
+
+        实修复现：``run_post`` / ``run_notify`` / ``run_session`` 原先只有
+        ``channel_failed`` / ``failed`` 两条审计，运维看不出「为什么这次
+        hook 失败却没阻断」。这里如实写明 stdout 被忽略、失败不改变动作
+        裁决、同步等待耗时与是否有界。
+        """
+        t0 = time.monotonic()
+        self._exec(spec, pl)
+        ch = getattr(self._tls, "last_channel", None)
+        elapsed = int((time.monotonic() - t0) * 1000)
+        status = ch.status if ch is not None else "command"
+        kind = (ch.failure_kind if ch is not None else "") or "-"
+        bounded = getattr(ch, "bounded", True) if ch is not None else True
+        detached = getattr(ch, "detached", False) if ch is not None else False
+        self._audit(
+            spec.event, spec.raw, "channel_notification",
+            "%s: stdout 忽略、失败不改变动作裁决（设计内）；status=%s "
+            "kind=%s elapsed=%dms bounded=%s detached=%s"
+            % (label, status, kind, elapsed, bounded, detached))
+
     def run_post(self, tool_name: str, args: Dict[str, Any],
                  result: Any = None) -> None:
         """PostToolUse: 只读审计, stdout 忽略, 异常隔离。
 
-        同步有界等待 hook 返回（通知类语义）；``tool_result.content``
-        由 ``_exec`` 单一出口的 ``safe_payload`` 递归净化（XVI P1）。
+        **B3 XVI 口径纠正**：「不阻断主流程」指**不改变动作裁决**，不是
+        「不耗时」。hook 执行本身同步有界等待（三类 hook 走墙钟 deadline，
+        command 走看门狗），耗时记入 ``channel_notification`` 审计。
         """
         if not self.enabled:
             return
         res = result
-        raw_content = getattr(res, "content", "")
-        if not isinstance(raw_content, str):
-            raw_content = ""
         payload = {
             "hook_event_name": "PostToolUse",
             "tool_name": tool_name,
             "tool_input": args,
             "tool_result": {
                 "status": getattr(res, "status", None),
-                "content": raw_content,
+                "content": (getattr(res, "content", "") or "")[:2000],
                 "error_type": getattr(res, "error_type", None),
             },
         }
@@ -498,548 +848,216 @@ class HookManager:
                 continue
             if not self._match(spec.matcher, tool_name):
                 continue
-            # B3: Post hook 失败只留痕，不阻断回合；走通知类同步有界等待出口
-            self._exec_notify(spec, payload)
-
-    # ---- 扩展事件的决策类裁决出口 (B3) ----
-    # 契约:
-    # - event 不在已知事件表 → 返回不阻断决策 + 留 unknown_decision_event 审计
-    # - 事件无对应 hook spec → 返回不阻断决策 (无 hook 不阻)
-    # - 事件是通知类误走本出口 → 留 decision_event_misrouted 审计, 不执行 hook
-    # - 命中 hook: 解析 stdout JSON:
-    #     * 顶层 decision:"block" / reason → block=True (旧格式)
-    #     * hookSpecificOutput.permissionDecision:
-    #         deny → block=True + reason
-    #         ask  → block=True (Tuan 无交互确认通道, fail-closed)
-    #         allow → block=False
-    #     * 都不是 → block=False
-    #   支持旧格式 {"decision":"block","reason":"..."}
-    #   stdout 解析异常 / 非 JSON → block=True (fail-closed)
-    def run_decision(self, event: str, tool_name: str = "",
-                     payload: Optional[Dict[str, Any]] = None,
-                     *, skip_notify_audit: bool = False) -> HookDecision:
-        """决策类事件的统一裁决出口 (WorktreeCreate/PermissionRequest/...)。
-
-        - 不在 DECISION_CAPABLE_EVENTS 里的通知类事件误入 → 留痕拒绝,
-          不执行 hook (与 triggers._notify 互为镜像保护)。
-        - stdout 必须是可解析 JSON 才被采信; 解析失败 / 非法 shape → fail-closed。
-        - ask 在 Tuan 没有交互确认通道时按既有契约阻断, 不静默放行。
-        """
-        decision = HookDecision()
-        kernel = getattr(self, "_kernel", None)
-
-        # 事件必须已知 (在 HOOK_EVENTS 且属于 DECISION_CAPABLE_EVENTS)
-        known = event in HOOK_EVENTS
-        from tuan_cli.hooks.exit_semantics import DECISION_CAPABLE_EVENTS
-        if (not known) or (event not in DECISION_CAPABLE_EVENTS):
-            self._audit(
-                event, {"tool_name": tool_name}, "unknown_decision_event",
-                f"事件 {event!r} 不属于决策类事件表 (known={known})",
-            )
-            return decision
-
-        # 通知类误走 run_decision → 拒绝并留痕
-        # (lifecycle.run_event 已知自己走对通道时传 skip_notify_audit=True)
-        if event in _NOTIFY_EVENTS and not skip_notify_audit:
-            self._audit(
-                event, {"tool_name": tool_name}, "decision_event_misrouted",
-                f"通知类事件 {event!r} 误走 run_decision, 不执行 hook",
-            )
-            return decision
-
-        # 收集所有匹配本事件 + tool_name 的 hook specs
-        specs = [
-            s for s in self._specs
-            if s.event == event and self._match(s.matcher, tool_name)
-        ]
-        if not specs:
-            return decision
-
-        pl = dict(payload or {})
-        pl["hook_event_name"] = event
-        pl["tool_name"] = tool_name
-
-        # 逐条 hook 按顺序裁决; 首个 block 即生效
-        from tuan_cli.hooks.exit_semantics import ANY_NONZERO_FAILS_EVENTS, EXIT_IGNORED_EVENTS
-        non_command_seen = False
-        last_policy = ""
-        for spec in specs:
-            last_policy = self._effective_on_failure(spec)
-            if spec.hook_type != "command":
-                non_command_seen = True
-            out, kind, stderr, rc = self._exec(spec, pl)
-
-            # ---- PermissionRequest: exit 2 不生效（官方真值表） ----
-            if kind == "exit_2" and event == "PermissionRequest":
-                continue  # 权限流照旧，stderr 丢弃
-
-            # ---- exit_2: 无条件阻断（stderr 就是阻断理由） ----
-            if kind == "exit_2":
-                reason = (stderr or "").strip() or f"{event} exit 2"
-                return HookDecision(
-                    block=True, reason=reason, failure_kind="exit_2",
-                )
-
-            # ---- spawn_error/timeout/no_kernel/no_model → 按 on_failure ----
-            # (必须在 ANY_NONZERO_FAILS 之前判定，否则 spawn_error rc=-1 会被误标)
-            if out is None:
-                if event in EXIT_IGNORED_EVENTS:
-                    continue
-                policy = self._effective_on_failure(spec)
-                if policy in ("block", "ask"):
-                    hint = "需人工确认" if policy == "ask" else ""
-                    reason = self._clean_reason(stderr) if stderr else ""
-                    if reason:
-                        reason = (f"{event} {kind} 失败: {reason} "
-                                  f"(fail-closed, on_failure={policy})")
-                    else:
-                        reason = (f"{event} {kind} 失败 "
-                                  f"(fail-closed, on_failure={policy})")
-                    if spec.hook_type != "command":
-                        self._emit_channel_semantics(
-                            event, spec.raw, block=True, policy=policy)
-                    return HookDecision(
-                        block=True,
-                        reason=reason,
-                        failure_kind=kind,
-                    )
-                if spec.hook_type != "command":
-                    self._emit_channel_semantics(
-                        event, spec.raw, block=False, policy=policy)
-                continue
-
-            # ---- ANY_NONZERO_FAILS_EVENTS: WorktreeCreate/WorktreeRemove ----
-            if event in ANY_NONZERO_FAILS_EVENTS and rc != 0:
-                reason = (stderr or "").strip() or f"{event} rc={rc} create failed"
-                return HookDecision(
-                    block=True, reason=reason, failure_kind="nonzero_rc",
-                )
-
-            # ---- EXIT_IGNORED_EVENTS: exit code 忽略，只看 JSON ----
-            # (PermissionDenied/StopFailure/InstructionsLoaded)
-
-            # ---- non-zero rc + 空 stdout: hook 操作失败 ----
-            # 与 url/prompt/subagent 失败路径等价（XV）：通道自身
-            # 报错（命令返回非零但无裁决 stdout）不能静默放行。空
-            # stdout 在 CC 官方语义里只是「hook 未表态」（exit 0），
-            # 配合 rc!=0 就是「命令炸了」→ 按 on_failure 策略处理。
-            if (rc != 0 and not out
-                    and event not in ANY_NONZERO_FAILS_EVENTS
-                    and event not in EXIT_IGNORED_EVENTS):
-                policy = self._effective_on_failure(spec)
-                if policy in ("block", "ask"):
-                    return HookDecision(
-                        block=True,
-                        reason=(f"{event} rc={rc} operation failed "
-                                f"(fail-closed, on_failure={policy})"),
-                        failure_kind="nonzero_rc",
-                    )
-                continue
-
-            if out is None:
-                # hook 执行失败 → 按 on_failure 策略
-                policy = self._effective_on_failure(spec)
-                if policy in ("block", "ask"):
-                    hint = "需人工确认" if policy == "ask" else ""
-                    reason = self._clean_reason(stderr) if stderr else ""
-                    if reason:
-                        reason = (f"{event} {kind} 失败: {reason} "
-                                  f"(fail-closed, on_failure={policy})")
-                    else:
-                        reason = (f"{event} {kind} 失败 "
-                                  f"(fail-closed, on_failure={policy})")
-                    if non_command_seen:
-                        self._emit_channel_semantics(
-                            event, spec.raw, block=True, policy=policy)
-                    return HookDecision(
-                        block=True,
-                        reason=reason,
-                        failure_kind=kind,
-                    )
-                if non_command_seen:
-                    self._emit_channel_semantics(
-                        event, spec.raw, block=False, policy=policy)
-                continue
-
-            # ---- exit code 2 在非 PreToolUse 决策类事件不阻断（PermissionRequest） ----
-            # exit 2 只在 PreToolUse / WorktreeCreate / PreModelSwitch 等阻断，
-            # PermissionRequest 官方真值表：exit 2 不生效
-            from tuan_cli.hooks.exit_semantics import EXIT_IGNORED_EVENTS
-
-            # command hook: 留 exit_code_semantics 结构化审计（XV 对照通道留痕）
-            if spec.hook_type == "command":
-                self._audit(event, spec.raw, "exit_code_semantics",
-                            f"rc={rc}; kind={kind or 'ok'}")
-
-            # 非 command hook: ok_no_decision → stdout 是噪声，不是裁决，跳过解析
-            # (url/prompt/subagent 的 stdout 不像 command 那样承载裁决语义；
-            #  通道层已在 _ok() 里判定「无裁决」并留痕，这里不再二次解析)
-            if spec.hook_type != "command":
-                oc = getattr(self._tls, "last_channel", None)
-                if oc is not None and oc.status == "ok_no_decision":
-                    continue
-
-            parsed = self._parse_decision_output(out, event, tool_name)
-            if parsed is None:
-                # stdout 解析失败 / 非法 shape → 按 on_failure 策略
-                if event in EXIT_IGNORED_EVENTS:
-                    # exit code 忽略的事件: 解析失败不阻断
-                    continue
-                policy = self._effective_on_failure(spec)
-                if policy in ("block", "ask"):
-                    return HookDecision(
-                        block=True,
-                        reason=f"{event} hook stdout 非法 (fail-closed)",
-                        failure_kind="parse_error",
-                    )
-                continue
-            if parsed.block:
-                parsed.reason = self._clean_reason(parsed.reason)
-                if non_command_seen:
-                    self._emit_channel_semantics(
-                        event, spec.raw, block=True, policy=last_policy)
-                return parsed
-            # 决策类事件 allow + updatedInput: 返回给调用方参考
-            # (工具执行层会审计但不会自动改参，决策类与 PreToolUse 改参语义不同)
-            if parsed.args is not None:
-                if non_command_seen:
-                    self._emit_channel_semantics(
-                        event, spec.raw, block=False, policy=last_policy)
-                return parsed
-            # PermissionDenied retry=True: 显式请求重试，返回给 lifecycle
-            # (B3 XIII: PermissionDenied 虽忽略 exit code 但保留 retry JSON)
-            if parsed.retry:
-                if non_command_seen:
-                    self._emit_channel_semantics(
-                        event, spec.raw, block=False, policy=last_policy)
-                return parsed
-
-        if non_command_seen:
-            self._emit_channel_semantics(
-                event, {}, block=decision.block, policy=last_policy or
-                self._on_failure_global)
-        return decision
-
-    def _parse_decision_output(
-        self, out: str, event: str, tool_name: str,
-    ) -> Optional[HookDecision]:
-        """解析决策类 hook 的 stdout → HookDecision。
-
-        返回 None 表示 stdout 非法 / 解析失败 (调用方 fail-closed)。
-        """
-        text = (out or "").strip()
-        if not text:
-            # 空 stdout = hook 未表态, 不阻断 (与 CC 的 exit 0 + 空 stdout 对齐)
-            return HookDecision()
-        try:
-            obj = json.loads(text)
-        except (ValueError, TypeError):
-            return None
-        if not isinstance(obj, dict):
-            return None
-
-        # CC 原生 hookSpecificOutput.permissionDecision
-        hso = obj.get("hookSpecificOutput")
-        if isinstance(hso, dict):
-            pd = hso.get("permissionDecision")
-            if pd == "deny":
-                return HookDecision(
-                    block=True,
-                    reason=str(hso.get("permissionDecisionReason", "")
-                               or f"{event} hook deny"),
-                )
-            if pd == "ask":
-                # Tuan 无交互确认通道, ask 按 fail-closed 阻断
-                return HookDecision(
-                    block=True,
-                    reason=str(hso.get("permissionDecisionReason", "")
-                               or f"{event} hook ask (无确认通道, fail-closed)"),
-                )
-            if pd == "allow":
-                # permissionDecision: allow 的 updatedInput 是 advisory，
-                # 决策类事件不允许改参 → args=None, 留痕
-                ui = hso.get("updatedInput")
-                if isinstance(ui, dict):
-                    self._audit(
-                        event, obj, "decision_args_ignored",
-                        f"决策类事件 {event!r} permissionDecision=allow "
-                        f"不允许改参, 已忽略 updatedInput",
-                    )
-                return HookDecision(block=False, reason="", args=None)
-            # CC 原生嵌套 decision 格式: {"decision": {"behavior": "deny"/"allow", ...}}
-            nested = hso.get("decision")
-            if isinstance(nested, dict):
-                behavior = str(nested.get("behavior", "")).strip().lower()
-                if behavior == "deny":
-                    return HookDecision(
-                        block=True,
-                        reason=str(nested.get("message", "")
-                                   or nested.get("reason", "")
-                                   or f"{event} hook deny"),
-                    )
-                if behavior == "allow":
-                    ui = nested.get("updatedInput")
-                    return HookDecision(
-                        block=False,
-                        args=dict(ui) if isinstance(ui, dict) else None,
-                    )
-            # PermissionDenied: hookSpecificOutput.retry=True 请求重试
-            # （exit code 被忽略，但 JSON retry 仍生效 —— B3 XIII）
-            if hso.get("retry") is True:
-                return HookDecision(block=False, retry=True)
-            # 未知 permissionDecision → fall through 到顶层 decision
-
-        # 顶层 decision (旧格式): {"decision":"block","reason":"..."}
-        top = obj.get("decision")
-        if isinstance(top, dict):
-            behavior = str(top.get("behavior", "")).strip().lower()
-            if behavior == "deny":
-                return HookDecision(
-                    block=True,
-                    reason=str(top.get("message", "")
-                               or top.get("reason", "")
-                               or f"{event} hook deny"),
-                )
-            if behavior == "allow":
-                ui = top.get("updatedInput")
-                return HookDecision(
-                    block=False,
-                    args=dict(ui) if isinstance(ui, dict) else None,
-                )
-        if top == "block":
-            return HookDecision(
-                block=True,
-                reason=str(obj.get("reason", "") or f"{event} hook block"),
-            )
-        if top == "allow":
-            return HookDecision()
-        # 顶层 decision 未知值 → 保守放行 (与 CC 官方对齐: 未声明就不阻断)
-        return HookDecision()
+            self._exec_notify(spec, payload, "run_post")
 
     def run_notify(self, event: str, payload: Optional[Dict[str, Any]] = None) -> None:
         """通知类事件的统一派发 (Stop/SubagentStop/PreCompact/SessionStart/SessionEnd)。
 
-        只读通知: **同步有界等待** hook 返回；stdout 忽略、异常隔离、
-        **不改变动作裁决**（永远返回 ``None``）。
-        决策专用事件误入（不在 _NOTIFY_EVENTS 但在 DECISION_CAPABLE_EVENTS）→
-        留 decision_event_misrouted 审计, 不执行 hook（与 run_decision 互为镜像）。
-        ConfigChange / Notification 同时属于 DECISION_CAPABLE_EVENTS 但走本出口，
-        不算误入。
+        只读通知: stdout 忽略、异常隔离、**不改变动作裁决**。
+
+        **B3 XVI 口径纠正**：实测 ``timeout=1.0s`` 的挂住 url 通知 hook
+        会让本方法同步等待 1.00s —— 旧 docstring 写「不阻断主流程」
+        容易被读成「不耗时」。现在如实写明同步有界等待，并把耗时、
+        status、kind 写进 ``channel_notification`` 审计。刻意**不**改成
+        异步：post/notify 是高频调用，异步化会引入 detached 线程与
+        资源泄漏，收益不抵风险。
         """
         if not self.enabled:
             return
-        from tuan_cli.hooks.exit_semantics import DECISION_CAPABLE_EVENTS
-        # PreToolUse 等事件虽然可阻断，但它们走 run_pre/run_decision，不走本出口。
-        # 在 run_notify 里它们应被视为「未知通知事件」而非「决策路由误入」。
-        _run_decision_only = DECISION_CAPABLE_EVENTS - {"PreToolUse"}
-        if event in _run_decision_only and event not in _NOTIFY_EVENTS:
-            self._audit(
-                event, {"payload": payload or {}}, "decision_event_misrouted",
-                f"决策类事件 {event!r} 误走 run_notify, 不执行 hook (应走 run_decision)",
-            )
+        if event in _DECISION_EVENTS:
+            # B3 R4：决策类事件走通知通道等于把 hook 输出吞掉，用户以为
+            # 装了拦截器、实际什么都没发生。显式留痕并拒绝静默派发。
+            self._audit(event, {}, "decision_event_misrouted",
+                        "决策类事件必须用 run_decision 派发；run_notify 会忽略 stdout")
             return
         if event not in _NOTIFY_EVENTS:
-            # 非通知类事件误入 run_notify → 留 unknown_notify_event 审计
-            self._audit(
-                event, {"payload": payload or {}}, "unknown_notify_event",
-                f"事件 {event!r} 不在通知类事件表",
-            )
+            self._audit(event, {}, "unknown_notify_event",
+                        f"事件 {event!r} 不是通知类事件，run_notify 已忽略")
             return
+        pl = dict(payload or {})
+        pl["hook_event_name"] = event
         for spec in self._specs:
             if spec.event != event:
                 continue
-            # 构造 dict payload（_exec 会拒绝 None 并 fail-closed）
-            pl = dict(payload or {})
-            pl["hook_event_name"] = event
-            self._exec_notify(spec, pl)
-
-    def _exec_notify(self, spec, payload):
-        """通知类单出口: 同步有界等待, stdout 忽略, 不改变动作裁决。"""
-        t0 = time.monotonic()
-        out, kind, stderr, rc = self._exec(spec, payload)
-        elapsed = time.monotonic() - t0
-        self._audit(spec.event, spec.raw, "channel_notification",
-                    f"stdout 忽略; 不改变动作裁决; elapsed={elapsed:.3f}s; kind={kind or 'ok'}")
-        return out
-
-    def on_failure_policy(self) -> str:
-        """返回本管理器的 on_failure 策略 (全局默认)。"""
-        return self._on_failure_global
-
-    def run_event(self, event: str, payload: Optional[Dict[str, Any]] = None,
-                  tool_name: str = "") -> HookDecision:
-        """按事件类型统一派发：决策类走 run_decision，通知类走 run_notify。
-
-        lifecycle.emit() 用这个方法自动路由（B3 XIII）：调用方不需要知道
-        事件是决策类还是通知类。返回值仅供决策类使用；通知类返回空决策。
-        事件不在已知事件表 → 留 unknown_event 留痕并返回空决策。
-
-        注意：PreCompact / Stop 等事件同时属于 DECISION_CAPABLE_EVENTS
-        和 _NOTIFY_EVENTS。这些事件的 lifecycle.emit 需要走 run_decision
-        （解析 stdout decision），不走 run_notify（stdout 忽略）。所以
-        这里以 DECISION_CAPABLE_EVENTS 为准，绕开 run_decision 里的
-        _NOTIFY_EVENTS 审计检查（那个检查是给直接调 run_decision 的
-        老调用方准备的；run_event 是 lifecycle 的统一入口，已经知道
-        自己在做正确的路由）。
-        """
-        from tuan_cli.hooks.exit_semantics import DECISION_CAPABLE_EVENTS
-        if event in DECISION_CAPABLE_EVENTS:
-            # 直接调 run_decision；skip_notify_audit=True 让它跳过
-            # _NOTIFY_EVENTS 审计拦截（PreCompact / Stop 同时在两边）。
-            return self.run_decision(
-                event, tool_name=tool_name, payload=payload,
-                skip_notify_audit=True)
-        self.run_notify(event, payload)
-        return HookDecision()
+            self._exec_notify(spec, pl, "run_notify")
 
     def run_session(self, event: str, payload: Optional[Dict[str, Any]] = None) -> None:
         """SessionStart / SessionEnd: 只读通知 (run_notify 的会话别名)。"""
         self.run_notify(event, payload)
 
-    def run_user_prompt_submit(self, prompt: Optional[str]) -> str:
+    def run_user_prompt_submit(self, prompt: str) -> str:
         """UserPromptSubmit: 收集各 hook 的 stdout 作为附加上下文。
 
-        - 入参类型面：非 str 非 None → 强制回落 ``""`` 并留
-          ``invalid_prompt_type`` 审计，**绝不抛异常**（XVI P4）；
-          ``None`` 保持既有静默兼容。
-        - 出站净化：command hook 的 stdout 经 ``safe_hook_text`` 单一
-          真值剥控制字符 / 脱敏 / 限长；空 stdout 不注入（P2）。
-        - 总长硬上界 ``MAX_ADDITIONAL_CONTEXT``（分隔符一并计入），
-          命中时留 ``additional_context_capped`` 审计。
-        - **不谎称**防住语义级 prompt injection：净化不宣称解决模型
-          侧的输入边界。
+        返回所有命中 hook 的 stdout (各截断 1000 字符后以换行拼接);
+        无 hook 命中或无输出时返回空串。对标 Claude Code 的 additionalContext。
+
+        **B3 XVI P2/P4（先实测复现）**：
+        - 修复前 command hook 的 stdout **原样**注入模型上下文，实测
+          OSC 8 / RLO / ZWSP / bidi isolate 与伪造系统指令全部原样。
+          XV 只净化了三类非进程 hook 的 stdout 与 ``_parse_decision``
+          的 ``reason``，这里是唯一剩下的**入站**旁路。
+        - 30 个 hook 实测拼出 **30029 码点**（单 hook 1000，总长无界）。
+        - ``prompt`` 非 str 时三种不同行为：int/dict/bool 抛底层
+          TypeError、bytes 静默失败、list 恰好能跑。现在统一回落空串
+          并留痕，绝不抛异常。
+
+        现在每条 stdout 过 ``safe_hook_text``（与 lifecycle / nonprocess
+        **同一函数对象**），总长硬上界 ``MAX_ADDITIONAL_CONTEXT``。
+        净化剥控制字符 / 脱敏凭据，**但剥不掉语义层面的伪系统指令**
+        —— 那是模型侧的输入边界，不谎称「防住 prompt injection」。
         """
         if not self.enabled:
             return ""
         if prompt is None:
-            clean_prompt = ""
+            # 既有行为：``(None or "")`` 就是空串，保持静默兼容。
+            prompt = ""
         elif not isinstance(prompt, str):
-            self._audit(
-                "UserPromptSubmit", {}, "invalid_prompt_type",
-                f"prompt 不是 str: {type(prompt).__name__}，回落空串",
-            )
-            clean_prompt = ""
-        else:
-            clean_prompt = prompt
-
+            self._audit("UserPromptSubmit", {}, "invalid_prompt_type",
+                        "prompt 非 str（%s），按空串处理，不抛异常"
+                        % type(prompt).__name__)
+            prompt = ""
         outs: List[str] = []
         total = 0
-        capped = False
-        injected = False
         for spec in self._specs:
             if spec.event != "UserPromptSubmit":
                 continue
-            out, kind, stderr, rc = self._exec(spec, {
+            out = self._exec(spec, {
                 "hook_event_name": "UserPromptSubmit",
-                "prompt": clean_prompt[:4000],
+                "prompt": prompt[:4000],
             })
-            # url hook 无有效 stdout：非进程通道「正常响应但无裁决」，显式留痕
-            if spec.hook_type == "url" and not (out or "").strip() and kind == "":
-                self._audit(spec.event, spec.raw, "channel_no_decision",
-                            "url hook 正常响应但无有效裁决")
-            # UserPromptSubmit: exit 2 → 阻断 prompt，stderr 给用户且不进 context
-            if kind == "exit_2":
-                return "BLOCKED"  # 信号量：上层应拒绝 prompt
-            if not out:
-                # 空输出不注入；url hook 无裁决时留痕（XVI P2）
-                if spec.hook_type == "url" and kind == "":
-                    self._audit(spec.event, spec.raw, "channel_no_decision",
-                                "url hook 正常响应但无有效裁决")
+            if not out or not out.strip():
                 continue
-            # 单条 1000 字上限（XVI P2 探针契约：不是 safe_hook_text 的 400）；
-            # 先硬截到 1000，再交 safe_hook_text（limit=1002 使其不触发
-            # cap-1+省略号 截断，1000 字原文不变）。
-            cleaned = safe_hook_text(out[:1000], 1002)
-            if not cleaned:
+            clean = safe_hook_text(out.strip(), MAX_PER_HOOK_CONTEXT)
+            if not clean:
+                self._audit("UserPromptSubmit", spec.raw,
+                            "additional_context_dropped",
+                            "hook stdout 净化后为空，不注入模型上下文")
                 continue
-            injected = True
-            if capped:
-                continue
-            sep = "\n" if outs else ""
-            budget = MAX_ADDITIONAL_CONTEXT - total - len(sep)
-            if budget <= 0:
-                capped = True
-                self._audit(spec.event, spec.raw, "additional_context_capped",
-                            f"附加上下文总长已达 {MAX_ADDITIONAL_CONTEXT} 码点硬上界，截断")
-                continue
-            if len(cleaned) <= budget:
-                outs.append(sep + cleaned)
-                total += len(sep) + len(cleaned)
-            else:
-                outs.append(sep + cleaned[:budget])
-                total += len(sep) + budget
-                capped = True
-                self._audit(spec.event, spec.raw, "additional_context_capped",
-                            f"附加上下文总长已达 {MAX_ADDITIONAL_CONTEXT} 码点硬上界，截断")
-        if injected:
-            self._audit("UserPromptSubmit", {}, "additional_context_injected",
-                        "已注入附加上下文（经 safe_hook_text 净化"
-                        + ("；总长命中上界已截断）" if capped else "）"))
-        return "".join(outs)
+            # A′（XVI）：``"\n".join(outs)`` 的分隔符也要算进总量，
+            # 否则 30 hooks 实测 4003 > 4000，违反「总长硬上界」承诺。
+            sep = 1 if outs else 0
+            if total + sep + len(clean) > MAX_ADDITIONAL_CONTEXT:
+                room = MAX_ADDITIONAL_CONTEXT - total - sep
+                self._audit("UserPromptSubmit", spec.raw,
+                            "additional_context_capped",
+                            "总长超过 %d 码点，本条起截断/丢弃"
+                            % MAX_ADDITIONAL_CONTEXT)
+                if room <= 0:
+                    break
+                clean = clean[:room]
+            outs.append(clean)
+            total += sep + len(clean)
+        if outs:
+            self._audit("UserPromptSubmit", {},
+                        "additional_context_injected",
+                        "hooks=%d chars=%d（已净化 + 总长有界）"
+                        % (len(outs), total))
+        return "\n".join(outs)
 
     # ------------------------------------------------------------------ 底层
 
-    def _exec(self, spec: _HookSpec, payload: Dict[str, Any]) -> tuple:
-        """执行单条 hook, 返回 (stdout, failure_kind, stderr, returncode)。
+    def _record_failure(self, spec: _HookSpec, kind: str, detail: str,
+                        tool_name: str = "") -> None:
+        """记录一次 hook 执行失败 (线程局部 + 有界历史 + 审计)。
 
-        B3 续轮 XVI：**单一净化出口**。所有五条链路（run_pre / run_post /
-        run_notify / run_decision / run_user_prompt_submit）的 payload 都
-        先在本函数内过递归净化真值 ``safe_payload``，再交给对应执行器。
-
-        - 非 dict payload → ``(None, "invalid_spec", "", -1)``（fail-closed）
-        - ``n > 0`` 时留 ``payload_sanitized`` 审计（出站留痕）
-        - url / prompt / subagent 三类非进程 hook → ``_np.execute`` 单一入口
-        - command → ``self._exec_command``（命令路径逐字节零改动）
+        绝不抛异常：记录失败本身不能把 hook 流水线弄崩。
         """
-        self._last_failure_kind = ""
-        if not isinstance(payload, dict):
+        rec = HookFailure(
+            uid=spec.uid, event=spec.event, hook_type=spec.hook_type,
+            kind=kind, detail=str(detail)[:400], tool_name=tool_name,
+            ts=time.time(),
+        )
+        try:
+            self._tls.last_failure = rec
+        except Exception:  # noqa: BLE001
+            pass
+        self._failures.append(rec)
+        if len(self._failures) > self._max_failures:
+            self._failures = self._failures[-self._max_failures:]
+        self._audit(spec.event, spec.raw, "failed", f"{kind}: {detail}")
+
+    def failures(self) -> List[Dict[str, Any]]:
+        """返回本实例的 hook 失败记录 (只读副本)。"""
+        return [f.to_dict() for f in list(self._failures)]
+
+    def clear_failures(self) -> None:
+        """清空失败记录 (供测试/运维显式重置)。"""
+        self._failures.clear()
+        self._tls.last_failure = None
+
+    def on_failure_policy(self) -> str:
+        """当前全局故障策略 (block / ask / allow)。"""
+        return self.on_failure
+
+    def _exec(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
+        """执行单条 hook, 返回结果文本; 超时/异常返回 None。
+
+        支持四种类型:
+        - command: 传统 argv 脚本 (stdin JSON, stdout 文本) —— 原路径零改动
+        - url / prompt / subagent: **B3 XV** 统一走
+          ``hooks/nonprocess.execute()``，权威实现只有一份
+
+        B1: 每次派发前清空「最近一次失败」，执行器在失败时调用
+        ``_record_failure``。调用方据此做 fail-closed 判定。
+
+        **XV**: 三类非进程 hook 把结构化事实写进 ``last_channel``，
+        由 ``_exit_gate`` 复用既有逐事件真值表裁决；failure 由**主线程**
+        在这里统一补记（后台线程写 thread-local 主线程读不到，与
+        ``_exec_command`` 看门狗的既有注释同源）。
+        """
+        self._tls.last_failure = None
+        self._tls.last_exit = None
+        self._tls.last_verdict = None
+        self._tls.last_channel = None
+        # B3 XVI P1：**唯一**出站净化点。run_pre / run_post / run_notify /
+        # run_event / run_decision / run_user_prompt_submit 六条链路 + 两类
+        # 执行器（command stdin / url POST / prompt / subagent）全部过这里。
+        # 复用 XIV 搬到 core/safe_text.safe_payload 的同一份递归真值，
+        # lifecycle 也调它 —— 不产生第二套 payload 净化。
+        try:
+            pl, changed = safe_payload(payload)
+        except TypeError:
             self._audit(spec.event, spec.raw, "payload_rejected",
-                        f"payload 不是 dict: {type(payload).__name__}")
-            self._record_failure("invalid_spec", spec.event, spec,
-                                 "payload 非 dict，fail-closed")
-            self._last_failure_kind = "invalid_spec"
-            return (None, "invalid_spec", "", -1)
-
-        # 单一净化出口：整个文件仅此一处调用本函数（XVI 源码级核销点）
-        pl, n = safe_payload(payload)
-        if n > 0:
+                        "出站 payload 非 dict（fail-closed），hook 未执行")
+            self._record_failure(spec, "invalid_spec",
+                                 "出站 payload 非 dict（fail-closed）")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            self._audit(spec.event, spec.raw, "payload_rejected",
+                        "出站 payload 净化异常: %s" % type(exc).__name__)
+            self._record_failure(spec, "error",
+                                 "出站 payload 净化异常（fail-closed）")
+            return None
+        if changed:
             self._audit(spec.event, spec.raw, "payload_sanitized",
-                        f"递归净化改动 {n} 个字段（OSC/RLO/凭据/有界）")
-
-        if spec.hook_type == "command":
-            return self._exec_command(spec, pl)
-
-        # url / prompt / subagent：统一走 nonprocess 单一权威入口
+                        "出站 payload 已脱敏/剥控制字符/截断，改动 %d 处"
+                        % changed)
         if spec.hook_type in _np.HOOK_TYPES:
-            oc = _np.execute(spec, pl, self._kernel, self.workspace or "",
-                             default_timeout=self.default_timeout)
-            # 等价故障闭合：把通道故障映射成等价 rc，与 command hook 同一裁决
-            _np.classify_channel(spec.event, oc, tuan_policy="block")
+            oc = _np.execute(spec, pl, self._kernel,
+                             self.workspace or "", self.default_timeout)
             self._tls.last_channel = oc
-            for st, detail in oc.audit_events:
-                self._audit(spec.event, spec.raw, st, detail)
-            if oc.status == "failure":
-                self._last_failure_kind = oc.failure_kind
-                self._record_failure(oc.failure_kind, spec.event, spec,
+            for status, detail in oc.audit_events:
+                self._audit(spec.event, spec.raw, status, detail)
+            if oc.failure_kind:
+                self._record_failure(spec, oc.failure_kind,
                                      oc.failure_detail)
-                return (None, oc.failure_kind, oc.stderr, -1)
-            if oc.status == "ok_no_decision":
-                self._audit(spec.event, spec.raw, "exit_json_ignored",
-                            "hook 正常响应但无有效裁决，按无意见放行")
-            return (oc.stdout or "", "", "", 0)
-        return (None, "invalid_spec", "", -1)
+            return oc.stdout
+        return self._exec_command(spec, pl)
 
-    def _exec_command(self, spec: _HookSpec, payload: Dict[str, Any]) -> tuple:
-        """执行传统 argv 脚本, 返回 (stdout, failure_kind, stderr, returncode)。
+    def _exec_command(self, spec: _HookSpec, payload: Dict[str, Any]) -> Optional[str]:
+        """执行传统 argv 脚本。
 
         采用「看门狗线程 + 进程树强杀」而非 subprocess.run(timeout=...):
-        Windows 上 subprocess.run 的超时杀进程不可靠。
+        Windows 上 subprocess.run 的超时杀进程不可靠 —— 对已 sleep / 阻塞的子进程,
+        TerminateProcess 未必及时回收, 导致内部 communicate() 永久阻塞 (实测会挂死)。
+        看门狗在超时后强制 taskkill /T 整棵树, 主线程的 communicate() 随管道关闭而返回。
         """
+        # Validate command before spawning (fail-fast for misconfigured hooks)
         if not spec.command or not isinstance(spec.command, (list, tuple)):
             self._audit(spec.event, spec.raw, "rejected_empty_command",
                         "hook command 为空或非列表")
-            self._record_failure("rejected_empty_command", spec.event, spec)
-            return (None, "rejected_empty_command", "", -1)
+            self._record_failure(spec, "invalid_spec", "hook command 为空或非列表")
+            return None
 
         try:
             proc = subprocess.Popen(
@@ -1049,25 +1067,23 @@ class HookManager:
                 stderr=subprocess.PIPE,
                 cwd=self.workspace,
                 text=True,
-                start_new_session=(os.name != "nt"),
+                start_new_session=(os.name != "nt"),  # POSIX 独立会话: 强杀不波及父进程组
             )
         except FileNotFoundError:
-            msg = f"命令未找到: {spec.command[0] if spec.command else '<empty>'}"
-            self._audit(spec.event, spec.raw, "spawn_error", msg)
-            self._last_failure_kind = "spawn_error"
-            self._record_failure("spawn_error", spec.event, spec, msg)
-            return (None, "spawn_error", msg, -1)
+            d = f"命令未找到: {spec.command[0] if spec.command else '<empty>'}"
+            self._audit(spec.event, spec.raw, "spawn_error", d)
+            self._record_failure(spec, "spawn_error", d)
+            return None
         except PermissionError as exc:
-            self._audit(spec.event, spec.raw, "spawn_error", f"权限不足: {exc}")
-            self._last_failure_kind = "spawn_error"
-            self._record_failure("spawn_error", spec.event, spec, f"权限不足: {exc}")
-            return (None, "spawn_error", str(exc), -1)
+            d = f"权限不足: {exc}"
+            self._audit(spec.event, spec.raw, "spawn_error", d)
+            self._record_failure(spec, "spawn_error", d)
+            return None
         except Exception as exc:  # noqa: BLE001
-            self._audit(spec.event, spec.raw, "spawn_error", f"{type(exc).__name__}: {exc}")
-            self._last_failure_kind = "spawn_error"
-            self._record_failure("spawn_error", spec.event, spec,
-                                 f"{type(exc).__name__}: {exc}")
-            return (None, "spawn_error", str(exc), -1)
+            d = f"{type(exc).__name__}: {exc}"
+            self._audit(spec.event, spec.raw, "spawn_error", d)
+            self._record_failure(spec, "spawn_error", d)
+            return None
 
         killed: list[bool] = []
         stop_watchdog = threading.Event()
@@ -1077,8 +1093,11 @@ class HookManager:
                 return
             killed.append(True)
             self._kill_tree(proc)
-            self._audit(spec.event, spec.raw, "timeout",
-                        f"hook 超过 {spec.timeout}s 被强杀")
+            d = f"hook 超过 {spec.timeout}s 被强杀"
+            # 只在这里审计；failure 由**主线程**在 killed 分支补记。
+            # _record_failure 写的是 thread-local 的 last_failure，若在
+            # 看门狗线程里调用，run_pre 读不到，fail-closed 就会被绕过。
+            self._audit(spec.event, spec.raw, "timeout", d)
 
         watcher = threading.Thread(target=_watchdog, daemon=True)
         watcher.start()
@@ -1086,50 +1105,27 @@ class HookManager:
             out, err = proc.communicate(input=json.dumps(payload, ensure_ascii=False))
         except Exception as exc:  # noqa: BLE001
             self._kill_tree(proc)
-            self._audit(spec.event, spec.raw, "error", f"{type(exc).__name__}: {exc}")
-            self._last_failure_kind = "error"
-            self._record_failure("error", spec.event, spec,
-                                 f"{type(exc).__name__}: {exc}")
-            return (None, "error", str(exc), -1)
+            d = f"{type(exc).__name__}: {exc}"
+            self._audit(spec.event, spec.raw, "error", d)
+            self._record_failure(spec, "error", d)
+            return None
         finally:
             stop_watchdog.set()
             watcher.join(timeout=2.0)
 
-        rc = proc.returncode
-        err_text = err or ""
         if killed:
-            self._last_failure_kind = "timeout"
-            self._record_failure("timeout", spec.event, spec,
-                                 f"hook 超过 {spec.timeout}s 被强杀")
-            return (None, "timeout", "", -1)
-        if rc == 2:
-            return (out, "exit_2", err_text, 2)
-        if rc != 0:
-            # 非零 rc: 留痕（决策类会参考），但若 stdout 是合法 JSON 仍被采信
-            self._last_failure_kind = "nonzero_rc"
-            self._record_failure("nonzero_rc", spec.event, spec,
-                                 f"rc={rc} stderr={err_text[:200]}")
-            return (out, "nonzero_rc", err_text, rc)
-        return (out, "", err_text, 0)
-
-    def _emit_channel_semantics(self, event: str, raw: Any,
-                                block: bool, policy: str) -> None:
-        """留一条 channel_semantics 结构化审计（XV/XVI 通知/裁决链路）。"""
-        self._audit(event, raw, "channel_semantics",
-                    f"block={block}; on_failure={policy}")
-
-    @staticmethod
-    def _clean_reason(reason: str) -> str:
-        """净化决策 reason：剥控制字符 + 脱敏 ``ghp_...``（XV/XVI）。"""
-        return safe_hook_text(reason or "")
-
-    def _exec_notify(self, spec, payload):
-        """通知类单出口: 同步有界等待, stdout 忽略, 不改变动作裁决。"""
-        t0 = time.monotonic()
-        out, kind, stderr, rc = self._exec(spec, payload)
-        elapsed = time.monotonic() - t0
-        self._audit(spec.event, spec.raw, "channel_notification",
-                    f"stdout 忽略; 不改变动作裁决; elapsed={elapsed:.3f}s; kind={kind or 'ok'}")
+            self._record_failure(
+                spec, "timeout", f"hook 超过 {spec.timeout}s 被强杀")
+            return None
+        if proc.returncode != 0:
+            d = f"rc={proc.returncode} stderr={err[:200]}"
+            self._audit(spec.event, spec.raw, "nonzero_rc", d)
+            # 仍返回 out（向后兼容所有调用方）；但**是否采纳 stdout 的
+            # JSON 由 exit_semantics 裁决**，不再无条件「JSON 优先」。
+            self._record_failure(spec, "nonzero_rc", d)
+        self._tls.last_exit = HookExit(
+            rc=int(proc.returncode or 0), stderr=err or "",
+            stdout=out or "", event=spec.event)
         return out
 
     @staticmethod
@@ -1153,23 +1149,51 @@ class HookManager:
                     os.killpg(os.getpgid(pid), signal.SIGKILL)  # type: ignore[attr-defined]  # POSIX-only: killpg/getpgid/SIGKILL
                 except ProcessLookupError:
                     pass  # Process group already gone
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             # Fallback: try to kill just the main process
             try:
                 if proc.poll() is None:
                     proc.kill()
-            except Exception as exc2:  # noqa: BLE001
-                # 双层失败会留孤儿进程; 至少告警让运维能介入
-                log.warning("hook 进程树终止失败 (pid=%s): fallback=%s, kill=%s",
-                            pid, exc, exc2)
+            except Exception:  # noqa: BLE001
+                pass
+
+    # B3 XV: ``_exec_http`` / ``_exec_prompt`` / ``_exec_subagent`` 三个
+    # 重复执行器已删除，权威实现只有 ``hooks/nonprocess.execute()`` 一份。
+    # 删除理由（实测）：旧 HTTP 用 socket 级 timeout 而非墙钟、默认跟随
+    # 302、stdout 无界、失败 detail 不净化；旧 prompt/subagent 完全不传
+    # timeout，调用方能无限挂住。保留三份旧实现只会产生两套真值。
+    # 全仓源码扫描回归确认无残留 ``_exec_http(`` / ``_exec_prompt(`` /
+    # ``_exec_subagent(`` 调用点。
 
     def _parse_decision(self, stdout: str) -> Optional[Dict[str, Any]]:
-        """解析 hook stdout 为决策 dict。兼容多种风格:
-        - {"decision":"block","reason":...} / {"block":true,"reason":...}
-        - {"args": {...}}
-        - {"hookSpecificOutput": {"permissionDecision": "allow",
-                                   "updatedInput": {...}}}  (CC 原生)
-        - 非 JSON 输出 → 忽略 (视为无决策)
+        """B3 XV 单一净化出口：所有 hook stdout 的 ``reason`` 在返回前
+        过 ``core.safe_text.safe_hook_text``（与 XIV lifecycle、
+        XV nonprocess 共用同一函数对象）。
+
+        实测 N3/N3b：url hook 成功返回的 reason、prompt hook 异常 detail
+        里的 ``ghp_`` 明文与 OSC 8 / RLO 原样进 ``HookDecision.reason``，
+        再经 ``ToolResult.content`` 回显。command hook 的 stdout 此前也
+        没净化，一并覆盖。只净化 ``reason``，**不碰 args / updatedInput**
+        （那是工具参数，净化会破坏语义）。
+        """
+        parsed = self._parse_decision_raw(stdout)
+        if isinstance(parsed, dict) and isinstance(parsed.get("reason"), str):
+            parsed = dict(parsed)
+            parsed["reason"] = safe_hook_text(parsed["reason"], 400)
+        return parsed
+
+    def _parse_decision_raw(self, stdout: str) -> Optional[Dict[str, Any]]:
+        """解析 hook stdout 为统一决策 dict。
+
+        B3 R3：旧实现只认 ``args`` / ``block`` / ``decision``，用户按
+        Claude Code 官方文档写的
+        ``{"hookSpecificOutput":{"hookEventName":"PreToolUse",
+        "permissionDecision":"deny", "updatedInput":{...}}}`` 会被判
+        ``None`` 后静默 ``continue`` —— 既不阻断也不改参。现在同时支持
+        CC 原生格式与本地旧格式，并用 ``source`` 标明走了哪条协议。
+
+        ``updatedInput`` 按 CC 语义是**替换**整个 tool_input（不是
+        merge）；替换后的校验由 ``input_validation`` 在 run_pre 里做。
         返回 None 表示无有效决策。
         """
         s = (stdout or "").strip()
@@ -1181,39 +1205,72 @@ class HookManager:
             return None
         if not isinstance(data, dict):
             return None
-        # CC 原生 hookSpecificOutput.permissionDecision
+
+        # ---- CC 原生: hookSpecificOutput (PreToolUse / ElicitationResult 等) ----
         hso = data.get("hookSpecificOutput")
         if isinstance(hso, dict):
-            pd = hso.get("permissionDecision")
-            if pd == "allow":
-                ui = hso.get("updatedInput")
-                return {"block": False, "reason": "",
-                        "args": dict(ui) if isinstance(ui, dict) else None}
-            if pd == "deny":
-                return {"block": True,
-                        "reason": str(hso.get("permissionDecisionReason", "")
-                                      or "hook deny"),
-                        "args": None}
-            if pd == "ask":
-                return {"block": True,
-                        "reason": str(hso.get("permissionDecisionReason", "")
-                                      or "hook ask"),
-                        "args": None}
-            # additionalContext: CC advisory 无本地注入通道 → 留痕
-            if "additionalContext" in hso:
-                self._audit(
-                    "PreToolUse", data, "additional_context_no_channel",
-                    str(hso.get("additionalContext", ""))[:200],
-                )
-                # additionalContext 不阻断，继续检查其他字段
+            # ---- CC 官方 PermissionRequest 协议（B3 续轮 XII 实测复现）
+            # {"hookSpecificOutput":{"hookEventName":"PermissionRequest",
+            #   "decision":{"behavior":"deny"|"allow", "updatedInput":{...}}}}
+            # 旧版只读 permissionDecision 字符串，decision 是 dict 时被
+            # 整个忽略 → 官方写法静默放行（实测 block=False, reason=""）。
+            # B3 XIII: PermissionDenied 的官方 retry 语义。它忽略 exit
+            # code，但 hookSpecificOutput.retry 仍要被读出来。
+            retry = hso.get("retry")
+            if isinstance(retry, bool) and retry:
+                return {"block": False, "reason": "", "args": None,
+                        "retry": True, "source": "cc_permission_denied_retry",
+                        "permission_decision": ""}
+            dec = hso.get("decision")
+            if isinstance(dec, dict):
+                behavior = str(dec.get("behavior", "") or "").strip().lower()
+                if behavior in ("allow", "deny", "ask"):
+                    reason = str(dec.get("message") or dec.get("reason")
+                                 or hso.get("permissionDecisionReason")
+                                 or data.get("reason", "") or "")
+                    upd = dec.get("updatedInput")
+                    if behavior == "allow" and not isinstance(upd, dict):
+                        # CC: 需要用户交互的工具（ExitPlanMode）的 allow
+                        # 必须带 updatedInput，否则忽略并仍显示提示。
+                        self._audit("PermissionRequest", {},
+                                    "allow_without_updated_input",
+                                    "CC 语义: allow 缺 updatedInput 不生效")
+                        upd = None
+                    return {"block": behavior in ("deny", "ask"),
+                            "reason": reason, "args": upd,
+                            "source": "cc_permission_request",
+                            "permission_decision": behavior}
+            pd = str(hso.get("permissionDecision", "") or "").strip().lower()
+            reason = str(hso.get("permissionDecisionReason", "")
+                         or data.get("reason", "") or "")
+            updated = hso.get("updatedInput")
+            if pd in ("deny", "ask", "allow") or updated is not None:
+                # "ask" 在无交互确认通道时按 fail-closed 阻断（与 Tuan 既有
+                # 审批覆盖层契约一致：没有确认通道绝不静默放行）。
+                return {"block": pd in ("deny", "ask"), "reason": reason,
+                        "args": updated, "source": "cc_native",
+                        "permission_decision": pd}
+            ctx = hso.get("additionalContext")
+            if ctx:
+                # Advisory：CC 会注入下一回合；Tuan 没有该注入通道，
+                # 只留痕不静默假装已注入。
+                self._audit("PreToolUse", {}, "additional_context_no_channel",
+                            "CC advisory additionalContext 无本地注入通道，仅留痕")
+            return {"block": False, "reason": reason, "args": None,
+                    "source": "cc_native_no_decision"}
+
+        # ---- 本地旧格式（向后兼容，不改行为）----
         if "decision" in data:
             return {"block": str(data.get("decision")).lower() == "block",
-                    "reason": str(data.get("reason", "")), "args": data.get("args")}
+                    "reason": str(data.get("reason", "")),
+                    "args": data.get("args"), "source": "legacy"}
         if "block" in data:
             return {"block": bool(data.get("block")),
-                    "reason": str(data.get("reason", "")), "args": data.get("args")}
+                    "reason": str(data.get("reason", "")),
+                    "args": data.get("args"), "source": "legacy"}
         if "args" in data:
-            return {"block": False, "reason": "", "args": data.get("args")}
+            return {"block": False, "reason": "", "args": data.get("args"),
+                    "source": "legacy"}
         return None
 
     def _audit(self, event: str, hook: Any, status: str, detail: str = "") -> None:

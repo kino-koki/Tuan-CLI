@@ -42,12 +42,10 @@ def _find_skill_manager() -> Any:
     """惰性 import, 避免 CLI 启动时加载重模块。"""
     try:
         from ..skills.manager import SkillManager
-        from ..config import Config
+        from ..core import config as _cfg
 
-        # 与 cmd_ecosystem.py / app.py 一致: Config() 为默认 profile 的组合配置视图。
-        # 旧代码错误地引用不存在的 `..core.config.ConfigManager.load()`（死引用），
-        # 被 try/except 吞掉导致 _find_skill_manager() 恒为 None，技能命令静默失效。
-        return SkillManager(Config().home, config=Config())
+        kernel_cfg = _cfg.ConfigManager.load()
+        return SkillManager(kernel_cfg)
     except Exception as exc:  # noqa: BLE001
         log.debug("_find_skill_manager(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
@@ -165,7 +163,42 @@ def _list_installed(args: Any) -> int:
         origin = getattr(s, "origin", "builtin")
         ver = getattr(s, "version", "") or ""
         console.print(f"  {s.name:<22} [{origin}]  {ver:<8}  {getattr(s, 'path', '')}")
+    # 聚合 DSH 原生插件来源技能 (DSH bundle 无 skills/ 子目录, 技能经插件 apply 注册)
+    dsh_count = _print_dsh_plugin_skills()
+    if dsh_count:
+        console.print(f"[dim]  + DSH 原生插件提供 [green]{dsh_count}[/] 个技能[/dim]")
     return 0
+
+
+def _print_dsh_plugin_skills() -> int:
+    """列出已安装 DSH 原生插件来源技能, 返回技能总数。"""
+    try:
+        from ..skills.plugin_sdk import DshPluginLoader
+        from ..skills.plugin_sdk import PluginManager
+    except Exception:  # noqa: BLE001
+        return 0
+    try:
+        pm = PluginManager(Path.home() / ".tuan" / "plugins")
+        loader = DshPluginLoader(timeout=15)
+        total = 0
+        for plugin in pm.list_plugins():
+            path = getattr(plugin, "path", None)
+            if not path:
+                continue
+            if not loader.is_dsh_native(path):
+                continue
+            try:
+                skills = loader.list_skills(path)
+            except Exception:  # noqa: BLE001
+                continue
+            for s in skills:
+                total += 1
+                console.print(
+                    f"  {s.get('name', '?'):<22} [dsh-plugin]  {getattr(plugin, 'name', '?')}"
+                )
+        return total
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def _clear_cache(_args: Any) -> int:

@@ -142,7 +142,7 @@ tuan --print run "Hi, describe yourself in one sentence."
 
 ---
 
-## The command surface: 94 core subcommands + 88 slash commands
+## The command surface: 92 core subcommands + 88 slash commands
 
 | Command | What it's for |
 |---|---|

@@ -246,7 +246,3 @@ scripts/install_and_build.ps1
 # except 治理/拆分期间的测试临时目录与媒体产物
 /.pytest-tmp-run/
 /media/
-
-# except 治理/拆分期间的测试临时目录与媒体产物
-/.pytest-tmp-run/
-/media/

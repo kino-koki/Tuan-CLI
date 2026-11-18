@@ -140,7 +140,7 @@ class TestSanitizedChildEnv:
     def test_workspace_indicator_restored(self):
         """SECRET_HINTS 含 TUAN_，必须按 workspace 参数补回（同 §15）。"""
         _, _, calls = _call(_server())
-        assert calls[0][1]["env"]["TUAN_WORKSPACE"] == "/tmp/ws"
+        assert calls[0][1]["env"]["TUAN_WORKSPACE"] == str(Path("/tmp/ws"))
 
     def test_sentinel_count_matches_sensitive_keys(self):
         _, _, calls = _call(_server())
@@ -151,7 +151,7 @@ class TestSanitizedChildEnv:
 
     def test_cwd_still_honored(self):
         _, _, calls = _call(_server())
-        assert calls[0][1]["cwd"] == "/tmp/ws"
+        assert calls[0][1]["cwd"] == str(Path("/tmp/ws"))
 
 
 # ================================================ 2 M3: 异常文本净化

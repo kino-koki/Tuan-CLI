@@ -798,14 +798,8 @@ class StateMixin:
             self._history_dirty = True
             if len(self._events) > 5000:
                 del self._events[: len(self._events) - 4000]
-        # slogans: 流式分片节流分发 (50 分片 ≤1 次取词, 不逐条刷屏)
-        self._stream_deltas = getattr(self, "_stream_deltas", 0) + 1
-        if self._stream_deltas % 50 == 1:
-            try:
-                self._slogan_dispatch("model.streaming")
-            except Exception as exc:  # noqa: BLE001
-                log.warning("StateMixin.stream_assistant(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
-                pass
+        # slogans: 流式开始/分片 -> 节流推进阶段与活性 (B3 XVI 接线)
+        self._slogan_stream_started()
         self._throttled_invalidate()
 
     def stream_reason(self, delta: str) -> None:
@@ -843,6 +837,9 @@ class StateMixin:
             self._audit_log.append(("class:textdim", self._reason_full))
             self._reason_buf = []
             self._reason_full = ""
+        # slogans: 流式收尾 -> 活性证据 kind=stream_end, 阶段保持 streaming
+        # (B3 XVI 接线)
+        self._slogan_stream_ended()
         self._streaming = False
         # 流式收尾: 到回合结束前抑制月亮, 避免与刚落库的回复同屏出现鬼影。
         # 若回合不结束, 由随后 begin_tool 重启指示。
@@ -856,12 +853,8 @@ class StateMixin:
         self._busy = True
         self._moon_suppressed = False  # 新工具开始: 后续思考重新亮出指示
         self._tool_start_times[name] = time.monotonic()
-        # slogans: 工具开始 (每次 begin_tool 都 dispatch, sealed 回放测试依赖计数准确)
-        try:
-            self._slogan_dispatch("tool.exploring")
-        except Exception as exc:  # noqa: BLE001
-            log.warning("StateMixin.begin_tool(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
-            pass
+        # slogans: 工具开始 -> 阶段切到 running_tool (B3 XVI 接线)
+        self._slogan_tool_started(name)
         if self._app and self._app.is_running:
             self._app.invalidate()
 
@@ -878,6 +871,8 @@ class StateMixin:
         self._audit_log.append(("class:success" if ok else "class:error", line))
         if len(self._audit_log) > 500:
             self._audit_log = self._audit_log[-500:]
+        # slogans: 工具结束 -> 活性证据 kind=tool_end (B3 XVI 接线)
+        self._slogan_tool_ended()
         # _busy 由回合生命周期 (submit 开始置 True、finally 清) 统一掌管, 不在
         # 工具中途置 False, 否则多步回合会反复"掉指示/复现"造成月亮闪烁。
         if self._app and self._app.is_running:
@@ -1278,6 +1273,8 @@ class StateMixin:
             self._streaming = False
             self._moon_suppressed = False
             self._running.clear()
+            # slogans: 回合完成 -> 活性证据 kind=turn_completed (B3 XVI 接线)
+            self._slogan_turn_completed()
             # codex `FinalMessageSeparator`: 回合结束注入完成分隔线
             # `  Worked for Xs · HH:MM` (缩进 2 空格, dim), 紧贴助手回复下方。
             footer = self._completion_footer_text()

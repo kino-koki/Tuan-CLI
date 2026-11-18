@@ -16,7 +16,7 @@ XIII 接了 13 个生产触发点，XIV 修了 lifecycle 出站通道的失败�
   实测 ``_exec_http`` 耗时 **2.71s**（5.4 倍）且 ``block=False``、
   ``failures()=[]``。``urlopen(timeout=)`` 是 **socket 级**超时，不是
   整体墙钟；command hook 有看门狗强杀整棵进程树，三类 hook 什么都没有。
-- **N3**：模型异常消息 ``api_key=ghp_... \\x1b]8，...\\x07\\u202e``
+- **N3**：模型异常消息 ``api_key=ghp_... \\x1b]8;;...\\x07\\u202e``
   原样进 ``HookDecision.reason``（再经 ``ToolResult.content`` 回显）；
   HTTP 成功返回 reason 里的 token / RLO 同样原样采纳。XIV 净化只覆盖
   lifecycle 链路。
@@ -44,7 +44,7 @@ XIII 接了 13 个生产触发点，XIV 修了 lifecycle 出站通道的失败�
 - **不擅自放宽或收紧安全**：等价 rc 是 1（非 2 的非零），逐事件裁决
   完全交给既有 ``classify()``。command rc=1 与 url HTTP 500 同结果，
   有真跑对照回归。
-- **能强杀线程**：prompt / subagent 的模型调用 / Agent 运行无法
+- **不假装能强杀线程**：prompt / subagent 的模型调用 / Agent 运行无法
   中断，超时后主线程立即返回失败裁决，**后台 daemon 线程仍在跑但结果
   被丢弃**，``detached=True`` 如实登记。HTTP 走 ``read1`` + deadline +
   ``resp.close()``，是真停。
@@ -62,7 +62,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from tuan_cli.core.safe_text import MAX_HOOK_TEXT, safe_hook_text
 
@@ -160,8 +160,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
     改 GET 发到另一个主机，URL 白名单形同虚设。
     """
 
-    def redirect_request(self, req: Any, fp: Any, code: int, msg: str,
-                         headers: Any, newurl: str) -> Any:  # noqa: ANN001
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
         return None
 
 
@@ -246,8 +245,7 @@ def _run_http(spec: Any, payload: Dict[str, Any], timeout: float,
                truncated=truncated)
 
 
-def _bounded_call(fn: Callable[..., Any], timeout: float, t0: float,
-                  audits: List[Tuple[str, str]],
+def _bounded_call(fn, timeout: float, t0: float, audits: List[Tuple[str, str]],
                   event: str, hook_type: str, label: str) -> ChannelOutcome:
     """prompt / subagent 的有界等待。
 
@@ -312,7 +310,7 @@ def _run_prompt(spec: Any, payload: Dict[str, Any], kernel: Any,
                 ph, val if isinstance(val, str)
                 else json.dumps(val, ensure_ascii=False))
 
-    def call() -> Any:
+    def call():
         result = model.chat([{"role": "user", "content": prompt}],
                             stream=False)
         if hasattr(result, "content"):
@@ -331,7 +329,7 @@ def _run_subagent(spec: Any, payload: Dict[str, Any], kernel: Any,
                      "Subagent hook: 无内核，无法创建隔离 Agent",
                      time.monotonic() - t0, audits)
 
-    def call() -> str:
+    def call():
         from ..app import create_agent
         sub = None
         try:
@@ -382,7 +380,7 @@ def execute(spec: Any, payload: Dict[str, Any], kernel: Any,
 
 
 def classify_channel(event: str, outcome: ChannelOutcome, *,
-                     tuan_policy: str = "block") -> XS.ExitVerdict:
+                     tuan_policy: str = "block"):
     """把通道故障映射成**等价 rc**，复用 ``exit_semantics.classify()``。
 
     这是「等价故障闭合表」的全部：不新建第二套逐事件策略，33 个官方

@@ -498,6 +498,312 @@ THIRD-PARTY ATTRIBUTIONS
     this project.
 
 -------------------------------------------------------------------------------
+14) Claude Code v2.1.319 capability baseline and B1 hook hardening
+    Location: tuan_cli/parity_claude/ (catalog.py, evidence.py,
+              superiority.py, matrix.py, __init__.py)
+              CLAUDE_PARITY.md
+              tuan_cli/cli/cmd_claude_parity.py
+              tuan_cli/hooks/manager.py (fail-closed changes)
+              tuan_cli/config/security_schema.py (hooks validation)
+              tests/test_claude_parity.py, tests/test_hooks.py
+    Baseline: Claude Code v2.1.319, GitHub tag published
+              2026-11-06T17:04:01Z (non-prerelease). The official
+              changelog is organized by DATE (top entry 2026-11-04 =
+              v2.1.318); the version number comes from the GitHub release
+              archive and public release trackers. All eight sources with
+              URLs and usage notes are recorded in catalog.SOURCES.
+
+    ------------------------------------------------------------------
+    LICENSE / COMPLIANCE NOTICE (important, read before reusing):
+
+    Claude Code is Anthropic's PROPRIETARY product, governed by
+    Anthropic's Commercial Terms of Service. Unlike components 9-13
+    (derived from OpenAI Codex, Apache-2.0), NO source code, deobfuscated
+    artifact, LICENSE text, NOTICE text, trademark, ASCII art or visual
+    element of Claude Code is copied, vendored, translated or
+    redistributed here.
+
+    This component contains ONLY:
+      - verifiable capability facts taken from PUBLIC documentation,
+        the official changelog, GitHub release notes, feature catalogs
+        and the Agent SDK overview;
+      - an INDEPENDENT Python implementation of a parity/measurement
+        matrix, with runtime evidence checks and probes;
+      - behavioral contracts described in our own words.
+
+    "Surpass" means a measurable comparison of capability and security
+    posture ONLY. It does NOT mean affiliation, sponsorship, endorsement,
+    or compatibility certification by Anthropic. No Claude Code branding
+    is used in any UI, artifact or file name. The Agent SDK branding
+    guidelines explicitly disallow "Claude Code"-branded derivative
+    products; this project keeps its own name (Tuan / 青小团).
+
+    ------------------------------------------------------------------
+    What was actually built in B1:
+
+    - A machine-verifiable baseline: 14 functional domains / 99 modules,
+      five statuses (ahead / aligned / partial / gap / not_applicable).
+      Every non-not_applicable module MUST point at evidence paths that
+      really exist in this repository (evidence.verify_evidence()).
+      Every `ahead` module MUST carry an ahead_reason and belong to one
+      of six superiority dimensions. Every `gap` MUST be assigned to a
+      wave. Derived-consistency checks prevent inflating the numbers by
+      editing status definitions.
+    - Six RUNTIME probes (superiority.py) that actually call existing
+      code rather than quoting docs: injecting a non-existent hook binary,
+      tampering an HMAC record, feeding malformed config, corrupting an
+      MCP policy file to check locked state, counting real i18n/README
+      files, and validating the 165-module Codex TUI parity matrix.
+      A dimension whose probe fails is reported as UNVERIFIED and its
+      `ahead` modules are NOT counted as verified.
+    - `fully_superior` has a HARD criterion written in matrix.py:
+      gaps == 0 AND all six probes OK AND every dimension has a verified
+      ahead module AND all B-waves done AND an external adaptive red
+      team has signed off. It is currently FALSE (30 gaps, red team not
+      done) and MUST NOT be reached by relaxing the criterion.
+    - `tuan claude parity` / --gaps / --probes / --report-json.
+
+    B1 production-code changes (two real fail-open side doors):
+
+      1. `hooks/manager.py`: all four hook executors (command / http /
+         prompt / subagent) previously returned None on spawn failure,
+         timeout, communicate error, HTTP error, missing kernel/model or
+         nonzero exit; `run_pre()` treated None as "continue", i.e. a
+         broken safety hook silently ALLOWED the tool call. Now failures
+         are recorded as structured `HookFailure` entries (queryable via
+         `failures()`), and `hooks.on_failure` DEFAULTS TO "block" for
+         PreToolUse with a machine-readable `HookDecision.failure_kind`
+         and an audit trail. `ask` also blocks with a manual-confirmation
+         marker; `allow` is an explicit, audited escape hatch. Unknown
+         values fall back to the strictest policy. Watchdog-thread
+         timeouts are recorded on the MAIN thread because last_failure
+         is thread-local (otherwise fail-closed could be bypassed).
+         Notification-type events record failures but never stall the
+         turn (they have no action to block).
+      2. `hooks/manager.py`: `blocking` default changed False -> True.
+         Previously a hook returning {"block": true} was silently
+         swallowed unless the user explicitly wrote `blocking: true`.
+         `blocking` governs ONLY a hook's own block decision; it does
+         NOT govern execution-failure fail-closed.
+      3. `config/security_schema.py`: validates `hooks.on_failure`
+         enum plus per-hook overrides; explicit `allow` is surfaced as a
+         security-downgrade warning.
+
+    Behavioral change (disclosed, with migration): a hook that used to
+    "fail open" now blocks by default. `hooks.on_failure: allow`
+    (global or per hook) restores the old behavior and emits a
+    `failure_allowed` audit event. The pre-existing test
+    `test_timeout_kills_hook` (which asserted timeout must NOT block) was
+    updated to assert fail-closed, and a new
+    `test_timeout_can_be_explicitly_allowed` proves the escape hatch
+    stays reachable. We did not relax a policy merely to turn a test
+    green.
+
+    Comparison context (public facts, no source copied):
+      - Claude Code added `onFailure: "block"` for command/HTTP/Agent SDK
+        hooks in v2.1.317/319; it must be configured EXPLICITLY per
+        hook, and the old behavior was silent fail-open.
+      - v2.1.319 added `permissions.denyInsteadOfPrompting`, MCP task
+        backgrounding, stopped auto mode falling back to the built-in
+        classifier, and fixed a worktree-creation sandbox escape and a
+        Bash permission bypass.
+      - v2.1.314 added `permissions.blockWritesOutsideWorkingDirectories`
+        (off by default); v2.1.318 fixed stray keystrokes approving
+        permission prompts; v2.1.221+ added sandbox credential masking
+        (Linux/WSL only).
+
+    Honest boundaries (see CLAUDE_PARITY.md section 8): Tuan still lacks
+    an OS-enforced sandbox by default, network-default-deny,
+    credential masking on the egress path, and a proof that worktree
+    creation stays inside the isolation boundary. These are explicitly
+    listed as gaps for wave B2, NOT presented as advantages. Anthropic
+    cloud/subscription-only features are marked not_applicable, not
+    counted as lead items. No third-party adaptive red team has been
+    performed; static benchmarks and self-authored fuzz corpora are not
+    a substitute.
+
+    Existing security wiring protection (continued hard requirement):
+    matrix.validate() calls round 12's
+    `corekit.app.assert_wiring_intact()`, verifying all SIX pre-existing
+    invariants (permission-policy injection, deny-all MCP policy,
+    ctx.confirm channel, approval-card wiring, copy-mode confirmation,
+    explicit ABORT). `tuan claude parity` reports the wiring intact.
+    Line B does not modify any file under `tuan_cli/tui/parity/`;
+    line A (Codex TUI alignment) continues independently.
+
+    NO Claude Code source is copied verbatim. Anthropic does not endorse
+    or sponsor this project.
+
+15) Runtime slogans (spinner verbs) - behavioral comparison with Claude Code
+    Location: tuan_cli/tui/runtime_slogans.py, tuan_cli/tui/tui.py,
+              RUNTIME_SLOGANS.md, tests/test_runtime_slogans.py
+    Inspiration: a Bilibili video title supplied by the user
+              (BV1F8nB6fEc1). THE VIDEO CONTENT ITSELF WAS NOT OBTAINED;
+              no part of it is reproduced or paraphrased here. The
+              implementation is based on publicly verifiable material about
+              Claude Code spinner verbs: community lists of ~185 verbs
+              (v2.1.42), the `spinnerVerbs` settings interface
+              (replace/append, v2.1.23+), and the fact that official
+              Anthropic documentation does not enumerate the word list.
+              Sources are recorded in RUNTIME_SLOGANS.md section 7.
+
+    Nature of reuse: a handful of short Chinese phrases in the built-in
+              word pool ("腌制入味" / "磨洋工" / "看报纸中" / "那个啥来着" /
+              "光合作用中" / "闲庭信步") draw on publicly published
+              community translations of those ~185 verbs. These are short
+              factual UI strings, NOT source code, obfuscated build output,
+              or trademark assets. Everything else is independently written
+              by this project: the ten-language translations, the phase
+              taxonomy, the event-driven engine, the "possibly slacking"
+              stall diagnostic, the OSC/CSI/C0/C1 sanitizer, and the
+              configuration loader. The `spinnerVerbs` key name is kept
+              for interoperability with the documented interface.
+
+    Deliberate difference (not a copy): upstream verbs are random spinner
+              decoration that correspond to no phase and no real progress.
+              Here every verb is tied to a real runtime event, render() is
+              a pure read, and a busy session with no events is reported
+              honestly instead of continuing to look busy.
+
+    NO Claude Code source code, configuration schema, or brand asset is
+              copied verbatim. Anthropic does not endorse or sponsor this
+              project. This notice is SEPARATE from the Apache-2.0 / MIT
+              attributions for line A (Codex TUI alignment) in sections
+              9-13; the two lines' license scopes are not mixed.
+
+    Deep pass (section 15 capability, NO new third-party material):
+              the runtime-slogan engine was hardened for concurrency,
+              phase-specific liveness budgets, structured diagnostics and
+              a redacted in-memory evidence ring. No additional upstream
+              source, word list, trademark asset or license scope was
+              introduced. No new module, CLI subcommand, or parity-matrix
+              status change accompanies this pass.
+
+    Deep pass 2 (same section-15 capability, NO new third-party material):
+              the sanitizer was hardened against bidi/zero-width/escape
+              sequences, width calculation was consolidated, a short
+              header headline was added, and config parsing was tightened.
+              No additional upstream source, word list, trademark asset or
+              license scope was introduced. No new module, CLI subcommand,
+              or parity-matrix status change accompanies this pass. The
+              ten short diagnostic phrases are original translations.
+
+    Slogan correspondence pass (user-supplied 15-file slogan library):
+              the 860 supplied slogans plus 240 original localised
+              additions, 5 empty-pool entries and 3 short replacements
+              are original/derived project content. NO new third-party
+              source, word list, trademark asset or license scope was
+              introduced; the Claude Code / Codex attributions in
+              sections 9-15 are unchanged and are NOT mixed with this
+              text bank. No new CLI subcommand or parity-matrix status
+              change accompanies this pass. The historical root-level
+              `slogans/` package was converted to thin re-export shims
+              (no files deleted) so the word bank exists only once.
+
+    Runtime trace-closure pass (same 18-event / 16-context /
+              1108-entry text bank, NO new third-party material):
+              dispatch records now carry entry_id and an owner scope;
+              unknown events are logged instead of silently swallowed;
+              O(1) indexes, cached sanitizer audit and injectable
+              rng/clock make dispatch auditable and replayable. No new
+              slogans, events, CLI subcommands, license scope, upstream
+              source or trademark asset was introduced.
+    Closure-patch pass (still NO new third-party material): a
+              sanitized-text index makes unresolvable slogans fail
+              closed, owner log buckets are LRU-bounded and released on
+              close, dispatch errors are mirrored into both log layers,
+              and avoid-repeat window capacity follows the real key
+              space. No new slogans, events, CLI subcommands, or
+              upstream source. The Claude Code / Codex attributions in
+              sections 9-15 are unchanged.
+    Self-heal / evidence-preservation pass (still NO new third-party
+              material): consecutive runtime misses are distinguished
+              from cumulative audit evidence, session-exit decisions are
+              sealed before bucket release, log fields share the single
+              Unicode-cleaning core with UI copy, and distribution and
+              indexes share one sanitize_verb exit. No new slogans,
+              events, CLI subcommands, license scope, upstream source
+              or trademark asset. Sections 9-15 remain unchanged.
+    Owner-normalization / eviction-trace pass (still NO new third-
+              party material): the public `owner` argument is
+              normalized through a single idempotent function shared
+              by writes and queries, log-field length limits are
+              strictly validated, passive LRU evictions leave a
+              desensitized bounded trace, and session release is
+              collapsed to one exit. No new slogans, events, CLI
+              subcommands, license scope, upstream source or trademark
+              asset. Sections 9-15 remain unchanged.
+    Clean-before-truncate / injected-clock pass (still NO new third-
+              party material): log fields are cleaned before being
+              truncated with an explicit scan bound, consecutive ESC
+              runs no longer consume trailing text, eviction traces
+              share the injected clock with decisions, and eviction
+              records carry a desensitized reason summary. One
+              suspected defect (lone ESC) was measured FALSE and was
+              deliberately NOT changed. No new slogans, events, CLI
+              subcommands, license scope, upstream source or trademark
+              asset. Sections 9-15 remain unchanged.
+    ESC-plus / clock-strictness pass (still NO new third-party
+              material): OSC/CSI introducers accept one or more ESC
+              bytes, injected clock values are strictly validated with
+              a legal-zero guard, oversized owner digests are bounded,
+              and cumulative eviction counts are exposed. Four further
+              suspected defects were measured FALSE and deliberately
+              NOT changed. No new slogans, events, CLI subcommands,
+              license scope, upstream source or trademark asset.
+              Sections 9-15 remain unchanged.
+    Bucket-trim evidence pass (still NO new third-party material):
+              per-bucket cap trims now leave global and per-session
+              desensitized evidence, and cumulative decision counts
+              are exposed. The cleaning layer is byte-identical: two
+              real fidelity candidates (unterminated OSC, ZWJ emoji)
+              were measured and deliberately NOT changed because
+              fixing them would weaken sanitizing for zero real gain;
+              executable regressions record that judgment. No new
+              slogans, events, CLI subcommands, license scope,
+              upstream source or trademark asset. Sections 9-15
+              remain unchanged.
+    Public-argument type-surface pass (still NO new third-party
+              material): non-string events now raise the structured
+              unbound-event exception instead of leaking a low-level
+              TypeError, and non-string owners are isolated into a
+              fixed bucket with desensitized, bounded type evidence.
+              Four further candidates were measured and deliberately
+              NOT changed; one pre-existing source assertion was
+              synchronized to the new contract, not relaxed. The
+              cleaning layer, TUI and engine remain byte-identical.
+              No new slogans, events, CLI subcommands, license scope,
+              upstream source or trademark asset. Sections 9-15
+              remain unchanged.
+    Engine public-argument pass (still NO new third-party material):
+              the runtime slogan engine now validates injected clocks
+              BEFORE any state write (eliminating an exception-path
+              half-update that could stall the TUI), sanitizes
+              progress kinds and diagnostic sources through the same
+              cleaning truth, keeps reset evidence on one clock, and
+              folds non-string detail/path values into safe fallbacks.
+              Four further candidates were measured and deliberately
+              NOT changed. The cleaning layer, mapping module, TUI and
+              package exports remain byte-identical. No new slogans,
+              events, CLI subcommands, license scope, upstream source
+              or trademark asset. Sections 9-15 remain unchanged.
+    Injection-contract / config-switch pass (still NO new third-party
+              material): falsy but legal injected configs and random
+              sources are now preserved, over-limit custom verb lists
+              are rejected instead of silently truncated, unrenderable
+              custom verbs are rejected instead of silently ignored,
+              and a config reload is recorded as an auditable state
+              transition so one seq can no longer map to two verbs.
+              Four further candidates were measured and deliberately
+              NOT changed; one pre-existing runtime assertion and one
+              prior standalone-script assertion were synchronized to
+              the stricter new contract, not relaxed. The cleaning
+              layer, mapping module, TUI and package exports remain
+              byte-identical. No new slogans, events, CLI subcommands,
+              license scope, upstream source or trademark asset.
+              Sections 9-15 remain unchanged. The Claude Code /
+              Codex attributions in sections 9-15 are unchanged.
+
 RUNTIME THIRD-PARTY LIBRARIES (installed via pip, not vendored):
 -------------------------------------------------------------------------------
 
@@ -540,3 +846,251 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+16. B2 egress / unattended / worktree boundary pass (still NO new
+    third-party material): three pure-Python local modules were added
+    for child-process egress enforcement, credential sentinels,
+    denyInsteadOfPrompting, and worktree creation boundary proofs,
+    and wired into existing sandbox manager / worktree layer. No
+    Anthropic source, trademark asset, upstream Rust source, or new
+    third-party dependency was copied. Sections 9-15 remain unchanged;
+    the Apache-2.0 + MIT dual attribution for the Codex TUI parity
+    line and the "no endorsement" statements still apply unchanged.
+
+
+17. B2 wrap-up egress-allowlist / loopback-proxy pass (still NO new
+    third-party material): two pure-Python stdlib modules were added
+    for per-command domain claims and a real local loopback egress
+    proxy (CONNECT host validation + plain-HTTP credential sentinel
+    injection), and wired into the existing sandbox manager,
+    SandboxProfile and config schema. No Anthropic source, trademark
+    asset, upstream Rust source, or new third-party dependency was
+    copied. Sections 9-16 remain unchanged; the Apache-2.0 + MIT dual
+    attribution for the Codex TUI parity line and all "no endorsement"
+    statements still apply unchanged.
+
+
+18. Depth-round egress uniformization (still NO new third-party
+    material): one pure-Python stdlib module (`egress_plan.py`) was
+    added and the existing sandbox manager, platform syscall layer,
+    config defaults/schema and `harden status` were extended to
+    thread a sanitized environment through EVERY execution branch.
+    No Anthropic source, trademark asset, upstream Rust source, or
+    new third-party dependency was copied. Sections 9-17 remain
+    unchanged; the Apache-2.0 + MIT dual attribution for the Codex
+    TUI parity line and all "no endorsement" statements still apply
+    unchanged.
+
+
+19. Depth-round terminal-refusal routing and placeholder preservation
+    (still NO new third-party material): the existing sandbox manager,
+    shell tool router, shared security primitives and sandbox provider
+    were extended so a pre-execution security refusal is treated as a
+    terminal result (never falling back to bare execution), and so
+    already-masked credential placeholders survive the provider's inner
+    environment sanitization. A new stdlib-only regression test file was
+    added. No Anthropic source, trademark asset, upstream Rust source,
+    or new third-party dependency was copied. Sections 9-18 remain
+    unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
+    parity line and all "no endorsement" statements still apply
+    unchanged.
+
+
+20. Depth-round `decided` result contract and execution-error text
+    sanitization (still NO new third-party material): the existing
+    sandbox manager, shell tool router and shared security primitives
+    were extended so the RESULT itself (not the verdict flags) decides
+    whether the caller may fall back, and so execution-layer exception
+    messages are redacted and stripped of terminal control sequences
+    before being echoed. A new stdlib-only regression test file was
+    added. No Anthropic source, trademark asset, upstream Rust source,
+    or new third-party dependency was copied. Sections 9-19 remain
+    unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
+    parity line and all "no endorsement" statements still apply
+    unchanged.
+
+
+21. Depth-round closure of two execution side doors (background `! cmd`
+    and the outbound MCP `run_shell` tool), plus the
+    `safe_exception_text` helper for all exception-message exits.
+    Still NO new third-party material: only the existing shell tool,
+    background-shell manager, shared security primitives and the
+    existing stdlib MCP server were extended, and two stdlib-based
+    regression test files were added. No Anthropic source, trademark
+    asset, upstream Rust source, or new third-party dependency was
+    copied. Sections 9-20 remain unchanged; the Apache-2.0 + MIT
+    dual attribution for the Codex TUI parity line and all
+    "no endorsement" statements still apply unchanged.
+
+
+22. Tool-layer write-path boundary (`core/write_boundary.py`), the
+    `permissions.blockWritesOutsideWorkingDirectories` configuration key,
+    the `/add-dir --writable` explicit grant, and the `edit_files`
+    transaction fix. Still NO new third-party material: only existing
+    stdlib filesystem tooling, the existing config schema / harden
+    status / slash-command modules, and one new stdlib-based regression
+    test file were changed or added. No Anthropic source, trademark
+    asset, upstream Rust source, or new third-party dependency was
+    copied. Items 9-21 remain unchanged; the Apache-2.0 + MIT dual
+    attribution for the Codex TUI parity line and all "no endorsement"
+    statements still apply unchanged.
+
+
+23. Extended hook event engine (7 additional events, decision-type
+    `run_decision` exit), Claude Code native `hookSpecificOutput`
+    protocol support, and the `updatedInput` schema-validation module
+    (`hooks/input_validation.py`). Still NO new third-party material:
+    only the existing stdlib hooks manager, the existing tool registry
+    / slash-command / execution-pipeline modules, and two new
+    stdlib-based regression/implementation files were changed or
+    added. No Anthropic source, trademark asset, upstream Rust source,
+    or new third-party dependency was copied. Items 9-22 remain
+    unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
+    parity line and all "no endorsement" statements still apply
+    unchanged.
+
+
+24. Production trigger layer for the 5 extended hook events
+    (`hooks/triggers.py`) and its wiring into config loading, worktree
+    creation, ask_user / ACP elicitation, desktop / remote notifications,
+    the hooks CLI test entry, and the arch execution pipeline. Still NO
+    new third-party material: all changes are stdlib-based Python in
+    this repository's own modules, plus one new stdlib-based regression
+    file. No Anthropic source, trademark asset, upstream Rust source,
+    or new third-party dependency was copied. Items 9-23 remain
+    unchanged; the Apache-2.0 + MIT dual attribution for the Codex TUI
+    parity line and all "no endorsement" statements still apply
+    unchanged.
+
+
+25. B3-continued V correctness layer: honest write-persistence
+    reporting (`_dump_yaml_impl` / `dump_yaml_checked` in
+    `config/loader.py`), thread-local reentry guards and provider
+    diagnostics (`hooks/triggers.py`), explicit per-session hook
+    backfill (`app.py`), and one new stdlib-based regression file
+    (`tests/test_b3v_depth.py`). Still NO new third-party material:
+    all changes are stdlib-based Python in this repository's own
+    modules. No Anthropic source, trademark asset, upstream Rust
+    source, or new third-party dependency was copied. Items 9-24
+    remain unchanged; the Apache-2.0 + MIT dual attribution for the
+    Codex TUI parity line and all "no endorsement" statements still
+    apply unchanged.
+
+
+26. B3-continued VI session-binding layer: freeze-on-construct for
+    ``HookTrigger``, an owner-partitioned session registry,
+    ``current_session_hooks`` / ``bind_session_hooks`` in
+    ``hooks/triggers.py``, instance-level ``hooks`` binding for
+    ``RemoteControl`` / ``SecurityAlerter`` / ``KernelAcpBridge``,
+    and one new stdlib-based regression file
+    (``tests/test_b3vi_session_binding.py``). Still NO new third-party
+    material: all changes are stdlib-based Python in this repository's
+    own modules, with no new dependency and no copied upstream source.
+    Items 9-25 remain unchanged; the Apache-2.0 + MIT dual attribution
+    for the Codex TUI parity line and all "no endorsement" statements
+    still apply unchanged.
+
+
+27. B3-continued VII concurrent-session dispatch layer: a stdlib
+    ``contextvars``-based session owner API, owner-partitioned
+    ``HookTrigger`` resolution, an ``owner`` routing field on
+    ``core/security_alert.AlertRecord`` (not serialized), an optional
+    ``owner`` keyword on ``core/remote_control.notify``, owner-aware
+    dispatch in ``runtime/acp/bridge.py``, one ``set_session_owner``
+    call in ``app.py``, and one new stdlib-based regression file
+    (``tests/test_b3vii_concurrent_sessions.py``). No new third-party
+    material, no new dependency, and no copied upstream source.
+    Items 9-26 remain unchanged; the Apache-2.0 + MIT dual attribution
+    for the Codex TUI parity line and all "no endorsement" statements
+    still apply unchanged.
+
+
+28. B3-continued VIII session-lifecycle layer: stdlib ``contextvars``
+    based ``SessionHandle`` / ``activate_session`` / ``deactivate_session``
+    in ``hooks/triggers.py``, one ``activate_session`` call plus explicit
+    ``agent.ctx.session_owner`` / ``session_handle`` attachment in
+    ``app.py``, an optional ``owner`` constructor argument and
+    ``_resolve_owner()`` in ``runtime/acp/bridge.py``, a lock-scoped
+    ``_bump_owner_miss``, a ``rejected`` counter in the session registry,
+    and one new stdlib-based regression file
+    (``tests/test_b3viii_session_lifecycle.py``). No new third-party
+    material, no new dependency, and no copied upstream source.
+    Items 9-27 remain unchanged; the Apache-2.0 + MIT dual attribution
+    for the Codex TUI parity line and all "no endorsement" statements
+    still apply unchanged.
+
+
+29. B3-continued IX transactional session layer: stdlib
+    ``contextlib.contextmanager`` based ``session_scope``, a mutable
+    ``SessionHandle`` with ``hooks`` / ``ctx`` / ``closed`` fields,
+    ``register_session`` conflict rejection with a ``conflicts``
+    counter, ``unregister_session(owner, *, expected=)`` ABA guard,
+    an early ``return False`` on failed registration in
+    ``bind_session_hooks``, a reordered (registration-first)
+    ``activate_session`` with stage-2 rollback, ``ctx=agent.ctx`` in
+    ``app.py``, and ``_close_agent_session`` in ``cli/cmd_chat.py``
+    (called after SessionEnd hooks in both finally blocks). Plus one
+    new stdlib-based regression file
+    ``tests/test_b3ix_session_transaction.py``. No new third-party
+    material, no new dependency, and no copied upstream source.
+    Items 9-28 remain unchanged; the Apache-2.0 + MIT dual attribution
+    for the Codex TUI parity line and all "no endorsement" statements
+    still apply unchanged.
+
+
+30. B3-continued X shared session resolver and unified close entry:
+    a closure-free module-level ``default_hooks_resolver`` (resolves
+    hooks by ``current_session_owner()`` against the owner-partitioned
+    registry, falling back to the earliest live session when no owner
+    is available), a unified idempotent exception-isolated
+    ``close_agent_session(agent)`` entry, ``provider=default_hooks_resolver``
+    in ``app.py`` replacing the per-session agent-capturing lambda,
+    delegation in ``cli/cmd_chat.py``, and explicit ``finally``
+    close calls in ``hooks/manager.py``, ``tools/subagent_tool.py``,
+    ``tools/workflow_tool.py`` and ``stream_json/headless.py``.
+    Plus one new regression file
+    ``tests/test_b3x_agent_sessions.py``. No GC-finalizer fallback is
+    used (slot release must not depend on GC timing). No new
+    third-party material, no new dependency, and no copied upstream
+    source. Items 9-29 remain unchanged; the Apache-2.0 + MIT dual
+    attribution for the Codex TUI parity line and all "no
+    endorsement" statements still apply unchanged.
+
+
+31. A-line continued XI depth-first parity layer: a new pure-Python
+    ``tuan_cli/tui/codexkit/`` package implementing the final ten
+    pending Codex TUI modules (auto-review denials, history insertion,
+    rendered selection geometry, local settings, clock format,
+    external agent config migration, streaming assembly, async
+    question reply, typed exec command, and a pure-stdlib self-test
+    harness), each with a registered runtime probe in
+    ``tuan_cli/tui/parity/depth.py``; a tightened
+    ``fully_identical`` gate requiring both zero pending modules and
+    a fully verified probe set; a read-only B-line depth baseline in
+    ``tuan_cli/parity_claude/depth.py``; and one new regression file
+    ``tests/test_codexkit_depth.py``. All implementations are
+    independent Python written against publicly described semantics;
+    NO Rust source was copied and NO existing runtime object was
+    replaced. Items 9-30 remain unchanged; the Apache-2.0 + MIT
+    dual attribution for the Codex TUI parity line and all "no
+    endorsement" statements still apply unchanged.
+
+
+32. B3 continued XII depth-first hooks layer: a new pure-Python
+    ``tuan_cli/hooks/exit_semantics.py`` holding the per-event
+    Claude Code exit-code-2 truth table and structured ``classify()``
+    verdicts; ``HookExit`` capture and a shared ``_exit_gate()`` in
+    ``hooks/manager.py`` (event surface 15 -> 33, official
+    ``hookSpecificOutput.decision`` / ``updatedInput`` protocol,
+    rc=1 JSON reason preserved); a real production ``ToolPipeline``
+    constructor in ``core/tool_executor.py``; ``validate_updated_input``
+    wiring in ``runtime/tools/bridge.py``; two module-level runtime
+    probes in ``tuan_cli/parity_claude/module_probes.py`` with the
+    ``gap_probe_audit()`` observability entry; and one new regression
+    file ``tests/test_b3xii_exit_semantics.py``. All implementations
+    are independent Python written against publicly documented
+    semantics; NO upstream source was copied and NO existing runtime
+    object was replaced. Items 9-31 remain unchanged; the Apache-2.0 +
+    MIT dual attribution and all "no endorsement" statements still
+    apply unchanged.

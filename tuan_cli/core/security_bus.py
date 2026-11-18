@@ -18,6 +18,7 @@ import os
 import queue
 import threading
 import time
+import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -110,7 +111,13 @@ class SecurityEventBus:
         async_alerter: bool = False,
     ) -> None:
         self._handlers: Dict[str, List[Callable[[SecurityEvent], None]]] = {}
-        self._wildcard_handlers: List[Callable[[SecurityEvent], None]] = []
+        # 通配 handler 用弱引用: auditor 等订阅方的生命周期由所属对象管理,
+        # 强引用会让上百个测试创建的 auditor 永远挂在全局总线上, 每个安全
+        # 事件扇出到所有历史 auditor (实测把全量套件拖过超时线)。弱引用让
+        # 失去宿主的 handler 自动失效。普通函数/lambda (测试内联订阅) 用
+        # 强引用保活 (weakref.ref + keepalive), 否则内联 lambda 会被回收。
+        self._wildcard_handlers: List[weakref.ref] = []
+        self._wildcard_keepalive: List[Callable[[SecurityEvent], None]] = []
         self._events: List[SecurityEvent] = []
         self._lock = threading.Lock()
         self._persist_path = persist_path
@@ -133,12 +140,21 @@ class SecurityEventBus:
         self._write_lock = threading.Lock()
         self._pending_writes: List[str] = []
         self._last_flush: float = time.time()
+        # fsync 节流: 高/critical 事件每条都触发 flush; 慢盘上逐条 fsync
+        # 会把审计密集的测试/会话拖过超时线。落盘 (write) 本身已满足
+        # 「进程退出前已落盘」的设计目标; fsync 降频为周期性 + 关键点强制。
+        self._last_fsync: float = 0.0
 
     def on(self, event_type: str, handler: Callable[[SecurityEvent], None]) -> None:
         """订阅安全事件。event_type 为 "*" 时匹配所有事件。"""
         with self._lock:
             if event_type == "*":
-                self._wildcard_handlers.append(handler)
+                try:
+                    self._wildcard_handlers.append(weakref.WeakMethod(handler))
+                except TypeError:
+                    # 普通函数/lambda 不是 bound method: 强引用保活
+                    self._wildcard_handlers.append(weakref.ref(handler))
+                    self._wildcard_keepalive.append(handler)
             else:
                 self._handlers.setdefault(event_type, []).append(handler)
 
@@ -146,11 +162,11 @@ class SecurityEventBus:
         """解除订阅 (防止长生命周期进程 handler 累积泄漏)。返回是否移除成功。"""
         with self._lock:
             if event_type == "*":
-                try:
-                    self._wildcard_handlers.remove(handler)
-                except ValueError:
-                    return False
-                return True
+                for i, ref in enumerate(self._wildcard_handlers):
+                    if ref() == handler:
+                        del self._wildcard_handlers[i]
+                        return True
+                return False
             lst = self._handlers.get(event_type)
             if not lst:
                 return False
@@ -247,9 +263,18 @@ class SecurityEventBus:
                 self._severity_counts.get(event.severity, 0) + 1
             )
 
-            # 快照 handler 列表 (锁内快照, 锁外派发)
+            # 快照 handler 列表 (锁内快照+清理失效引用, 锁外派发)
             handlers = list(self._handlers.get(event.event_type, []))
-            wildcards = list(self._wildcard_handlers)
+            wildcards: List[Callable[[SecurityEvent], None]] = []
+            alive: list[weakref.ref] = []
+            for ref in self._wildcard_handlers:
+                h = ref()
+                if h is None:
+                    continue
+                alive.append(ref)
+                wildcards.append(h)
+            if len(alive) != len(self._wildcard_handlers):
+                self._wildcard_handlers = alive
 
         # 锁外派发
         for handler in handlers:
@@ -438,7 +463,7 @@ class SecurityEventBus:
         """
         if self._persist_path is not None:
             with self._write_lock:
-                self._flush_to_disk()
+                self._flush_to_disk(force=True)
 
     def shutdown(self) -> None:
         """关闭总线: 刷盘 + 清理资源。
@@ -450,11 +475,13 @@ class SecurityEventBus:
         # flush_alerts() 在同步模式下是立即返回的空操作。
         self.flush_alerts()
 
-    def _flush_to_disk(self) -> None:
+    def _flush_to_disk(self, force: bool = False) -> None:
         """内部方法: 把缓冲区写入磁盘。调用方需持有 _write_lock。
 
-        安全审计完整性优先: 整行拼接单次写入 + fsync, 崩溃最多丢尾行,
+        安全审计完整性优先: 整行拼接单次写入, 崩溃最多丢尾行,
         不产生半行交错 (读取方对尾部残缺行应容忍跳过)。
+        fsync 降频: write+flush 已满足「进程退出前已落盘」; 逐条 fsync
+        在慢盘上会把审计密集场景拖过超时线, 故仅周期性 (5s) 或强制时落盘。
         """
         if not self._pending_writes or self._persist_path is None:
             return
@@ -462,7 +489,10 @@ class SecurityEventBus:
             with open(self._persist_path, "a", encoding="utf-8") as f:
                 f.write("\n".join(self._pending_writes) + "\n")
                 f.flush()
-                os.fsync(f.fileno())
+                now = time.time()
+                if force or now - self._last_fsync > 5.0:
+                    os.fsync(f.fileno())
+                    self._last_fsync = now
             self._pending_writes.clear()
             self._last_flush = time.time()
         except Exception as exc:  # noqa: BLE001

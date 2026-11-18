@@ -364,11 +364,11 @@ def probe_exec_command() -> dict:
     r2 = run_bounded(cmd, lambda argv, t: "x" * 9000)
     chk(r2["truncated"] and len(r2["output"]) == 4096, "输出上限失效")
 
-    def slow(argv: List[str], t: float):
+    def slow(argv, t):
         raise TimeoutError()
     chk(run_bounded(cmd, slow)["reason"] == "timeout", "超时未结构化")
 
-    def boom(argv: List[str], t: float):
+    def boom(argv, t):
         raise RuntimeError("x")
     chk(run_bounded(cmd, boom)["reason"].startswith("runner:"), "异常未结构化")
     chk(run_bounded(cmd, lambda a, t: "x", timeout_secs=float("inf"))["ok"] is False,

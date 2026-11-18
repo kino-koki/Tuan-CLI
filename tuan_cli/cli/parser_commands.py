@@ -548,23 +548,31 @@ def register_subcommands(sub: Any) -> None:
     s.add_argument("value")
     p.set_defaults(func="cmd_config")
 
-    p = sub.add_parser("plugin", help="插件管理 (兼容 DSH 0.2+)")
+    p = sub.add_parser("plugin", help="插件管理")
     psub = p.add_subparsers(dest="plugin_cmd", required=True)
     psub.add_parser("list", help="列出全部插件与服务")
-    # install/uninstall/enable/disable/info: cmd_plugin 已实现这些 handler,
-    # 但 argparse 此前只注册了 list —— `tuan plugin install <path>` 会因
-    # "invalid choice" 失败。补齐子命令注册, 让真实接口可达。
-    pin = psub.add_parser("install", help="从本地目录安装插件 (兼容 DSH 0.2 plugin.toml/plugin.json)")
-    pin.add_argument("path", help="插件源目录路径 (含 plugin.json / plugin.toml)")
-    pin.add_argument("--name", default=None, help="覆盖插件名 (默认取 manifest.name)")
-    pun = psub.add_parser("uninstall", help="卸载插件")
-    pun.add_argument("name", help="插件名")
-    pen = psub.add_parser("enable", help="启用插件")
-    pen.add_argument("name", help="插件名")
-    pdis = psub.add_parser("disable", help="禁用插件")
-    pdis.add_argument("name", help="插件名")
-    pif = psub.add_parser("info", help="查看插件详情 (含技能/钩子/依赖/DSH 兼容性)")
-    pif.add_argument("name", help="插件名")
+    pi = psub.add_parser("install", help="从目录安装插件")
+    pi.add_argument("source", help="插件目录或 plugin.json 所在目录")
+    pi.add_argument("--name", default=None, help="重命名安装")
+    pi.add_argument("--config", default=None,
+                    help='DSH 原生插件配置 JSON (如 \'{"rank":42}\'), 经 Config 校验并持久化')
+    pu = psub.add_parser("uninstall", help="卸载插件")
+    pu.add_argument("name")
+    pe = psub.add_parser("enable", help="启用插件")
+    pe.add_argument("name")
+    pd = psub.add_parser("disable", help="禁用插件")
+    pd.add_argument("name")
+    pinfo = psub.add_parser("info", help="查看插件详情")
+    pinfo.add_argument("name")
+    prun = psub.add_parser("run", help="运行时执行插件 apply() 并展示注册结果 (DSH 原生)")
+    prun.add_argument("name")
+    prun.add_argument("--config", default=None,
+                      help='插件配置 JSON (如 \'{"rank":42}\')')
+    ppatch = psub.add_parser("patch", help="读取插件 cordis.patch.yml 并应用到目标 YAML 的 services 段 (DSH 原生)")
+    ppatch.add_argument("name")
+    ppatch.add_argument("target", help="目标配置文件路径 (如 cordis.yml)")
+    ppatch.add_argument("--config", default=None,
+                        help='覆盖插件配置 JSON (如 \'{"rank":42}\')')
     p.set_defaults(func="cmd_plugin")
 
     p = sub.add_parser("skill", help="技能管理")

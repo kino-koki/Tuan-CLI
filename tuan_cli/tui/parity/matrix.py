@@ -10,14 +10,26 @@
                        明确记为「本地化替代」而非缺口；
 - ``pending``       —— 尚未对齐，是后续轮次的工作队列。
 
-达成「完全相同」的判定：``pending == 0`` 且 ``aligned + localized +
-not_applicable == 165``。本模块不虚报状态 —— 每个 aligned 都必须能指向
-本仓库里的实现与回归测试。
+达成「完全相同」的判定（**A 线续轮 XI 加严**）：
+
+    fully_identical = (pending == 0) and depth_audit()["ok"]
+
+``depth_audit()`` 在 ``parity/depth.py``：对**每一个** aligned /
+localized 模块真调一个注册在 ``PROBE_REGISTRY`` 的运行时探针，
+逐项断言行为并计时；任何一个没探针或探针失败，``ok`` 就是 False。
+
+**为什么要加严**：此前 ``fully_identical`` 只看 ``pending == 0``，
+而状态来自一张 note 表 —— 一条 note 指向某个 .py 文件，只证明「有
+代码」，证明不了「跑起来行为真的对」。若只按这张表报 93.9% 覆盖率，
+就是「仅仅广度」。现在 ``depth_verified / depth_claimed`` 把水分单独
+列出来，**不许靠改状态定义凑数**；``depth_missing`` 是下一轮的工作
+队列。本模块不虚报状态 —— 每个 aligned 都必须能指向实现、回归测试
+**和一个通过的运行时探针**。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, List, Set, Tuple
+from typing import Dict, FrozenSet, List, Tuple
 
 from .upstream_spec import TOP_LEVEL_MODULES, MODULE_GROUPS, SCALE
 
@@ -69,7 +81,27 @@ EXPLICIT_ALIGNED: Dict[str, str] = {
     "model_migration": "tui/configkit/model_migration.py — 三态 Outcome / 强制与可选键位 / 单次模板替换修链式缺陷",
     "sidebar_chooser": "tui/configkit/sidebar_chooser.py — WIDE_WIDTH=58 / 窄屏双行 / choice_at 命中 / footer 提示",
     "sidebar_tab_strip": "tui/configkit/sidebar_tab_strip.py — 三态 TabState / targets 几何 / add 优先 / hit 与 render 同源",
+    # ---- A 线续轮 XI：最后 10 个 pending，逐模块有真实实现 + 运行时探针
+    "auto_review_denials": "tui/codexkit/approval_history.py::DenialLedger — 忽略即拒绝 / 去重 / 分桶 / 有界 ring（probe 13 断言）",
+    "insert_history": "tui/codexkit/approval_history.py::HistoryBuffer — id 单调 / 越界拒绝 / 幂等 / backtrack 失效（probe 12）",
+    "rendered_selection": "tui/codexkit/approval_history.py::SelectionGeometry — CJK 列宽 / hit==render 同源（probe 12）",
+    "local_settings": "tui/codexkit/session_config.py::LocalSettings — 三层优先级 / 严格类型 / 不落盘（probe 17）",
+    "clock_format": "tui/codexkit/session_config.py::ClockFormat — 注入时钟 / 单调钳制 / 显式时区（probe 16）",
+    "external_agent_config_migration":
+        "tui/codexkit/session_config.py::migrate_external_agent_config — 单次模板替换 / 未知键留痕（probe 12）",
+    "streaming": "tui/codexkit/stream_exec.py::StreamAssembler — seq 单调 / done 拒绝 / render 纯读（probe 13）",
+    "async_question_reply": "tui/codexkit/stream_exec.py::AsyncQuestionReply — 超时/取消/重复 / 绝不代答（probe 17）",
+    "exec_command": "tui/codexkit/stream_exec.py::ExecCommand — argv 强制 / 无 shell / 输出与超时上限（probe 15）",
+    "tests": "tui/codexkit/selftest.py::run_all_probes — 纯 stdlib 自检 harness（probe 6）",
 }
+
+# A 线续轮 XI 新增对齐项：**每一项都必须有运行时探针且通过**。
+# validate() 会逐一执行 depth.run_probe()，失败即矩阵自检不通过。
+NEW_DEPTH_MODULES: FrozenSet[str] = frozenset({
+    "auto_review_denials", "insert_history", "rendered_selection",
+    "local_settings", "clock_format", "external_agent_config_migration",
+    "streaming", "async_question_reply", "exec_command", "tests",
+})
 
 EXPLICIT_LOCALIZED: Dict[str, str] = {
     "style": "Kimi Code MIT 视觉 token（NOTICE 第 1 条），中文界面",
@@ -183,11 +215,13 @@ def parity_status() -> List[ComponentStatus]:
 
 
 def summary() -> Dict[str, object]:
+    from . import depth as _depth          # 延迟导入，避免循环
     rows = parity_status()
     counts = {s: sum(1 for r in rows if r.status == s) for s in _STATUSES}
     total = len(rows)
     settled = counts[ALIGNED] + counts[LOCALIZED] + counts[NOT_APPLICABLE]
     strict = counts[ALIGNED] + counts[LOCALIZED]
+    audit = _depth.depth_audit()
     return {
         "total_modules": total,
         "by_status": counts,
@@ -201,37 +235,15 @@ def summary() -> Dict[str, object]:
         "aligned_only_pct": round(counts[ALIGNED] * 100.0 / total, 1),
         "upstream_rs_files": SCALE["rs_files"],
         "upstream_rs_lines": SCALE["rs_lines"],
-        # 双口径完全对齐：pending 清零**且**深度探针全覆盖
+        # 旧口径（只看状态表）单独保留，便于看清「广度」与「深度」的差
         "all_modules_settled": counts[PENDING] == 0,
-        "depth_strict_ok": depth_strict_ok(),
-        "fully_identical": counts[PENDING] == 0 and depth_strict_ok(),
-    }
-
-
-# ---------------------------------------------------------------- 深度探针
-# 逐模块「深度探针」登记表：对每个 aligned 模块给一条可执行的深度断言
-# 路径。当前为占位登记（本轮只补齐计数契约，逐条断言由后续轮次补）。
-_DEPTH_REGISTRY: Dict[str, str] = {}
-
-
-def depth_strict_ok() -> bool:
-    """深度探针是否已 100% 覆盖 aligned 模块（不含 not_applicable）。"""
-    if not _DEPTH_REGISTRY:
-        return False
-    aligned = {r.module for r in parity_status() if r.status == ALIGNED}
-    return aligned <= set(_DEPTH_REGISTRY)
-
-
-def depth_report() -> Dict[str, object]:
-    """深度探针覆盖度报告（供探针与测试核销）。"""
-    aligned = sorted(r.module for r in parity_status() if r.status == ALIGNED)
-    verified = [m for m in aligned if m in _DEPTH_REGISTRY]
-    missing = [m for m in aligned if m not in _DEPTH_REGISTRY]
-    return {
-        "depth_claimed": len(aligned),
-        "depth_verified": len(verified),
-        "depth_missing": missing,
-        "depth_strict_ok": not missing and bool(aligned),
+        "depth_claimed": audit["claimed"],
+        "depth_verified": audit["verified"],
+        "depth_coverage_pct": audit["coverage_pct"],
+        "depth_strict_ok": audit["ok"],
+        "depth_missing": audit["missing"],
+        # 加严后的「完全相同」：状态清零 **且** 每项都有通过的运行时探针
+        "fully_identical": counts[PENDING] == 0 and audit["ok"],
     }
 
 
@@ -243,7 +255,7 @@ def gaps(limit: int = 0) -> List[Tuple[str, str]]:
         for m in mods:
             if m in pending:
                 out.append((group, m))
-    seen: Set[str] = set()
+    seen = set()
     uniq = [(g, m) for g, m in out if not (m in seen or seen.add(m))]
     return uniq[:limit] if limit else uniq
 
@@ -275,4 +287,12 @@ def validate() -> List[str]:
                | set(NOT_APPLICABLE_MODULES)) - set(TOP_LEVEL_MODULES)
     for m in sorted(unknown):
         problems.append(f"标注了上游不存在的模块: {m}")
+    # ---- A 线续轮 XI：本轮 10 项必须真有探针且通过
+    from . import depth as _depth
+    d = _depth.assert_depth_intact()
+    for x in d["problems"]:
+        problems.append("深度探针: " + x)
+    for m in NEW_DEPTH_MODULES:
+        if m not in EXPLICIT_ALIGNED and m not in EXPLICIT_LOCALIZED:
+            problems.append(f"新增对齐项未登记状态: {m}")
     return problems

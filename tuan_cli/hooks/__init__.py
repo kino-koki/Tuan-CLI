@@ -1,38 +1,34 @@
-"""B3 hooks 子系统公共入口。
+"""用户级 Hooks —— 让用户在 Agent 工具执行前/后挂载自己的脚本。
 
-导出 manager / triggers 中已存在的符号；session / diagnostics / provider
-等公共 API 从 triggers 汇总以便外部直接 ``from tuan_cli.hooks import ...``。
+对标 Claude Code 的 Hooks 模型, 但更克制、更贴合青小团的"最小影响半径"哲学:
+- 命令强制 list(argv) 形式, 绝不接受裸 shell 字符串 → 杜绝 `; rm -rf` 类注入。
+- 超时强杀, 单个 hook 异常不影响主流程 (fail-safe, 不阻断)。
+- PreToolUse 的"阻断权"与"改参权"默认需显式声明, 不静默赋予。
+- 所有 hook 调用写入审计事件 (kernel.emit("hook.executed"))。
 """
-from __future__ import annotations
 
 from .manager import (
-    HookManager, HookDecision, HOOK_EVENTS,
-    CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS, OFFICIAL_EXTRA_EVENTS,
-    ON_FAILURE_POLICIES, DEFAULT_ON_FAILURE,
+    HookManager, HookDecision, HookFailure,
+    HOOK_EVENTS, CORE_HOOK_EVENTS, EXTENDED_HOOK_EVENTS,
 )
-from .triggers import (
-    HookTrigger, SessionHandle,
-    set_default_hooks_provider, get_default_hooks_provider,
-    current_session_hooks, default_hooks_resolver,
-    register_session, unregister_session, resolve_session,
-    current_session_owner, set_session_owner, reset_session_owner,
-    owner_miss_stats, hooks_for_owner,
-    session_registry_diagnostics, bind_session_hooks,
-    activate_session, deactivate_session, session_scope,
-    close_agent_session, provider_diagnostics,
-)
+from .triggers import HookTrigger, set_default_hooks_provider, \
+    get_default_hooks_provider, provider_diagnostics, \
+    current_session_hooks, bind_session_hooks, \
+    register_session, unregister_session, resolve_session, \
+    session_registry_diagnostics, current_session_owner, \
+    set_session_owner, reset_session_owner, owner_miss_stats, \
+    hooks_for_owner, activate_session, deactivate_session, SessionHandle, \
+    session_scope, default_hooks_resolver, close_agent_session
 
 __all__ = [
-    "HookManager", "HookDecision", "HOOK_EVENTS",
-    "CORE_HOOK_EVENTS", "EXTENDED_HOOK_EVENTS", "OFFICIAL_EXTRA_EVENTS",
-    "ON_FAILURE_POLICIES", "DEFAULT_ON_FAILURE",
-    "HookTrigger", "SessionHandle",
-    "set_default_hooks_provider", "get_default_hooks_provider",
-    "current_session_hooks", "default_hooks_resolver",
+    "HookManager", "HookDecision", "HookFailure",
+    "HOOK_EVENTS", "CORE_HOOK_EVENTS", "EXTENDED_HOOK_EVENTS",
+    "HookTrigger", "set_default_hooks_provider", "get_default_hooks_provider",
+    "provider_diagnostics", "current_session_hooks", "bind_session_hooks",
     "register_session", "unregister_session", "resolve_session",
-    "current_session_owner", "set_session_owner", "reset_session_owner",
-    "owner_miss_stats", "hooks_for_owner",
-    "session_registry_diagnostics", "bind_session_hooks",
-    "activate_session", "deactivate_session", "session_scope",
-    "close_agent_session", "provider_diagnostics",
+    "session_registry_diagnostics", "current_session_owner",
+    "set_session_owner", "reset_session_owner", "owner_miss_stats",
+    "hooks_for_owner", "activate_session", "deactivate_session",
+    "SessionHandle", "session_scope", "default_hooks_resolver",
+    "close_agent_session",
 ]

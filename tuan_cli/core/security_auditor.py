@@ -128,6 +128,14 @@ class AuditRecord:
 
 # =========================================================== SecurityAuditor
 
+# 模块级重入深度 (跨实例共享): 多个 auditor 实例会订阅**同一个全局总线**,
+# A 实例的关联告警 → bus.emit → B 实例.record → B 的关联告警 → A.record …
+# 会形成**跨实例**自循环。per-instance 的 threadlocal 拦不住这种链
+# (每个新实例的 depth 都从 0 起算), 故改为**模块级**共享: 任意线程在
+# 任意实例的 record() 里时, 其它实例的重入只记证据、不再触发关联分析。
+_AUDIT_REENTRANT = threading.local()
+
+
 class SecurityAuditor:
     """安全审计溯源器 —— AEAD 加密审计日志 + 防篡改链 + 完整 provenance。"""
 
@@ -151,9 +159,8 @@ class SecurityAuditor:
         # → _on_security_event() → record() 是同线程重入路径, 非重入锁会死锁。
         self._lock = threading.RLock()
 
-        # 同线程重入深度守卫: record() → emit → _on_security_event → record()
-        # 若不拦截会无限递归 (每次 record 都 emit, 递归深度爆栈)。>1 层时
-        # 跳过关联分析 (不再 emit), 从源头切断自循环 —— 观测层不影响裁决。
+        # 重入深度守卫: 见模块级 _AUDIT_REENTRANT (跨实例共享 —— 多实例订阅
+        # 同一全局总线时, per-instance 守卫拦不住跨实例自循环)。
         self._reentrant_depth = threading.local()
 
         # 内存缓冲 (最近 N 条明文, 查询用)
@@ -174,6 +181,10 @@ class SecurityAuditor:
         self._log_dir.mkdir(parents=True, exist_ok=True)
         self._chmod_600(self._log_dir)
         self._log_file = self._log_dir / "security_audit.aead"
+        # 持久写句柄: 避免每条审计记录都 open/close (高并发审计时的系统调用开销)。
+        # 惰性打开; 写失败时关闭并回落到逐条打开。
+        self._log_fh = None
+        self._last_fsync = 0.0
 
         # 加载已有记录的序号和 prev_hash
         self._load_existing()
@@ -283,15 +294,18 @@ class SecurityAuditor:
         # 最外层 (depth==1) 才做关联分析并 emit; 重入层 (depth>1, 来自
         # 自己总线订阅的回调) 跳过关联分析, 从源头切断 record→emit→
         # _on_security_event→record 的自循环。
-        depth = getattr(self._reentrant_depth, "n", 0) + 1
-        self._reentrant_depth.n = depth
+        # 跨实例重入守卫: 计数当前线程在 record 里的嵌套深度 (模块级共享 ——
+        # 多个 auditor 实例订阅同一全局总线时, per-instance 守卫拦不住
+        # A 实例的关联告警触发 B 实例 record 的跨实例自循环)。
+        depth = getattr(_AUDIT_REENTRANT, "n", 0) + 1
+        _AUDIT_REENTRANT.n = depth
         try:
             return self._record_impl(
                 module, action, severity, input_summary,
                 reasons, context, features, do_correlation=(depth == 1),
             )
         finally:
-            self._reentrant_depth.n = depth - 1
+            _AUDIT_REENTRANT.n = depth - 1
 
     def _record_impl(
         self,
@@ -353,15 +367,34 @@ class SecurityAuditor:
             data = json.dumps(rec.to_dict(), ensure_ascii=False).encode()
             encrypted = self._provider.seal_raw(data, self._crypto_key)
             line = base64.b64encode(encrypted) + b"\n"
-            created = not self._log_file.exists()
-            with open(self._log_file, "ab") as f:
-                f.write(line)
-                f.flush()
-                os.fsync(f.fileno())
-            if created:
-                self._chmod_600(self._log_file)
+            fh = self._log_fh
+            if fh is None:
+                created = not self._log_file.exists()
+                fh = open(self._log_file, "ab")
+                self._log_fh = fh
+                if created:
+                    self._chmod_600(self._log_file)
+            fh.write(line)
+            fh.flush()
+            # fsync 降频 (5s): write+flush 已满足「进程退出前已落盘」; 逐条
+            # fsync 在慢盘上会把审计密集场景拖过超时线 (实测)。
+            now = time.time()
+            if now - self._last_fsync > 5.0:
+                os.fsync(fh.fileno())
+                self._last_fsync = now
         except Exception as exc:
+            # 写失败: 关闭持久句柄 (下次写入重新打开), 不让坏句柄卡死审计链。
+            self._close_log_fh()
             log.warning("审计日志写入失败: %s", exc)
+
+    def _close_log_fh(self) -> None:
+        """关闭持久审计写句柄 (写失败/实例清理时)。"""
+        fh, self._log_fh = self._log_fh, None
+        try:
+            if fh is not None:
+                fh.close()
+        except Exception as exc:
+            log.debug("审计日志句柄关闭失败: %s", exc)
 
     @staticmethod
     def _publish_correlation_alerts(alerts: List[Any]) -> None:

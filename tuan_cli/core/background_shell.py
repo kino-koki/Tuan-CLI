@@ -244,8 +244,13 @@ class BackgroundShellManager:
         """异步启动一条 shell 命令, 立即返回 job (不阻塞)。
 
         ``timeout`` 为可选软超时 (达到后自动 kill 进程树, 防失控)。
-        ``env`` 为子进程环境变量 (None = 继承父进程, 既有调用点语义不变)。
         超过并发上限 (见 max_running) 时抛 RuntimeError, 防止后台进程失控。
+
+        本轮 §17: ``env`` 为**已脱敏**的子进程环境。此前 Popen 完全不传
+        env，后台子进程继承父进程完整环境 —— 真实 GITHUB_TOKEN /
+        OPENAI_API_KEY 原样进入，而后台分支又绕过 plan_egress 的代理
+        注入链路，既拿不到 sentinel 也拿不到任何脱敏。
+        ``env=None`` 保持既有继承语义向后兼容，由调用方显式传脱敏值。
         """
         cap = self.max_running()
         if cap and self._running_count() >= cap:
@@ -283,9 +288,8 @@ class BackgroundShellManager:
                 proc = subprocess.Popen(
                     normalized, shell=True, cwd=job.cwd or None,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    text=True, errors="replace",
+                    text=True, errors="replace", env=env,
                     start_new_session=os.name != "nt",
-                    env=env,
                 )
                 job.register_proc(proc)
                 # 读线程: 关闭句柄避免管道缓冲阻塞子进程
@@ -513,10 +517,7 @@ def strip_bg_prefix(command: str) -> str:
 def run_in_background(command: str, cwd: Optional[str] = None,
                       timeout: Optional[float] = None,
                       env: Optional[Dict[str, str]] = None) -> ShellJob:
-    """工具层便捷入口: 解析 ``! cmd`` 并异步执行, 返回 job。
-
-    ``env`` 透传到 ``BackgroundShellManager.start`` (None = 继承父进程)。
-    """
+    """工具层便捷入口: 解析 ``! cmd`` 并异步执行, 返回 job。"""
     real = strip_bg_prefix(command).strip()
     if not real:
         raise ValueError("后台命令为空")

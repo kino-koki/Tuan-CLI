@@ -210,6 +210,38 @@ def _restore_ui_singleton():
     _ui_singleton._ui = before
 
 
+@pytest.fixture(autouse=True)
+def _reset_global_security_state():
+    """每个测试后重置安全告警/标语映射/会话注册的进程级状态 (测试隔离)。
+
+    SecurityAlerter 全局单例、slogans mapping 的分发日志/owner 桶、
+    hooks.triggers 的会话注册表都是进程级状态 —— 前序测试的残留会让
+    后续测试读到旧会话的 hooks/日志 (实测: 告警路由、底栏文案、会话
+    注册冲突的顺序依赖失败)。每个测试后重置, 保证确定性。
+    """
+    yield
+    try:
+        from tuan_cli.core import security_alert
+        security_alert._global_alerter = None
+        security_alert._NOTIFY_LAST_START = 0.0
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from tuan_cli.ui.slogans import mapping
+        mapping.reset_dispatch_log()
+        mapping.reset_runtime_counters(include_dispatch_log=True)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from tuan_cli.hooks import triggers
+        with triggers._SESSION_LOCK:
+            triggers._SESSIONS.clear()
+            triggers._SESSION_REJECTIONS = 0
+            triggers._SESSION_CONFLICTS = 0
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ---------------------------------------------------------------------------
 # 共享: 本地 OpenAI 兼容 mock 端点 (供模型/CLI/worker 端到端测试复用)
 # ---------------------------------------------------------------------------

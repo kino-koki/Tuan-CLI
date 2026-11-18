@@ -942,7 +942,11 @@ class RenderMixin:
         return flat
 
     def _render_header(self) -> Any:
-        """顶部状态 HUD: 实时状态(启动转圈/思考月亮/就绪勾) + 模式 + 模型。"""
+        """顶部状态 HUD: 实时状态(启动转圈/思考月亮/就绪勾) + 运行时标语 + 模式。
+
+        B3 XVI: 工作状态行 ("• Working (Ns • esc to interrupt)") 与运行时标语
+        只在顶栏显示; 底栏不再重复 (底栏负责 模式/模型/工具名/目录/分支/上下文)。
+        """
         parts: List[Tuple[str, str]] = []
         # 复制/操作反馈 toast: 优先于常规状态展示 (2 秒后自动消失)
         if self._toast and time.monotonic() < self._toast_until:
@@ -957,16 +961,36 @@ class RenderMixin:
             parts.append(("class:warning", f"? {t('tui.confirm_title')}"))
             return self._clip_parts(parts)
         if self._busy or self._running or self._streaming:
-            # codex 状态行: "• Working (Ns • esc to interrupt)" (替代旧月亮 + Processing)
-            parts.extend(self._working_status_line())
+            # 运行时标语: 文案由真实事件驱动, 忙碌但长时间无进展时改成
+            # 「疑似摸鱼」诊断并标 warning。
+            engine = getattr(self, "_slogans", None)
+            view = engine.render(busy=True) if engine is not None else None
+            diagnosing = (view is not None and view.mode != "off"
+                          and view.stalled and bool(view.headline))
+            if diagnosing:
+                # 诊断态不挂 "Working (Ns...)" —— 那条「还在工作」的字样
+                # 正是本诊断要戳破的假象, 且约 35 列, 窄终端会挤掉关键秒数。
+                parts.append(("class:warning", STATUS_BULLET))
+            else:
+                # codex 状态行: "• Working (Ns • esc to interrupt)"
+                parts.extend(self._working_status_line())
+            if view is not None and view.mode != "off" and (view.headline or view.text):
+                # 三态视觉分级: stalled -> warning, slow -> textdim, healthy -> primary
+                if view.stalled:
+                    cls = "class:warning"
+                elif view.state == "slow":
+                    cls = "class:textdim"
+                else:
+                    cls = "class:primary"
+                label = view.headline or view.text
+                # STATUS_BULLET 自带尾空格; 普通态在状态行后补一个空格。
+                parts.append((cls, label if diagnosing else " " + label))
         else:
             parts.append(("class:success", f"{SUCCESS_MARK} {t('fs.ready')}"))
         if self._plan_mode:
             parts.append(("class:plan", f"  [{t('tui.plan_badge')}]"))
-        if self._model_label:
-            parts.append(("class:text", f"  {self._model_label}"))
-        # header 也是 height=1 的单行控件: 长模型名 (provider/model 很长) 会顶破
-        # 顶部一行, 必须按显示宽度硬裁。
+        # 模型名只在底栏显示 (顶栏不再重复, 修复状态/模型在顶栏+底栏出现两次)。
+        # header 也是 height=1 的单行控件: 内容过长会顶破顶部一行, 按显示宽度硬裁。
         return self._clip_parts(parts)
 
     def _render_footer(self) -> Any:
@@ -1043,19 +1067,22 @@ class RenderMixin:
             elif self._booting:
                 status = t("tui.boot_starting")
                 status_cls = "class:textdim"
-            elif self._busy or self._streaming:
-                # codex 同款: "Working (Ns · esc to interrupt)" 而非简单 "Thinking…"
-                status = self._working_status_text()
-                status_cls = "class:text"
             elif self._running:
+                # 真实工具名优先于忙碌判定: begin_tool() 同时置 _busy=True,
+                # 旧顺序让本分支永远不可达 —— 明明在跑命令, 底栏却说 Working。
                 tool = self._running[-1] if self._running else ""
                 status = tool if tool else t("fs.ready")
                 status_cls = "class:accent"
+            elif self._busy or self._streaming:
+                # 状态行已在顶栏 (Working + 运行时标语), 底栏不重复显示。
+                status = None
+                status_cls = None
             else:
                 status = t("fs.ready")
                 status_cls = "class:success"
             left.append(("class:primary", f" {model}"))
-            left.append((status_cls, f" {status}"))
+            if status is not None:
+                left.append((status_cls, f" {status}"))
 
             # 工作目录 (语义色 green)
             cwd = os.path.basename(os.path.normpath(self.workspace)) or self.workspace
