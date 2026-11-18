@@ -1,55 +1,45 @@
-# B3 XVI 备份分支重放评估（待决策 · 未实施）
+# B3 XVI 备份分支重放评估（已核实 · 结论：无需移植）
 
-> 状态：**评估报告，等待产品决策**。本文档只做分析，不改任何代码。
-> 对象：`origin/parallel/b3-xvi-backup`（b5083de3，"B3 XVI: close outbound payload + inbound additionalContext side doors"）。
-> 基线：合并基 `740f0763`；对照：`main`（60a93859）。
+> 状态：**评估完成**。初版曾把 `permission_fusion.py` / `egress_allowlist.py`
+> 误判为「未移植候选」—— 分类脚本对 `m == b`（main 自基线未动）与
+> `m is None`（文件不存在）未加区分导致误读。本文为逐文件核实后的修正版。
+> 对象：`origin/parallel/b3-xvi-backup`（b5083de3）；基线 `740f0763`；对照 `main`。
 
-## 总体分类（213 个变更文件）
+## 总体分类（213 个 base→backup 变更文件，blob 级核实）
 
 | 类别 | 数量 | 含义 |
 |---|---|---|
-| 已整合 | 71 | 备份与 main 的 blob 完全一致，重放无意义 |
-| 双方演进 | 128 | 合并时冲突，已按 0.4.4 线裁决；备份侧差异 = 被刻意搁置的增量 |
-| **未移植** | **14** | 备份独有 / main 自基线未动 —— 真正的"重放候选" |
-| 备份中删除 | 0 | — |
+| 已整合 | 71 | 备份与 main 的 blob 完全一致 |
+| 双方演进 | 124 | 合并时冲突，已按 0.4.4 线裁决；main 版本为后续精修 |
+| main 未动 | 9 | main 保持基线版本（含 2 个纯路径搬迁的文档） |
+| 备份中删除 | 9 | main 保留（如 test_multi_path_fusion、test_taint_exfil），全部在跑且绿 |
 
-## 14 个未移植文件明细（重放的全部真实增量）
+## 两个曾疑似「待移植」文件的核实结论
 
-### 生产代码（3 组）
+- `tuan_cli/tools/permission_fusion.py`：main 已有且**已接线**
+  （`tools/base.py` 经 `build_permission_policy()` 装配，`tools/__init__.py` 导出）。
+  备份侧差异仅为删一行类型注解注释与措辞调整 —— 无可移植增量。
+- `tuan_cli/sandbox/egress_allowlist.py`：main 版本更优 —— 拒绝理由更明确
+  （含「逐命令域名声明」归因），`profile_domains` 同时接受 NetworkClaim 与
+  SandboxProfile（备份版只收 NetworkClaim，属收窄）。备份侧差异是简化，不采。
 
-| 文件 | 内容 | 评估 |
-|---|---|---|
-| `tuan_cli/sandbox/egress_allowlist.py` | B2 收尾：逐命令域名强绑定（strict allowlist）。补齐 `SandboxProfile` 只有 `network: bool`、裁决不带逐命令主机清单的缺口 | 真实安全增强；但合并时 main 刻意保留了 0.4.4 egress 线 —— 重放需与现行 `sandbox/egress*.py` 重新对齐，**不是纯 cherry-pick** |
-| `tuan_cli/tools/permission_fusion.py` | 敏感文件纵深防御叠加层：原生 PermissionPolicy 仍是唯一决策源，allow+写类+敏感文件 → 升级 confirm | 设计克制（绝不降级放行），可独立引入；需接 `tools/permissions.py` 装配点 |
-| `tuan_cli/ext/patterns_data/`（5 文件） | critical/extreme/high/medium 分级模式数据表 | 纯数据，跟随上述两者或 safety_score 使用 |
+## 其余「main 未动」文件
 
-### 测试（6 文件，约 137 个用例）
+- `CAPABILITY-MATRIX.md` / `TUI_PARITY.md`（根目录副本）：main 已把内容
+  迁至 `docs/parity/`，路径变化而已，非缺口。
+- 5 个 B2 测试（test_b2_boundaries / test_b2_egress_strict /
+  test_b2s_egress_uniform / test_b2su_decided_routing / test_b2su_write_boundary）：
+  main 保留基线版并实测通过；备份侧改动是配合其被否决的 egress 简化，不采。
 
-`tests/test_b2_boundaries.py`(31)、`test_b2_egress_strict.py`(26)、
-`test_b2s_egress_uniform.py`(25)、`test_b2su_decided_routing.py`(26)、
-`test_b2su_write_boundary.py`(29)、`test_multi_path_fusion.py`、
-`test_taint_exfil.py`（备份侧增强版；main 现行版自基线未变）。
+## 最终验证
 
-测试依赖上述生产代码，**不能单独重放**。
+- 上述全部测试在 main 实测：**221 passed, 1 skipped**
+  （含 B2 五件套、multi_path_fusion、taint_exfil）。
+- 治理护栏（silent=0 / SEC fallback=0）、版本/shell/引擎同步门禁全绿。
 
-## 128 个"双方演进"文件
+## 结论
 
-这些文件在合并时已裁决取 0.4.4 线（含 hooks/triggers/lifecycle、security_*、
-superagent、tui、slogans 等）。备份侧差异是**被刻意搁置的 B3 XVI 语义**
-（outbound payload 收口、additionalContext 侧门关闭等）。全量重放 = 推翻
-合并裁决，会重新引入已治理的静默吞异常与 egress 行为回退，**不建议**。
-
-## 结论与建议
-
-1. **不建议**整分支重放（71 个已整合 + 128 个已裁决，重放净收益为负）。
-2. 若要取其精华，建议**按文件择优移植**，优先级：
-   ① `permission_fusion.py`（独立、克制、低风险）
-   ② `egress_allowlist.py`（需与现行 egress 线对齐后移植）
-   ③ 对应测试随后补齐。
-3. 移植后必须：护栏测试（235 模块 silent=0）保持绿、
-   `test_sandbox*` / `test_safety_*` 全绿、版本号按发布流程递增。
-
-## 备份分支处置
-
-`origin/parallel/b3-xvi-backup` 与本地 `wip/merge-b3-xvi` 建议至少保留到
-上述择优移植完成，再行归档/删除。
+1. **无需任何移植**：B3 XVI 的有效增量已在 main（合并时取新），被搁置部分
+   经逐文件比对均为简化/措辞差异，不构成回 port 理由。
+2. `origin/parallel/b3-xvi-backup` 与 `wip/merge-b3-xvi` 的历史使命已完成，
+   可归档；删除与否由维护者定（删除不影响 main）。
