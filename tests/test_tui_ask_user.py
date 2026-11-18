@@ -245,6 +245,7 @@ def test_session_tools_uses_ui_hook_not_print():
 
     ctx = mock.Mock()
     ctx.ui = _UI()
+    ctx.hooks = None  # 本测试只验证 UI 钩子路径, 不涉及 Elicitation hook
     with mock.patch.object(session_tools, "_fullscreen_tui_active", return_value=True), \
          mock.patch("builtins.print") as pr, \
          mock.patch("builtins.input", side_effect=AssertionError("不应调用 input")):
@@ -260,6 +261,7 @@ def test_session_tools_guard_blocks_print_under_tui():
 
     ctx = mock.Mock()
     ctx.ui = None
+    ctx.hooks = None  # 本测试只验证安全阀降级路径, 不涉及 Elicitation hook
     with mock.patch.object(session_tools, "_fullscreen_tui_active", return_value=True), \
          mock.patch("builtins.print") as pr, \
          mock.patch("builtins.input", side_effect=AssertionError("不应调用 input")):
