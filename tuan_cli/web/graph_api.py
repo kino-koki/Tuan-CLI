@@ -284,7 +284,8 @@ def _exec_codeanim(node: FlowNode, inputs: Dict[str, Any],
         workspace = (ctx.get("graph", None) and getattr(ctx["graph"], "workspace", None)) or None
         out = _codeanim_out_path(workspace or ".")
         fps = int(p.get("fps") or pj.get("fps") or 30)
-        result = car.render_video(pj, out, fps=fps)
+        result = car.render_video(pj, out, fps=fps,
+                                  workspace=workspace)
         # media_rel: 相对 workspace/media/ 的路径, 供前端拼 /api/media?path=
         media_rel = _media_rel(workspace or ".", out)
         return {"out_path": out, "media_rel": media_rel, **result}

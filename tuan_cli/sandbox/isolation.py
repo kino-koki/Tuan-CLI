@@ -275,7 +275,9 @@ def _read_preview(path: str) -> "tuple[str, bool]":
 
 def build_diff_preview(wd: "IsolatedWorkdir") -> DiffPreview:
     """从隔离副本构建结构化预览 (不修改任何文件, 不写回)。"""
-    assert wd._base is not None, "未 solid(), 无法生成预览"
+    if wd._base is None:
+        # 审计 P2-30: 不变量用显式异常, 不用 assert (python -O 下会消失)
+        raise RuntimeError("未 solid(), 无法生成预览")
     copy_snap = Snapshot.capture(wd.path)
     base = wd._base
     preview = DiffPreview(original=wd.original, copy=wd.path,
@@ -408,11 +410,13 @@ class IsolatedWorkdir:
         return self
 
     def diff(self) -> List[Dict[str, str]]:
-        assert self._base is not None, "未 solid(), 无法 diff"
+        if self._base is None:
+            raise RuntimeError("未 solid(), 无法 diff")  # 审计 P2-30
         return self._base.diff(Snapshot.capture(self.path))
 
     def apply(self, *, dry_run: bool = False) -> List[str]:
-        assert self._base is not None, "未 solid(), 无法 apply"
+        if self._base is None:
+            raise RuntimeError("未 solid(), 无法 apply")  # 审计 P2-30
         base_orig = Snapshot(self.original, dict(self._base.files))
         return base_orig.apply(Snapshot.capture(self.path), dry_run=dry_run)
 

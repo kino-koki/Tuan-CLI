@@ -253,7 +253,9 @@ class ToolExecutor:
             )
 
         tool = pre.tool
-        assert tool is not None
+        if tool is None:
+            # 审计 P2-30: 不变量用显式异常, 不用 assert (python -O 下会消失)
+            raise RuntimeError("调度器返回的 tool 为空 (内部契约违约)")
         try:
             execution = tool.resolve_execution(pre.args)
             if hasattr(execution, "__await__"):

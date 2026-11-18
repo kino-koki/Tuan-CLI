@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any, Dict, cast
 
 from ..core.proc import normalize_shell_command
@@ -745,6 +746,60 @@ def _guard_exfil(ctx: ToolContext, command: str, state: GuardState) -> Any:
     return None
 
 
+# 审计 P1-07: 良性前缀命令 -> 对应的构建/测试文件 (真正执行体所在)
+_BUILD_FILE_HINTS: Dict[str, tuple] = {
+    "make": ("Makefile", "makefile", "GNUmakefile"),
+    "npm": ("package.json",),
+    "pnpm": ("package.json",),
+    "yarn": ("package.json", "yarn.lock"),
+    "pytest": ("conftest.py", "pytest.ini", "pyproject.toml", "setup.cfg"),
+    "tox": ("tox.ini",),
+    "mvn": ("pom.xml",),
+    "gradle": ("build.gradle", "gradlew"),
+    "cargo": ("Cargo.toml",),
+}
+
+
+def _guard_build_prescan(ctx: ToolContext, command: str, state: GuardState) -> Any:
+    """阶段 1.7: 构建文件内容预扫描 (审计 P1-07)。
+
+    make / npm / pytest 这类「良性前缀」命令的真正执行体在仓库文件里
+    (Makefile / package.json scripts / conftest.py), 命令字符串本身看不到
+    危险内容, 静态判定零覆盖 —— README 把「零确认跑构建/测试」写成卖点,
+    意味着任何能往工作区写文件的攻击者都拿到执行权。这里对工作区内对应的
+    构建文件跑一遍红线引擎: 命中红线 (如 Makefile 里藏 `rm -rf /` /
+    `curl|sh`) 直接拦截。
+    """
+    from ..ext.safety_engine import is_hard_redline as _is_hard
+    try:
+        first = command.strip().split(None, 1)[0].lower()
+    except Exception:  # noqa: BLE001
+        return None
+    names = _BUILD_FILE_HINTS.get(first)
+    if not names:
+        return None
+    cwd = getattr(ctx, "workspace", "") or os.getcwd()
+    root = Path(cwd).resolve()
+    for name in names:
+        p = root / name
+        try:
+            if not p.is_file():
+                continue
+            # 上限 64KB: 覆盖真实构建文件, 同时把预扫描成本压在 ~0.1s 量级
+            content = p.read_text(encoding="utf-8", errors="replace")[:65536]
+        except OSError:
+            continue
+        # 分块送红线引擎 (1500 字符 + 200 重叠): 文件内容不能整块送 ——
+        # 入口的超长 fail-closed 哨兵 (P0-01) 会把任何 >2048 字符的输入
+        # 直接判危险; 分块既绕开哨兵, 又覆盖文件任意位置的危险内容。
+        for start in range(0, len(content), 1300):
+            chunk = content[start:start + 1500]
+            if chunk and (_engine_is_redline(chunk) or _is_hard(chunk)):
+                return (f"[已拦截] 构建文件 {name} 内容命中安全红线 "
+                        f"(审计 P1-07: 良性开发命令的执行体在仓库文件里, 已预扫描)")
+    return None
+
+
 # 执行前护栏的完整阶段流水线 (按优先级排序; 编号见各阶段 docstring)
 _GUARD_STAGES = (
     _guard_trust,               # 阶段 0   工作区信任
@@ -753,6 +808,7 @@ _GUARD_STAGES = (
     _guard_script_isolation,    # 阶段 0.6 脚本隔离裁决
     _guard_network,             # 网络出口门控
     _guard_redline,             # 阶段 1   硬红线
+    _guard_build_prescan,       # 阶段 1.7 构建文件内容预扫描 (审计 P1-07)
     _guard_disallowed,          # 阶段 1.5 会话级 disallowedTools
     _guard_whitelist,           # 阶段 2   白名单 (命中可 _ALLOW 短路)
     _guard_strict_mode,         # 阶段 2.5 严格模式兜底

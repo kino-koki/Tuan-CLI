@@ -449,7 +449,8 @@ class McpToolServer:
             return _err(f"创建 media 目录失败: {exc}")
         out_path = media / f"codeanim_{int(__import__('time').time() * 1000)}.mp4"
         try:
-            result = car.render_video(pj, str(out_path), fps=fps)
+            result = car.render_video(pj, str(out_path), fps=fps,
+                                      workspace=str(self.workspace) if self.workspace else None)
         except RuntimeError as exc:
             return _err(f"渲染失败: {exc}")
         except Exception as exc:  # noqa: BLE001

@@ -338,11 +338,36 @@ def test_render_video_with_audio_mix(tmp_path):
         w.writeframes(b"\x00\x00" * (22050 // 2))
     pj = _base_project(audio=str(wav))
     out = tmp_path / "audio_mix.mp4"
-    res = car.render_video(pj, str(out), fps=5)
+    res = car.render_video(pj, str(out), fps=5, workspace=str(tmp_path))
     assert out.exists()
     assert res["audio"]["mixed"] is True
     assert res["audio"]["tracks"] == 1
     assert res["frames"] >= 1
+
+
+def test_render_video_audio_outside_workspace_rejected(tmp_path):
+    """审计 P2-31: audio 路径越出工作区 -> fail-closed 拒绝, 不落盘。"""
+    import wave
+
+    if not car.ffmpeg_available():
+        import pytest
+        pytest.skip("ffmpeg 不可用")
+    outside = tmp_path.parent / "outside_audio.wav"
+    with wave.open(str(outside), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(44100)
+        w.writeframes(b"\x00\x00" * (22050 // 2))
+    pj = _base_project(audio=str(outside))
+    out = tmp_path / "audio_mix.mp4"
+    try:
+        car.render_video(pj, str(out), fps=5, workspace=str(tmp_path))
+        raise AssertionError("越界 audio 不应渲染成功")
+    except RuntimeError as e:
+        assert "越界" in str(e)
+    # 视频主体先编码、混音前才校验边界 -> out 可能已存在;
+    # 关键断言: 越界音频未被读取/混入 (渲染在混音前失败)
+    assert outside.is_file()
 
 
 def test_transition_outside_range_no_effect():

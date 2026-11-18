@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 
 import pytest
@@ -42,6 +43,17 @@ def test_create_and_persist(tmp_path):
     raw = json.loads((tmp_path / ".tuan" / "team_group.json").read_text(encoding="utf-8"))
     assert raw["owner"] == "m1"
     assert "m1" in raw["members"]
+    # 审计 P0-06: 明文 secret 不再进团组 JSON, 独立侧文件存放 (POSIX 0600;
+    # Windows 的权限模型不同, 只验证内容与存在性)
+    assert "secret" not in raw
+    sec = tmp_path / ".tuan" / ".team_secret"
+    assert sec.is_file()
+    assert sec.read_text(encoding="utf-8").strip() == g.secret
+    if sys.platform != "win32":
+        assert (sec.stat().st_mode & 0o777) == 0o600
+    # 重启后从侧文件恢复密钥, 验签仍工作
+    store2 = TeamGroupStore(tmp_path / ".tuan" / "team_group.json")
+    assert store2.group.secret == g.secret
 
 
 def test_create_idempotent_rejected(tmp_group):

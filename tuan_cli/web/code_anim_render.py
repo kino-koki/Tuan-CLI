@@ -281,9 +281,29 @@ def validate_project(project_json: Any) -> Optional[str]:
         val = project_json.get(key)
         if not isinstance(val, (int, float)) or isinstance(val, bool) or val <= 0:
             return f"project_json.{key} 必须是 > 0 的数字"
+    # 资源上限 (审计 P1-13 深度加固): 畸形项目 (超大分辨率/时长/帧率) 会让
+    # 渲染循环耗尽内存/永久占用后台 job —— 在校验层直接拒绝。
+    if project_json["width"] > 7680 or project_json["height"] > 7680:
+        return "project_json.width/height 超过上限 (7680)"
+    if project_json["fps"] > 240:
+        return "project_json.fps 超过上限 (240)"
+    if project_json["duration"] > 3600:
+        return "project_json.duration 超过上限 (3600s)"
+    est_frames = int(project_json["duration"] * project_json["fps"]) + 1
+    if est_frames > 200_000:
+        return "project_json 渲染帧数超过上限 (duration*fps ≤ 200000)"
     nodes = project_json.get("nodes")
     if nodes is not None and not isinstance(nodes, list):
         return "project_json.nodes 必须是数组"
+    if isinstance(nodes, list):
+        if len(nodes) > 500:
+            return "project_json.nodes 超过上限 (500)"
+        for idx, nd in enumerate(nodes):
+            if not isinstance(nd, dict):
+                return f"project_json.nodes[{idx}] 必须是对象"
+            nt = nd.get("type")
+            if not isinstance(nt, str) or not nt.strip():
+                return f"project_json.nodes[{idx}].type 必须是非空字符串"
     # 阶段 9: 音频混音轨 (cinecode 式) —— 路径或对象列表, 逐项校验, fail-closed
     audio = project_json.get("audio")
     if audio is not None:
@@ -1675,12 +1695,14 @@ def _probe_encoder(ffmpeg: str) -> Optional[str]:
 
 def render_video(project_json: Dict[str, Any], out_path: str, *,
                  fps: int = 30, on_progress: Optional[Callable[[int, int], None]] = None,
-                 profile: bool = False) -> Dict[str, Any]:
+                 profile: bool = False,
+                 workspace: Optional[str] = None) -> Dict[str, Any]:
     """同步渲染视频 (Pillow 逐帧 + ffmpeg rawvideo 管道编码)。
 
     返回 ``{"out_path","frames","fps","elapsed","size_bytes"}``。
     ``profile=True`` 时额外返回 ``perf`` (逐节点耗时 + 帧时间序列,
     见 :func:`_profile_summary`)。ffmpeg 缺失时抛出 RuntimeError。
+    ``workspace`` 用于 audio 轨道路径的边界校验 (审计 P2-31)。
     """
     err = validate_project(project_json)
     if err:
@@ -1758,7 +1780,8 @@ def render_video(project_json: Dict[str, Any], out_path: str, *,
         tail = stderr_b.decode("utf-8", errors="replace")[-_TAIL_BYTES:]
         raise RuntimeError(f"ffmpeg 编码失败 (exit={proc.returncode}): {tail}")
     # 阶段 9: cinecode 式音频混音 —— 混入音轨 (若 project_json 含 audio)
-    audio_result = _mix_audio_tracks(ffmpeg, project_json, str(out), duration)
+    audio_result = _mix_audio_tracks(ffmpeg, project_json, str(out), duration,
+                                     workspace=workspace)
     size_bytes = out.stat().st_size if out.is_file() else 0
     result: Dict[str, Any] = {
         "out_path": str(out),
@@ -1815,7 +1838,8 @@ def _profile_summary(frame_profiles: List[Dict[str, Any]],
 
 
 def _mix_audio_tracks(ffmpeg: str, project_json: Dict[str, Any],
-                      video_path: str, duration: float) -> Dict[str, Any]:
+                      video_path: str, duration: float,
+                      workspace: Optional[str] = None) -> Dict[str, Any]:
     """把 project_json 的 ``audio`` 音轨混入已编码视频 (cinecode 式)。
 
     audio 支持两种形态:
@@ -1825,6 +1849,10 @@ def _mix_audio_tracks(ffmpeg: str, project_json: Dict[str, Any],
     用 ffmpeg 二次转码: 读视频 + N 条音频输入, amix 合并 (每条延迟 start,
     缩放 volume), 输出临时 mp4 后原子替换。任何一步失败都 fail-closed
     (抛 RuntimeError, 不产出无声假成功)。
+
+    审计 P2-31: 音频路径必须 ``resolve`` 后落在 **workspace 内** —— 否则
+    任意本地音频/媒体文件可被混进导出视频并经 /api/media 取回 (信息外带)。
+    ``workspace`` 缺失时一律拒绝 (fail-closed)。
 
     返回 ``{"mixed": bool, "tracks": n, "audio_codec": ...}``; 无 audio 时返回
     ``{"mixed": False, "tracks": 0}``。
@@ -1840,6 +1868,7 @@ def _mix_audio_tracks(ffmpeg: str, project_json: Dict[str, Any],
         raise RuntimeError("audio 字段类型非法 (fail-closed)")
     if not tracks:
         return {"mixed": False, "tracks": 0}
+    root = Path(workspace).resolve() if workspace else None
     # 逐条解析
     resolved = []
     for tr in tracks:
@@ -1848,10 +1877,17 @@ def _mix_audio_tracks(ffmpeg: str, project_json: Dict[str, Any],
         ap = tr.get("path")
         if not isinstance(ap, str) or not ap.strip():
             raise RuntimeError("audio 轨道缺 path (fail-closed)")
-        if not Path(ap).is_file():
+        if root is None:
+            raise RuntimeError("audio 轨道需要 workspace 边界 (fail-closed)")
+        try:
+            rp = Path(ap).resolve()
+            rp.relative_to(root)
+        except (ValueError, OSError):
+            raise RuntimeError(f"audio 路径越界 (必须位于工作区内): {ap} (fail-closed)")
+        if not rp.is_file():
             raise RuntimeError(f"audio 文件不存在: {ap} (fail-closed)")
         resolved.append({
-            "path": ap,
+            "path": str(rp),
             "start": max(0.0, _num(tr.get("start"), 0.0)),
             "volume": max(0.01, _num(tr.get("volume"), 1.0)),
             "loop": bool(tr.get("loop")),
@@ -1937,11 +1973,13 @@ def render_contact_sheet(project_json: Dict[str, Any], times: List[float],
 
 
 def start_render_job(project_json: Dict[str, Any], out_path: str,
-                     fps: int = 30, profile: bool = False) -> str:
+                     fps: int = 30, profile: bool = False,
+                     workspace: Optional[str] = None) -> str:
     """后台渲染视频; 返回 job_id。``profile=True`` 时结果含 ``perf``。"""
     return _start_render_job(
         "render",
-        lambda: render_video(project_json, out_path, fps=fps, profile=profile))
+        lambda: render_video(project_json, out_path, fps=fps, profile=profile,
+                             workspace=workspace))
 
 
 def start_contact_job(project_json: Dict[str, Any], times: List[float],

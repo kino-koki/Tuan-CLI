@@ -165,6 +165,11 @@ class TeamGroupStore:
 
     # ---------------------------------------------------------- 加载/落盘
 
+    @property
+    def _secret_path(self) -> Path:
+        """HMAC 密钥的独立存放文件 (0600) —— 审计 P0-06: 团组 JSON 不再含明文 secret。"""
+        return self._path.parent / ".team_secret"
+
     def _load(self) -> None:
         if not self._path.exists():
             self._group = None
@@ -175,17 +180,29 @@ class TeamGroupStore:
         except Exception as exc:  # noqa: BLE001
             log.warning("团组文件读取失败, 视为未创建: %s", exc)
             self._group = None
+            return
+        # 审计 P0-06: 密钥从 0600 侧文件恢复; 旧格式 (JSON 内明文 secret) 仅作
+        # 迁移读取 —— 下一次落盘即被剥离。
+        try:
+            if self._secret_path.is_file():
+                s = self._secret_path.read_text(encoding="utf-8").strip()
+                if s and self._group is not None:
+                    self._group.secret = s
+        except OSError as exc:
+            log.warning("团组密钥侧文件读取失败: %s", exc)
 
     def _save(self) -> None:
         if self._group is None:
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        payload = self._group.to_dict()
+        secret = str(payload.pop("secret", ""))
         fd, tmp = tempfile.mkstemp(
             dir=str(self._path.parent), prefix=".team_group.", suffix=".tmp"
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(self._group.to_dict(), f, ensure_ascii=False, indent=2)
+                json.dump(payload, f, ensure_ascii=False, indent=2)
             os.replace(tmp, self._path)
         except Exception:
             try:
@@ -193,6 +210,15 @@ class TeamGroupStore:
             except OSError:
                 pass
             raise
+        # HMAC 密钥独立 0600 存放 (审计 P0-06): team_group.json 不再含明文 secret,
+        # 任何能读 JSON 的通道 (如越权的文件读取) 都拿不到签名密钥。
+        try:
+            fd2 = os.open(str(self._secret_path),
+                          os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd2, "w", encoding="utf-8") as f:
+                f.write(secret)
+        except OSError as exc:
+            log.warning("团组密钥侧文件写入失败: %s", exc)
 
     # ---------------------------------------------------------- 创建/查询
 
@@ -230,10 +256,14 @@ class TeamGroupStore:
         return self._group
 
     def reset_group(self) -> None:
-        """删除团组 (危险操作, 仅供测试/重建)。"""
+        """删除团组 (危险操作, 仅供测试/重建)。密钥侧文件一并清除。"""
         self._group = None
-        if self._path.exists():
-            self._path.unlink()
+        for p in (self._path, self._secret_path):
+            try:
+                if p.exists():
+                    p.unlink()
+            except OSError as exc:
+                log.warning("团组文件清理失败 (%s): %s", p, exc)
 
     def export_public(self) -> Dict[str, Any]:
         """对外快照 (不含 secret, 供 web/API 展示)。"""
@@ -420,7 +450,11 @@ class TeamGroupStore:
         for grant in g.grants.values():
             if member and grant.get("member") != member:
                 continue
-            out.append(dict(grant))
+            item = dict(grant)
+            # 审计 P3-38: 展示场景只给签名前缀, 完整签名不随列表外发
+            sig = str(item.get("signature", ""))
+            item["signature"] = sig[:16] + "…" if len(sig) > 16 else sig
+            out.append(item)
         return out
 
     def verify_grant(

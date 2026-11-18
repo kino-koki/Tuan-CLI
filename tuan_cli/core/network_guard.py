@@ -179,9 +179,13 @@ _SENSITIVE_DOMAINS = frozenset({
 
 # 云元数据/链路本地地址字面量 (含 IPv6), URL 解析正则抓不全, 单独兜底。
 # AWS/GCP/Azure/阿里云实例元数据均落在 169.254.0.0/16 链路本地段。
+# 审计 P2-27: 补充十进制/十六进制整数形式的等价地址 (2852039166 ==
+# 169.254.169.254, 0xa9fea9fe 等) —— 此前这类写法只被降级为 confirm。
 _CLOUD_METADATA_RE = re.compile(
     r"\b(?:169\.254\.169\.254|100\.100\.100\.200|metadata\.google\.internal"
-    r"|\[?fd00:ec2::254\]?)\b",
+    r"|\[?fd00:ec2::254\]?"
+    r"|2852039166|0xa9fea9fe"
+    r"|1684301000|0x646464c8)\b",
     re.IGNORECASE,
 )
 

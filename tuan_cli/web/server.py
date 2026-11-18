@@ -1040,7 +1040,9 @@ class _WebHandler(BaseHTTPRequestHandler):
                 member=str(body.get("member") or ""),
                 days=body.get("days") or 0,
                 models=models,
-                owner=str(body.get("owner") or ""))
+                # 审计 P0-06: 签发者身份不取自请求体 (可被冒名), 由团组库
+                # 按既有 owner 判定。
+                owner="")
             self._json(200 if res.get("ok") else 400, res)
             return
         if path == "/api/teamgroup/grant/revoke":
@@ -2164,7 +2166,8 @@ class WebServer:
             return {"ok": False, "error": "out 路径越界"}
         fps = int(project_json.get("fps") or 30)
         job_id = _codeanim.start_render_job(project_json, str(out_abs),
-                                            fps=fps, profile=bool(profile))
+                                            fps=fps, profile=bool(profile),
+                                            workspace=self.workspace)
         return {"ok": True, "job_id": job_id, "out_rel": safe_out}
 
     def codeanim_contact(self, project_json: Dict[str, Any], times: List[Any]) -> Dict[str, Any]:
