@@ -4,12 +4,74 @@ import shutil
 import signal
 import sys
 import threading
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+# ------------------------------------------------------------------ Web /api/* 鉴权 (审计 P0-03)
+# Web 工作台现在要求访问令牌 (Set-Cookie 随首页下发)。大量既有测试用裸 urlopen
+# 打 /api/* —— 这里装一个全局 opener: 遇 401 自动 GET 一次同源首页拿令牌 cookie
+# 再重放原请求 (等价于浏览器「先开页面再调接口」的自然流程)。
+# 需要断言「无令牌必须 401」的安全测试请自建 opener (build_opener()) 直接 open(),
+# 不要依赖全局 urlopen。
+class _TuanAuthRetryHandler(urllib.request.BaseHandler):
+    """http_error_401 钩子: 先取同源首页的令牌 cookie, 再重放一次原请求。"""
+
+    def http_error_401(self, req, fp, code, msg, hdrs):
+        import io
+        if getattr(req, "_tuan_auth_retried", False):
+            # 重放仍 401: 读出原始响应体后用 BytesIO 重建 HTTPError,
+            # 避免上层 e.read() 拿到已关闭/耗尽的空流。
+            body = b""
+            try:
+                body = fp.read()
+            except Exception:  # noqa: BLE001
+                pass
+            raise urllib.error.HTTPError(
+                req.full_url, code, msg, hdrs, io.BytesIO(body))
+        try:
+            fp.close()
+        except Exception:  # noqa: BLE001
+            pass
+        host = getattr(req, "host", "") or ""
+        try:
+            self.parent.open(urllib.request.Request(f"http://{host}/"))
+        except Exception:  # noqa: BLE001 - 拿令牌失败就让重放仍报原错误
+            pass
+        req._tuan_auth_retried = True
+        try:
+            # 丢弃首次尝试时附带的过期 Cookie 头: cookie processor 只在请求
+            # 没有 Cookie 头时才附加, 旧头不摘掉重放会继续 401。
+            req.unredirected_hdrs.pop("Cookie", None)
+            req.headers.pop("Cookie", None)
+            return self.parent.open(req)
+        except urllib.error.HTTPError as e:
+            # 重放的 HTTPError (如 400) 经多层传播后 body 可能被耗尽,
+            # 读出后用 BytesIO 重建, 保证调用方 e.read() 拿得到原文。
+            body = b""
+            try:
+                body = e.read()
+            except Exception:  # noqa: BLE001
+                pass
+            raise urllib.error.HTTPError(
+                e.url, e.code, e.msg, e.headers, io.BytesIO(body)) from None
+
+
+def _install_web_auth_opener() -> None:
+    import http.cookiejar
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(jar), _TuanAuthRetryHandler())
+    urllib.request.install_opener(opener)
+
+
+_install_web_auth_opener()
 
 # ------------------------------------------------------------------ safe-delete 沙箱守卫
 # 部分测试会真实删除文件 (prune disk / delete session / ledger 回滚 / 移动删除文件 / gh 审计清理等)。

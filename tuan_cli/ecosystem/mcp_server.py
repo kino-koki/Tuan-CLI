@@ -694,7 +694,11 @@ class McpToolServer:
         import subprocess
 
         from ..core.security_utils import safe_error_text, safe_exception_text
-        from ..ext.safety_engine import is_hard_redline, is_redline
+        from ..ext.safety_engine import (
+            SafetyEngine,
+            is_hard_redline,
+            is_redline,
+        )
         from ..sandbox.egress_plan import plan_egress
         from ..sandbox.manager import SandboxManager
         from ..sandbox.verdict import Action
@@ -711,6 +715,16 @@ class McpToolServer:
             return _err("硬红线拦截: 该命令在任何模式下都不可自动执行 (fail-closed)。")
         if risk:
             return _err("安全引擎标记高风险, MCP 通道拒绝自动执行; 请改用 tuan_run 走完整确认流程。")
+
+        # 审计 P0-05: 红线判定之外再过一次**不截断**的共享打分库 —— 与 shell 主链路
+        # / decide_mcp_tool 三入口口径统一 (同一命令在任何入口结论一致);
+        # critical/block 一律拒绝, 不给「前置填充绕过文本红线」留入口差异。
+        try:
+            shared = SafetyEngine().score({"command": command, "type": "shell"})
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"安全引擎评分失败 (fail-closed): {safe_exception_text(exc)}")
+        if shared.get("block") or shared.get("risk") == "critical":
+            return _err("安全引擎判定 critical/block (不截断全文扫描), MCP 通道拒绝执行。")
 
         # 与 tools/shell.py 主链路共用同一套四层滤网裁决（不再只看文本红线）。
         class _McpCtx:

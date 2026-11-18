@@ -10,16 +10,19 @@
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import queue
 import re
+import secrets
 import subprocess
 import sys
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, parse_qs
@@ -372,6 +375,53 @@ class _WebHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:  # 静默访问日志
         pass
 
+    # ---------------- API 鉴权 (审计 P0-03) ----------------
+    def _api_authorized(self) -> bool:
+        """校验 /api/* 请求携带了本进程签发的 token (cookie 或 X-Tuan-Token 头)。
+
+        token 随首页 HTML 的 Set-Cookie (HttpOnly + SameSite=Lax) 下发: 同源页面
+        的 fetch 自动携带; 跨源页面既读不到 HttpOnly cookie, 也无法在无 preflight
+        的 text/plain 请求上附带自定义头 —— 审计里的跨源 CSRF 形态在此失效。
+        """
+        expected = self._owner.api_token.encode("utf-8")
+        try:
+            cookie = SimpleCookie(self.headers.get("Cookie", ""))
+        except Exception as exc:  # noqa: BLE001 - 异常 Cookie 头按未授权处理
+            log.debug("_WebHandler._api_authorized(): 非法 Cookie 头已忽略: %s", exc)
+            return False
+        val = cookie.get("tuan_api")
+        if val is not None:
+            if hmac.compare_digest(val.value.encode("utf-8"), expected):
+                return True
+        header = self.headers.get("X-Tuan-Token", "")
+        if header and hmac.compare_digest(header.encode("utf-8"), expected):
+            return True
+        return False
+
+    def _origin_allowed(self) -> bool:
+        """POST 携带 Origin 时必须与 Host 同源; 无 Origin 视为非浏览器客户端。"""
+        origin = self.headers.get("Origin", "")
+        if not origin:
+            return True
+        host = self.headers.get("Host", "")
+        try:
+            o = urlparse(origin)
+            return bool(o.netloc) and o.netloc == host
+        except Exception as exc:  # noqa: BLE001
+            log.debug("_WebHandler._origin_allowed(): 非致命异常已忽略(设计内降级): %s", exc)
+            return False
+
+    def _serve_page(self, html: str) -> None:
+        """返回工作台页面并下发鉴权 cookie (HttpOnly + SameSite=Lax)。"""
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Set-Cookie",
+                         f"tuan_api={self._owner.api_token}; Path=/; HttpOnly; SameSite=Lax")
+        self.end_headers()
+        self.wfile.write(body)
+
     # ---------------- routes ----------------
     def _serve_asset(self, name: str) -> None:
         """静态资源 (官方 Kimi 设计系统 CSS 等)。读一次缓存, 断网可用。"""
@@ -397,14 +447,20 @@ class _WebHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+        # 审计 P0-03: /api/* 统一鉴权 (/api/auth/* 除外 —— 它本身是登录流程)。
+        if path.startswith("/api/") and not path.startswith("/api/auth/"):
+            if not self._api_authorized():
+                self._json(401, {"ok": False,
+                                 "error": "未授权: 请先从工作台页面访问 (缺少访问令牌)"})
+                return
         if path.startswith("/assets/"):
             self._serve_asset(path[len("/assets/"):])
             return
         if path == "/" or path == "/index.html":
-            self._text(200, FRONTEND_HTML, "text/html; charset=utf-8")
+            self._serve_page(FRONTEND_HTML)
             return
         if path == "/web/graph":
-            self._text(200, GRAPH_HTML, "text/html; charset=utf-8")
+            self._serve_page(GRAPH_HTML)
             return
         if path == "/api/sessions":
             with _SESSIONS_LOCK:
@@ -471,6 +527,17 @@ class _WebHandler(BaseHTTPRequestHandler):
             target = _resolve_in_workspace(self._owner.workspace, rel)
             if target is None:
                 self._json(400, {"ok": False, "error": "path outside workspace"})
+                return
+            # 审计 P0-06: .tuan/ 下是内部状态文件 (team_group.json 的 HMAC secret、
+            # web_auth.json、learner_weights.json、mcp_policy.json 等), 一律不通过
+            # /api/file 回显 —— 匿名读密钥 -> 冒名签发授权的链路在这里切断。
+            try:
+                rel_parts = target.resolve().relative_to(
+                    Path(self._owner.workspace or ".").resolve()).parts
+            except (ValueError, OSError):
+                rel_parts = ()
+            if rel_parts and rel_parts[0] == ".tuan":
+                self._json(403, {"ok": False, "error": "敏感内部文件不可读取"})
                 return
             if not target.is_file():
                 self._json(404, {"ok": False, "error": "not a file"})
@@ -730,6 +797,15 @@ class _WebHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+        # 审计 P0-03: /api/* 统一鉴权 + 同源校验 (跨源无 preflight 的 CSRF 失效)。
+        if path.startswith("/api/") and not path.startswith("/api/auth/"):
+            if not self._api_authorized():
+                self._json(401, {"ok": False,
+                                 "error": "未授权: 请先从工作台页面访问 (缺少访问令牌)"})
+                return
+            if not self._origin_allowed():
+                self._json(403, {"ok": False, "error": "跨源请求已被拒绝"})
+                return
         if path == "/api/chat":
             self._chat()
             return
@@ -1295,7 +1371,11 @@ class _WebHandler(BaseHTTPRequestHandler):
         if not command:
             self._json(400, {"ok": False, "error": "empty command"})
             return
-        approved = bool(body.get("approved"))
+        # 审计 P0-04: 客户端自报 approved 不可信。改为服务端签发**一次性审批票据**:
+        # 高危命令先返回 needs_approval + ticket, 前端用户点确认后带同一 ticket
+        # 重发; 票据绑定具体命令、一次性、60s 过期。服务端由此记录「审批确实
+        # 发生过」, 且票据无法跨命令/跨会话复用。
+        ticket = str(body.get("approval_ticket") or "")
         verdict = analyze_command(command)
         # v0.4: 多维风险向量 + 执行域决策 (审批弹窗可见"危险在哪一类/要不要沙箱")
         try:
@@ -1312,10 +1392,13 @@ class _WebHandler(BaseHTTPRequestHandler):
                 or decision.action in ("ask", "deny")
         except Exception:  # noqa: BLE001 - 向量评估失败不阻断原判定
             risky = bool(verdict.get("block")) or verdict.get("risk") in ("critical", "high")
-        if risky and not approved:
-            self._json(200, {"ok": True, "needs_approval": True,
-                             "command": command, "verdict": verdict})
-            return
+        if risky:
+            if not self._owner.consume_approval_ticket(ticket, command):
+                tid = self._owner.issue_approval_ticket(command)
+                self._json(200, {"ok": True, "needs_approval": True,
+                                 "command": command, "verdict": verdict,
+                                 "approval_ticket": tid})
+                return
         timeout = int(body.get("timeout") or 60)
         try:
             proc = subprocess.run(  # noqa: S602 - 命令经安全引擎评估 + 用户审批
@@ -1571,8 +1654,37 @@ class WebServer:
         self._auth_store = _WebAuthStore(Path(workspace or ".") / ".tuan" / "web_auth.json")
         # T-5.2: 预算告警去重状态 —— 会话id -> 已告警档位 (0 未告警 / 80 已达阈值 / 100 已用满)
         self._budget_notified: Dict[str, int] = {}
+        # 审计 P0-03/P0-04: /api/* 统一鉴权 token (每进程随机, 注入到首页 HTML 的
+        # cookie + meta 中; 跨源页面因同源策略与 SameSite=Lax 无法携带)。
+        self.api_token: str = secrets.token_urlsafe(32)
+        # 审计 P0-04: 高危 shell 审批票据 (一次性 / 绑定命令 / 60s 过期)
+        self._pending_approvals: Dict[str, Dict[str, Any]] = {}
+        self._approval_lock = threading.Lock()
         self.load_sessions()
         self.load_settings()
+
+    # ---------------- 审批票据 (审计 P0-04) ----------------
+    def issue_approval_ticket(self, command: str) -> str:
+        """为一条高危命令签发一次性审批票据 (60s 过期, 绑定命令)。"""
+        tid = secrets.token_urlsafe(16)
+        with self._approval_lock:
+            self._pending_approvals[tid] = {
+                "command": command, "ts": time.time()}
+        return tid
+
+    def consume_approval_ticket(self, ticket: str, command: str) -> bool:
+        """校验并消费审批票据: 必须存在、绑定同一命令、未过期; 用后即焚。"""
+        if not ticket:
+            return False
+        with self._approval_lock:
+            rec = self._pending_approvals.get(ticket)
+            if rec is None or rec.get("command") != command:
+                return False
+            if time.time() - float(rec.get("ts", 0)) > 60.0:
+                self._pending_approvals.pop(ticket, None)
+                return False
+            self._pending_approvals.pop(ticket, None)
+            return True
 
     # ---------------- 会话持久化 ----------------
     def load_sessions(self) -> int:

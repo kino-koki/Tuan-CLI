@@ -577,21 +577,27 @@ def _match_any(text: str, patterns: Any) -> bool:
     在 20k 行上吃 22.5s, 全量模式 >120s, 等于让攻击者用一条超长载荷**冻结整个安全
     闸门**, 危险命令反而无法被及时判定。
 
-    这里对单行做长度上限截断: 真实危险命令的关键 token (命令名 / 危险旗标 / 目标路径)
-    都集中在行首附近, 截断扫描**不漏判**这些; 超长尾部一般是填充/噪声 (base64 段 /
-    长 URL / 重复填充), 截断后仍由 token 化硬红线 (rm / dd / force push 等独立判定,
-    不受长度限制) 与首部模式兜住。这是与 `_GLOB_MAX_TOTAL_CHARS` 同思路的防御性上限:
-    宁可对极端超长行减少正则扫描覆盖, 也不给 DoS 留活口。
+    超长行处理 (审计 P0-01, 不再截断后判定): 旧实现「截前 512 再扫」会被
+    `echo A×600 ; <payload>` 的前置填充绕过 —— 危险 token 在截断点之后被丢掉。
+    现改为**滑窗全覆盖**: 以 512 为窗、256 为步长 (50% 重叠, 防止模式跨窗边界
+    漏配) 扫完整行。成本有界: 入口 `_clamp_command` 已把整条命令压到 ≤2048,
+    单行最多 8 个窗 × 最慢嵌套模式在 512 上 <0.01s, 合计仍远低于 DoS 线;
+    而任意位置的危险 token (头/中/尾) 都必然落在某个窗内, 不再可绕。
     """
     lines = text.split("\n") if "\n" in text else (text,)
     for line in lines:
         if len(line) > _MATCH_LINE_MAX:
-            line = line[:_MATCH_LINE_MAX]
-        for pattern, label in patterns:
-            if _label_suppressed(label):
-                continue
-            if _compiled(pattern).search(line):
-                return True
+            step = _MATCH_LINE_MAX // 2
+            chunks = [line[s:s + _MATCH_LINE_MAX]
+                      for s in range(0, len(line), step)]
+        else:
+            chunks = (line,)
+        for chunk in chunks:
+            for pattern, label in patterns:
+                if _label_suppressed(label):
+                    continue
+                if _compiled(pattern).search(chunk):
+                    return True
     return False
 
 
@@ -1474,10 +1480,21 @@ _COMMAND_MAX_LEN: int = 2048
 _MATCH_LINE_MAX: int = 512
 
 
+# 超长命令 fail-closed 哨兵 (审计 P0-01): 旧实现「截前 2048 再判」会被
+# `echo A×600 ; <payload>` 的前置填充绕过 —— 危险 token 落在截断点之后被丢掉。
+# 现在超长命令整体替换为这个必命中红线的哨兵串: 它同时触发 token 化硬红线
+# (rm -rf /) 与正则红线库, 且只有 ~45 字符, 不重新引入任何 DoS 面。
+_OVERLONG_COMMAND_SENTINEL = "rm -rf / __tuan_command_overlong_fail_closed__"
+
+
 def _clamp_command(command: str) -> str:
-    """超长命令截断到安全长度, 消除 token 化函数上的 DoS 放大。"""
+    """超长命令不再「截断后判定」, 直接替换为必命中红线的哨兵 (fail-closed)。
+
+    哨兵串极短, token 化与正则扫描都无 DoS 面; 任何超过 _COMMAND_MAX_LEN 的
+    输入在 is_hard_redline / is_redline 入口即判危险, 不存在截断盲区。
+    """
     if len(command) > _COMMAND_MAX_LEN:
-        return command[:_COMMAND_MAX_LEN]
+        return _OVERLONG_COMMAND_SENTINEL
     return command
 
 

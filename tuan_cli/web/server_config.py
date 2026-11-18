@@ -459,10 +459,15 @@ class ServerConfigMixin:
 
 
     def apply_apikey(self, env: str, key: str) -> Dict[str, Any]:
-        """设置 (key 非空) 或清除 (key 空) 某个供应商的 API Key。"""
+        """设置 (key 非空) 或清除 (key 空) 某个供应商的 API Key。
+
+        审计 P1-14: env 名必须匹配 ``*_API_KEY`` 白名单形态。此前任意环境变量名
+        都可写入 (实测 BASH_ENV / LD_PRELOAD / NODE_OPTIONS / PYTHONSTARTUP 全部
+        ok=True), 结合 Web 面等于持久化环境变量注入 —— 影响后续所有子进程。
+        """
         env = (env or "").strip()
-        if not env or "=" in env:
-            return {"ok": False, "error": f"非法的环境变量名: {env!r}"}
+        if not env or "=" in env or not re.fullmatch(r"[A-Z][A-Z0-9_]*_API_KEY", env):
+            return {"ok": False, "error": f"非法的环境变量名 (仅允许 *_API_KEY): {env!r}"}
         try:
             from ..config.loader import persist_api_key, remove_api_key
             if key:

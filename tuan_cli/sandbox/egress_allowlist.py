@@ -185,18 +185,42 @@ def claim_from_values(values: Any, *, strict: bool = True,
 
 
 def claim_from_args(fn_args: Any, *, fallback: Any = None,
-                    fallback_source: str = "global_policy") -> NetworkClaim:
+                    fallback_source: str = "global_policy",
+                    trusted: bool = False) -> NetworkClaim:
     """优先取工具参数里的逐命令声明；没有则回落全局配置。
 
     ``fn_args`` 里 ``allowed_domains`` 就是 CC v2.1.271 的 per-command
     ``allowed_domains`` 语义。回落时是逐命令声明，``source`` 会写明。
+
+    审计 P1-10: ``fn_args`` 是**模型输出**，属不可信来源 —— 模型自带
+    ``allowed_domains=["evil.example"]`` 就能覆盖用户配置的全局白名单。
+    因此 ``trusted=False``（默认）时，工具参数里的域名声明只与全局策略
+    **取交集**（只收窄、永不放宽）；没有全局策略时交集为空 → 一律拒绝
+    （模型不能凭空创造出网权限）。只有 ``trusted=True``（调用方已验证
+    参数确实来自用户/策略配置）才允许直接采用工具参数声明。
     """
+    args_claim: Optional[NetworkClaim] = None
     if isinstance(fn_args, Mapping):
         for key in ("allowed_domains", "allowedDomains", "claim_domains"):
             if key in fn_args:
-                return claim_from_values(fn_args[key], strict=True,
-                                         source="tool_args")
-    return claim_from_values(fallback, strict=True, source=fallback_source)
+                args_claim = claim_from_values(fn_args[key], strict=True,
+                                               source="tool_args")
+                break
+    if args_claim is None:
+        if fallback is None:
+            # 无逐命令声明且未配置全局策略: 维持既有非严格默认 (不在此处把
+            # 普通命令全部拒掉); P1-10 的攻击面在下方交集分支已封死。
+            return claim_from_values(None)
+        return claim_from_values(fallback, strict=True, source=fallback_source)
+    if trusted:
+        return args_claim
+    base = (claim_from_values(fallback, strict=True, source=fallback_source)
+            if fallback is not None else
+            NetworkClaim((), True, "no_policy", ()))
+    inter = tuple(d for d in args_claim.required_domains
+                  if d in base.required_domains)
+    return NetworkClaim(inter, True, "tool_args_intersect",
+                        args_claim.invalid_values)
 
 
 @dataclass(frozen=True)

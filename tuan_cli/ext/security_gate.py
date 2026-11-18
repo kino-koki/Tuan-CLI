@@ -240,6 +240,30 @@ class SecurityGate:
                         (f"MCP 工具 {tool_name} 的参数包含危险操作, 已阻止",),
                     )
 
+            # 审计 P0-02/P0-05: run_shell 的命令必须同时过**不截断**的共享打分库
+            # 与 token 化硬红线 —— 只靠红线文本判定会与 shell 主链路口径漂移
+            # (同一命令在 shell 入口被拒、MCP 入口放行)。
+            if tool_name == "run_shell":
+                cmd = ""
+                if isinstance(args, dict):
+                    cmd = str(args.get("command", "") or "")
+                if cmd.strip():
+                    from ..ext.safety_engine import (
+                        is_hard_redline as _engine_is_hard_redline,
+                    )
+                    if _engine_is_hard_redline(cmd):
+                        return GateVerdict(
+                            _DENY, _DENY_CRITICAL,
+                            ("MCP run_shell 命中硬红线 (文件系统/OS 级毁灭), 已阻止",),
+                        )
+                    shared = SafetyEngine().score({"command": cmd, "type": "shell"})
+                    if shared.get("block") or shared.get("risk") == "critical":
+                        return GateVerdict(
+                            _DENY, _DENY_CRITICAL,
+                            ("MCP run_shell 命中安全引擎 critical/block "
+                             "(不截断全文判定), 已阻止",),
+                        )
+
             # 模式附加过滤（不改变现有判定顺序，仅 ALLOW→DENY 升级）
             if self.mode is not None:
                 from ..modes.policy import get_mode_policy

@@ -76,15 +76,21 @@ def _url(srv) -> str:
     return f"http://127.0.0.1:{srv._httpd.server_address[1]}"
 
 
+def _hdr(srv):
+    """审计 P0-03: /api/* 需要服务端签发的访问令牌。"""
+    return {"X-Tuan-Token": srv.api_token}
+
+
 def _get(srv, path):
-    with urllib.request.urlopen(_url(srv) + path, timeout=10) as r:
+    req = urllib.request.Request(_url(srv) + path, headers=_hdr(srv))
+    with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
 def _post(srv, path, body, expect_error=False):
     req = urllib.request.Request(
         _url(srv) + path, data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"}, method="POST")
+        headers={"Content-Type": "application/json", **_hdr(srv)}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             return json.loads(r.read().decode("utf-8"))

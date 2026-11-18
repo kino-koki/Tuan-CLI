@@ -139,7 +139,14 @@ async def handle_connection(ws: Any) -> None:
         "session": session,
     }
 
-    # 发 hello 给手机
+    # 发 hello 给手机 —— 审计 P1-19: **配对码绝不进 WebSocket hello**。
+    # 旧实现把 pair_code 原样发给连接方, 「配对」退化成拿刚收到的码回传,
+    # 任何能连上的人都可自发放配对。配对码只在本机 stderr 展示, 由用户
+    # 手工抄给手机端输入。
+    import sys as _sys
+    print(f"[Dispatch] 配对码: {pair_code} ({PAIR_TTL_SEC}s 内有效) "
+          f"— 请在本机输入该码完成配对", file=_sys.stderr, flush=True)
+    _audit({"event": "pair_code_issued", "time": time.time()})
     await session.send({
         "type": "hello",
         "protocol": 1,
@@ -147,7 +154,6 @@ async def handle_connection(ws: Any) -> None:
         "version": DESKTOP_VERSION,
         "build": DESKTOP_BUILD,
         "auth_required": True,
-        "pair_code": pair_code,
         "agents": agents_dict,
         "mode": "chat",
     })
@@ -197,6 +203,11 @@ async def handle_connection(ws: Any) -> None:
                 await session.send({"type": "pong"})
 
             elif msg_type == "list_agents":
+                # 审计 P1-19: 未配对的连接不得获取本机 Agent 清单。
+                if not session.is_paired():
+                    await session.send({"type": "error", "code": "SESSION_EXPIRED",
+                                        "message": "请先配对"})
+                    continue
                 session.agents_info = await discover_agents()
                 await session.send({
                     "type": "hello",
@@ -231,6 +242,11 @@ async def handle_connection(ws: Any) -> None:
                 asyncio.create_task(_run_task(session, task))
 
             elif msg_type == "approval":
+                # 审计 P1-19: 审批决策只接受已配对会话 (C-2 附注的越权写入在此收口)。
+                if not session.is_paired():
+                    await session.send({"type": "error", "code": "SESSION_EXPIRED",
+                                        "message": "请先配对"})
+                    continue
                 approval_id = msg.get("approval_id", "")
                 decision = msg.get("decision", "deny")
                 session.approval_decisions[approval_id] = decision
