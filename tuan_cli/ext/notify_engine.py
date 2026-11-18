@@ -56,7 +56,7 @@ def _run_cmd(cmd: Any, timeout: Any = 5) -> Tuple[int, str]:
             with open(tmp, "rb") as f:
                 data = f.read()
             return rc, data[-200:].decode(errors="replace").strip()
-        except (FileNotFoundError, OSError) as exc:
+        except (FileNotFoundError, OSError) as _fb_exc:
             return -1, str(exc)[:200]
     except Exception as e:
         log.debug("_run_cmd(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)

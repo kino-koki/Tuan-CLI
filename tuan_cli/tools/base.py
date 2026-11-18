@@ -650,8 +650,8 @@ class ToolRegistry:
             if ledger is not None and _snaps is not None and _cfg_bool(cfg, "ledger.auto_rollback_on_error", True):
                 try:
                     ledger.restore(_snaps)
-                except Exception as exc:
-                    log.warning("ToolRegistry._exec_and_record(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+                except Exception as _fb_exc:
+                    log.warning("ToolRegistry._exec_and_record(): 非致命异常已忽略(设计内降级, 不改控制流): %s", _fb_exc)
                     pass
             self._emit_exec(ctx, name, "error", elapsed=elapsed, error_type=type(exc).__name__)
             # PostToolUseFailure：决策类，动作已发生（工具执行失败），只作反馈
@@ -660,8 +660,8 @@ class ToolRegistry:
                     "tool_name": name,
                     "error_type": type(exc).__name__,
                     "error": str(exc)})
-            except Exception as exc:  # noqa: BLE001 - 通知类吞异常
-                log.warning("ToolRegistry._exec_and_record(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            except Exception as _fb_exc:  # noqa: BLE001 - 通知类吞异常
+                log.warning("ToolRegistry._exec_and_record(): 非致命异常已忽略(设计内降级, 不改控制流): %s", _fb_exc)
                 pass
             return ToolResult(
                 status="error",

@@ -36,8 +36,8 @@ def _render_model_error(exc: Exception) -> str:
         tmpl = friendly_for(exc)
         if tmpl is not None:
             return tmpl.render()
-    except Exception as exc:  # noqa: BLE001
-        log.warning("_render_model_error(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+    except Exception as _fb_exc:  # noqa: BLE001
+        log.warning("_render_model_error(): 非致命异常已忽略(设计内降级, 不改控制流): %s", _fb_exc)
         pass
     return str(exc)
 

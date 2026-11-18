@@ -313,8 +313,8 @@ class AltScreenGuard:
     def __exit__(self, exc_type, exc, tb) -> bool:
         try:
             self.tui.leave_alt_screen()
-        except Exception as exc:  # noqa: BLE001 - 异常路径也必须恢复
-            log.warning("AltScreenGuard.__exit__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        except Exception as _fb_exc:  # noqa: BLE001 - 异常路径也必须恢复
+            log.warning("AltScreenGuard.__exit__(): 非致命异常已忽略(设计内降级, 不改控制流): %s", _fb_exc)
             pass
         self.entered = False
         return False  # 不吞异常

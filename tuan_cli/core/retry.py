@@ -41,8 +41,8 @@ def classify_error(exc: Exception) -> tuple:
     """错误分类 -> (kind, status)。委托给 OpenAI 兼容适配器, 未知类型视为 other。"""
     try:
         from ..models.openai_compat import OpenAICompatAdapter
-    except Exception as exc:  # pragma: no cover
-        log.debug("classify_error(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+    except Exception as _fb_exc:  # pragma: no cover
+        log.debug("classify_error(): 非致命异常已忽略(设计内降级, 不改控制流): %s", _fb_exc)
         return "other", None
     if hasattr(exc, "status_code") or "openai" in type(exc).__module__.lower():
         return OpenAICompatAdapter.classify_error(exc)

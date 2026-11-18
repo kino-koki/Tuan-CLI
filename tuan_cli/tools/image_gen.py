@@ -107,8 +107,8 @@ def _generate_dalle(
         body_text = ""
         try:
             body_text = exc.read().decode("utf-8", errors="replace")[:500]
-        except Exception as exc:
-            log.warning("_generate_dalle(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        except Exception as _fb_exc:
+            log.warning("_generate_dalle(): 非致命异常已忽略(设计内降级, 不改控制流): %s", _fb_exc)
             pass
         return {"error": f"OpenAI API 错误 {exc.code}: {body_text}"}
     except Exception as exc:  # noqa: BLE001
@@ -166,8 +166,8 @@ def _generate_stability(
         body_text = ""
         try:
             body_text = exc.read().decode("utf-8", errors="replace")[:500]
-        except Exception as exc:
-            log.warning("_generate_stability(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        except Exception as _fb_exc:
+            log.warning("_generate_stability(): 非致命异常已忽略(设计内降级, 不改控制流): %s", _fb_exc)
             pass
         return {"error": f"Stability API 错误 {exc.code}: {body_text}"}
     except Exception as exc:  # noqa: BLE001
