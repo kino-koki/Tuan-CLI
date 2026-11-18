@@ -1,5 +1,5 @@
 except Exception 盘点 (scripts/audit_except.py 生成)
-总计 1772; 分类 {'rethrow': 60, 'logged': 1113, 'silent': 0, 'fallback': 599}; 安全/审计 {'rethrow': 6, 'logged': 205, 'silent': 0, 'fallback': 0}
+总计 1772; 分类 {'rethrow': 60, 'logged': 1114, 'silent': 0, 'fallback': 598}; 安全/审计 {'rethrow': 6, 'logged': 205, 'silent': 0, 'fallback': 0}
 
 == 按文件汇总 (silent 降序) ==
 tuan_cli/_http.py: total=9 {'rethrow': 2, 'logged': 7, 'silent': 0, 'fallback': 0}
@@ -227,7 +227,7 @@ tuan_cli/memory/store.py: total=3 {'rethrow': 1, 'logged': 2, 'silent': 0, 'fall
 tuan_cli/models/cache.py: total=3 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 2}
 tuan_cli/models/local_catalog.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
 tuan_cli/models/official_sync.py: total=1 {'rethrow': 0, 'logged': 0, 'silent': 0, 'fallback': 1}
-tuan_cli/models/offline.py: total=3 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 1}
+tuan_cli/models/offline.py: total=3 {'rethrow': 0, 'logged': 3, 'silent': 0, 'fallback': 0}
 tuan_cli/models/router.py: total=2 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 0}
 tuan_cli/modes/prompts.py: total=1 {'rethrow': 0, 'logged': 1, 'silent': 0, 'fallback': 0}
 tuan_cli/modes/switcher.py: total=2 {'rethrow': 0, 'logged': 2, 'silent': 0, 'fallback': 0}
@@ -723,9 +723,8 @@ tuan_cli/web/web_sessions_auth.py: total=2 {'rethrow': 0, 'logged': 1, 'silent':
       tuan_cli/memory/auto_extractor.py:215 (Exception) except Exception:  # noqa: BLE001  | body@216: enabled = True
       tuan_cli/models/cache.py:56 (Exception) except Exception:  # noqa: BLE001 - 损坏缓存直接重建  | body@57: self._mem = {}
       tuan_cli/models/cache.py:39 (Exception) except Exception:  # noqa: BLE001 - 兜底用临时目录  | body@40: path = Path.home() / ".tuan" / "ca
-      tuan_cli/models/local_catalog.py:204 (Exception) except Exception as exc:  # noqa: BLE001 - 后台失败只回传, 不冒泡  | body@205: if on_done is not Non
-      tuan_cli/models/official_sync.py:149 (Exception) except Exception as exc:  # noqa: BLE001  | body@150: results[provider] = {"ok": False, "c
-      tuan_cli/models/offline.py:118 (Exception) except Exception as exc:  | body@119: self._status = OllamaStatus(
+      tuan_cli/models/local_catalog.py:209 (Exception) except Exception as exc:  # noqa: BLE001 - 后台失败只回传, 不冒泡  | body@210: if on_done is not Non
+      tuan_cli/models/official_sync.py:156 (Exception) except Exception as exc:  # noqa: BLE001  | body@157: results[provider] = {"ok": False, "c
       tuan_cli/parity_claude/depth.py:151 (Exception) except Exception as exc:  # noqa: BLE001  | body@152: out[name] = {"ok": False, "checks": 
       tuan_cli/parity_claude/depth.py:107 (Exception) except Exception as exc:  # noqa: BLE001  | body@108: probe_evidence = "探针抛 %s" % type(exc
       tuan_cli/parity_claude/module_probes.py:444 (Exception) except Exception as exc:  # noqa: BLE001  | body@445: problems.append("真 worktree: %s" % t
@@ -1089,7 +1088,7 @@ tuan_cli/cli/cmd_sandbox.py:46 (Exception) except Exception as exc:  # noqa: BLE
 tuan_cli/cli/cmd_sandbox.py:53 (Exception) except Exception as exc:  # noqa: BLE001  | body@54: log.debug("安全路径 fallback 降级: %s", exc
 tuan_cli/cli/cmd_sandbox.py:184 (Exception) except Exception as exc:  # noqa: BLE001  | body@185: log.debug("安全路径 fallback 降级: %s", ex
 tuan_cli/cli/cmd_sandbox.py:250 (Exception) except Exception as exc:  # noqa: BLE001  | body@251: log.debug("安全路径 fallback 降级: %s", ex
-tuan_cli/cli/cmd_sandbox.py:313 (Exception) except Exception as exc:  # noqa: BLE001 - 总线不可用回退审计  | body@314: log.debug("安全路径 fallback
+tuan_cli/cli/cmd_sandbox.py:313 (Exception) except Exception as _fb_exc:  # noqa: BLE001 - 总线不可用回退审计  | body@314: log.debug("安全路径 fall
 tuan_cli/cli/cmd_sandbox.py:329 (Exception) except Exception as exc:  # noqa: BLE001  | body@330: log.debug("安全路径 fallback 降级: %s", ex
 tuan_cli/cli/cmd_session_export.py:93 (Exception) except Exception as exc:  # noqa: BLE001  | body@94: log.warning("export_session_zip(): 非致
 tuan_cli/cli/cmd_session_export.py:34 (Exception) except Exception as exc:  # noqa: BLE001 - 损坏行跳过  | body@35: log.debug("_read_records(): 非
@@ -1315,7 +1314,7 @@ tuan_cli/core/ledger.py:283 (Exception) except Exception as exc:  | body@284: lo
 tuan_cli/core/ledger.py:275 (Exception) except Exception as exc:  | body@276: log.debug("回滚删除失败 (%s): %s", ap, exc)
 tuan_cli/core/ledger.py:294 (Exception) except Exception as exc:  | body@295: log.debug("快照清理失败 (%s): %s", sp, exc)
 tuan_cli/core/ledger.py:109 (Exception) except Exception as exc:  | body@110: log.debug("MutationLedger._snap_dir(): 非致命异常已忽略(设计内降
-tuan_cli/core/loop_provider.py:39 (Exception) except Exception as exc:  # noqa: BLE001  | body@40: log.warning("_render_model_error(): 非
+tuan_cli/core/loop_provider.py:39 (Exception) except Exception as _fb_exc:  # noqa: BLE001  | body@40: log.warning("_render_model_error(
 tuan_cli/core/loop_provider.py:405 (Exception) except Exception as exc:  | body@406: log.debug("PlannerExecuteLoop._plan(): 非致命异常已忽略(设计内降
 tuan_cli/core/loop_registry.py:123 (Exception) except Exception as exc:  | body@124: log.warning("pre-execute stage '%s' failed: %s", sta
 tuan_cli/core/loop_registry.py:138 (Exception) except Exception as exc:  | body@139: log.warning("execute stage failed: %s", exc)
@@ -1360,7 +1359,7 @@ tuan_cli/core/resilience.py:209 (Exception) except Exception as exc:  # noqa: BL
 tuan_cli/core/resilience.py:359 (Exception) except Exception as exc:  # noqa: BLE001  | body@360: log.warning("AgentResilience._failov
 tuan_cli/core/resilience.py:65 (Exception) except Exception as exc:  # noqa: BLE001  | body@66: log.warning("AgentResilience.__init__
 tuan_cli/core/resilience.py:435 (Exception) except Exception:  # noqa: BLE001  | body@436: self._sticky = None  # 备用也挂了 → 回到主路径 (主模型可能
-tuan_cli/core/retry.py:44 (Exception) except Exception as exc:  # pragma: no cover  | body@45: log.debug("classify_error(): 非致命异
+tuan_cli/core/retry.py:44 (Exception) except Exception as _fb_exc:  # pragma: no cover  | body@45: log.debug("classify_error(): 
 tuan_cli/core/safe_text.py:83 (Exception) except Exception as exc:  # noqa: BLE001 - 净化自身绝不让 hook 通道再抛  | body@84: log.debug("safe_h
 tuan_cli/core/sandbox.py:161 (Exception) except Exception as exc:  # noqa: BLE401  | body@162: log.debug("安全路径 fallback 降级: %s", ex
 tuan_cli/core/sandbox_provider.py:168 (Exception) except Exception as exc:  | body@169: log.debug("安全路径 fallback 降级: %s", exc)
@@ -1419,7 +1418,7 @@ tuan_cli/core/security_policy.py:545 (Exception) except Exception as exc:  | bod
 tuan_cli/core/security_policy.py:377 (Exception) except Exception as exc:  | body@378: log.debug("规则解析失败: %s", exc)
 tuan_cli/core/security_policy.py:322 (Exception) except Exception as exc:  | body@323: log.warning("安全策略评估降级: %s", exc)
 tuan_cli/core/security_utils.py:222 (Exception) except Exception as exc:  # noqa: BLE001 - 展示原语绝不抛  | body@223: log.debug("安全展示原语降级: %s", 
-tuan_cli/core/security_utils.py:240 (Exception) except Exception as exc:  # noqa: BLE001  | body@241: log.debug("安全路径 fallback 降级: %s", ex
+tuan_cli/core/security_utils.py:240 (Exception) except Exception as _fb_exc:  # noqa: BLE001  | body@243: log.debug("安全路径 fallback 降级: %s"
 tuan_cli/core/security_utils.py:185 (Exception) except Exception as exc:  # noqa: BLE001  | body@186: log.debug("安全展示原语降级: %s", exc)
 tuan_cli/core/security_utils.py:211 (Exception) except Exception as exc:  # noqa: BLE001  | body@212: log.debug("安全路径 fallback 降级: %s", ex
 tuan_cli/core/subagents.py:156 (Exception) except Exception as exc:  # noqa: BLE001  | body@157: log.warning("SubAgentPool.__init__()
@@ -1566,8 +1565,9 @@ tuan_cli/memory/auto_extractor.py:192 (Exception) except Exception as exc:  # no
 tuan_cli/memory/store.py:187 (Exception) except Exception as exc:  # noqa: BLE001  | body@188: log.warning("用户画像 FTS 索引失败 (已忽略): %s
 tuan_cli/memory/store.py:136 (Exception) except Exception as exc:  # noqa: BLE001  | body@137: log.warning("记忆 FTS 索引失败 (已忽略): %s",
 tuan_cli/models/cache.py:66 (Exception) except Exception as exc:  # noqa: BLE001  | body@67: log.warning("ResponseCache._flush(): 
-tuan_cli/models/offline.py:210 (Exception) except Exception as exc:  # noqa: BLE001  | body@211: log.debug("detect_llamacpp(): 非致命异常已
-tuan_cli/models/offline.py:164 (Exception) except Exception as exc:  | body@165: log.debug("OllamaManager.pull_model(): 非致命异常已忽略(设计内降
+tuan_cli/models/offline.py:89 (Exception) except Exception as exc:  # noqa: BLE001 - 探测原语绝不抛  | body@90: log.warning("_capture_cmd()
+tuan_cli/models/offline.py:231 (Exception) except Exception as exc:  # noqa: BLE001  | body@232: log.debug("detect_llamacpp(): 非致命异常已
+tuan_cli/models/offline.py:185 (Exception) except Exception as exc:  | body@186: log.debug("OllamaManager.pull_model(): 非致命异常已忽略(设计内降
 tuan_cli/models/router.py:618 (Exception) except Exception as exc:  # noqa: BLE001 - 探测失败按无本地模型处理  | body@619: log.warning("_pick_lo
 tuan_cli/models/router.py:638 (Exception) except Exception as exc:  # noqa: BLE001 - 检测模块异常时按在线处理, 不干扰主流程  | body@639: log.debug("ap
 tuan_cli/modes/prompts.py:65 (Exception) except Exception as exc:  | body@66: log.warning("_resolve_mode_prompts_dir(): 非致命异常已忽略(设计
@@ -1756,8 +1756,8 @@ tuan_cli/tools/base.py:555 (Exception) except Exception as exc:  # noqa: BLE001 
 tuan_cli/tools/base.py:561 (Exception) except Exception as exc:  | body@562: log.warning("ToolRegistry._approve_dangerous(): 非致命异
 tuan_cli/tools/base.py:628 (Exception) except Exception as exc:  | body@629: log.warning("ToolRegistry._exec_and_record(): 非致命异常已
 tuan_cli/tools/base.py:643 (Exception) except Exception as exc:  | body@644: log.warning("ToolRegistry._exec_and_record(): 非致命异常已
-tuan_cli/tools/base.py:663 (Exception) except Exception as exc:  # noqa: BLE001 - 通知类吞异常  | body@664: log.warning("ToolRegistry._
-tuan_cli/tools/base.py:653 (Exception) except Exception as exc:  | body@654: log.warning("ToolRegistry._exec_and_record(): 非致命异常已
+tuan_cli/tools/base.py:663 (Exception) except Exception as _fb_exc:  # noqa: BLE001 - 通知类吞异常  | body@664: log.warning("ToolRegist
+tuan_cli/tools/base.py:653 (Exception) except Exception as _fb_exc:  | body@654: log.warning("ToolRegistry._exec_and_record(): 非致
 tuan_cli/tools/browser.py:57 (Exception) except Exception as exc:  # noqa: BLE001  | body@58: log.debug("browser_use_available(): 非
 tuan_cli/tools/browser.py:293 (Exception) except Exception as exc:  # noqa: BLE001  | body@294: log.warning("_format_report(): 非致命异常
 tuan_cli/tools/consolidate.py:189 (Exception) except Exception as exc:  # noqa: BLE001 - 单个家族失败不应阻断启动  | body@190: log.debug("apply_cons
@@ -1774,8 +1774,8 @@ tuan_cli/tools/gh_borrow.py:158 (Exception) except Exception as exc:  | body@159
 tuan_cli/tools/gh_borrow.py:134 (Exception) except Exception as exc:  | body@135: log.warning("GitHubClient.get_file_content(): 非致命异常已
 tuan_cli/tools/image_gen.py:114 (Exception) except Exception as exc:  # noqa: BLE001  | body@115: log.debug("_generate_dalle(): 非致命异常已
 tuan_cli/tools/image_gen.py:173 (Exception) except Exception as exc:  # noqa: BLE001  | body@174: log.debug("_generate_stability(): 非致
-tuan_cli/tools/image_gen.py:110 (Exception) except Exception as exc:  | body@111: log.warning("_generate_dalle(): 非致命异常已忽略(设计内降级, 不改控制
-tuan_cli/tools/image_gen.py:169 (Exception) except Exception as exc:  | body@170: log.warning("_generate_stability(): 非致命异常已忽略(设计内降级, 
+tuan_cli/tools/image_gen.py:110 (Exception) except Exception as _fb_exc:  | body@111: log.warning("_generate_dalle(): 非致命异常已忽略(设计内降级, 
+tuan_cli/tools/image_gen.py:169 (Exception) except Exception as _fb_exc:  | body@170: log.warning("_generate_stability(): 非致命异常已忽略(设计内
 tuan_cli/tools/mcp/audit.py:28 (Exception) except Exception as exc:  # noqa: BLE001 - 配置模块不可用时回退到 ~/.tuan  | body@29: log.debug("安全路径
 tuan_cli/tools/mcp/audit.py:54 (Exception) except Exception as exc:  # noqa: BLE001  | body@55: log.warning("MCP 审计记录失败: %s", exc)
 tuan_cli/tools/mcp/client.py:175 (Exception) except Exception as exc:  # noqa: BLE001  | body@176: log.warning("MCPClient._persist_audi
@@ -1859,7 +1859,7 @@ tuan_cli/tui/common.py:334 (Exception) except Exception as exc:  # noqa: BLE001 
 tuan_cli/tui/common.py:509 (Exception) except Exception as exc:  # noqa: BLE001 - 测量失败不影响渲染  | body@510: log.warning("_MeasuredWi
 tuan_cli/tui/common.py:539 (Exception) except Exception as exc:  # noqa: BLE001  | body@540: log.warning("_TuiLogHandler.emit(): 
 tuan_cli/tui/configkit/model_migration.py:307 (Exception) except Exception as exc:  # noqa: BLE001 - 对齐上游 `let _ =`  | body@308: log.warning("AltScr
-tuan_cli/tui/configkit/model_migration.py:316 (Exception) except Exception as exc:  # noqa: BLE001 - 异常路径也必须恢复  | body@317: log.warning("AltScreenGu
+tuan_cli/tui/configkit/model_migration.py:316 (Exception) except Exception as _fb_exc:  # noqa: BLE001 - 异常路径也必须恢复  | body@317: log.warning("AltScre
 tuan_cli/tui/inputkit/copy_input_guard.py:79 (Exception) except Exception as err:  # noqa: BLE001 - 析构路径绝不抛  | body@80: log.debug("安全路径 fallback 降级
 tuan_cli/tui/inputkit/copy_input_guard.py:88 (Exception) except Exception as exc:  | body@89: log.warning("剪贴板护栏降级: %s", exc)
 tuan_cli/tui/interact.py:548 (Exception) except Exception as exc:  # noqa: BLE001 - 无 app 时忽略  | body@549: log.warning("InteractMix
