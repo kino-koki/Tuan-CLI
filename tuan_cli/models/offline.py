@@ -14,10 +14,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
+
+log = logging.getLogger(__name__)
 
 import logging
 log = logging.getLogger(__name__)
@@ -84,6 +87,7 @@ def _capture_cmd(cmd: List[str], timeout: float) -> tuple:
     except FileNotFoundError:
         return None, "missing"
     except Exception as exc:  # noqa: BLE001 - 探测原语绝不抛
+        log.warning("_capture_cmd(): 探测命令执行失败: %s", exc)
         return None, f"{type(exc).__name__}: {exc}"
 
 
