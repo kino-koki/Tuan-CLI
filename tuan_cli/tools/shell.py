@@ -773,7 +773,8 @@ def _guard_build_prescan(ctx: ToolContext, command: str, state: GuardState) -> A
     from ..ext.safety_engine import is_hard_redline as _is_hard
     try:
         first = command.strip().split(None, 1)[0].lower()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_guard_build_prescan(): 命令解析异常已忽略 (按无构建文件处理): %s", exc)
         return None
     names = _BUILD_FILE_HINTS.get(first)
     if not names:
