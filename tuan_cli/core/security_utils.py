@@ -237,8 +237,10 @@ def safe_exception_text(exc: BaseException, limit: Any = None) -> str:
         if out:
             return f"{type_name}: {out}"
         return type_name
-    except Exception as exc:  # noqa: BLE001
-        log.debug("安全路径 fallback 降级: %s", exc)
+    except Exception as _fb_exc:  # noqa: BLE001
+        # 绑定名刻意用 _fb_exc: 函数参数名也是 exc, 若用 as exc 会遮蔽参数,
+        # 让下面 type(exc).__name__ 变成内层异常名 (实测把 BadExc 变 RuntimeError)。
+        log.debug("安全路径 fallback 降级: %s", _fb_exc)
         return (f"{type(exc).__name__} (异常消息不可用已丢弃)")
 
 

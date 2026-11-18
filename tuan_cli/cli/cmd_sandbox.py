@@ -310,8 +310,8 @@ def _sandbox_trace(args: Any) -> int:
                 "layer": payload.get("layer", ""),
                 "reason": payload.get("reason", ""),
             })
-    except Exception as exc:  # noqa: BLE001 - 总线不可用回退审计
-        log.debug("安全路径 fallback 降级: %s", exc)
+    except Exception as _fb_exc:  # noqa: BLE001 - 总线不可用回退审计
+        log.debug("安全路径 fallback 降级: %s", _fb_exc)
         try:
             from ..core.security_auditor import SecurityAuditor
 
