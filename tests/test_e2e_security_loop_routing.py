@@ -219,18 +219,23 @@ def test_e2e_full_chain(isolated_home):
 # ---------------------------------------------------------------- 附加: 本地黑名单减负 (与审计同链)
 
 def test_stage_blacklist_override(isolated_home):
-    """用户本地抑制某黑名单模式后, is_redline 不再命中该模式 (硬红线仍不可抑制)。"""
+    """审计 P1-18: 用户本地抑制对**关键红线 label 不生效** (防自我提权)。
+
+    旧契约允许抑制 format 等关键模式 (实测 curl|sh / fork bomb 被抑制成 none);
+    新契约下关键 label 的抑制一律忽略。
+    """
     from tuan_cli.core import blacklist_override
     from tuan_cli.ext import safety_engine as se
 
     # 正则模式命中 (format 写盘)
     assert se.is_redline("format c:") is True
     blacklist_override.suppress("format")
-    assert se.is_redline("format c:") is False
+    # 关键 label 的抑制被忽略: 仍拦截
+    assert se.is_redline("format c:") is True
 
     # token 化硬红线不受影响 (dd 写原始设备)
     assert se.is_hard_redline("dd if=/dev/zero of=/dev/sda") is True
 
-    # 恢复
+    # 恢复 (幂等)
     blacklist_override.release("format")
     assert se.is_redline("format c:") is True

@@ -623,11 +623,11 @@ def _guard_safety_check(ctx: ToolContext, command: str, state: GuardState) -> An
     try:
         verdict = svc.check(ctx, command)
     except Exception as exc:  # noqa: BLE001
-        # fail-closed: safety_check 异常时不做静默放行。
-        # strict_mode 已在上游挡住非良性命令, 但 safety_check 故障时
-        # 仍应记录异常, 避免高危命令因安全组件故障而溜过。
-        log.error("safety_check 异常 (不再静默放行): %s", exc)
-        return _ALLOW
+        # 审计 P2-28: fail-closed 落实到实现 —— 旧代码注释写 fail-closed
+        # 却 return _ALLOW 静默放行。安全组件故障时必须拒绝执行。
+        log.error("safety_check 异常, fail-closed 拒绝执行: %s", exc)
+        return (f"[已拦截] safety_check 服务异常 (fail-closed, 不静默放行): "
+                f"{type(exc).__name__}: {exc}")
     state["safety_verdict"] = verdict
     risk = (verdict.get("risk") or "none").lower()
     block = bool(verdict.get("block"))

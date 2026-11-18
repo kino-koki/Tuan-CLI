@@ -763,7 +763,9 @@ class McpToolServer:
 
         try:
             manager = SandboxManager()
-            verdict = manager.assess_command(command, _McpCtx(self.workspace, self._config))
+            verdict = manager.assess_command(
+                command,
+                _McpCtx(self.workspace, getattr(self, "_config", None)))
         except Exception as exc:  # noqa: BLE001
             # 裁决器异常一律拒绝，不回落裸跑（同 decided 契约）。
             return _err(f"统一滤网裁决失败 (fail-closed): {safe_exception_text(exc)}")

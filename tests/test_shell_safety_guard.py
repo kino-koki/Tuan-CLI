@@ -565,24 +565,23 @@ def test_high_kubectl_delete():
 @pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
 @pytest.mark.usefixtures("strict_shell_off")
 def test_high_iptables_flush():
-    """iptables -F 应被判为 high (清空防火墙规则)。"""
+    """审计 P1-16: iptables -F (服务级网络防护破坏) 升为硬红线, 直接拦截。"""
     k = _kernel_with_safety()
     ctx = _build_ctx(k)
     reason = _pre_exec_guard(ctx, "iptables -F")
-    assert reason is None
-    assert ctx.safety_advice is not None
+    assert reason is not None and "iptables" in reason
 
 
 @pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
 @pytest.mark.usefixtures("strict_shell_off")
 def test_medium_systemctl_stop():
-    """systemctl stop/disable 应被判为 medium。"""
+    """systemctl stop nginx 仍 medium; disable sshd 升为 critical (审计 P1-16)。"""
     k = _kernel_with_safety()
-    for cmd in ["systemctl stop nginx", "systemctl disable sshd"]:
-        ctx = _build_ctx(k)
-        reason = _pre_exec_guard(ctx, cmd)
-        assert reason is None  # medium 不硬拦截
-        assert ctx.safety_advice is not None
+    ctx = _build_ctx(k)
+    assert _pre_exec_guard(ctx, "systemctl stop nginx") is None
+    ctx2 = _build_ctx(k)
+    reason = _pre_exec_guard(ctx2, "systemctl disable sshd")
+    assert reason is not None and "sshd" in reason
 
 
 @pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
@@ -665,14 +664,17 @@ def test_redline_covers_ansi_c_quoting():
 
 @pytest.mark.usefixtures("strict_shell_off")
 def test_high_new_patterns_advice_only():
-    """新增高危模式 (crontab -r / truncate -s 0 / systemctl mask) 不硬拦, 仅附建议。"""
+    """crontab -r / truncate -s 0 不硬拦仅附建议; systemctl mask 升为 critical (审计 P1-16)。"""
     k = _kernel_with_safety()
-    for cmd in ["crontab -r", "truncate -s 0 big.log", "systemctl mask docker"]:
+    for cmd in ["crontab -r", "truncate -s 0 big.log"]:
         ctx = _build_ctx(k)
         reason = _pre_exec_guard(ctx, cmd)
         assert reason is None, f"高危命令不应硬拦截: {cmd}"
         assert ctx.safety_severity == "high"
         assert ctx.safety_advice is not None
+    ctx = _build_ctx(k)
+    reason = _pre_exec_guard(ctx, "systemctl mask docker")
+    assert reason is not None and "mask" in reason
 
 
 @pytest.mark.skipif(not HAVE_SAFETY, reason="safety 引擎不可用")
