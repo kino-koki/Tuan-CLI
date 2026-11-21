@@ -44,7 +44,7 @@ class ToolResultCache:
         # workspace 纳入键: 只读工具的结果可能依赖工作区 (如相对路径/索引),
         # 否则切换工作区后会命中上一个工作区的陈旧结果 (stale)。
         raw = f"{name}\x00{workspace}\x00{norm}"
-        return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24]
+        return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:24]
 
     def get(self, name: str, arguments_json: str, dangerous: bool = False,
             workspace: str = "") -> Optional[str]:

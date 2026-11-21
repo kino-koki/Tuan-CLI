@@ -34,7 +34,7 @@ def project_slug(workspace: str) -> str:
         norm = str(workspace)
     # 统一分隔符并去掉结尾斜杠, 避免 `foo` 与 `foo/` 产生不同 slug
     norm = norm.replace("\\", "/").rstrip("/")
-    return hashlib.sha1(norm.encode("utf-8")).hexdigest()[:8]
+    return hashlib.sha1(norm.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
 
 
 class MemoryNotesStore:

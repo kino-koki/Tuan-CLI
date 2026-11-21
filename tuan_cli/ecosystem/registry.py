@@ -74,7 +74,7 @@ class RegistryEntry:
 
 def _fetch_json(url: str, *, ttl_seconds: int = 3600) -> Optional[Dict[str, Any]]:
     """拉 JSON 注册表, 先查本地缓存 (TTL)。失败返回 None。"""
-    cache_key = hashlib.sha1(url.encode()).hexdigest()
+    cache_key = hashlib.sha1(url.encode(), usedforsecurity=False).hexdigest()
     cache_file = _REGISTRY_CACHE_DIR / f"{cache_key}.json"
     _REGISTRY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 

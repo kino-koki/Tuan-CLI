@@ -279,7 +279,7 @@ def _cache_dir(ctx: Any) -> Optional[Path]:
 
 def _cache_key(query: str, limit: int, engine: str) -> str:
     raw = f"{engine}\0{query.strip().lower()}\0{limit}"
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
 def _cache_load(ctx: Any, query: str, limit: int, engine: str, ttl: float,

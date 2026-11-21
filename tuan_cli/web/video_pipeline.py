@@ -26,7 +26,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from ..runtime.gateway import ModelGateway
@@ -115,7 +118,11 @@ class VideoPipeline:
     def _default_tts(self, text: str, voice: str,
                      ctx: PipelineContext) -> Dict[str, Any]:
         from . import narration_tts
-        return narration_tts.synthesize_narration(text, voice=voice)
+        # 默认 TTS 无调用方传入输出路径: 按 text+voice 派生确定性临时路径
+        # (同输入同文件, 与 narration_tts 确定性合成的语义一致)。
+        digest = hashlib.sha1(f"{text}|{voice}".encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+        out_path = str(Path(tempfile.gettempdir()) / f"tuan_narration_{digest}.wav")
+        return narration_tts.synthesize_narration(text, out_path, voice=voice)
 
     def _attach_narration_audio(self, narration: Dict[str, Any], ctx: PipelineContext,
                                 tts_fn: Callable[[str, str, PipelineContext],

@@ -40,7 +40,8 @@ class ResultEntry:
     def __post_init__(self) -> None:
         if not self._content_hash:
             self._content_hash = hashlib.md5(
-                self.content.encode("utf-8", errors="replace")
+                self.content.encode("utf-8", errors="replace"),
+                usedforsecurity=False,
             ).hexdigest()
 
     @property

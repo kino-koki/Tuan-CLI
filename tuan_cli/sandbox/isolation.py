@@ -135,7 +135,7 @@ class Snapshot:
 
 
 def _sha1(path: str) -> str:
-    h = hashlib.sha1()
+    h = hashlib.sha1(usedforsecurity=False)
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 16), b""):
             h.update(chunk)
@@ -148,7 +148,7 @@ def _backup(path: str) -> None:
     # basename 相同但目录不同的文件 (如 src/main.py 与 lib/main.py) 备份会互相
     # 覆盖, 使回滚丢失其一; 用父目录哈希消歧, 同时保留可读文件名。
     d = os.path.dirname(os.path.abspath(path))
-    tag = hashlib.sha1(d.encode("utf-8")).hexdigest()[:8]
+    tag = hashlib.sha1(d.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
     name = f"{os.path.basename(path)}.{tag}.bak"
     try:
         shutil.copy2(path, os.path.join(bakdir, name))

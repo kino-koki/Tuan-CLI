@@ -52,7 +52,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, BinaryIO, Dict, List, Optional
 
 from .security_utils import redact_nested, redact_sensitive
 from .audit_correlation import AuditCorrelator
@@ -183,7 +183,7 @@ class SecurityAuditor:
         self._log_file = self._log_dir / "security_audit.aead"
         # 持久写句柄: 避免每条审计记录都 open/close (高并发审计时的系统调用开销)。
         # 惰性打开; 写失败时关闭并回落到逐条打开。
-        self._log_fh = None
+        self._log_fh: Optional[BinaryIO] = None
         self._last_fsync = 0.0
 
         # 加载已有记录的序号和 prev_hash
@@ -300,10 +300,23 @@ class SecurityAuditor:
         depth = getattr(_AUDIT_REENTRANT, "n", 0) + 1
         _AUDIT_REENTRANT.n = depth
         try:
-            return self._record_impl(
+            # 关联分析必须在 self._lock 外执行: record() → _publish_correlation_alerts()
+            # → bus.emit() → AlertLogger.log() 会获取 AlertLogger._lock。若在持有
+            # self._lock 的同时跨线程等待该锁, 与异步告警线程反向持锁会形成
+            # lock-ordering 死锁 (全套件高负载下实测复现)。因此写盘 (持锁) 与
+            # 关联/告警 (放锁后) 严格分离。
+            rec = self._record_impl(
                 module, action, severity, input_summary,
-                reasons, context, features, do_correlation=(depth == 1),
+                reasons, context, features, do_correlation=False,
             )
+            if depth == 1:
+                try:
+                    alerts = self._correlator.assess(rec)
+                    if alerts:
+                        self._publish_correlation_alerts(alerts)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("审计关联失败 (不影响裁决): %s", exc)
+            return rec
         finally:
             _AUDIT_REENTRANT.n = depth - 1
 
@@ -422,7 +435,8 @@ class SecurityAuditor:
         return [a.to_dict() for a in self._correlator.recent_alerts(limit)]
 
     def correlation_stats(self) -> Dict[str, Any]:
-        return self._correlator.stats()
+        stats: Dict[str, Any] = self._correlator.stats()
+        return stats
 
     # ---------------------------------------------------------- 查询
 

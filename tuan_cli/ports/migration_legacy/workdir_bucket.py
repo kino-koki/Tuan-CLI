@@ -11,4 +11,4 @@ import hashlib
 
 def old_md5_bucket_name(workdir_path: str) -> str:
     """Return the md5 hex of the workdir path (legacy bucket directory name)."""
-    return hashlib.md5(workdir_path.encode("utf-8")).hexdigest()
+    return hashlib.md5(workdir_path.encode("utf-8"), usedforsecurity=False).hexdigest()

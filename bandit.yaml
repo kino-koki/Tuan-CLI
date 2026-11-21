@@ -1,0 +1,7 @@
+# bandit 配置: 供 CI `bandit -c bandit.yaml -r tuan_cli` 使用。
+#
+# B602 (subprocess shell=True): 由项目自有 scripts/check_shell_true.py 白名单
+# 门禁管理 (35 处全在册、CI 独立校验), bandit 不重复裁决 —— 避免两套门禁口径
+# 不一致导致 CI 假红。白名单每条都经过安全评审, 排除 B602 不代表放行未授权
+# 的 shell=True (check_shell_true.py 未授权即 fail)。
+skips: ['B602']

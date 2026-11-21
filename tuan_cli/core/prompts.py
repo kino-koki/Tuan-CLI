@@ -941,17 +941,17 @@ def is_short_task(task_hint: str, max_chars: int = 160) -> bool:
 
 def system_prompt_hash(system_prompt: str) -> str:
     """返回 system 提示的短哈希, 用于断言「同会话前缀稳定」(缓存命中自检)。"""
-    return hashlib.sha1(system_prompt.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha1(system_prompt.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
 def system_prompt_stable_hash(stable_prompt: str) -> str:
     """稳定前缀哈希: 用于自检「stable 段跨 Git/记忆变化逐字节一致」(缓存前缀边界)。"""
-    return hashlib.sha1(("stable|" + stable_prompt).encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha1(("stable|" + stable_prompt).encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
 def system_prompt_dynamic_hash(dynamic_prompt: str) -> str:
     """动态后缀哈希: 用于自检「dynamic 段随 Git/记忆变化而变化」。"""
-    return hashlib.sha1(("dynamic|" + dynamic_prompt).encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha1(("dynamic|" + dynamic_prompt).encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
 def _is_empty_user_template(user_text: str) -> bool:

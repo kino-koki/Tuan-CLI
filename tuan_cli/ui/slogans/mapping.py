@@ -854,7 +854,7 @@ def _norm_owner_impl(raw: str) -> str:
                 raw[-2048:]).encode("utf-8", "replace")
     else:
         seed = raw.encode("utf-8", "replace")
-    fp = hashlib.sha1(seed).hexdigest()[:16]
+    fp = hashlib.sha1(seed, usedforsecurity=False).hexdigest()[:16]
     return f"owner:{fp}"
 
 

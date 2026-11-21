@@ -72,7 +72,7 @@ class ResponseCache:
     def make_key(provider: str, model: str, prompt: str) -> str:
         """生成缓存键: provider + model + prompt 的规范化哈希。"""
         norm = f"{provider}|{model}|{prompt.strip()}"
-        return hashlib.sha1(norm.encode("utf-8")).hexdigest()
+        return hashlib.sha1(norm.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     # ------------------------------------------------------------ 读写
     def get(self, provider: str, model: str, prompt: str) -> Optional[str]:
