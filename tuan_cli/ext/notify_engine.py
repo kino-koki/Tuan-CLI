@@ -57,9 +57,9 @@ def _run_cmd(cmd: Any, timeout: Any = 5) -> Tuple[int, str]:
                 data = f.read()
             return rc, data[-200:].decode(errors="replace").strip()
         except (FileNotFoundError, OSError) as _fb_exc:
-            return -1, str(exc)[:200]
+            return -1, str(_fb_exc)[:200]
     except Exception as e:
-        log.debug("_run_cmd(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+        log.debug("_run_cmd(): 非致命异常已忽略(设计内降级, 不改控制流): %s", e)
         return -1, str(e)[:200]
     finally:
         if tmp:
@@ -158,12 +158,20 @@ class NotifyEngine:
             return {"sent": False, "dry_run": True, "system": system,
                     "backend": self._backend(system)}
 
+        # 测试环境 (pytest) 不拉起真实系统通知子进程: Windows 上 PowerShell
+        # toast/balloon 通知偶发阻塞 5s+, 会占死异步告警 worker, 级联拖住
+        # AlertLogger._lock 导致安全护栏 (MainThread) 超时 (全套件实测复现)。
+        # 与 SecurityAlerter._send_notification 的 pytest 保护口径一致。
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            return {"sent": False, "skipped": "pytest", "system": system,
+                    "backend": self._backend(system)}
+
         try:
             result = self._send(title, message, system)
             result.setdefault("system", system)
             return result
         except Exception as e:
-            log.debug("NotifyEngine.notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            log.debug("NotifyEngine.notify(): 非致命异常已忽略(设计内降级, 不改控制流): %s", e)
             return {"sent": False, "error": str(e), "system": system}
 
     def beep(self, params: Any) -> Any:
@@ -181,7 +189,7 @@ class NotifyEngine:
                 sys.stderr.flush()
             return {"played": True, "way": "beep"}
         except Exception as e:
-            log.debug("NotifyEngine.beep(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            log.debug("NotifyEngine.beep(): 非致命异常已忽略(设计内降级, 不改控制流): %s", e)
             return {"played": False, "error": str(e)}
 
     def handle(self, line: Any) -> str:
