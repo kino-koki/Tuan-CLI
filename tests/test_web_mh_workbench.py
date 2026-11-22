@@ -161,13 +161,19 @@ def test_resolve_mh_reports_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("TUAN_MH_NODE", str(tmp_path / "no-node"))
     monkeypatch.delenv("PATH", raising=False)
     monkeypatch.setenv("PATH", str(tmp_path))  # 空 PATH, 没有可用的 mh
+    # imageio-ffmpeg pip 包自带 ffmpeg 二进制, 与 PATH 无关 —— 显式屏蔽 find_ffmpeg
+    # 才能模拟 "无 ffmpeg" 环境。
+    monkeypatch.setattr(mh_runner._renderer, "find_ffmpeg", lambda: None)
     res = mh_runner.resolve_mh()
     assert res["ok"] is False
     assert res["reason"]
 
 
 # ---------------------------------------------------------------- HTTP: status unavailable
-def test_status_unavailable(server):
+def test_status_unavailable(server, monkeypatch):
+    # 同上: imageio-ffmpeg 让 ffmpeg 永远可用, 必须屏蔽 find_ffmpeg 才能让
+    # /api/mh/status 返回 available:false。
+    monkeypatch.setattr(mh_runner._renderer, "find_ffmpeg", lambda: None)
     data = _getj(_url(server, "/api/mh/status"))
     assert data["ok"] is True
     assert data["available"] is False

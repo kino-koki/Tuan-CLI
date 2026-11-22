@@ -65,9 +65,8 @@ def resolve_mh() -> Dict[str, Any]:
       * ``reason``      = 不可用原因
     """
     import shutil
-    ffmpeg = shutil.which("ffmpeg") or os.environ.get("TUAN_FFMPEG") or ""
-    if not ffmpeg:
-        ffmpeg = _renderer.find_ffmpeg() or ""
+    # 顺序: TUAN_FFMPEG → 自研 find_ffmpeg (含 imageio-ffmpeg) → PATH
+    ffmpeg = os.environ.get("TUAN_FFMPEG") or _renderer.find_ffmpeg() or shutil.which("ffmpeg") or ""
     ok = bool(ffmpeg) and _renderer._pillow_available()
     reason = "" if ok else (
         "自研渲染需要 ffmpeg (设置 TUAN_FFMPEG 或加入 PATH)" +

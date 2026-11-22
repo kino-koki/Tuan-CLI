@@ -84,6 +84,10 @@ mcp = []
 # 纯可选 —— 未安装时工具 handler 一律返回安装指引 (INSTALL_HINT), 绝不炸 Agent 循环。
 # 版本上限 <1.0: 0.x 大版本可能破坏, 限定在 0.x 线内; Chromium 另行 `uvx browser-use install`。
 browser = ["browser-use>=0.1,<1.0"]
+# video: 自研视频渲染 (tools/video_render_tool.py + web/code_anim_render.py)。
+# Pillow 逐帧绘制 + ffmpeg 编码 (ffmpeg 二进制由 imageio-ffmpeg pip 包自带, 无需系统装)。
+# 不装时 video_render 工具 handler 返回安装指引, 不影响其他能力。
+video = ["Pillow>=10.0", "imageio-ffmpeg>=0.5"]
 # dev: 测试与静态检查。openai / httpx / PyYAML 之所以在这里而不是核心依赖,
 # 是因为测试代码拿它们当「真实 SDK 行为」的回归基准 (对照验证自研 shim),
 # 运行期完全不需要。

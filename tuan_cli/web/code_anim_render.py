@@ -235,7 +235,8 @@ def find_ffmpeg() -> Optional[str]:
     优先级:
       1. ``TUAN_FFMPEG`` 环境变量 (显式覆盖);
       2. mh cache 内的 ``ffmpeg.exe``;
-      3. 系统 PATH 上的 ``ffmpeg`` (``shutil.which``)。
+      3. imageio-ffmpeg 打包的二进制 (pip install imageio-ffmpeg 即得);
+      4. 系统 PATH 上的 ``ffmpeg`` (``shutil.which``)。
     找不到返回 None。
     """
     env = os.environ.get("TUAN_FFMPEG", "").strip()
@@ -246,8 +247,14 @@ def find_ffmpeg() -> Optional[str]:
     cached = _mh_cache_ffmpeg()
     if cached:
         return cached
-    which = shutil.which("ffmpeg")
-    return which
+    try:  # imageio-ffmpeg 自带一个静态编译的 ffmpeg 二进制
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and Path(exe).is_file():
+            return str(exe)
+    except Exception as exc:  # noqa: BLE001 - 未安装/损坏都降级到 PATH
+        log.debug("find_ffmpeg(): imageio_ffmpeg 不可用: %s", exc)
+    return shutil.which("ffmpeg")
 
 
 def ffmpeg_available() -> bool:
@@ -1711,7 +1718,8 @@ def render_video(project_json: Dict[str, Any], out_path: str, *,
     width = max(1, _int(project_json.get("width"), 1280))
     height = max(1, _int(project_json.get("height"), 720))
     duration = max(0.0, _num(project_json.get("duration"), 1.0))
-    fps = max(1, int(fps))
+    # 优先用 project_json.fps (validate 已保证 >0), 否则退到函数参数 fps。
+    fps = max(1, _int(project_json.get("fps"), fps) or fps)
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
         raise RuntimeError("ffmpeg 不可用: 未找到可执行文件 (设置 TUAN_FFMPEG 或安装 ffmpeg)")
