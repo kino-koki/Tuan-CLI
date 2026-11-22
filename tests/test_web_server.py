@@ -205,6 +205,7 @@ def test_delete_session(server):
     assert all(s["id"] != sid for s in sessions["sessions"])
 
 
+@pytest.mark.flaky(reruns=2, reruns_delay=0.5)  # Windows 套接字偶发 WinError 10053
 def test_persistence_roundtrip(server, tmp_path):
     """会话持久化: 聊天后磁盘有快照, 新 server 实例可加载 (重启不丢)。"""
     sid = _new_session(server)
