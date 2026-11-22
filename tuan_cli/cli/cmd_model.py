@@ -183,6 +183,66 @@ class _ConfigOverride:
         return cast(Optional[str], self._base.api_key())
 
 
+def _setup_custom_provider(config: Any) -> int:
+    """交互式创建真正的自定义供应商 (OpenAI 兼容端点), 持久化到本地目录。
+
+    复用 ports.oauth.custom_registry 的 CustomRegistryProviderEntry 结构,
+    通过 local_catalog.add_custom_provider 写入本地 models_catalog.json,
+    使其成为一等公民 (可再次选择 / list-providers 展示)。
+    """
+    from ..models import local_catalog
+    try:
+        custom_provider = input(
+            "  供应商名称 (回车用 custom): ").strip() or "custom"
+        custom_base = input(
+            "  base_url (OpenAI 兼容, 如 https://api.example.com/v1): ").strip()
+        custom_model = input("  模型名 (如 gpt-4o-mini): ").strip()
+        custom_env = input(
+            "  API Key 环境变量名 (回车用 CUSTOM_API_KEY): ").strip() or "CUSTOM_API_KEY"
+    except (EOFError, KeyboardInterrupt):
+        console.print("  已取消")
+        return 0
+    if not custom_base or not custom_model:
+        console.print("  ! base_url 与模型名不能为空, 已取消")
+        return 0
+
+    try:
+        from ..ports.oauth.custom_registry import (
+            CustomRegistryModelEntry, CustomRegistryProviderEntry,
+        )
+        entry = CustomRegistryProviderEntry(
+            id=custom_provider,
+            name=custom_provider,
+            api="openai",
+            type="openai",
+            models={custom_model: CustomRegistryModelEntry(id=custom_model, name=custom_model)},
+            env=[custom_env] if custom_env else None,
+        )
+        local_catalog.add_custom_provider(entry, home=config.home)
+        console.print(f"  [自定义供应商已保存] {custom_provider} (可在 list-providers 中再次选择)")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"  ! 自定义供应商持久化失败: {exc} (仍可临时使用)")
+        # 持久化失败不阻断本次使用, 但不再重复持久化。
+
+    config.set_user("model.provider", custom_provider)
+    config.set_user("model.model", custom_model)
+    config.set_user("model.base_url", custom_base)
+    config.set_user("model.api_key_env", custom_env)
+    try:
+        api_key = input(f"  输入 {custom_env} API Key (回车跳过): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        api_key = ""
+    if api_key:
+        os.environ[custom_env] = api_key
+        try:
+            persist_api_key(custom_env, api_key)
+        except ValueError:
+            pass
+        console.print(f"  已设置 {custom_env} (本次会话生效)")
+    console.print(f"已选择: {custom_provider}/{custom_model} (自定义端点)")
+    return 0
+
+
 def _model_test(config: Any, args: Any = None) -> int:
     """连通性测试。"""
     overrides: Dict[str, Any] = {}
@@ -270,7 +330,8 @@ def _model_local() -> int:
 def _model_update(args: Any, config: Any) -> int:
     """tuan models update: 本地更新模型/供应商目录。
     全程离线: 把内置最新清单合并写入本地 JSON,
-    保留用户自建条目; --check 只报告不写盘; --background 后台执行。
+    保留用户自建条目; --check 只报告不写盘; --background 后台执行;
+    --online 联网从各供应商官方端点拉取最新模型 (默认 7 天到期检测, --force 忽略)。
     """
     from ..models import local_catalog
     home = getattr(config, "home", None)
@@ -289,9 +350,39 @@ def _model_update(args: Any, config: Any) -> int:
         local_catalog.refresh_in_background(home, on_done=_print_update_done)
         console.print("后台更新已启动 (模型/供应商目录, 本地离线写入)。")
         return 0
+    if getattr(args, "online", False):
+        return _model_update_online(config, args)
     n_p, n_m = local_catalog.refresh_catalog(home)
     console.print(f"模型/供应商目录已更新: {n_p} 供应商 / {n_m} 模型 -> {local_catalog.catalog_file(home)}")
     return 0
+
+
+def _model_update_online(config: Any, args: Any) -> int:
+    """联网同步: 从各供应商官方端点拉取最新模型并合并进本地目录。
+
+    默认 7 天到期检测 (is_stale), --force 忽略检测强制拉取。
+    """
+    from ..models import local_catalog, official_sync
+    home = getattr(config, "home", None)
+    force = bool(getattr(args, "force", False))
+    if not force and not official_sync.is_stale(home=home):
+        console.print("目录 7 天内已联网同步过, 跳过 (--force 强制重新拉取)。")
+        return 0
+    console.print("正在从各供应商官方端点拉取最新模型 ...")
+    result = official_sync.sync_models_online(home=home, force=force)
+    ok_all = True
+    for provider, info in result.items():
+        if provider == "_summary":
+            continue
+        if info.get("ok"):
+            console.print(f"  [ok] {provider}: +{info.get('count', 0)} 模型")
+        else:
+            ok_all = False
+            console.print(f"  [fail] {provider}: {info.get('error') or '未知错误'}")
+    summary = result.get("_summary", {})
+    console.print(f"完成: {summary.get('ok', 0)} 成功 / {summary.get('fail', 0)} 失败 / "
+                  f"共 {summary.get('total', 0)} 家, 写入 {local_catalog.catalog_file(home)}")
+    return 0 if ok_all else 1
 
 
 def _print_update_done(n_p: int, n_m: int, error: Optional[str] = None) -> None:
@@ -420,38 +511,8 @@ def cmd_model(args: Any) -> int:
         except (ValueError, EOFError, KeyboardInterrupt):
             cat_idx = -1
         if cat_idx == len(categories):
-            # 自定义 OpenAI 兼容端点: 手动填写 provider/base_url/模型/api_key_env。
-            try:
-                custom_provider = input(
-                    "  供应商名称 (回车用 custom, 仅作展示用): ").strip() or "custom"
-                custom_base = input(
-                    "  base_url (OpenAI 兼容, 如 https://api.example.com/v1): ").strip()
-                custom_model = input("  模型名 (如 gpt-4o-mini): ").strip()
-                custom_env = input(
-                    "  API Key 环境变量名 (回车用 CUSTOM_API_KEY): ").strip() or "CUSTOM_API_KEY"
-            except (EOFError, KeyboardInterrupt):
-                console.print("  已取消")
-                return 0
-            if not custom_base or not custom_model:
-                console.print("  ! base_url 与模型名不能为空, 已取消")
-                return 0
-            config.set_user("model.provider", custom_provider)
-            config.set_user("model.model", custom_model)
-            config.set_user("model.base_url", custom_base)
-            config.set_user("model.api_key_env", custom_env)
-            try:
-                api_key = input(f"  输入 {custom_env} API Key (回车跳过): ").strip()
-            except (EOFError, KeyboardInterrupt):
-                api_key = ""
-            if api_key:
-                os.environ[custom_env] = api_key
-                try:
-                    persist_api_key(custom_env, api_key)
-                except ValueError:
-                    pass
-                console.print(f"  已设置 {custom_env} (本次会话生效)")
-            console.print(f"已选择: {custom_provider}/{custom_model} (自定义端点)")
-            return 0
+            # 自定义 OpenAI 兼容端点: 复用 local_catalog 持久化为一等公民。
+            return _setup_custom_provider(config)
         if 0 <= cat_idx < len(categories):
             cat = categories[cat_idx]
             providers = _categories[cat]

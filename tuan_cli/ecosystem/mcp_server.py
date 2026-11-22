@@ -591,13 +591,13 @@ class McpToolServer:
              "free_tier": bool(p.free_tier), "region": p.region}
             for p in ALL_PROVIDERS
         ]
-        rows: List[Dict[str, Any]] = minimal
-        text = json.dumps({"providers": rows}, ensure_ascii=False)
+        fallback_rows: List[Dict[str, Any]] = minimal
+        text = json.dumps({"providers": fallback_rows}, ensure_ascii=False)
         if len(text) > MAX_OUTPUT_CHARS:
             # 逐条剔除尾部直到 JSON 落回上限内
-            while rows and len(json.dumps({"providers": rows}, ensure_ascii=False)) > MAX_OUTPUT_CHARS:
-                rows = rows[:-1]
-            text = json.dumps({"providers": rows, "truncated": True}, ensure_ascii=False)
+            while fallback_rows and len(json.dumps({"providers": fallback_rows}, ensure_ascii=False)) > MAX_OUTPUT_CHARS:
+                fallback_rows = fallback_rows[:-1]
+            text = json.dumps({"providers": fallback_rows, "truncated": True}, ensure_ascii=False)
         return _ok(text)
 
     def _h_video_pipeline_run(self, args: Dict[str, Any]) -> Tuple[str, bool]:
@@ -751,7 +751,7 @@ class McpToolServer:
             def __init__(self, cfg: Any) -> None:
                 self._cfg = cfg
 
-            def get(self, name: str):
+            def get(self, name: str) -> Any:
                 return self._cfg if name == "config" else None
 
         class _McpCtx:

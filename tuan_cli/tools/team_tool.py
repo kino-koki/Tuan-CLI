@@ -41,7 +41,8 @@ _UPDATE_TYPES = (MessageType.STATUS, MessageType.PROGRESS)
 
 def _require_protocol(ctx: ToolContext) -> CollaborationProtocol:
     """从内核取协作协议服务; 不可用时抛错由外层 except 捕获。"""
-    return ctx.kernel.require("collaboration_protocol")
+    protocol: CollaborationProtocol = ctx.kernel.require("collaboration_protocol")
+    return protocol
 
 
 # ================================================================ team_share_note

@@ -171,7 +171,7 @@ class TestDshPluginLoader:
             pm.install_from_directory(BUNDLE_DIR, config={"rank": "bad"})
         assert not (tmp_path / "plugins" / "tuan-skills-bundle").exists()
 
-    @pytest.mark.skipif(not BUNDLE_DIR.exists(), reason="缺少 tuan-skills-bundle")
+    @pytest.mark.skipif(BUNDLE_DIR is None or not BUNDLE_DIR.exists(), reason="缺少 tuan-skills-bundle")
     def test_installed_state_full_contract(self, tmp_path):
         """安装态端到端: 安装到任意位置后 get/describe/apply 全链路仍识别。"""
         pm = PluginManager(tmp_path / "plugins")
@@ -346,7 +346,7 @@ class TestNativePluginScan:
         assert r.get("ok") is False
         assert "remove" in r.get("error", "")
 
-    @pytest.mark.skipif(not BUNDLE_DIR.exists(), reason="缺少 tuan-skills-bundle")
+    @pytest.mark.skipif(BUNDLE_DIR is None or not BUNDLE_DIR.exists(), reason="缺少 tuan-skills-bundle")
     def test_get_skills_full_definition(self):
         """get_skills: DSH get 契约——返回全部技能完整定义, 含 content 正文。"""
         loader = DshPluginLoader(timeout=30)

@@ -242,7 +242,8 @@ def probe_insert_history() -> dict:
     chk(len(b) == 3, "重复 id 产生第二条")
     for bad in (-1, 99, True, "1"):
         try:
-            b.insert_at(bad, HistoryCell(9, "x"))
+            # 故意传脏 index（bool/str），验证 insert_at 的运行时拒绝
+            b.insert_at(bad, HistoryCell(9, "x"))  # type: ignore[arg-type]
             p.append("越界/脏 index 未抛错: %r" % (bad,))
         except HistoryInsertError:
             pass

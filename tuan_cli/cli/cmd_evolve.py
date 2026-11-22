@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 from ._ui_singleton import console
 from .parser import _register_command
@@ -72,32 +72,32 @@ def cmd_evolve(args: Any) -> int:
     from ..self_improve.evolution_loop import EvolutionLedger
 
     ledger = EvolutionLedger(ledger_path)
-    records = ledger.load()
+    entries = ledger.load()
     if json_mode:
-        print(json.dumps({"ledger": ledger_path, "records": records},
+        print(json.dumps({"ledger": ledger_path, "records": entries},
                          ensure_ascii=False, indent=2))
         return 0
-    if not records:
+    if not entries:
         console.print("[dim](进化账本为空, 尚未运行任何迭代)[/dim]")
         console.print("[dim]运行: tuan evolve run --tasks \"T1;T2\"[/dim]")
         return 0
-    accepted = [r for r in records if r.get("accepted")]
+    accepted = [r for r in entries if r.get("accepted")]
     deltas = [r.get("delta", 0.0) for r in accepted]
     avg = sum(deltas) / len(deltas) if deltas else 0.0
-    console.print(f"[bold]进化摘要[/bold] · 共 {len(records)} 次迭代 · "
+    console.print(f"[bold]进化摘要[/bold] · 共 {len(entries)} 次迭代 · "
                   f"接受 {len(accepted)} 次 · "
-                  f"接受率 {len(accepted)/len(records)*100:.0f}%")
+                  f"接受率 {len(accepted)/len(entries)*100:.0f}%")
     console.print(f"[dim]平均净改进: {avg:+.2f} 分[/dim]\n")
-    for r in records:
-        mark = "[green]✓[/green]" if r.get("accepted") else "[red]✗[/red]"
-        console.print(f"  {mark} {r.get('summary', r.get('candidate_id', ''))[:40]} "
-                      f"[dim]Δ{r.get('delta', 0.0):+.1f} "
-                      f"· {r.get('reason', '')[:36]}[/dim]")
+    for rec in entries:
+        mark = "[green]✓[/green]" if rec.get("accepted") else "[red]✗[/red]"
+        console.print(f"  {mark} {rec.get('summary', rec.get('candidate_id', ''))[:40]} "
+                      f"[dim]Δ{rec.get('delta', 0.0):+.1f} "
+                      f"· {rec.get('reason', '')[:36]}[/dim]")
     console.print(f"\n[dim]账本: {ledger_path}[/dim]")
     return 0
 
 
-def _build_runner():
+def _build_runner() -> Callable[[str], dict]:
     """构建默认任务执行器。
 
     在纯 CLI 骨架中, 默认产物为空 (ok=False), 用于验证闭环可跑通;

@@ -27,7 +27,11 @@ DEFAULT_TTL = 3600.0
 
 
 class ResponseCache:
-    """按 (provider, model, 规范化 prompt) 缓存模型最终文本响应。"""
+    """按 (provider, model, [intent], 规范化 prompt) 缓存模型最终文本响应。
+
+    intent 参数可选: 传入时键包含 intent (intent 级分组, 让同一意图下不同措辞
+    命中同一槽); 不传时与历史行为完全一致 (纯 prompt 精确匹配)。
+    """
 
     def __init__(self, path: Optional[Path] = None, ttl: float = DEFAULT_TTL) -> None:
         self.ttl = ttl
@@ -69,15 +73,30 @@ class ResponseCache:
 
     # ------------------------------------------------------------ 键生成
     @staticmethod
-    def make_key(provider: str, model: str, prompt: str) -> str:
-        """生成缓存键: provider + model + prompt 的规范化哈希。"""
-        norm = f"{provider}|{model}|{prompt.strip()}"
+    def make_key(provider: str, model: str, prompt: str, intent: Optional[str] = None) -> str:
+        """生成缓存键: provider + model + [intent] + prompt 的规范化哈希。
+
+        - intent 为空: 保持旧行为 ``sha1(provider|model|prompt.strip())``,
+          兼容既有调用方与已落盘的历史条目。
+        - intent 非空: ``sha1(provider|model|intent|prompt.strip())``, 让同一意图下
+          不同措辞的 prompt 命中同一缓存槽 (intent 级别分组)。调用方应从
+          ``intent_router.route()`` 的决策中取 intent 传入。
+        """
+        if intent:
+            norm = f"{provider}|{model}|{intent}|{prompt.strip()}"
+        else:
+            norm = f"{provider}|{model}|{prompt.strip()}"
         return hashlib.sha1(norm.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     # ------------------------------------------------------------ 读写
-    def get(self, provider: str, model: str, prompt: str) -> Optional[str]:
-        """命中返回缓存的文本响应; 未命中/过期返回 None。"""
-        key = self.make_key(provider, model, prompt)
+    def get(
+        self, provider: str, model: str, prompt: str, intent: Optional[str] = None
+    ) -> Optional[str]:
+        """命中返回缓存的文本响应; 未命中/过期返回 None。
+
+        intent 参数可选; 传入时与写入时保持一致才能命中。
+        """
+        key = self.make_key(provider, model, prompt, intent)
         with self._lock:
             self._ensure_loaded()
             entry = self._mem.get(key)
@@ -92,9 +111,12 @@ class ResponseCache:
             value = entry.get("value")
             return value if isinstance(value, str) else None
 
-    def set(self, provider: str, model: str, prompt: str, response: str) -> None:
-        """写入一条缓存 (线程安全, 落盘失败不影响内存)。"""
-        key = self.make_key(provider, model, prompt)
+    def set(
+        self, provider: str, model: str, prompt: str, response: str,
+        intent: Optional[str] = None,
+    ) -> None:
+        """写入一条缓存 (线程安全, 落盘失败不影响内存)。intent 可选。"""
+        key = self.make_key(provider, model, prompt, intent)
         with self._lock:
             self._ensure_loaded()
             self._mem[key] = {"value": response, "ts": time.time()}

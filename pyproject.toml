@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tuan-cli"
-version = "0.4.5"
+version = "0.5.0"
 description = "青小团 Tuan-CLI — safety-first, model-agnostic, pure-Python AI Agent CLI (blast-radius preview → hard redline → exact /undo)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -58,8 +58,10 @@ dependencies = [
 # tuan_cli._yaml 的 stdlib 实现 —— 已对本仓库全部 YAML 文件做过差分测试,
 # 解析结果与 PyYAML 完全一致; 遇到锚点等高级构造会抛出带行号的明确错误。
 yaml = ["PyYAML>=6.0"]
-# crypto: cryptography 的 AES-256-GCM (硬件加速、标准 AEAD)。不装时使用
-# ext/crypto_engine.py 的 PBKDF2 + CTR + HMAC 纯 Python 实现, 功能等价。
+# crypto: cryptography 的 AES-256-GCM (硬件加速、标准 AEAD)。不装时
+# ext/crypto_engine.py 回退到 PBKDF2 + CTR + HMAC 纯 Python 构造 —— 该回退
+# 是**非等价降级** (自研流密码构造, 未经第三方密码学评审), 生产/处理敏感
+# 数据的环境必须安装 cryptography; 回退路径会在日志中给出显著警告。
 crypto = ["cryptography>=41.0"]
 # repl: prompt_toolkit 增强交互 (补全/历史/快捷键)。已随核心依赖安装, 此 extra
 # 仅为兼容旧文档/脚本里的 `pip install ".[repl]"` 写法。

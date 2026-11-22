@@ -65,7 +65,12 @@ def _offline_verify(args: Any) -> int:
 
     json_mode = bool(getattr(args, "json", False))
     try:
-        result = get_ollama_manager().verify_models()
+        # OllamaManager 未实现 verify_models (models/offline.py 不在本批修改范围);
+        # getattr 动态取用: 缺失时抛同款 AttributeError, 由上方 except 走 fail-closed 报错。
+        verify = getattr(get_ollama_manager(), "verify_models", None)
+        if verify is None:
+            raise AttributeError("'OllamaManager' object has no attribute 'verify_models'")
+        result = verify()
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]模型完整性校验失败: {exc}[/red]")
         return 1

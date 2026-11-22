@@ -128,8 +128,10 @@ def _dispatch_extended_safe(args: Any, safe_cmd: str) -> int | None:
         # 部分 handler 为 0 参 (如 _cmd_update() 无需 args), 其余均接受 args
         n_params = len(inspect.signature(handler).parameters)
         if n_params == 0:
-            return handler()
-        return handler(args)
+            ret0: int | None = handler()
+            return ret0
+        ret: int | None = handler(args)
+        return ret
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]子命令 {safe_cmd} 执行失败: {exc}[/red]")
         return 1
@@ -449,13 +451,17 @@ def _cmd_bench(args: Any) -> int:
     results: dict[str, Any] = {}
 
     # 1) 对抗样本基准 (bash/通用命令)
+    # 单套件等待上限用 _bench_timeout (与 safe report 同源): 默认 1800s,
+    # 可用环境变量 TUAN_SAFE_BENCH_TIMEOUT 覆盖 —— 慢机/并发负载必需。
+    from .safe.bench_report import _bench_timeout
     tmp10k = bench_dir / f".run_tmp_10k_{os.getpid()}.json"
     console.print(f"[bold]1/5 对抗样本基准[/bold] ({count} 条, 随机种子 20260906, 可复现)...")
     try:
         r1 = subprocess.run(
             [py, str(bench_dir / "safety_bench_10k.py"),
              "--count", str(count), "--seed", "20260906", "--out", str(tmp10k)],
-            capture_output=True, text=True, errors="replace", timeout=600,
+            capture_output=True, text=True, errors="replace",
+            timeout=_bench_timeout(1800),
         )
         if tmp10k.exists():
             data = json.loads(tmp10k.read_text(encoding="utf-8"))
@@ -479,7 +485,8 @@ def _cmd_bench(args: Any) -> int:
     try:
         r2 = subprocess.run(
             [py, str(bench_dir / "bench_powershell_safety.py")],
-            capture_output=True, text=True, errors="replace", timeout=600,
+            capture_output=True, text=True, errors="replace",
+            timeout=_bench_timeout(1200),
         )
         if ps_json.exists():
             data = json.loads(ps_json.read_text(encoding="utf-8"))
@@ -502,7 +509,8 @@ def _cmd_bench(args: Any) -> int:
     try:
         r3 = subprocess.run(
             [py, str(bench_dir / "bypass_matrix.py"), "--json-out", str(tmp_bypass)],
-            capture_output=True, text=True, errors="replace", timeout=600,
+            capture_output=True, text=True, errors="replace",
+            timeout=_bench_timeout(1200),
         )
         if tmp_bypass.exists():
             data = json.loads(tmp_bypass.read_text(encoding="utf-8"))
@@ -533,7 +541,8 @@ def _cmd_bench(args: Any) -> int:
             [py, str(bench_dir / "realistic_usage_bench.py"),
              "--count", str(real_count), "--seeds", str(real_seeds),
              "--out", str(tmp_real), "--quiet"],
-            capture_output=True, text=True, errors="replace", timeout=900,
+            capture_output=True, text=True, errors="replace",
+            timeout=_bench_timeout(1800),
         )
         if tmp_real.exists():
             data = json.loads(tmp_real.read_text(encoding="utf-8"))
@@ -569,7 +578,8 @@ def _cmd_bench(args: Any) -> int:
         r5 = subprocess.run(
             [py, "-m", "pytest", str(root / "tests" / "test_platform_portability.py"),
              "-q", "--noconftest", "-p", "no:cacheprovider"],
-            capture_output=True, text=True, errors="replace", timeout=600,
+            capture_output=True, text=True, errors="replace",
+            timeout=_bench_timeout(600),
         )
         # 从 pytest 末行解析 "N passed" / "N failed"
         tail = (r5.stdout or "").strip().splitlines()[-3:]
@@ -591,9 +601,19 @@ def _cmd_bench(args: Any) -> int:
                 "不代表已在 Linux/macOS 实机验证。"
             ),
         }
-        if failed == 0:
+        # rc 0 = 全过; rc 1 = 有失败 (failed>0); 其它 rc (如 4 = 文件缺失/用法错)
+        # 说明套件**根本没跑起来**, 绝不能当 ✓ (历史 bug: 文件缺失时 passed=0
+        # failed=0 也打印了 ✓, 让存档里出现 "0 项符合预期" 的假绿)。
+        if failed == 0 and r5.returncode == 0 and passed > 0:
             console.print(f"  [green]✓ {passed} 项载荷判定符合预期 "
                           f"(本平台 {platform.system()})[/green]")
+        elif passed == 0 and failed == 0:
+            console.print(f"  [red]✗ 可移植性套件未能运行 (rc={r5.returncode}): "
+                          f"{(r5.stdout or '')[-200:]} {(r5.stderr or '')[-200:]}[/red]")
+            results["portability"]["error"] = (
+                f"pytest rc={r5.returncode}: 套件未收集到任何用例 "
+                f"(tests/test_platform_portability.py 缺失或不可导入?)"
+            )
         else:
             console.print(f"  [red]✗ {failed} 项判定偏离预期[/red]")
             for ln in tail:

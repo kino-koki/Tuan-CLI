@@ -192,6 +192,10 @@ class RetryPolicy:
                 else:
                     retriable = status in self.retry_on
                 if not retriable or attempt >= self.max_retries:
+                    # 不可重试 (4xx 等) 或超出预算 —— 记录实际尝试次数, 消息不再虚标 "已重试 N 次"
+                    if not retriable:
+                        log.debug("%s调用失败 (HTTP %s, 不可重试, 实际尝试 %d 次)",
+                                  label, status, attempt)
                     break
                 # 超时单独收敛重试次数: 单次读超时的代价极高 (动辄数分钟),
                 # 满额重试 × 退避会把「等不到」放大成十几分钟的静默卡死, 看起来
@@ -210,7 +214,8 @@ class RetryPolicy:
                 log.debug("%s 调用失败 (第 %d/%d 次, kind=%s, status=%s), %.1fs 后重试: %s",
                           label, attempt, self.max_retries, kind, status, wait, str(exc)[:160])
                 self._sleep(wait)
-        raise RuntimeError(f"{label}调用失败 (已重试 {self.max_retries} 次): {last_err}") from last_err
+        # 实际尝试次数 = attempt 变量终值 (max_retries 可能因不可重试提前 break)
+        raise RuntimeError(f"{label}调用失败 (共尝试 {attempt} 次): {last_err}") from last_err
 
 
 # ------------------------------------------------------------ 客户端限流

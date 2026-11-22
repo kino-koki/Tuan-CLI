@@ -1596,4 +1596,25 @@ MODEL_LISTS: Dict[str, List[str]] = {
     "aimon": [
         "aimon-rail|free",
     ],
+    # ---- 2026-11 新增: Liquid / Sakana / Thinking Machines / Aion Labs / 小米 MiMo ----
+    "liquid": [
+        "lfm-2.5-2.6b|free",
+        "lfm-2.5-30b-a3b|paid",
+    ],
+    "sakana": [
+        "sakana-namazu|free",
+        "sakana-fugu-ultra|paid",
+    ],
+    "thinkingmachines": [
+        "inkling-small|free",
+        "inkling|paid",
+    ],
+    "aionlabs": [
+        "aion-3.0-mini|paid",
+        "aion-3.0|paid",
+    ],
+    "xiaomi-mimo": [
+        "mimo-v2.5-pro|paid",
+        "mimo-v2.5|paid",
+    ],
 }

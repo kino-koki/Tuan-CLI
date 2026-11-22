@@ -197,6 +197,7 @@ def build_workflow_status_tool() -> Tool:
 
 class DynamicWorkflowPlugin:
     name = "tools.dynamic_workflow"
+    version = "1.0"
     provides = ["dynamic_workflow_engine"]
     requires = ["tool_registry"]
 

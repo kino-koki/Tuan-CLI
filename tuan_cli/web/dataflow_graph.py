@@ -348,7 +348,7 @@ class GraphRunner:
     def run(self) -> Dict[str, Any]:
         """执行整图, 返回 {node_id: result}。含环/缺执行器则抛异常 (fail-closed)。"""
         order = self.graph.topological_order()  # 环检测
-        if not self.exec_fn:
+        if self.exec_fn is None:  # 防御性判空 (ExecFn 为 Callable, 恒真, 用 is None 明确语义)
             raise ValueError("GraphRunner 需要 exec_fn")
         self._logs = []
         self._results = {}

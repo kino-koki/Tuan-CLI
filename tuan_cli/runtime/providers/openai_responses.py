@@ -19,7 +19,14 @@ from ..contract import (
     Tool,
     Usage,
 )
-from ._http import build_client, is_nvidia_provider, iter_sse, raise_for_status, strip_prompt_cache_key
+from ._http import (
+    build_client,
+    is_nvidia_provider,
+    is_openai_reasoning_model,
+    iter_sse,
+    raise_for_status,
+    strip_prompt_cache_key,
+)
 
 
 def _convert_messages_responses(system_prompt: str, history: List[Message]) -> List[Dict[str, Any]]:
@@ -74,6 +81,8 @@ class OpenAIResponsesChatProvider(ChatProvider):
     """OpenAI Responses 协议适配（走 /responses）。"""
 
     name = "openai-responses"
+    # kernel 后端能力位: Responses 协议支持 image 输入 (input_image 块)。
+    supports_vision = True
 
     def __init__(
         self,
@@ -113,10 +122,12 @@ class OpenAIResponsesChatProvider(ChatProvider):
             "model": self.model_name,
             "input": _convert_messages_responses(system_prompt, history),
             "instructions": system_prompt,
-            "temperature": self._temperature,
             "max_output_tokens": (options.max_completion_tokens if options else None) or self._max_tokens,
             "stream": True,
         }
+        # 推理模型 (o 系列 / gpt-5) 只接受默认 temperature, 传自定义值会 400。
+        if not is_openai_reasoning_model(self.model_name):
+            body["temperature"] = self._temperature
         if tools:
             body["tools"] = [_convert_tool_responses(t) for t in tools]
         # nvidia 不支持 prompt_cache_key（上游缺陷）→ 发送前剔除；其它 provider 注入

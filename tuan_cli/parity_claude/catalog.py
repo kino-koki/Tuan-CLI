@@ -114,8 +114,9 @@ class Module:
     ahead_dim: str = ""
 
 
-def M(name, domain, cc_ref, status, evidence, note,
-      wave="", ahead_reason="", ahead_dim="") -> Module:
+def M(name: str, domain: str, cc_ref: str, status: str,
+      evidence: Tuple[str, ...], note: str,
+      wave: str = "", ahead_reason: str = "", ahead_dim: str = "") -> Module:
     ev = tuple(e for e in evidence if e)
     return Module(name, domain, cc_ref, status, ev, note,
                   wave, ahead_reason, ahead_dim)

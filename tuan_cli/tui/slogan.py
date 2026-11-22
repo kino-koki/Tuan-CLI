@@ -24,7 +24,9 @@ class SloganMixin:
     _slogan_lock: Any
     _slogan_log: Any
     _slogan_owner: str
-    _slogan_sealed: Tuple[Dict[str, Any], ...]
+    # close() 路径封存的是 mapping.take_owner_log 的 SloganDecision 快照，
+    # _release_slogan_owner 路径封存的是 dict 行 —— 元素类型按 Any 声明
+    _slogan_sealed: Tuple[Any, ...]
 
     def _phase_of_context(self, context: Optional[str]) -> str:
             """事件上下文 → RuntimeSloganEngine 真实阶段 (驱动 stall 诊断)。"""
@@ -118,7 +120,7 @@ class SloganMixin:
 
     # ------------------------------------------------------------ B3 XVI 生命周期接线
 
-    def liveness(self):
+    def liveness(self) -> Any:
             """运行时活性快照 (调试/doctor 用), 透传 runtime_slogans 引擎。"""
             engine = getattr(self, "_slogans", None)
             return engine.liveness() if engine is not None else None

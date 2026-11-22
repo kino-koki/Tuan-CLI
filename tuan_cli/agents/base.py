@@ -220,7 +220,7 @@ class AgentAdapter(ABC):
                 stderr=asyncio.subprocess.PIPE,
             )
         except Exception as e:
-            log.debug("AgentAdapter._probe_version(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            log.debug("AgentAdapter._probe_version(): 非致命异常已忽略(设计内降级, 不改控制流): %s", e)
             return None, f"{type(e).__name__}: {e}"
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout=5)

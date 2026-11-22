@@ -23,7 +23,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 try:
     import tomllib  # Python 3.11+
 except ImportError:  # pragma: no cover
-    tomllib = None  # type: ignore
+    tomllib = None
 
 import logging
 log = logging.getLogger(__name__)
@@ -318,10 +318,10 @@ class PluginManager:
         if json_path.is_file():
             try:
                 try:
-                    raw = json_path.read_text(encoding="utf-8")
+                    raw_text = json_path.read_text(encoding="utf-8")
                 except UnicodeDecodeError:
-                    raw = json_path.read_text(encoding="utf-8-sig")
-                data = json.loads(raw)
+                    raw_text = json_path.read_text(encoding="utf-8-sig")
+                data = json.loads(raw_text)
                 if isinstance(data, dict) and data.get("name"):
                     # 旧 tuan plugin.json 与 DSH plugin.json 共用扩展名;
                     # 通过 min_dsh_version / skills[].auto_invoke 等字段判别为 dsh

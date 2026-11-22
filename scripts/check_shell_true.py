@@ -165,7 +165,42 @@ def scan() -> list[tuple[str, int, str]]:
     return hits
 
 
+def render_doc() -> str:
+    """把白名单渲染成 markdown, 供 docs/shell_true_whitelist.md 公开说明。"""
+    lines = [
+        "# `shell=True` 白名单公开说明",
+        "",
+        "> 本文档由 `python scripts/check_shell_true.py --doc` 生成, 与 CI 门禁",
+        "> (`scripts/check_shell_true.py`) 的 WHITELIST 表同源, 请勿手改;",
+        "> 修改白名单后重新生成即可。",
+        "",
+        "门禁规则: `tuan_cli/**.py` 中任何 `shell=True` 调用点必须出现在下表",
+        "(按 文件 + 内容锚点 匹配, 行号仅作文档提示)。白名单外的新调用点直接",
+        "使 CI 失败。",
+        "",
+        f"当前白名单条目: {len(WHITELIST)} 条。",
+        "",
+        "| 文件 (相对 tuan_cli/) | 写入行号 | 锚点 | 必要性分类 |",
+        "|---|---|---|---|",
+    ]
+    reason_desc = {
+        "USER_INPUT": "命令由用户/LLM 直接提供, 无法安全转 list",
+        "SHELL_META": "命令含 | & ; > < 等 shell 元字符, 需 shell 解释",
+        "REGEX_CONST": "正则/错误消息字符串常量里的字样, 非真实调用点",
+        "COMMENT": "注释中的文字描述, 非真实调用点",
+        "PLUGIN_HOOK": "命令来自插件 manifest (插件作者 = 外部输入)",
+        "SAFE_FALLBACK": "已 shlex 优先, 仅检测到 shell 元字符才回退 shell=True",
+    }
+    for rel, lineno, anchor, reason in WHITELIST:
+        lines.append(f"| `{rel}` | {lineno} | `{anchor}` | {reason} — {reason_desc.get(reason, reason)} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main() -> int:
+    if "--doc" in sys.argv:
+        print(render_doc())
+        return 0
     hits = scan()
     # 按 (relpath, 锚点) 建立索引; 同一文件同一锚点可出现多次
     # (如 plugin_sdk.py 的三处 `shell=True,`), 因此按**条目索引**逐条消耗,

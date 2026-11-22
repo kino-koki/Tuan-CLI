@@ -1072,7 +1072,8 @@ class _WebHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/mh/preview":
             body = self._read_body()
-            times = body.get("times") if isinstance(body.get("times"), list) else []
+            raw_times = body.get("times")
+            times = raw_times if isinstance(raw_times, list) else []
             res = self._owner.mh_preview(
                 project_id=str(body.get("project_id") or ""),
                 times=times,
@@ -1092,7 +1093,8 @@ class _WebHandler(BaseHTTPRequestHandler):
         if path == "/api/codeanim/contact":
             body = self._read_body()
             pj = body.get("project_json")
-            times = body.get("times") if isinstance(body.get("times"), list) else []
+            raw_times = body.get("times")
+            times = raw_times if isinstance(raw_times, list) else []
             res = self._owner.codeanim_contact(
                 project_json=pj if isinstance(pj, dict) else {},
                 times=times)
@@ -1140,9 +1142,10 @@ class _WebHandler(BaseHTTPRequestHandler):
         path = parsed.path
         if path == "/api/mh/scene":
             body = self._read_body()
+            raw_scene_js = body.get("scene_js")
             res = self._owner.mh_write_scene(
                 project_id=str(body.get("project_id") or ""),
-                scene_js=body.get("scene_js") if isinstance(body.get("scene_js"), str) else "",
+                scene_js=raw_scene_js if isinstance(raw_scene_js, str) else "",
                 identity=self._owner.current_identity(self))
             self._json(200 if res.get("ok") else 400, res)
             return

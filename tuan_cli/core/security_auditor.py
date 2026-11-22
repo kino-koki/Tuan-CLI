@@ -255,6 +255,10 @@ class SecurityAuditor:
             return
         try:
             with open(self._log_file, "rb") as f:
+                # 聚合统计: 同类失败只告警一次, 避免启动时逐行刷屏 (GH 用户反馈)。
+                # 常见触发: 换机器/换 shell 后设备指纹变化, 旧日志整文件无法解密。
+                skipped_broken_format = 0  # 解析/格式错误 (真单行损坏)
+                skipped_hmac_fail = 0      # HMAC 校验失败 (密钥不匹配/被篡改)
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -271,9 +275,27 @@ class SecurityAuditor:
                         self._buffer.append(rec)
                         if len(self._buffer) > self._IN_MEMORY_LIMIT:
                             self._buffer = self._buffer[-self._IN_MEMORY_LIMIT:]
-                    except Exception as exc:  # noqa: BLE001 - 单行损坏跳过, 不中断恢复
-                        log.warning("审计恢复: 跳过无法解析的记录行: %s", exc)
+                    except ValueError as exc:
+                        # HMAC 校验失败抛 ValueError —— 单独计数, 末尾只报一次并给修复提示
+                        msg = str(exc)
+                        if "HMAC" in msg or "验证失败" in msg:
+                            skipped_hmac_fail += 1
+                        else:
+                            skipped_broken_format += 1
                         continue
+                    except Exception:  # noqa: BLE001 - 单行损坏跳过, 不中断恢复
+                        skipped_broken_format += 1
+                        continue
+            # 恢复结束: 汇总输出 (各类型最多一条 warning, 附修复提示)
+            if skipped_hmac_fail:
+                log.warning(
+                    "审计恢复: %d 行 HMAC 校验失败已跳过 —— 多为换机器/换 shell 后设备指纹"
+                    "变化导致旧日志无法解密 (非篡改)。如需重置审计日志: 删除 %s 后重启。",
+                    skipped_hmac_fail, self._log_file)
+            if skipped_broken_format:
+                log.warning(
+                    "审计恢复: %d 行格式损坏已跳过 (单行错误不影响其余记录恢复)。",
+                    skipped_broken_format)
         except Exception as exc:
             log.warning("审计日志恢复失败, 以当前状态继续: %s", exc)
 

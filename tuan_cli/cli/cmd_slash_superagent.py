@@ -145,7 +145,11 @@ def _cmd_superagent(agent: Any, arg: str) -> None:
         action = s[1].strip() if len(s) > 1 else "allow"
         # ProgramRule 用 fn 谓词; 简化: 匹配词出现在 content 中即命中
         kw = s[0]
-        eng.add_rule(ProgramRule(name=kw, fn=lambda t, k=kw: k in t.content, action=action))
+
+        def _kw_match(t: Any, k: str = kw) -> bool:
+            return k in t.content
+
+        eng.add_rule(ProgramRule(name=kw, fn=_kw_match, action=action))
         ui.success(f"已添加规则: match='{kw}' action={action}")
     elif sub == "recover":
         eng._recover_pending()

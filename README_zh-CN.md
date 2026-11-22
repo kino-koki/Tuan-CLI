@@ -1,7 +1,7 @@
 ﻿# 青小团 · Tuan-CLI
 
 > **「Model + Harness = Agent」** —— 把「会思考」和「靠谱地跑」拆开，两者都交到你手里。
-> 一个安全优先、模型无关、纯 Python 的 AI Agent Harness。`v0.4.5` · MIT · Python ≥ 3.10
+> 一个安全优先、模型无关、纯 Python 的 AI Agent Harness。`v0.5.0` · MIT · Python ≥ 3.10
 
 > ### 定位：安全优先的 Agent，尽量不牺牲开发体验
 >
@@ -32,8 +32,8 @@
 | 它给的 | 细节 |
 |---|---|
 | 🛡️ **安全优先** | 四道闸：静态评分、影响半径预拦截、YOLO 红线兜底、事务化账本 `/undo` 精确回滚 |
-| 🎯 **开发体验** | 良性开发命令零确认零拦截、`/undo` 兜底、40+ 斜杠命令、`tuan safe allow` 显式放行、YOLO 一键省掉重复确认 |
-| 🔌 **模型无关** | 58 家供应商 + 本地 Ollama + 运行时热切换 + 自动路由（`router.*`） |
+| 🎯 **开发体验** | 良性开发命令零确认零拦截、`/undo` 兜底、91 个斜杠命令、`tuan safe allow` 显式放行、YOLO 一键省掉重复确认 |
+| 🔌 **模型无关** | 63 家供应商 + 本地 Ollama + 运行时热切换 + 自动路由（`router.*`） |
 | 🧠 **三种主循环** | ReAct / Planner-Execute / DevLoop，可插拔，"同一个内核跑不同的思考节奏" |
 | 🔧 **插件容器** | `@plugin` 一行声明，服务注册表、append-only 事件总线、hook 中间件 |
 | 🗂️ **记忆** | SQLite FTS5 + 会话事件流；三层记忆、`/undo`、checkpoint、replay、Trajectory 导出 |
@@ -122,11 +122,11 @@ tuan dispatch serve --port 8788            # WebSocket 在 ws://HOST:8788/tuan/d
 
 ## 版本号说明
 
-**为什么现在是 `0.4.2`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的诚实口径：**`0.x` 阶段意味着公共 API（CLI 接口、配置 schema、工具协议、插件契约）尚未冻结**，仍可能随迭代调整。Tuan-CLI 功能面已相当完整（安全拦截/事务回滚、模型无关热切换（58 家供应商 + 本地 Ollama）、三种主循环、插件容器架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等，均配有测试），但**版本号反映的是接口稳定度，不是功能完成度**——功能齐全 ≠ API 该冻结。`1.0` 预留给公共 API 真正稳定、敢于承诺向后兼容之时。此前：破坏性变更在 `0.x` 内升 MINOR（并附迁移提示）、兼容功能升 MINOR、修复升 PATCH（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。
+**为什么现在是 `0.5.x`，不是 `1.0`？** 遵循 [SemVer](https://semver.org/) 的诚实口径：**`0.x` 阶段意味着公共 API（CLI 接口、配置 schema、工具协议、插件契约）尚未冻结**，仍可能随迭代调整。Tuan-CLI 功能面已相当完整（安全拦截/事务回滚、模型无关热切换（63 家供应商 + 本地 Ollama）、三种主循环、插件容器架构、三层记忆、生态互操作（MCP/ACP/Claude Code/Hermes 三方桥）、子代理与 Swarm、cron 与后台任务、Goal 模式与精确权限等，均配有测试），但**版本号反映的是接口稳定度，不是功能完成度**——功能齐全 ≠ API 该冻结。`1.0` 预留给公共 API 真正稳定、敢于承诺向后兼容之时。此前：破坏性变更在 `0.x` 内升 MINOR（并附迁移提示）、兼容功能升 MINOR、修复升 PATCH（见 [VERSION_POLICY.md](VERSION_POLICY.md)）。
 
 | 版本号语义 | 说明 |
 |---|---|
-| `0.4.2`（当前） | **API 尚未冻结**：`0.x` 阶段允许破坏性调整，会预告 + 给迁移提示；不承诺向后兼容 |
+| `0.5.x`（当前） | **API 尚未冻结**：`0.x` 阶段允许破坏性调整，会预告 + 给迁移提示；不承诺向后兼容 |
 | `1.0`（预留） | 公共 API 冻结、承诺向后兼容时启用；此后破坏性变更才升 MAJOR（2.0） |
 
 **Git 历史说明（开源透明披露）**：本仓库的 Git 提交历史 **并非"有意隐藏/覆盖"**，真实情况是：**早期项目并没有放入 Git 版本管理，代码一直在其他机器上开发；后来那台机器损坏，才导致部分早期记录丢失，之后我们重建了 Git 历史。庆幸的是硬盘并没有损坏**，当前代码从架构到实现完整可审查。因此：**Git 历史不可考，对于几乎所有人来说没有任何影响**——代码是完整的、可审查的，功能演进请以 [CHANGELOG.md](CHANGELOG.md) 的版本记录为准（版本纪律不受影响）。我们不修饰、不隐藏，如实披露这一点，也**请不要揪着不放**。
@@ -174,14 +174,14 @@ tuan --print run "你好，一句话介绍你自己"
 
 ---
 
-## 命令行面：92 个子命令（含嵌套共 194 个）+ 50 个斜杠命令
+## 命令行面：92 个子命令（含嵌套共 194 个）+ 91 个斜杠命令
 
 上手常用的几个：
 
 | 命令 | 干啥 |
 |---|---|
 | `tuan` | 交互式 TUI（Kimi Code 皮肤） |
-| `tuan setup` / `tuan models` | 配供应商 / 列出模型（58 家供应商、1400+ 内置模型） |
+| `tuan setup` / `tuan models` | 配供应商 / 列出模型（63 家供应商、1400+ 内置模型） |
 | `tuan sessions` / `--continue` / `--resume <id>` / `setup --skip` | 列出/恢复/删除已存会话，可从命令行直接续跑；首次运行自动弹出配置向导（`setup --skip` 跳过） |
 | `tuan models update` | 本地更新模型/供应商目录：把内置最新清单合并写入 `~/.tuan/models_catalog.json`（离线、保留用户自建条目；`--check` 只报差异、`--background` 后台执行） |
 | `tuan agent` | 命名 Agents（`.claude/agents` 兼容 + 三层发现） |
@@ -193,10 +193,22 @@ tuan --print run "你好，一句话介绍你自己"
 | `tuan upgrade` | 检查并升级到最新版（`--check` 只查不装 / `--yes` 免确认 / `--version <ver>` 装指定版） |
 | `tuan permissions list|test` | 查看权限规则，只读测试某次调用命中哪条规则 |
 
-历史最常用的斜杠命令：`/plan`（只读模式）· `/model`（切模型）· `/undo`·`/impact`（回滚+影响半径）· `/swarm`（多 Agent 协作）· `/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help`。完整列表在 TUI 里按 `Ctrl-G`。
+历史最常用的斜杠命令：`/plan`（只读模式）· `/model`（切模型）· `/undo`·`/impact`（回滚+影响半径）· `/swarm`（多 Agent 协作）· `/watch`（看视频）· `/reach`（读网页）· `/approvals`（审批三档）· `/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help`。完整列表在 TUI 里按 `Ctrl-G`。
 
 > **Goal 增强**：`/goal all tests pass` 会自动拆成 3~7 个子步骤逐步验证续轮推进，进度落盘 `.tuan/goal.json`，`/goal status` 看步骤进度，`/goal clear` 停止。
 > **精确权限**：规则可写到参数级，如 `tuan config set permissions.rules '[{"tool":"run_shell","param":"command","value":"rm -rf*","action":"deny"}]'`，再用 `tuan permissions test run_shell '{"command":"rm -rf /"}'` 验证命中。
+
+---
+
+## 看视频、读网页、审批有档位
+
+三个 Codex/Claude 级能力层，完全自研：
+
+- **`/watch <文件|URL> [问题]`** —— Agent 真能「看」视频：字幕优先转写（可选本地 Whisper）、按 `--detail low/medium/high` 档位抽帧、16×16 灰度去重（近似帧不重复烧视觉预算）。落地为 `video_watch` 工具 + `tuan-watch` 内置技能。
+- **`/reach <URL>`** —— 多平台联网读取能力层：按通道（web / rank / search / docs / code / media）有序后端回退、免 key 优先；`/reach doctor` 自检、`/reach channels` 列覆盖。落地为 `reach_fetch` / `reach_doctor` 工具 + `tuan-reach` 内置技能。
+- **`/approvals read-only|auto|full-access`** —— Codex 同款审批三档：read-only 映射 plan 模式、auto 为默认策略、full-access 开 YOLO（硬红线仍生效）；agent 与 TUI 双向同步。
+- **F3 任务清单执行面板** —— TUI 右侧只读展示 Agent 的实时任务清单（持久化于 `.tuan/todo.json`）：进行中优先、三态图标、进度计数；F3 开关，与 Ctrl+D diff 面板互斥。
+- **`/web` 换上官网同款设计语言** —— 本地 Web 工作台与官网共用青奈设计系统：暖纸底、olive/lime 品牌色对、发丝线描边、统一 3px 圆角、Georgia + 苹方正文与 IBM Plex Mono 标签（light/dark/system 三主题保留）。
 
 ---
 
@@ -269,7 +281,7 @@ tuan --print run "你好，一句话介绍你自己"     # 冒烟
 ```
 
 - **多语言文档纪律**：以 `README_zh-CN.md`（本文件）为权威母本，新增内容同步到全部 10 份，对译求「生动、零漂移」，**禁机械直译**。
-- **版本**：`v0.4.5`（`0.x` 阶段 API 未冻结）；破坏性调整提前预告 + 迁移提示，`1.0` 预留给 API 冻结。
+- **版本**：`v0.5.0`（`0.x` 阶段 API 未冻结）；破坏性调整提前预告 + 迁移提示，`1.0` 预留给 API 冻结。
 - **深挖**：九大引擎签名与新增工具走查见文末「附录」，插桩/二开/调试党请直接翻 `README_zh-CN.md` 尾部。
 
 ---

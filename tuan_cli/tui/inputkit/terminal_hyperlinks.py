@@ -44,7 +44,7 @@ import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urlparse
 
 MAX_HYPERLINK_DESTINATION_BYTES = 8 * 1024
@@ -215,7 +215,7 @@ def _looks_like_image(p: Path) -> bool:
     return False
 
 
-def _ancestors(p: Path):
+def _ancestors(p: Path) -> List[Path]:
     """目标本身的父链（不含文件系统根，避免 /tmp 这类系统 symlink 误杀）。"""
     out = []
     cur = p.parent

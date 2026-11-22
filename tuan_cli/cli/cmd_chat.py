@@ -372,6 +372,8 @@ def cmd_chat(args: Any) -> int:
             def on_error(message: str) -> None:
                 # 已是 C-2 友好模板 (❌ 开头) 则原样展示, 避免 "[错误] ❌" 双重前缀
                 text = message if message.lstrip().startswith("❌") else f"[错误] {message}"
+                # 置标记: _run_submit 的 except 看到后不再重复 append_log (避免刷两次)
+                tui._error_logged_this_turn = True
                 tui.append_log(text)
                 tui.audit("warning", f"[错误] {message}")
                 tui.end_any_tool()

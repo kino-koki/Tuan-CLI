@@ -63,7 +63,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -425,7 +425,7 @@ class HookManager:
 
     # ------------------------------------------------------------------ 执行
 
-    def _exit_gate(self, spec: "_HookSpec", policy: str):
+    def _exit_gate(self, spec: "_HookSpec", policy: str) -> "tuple[_xs.ExitVerdict | None, bool]":
         """逐事件 exit-code-2 闸门。
 
         返回 ``(verdict, skip_failure_block)``：
@@ -550,6 +550,8 @@ class HookManager:
             failed_run = (out is None or
                           (isinstance(out, str) and not out.strip()))                 and failure is not None and not skip_failure_block
             if failed_run:
+                # failed_run 的条件已确保 failure 非空；断言仅供 mypy 收窄类型。
+                assert failure is not None
                 # B1: hook 故障默认闭合。CC 需逐条显式 onFailure:"block"。
                 # blocking 开关只影响 hook 自己返回的 block, 不影响这里。
                 reason = (
@@ -671,6 +673,8 @@ class HookManager:
             failed_run = (out is None or
                           (isinstance(out, str) and not out.strip()))                 and failure is not None and not skip_failure_block
             if failed_run:
+                # failed_run 的条件已确保 failure 非空；断言仅供 mypy 收窄类型。
+                assert failure is not None
                 reason = (f"hook 执行失败 (fail-closed, on_failure={policy}): "
                           f"event={spec.event} hook={spec.uid} "
                           f"kind={failure.kind} detail={failure.detail}")
@@ -761,6 +765,8 @@ class HookManager:
             failed_run = (out is None or
                           (isinstance(out, str) and not out.strip()))                 and failure is not None and not skip_failure_block
             if failed_run:
+                # failed_run 的条件已确保 failure 非空；断言仅供 mypy 收窄类型。
+                assert failure is not None
                 reason = (f"hook 执行失败 (fail-closed, on_failure={policy}): "
                           f"event={spec.event} hook={spec.uid} "
                           f"kind={failure.kind} detail={failure.detail}")

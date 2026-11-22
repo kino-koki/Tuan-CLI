@@ -144,7 +144,8 @@ def preset_graph(preset_id: str) -> Dict[str, Any]:
 
 def get_preset_data(preset_id: str) -> Dict[str, Any]:
     """取预置图的序列化图数据 (可直接 run/save); 未知 id 抛 ValueError。"""
-    return preset_graph(preset_id)["data"]
+    data: Dict[str, Any] = preset_graph(preset_id)["data"]
+    return data
 
 
 __all__ = [

@@ -91,6 +91,7 @@ class KernelModelAdapter(ModelAdapter):
         stream: bool = False,
         on_token: Optional[Callable[[str], None]] = None,
         on_reason: Optional[Callable[[str], None]] = None,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> ModelResponse:
         # 拆分 system / history（kernel 的 system 单独传）
         system_prompt = ""

@@ -596,7 +596,7 @@ def _match_any(text: str, patterns: Any) -> bool:
             chunks = [line[s:s + _MATCH_LINE_MAX]
                       for s in range(0, len(line), step)]
         else:
-            chunks = (line,)
+            chunks = [line]
         for chunk in chunks:
             for pattern, label in patterns:
                 if _label_suppressed(label):
@@ -1453,19 +1453,32 @@ _CRED_READ_RE_HARD = re.compile(
     r"\b(?:cat|tac|less|more|head|tail|nl|bat|type|awk|sed|grep|egrep|fgrep|zgrep"
     r"|tee|sort|uniq|cut|tr|paste|join|xargs|wc|xsl|csvlook)\b"
     r"[^\n]*(?:~?/\.ssh/(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/\s]+_key)(?!\.pub\b)"
-    r"|/root/\.ssh/|/etc/shadow\b|~?/\.aws/credentials\b)",
+    r"|/root/\.ssh/|/etc/shadow\b|~?/\.aws/credentials\b"
+    r"|~?/\.kube/config\b|~?/\.config/gcloud/(?:credentials|access_tokens\.json)\b"
+    r"|~?/\.docker/config\.json\b)",
     re.IGNORECASE,
 )
 
 # 审计 P1-16 / P1-17 / P1-09: 服务级/集群级破坏、凭证转移与「配置注入 /
 # 间接执行」家族 —— 此前判 high 在 YOLO 下被放行, 现升为红线 (可确认关键级)。
 _P1_NEW_PATTERNS = [
-    (r"\biptables\b[^\n]*\s-F\b", "iptables flush (服务级网络防护破坏)"),
+    # iptables -F / -X / --flush, 含 ip6tables (服务级网络防护破坏)
+    (r"\bip6?tables\b[^\n]*\s(?:-F\b|-X\b|--flush\b)", "iptables flush (服务级网络防护破坏)"),
+    (r"\bnft\b[^\n]*\bflush\s+ruleset\b", "nft flush ruleset (清空全部 nftables 规则)"),
+    (r"\bufw\s+reset\b", "ufw reset (清空防火墙规则)"),
+    (r"\bfirewall-cmd\b[^\n]*--panic\b", "firewall-cmd --panic (防火墙恐慌模式, 全部流量中断)"),
+    (r"\bauditctl\b[^\n]*\s(?:-D\b|--delete\b)", "auditctl 清空审计规则 (审计体系破坏)"),
+    (r"\bnvram\b[^\n]*\s(?:-c\b|delete\b)", "nvram 清空/删除固件变量 (macOS 固件破坏)"),
+    (r"\bdscl\b[^\n]*-delete\b[^\n]*/Users\b", "dscl 删除用户 (macOS 账户删除)"),
+    (r"\bdseditgroup\b[^\n]*-o\s+delete\b", "dseditgroup 删除组 (macOS 账户组删除)"),
+    (r"\bsecurity\s+delete-keychain\b", "security delete-keychain (macOS 钥匙串删除)"),
+    (r"\bkmutil\s+install\b", "kmutil install (macOS 内核扩展安装)"),
+    (r"\bch(?:mod|own|grp)\b[^\n]*/etc/shadow\b", "凭证文件权限篡改 (/etc/shadow)"),
     (r"\bsystemctl\b[^\n]*\bmask\b", "systemctl mask 系统服务"),
     (r"\bsystemctl\b[^\n]*\b(?:stop|disable)\b[^\n]*\b(?:sshd|ssh\.service|firewalld|ufw|auditd|selinux)\b", "systemctl 停用安全服务"),
     (r"\bkubectl\b[^\n]*\bdelete\b[^\n]*\b(?:ns|namespace|node|pv|secret)\b", "kubectl 删除集群关键资源"),
-    (r"\b(?:cp|mv|rsync|tar|zip)\b[^\n]*\.ssh/(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/\s]+_key)", "凭证转移 (SSH 私钥)"),
-    (r"\b(?:cp|mv|rsync|tar|zip)\b[^\n]*/etc/shadow\b", "凭证转移 (/etc/shadow)"),
+    (r"\b(?:cp|mv|rsync|tar|zip|gpg|openssl|7z|gzip|bzip2|base64)\b[^\n]*\.ssh/(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/\s]+_key)", "凭证转移 (SSH 私钥)"),
+    (r"\b(?:cp|mv|rsync|tar|zip|gpg|openssl|7z|gzip|bzip2|base64)\b[^\n]*/etc/shadow\b", "凭证转移 (/etc/shadow)"),
     (r"\bgit\b[^\n]*-c\s+core\.(?:hooksPath|fsmonitor|pager)\s*=", "git 配置注入 (hooksPath/fsmonitor/pager 间接执行)"),
     (r"\bssh\b[^\n]*ProxyCommand\s*=", "ssh ProxyCommand 间接执行"),
     (r"\bsed\b[^\n]*s[/|][^/\n|]*[/|][^/\n|]*[/|][a-zA-Z]*e\b", "sed s///e 替换执行"),

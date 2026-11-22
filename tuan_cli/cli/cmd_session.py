@@ -164,7 +164,8 @@ def cmd_session(args: Any) -> int:
         if mode == "auto":
             agent.ctx.auto_mode = True
         effort = config.get("agent.effort", "high")
-        return _run_chat_repl(agent, config, workspace, mode, effort)
+        rc: int = _run_chat_repl(agent, config, workspace, mode, effort)
+        return rc
 
     if session_cmd == "delete":
         target = getattr(args, "target", None) or "1"
@@ -487,7 +488,8 @@ class _EventStoreAdapter:
         self._store.append(ev_type, d)
 
     def read_all(self) -> list:
-        return self._store.read_all()
+        rows: list = self._store.read_all()
+        return rows
 
 
 def _session_compare(args: Any) -> int:

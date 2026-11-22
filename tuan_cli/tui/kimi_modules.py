@@ -396,7 +396,10 @@ def collect_mcp_servers() -> List[McpServerInfo]:
     读 .tuan/mcp.json 静态清单。缺位返回 []。
     """
     try:
-        from tuan_cli.web.server import _MCP_DEFAULT  # noqa: F401
+        import tuan_cli.web.server as _web_server_mod
+        # 属性可能不存在（版本差异）：getattr 缺省 None，与原 from-import
+        # 失败后回落 None 的运行时语义等价，且对 mypy 可见
+        _MCP_DEFAULT = getattr(_web_server_mod, "_MCP_DEFAULT", None)  # noqa: F841
     except Exception:  # noqa: BLE001
         _MCP_DEFAULT = None
     try:
@@ -406,7 +409,9 @@ def collect_mcp_servers() -> List[McpServerInfo]:
         if not mcp_cfg.exists():
             return []
         data = json.loads(mcp_cfg.read_text(encoding="utf-8"))
-        servers = data.get("mcpServers") if isinstance(data, dict) else {}
+        # json.loads 返回 Any，mcpServers 缺失时为 None（.items() 前由外层
+        # try/except 兜底），显式 Any 标注仅用于类型检查
+        servers: Any = data.get("mcpServers") if isinstance(data, dict) else {}
         out: List[McpServerInfo] = []
         for name, spec in servers.items():
             if not isinstance(spec, dict):
@@ -478,7 +483,9 @@ def _fmt_seconds_duration(seconds: int) -> str:
 
 def _format_reset_time(val: str) -> str:
     """Kimi _format_reset_time 的移植 (ISO → "resets in X")。"""
-    from datetime import UTC, datetime
+    # datetime.UTC 仅 Python 3.11+；mypy 按 pyproject 的 python_version=3.10
+    # 检查会报 attr-defined，运行环境（3.12）实际可用，故针对性豁免
+    from datetime import UTC, datetime  # type: ignore[attr-defined]
     try:
         if "." in val and val.endswith("Z"):
             base, frac = val[:-1].split(".")

@@ -42,7 +42,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple, cast
 
 VSCODE_RESIZE_REFLOW_MAX_ROWS = 1_000
 WINDOWS_TERMINAL_RESIZE_REFLOW_MAX_ROWS = 9_001
@@ -90,7 +90,9 @@ class TerminalResizeReflowConfig:
     def __init__(self, mode: MaxRowsMode = MaxRowsMode.AUTO,
                  limit: int = 0):
         self.mode = mode
-        self.limit = limit
+        # `limit` 与同名 classmethod 冲突，mypy 把 self.limit 解析为方法；
+        # 运行时这就是普通实例属性赋值，语义不变
+        self.limit = limit  # type: ignore[method-assign, assignment]
 
     @classmethod
     def auto(cls) -> "TerminalResizeReflowConfig":
@@ -141,7 +143,8 @@ def resize_reflow_max_rows_for(
     if config.mode is MaxRowsMode.DISABLED:
         return None
     if config.mode is MaxRowsMode.LIMIT:
-        n = config.limit
+        # getattr 绕开同名 classmethod 遮蔽；cast 标注运行时实际为 int
+        n = cast(int, getattr(config, "limit"))
         if n < 0 or n > MAX_CONFIGURABLE_ROWS:
             # 本地化 fail-closed：非法上限退回保守 fallback，绝不无限重放
             return _fallback_rows
@@ -171,11 +174,11 @@ def cap_for(config: TerminalResizeReflowConfig,
     if config.mode is MaxRowsMode.DISABLED:
         return None, "用户显式禁用行数限制，保留全部行"
     if config.mode is MaxRowsMode.LIMIT:
-        if config.limit == 0:
+        if getattr(config, "limit") == 0:
             return None, "Limit(0) 视为 Disabled"
-        if config.limit < 0 or config.limit > MAX_CONFIGURABLE_ROWS:
+        if getattr(config, "limit") < 0 or getattr(config, "limit") > MAX_CONFIGURABLE_ROWS:
             return _fallback_rows, "非法上限，fail-closed 回退 fallback"
-        return config.limit, "显式配置覆盖自动探测"
+        return getattr(config, "limit"), "显式配置覆盖自动探测"
     if running_in_vscode_terminal:
         return VSCODE_RESIZE_REFLOW_MAX_ROWS, "VS Code 环境探测优先"
     if terminal_name in (TerminalName.VS_CODE, TerminalName.WINDOWS_TERMINAL,

@@ -37,7 +37,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 # 域名标签：字母数字 + 连字符，不以连字符开头/结尾；不允许多余标点。
 _LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -312,10 +312,11 @@ def profile_domains(obj: Any) -> Tuple[str, ...]:
     (读取其 ``allowed_domains`` 字段); 后者用于 manager → provider 传递。
     """
     if hasattr(obj, "required_domains"):
-        return obj.required_domains
+        domains: Tuple[str, ...] = obj.required_domains
+        return domains
     raw = getattr(obj, "allowed_domains", None)
     if not isinstance(raw, (list, tuple)):
-        return []
+        return ()
     out: List[str] = []
     for x in raw:
         n = normalize_domain(x)

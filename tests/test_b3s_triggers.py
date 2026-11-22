@@ -373,6 +373,54 @@ class TestDecisionSemantics:
         assert "作废本次回答" in out
         assert "用户回答: 是" not in out
 
+    def test_elicitation_exit2_declines_question(self, tmp_path, monkeypatch):
+        """CC exit-code-2 官方语义：Elicitation exit 2 → decline，非通道故障。
+
+        旧实现把 exit 2 当「Hook 阻断/取消提问」报给模型；按官方逐事件
+        真值表（exit_semantics.py: Elicitation exit2=blocks），effective
+        action 应为 **decline** —— 用户明确拒绝，模型不得重复提问。
+        """
+        log = tmp_path / "e2.jsonl"
+        monkeypatch.setenv("B3S_LOG", str(log))
+        mgr = HookManager({"hooks": {
+            "enabled": True,
+            "Elicitation": [{"command": [PY, "-c", "import sys; sys.exit(2)"]}]}},
+            workspace=str(tmp_path), kernel=RecordingKernel())
+        from tuan_cli.tools.session_tools import _ask_user_handler
+        seen = []
+
+        class UI:
+            def ask_user(self, q, opts):
+                seen.append(q); return "是"
+
+        out = _ask_user_handler(SimpleNamespace(ui=UI(), hooks=mgr),
+                                question="继续?", options=["是"])
+        assert "decline" in out, f"exit 2 应反馈 decline, 实际: {out}"
+        assert "取消提问" not in out
+        assert seen == [], "decline 语义下同样绝不能去问用户"
+        assert not any(r["hook_event_name"] == "ElicitationResult"
+                       for r in _records(log))
+
+    def test_elicitation_result_exit2_declines_answer(self, tmp_path,
+                                                      monkeypatch):
+        """CC exit-code-2 官方语义：ElicitationResult exit 2 → 该回答按 decline 处理。"""
+        log = tmp_path / "er2.jsonl"
+        monkeypatch.setenv("B3S_LOG", str(log))
+        mgr = HookManager({"hooks": {
+            "enabled": True,
+            "Elicitation": [_writer_hook(log)],
+            "ElicitationResult": [{"command": [PY, "-c", "import sys; sys.exit(2)"]}]}},
+            workspace=str(tmp_path), kernel=RecordingKernel())
+        from tuan_cli.tools.session_tools import _ask_user_handler
+
+        class UI:
+            def ask_user(self, q, opts): return "是"
+
+        out = _ask_user_handler(SimpleNamespace(ui=UI(), hooks=mgr),
+                                question="继续?", options=["是"])
+        assert "decline" in out, f"exit 2 应按 decline 处理, 实际: {out}"
+        assert "用户回答: 是" not in out
+
     def test_hook_allow_does_not_become_the_answer(self, tmp_path,
                                                    monkeypatch):
         """CC 允许 Elicitation hook 代答；Tuan 刻意不等价 —— 模型不能自问自答。"""

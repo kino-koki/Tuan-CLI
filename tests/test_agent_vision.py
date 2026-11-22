@@ -144,7 +144,11 @@ class TestToolContent:
         assert out is blocks
 
     def test_images_no_vision_returns_original(self):
-        """有图片但模型不支持视觉: 原样返回, 不调 build_tool_content。"""
+        """有图片但模型不支持视觉: 收敛为文本, 不调 build_tool_content。
+
+        tool 消息 content 要随请求 JSON 序列化, 故绝不能原样返回 ToolResult
+        (会触发 "Object of type ToolResult is not JSON serializable")。
+        """
         agent = DummyAgent(model=SimpleNamespace(
             capabilities=SimpleNamespace(vision=False)
         ))
@@ -152,10 +156,12 @@ class TestToolContent:
         with patch("tuan_cli.vision.build_tool_content") as m:
             out = agent._tool_content(result)
         m.assert_not_called()
-        assert out is result
+        assert isinstance(out, str)
+        assert "工具输出" in out
+        assert "图片" in out
 
     def test_no_images_returns_original(self):
-        """无图片 (即使视觉模型): 原样返回。"""
+        """无图片 (即使视觉模型): 收敛为文本, 不调 build_tool_content。"""
         agent = DummyAgent(model=SimpleNamespace(
             capabilities=SimpleNamespace(vision=True)
         ))
@@ -163,7 +169,8 @@ class TestToolContent:
         with patch("tuan_cli.vision.build_tool_content") as m:
             out = agent._tool_content(result)
         m.assert_not_called()
-        assert out is result
+        assert isinstance(out, str)
+        assert "工具输出" in out
 
     def test_non_tool_result_returns_original(self):
         """非 ToolResult (如纯字符串): 原样返回。"""
@@ -174,7 +181,7 @@ class TestToolContent:
         assert out == "just text"
 
     def test_images_none_returns_original(self):
-        """images 为 None: 原样返回。"""
+        """images 为 None: 视同无图片, 收敛为文本。"""
         agent = DummyAgent(model=SimpleNamespace(
             capabilities=SimpleNamespace(vision=True)
         ))
@@ -182,4 +189,5 @@ class TestToolContent:
         with patch("tuan_cli.vision.build_tool_content") as m:
             out = agent._tool_content(result)
         m.assert_not_called()
-        assert out is result
+        assert isinstance(out, str)
+        assert "工具输出" in out

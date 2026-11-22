@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .prompt_tier import COMPACT, FULL, PromptBudget, budget_for_tier, resolve_prompt_budget, resolve_soul_tier
 from .prompts import build_system_prompt, build_task_context
+from .intent_router import RouteDecision, route
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, cast
 import logging
 import threading
@@ -29,6 +30,10 @@ class AgentPromptMixin:
     _indexer: Optional[Any]
     _index_thread: Optional[threading.Thread]
     _turn_started: bool
+    _last_user_input: str
+    #: 最近一轮意图路由决策 (见 core/intent_router.py); 仅当本轮有用户输入时非 None。
+    #: 由 _effective_soul_tier 在每次 _build_system 期间刷新, 供日志/调试/后续按意图收紧工具集使用。
+    _intent_route: Optional[RouteDecision]
 
     def _resolve_prompt_tier(self) -> Any:
         """解析提示词分层: 返回 (档位名, 推断窗口, 该档预算)。
@@ -104,6 +109,38 @@ class AgentPromptMixin:
         )
 
 
+    def _effective_soul_tier(self) -> str:
+        """综合意图路由后的稳定前缀档位: 意图覆盖 > 既有 ``_soul_tier``。
+
+        仅当本轮已有用户输入 (``_last_user_input`` 非空) 时才尝试意图路由;
+        否则保持历史行为 (``_soul_tier`` 原值), 避免首帧/后台补建系统提示时
+        基于空输入做分类。
+        """
+        try:
+            user_input = (self._last_user_input or "").strip()
+        except Exception:  # noqa: BLE001 - 属性未初始化时回退 (测试常 Agent.__new__ 绕过 __init__)
+            return self._soul_tier
+        if not user_input:
+            return self._soul_tier
+        try:
+            decision = route(user_input, int(getattr(self, "context_window", 0) or 0))
+        except Exception as exc:  # noqa: BLE001 - 路由打坏不影响会话
+            log.debug("意图路由失败, 沿用既有 SOUL 档位: %s", exc)
+            return self._soul_tier
+        self._intent_route = decision
+        override = decision.prompt_tier
+        if not override:
+            return self._soul_tier
+        # 意图层档位映射: MINI 在当前架构下等价于 compact (SOUL_COMPACT.md),
+        # COMPACT → compact, FULL → full。未识别字符串一律回退原档位 (fail-safe)。
+        mapping = {"MINI": COMPACT, "COMPACT": COMPACT, "FULL": FULL}
+        mapped = mapping.get(override.upper())
+        if mapped is None:
+            return self._soul_tier
+        log.debug("意图路由覆盖 SOUL 档位: %s (intent=%s) -> %s",
+                  self._soul_tier, decision.intent.value, mapped)
+        return mapped
+
     def _build_system(self, task_hint: str = "") -> str:
         """组装「绝对稳定」的系统提示 (不含随任务变化的语义召回)。
 
@@ -127,7 +164,7 @@ class AgentPromptMixin:
             project_doc_max_bytes=doc_bytes,
             long_memory_max_chars=long_mem_chars,
             user_mode=self.user_mode,
-            tier=self._soul_tier,
+            tier=self._effective_soul_tier(),
             config=self.config,
         )
         # 类型化子代理的角色指令 (task 工具的 AgentType.system_extra)

@@ -37,6 +37,19 @@ try:
 except ImportError:
     _HAS_CRYPTOGRAPHY = False
 
+_FALLBACK_WARNED = False
+
+
+def _warn_fallback_once(where: str) -> None:
+    """回退到自研 CTR+HMAC 时给出一次性显著警告 (审计 #17: 拒绝「静默等价」)。"""
+    global _FALLBACK_WARNED
+    if not _FALLBACK_WARNED:
+        _FALLBACK_WARNED = True
+        log.warning(
+            "crypto_engine: %s 正在使用非标准回退构造 (PBKDF2 + CTR + HMAC, "
+            "未经第三方密码学评审, 非工业级 AEAD)。生产环境请安装 cryptography "
+            "以启用 AES-256-GCM: pip install 'tuan-cli[crypto]'", where)
+
 
 def _check_iterations(value: Any) -> int:
     """校验迭代次数为正整数, 且落在 [下限, 上限] 安全区间内。"""
@@ -116,7 +129,8 @@ def _derive_key_aesgcm(passphrase: str, salt: bytes, iterations: int = 100000) -
         salt=salt,
         iterations=iterations,
     )
-    return kdf.derive(passphrase.encode())  # cryptography 返回 Any
+    derived: bytes = kdf.derive(passphrase.encode())
+    return derived
 
 
 def _seal_aesgcm(plaintext: bytes, key: bytes) -> tuple[bytes, bytes]:
@@ -145,7 +159,8 @@ def _open_aesgcm(ciphertext_with_tag: bytes, key: bytes, nonce: bytes) -> bytes:
     from cryptography.exceptions import InvalidTag
     aesgcm = AESGCM(key)
     try:
-        return aesgcm.decrypt(nonce, ciphertext_with_tag, None)  # cryptography 返回 Any
+        plaintext: bytes = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+        return plaintext
     except InvalidTag:
         raise ValueError("AES-GCM 认证失败: 密码错误或密文被篡改")
 
@@ -206,7 +221,8 @@ class CryptoEngine:
                 "cipher": "aes-gcm",
             }
         else:
-            # CTR+HMAC: 纯 Python 回退 (轻量但非工业级)
+            # CTR+HMAC: 纯 Python 回退 (轻量但非工业级, 显著警告一次)
+            _warn_fallback_once("seal()")
             key = _derive_key(passphrase, salt, iterations)
             iv = os.urandom(16)
             ciphertext = _xor_stream(data, key, nonce=iv)
@@ -251,6 +267,7 @@ class CryptoEngine:
             plaintext = _open_aesgcm(ciphertext, key, iv)
         else:
             # CTR+HMAC 解密 (向后兼容旧密文)
+            _warn_fallback_once("open()")
             key = _derive_key(passphrase, salt, iterations)
             # fail-closed: HMAC 校验必须存在且通过
             if not mac_b64:

@@ -128,7 +128,7 @@ def _try_edge_tts(text: str, out_path: str, *,
     """edge-tts 神经网络 TTS (需网络); 不可用返回 None。"""
     try:
         import asyncio
-        import edge_tts  # type: ignore
+        import edge_tts
     except Exception as exc:  # noqa: BLE001
         log.debug("_try_edge_tts(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None
@@ -160,7 +160,7 @@ def _try_pyttsx3(text: str, out_path: str, *,
                  voice: str, lang: str) -> Optional[Dict[str, Any]]:
     """pyttsx3 本地 SAPI TTS (Windows); 不可用返回 None。"""
     try:
-        import pyttsx3  # type: ignore
+        import pyttsx3
     except Exception as exc:  # noqa: BLE001
         log.debug("_try_pyttsx3(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return None

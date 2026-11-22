@@ -1,22 +1,21 @@
 # -*- coding: utf-8 -*-
-"""MotionHarness (mh) 代码动画工作台后端测试。
+"""视频渲染工作台后端测试 (自研 code_anim_render 路径)。
 
-**子进程全部 mock**: 我们 monkeypatch ``mh_runner.RunFn`` (scaffold 用) 和
-``mh_runner.Popen`` (render/preview 用), 测试永远不会启动真实的 ``mh`` 或 Node,
-也不会依赖 ``I:\\MotionHarness`` 安装。
+自研后端不再调用外部 ``mh`` CLI / Node 子进程。render / preview 走
+``tuan_cli.web.code_anim_render`` (Pillow + ffmpeg), 测试通过 monkeypatch
+``mh_runner._renderer.render_video`` 隔离真实渲染, 不依赖 ffmpeg / Pillow。
 
 覆盖:
   * /api/mh/status 不可用路径返回 ``{available:false}``
   * scaffold → write_scene_js → read_project 落盘往返
   * scene_js 静态校验 (拒绝缺 prepareFrame / export default / 含 eval)
   * project_id / media 路径穿越拒绝
-  * render job 生命周期 (start → running → done) 用 fake runner 驱动
+  * render job 生命周期 (start → running → done) 用 fake renderer 驱动
   * /api/mh/media 路径护栏
 """
 from __future__ import annotations
 
 import json
-import subprocess
 import threading
 import time
 import urllib.error
@@ -257,45 +256,28 @@ def test_scene_put_rejects_bad_payload(server, monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------- render job 生命周期
-class _FakePopenRunning:
-    """一个会跑一段时间再成功的假 Popen (start→running→done 路径)。"""
-
-    started = threading.Event()
-    release = threading.Event()
-
-    def __init__(self, argv, **kwargs):
-        self.pid = 5151
-        self.returncode = None
-        self.argv = argv
-        type(self).started.set()
-
-    def poll(self):
-        return self.returncode
-
-    def communicate(self, timeout=None):
-        # 等 release 或 5s 超时; 调用方 (worker 线程) 会阻塞在 communicate 上
-        type(self).started.set()
-        type(self).release.wait(timeout=5)
-        self.returncode = 0
-        return (b"ok\n", b"")
-
 
 def test_render_job_lifecycle(server, monkeypatch, tmp_path):
-    # 准备项目目录
+    # 准备项目目录 (自研后端: mh.json 需含 nodes 字段以通过 validate_project)
     proj = tmp_path / ".tuan" / "mh" / "proj-r"
     (proj / "src").mkdir(parents=True)
     (proj / "mh.json").write_text(
-        json.dumps({"width": 1280, "height": 720, "fps": 30, "duration": 2}),
+        json.dumps({
+            "width": 1280, "height": 720, "fps": 30, "duration": 2,
+            "nodes": [{"type": "bg", "start": 0.0, "end": 2.0, "color": "#10121a"}],
+        }),
         encoding="utf-8")
 
     # 让 resolve_mh 报可用
     monkeypatch.setattr(mh_runner, "resolve_mh", lambda: {
-        "ok": True, "mh_cmd": "mh.cmd", "node_dir": "node",
+        "ok": True, "mh_cmd": "ffmpeg", "node_dir": "",
         "mh_home": "mh_home", "reason": ""})
 
-    _FakePopenRunning.started.clear()
-    _FakePopenRunning.release.clear()
-    monkeypatch.setattr(mh_runner, "Popen", _FakePopenRunning)
+    # 自研路径: monkeypatch render_video 返回假结果, 避免 mock Popen
+    fake_result = {"out_path": str(proj / "out.mp4"), "frames": 60,
+                   "fps": 30, "elapsed": 0.1, "size_bytes": 1024}
+    monkeypatch.setattr(mh_runner._renderer, "render_video",
+                        lambda *args, **kwargs: fake_result)
 
     resp = _req(_url(server, "/api/mh/render"),
                 body={"project_id": "proj-r", "out": "out.mp4"})
@@ -310,7 +292,6 @@ def test_render_job_lifecycle(server, monkeypatch, tmp_path):
     assert job["status"] in ("running", "done")
 
     # 让后台线程跑完
-    _FakePopenRunning.release.set()
     for _ in range(50):
         job = _getj(_url(server, f"/api/mh/job?id={job_id}"))["job"]
         if job["status"] == "done":

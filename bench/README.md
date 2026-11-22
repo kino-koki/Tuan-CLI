@@ -29,11 +29,29 @@ tuan safe report           # 自包含 HTML 安全报告 (可分享/存档)
   对抗矩阵问的是「攻击挡不挡得住」，问不了这个问题。
 - `indep_verify.py`：**独立对抗验证**（不引用项目任何数据文件，27+ 条自行构造的混淆载荷与良性命令），
   针对「混淆还原」这一核心声称做第三方交叉复核。漏拦 (MISS) 记为硬缺陷、误杀 (FP) 逐条人工判读。
+- `external_corpus.py`：**外部对抗语料接入器**（审计 #22）。用你自己的数据集评测检测层，
+  语料**不必并入本仓库**：JSONL/JSON，每条 `{"name", "command", "expect": "block"|"allow"}`。
+  判定口径与 `indep_verify.py` 一致（硬红线或综合红线任一命中 = 拦）；MISS（该拦没拦）退出码 1，
+  FP（不该拦被拦）逐条列出、默认也 fail（保守判读后可用 `--ignore-fp`）。详见文件头注释。
+  ```bash
+  python bench/external_corpus.py --in my_corpus.jsonl [--json out.json] [--ignore-fp]
+  ```
 - `tests/test_platform_portability.py`（第 5 套件，直接跑 pytest，~8 秒）：**跨平台可移植性检查**。
   在**本机**上跑 274 条 POSIX / Linux / macOS 载荷（`/etc/shadow`、`~/.ssh/id_rsa`、`/dev/tcp` 反向 shell、
   Linux 账户提权、macOS `csrutil`/`kextload`/`security` 等），断言判定与预期一致；另含两个结构性检查：
   检测层（engine/classifier/guard/patterns/redline）**不得引用** `os.path`/`ntpath`/`platform.system`/`os.name`，
   唯一碰文件系统的分支是 `safety_normalize._resolve_symlinks`（已跳过绝对路径以规避 Windows 盘符改写）。
+
+### 复现环境基线（审计 #23）
+
+- **硬件/系统**：Windows 10/11 x64，普通 NVMe 笔记本级硬件即可；无 GPU 需求。
+- **Python**：3.11+（与 `pyproject.toml` 要求一致）；核心依赖 `rich` 等由
+  `pip install -e ".[dev]"` 一次装齐。
+- **预期耗时**：`tuan safe bench --quick` 约 40 秒；全量约 5–10 分钟
+  （单套件超时由 `TUAN_SAFE_BENCH_TIMEOUT` 控制，默认 1800/1200 秒）。
+- **编码注意（Windows）**：控制台为 GBK 时请用 `python -X utf8 -m tuan_cli safe bench`
+  （或设 `PYTHONUTF8=1`），否则结果里的 ✓/✗ 字符可能触发 `UnicodeEncodeError`。
+- 所有套件本地可复现、不依赖网络与模型；数字请以本机重跑为准。
 
 ### 关于基准的自我限定（诚实声明）
 
@@ -54,25 +72,36 @@ tuan safe report           # 自包含 HTML 安全报告 (可分享/存档)
 因此「检测判定跨平台一致」是有依据的推论，而「Linux/macOS 端到端可用性」仍**未被实机验证**——
 本套件只回答前者，不声称后者。
 
-当前代码实测（2026-10-25，`tuan safe bench` 一次全量运行，存档 `bench/security-bench.json`）：
-对抗 10k（seed `20260906`，钉死可复现）→ 拦截召回 **100%** / 标记召回 **100%** /
-误杀 **5 (0.45%)** / **绕过 0**，5 条全为 `flag`，**0 条硬拦误杀**（其中 4 条是同一个
-`tar|ssh` 良性用例的程序化前缀变体）；
-PS 5k → 正确率 100% / 漏放 0 / 误杀 0；
-绕过矩阵 2497 → 绕过 0 / 误杀 1 / 灾难类别 100% 拦截。
+当前存档（2026-11-20，`tuan safe bench` 一次全量运行，Windows 10 / AMD64 / Python 3.12.14，
+存档 `bench/security-bench.json`）：
 
-真实使用（4 个独立随机种子 × 1500 = 6000 条，真随机不进门禁）：**三次独立运行**分别是
+- 绕过矩阵 2497 → **绕过 0 / 误杀 3 / 灾难类别 100% 拦截**（3 条误杀均为环境变量前缀
+  良性命令，如 `LD_LIBRARY_PATH=/usr/local/lib ./app`，逐条记录在存档 `anomalies`）。
+- 对抗 10k、PS 5k、真实使用 6k → **本机 600–900 秒单套件等待上限内未跑完**，
+  存档如实记为 error。**历史上 2026-10-25 的「10k 100% 拦截 / PS 100%」数字出自
+  另一台机器，当前机器不可复现，请视为历史数据而非当前声称。**
+- 第 5 套件跨平台可移植性 → 本次运行时测试文件缺失（历史遗留问题，已重建
+  `tests/test_platform_portability.py`），下一轮存档将带真实数字。
+
+> 复现提示：慢机/并发负载请设 `TUAN_SAFE_BENCH_TIMEOUT=<秒>`（如 3600）提高单套件
+> 等待上限；`tuan safe bench` 与 `tuan safe report` 均读取该变量。
+> 数字以 `tuan safe bench` 本地重跑为准。
+
+真实使用（4 个独立随机种子 × 1500 = 6000 条，真随机不进门禁）——以下为 **2026-10-25
+另一台机器的历史三次独立运行**，当前机器不可复现（本轮存档该套件超时），仅作方法学示例：
 0.24% – 0.39% / 80.6% – 91.2% / 10.4 ms（16 条硬拦）；
 0.23% – 0.32% / 90.0% – 100.0% / 15.4 ms；
-本次存档的 **0.16% – 0.31%**（中位 0.27%）/ **87.5% – 97.4%**（中位 93.1%）/ **20.6 ms**（13 条硬拦），
-**静默放行 0 条**。三次运行都满足「**没有任何危险命令被静默放行**」这个不变量，
+0.16% – 0.31%（中位 0.27%）/ 87.5% – 97.4%（中位 93.1%）/ 20.6 ms（13 条硬拦），
+静默放行 0 条。三次运行都满足「**没有任何危险命令被静默放行**」这个不变量，
 而召回与延迟随种子与机器负载浮动，这正是本套件按区间报告、且不进 CI 门禁的原因。
 13 条硬拦误杀 **100% 来自同一个钉死策略** `ssh user@host 'cmd'` → `net:deny`
 （`tests/test_security_network_ownership.py` 断言 `deny_remote_exec=True`），属产品决策而非缺陷。
 
-第 5 套件跨平台可移植性 → **274 项全部符合预期**（含 2 项结构性检查：检测层零平台 API 引用、
-`os.path.realpath` 仅存于归一化层）。存档带 `platform` 字段（Windows 10 / AMD64 /
-Python 3.11.5）与 `portability` 字段（passed 274 / failed 0 / rc 0）。
+第 5 套件跨平台可移植性 → 历史存档（2026-10-25，Python 3.11.5）曾记录
+**274 项全部符合预期**（含 2 项结构性检查：检测层零平台 API 引用、
+`os.path.realpath` 仅存于归一化层）。**注意：该测试文件曾从仓库历史中丢失**
+（2026-11-20 核查发现工作树与 git 对象库均无此文件），现已按同口径重建；
+引用 274 这个数字时请注明是历史机器数据。
 
 数字以 `tuan safe bench` 本地重跑为准。
 

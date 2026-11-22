@@ -294,8 +294,13 @@ def test_agent_tool_result_image_no_vision_returns_result(png_path):
     agent, model = _make_agent(vision=False)
     ref = encode_image_file(png_path)
     result = ToolResult(status="ok", content="图来了", images=[ref])
-    # 无视觉: 返回原 ToolResult (下游 str 化), 不泄漏图片字节
-    assert agent._tool_content(result) is result
+    # 无视觉: 收敛为文本 (tool 消息 content 要随请求 JSON 序列化),
+    # 且不泄漏图片字节
+    out = agent._tool_content(result)
+    assert isinstance(out, str)
+    assert "图来了" in out
+    # 不泄漏图片字节 (base64 形态也不会出现在降级文本里)
+    assert base64.b64encode(ref.data[:32]).decode("ascii") not in out
 
 
 def test_attach_image_rejects_non_image(tmp_path):

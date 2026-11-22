@@ -37,7 +37,7 @@
 """
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Callable, Dict, List
 
 from . import approval_history as AH
 from . import session_config as SC
@@ -58,7 +58,7 @@ MODULES = (
     "streaming", "async_question_reply", "exec_command", "tests",
 )
 
-PROBES: Dict[str, object] = {
+PROBES: Dict[str, Callable[[], dict]] = {
     "auto_review_denials": AH.probe_auto_review_denials,
     "insert_history": AH.probe_insert_history,
     "rendered_selection": AH.probe_rendered_selection,
@@ -88,7 +88,11 @@ try:
     from ..parity import depth as _depth
     for _m in MODULES:
         if _m not in _depth.PROBE_REGISTRY:
-            _depth.register(_m)(lambda m=_m: _to_probe_result(m))
+            # 具名函数替代 lambda：默认参数绑定 _m，语义与原 lambda 一致，
+            # 且让 mypy 能获得确定的 Callable 类型
+            def _probe(m: str = _m) -> dict:
+                return _to_probe_result(m)
+            _depth.register(_m)(_probe)
 except Exception as exc:  # noqa: BLE001 - 注册失败由 depth_audit 如实暴露
     log.warning("模块顶层: 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
     pass

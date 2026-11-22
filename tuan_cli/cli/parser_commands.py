@@ -34,7 +34,8 @@ class _DedupSub:
     def add_parser(self, name: str, **kwargs: Any) -> "argparse.ArgumentParser":
         if name in self._real.choices:
             return argparse.ArgumentParser(prog=name, add_help=False)
-        return self._real.add_parser(name, **kwargs)
+        parser: "argparse.ArgumentParser" = self._real.add_parser(name, **kwargs)
+        return parser
 
 
 def _register_subcommand_slices(sub: Any) -> None:

@@ -924,6 +924,25 @@ class QxtTUI(StateMixin, RenderMixin, LayoutMixin, InteractMixin,
                             lambda: self._diff_visible and self._diff_panel_available()
                         ),
                     ),
+                    # 任务清单执行面板 (F3): 与 diff 面板共用右侧栏位, 互斥展开。
+                    ConditionalContainer(
+                        HSplit([
+                            Window(width=1, char="│", style="class:border"),
+                            Window(
+                                FormattedTextControl(
+                                    self._render_todo_panel, show_cursor=False,
+                                    focusable=False,
+                                ),
+                                width=lambda: self._diff_panel_width(),
+                                wrap_lines=False,
+                                style="class:slashbg",
+                            ),
+                        ]),
+                        filter=Condition(
+                            lambda: getattr(self, "_todo_visible", False)
+                            and self._diff_panel_available()
+                        ),
+                    ),
                 ]),
                 bottom,
             ])
@@ -1141,7 +1160,7 @@ class QxtTUI(StateMixin, RenderMixin, LayoutMixin, InteractMixin,
         ]),
         ("Transcript (open first)", [
             ("ctrl+t", "Open transcript"),
-            ("f3", "Find text"),
+            ("f3", "Todo board"),
             ("pgup / pgdn", "Scroll"),
             ("ctrl+space", "Start selection"),
             ("ctrl+home / ctrl+end", "Top / latest"),

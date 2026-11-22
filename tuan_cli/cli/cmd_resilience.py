@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import Any, Dict, List
 
 from ..config import Config
@@ -87,7 +88,8 @@ def _runtime_status() -> Dict[str, Any]:
 
     kernel = build_kernel()
     res = AgentResilience(kernel.config if hasattr(kernel, "config") else Config(), kernel)
-    return res.status()
+    status: Dict[str, Any] = res.status()
+    return status
 
 
 # ---------------------------------------------------------------- 命令入口
@@ -174,12 +176,30 @@ def _resilience_status(json_mode: bool) -> int:
     return 0
 
 
+def _load_failover_history(limit: int) -> List[Dict[str, Any]]:
+    """读取 ~/.tuan/failover_history.jsonl 的最近 limit 条故障转移记录。"""
+    path = Path.home() / ".tuan" / "failover_history.jsonl"
+    if not path.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        return []
+    return rows[-limit:] if limit > 0 else rows
+
+
 def _resilience_history(args: Any, json_mode: bool) -> int:
     """跨会话故障转移历史。"""
-    from ..core.resilience import load_failover_history
-
     limit = int(getattr(args, "limit", 20) or 20)
-    rows = load_failover_history(limit)
+    rows = _load_failover_history(limit)
     if not rows:
         console.print("[dim]暂无故障转移历史 (主模型从未切换到备用供应商)[/dim]")
         return 0
@@ -333,7 +353,17 @@ def _resilience_limiter(args: Any, json_mode: bool) -> int:
 
     config = Config()
     limiter = RateLimiter.from_config(config)
-    snap = limiter.snapshot()
+    # RateLimiter 未实现 snapshot(); 用其声明属性构建等价快照 (waiting/last_wait/
+    # in_flight 未被限流器追踪, 恒为 0), 避免命令因 AttributeError 崩溃。
+    snap: Dict[str, Any] = {
+        "active": limiter.active,
+        "rate": limiter.rate,
+        "max_concurrent": getattr(limiter, "_max_concurrent", 0),
+        "tokens": getattr(limiter, "_tokens", 0.0),
+        "waiting": 0,
+        "last_wait": 0.0,
+        "in_flight": 0,
+    }
 
     if json_mode:
         sys.stdout.write(json.dumps(snap, ensure_ascii=False, indent=2) + "\n")

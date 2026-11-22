@@ -80,7 +80,7 @@ import unicodedata
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Deque, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Deque, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
     "PHASES", "LANGUAGES", "PHASE_BUDGET_MS", "LivenessState",
@@ -716,7 +716,7 @@ class RuntimeSloganEngine:
         lang: Optional[str] = None,
         *,
         rng: Optional[random.Random] = None,
-        clock=time.monotonic,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._lock = threading.RLock()
         # 深度轮 11 (A): 旧实现 ``config or load_config()`` /
@@ -848,7 +848,8 @@ class RuntimeSloganEngine:
             else:
                 pool = base
             seen = set()
-            uniq = tuple(v for v in pool if v and not (v in seen or seen.add(v)))
+            # 惯用去重写法：seen.add 仅作短路副作用（返回 None），不改写以免行为漂移
+            uniq = tuple(v for v in pool if v and not (v in seen or seen.add(v)))  # type: ignore[func-returns-value]
             self._pools[phase] = uniq
             return uniq
 
@@ -1072,7 +1073,8 @@ def _current_language() -> str:
     """从 i18n 取当前语言；i18n 不可用时回退默认 zh-CN。"""
     try:
         from ..i18n import get_language
-        return get_language()
+        # str() 恒等包装：skip 模式下 get_language 为 Any，全量模式下为 str
+        return str(get_language())
     except Exception as exc:  # noqa: BLE001 - i18n 不可用时不能让 TUI 崩
         log.debug("_current_language(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         return "zh-CN"

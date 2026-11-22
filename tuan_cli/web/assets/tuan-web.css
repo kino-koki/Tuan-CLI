@@ -1,70 +1,82 @@
 /* ==========================================================================
-   Tuan-CLI Web 工作台设计令牌 (tuan-web.css)
+   Tuan-CLI Web 工作台设计令牌 (tuan-web.css) —— 青奈设计系统版
    --------------------------------------------------------------------------
    本文件是 **原创实现**, 不是任何第三方产物的拷贝。
 
    历史上这里放的是从某个 npm 包 dist 目录里拷出来的 minified CSS (640KB)。
    那对 MIT 项目是明确的版权风险 —— 即便只用到其中的 CSS 变量, 整份拷贝本身
-   也不属于我们。现改为: 按前端**实际引用**的 66 个令牌逐个重新定义,
-   视觉与原先一致, 体积 640KB → 约 6KB, 且来源干净。
+   也不属于我们。现改为: 按前端**实际引用**的令牌逐个重新定义, 来源干净。
+
+   设计语言: 与官网 (青奈科技 · 数据终端) 完全一致 ——
+     - 暖纸底 (#FCFCFA) / 纯白面板 / 近黑终端墨色
+     - 深青柠品牌色: olive #7A9C22 (主行动) · lime #B8D640 (蜜黄点缀)
+     - 中国红 #DE2910 仅作警示/序号点缀
+     - 极细发丝线 #ECECE5 / #DDDDD3, 统一 3px 小圆角 (禁药丸)
+     - 字体三骨架: Georgia + 苹方/雅黑 (正文) · IBM Plex Mono (mono 标签)
+     - 极淡分层阴影 (负 spread 收拢), 卡片一律 --shadow-card 口径
 
    令牌口径 (与前端 frontend.py 内联样式一一对应):
-     - 颜色  --color-*    : 品牌蓝 / 文本 / 表面 / 语义色 (成功·危险)
+     - 颜色  --color-*    : 品牌 olive/lime / 墨色 / 表面 / 语义色
      - 间距  --space-*    : 4px 基准栅格
-     - 圆角  --radius-*   : xs 6 / sm 10 / md 12 / lg 16 / xl 20 / full 999 / composer 28
-     - 字号  --text-*     : 2xs 11 / xs 12 / sm 13 / base 14
+     - 圆角  --radius-*   : 统一 3px (xs/sm/md/lg/xl/full/composer 全部 3px)
+     - 字号  --text-*     : 2xs 11 / xs 12 / sm 13 / base 14 / md 16
      - 字重  --weight-*   : regular 400 / medium 500 / semibold 700 / section-label 600
      - 版式  --p-*        : hairline 1px / sidebar 264px / content-max 760px / focus-ring
-     - 动效  --duration-* / --ease-out
-     - 层级  --z-*        : max 9999
+     - 动效  --duration-* / --ease-out (青奈 --eo 缓动)
+     - 层级  --z-*        : tooltip/pop/modal/max
 
-   主题: 浅色为默认值, [data-color-scheme="dark"] 覆盖为深色,
+   主题: 浅色为默认值 (官网原色), [data-color-scheme="dark"] 覆盖为暖黑派生,
         [data-color-scheme="system"] 由 prefers-color-scheme 媒体查询接管。
    ========================================================================== */
 
 :root {
-  /* ---- 品牌与语义色 (TUI 品牌蓝 + 米色系) ---- */
-  --color-accent: #1783ff;
-  --color-accent-hover: #167ff7;
-  --color-accent-soft: #e8f3ff;
-  --color-accent-bd: rgba(23, 131, 255, .25);
-  --color-success: #3f9d63;
-  --color-danger: #d2493b;
-  --color-danger-soft: #fae8e4;
-  --color-warn: #c0872e;
+  /* ---- 品牌与语义色 (青奈深青柠系) ---- */
+  --color-accent: #7A9C22;                    /* olive · 主行动 */
+  --color-accent-hover: #8AAC30;              /* olive-hi */
+  --color-accent-soft: rgba(184, 214, 64, .16); /* wash · 蜜黄洗色 */
+  --color-accent-bd: rgba(122, 156, 34, .35);
+  --color-success: #4F6B12;                   /* olive-ink / lime-deep */
+  --color-success-soft: rgba(184, 214, 64, .16);
+  --color-danger: #DE2910;                    /* 中国红 · 警示点缀 */
+  --color-danger-soft: rgba(222, 41, 16, .10);
+  --color-warn: #B2620A;
+  --color-warning: #B2620A;
+  --color-warn-soft: #F7ECD4;
 
-  /* ---- 文本 ---- */
-  --color-text: #2e2a24;
-  --color-text-strong: #1c1813;
-  --color-text-muted: #6a6256;
-  --color-text-faint: #9a9081;
+  /* ---- 文本 (墨色三阶) ---- */
+  --color-text: #4C4C43;                      /* ink-2 · 正文 */
+  --color-text-strong: #16160F;               /* ink · 标题/强调 */
+  --color-text-muted: #6A6A5E;                /* ink-3 · AA */
+  --color-text-faint: #8A8A7D;
 
-  /* ---- 表面与描边 (米色 / 奶油色) ---- */
-  --color-bg: #f6f2e9;
-  --color-sidebar-bg: #efe9db;
-  --color-surface: #fdfaf2;
-  --color-surface-raised: #ffffff;
-  --color-hover: rgba(60, 50, 35, .05);
-  --color-line: rgba(60, 50, 35, .14);
-  --color-line-strong: rgba(60, 50, 35, .2);
-  --color-inline-code-bg: rgba(60, 50, 35, .07);
-  --color-user-bubble-bg: #ece4d4;
-  --color-scrim-strong: rgba(40, 33, 22, .42);
+  /* ---- 表面与描边 (暖纸 / 纯白面板 / 发丝线) ---- */
+  --color-bg: #FCFCFA;                        /* paper */
+  --color-sidebar-bg: #F6F6F1;                /* panel-2 */
+  --color-surface: #FFFFFF;                   /* panel */
+  --color-surface-raised: #FFFFFF;
+  --color-bg-elev: #F0F0E9;                   /* panel-3 */
+  --color-hover: rgba(22, 22, 15, .05);
+  --color-line: #ECECE5;
+  --color-line-strong: #DDDDD3;
+  --color-inline-code-bg: rgba(22, 22, 15, .06);
+  --color-user-bubble-bg: #F0F0E9;            /* panel-3 */
+  --color-scrim-strong: rgba(22, 22, 15, .45);
 
   /* ---- 代码块 ---- */
-  --color-code-bg: #efe8d9;
-  --color-code: #2e2a24;
-  --color-code-soft: rgba(60, 50, 35, .06);
+  --color-code-bg: #F0F0E9;                   /* panel-3 */
+  --color-code: #16160F;                      /* ink */
+  --color-code-soft: rgba(22, 22, 15, .04);
 
   /* ---- 输入面板 (composer) ---- */
-  --color-composer-bg: #fdfaf2;
-  --color-composer-line: rgba(60, 50, 35, .16);
-  --color-composer-focus-line: rgba(23, 131, 255, .4);
-  --color-send-bg: #2e2a24;
-  --color-send-bg-hover: #1c1813;
-  --color-send-bg-disabled: rgba(60, 50, 35, .08);
-  --color-send-icon: #f6f2e9;
-  --color-send-icon-disabled: rgba(60, 50, 35, .34);
+  --color-composer-bg: #FFFFFF;               /* panel */
+  --color-composer-line: #DDDDD3;             /* line-2 */
+  --color-composer-focus-line: rgba(122, 156, 34, .5);
+  /* 蜜黄主行动: lime 按钮 + 墨色图标 */
+  --color-send-bg: #B8D640;                   /* lime */
+  --color-send-bg-hover: #A6C532;             /* lime-hi */
+  --color-send-bg-disabled: rgba(22, 22, 15, .08);
+  --color-send-icon: #16160F;                 /* ink on lime */
+  --color-send-icon-disabled: rgba(22, 22, 15, .34);
 
   /* ---- 间距 (4px 栅格) ---- */
   --space-05: 2px;
@@ -78,29 +90,30 @@
   --space-6: 24px;
   --space-8: 32px;
 
-  /* ---- 圆角 (整体偏圆润: 面板/卡片 16, 控件 12, 药丸 full) ---- */
-  --radius-xs: 6px;
-  --radius-sm: 10px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-full: 999px;
-  --radius-composer: 28px;
+  /* ---- 圆角 (和纸·雕版: 统一 3px 小圆角, 禁药丸/大圆角) ---- */
+  --radius-xs: 3px;
+  --radius-sm: 3px;
+  --radius-md: 3px;
+  --radius-lg: 3px;
+  --radius-xl: 3px;
+  --radius-full: 3px;
+  --radius-composer: 3px;
 
-  /* ---- 字体 ---- */
-  --font-ui-latin: "Schibsted Grotesk Variable", "Helvetica Neue", Arial;
-  --font-ui: var(--font-ui-latin), "Noto Sans SC Variable", "Noto Sans SC",
-             "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC",
-             -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif,
+  /* ---- 字体 (官网三骨架: Georgia + 苹方/雅黑 · IBM Plex Mono) ---- */
+  --font-ui-latin: Georgia, "Times New Roman", serif;
+  --font-ui: Georgia, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+             "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI",
+             Roboto, Ubuntu, sans-serif,
              "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono",
-               Menlo, Consolas, "Liberation Mono", monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas,
+               "SF Mono", Menlo, "Liberation Mono", "Courier New", monospace;
 
   /* ---- 字号 / 字重 ---- */
   --text-2xs: 11px;
   --text-xs: 12px;
   --text-sm: 13px;
   --text-base: 14px;
+  --text-md: 16px;
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-section-label: 600;
@@ -111,109 +124,130 @@
   --p-sidebar-w: 264px;
   --p-content-max: 760px;
   --p-focus-ring-w: 3px;
-  --p-focus-ring: 0 0 0 var(--p-focus-ring-w) var(--color-accent-soft);
+  --p-focus-ring: 0 0 0 var(--p-focus-ring-w) rgba(122, 156, 34, .25);
 
-  /* ---- 阴影 ---- */
-  --shadow-input: 0 5px 16px -4px rgba(0, 0, 0, .07);
-  --shadow-lg: 0 12px 32px rgba(16, 24, 40, .12), 0 4px 10px rgba(16, 24, 40, .08);
-  --shadow-send: 0 7px 16px -13px rgba(0, 0, 0, .38), 0 1px 2px rgba(0, 0, 0, .07);
-  --shadow-send-hover: 0 8px 18px -13px rgba(0, 0, 0, .42), 0 1px 3px rgba(0, 0, 0, .09);
+  /* ---- 阴影 (官网极淡分层, 负 spread 收拢; 卡片一律 shadow-card 口径) ---- */
+  --shadow-input: 0 1px 2px rgba(22, 22, 15, .04), 0 2px 8px -2px rgba(22, 22, 15, .05);
+  --shadow-pop: 0 2px 6px rgba(22, 22, 15, .05), 0 14px 34px -14px rgba(22, 22, 15, .14);
+  --shadow-lg: 0 4px 10px rgba(22, 22, 15, .05), 0 30px 60px -24px rgba(22, 22, 15, .2);
+  --shadow-send: 0 1px 2px rgba(22, 22, 15, .05), 0 10px 26px -16px rgba(22, 22, 15, .12);
+  --shadow-send-hover: 0 2px 6px rgba(22, 22, 15, .06), 0 14px 34px -14px rgba(22, 22, 15, .16);
 
-  /* ---- 动效 ---- */
+  /* ---- 动效 (官网 --eo 缓动) ---- */
   --duration-fast: .12s;
-  --duration-base: .16s;
-  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --duration-base: .18s;
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
 
   /* ---- 层级 ---- */
   --z-tooltip: 600;
+  --z-pop: 40;
   --z-modal: 900;
   --z-max: 9999;
+
+  /* ---- 右侧文件树/Diff 面板宽度 (前端 #rpanel 亦就地定义) ---- */
+  --rp-w: min(340px, 86vw);
 }
 
-/* ---------------------------------------------------------------- 深色 */
+/* ---------------------------------------------------------------- 深色 (暖黑派生: 保留青奈色相) */
 [data-color-scheme="dark"] {
-  --color-accent: #1a88ff;
-  --color-accent-hover: #258eff;
-  --color-accent-soft: rgba(26, 136, 255, .1);
-  --color-accent-bd: rgba(26, 136, 255, .28);
-  --color-success: #5fbf7e;
-  --color-danger: #e35d52;
-  --color-danger-soft: rgba(227, 93, 82, .16);
-  --color-warn: #d6a23e;
+  --color-accent: #B8D640;                    /* lime 在暖黑上提亮为主色 */
+  --color-accent-hover: #C6E14E;
+  --color-accent-soft: rgba(184, 214, 64, .14);
+  --color-accent-bd: rgba(184, 214, 64, .3);
+  --color-success: #A6C532;
+  --color-success-soft: rgba(184, 214, 64, .14);
+  --color-danger: #E8442A;
+  --color-danger-soft: rgba(232, 68, 42, .16);
+  --color-warn: #D6A23E;
+  --color-warning: #D6A23E;
+  --color-warn-soft: rgba(214, 162, 62, .16);
 
-  --color-text: rgba(255, 255, 255, .88);
-  --color-text-strong: #f4efe7;
-  --color-text-muted: rgba(255, 255, 255, .62);
-  --color-text-faint: rgba(255, 255, 255, .45);
+  --color-text: rgba(244, 242, 232, .86);
+  --color-text-strong: #F4F2E8;
+  --color-text-muted: rgba(244, 242, 232, .62);
+  --color-text-faint: rgba(244, 242, 232, .42);
 
-  --color-bg: #2b2b28;
-  --color-sidebar-bg: #232321;
-  --color-surface: #343431;
-  --color-surface-raised: #3d3d39;
+  --color-bg: #191914;                        /* 暖黑纸 */
+  --color-sidebar-bg: #14140F;
+  --color-surface: #20201A;
+  --color-surface-raised: #262620;
+  --color-bg-elev: #262620;
   --color-hover: rgba(255, 255, 255, .06);
-  --color-line: rgba(255, 255, 255, .1);
-  --color-line-strong: rgba(255, 255, 255, .16);
-  --color-inline-code-bg: rgba(255, 255, 255, .1);
-  --color-user-bubble-bg: #3d3d39;
-  --color-scrim-strong: rgba(0, 0, 0, .5);
+  --color-line: rgba(244, 242, 232, .10);
+  --color-line-strong: rgba(244, 242, 232, .18);
+  --color-inline-code-bg: rgba(255, 255, 255, .10);
+  --color-user-bubble-bg: #262620;
+  --color-scrim-strong: rgba(0, 0, 0, .55);
 
-  --color-code-bg: #1d1d1b;
-  --color-code: #f4efe7;
+  --color-code-bg: #12120D;
+  --color-code: #F4F2E8;
   --color-code-soft: rgba(255, 255, 255, .05);
 
-  --color-composer-bg: #343431;
-  --color-composer-line: rgba(255, 255, 255, .12);
-  --color-composer-focus-line: rgba(26, 136, 255, .35);
-  --color-send-bg: rgba(255, 255, 255, .86);
-  --color-send-bg-hover: rgba(255, 255, 255, .92);
-  --color-send-bg-disabled: rgba(255, 255, 255, .1);
-  --color-send-icon: #2b2b28;
-  --color-send-icon-disabled: rgba(255, 255, 255, .3);
+  --color-composer-bg: #20201A;
+  --color-composer-line: rgba(244, 242, 232, .14);
+  --color-composer-focus-line: rgba(184, 214, 64, .4);
+  --color-send-bg: #B8D640;
+  --color-send-bg-hover: #C6E14E;
+  --color-send-bg-disabled: rgba(255, 255, 255, .10);
+  --color-send-icon: #16160F;
+  --color-send-icon-disabled: rgba(255, 255, 255, .34);
 
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, .34), 0 4px 10px rgba(0, 0, 0, .28);
+  --shadow-input: 0 1px 2px rgba(0, 0, 0, .3), 0 2px 8px -2px rgba(0, 0, 0, .3);
+  --shadow-pop: 0 2px 6px rgba(0, 0, 0, .3), 0 14px 34px -14px rgba(0, 0, 0, .5);
+  --shadow-lg: 0 4px 10px rgba(0, 0, 0, .3), 0 30px 60px -24px rgba(0, 0, 0, .6);
+  --shadow-send: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 26px -16px rgba(0, 0, 0, .45);
+  --shadow-send-hover: 0 2px 6px rgba(0, 0, 0, .32), 0 14px 34px -14px rgba(0, 0, 0, .5);
 }
 
 /* "跟随系统" 模式: 系统为深色时套用深色令牌 */
 @media (prefers-color-scheme: dark) {
   [data-color-scheme="system"] {
-    --color-accent: #1a88ff;
-    --color-accent-hover: #258eff;
-    --color-accent-soft: rgba(26, 136, 255, .1);
-    --color-accent-bd: rgba(26, 136, 255, .28);
-    --color-success: #5fbf7e;
-    --color-danger: #e35d52;
-    --color-danger-soft: rgba(227, 93, 82, .16);
-    --color-warn: #d6a23e;
+    --color-accent: #B8D640;
+    --color-accent-hover: #C6E14E;
+    --color-accent-soft: rgba(184, 214, 64, .14);
+    --color-accent-bd: rgba(184, 214, 64, .3);
+    --color-success: #A6C532;
+    --color-success-soft: rgba(184, 214, 64, .14);
+    --color-danger: #E8442A;
+    --color-danger-soft: rgba(232, 68, 42, .16);
+    --color-warn: #D6A23E;
+    --color-warning: #D6A23E;
+    --color-warn-soft: rgba(214, 162, 62, .16);
 
-    --color-text: rgba(255, 255, 255, .88);
-    --color-text-strong: #f4efe7;
-    --color-text-muted: rgba(255, 255, 255, .62);
-    --color-text-faint: rgba(255, 255, 255, .45);
+    --color-text: rgba(244, 242, 232, .86);
+    --color-text-strong: #F4F2E8;
+    --color-text-muted: rgba(244, 242, 232, .62);
+    --color-text-faint: rgba(244, 242, 232, .42);
 
-    --color-bg: #2b2b28;
-    --color-sidebar-bg: #232321;
-    --color-surface: #343431;
-    --color-surface-raised: #3d3d39;
+    --color-bg: #191914;
+    --color-sidebar-bg: #14140F;
+    --color-surface: #20201A;
+    --color-surface-raised: #262620;
+    --color-bg-elev: #262620;
     --color-hover: rgba(255, 255, 255, .06);
-    --color-line: rgba(255, 255, 255, .1);
-    --color-line-strong: rgba(255, 255, 255, .16);
-    --color-inline-code-bg: rgba(255, 255, 255, .1);
-    --color-user-bubble-bg: #3d3d39;
-    --color-scrim-strong: rgba(0, 0, 0, .5);
+    --color-line: rgba(244, 242, 232, .10);
+    --color-line-strong: rgba(244, 242, 232, .18);
+    --color-inline-code-bg: rgba(255, 255, 255, .10);
+    --color-user-bubble-bg: #262620;
+    --color-scrim-strong: rgba(0, 0, 0, .55);
 
-    --color-code-bg: #1d1d1b;
-    --color-code: #f4efe7;
+    --color-code-bg: #12120D;
+    --color-code: #F4F2E8;
     --color-code-soft: rgba(255, 255, 255, .05);
 
-    --color-composer-bg: #343431;
-    --color-composer-line: rgba(255, 255, 255, .12);
-    --color-composer-focus-line: rgba(26, 136, 255, .35);
-    --color-send-bg: rgba(255, 255, 255, .86);
-    --color-send-bg-hover: rgba(255, 255, 255, .92);
-    --color-send-bg-disabled: rgba(255, 255, 255, .1);
-    --color-send-icon: #2b2b28;
-    --color-send-icon-disabled: rgba(255, 255, 255, .3);
+    --color-composer-bg: #20201A;
+    --color-composer-line: rgba(244, 242, 232, .14);
+    --color-composer-focus-line: rgba(184, 214, 64, .4);
+    --color-send-bg: #B8D640;
+    --color-send-bg-hover: #C6E14E;
+    --color-send-bg-disabled: rgba(255, 255, 255, .10);
+    --color-send-icon: #16160F;
+    --color-send-icon-disabled: rgba(255, 255, 255, .34);
 
-    --shadow-lg: 0 12px 32px rgba(0, 0, 0, .34), 0 4px 10px rgba(0, 0, 0, .28);
+    --shadow-input: 0 1px 2px rgba(0, 0, 0, .3), 0 2px 8px -2px rgba(0, 0, 0, .3);
+    --shadow-pop: 0 2px 6px rgba(0, 0, 0, .3), 0 14px 34px -14px rgba(0, 0, 0, .5);
+    --shadow-lg: 0 4px 10px rgba(0, 0, 0, .3), 0 30px 60px -24px rgba(0, 0, 0, .6);
+    --shadow-send: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 26px -16px rgba(0, 0, 0, .45);
+    --shadow-send-hover: 0 2px 6px rgba(0, 0, 0, .32), 0 14px 34px -14px rgba(0, 0, 0, .5);
   }
 }

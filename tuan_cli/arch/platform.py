@@ -19,7 +19,7 @@ import platform
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import logging
 log = logging.getLogger(__name__)
@@ -385,7 +385,7 @@ def _linux_seccomp_sandbox(
             # 本轮: 传入脱敏后的环境, 不再让 seccomp 子进程继承父进程裸环境。
             # env=None 时保持原 execvp 语义 (继承), 向后兼容所有既有调用点。
             if env is not None:
-                os.execvpe(cmd[0], cmd, env)  # type: ignore[attr-defined]
+                os.execvpe(cmd[0], cmd, env)
             else:
                 os.execvp(cmd[0], cmd)
         except Exception:

@@ -15,10 +15,10 @@ import stat
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional, cast
 
 from ..core.kernel import Kernel, Plugin
-from .base import Tool, ToolContext, string_prop
+from .base import Tool, ToolContext, ToolResult, string_prop
 from ..ext.write_scan import scan_content_for_danger, format_matches_for_user, _resolve_path_for_warning
 
 MAX_READ_CHARS = 40000
@@ -98,7 +98,7 @@ log = logging.getLogger(__name__)
 
 
 def _resolve_write(ctx: ToolContext, path: str, *,
-                   op: str = "write") -> tuple:
+                   op: str = "write") -> tuple[Any, Optional[str]]:
     """写操作路径解析 + 写边界复检 (单一出口), 返回 ``(p, err)``。
 
     err 非 None 即拒绝 (返回串), p 为 None。recheck_write 优先于 _resolve:
@@ -364,10 +364,31 @@ def delete_dir(ctx: ToolContext, path: str) -> str:
     return f"已递归删除目录 {_rel(ctx, p)}"
 
 
-def read_file(ctx: ToolContext, path: str, offset: int = 0, limit: int = 0) -> str:
+def read_file(ctx: ToolContext, path: str, offset: int = 0,
+              limit: int = 0) -> ToolResult | str:
     p = _resolve(ctx, path)
     if not p.exists():
         return f"[错误] 文件不存在: {p}"
+    # ---- 图片文件: 走多模态通道 (ToolResult.images), 视觉模型可直接看图 ----
+    try:
+        head = p.read_bytes()[:64]
+    except OSError as exc:
+        return f"[错误] 读取失败: {exc}"
+    from ..vision.blocks import _detect_media_type, encode_image_file
+    media = _detect_media_type(str(p), head)
+    if media.startswith("image/"):
+        try:
+            ref = encode_image_file(str(p), workspace=ctx.workspace)
+        except Exception as exc:  # noqa: BLE001 - 过大/损坏图片降级为文本错误
+            return f"[错误] 图片读取失败: {exc}"
+        # 记录为本会话已读 (与文本路径同口径, 满足 Read-before-Edit 守卫)
+        ctx.mark_read(str(p))
+        return ToolResult(
+            status="ok", tool_name="read_file",
+            content=(f"# {p}\n[图片文件: {media}, {ref.byte_size() // 1024} KB; "
+                     "已作为图像附件提供给模型]"),
+            images=[ref],
+        )
     text = p.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines()
     if offset:
@@ -795,7 +816,7 @@ def search_files(ctx: ToolContext, pattern: str, path: str = ".") -> str:
 
 class FilesystemPlugin(Plugin):
     name = "tools.filesystem"
-    provides = []
+    provides: list[str] = []
     requires = ["tool_registry"]
 
     def activate(self, kernel: Kernel) -> None:
@@ -812,7 +833,9 @@ class FilesystemPlugin(Plugin):
                 },
                 "required": ["path"],
             },
-            handler=read_file, group="filesystem", read_only=True,
+            # read_file 文本分支返回 str, 图片分支返回 ToolResult (多模态附件)
+            handler=cast(Callable[..., str], read_file),
+            group="filesystem", read_only=True,
         ))
         registry.register(Tool(
             name="read_files",

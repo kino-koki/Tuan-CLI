@@ -38,6 +38,11 @@ class StateMixin:
     _show_welcome: Callable[[], None]
     _slash_menu_rows: Callable[[], int]
     _slogan_dispatch: Callable[..., Any]
+    _slogan_stream_started: Callable[..., None]
+    _slogan_stream_ended: Callable[..., None]
+    _slogan_tool_started: Callable[..., None]
+    _slogan_tool_ended: Callable[..., None]
+    _slogan_turn_completed: Callable[..., None]
 
     def __init__(
         self,
@@ -353,6 +358,25 @@ class StateMixin:
                             lambda: self._diff_visible and self._diff_panel_available()
                         ),
                     ),
+                    # 任务清单执行面板 (F3): 与 diff 面板共用右侧栏位, 互斥展开。
+                    ConditionalContainer(
+                        HSplit([
+                            Window(width=1, char="│", style="class:border"),
+                            Window(
+                                FormattedTextControl(
+                                    self._render_todo_panel, show_cursor=False,
+                                    focusable=False,
+                                ),
+                                width=lambda: self._diff_panel_width(),
+                                wrap_lines=False,
+                                style="class:slashbg",
+                            ),
+                        ]),
+                        filter=Condition(
+                            lambda: getattr(self, "_todo_visible", False)
+                            and self._diff_panel_available()
+                        ),
+                    ),
                 ]),
                 bottom,
             ])
@@ -565,7 +589,9 @@ class StateMixin:
             # 幂等: 避免重复绑定 listener (set_ready 可能被多次调用)。
             if getattr(eng, "_tui_bound", False):
                 return
-            eng._tui_bound = True  # type: ignore[union-attr]
+            # setattr 与属性赋值运行时等价；eng 为动态取得的引擎对象，
+            # 两种 mypy 模式下都无需 ignore
+            setattr(eng, "_tui_bound", True)
 
             def _on_sa_event(name: str, payload: Dict[str, Any]) -> None:
                 """Router 事件 → 对话区日志行 (线程安全, 只做 invalidate)。
@@ -974,7 +1000,8 @@ class StateMixin:
                 if _app is not None else None
         except Exception:  # noqa: BLE001
             configured = None
-        return infer_context_window(model=model, provider=provider, configured=configured)
+        # int() 恒等包装：skip 模式下 infer_context_window 为 Any，全量模式下返回 int
+        return int(infer_context_window(model=model, provider=provider, configured=configured))
 
     def _elapsed_since_turn(self) -> str:
         """codex `fmt_elapsed_compact` 同款: <60s→"{s}s", <3600→"{m}m {ss:02}s", 否则 "{h}h {mm:02}m {ss:02}s"."""
@@ -1084,7 +1111,8 @@ class StateMixin:
         running = app is not None and getattr(app, "is_running", False)
         if not running:
             # headless / 应用未启动: 没有 UI 可挂卡片, 退回终端 input (保持旧行为)
-            return interactive_confirm(prompt, expected=expected, position=position)
+            # bool() 恒等包装：skip 模式下 interactive_confirm 为 Any
+            return bool(interactive_confirm(prompt, expected=expected, position=position))
         assert app is not None  # running 为真即 app 非空
 
         done = threading.Event()
@@ -1260,18 +1288,23 @@ class StateMixin:
 
     # ============================================================ 运行
     def _run_submit(self, text: str) -> None:
+        # on_error 回调 (cmd_chat) 展示错误后会置此标记, 避免 except 再刷一次 (GH 用户反馈)
+        self._error_logged_this_turn = False
         try:
             result = self.on_submit(text)
             self.end_stream()
             if result and not self._streamed:
                 self.append_log(result)
         except Exception as exc:
-            self.append_log(f"[错误] {type(exc).__name__}: {exc}")
+            # on_error 已 append_log 并 end_any_tool —— 跳过重复展示
+            if not getattr(self, "_error_logged_this_turn", False):
+                self.append_log(f"[错误] {type(exc).__name__}: {exc}")
         finally:
             self._busy = False
             self._streamed = False
             self._streaming = False
             self._moon_suppressed = False
+            self._error_logged_this_turn = False
             self._running.clear()
             # slogans: 回合完成 -> 活性证据 kind=turn_completed (B3 XVI 接线)
             self._slogan_turn_completed()
@@ -1282,7 +1315,12 @@ class StateMixin:
                 self._events.append(("class:textdim", "  " + footer))
                 self._history_dirty = True
         if self._app and self._app.is_running:
-            self._app.invalidate()
+            # Windows conpty: 流式输出后 renderer diff 可能跳过输入行重绘 (输入框"消失")。
+            # 每轮结束调度一次轻量 erase+reset 强制全量重绘 (与 _reset_renderer 同源)。
+            if os.name == "nt":
+                self._reset_renderer()
+            else:
+                self._app.invalidate()
 
     def run(self) -> None:
         """启动 TUI: 默认处于加载态, 内核就绪后由 set_ready 切换。
@@ -1321,9 +1359,10 @@ class StateMixin:
                         key_bindings=self._app.key_bindings,
                         style=STYLE,
                         full_screen=False,
-                        # 内联模式是崩溃兜底路径, 鼠标上报在这里最可能加剧
-                        # 不稳定 —— 保守关掉, 滚轮不可用但键盘 PgUp/PgDn 照常。
-                        mouse_support=False,
+                        # 内联模式不占备用屏 -> 原生终端有滚动缓冲, 鼠标滚轮走
+                        # _mouse_wheel -> _scroll_log (日志面板内滚动), 启用以支持鼠标。
+                        # 键盘 Ctrl+↑/↓ 仍并行可用作后备 (GH 用户反馈: PS 窗口鼠标滚动)。
+                        mouse_support=True,
                     )
                     self._app.run()
                     return

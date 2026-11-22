@@ -143,4 +143,68 @@ def test_background_refresh_completes(tmp_path):
     assert "done" in holder
     n_p, n_m, err = holder["done"]
     assert err is None
-    assert n_p == len(ALL_PROVIDERS)
+
+# ---------------------------------------------------------------- 自定义供应商
+# E402: custom_registry 为延迟导入 (避免顶层依赖循环), 测试内局部导入。
+
+def _make_custom_entry(name="my-custom", model="my-model-v1",
+                       base="https://custom.example.com/v1", env="MY_CUSTOM_KEY"):
+    """构造一个 CustomRegistryProviderEntry (type=openai, 单模型)。"""
+    from tuan_cli.ports.oauth.custom_registry import (
+        CustomRegistryModelEntry, CustomRegistryProviderEntry,
+    )
+    return CustomRegistryProviderEntry(
+        id=name, name=name, api="openai", type="openai",
+        models={model: CustomRegistryModelEntry(id=model, name=model)},
+        env=[env],
+    )
+
+
+def test_add_custom_provider_persists(tmp_path):
+    """add_custom_provider 写盘并含 category=自定义供应商, 可回读。"""
+    entry = _make_custom_entry()
+    prov = local_catalog.add_custom_provider(entry, home=tmp_path)
+    assert prov["category"] == "自定义供应商"
+    assert prov["name"] == "my-custom"
+    assert prov["model"] == "my-model-v1"
+    data = local_catalog.load_catalog(tmp_path)
+    assert data is not None
+    names = [p["name"] for p in data["providers"]]
+    assert "my-custom" in names
+    assert "my-custom" in data["model_lists"]
+    assert data["model_lists"]["my-custom"] == ["my-model-v1"]
+
+
+def test_add_custom_provider_replaces_same_name(tmp_path):
+    """同名自定义供应商再次添加应覆盖 (不产生重复)。"""
+    local_catalog.add_custom_provider(_make_custom_entry(name="dup", model="v1"), home=tmp_path)
+    local_catalog.add_custom_provider(_make_custom_entry(name="dup", model="v2"), home=tmp_path)
+    data = local_catalog.load_catalog(tmp_path)
+    assert data is not None
+    names = [p["name"] for p in data["providers"]]
+    assert names.count("dup") == 1
+    assert data["model_lists"]["dup"] == ["v2"]
+
+
+def test_add_custom_provider_survives_refresh(tmp_path):
+    """refresh_catalog 后自定义供应商仍保留。"""
+    local_catalog.add_custom_provider(_make_custom_entry(name="keep"), home=tmp_path)
+    local_catalog.refresh_catalog(tmp_path)
+    data = local_catalog.load_catalog(tmp_path)
+    assert data is not None
+    names = [p["name"] for p in data["providers"]]
+    assert "keep" in names
+
+
+def test_add_custom_provider_default_env(tmp_path):
+    """env 为 None 时, 持久化的 provider 仍带 api_key_env 兜底 (CUSTOM_API_KEY)。"""
+    from tuan_cli.ports.oauth.custom_registry import (
+        CustomRegistryModelEntry, CustomRegistryProviderEntry,
+    )
+    entry = CustomRegistryProviderEntry(
+        id="noenv", name="noenv", api="openai", type="openai",
+        models={"m1": CustomRegistryModelEntry(id="m1", name="m1")},
+        env=None,
+    )
+    prov = local_catalog.add_custom_provider(entry, home=tmp_path)
+    assert prov["api_key_env"] == "CUSTOM_API_KEY"

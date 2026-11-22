@@ -129,6 +129,11 @@ class Agent(GoalMixin, VisionMixin, CompatMixin, HooksMixin):
             messages=self.messages,
             session_append=self._session_append,
             tool_content_fn=self._tool_content,
+            # 视觉上下文: 工具回传图片时按当前模型能力决定是否送图
+            vision_ctx_fn=lambda: (
+                getattr(getattr(self.model, "capabilities", None), "vision", False),
+                getattr(self.model, "name", "openai"),
+            ),
             telemetry=self._obs.telemetry,
             trace_id=self._obs.trace_id,
         )

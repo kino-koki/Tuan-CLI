@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from .base import ModelAdapter, ModelCapabilities, ModelResponse, ToolCall
@@ -9,6 +10,20 @@ from ..core.errors import ConfigError
 
 if TYPE_CHECKING:
     from .. import _openai_sdk
+
+# OpenAI 推理模型 (o1/o3/o4/gpt-5/codex-mini 系列) 的 Chat Completions 参数限制:
+# - 只接受默认 temperature (1), 传 0.7 等 → 400 Unsupported value;
+# - 不接受 max_tokens, 必须改用 max_completion_tokens → 400 Unsupported parameter。
+# 网关常带 "openai/" 之类前缀 (如 OpenRouter 的 openai/gpt-5.6-sol), 判定前先剥离。
+_OPENAI_REASONING_RE = re.compile(r"^(?:o[1-9]|gpt-5|codex-mini)(?:$|[-._])")
+
+
+def _is_openai_reasoning_model(model: Optional[str]) -> bool:
+    """按模型名判定是否需要使用推理模型的参数口径。"""
+    name = (model or "").strip().lower()
+    if "/" in name:
+        name = name.rsplit("/", 1)[-1]
+    return bool(_OPENAI_REASONING_RE.match(name))
 
 
 class OpenAICompatAdapter(ModelAdapter):
@@ -30,13 +45,31 @@ class OpenAICompatAdapter(ModelAdapter):
         read_timeout: float = 120.0,
         prompt_cache: bool = True,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        base = (base_url or "").rstrip("/")
+        # 修复: snowflake 等目录条目的 base_url 已含完整 /chat/completions 路径,
+        # 传输层还会再拼一次 → 双重路径必 404。这里剥掉尾段, 保证恰好拼接一次。
+        if base.endswith("/chat/completions"):
+            base = base[: -len("/chat/completions")]
+        # 修复: cloudflare 目录条目的 base_url 含 {account_id} 模板, 旧代码
+        # 原样上送必 404。此处用 CLOUDFLARE_ACCOUNT_ID 环境变量实例化模板。
+        if "{account_id}" in base:
+            import os as _os
+            _account = _os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+            if not _account:
+                raise ConfigError(
+                    "cloudflare 供应商需要账户 ID: 请设置环境变量 CLOUDFLARE_ACCOUNT_ID "
+                    "(base_url 中的 {account_id} 模板将用它实例化)。"
+                )
+            base = base.replace("{account_id}", _account)
+        self.base_url = base
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.timeout = timeout
         self.connect_timeout = connect_timeout
         self.read_timeout = read_timeout
+        # 保留配置位以兼容既有 model.prompt_cache 设置。OpenAI 兼容端点的前缀缓存
+        # 由服务端自动生效, 不再上送 Anthropic 风格的 cache_control (会触发 400)。
         self.prompt_cache = prompt_cache
         self._client: Optional[Any] = None
         # 防御历史脏数据: 误粘 "Bearer " 前缀的 key 剥离, 避免双重 Bearer 头
@@ -100,18 +133,19 @@ class OpenAICompatAdapter(ModelAdapter):
         # 遗漏, 落到线上请求体里的结构都合规 (严格端点如 SenseNova 会以 400 拒绝
         # 缺 type 的 tool_call)。
         messages = self._ensure_tool_call_types(messages)
-        # Prompt 缓存: 把稳定的 system 前缀打上 cache_control, 命中后只计费增量。
-        # 兼容 DeepSeek / OpenCode Zen 等支持 message 级缓存的 OpenAI 兼容端点。
-        if self.prompt_cache:
-            messages = self._mark_cache(messages, tools)
-            # 工具定义稳定, 一并打缓存标记 (复制, 不污染调用方)
-            tools = self._mark_tools_cache(tools)
-        kwargs: Dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-        }
+        messages = self._sanitize_outbound(messages)
+        # 参数口径按模型区分: OpenAI 推理模型 (o 系列 / gpt-5) 拒收 temperature 与
+        # max_tokens —— 发送即 400。其余模型维持 temperature + max_tokens。
+        # 注: 不再向 OpenAI 兼容端点注入 Anthropic 风格的 cache_control —— 该字段
+        # 不属于 chat/completions 协议, 严格端点 (OpenAI/通义/智谱等) 会以
+        # "Unrecognized request argument" 400 拒绝; 各家的前缀缓存均为服务端自动
+        # 生效 (DeepSeek/OpenAI/Moonshot 等), 无需显式断点。
+        kwargs: Dict[str, Any] = {"model": self.model, "messages": messages}
+        if _is_openai_reasoning_model(self.model):
+            kwargs["max_completion_tokens"] = self.max_tokens
+        else:
+            kwargs["temperature"] = self.temperature
+            kwargs["max_tokens"] = self.max_tokens
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
@@ -161,45 +195,62 @@ class OpenAICompatAdapter(ModelAdapter):
         return out if out is not None else messages
 
     @staticmethod
-    def _mark_cache(
-        messages: List[Dict[str, Any]],
-        tools: Optional[List[Dict[str, Any]]],
-    ) -> List[Dict[str, Any]]:
-        """给稳定的 system 消息打 cache_control 标记 (prompt 缓存断点)。
+    def _sanitize_outbound(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """发送前按 chat/completions 协议清洗消息, 消除常见的 400 参数/结构问题。
 
-        只标记最后一条 system 消息为缓存断点; 工具定义紧跟其后同样稳定,
-        一并标记。复制对象, 不污染调用方的原始 messages / tools。
-        返回打过标记的 messages (tools 的标记在 chat() 内单独处理)。
+        - 剔除非协议字段 (如本地记录用的 ``status``), 严格端点会以
+          "unknown field" 400 拒绝;
+        - tool 消息 content 必须是非空字符串 (None/"" 会被严格端点 400);
+        - assistant 带 tool_calls 时 content 空串归一为 None (协议允许 null);
+        - assistant.tool_calls 必须与后继 tool 消息成对, 未配对的剥离;
+          无前驱 assistant 的孤儿 tool 消息丢弃 —— 工具中断后残留的坏历史
+          会让后续每轮都 400 (粘性)。
+
+        返回新列表, 不修改调用方持有的会话历史。
         """
-        out = [dict(m) for m in messages]
-        last_sys = None
-        for i in range(len(out) - 1, -1, -1):
-            if out[i].get("role") == "system":
-                last_sys = i
-                break
-        if last_sys is not None:
-            out[last_sys]["cache_control"] = {"type": "ephemeral"}
+        allowed = {"role", "content", "name", "tool_calls", "tool_call_id"}
+        cleaned: List[Dict[str, Any]] = []
+        declared: set = set()
+        referenced: set = set()
+        for raw in messages:
+            if not isinstance(raw, dict):
+                continue
+            m = {k: v for k, v in raw.items() if k in allowed}
+            if m.get("role") == "assistant":
+                for tc in m.get("tool_calls") or []:
+                    if tc.get("id"):
+                        declared.add(tc["id"])
+            elif m.get("role") == "tool" and m.get("tool_call_id"):
+                referenced.add(m["tool_call_id"])
+            cleaned.append(m)
+        paired = declared & referenced
+
+        out: List[Dict[str, Any]] = []
+        for m in cleaned:
+            role = m.get("role")
+            if role == "tool":
+                if not m.get("tool_call_id") or m["tool_call_id"] not in declared:
+                    continue  # 孤儿 tool 消息 → 400, 丢弃
+                if not isinstance(m.get("content"), str) or m["content"] == "":
+                    m["content"] = "[empty]"
+                out.append(m)
+                continue
+            if role == "assistant":
+                tcs = m.get("tool_calls") or []
+                if tcs:
+                    kept = [tc for tc in tcs if tc.get("id") in paired]
+                    if kept:
+                        m["tool_calls"] = kept
+                        if m.get("content") == "":
+                            m["content"] = None
+                    else:
+                        m.pop("tool_calls", None)
+                        if not m.get("content"):
+                            continue  # 纯空 assistant 消息, 无信息量
+                elif not m.get("content"):
+                    continue
+            out.append(m)
         return out
-
-    @staticmethod
-    def _mark_tools_cache(
-        tools: Optional[List[Dict[str, Any]]],
-    ) -> Optional[List[Dict[str, Any]]]:
-        """给稳定的工具定义打 cache_control 标记 (复制, 不污染原列表)。
-
-        部分 OpenAI 兼容端点 (DeepSeek / OpenCode Zen) 支持在 tools 上缓存,
-        与 system 前缀一并命中, 进一步抬高缓存命中率。
-        """
-        if not tools:
-            return None
-        marked = []
-        for t in tools:
-            t2 = dict(t)
-            fn = dict(t2.get("function", {}))
-            fn["cache_control"] = {"type": "ephemeral"}
-            t2["function"] = fn
-            marked.append(t2)
-        return marked
 
     # ------------------------------------------------------------------ 内部
 

@@ -23,9 +23,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from tuan_cli.ui.theme import BRAND_PRIMARY
 
+log = logging.getLogger(__name__)
+
 _wcswidth_impl: Optional[Callable[..., int]] = None
 try:
-    from wcwidth import wcswidth as _wcswidth_impl  # 终端显示宽度 (prompt_toolkit 同源依赖)
+    from wcwidth import wcswidth as _wcswidth_fn  # 终端显示宽度 (prompt_toolkit 同源依赖)
+    _wcswidth_impl = _wcswidth_fn
 except Exception as exc:  # noqa: BLE001
     log.warning("模块顶层: 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
     pass
@@ -105,7 +108,8 @@ class _MissingKeys:
 if not _HAS_PT:  # pragma: no cover - 仅在无 prompt_toolkit 环境
     # 占位实例替代 Keys 枚举: 两个分支运行期互斥, 但类型检查器无法表达
     # "同名符号既是枚举类又是降级实例" —— 与下方占位类同属可选依赖降级。
-    Keys = _MissingKeys()  # type: ignore[misc,assignment]
+    # 用 globals() 绑定而非同名赋值: 避免对已导入符号的静态重定义报错。
+    globals()["Keys"] = _MissingKeys()
 
     class Completer:  # type: ignore[no-redef]
         """占位基类: prompt_toolkit 缺失时仅为让下面的类定义通过。"""
@@ -117,11 +121,12 @@ if not _HAS_PT:  # pragma: no cover - 仅在无 prompt_toolkit 环境
         prompt_toolkit, 此时会在 TUI 启动处给出清晰错误, 而不是在 import 时 NameError。
         """
 
-    def Completion(*args: Any, **kwargs: Any) -> None:  # type: ignore[no-redef]
+    def _completion_placeholder(*args: Any, **kwargs: Any) -> None:
         """占位构造器: prompt_toolkit 缺失时给出可读错误, 而不是 NameError。"""
         raise RuntimeError(
             "prompt_toolkit 未安装, 无法使用 TUI 输入补全; 安装 prompt_toolkit 或改用 CLI 模式"
         )
+    globals()["Completion"] = _completion_placeholder
 
 
 class _PlaceholderProcessor:
@@ -268,6 +273,21 @@ _SLASH_SUBCMDS: Dict[str, List[Tuple[str, str]]] = {
         ("chat", "闲聊: L0 受限陪伴, 仅对话与记忆"),
         ("boundless", "无界: L4 全能力, 桌面白名单"),
         ("collaboration", "协同: L2 工作区读写 + 审计, Shell 禁用"),
+    ],
+    "/approvals": [
+        ("read-only", "只读: 修改类工具拦截 (Plan 只读)"),
+        ("auto", "标准: 按风险分级确认 (默认)"),
+        ("full-access", "全自动批准 (YOLO; 红线工具仍强制确认)"),
+    ],
+    "/watch": [
+        ("transcript", "只看字幕/转写, 不抽帧"),
+        ("swift", "快速档: 约 24 帧封顶"),
+        ("balanced", "均衡档: 约 48 帧 (默认)"),
+        ("deep", "深度档: 约 96 帧封顶"),
+    ],
+    "/reach": [
+        ("doctor", "全频道健康自检"),
+        ("channels", "列出频道与后端回退链"),
     ],
     "/provider": [
         ("set <ENV>", "设置供应商 API Key (provider set <ENV> <KEY>)"),

@@ -25,7 +25,7 @@
 | Provider（模型/后端） | 58 |
 | 运行时第三方依赖 | **2**（rich、prompt_toolkit） |
 | 语言 README | 10 |
-| 版本 | 0.4.2 |
+| 版本 | 0.5.0 |
 | 安全闸门 | 4（硬红线 / YOLO 红线 / 事务账本 / 写边界） |
 | 主循环 | 3（ReAct / Planner-Execute / DevLoop） |
 | 内存层 | 3（短期 / 中期 / 长期） |
@@ -71,7 +71,7 @@
 - [会话与快照 (session)](session.md) —— 会话生命周期、断点恢复
 
 ### 命令面
-- [CLI 命令面 (cli)](cli.md) —— 94 子命令 + 88 斜杠命令
+- [CLI 命令面 (cli)](cli.md) —— 92 子命令（含嵌套 194）+ 91 斜杠命令
 - [流式 I/O (stream_json)](stream-io.md) —— --input/--output-format stream-json 线协议
 - [Parity 与差距分析 (parity)](parity.md) —— 与 Claude Code 对齐/领先/差距矩阵
 

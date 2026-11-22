@@ -26,13 +26,13 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, TextIO
 from ..core.security_bus import SecurityEvent
 from ..core.security_utils import redact_nested, redact_sensitive
 
+log = logging.getLogger(__name__)
+
 try:
     from .. import __version__ as _TUAN_VERSION
 except Exception as exc:  # pragma: no cover
     log.debug("安全路径 fallback 降级: %s", exc)
     _TUAN_VERSION = "0.0.0"
-
-log = logging.getLogger(__name__)
 
 # 严重度 -> CEF 0-10
 _CEF_SEVERITY = {"critical": 10, "high": 8, "medium": 5, "low": 3, "info": 1, "none": 0}

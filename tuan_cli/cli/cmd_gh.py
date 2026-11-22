@@ -237,10 +237,15 @@ def _run_rest(gh_args: List[str], args: Any) -> int:
     head = gh_args[0] if gh_args else ""
     try:
         if head == "api" and len(gh_args) >= 2:
-            _print(json.dumps(client._gh_api(gh_args[1]), ensure_ascii=False, indent=2))
+            # REST 回退场景 (本机无 gh): 必须走纯 HTTP 的 _rest(),
+            # 不能调 _gh_api() —— 那会去 spawn gh 二进制, 在本场景必失败。
+            _print(json.dumps(client._rest(
+                "https://api.github.com/" + gh_args[1].strip("/")),
+                ensure_ascii=False, indent=2))
             return 0
         if head == "repo" and len(gh_args) >= 3 and gh_args[1] == "view":
-            data = client._gh_api(f"repos/{gh_args[2].strip('/')}")
+            data = client._rest(
+                "https://api.github.com/repos/" + gh_args[2].strip("/"))
             _print(f"{data.get('full_name')}  ⭐{data.get('stargazers_count')}  "
                    f"fork:{data.get('forks_count')}")
             _print(data.get("description") or "")

@@ -52,6 +52,14 @@ from .tools.subagent_tool import SubagentPlugin
 from .tools.messaging_tool import MessagingPlugin
 from .tools.workflow_tool import WorkflowPlugin
 from .tools.artifact_tool import ArtifactPlugin
+from .tools.cron_tool import CronToolPlugin
+from .tools.gh_tool import GhToolPlugin
+from .tools.ecosystem_tool import EcosystemToolPlugin
+from .tools.audit_tool import AuditToolPlugin
+from .tools.dispatch_tool import DispatchToolPlugin
+from .tools.video_watch_tool import VideoWatchPlugin
+from .tools.video_render_tool import VideoRenderPlugin
+from .tools.reach_tool import ReachPlugin
 from .core.security_plugin import SecurityPlugin
 from .core.collaboration_plugin import CollaborationPlugin
 from .arch.plugin import ArchPlugin
@@ -121,6 +129,24 @@ def build_kernel(
     kernel.register(MessagingPlugin())
     kernel.register(WorkflowPlugin())
     kernel.register(ArtifactPlugin())
+    # cron 子系统接入 Agent 工具面 (此前仅 cmd_cron.py 可用)
+    kernel.register(CronToolPlugin())
+    # gh 子系统 (借力/搜索/只读 REST) 接入 Agent 工具面
+    kernel.register(GhToolPlugin())
+    # ecosystem 互操作 (Claude Code / Hermes 资产盘点/导入/导出) 接入 Agent 工具面
+    kernel.register(EcosystemToolPlugin())
+    # 内核审计归档只读查询接入 Agent 工具面
+    kernel.register(AuditToolPlugin())
+    # external_dispatch: tuan dispatch (Agent-of-Agents) 调度层接入 Agent 工具面
+    # (插件名 tools.external_dispatch, 避开 DispatchPlugin 的 tools.dispatch)
+    kernel.register(DispatchToolPlugin())
+    # tuan-watch: 视频观看能力 (claude-video 理念自研) 接入 Agent 工具面
+    kernel.register(VideoWatchPlugin())
+    # 自研视频渲染能力 (claude-video + MotionHarness 融合, 纯 Python + ffmpeg)
+    # 接入 Agent 工具面 —— agent 可直接从 prompt 生成短视频 (无需 Web 端点)
+    kernel.register(VideoRenderPlugin())
+    # tuan-reach: 多平台联网读取能力层 (Agent-Reach 理念自研) 接入 Agent 工具面
+    kernel.register(ReachPlugin())
     # 代码开发工具集: 依赖图 / 后端模板生成 / 沙箱执行 (此前未注册, 模型拿不到)
     kernel.register(CodeGraphPlugin())
     kernel.register(BackendDevPlugin())
@@ -256,7 +282,7 @@ def create_agent(
             # 累积 70 个 conflict (test_sub_agent_hooks_not_accumulated 实测)。
             # 注册失败 fail-closed, 不掀翻会话; config._hooks 作为跨层传递点
             # 供安全插件 (classifier 等在 create_agent 阶段才取到 hooks) 读取。
-            config._hooks = agent.ctx.hooks
+            setattr(config, "_hooks", agent.ctx.hooks)
             _session_owner = "agent:%x" % id(agent)
             _handle = activate_session(
                 owner=_session_owner,
@@ -274,7 +300,7 @@ def create_agent(
     # 传 lambda 而不是对象：这些模块构造早于此处，且 hooks 可在会话内
     # 被替换/置空。异常一律当 None（严格 no-op）。
     try:
-        config._hooks = agent.ctx.hooks
+        setattr(config, "_hooks", agent.ctx.hooks)
     except Exception as exc:  # noqa: BLE001
         logger.warning("create_agent(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
         pass
@@ -307,7 +333,7 @@ def _builtin_skills_dir() -> Path:
 
 def _skills_manifest_path(manager: "SkillManager") -> Path:
     """内置技能播种清单 (记录每个 skill 播种时的内容指纹)。"""
-    return manager.dir / ".builtin-skills.json"
+    return Path(manager.dir) / ".builtin-skills.json"
 
 
 def _sha256(path: Path) -> str:

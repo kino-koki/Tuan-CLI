@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tuan_cli.models.provider_catalog import (
     ALL_PROVIDERS, PROVIDER_CATEGORIES, get_provider, get_provider_models,
 )
+from tuan_cli.models.model_lists import MODEL_LISTS
 from tuan_cli.cli.commands import _pick_model_interactive
 
 
@@ -106,6 +107,31 @@ def test_every_provider_in_a_category():
 def test_every_provider_has_default_model():
     for p in ALL_PROVIDERS:
         assert p.model, f"{p.name} 缺少默认模型"
+
+# 2026-11 新增供应商: 官方 OpenAI 兼容端点需可达 (由联网同步测试覆盖), 此处验证注册与清单。
+NEW_PROVIDERS_2026_11 = [
+    "liquid", "sakana", "thinkingmachines", "aionlabs", "xiaomi-mimo",
+]
+
+
+def test_new_providers_registered_with_endpoint():
+    """5 家新供应商均在 ALL_PROVIDERS 且带 base_url。"""
+    by_name = {p.name: p for p in ALL_PROVIDERS}
+    for name in NEW_PROVIDERS_2026_11:
+        assert name in by_name, f"{name} 未注册"
+        assert by_name[name].base_url.startswith("https://"), f"{name} base_url 缺失"
+
+
+def test_new_providers_in_model_lists():
+    """5 家新供应商均有模型清单键。"""
+    for name in NEW_PROVIDERS_2026_11:
+        assert name in MODEL_LISTS, f"{name} 缺少模型清单"
+        assert MODEL_LISTS[name], f"{name} 清单为空"
+
+
+def test_provider_count_updated():
+    """内置供应商总数 = 63 (原 58 + 新增 5)。"""
+    assert len(ALL_PROVIDERS) == 63
 
 
 def test_pick_interactive_by_number(monkeypatch):

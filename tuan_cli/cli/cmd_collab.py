@@ -46,7 +46,12 @@ def _get_protocol() -> Any:
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as fh:
-                proto.load_state(json.load(fh))
+                state = json.load(fh)
+            # CollaborationProtocol 未实现 load_state (core 协议层无此方法);
+            # getattr 兜底: 方法缺失时跳过恢复, 从空黑板开始 (不改变既有行为)。
+            restore = getattr(proto, "load_state", None)
+            if callable(restore):
+                restore(state)
         except (OSError, ValueError):
             pass  # 损坏的板子忽略, 从空黑板开始
     return proto

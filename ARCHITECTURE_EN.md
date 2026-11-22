@@ -199,7 +199,53 @@ Four stages can each be independently unit-tested; the combination is the "safet
 
 ---
 
-## 6. Extension Points (Contributing Guide)
+## 6. Capability Layer (0.5.0): Video Watching, Multi-Platform Reading, Approval Tiers, TUI Task Panel
+
+v0.5.0 adds a **pure capability layer** on top of the five subsystems: it never touches the Kernel / Loop /
+Security verdicts — it only turns "content from the outside world" into structured input the Agent can consume,
+and makes the human-in-the-loop cadence explicit.
+
+### 6.1 `videowatch/` — watching videos (transcript-first + frame sampling)
+- Files: `videowatch/probe.py` (container/duration/track probing), `videowatch/frames.py` (frame sampling by detail level),
+  `videowatch/transcript.py` (transcript-first: embedded subtitles → external `.srt/.vtt` → ASR fallback),
+  `videowatch/watch.py` (orchestration: transcript + frames + locating the segment the question points at).
+- Design stance: **transcript first, frames as evidence**. Whenever text is available, never guess from frames;
+  sampling only backs up segments the transcript cannot cover, so video QA is not reduced to image QA.
+- Tool entry: `tools/video_watch_tool.py`; slash command: `/watch <path|URL> [question] [--detail level]`.
+
+### 6.2 `reach/` — multi-platform web reading
+- Files: `reach/channels.py` (channel implementations: web body / social platforms / doc sites, dispatched per channel),
+  `reach/registry.py` (channel registration + capability declaration), `reach/base.py` (channel contract),
+  `reach/doctor.py` (self-check: credentials / dependencies / connectivity, backing `/reach doctor`).
+- Design stance: **pluggable channels that declare their own capabilities**. Each channel declares what it reads
+  and what prerequisites it needs; `doctor` states the gap plainly instead of letting the Agent hit the same wall twice.
+- Tool entry: `tools/reach_tool.py`; slash commands: `/reach <URL>` · `/reach channels` · `/reach doctor`.
+
+### 6.3 `/approvals` — three approval tiers
+- Interaction parity with Codex CLI: **read-only / auto / full-access** tiers are switchable in-session.
+  A tier only changes *which* operations need a human nod — it **never changes Security's hard-redline verdicts**
+  (hard redlines are blocked in every tier).
+- Implemented at the TUI panel + slash-command layer (`cli/cmd_slash.py` + `tui/panels.py`); auditing continues to land on disk.
+
+### 6.4 TUI F3 task panel — Agent todo progress made visible
+- F3 toggles the right-hand "execution list" panel (mutually exclusive with the Ctrl+D diff panel; they share the right column):
+  `_fetch_todos()` reads `<workspace>/.tuan/todo.json` (the same source as `tools/todo_tool.py`);
+  any failure degrades to an error hint and never raises out of the render loop.
+- Entries sort `in_progress → pending → completed`, the in-progress one is highlighted with `class:accent`;
+  width reuses `_diff_panel_width()` (40% of terminal width, clamped to `[32,64]`), and the panel hides entirely when too narrow.
+
+### 6.5 `/web` design language — the Qingnai token sheet
+- The `/web` frontend's design language is consolidated in the CSS token sheet of `web/assets/tuan-web.css`
+  (`FRONTEND_HTML` in `frontend.py` only references `var(--*)` and carries no hard-coded values):
+  warm paper base `#FCFCFA`, hairline rules, uppercase mono labels, a uniform 3px radius, olive `#7A9C22` +
+  lime `#B8D640` accent colors, and a `Georgia + PingFang + IBM Plex Mono` font stack;
+  three themes (light default / `[data-color-scheme="dark"]` / the system-derived dark theme under `prefers-color-scheme: dark`).
+- A missing token is caught by the test gate: `tests/test_web_server.py` asserts key token values,
+  so a `var(--*)` reference without a CSS definition surfaces in visual regression.
+
+---
+
+## 7. Extension Points (Contributing Guide)
 
 | What to add | How to do it | Entry file |
 | --- | --- | --- |
@@ -212,7 +258,7 @@ Four stages can each be independently unit-tested; the combination is the "safet
 
 ---
 
-## 7. Localization & Configuration
+## 8. Localization & Configuration
 
 - Home directory: `~/.tuan` (can be overridden with environment variable `TUAN_HOME` for test isolation).
 - Key files:
@@ -224,7 +270,7 @@ Four stages can each be independently unit-tested; the combination is the "safet
 
 ---
 
-## 8. Related Documentation
+## 9. Related Documentation
 - `tuan help` — Complete subcommands and parameters.
 - `tuan others` — Friendly capability catalog (newcomer entry point).
 - `tuan safe` — Safety entry (status / whitelist / blacklist override / update).

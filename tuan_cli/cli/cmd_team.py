@@ -29,7 +29,7 @@ from .parser import _register_command
 
 
 def _store(args: Any) -> TeamGroupStore:
-    ws = getattr(args, "workspace", None) or home_dir()
+    ws = str(getattr(args, "workspace", None) or home_dir())
     return load_team_group(ws)
 
 
@@ -105,8 +105,9 @@ def _cmd_register(args: Any) -> int:
     """团主登记供应商凭证 (只存指纹, 原文留在本机环境变量)。"""
     store = _store(args)
     try:
+        group = store.group
         entry = store.register_provider_key(args.provider_id, args.fingerprint,
-                                            owner=args.owner or store.group.owner)
+                                            owner=args.owner or (group.owner if group else ""))
     except TeamGroupError as exc:
         return _err(exc)
     if args.json:

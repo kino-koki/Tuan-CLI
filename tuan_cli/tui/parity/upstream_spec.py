@@ -21,7 +21,7 @@ sparse 解压（只解出 1135 个文件）。完整解压后的真实规模见 
 """
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, Tuple
+from typing import Dict, FrozenSet, Tuple, cast
 
 # ---------------------------------------------------------------- 规模事实
 SCALE: Dict[str, object] = {
@@ -262,7 +262,7 @@ def normalize_key_spec(raw: str) -> str:
     strokes = raw.split()
     if not strokes:
         return normalize_key_stroke(raw)
-    if len(strokes) > LAYOUT_CONSTANTS["MAX_KEY_CHORD_STROKES"]:
+    if len(strokes) > cast(int, LAYOUT_CONSTANTS["MAX_KEY_CHORD_STROKES"]):
         raise KeySpecError(
             f"非法键位 `{raw}`：和弦最多 2 击（如 `ctrl-x ctrl-s`）。")
     if strokes[0].lower() == "leader":
@@ -278,7 +278,7 @@ def spec_identity(raw: str) -> str:
     return normalize_key_spec(raw)
 
 
-def layout(name: str):
+def layout(name: str) -> object:
     """取布局常量（供 Tuan 渲染层使用，避免硬编码漂移）。"""
     try:
         return LAYOUT_CONSTANTS[name]

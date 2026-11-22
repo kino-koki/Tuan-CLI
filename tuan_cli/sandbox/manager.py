@@ -379,13 +379,14 @@ class SandboxManager:
         if claim.strict and not decision.allowed:
             verdict.action = Action.DENY
             verdict.reason = f"egress_allowlist: {decision.reason}"
-            verdict.blocks = True
+            # blocks 是只读派生属性 (= action==DENY), 上行已置 DENY, 无需也
+            # 不能再赋值 (旧代码 setattr 会在此路径抛 AttributeError, 已修)。
             verdict.severity = "critical"
         return verdict
 
     # ------------------------------------------------------------ 隔离执行
     def should_isolate(self, verdict: Verdict) -> bool:
-        return verdict.isolate
+        return bool(verdict.isolate)
 
     def execute_isolated(self, command: str, verdict: Verdict, ctx: Any,
                          timeout: float = 60.0) -> SandboxExecResult:

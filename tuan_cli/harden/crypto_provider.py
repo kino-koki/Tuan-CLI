@@ -170,7 +170,8 @@ class SoftwareProvider(CryptoProvider):
             kdf = PBKDF2HMAC(
                 algorithm=_crypto_hashes.SHA256(), length=32, salt=salt, iterations=iterations,
             )
-            return kdf.derive(passphrase.encode())  # cryptography stubs 未标注
+            derived: bytes = kdf.derive(passphrase.encode())  # cryptography stubs 未标注
+            return derived
         return hashlib.pbkdf2_hmac("sha256", passphrase.encode(), salt, iterations)
 
     # ---------- seal / open ----------
@@ -214,7 +215,8 @@ class SoftwareProvider(CryptoProvider):
                 raise ValueError("密文为 aes-gcm 但 cryptography 未安装, 无法解密")
             key = self._derive(passphrase, salt, iterations)
             try:
-                return AESGCM(key).decrypt(iv, ct, None)  # cryptography stubs 未标注
+                plain: bytes = AESGCM(key).decrypt(iv, ct, None)  # cryptography stubs 未标注
+                return plain
             except Exception as exc:  # noqa: BLE001
                 raise ValueError("AES-GCM 认证失败: 密码错误或密文被篡改") from exc
         # CTR+HMAC 路径
@@ -258,7 +260,8 @@ class SoftwareProvider(CryptoProvider):
             nonce = blob[:12]
             ct = blob[12:]
             try:
-                return AESGCM(aes_key).decrypt(nonce, ct, None)  # cryptography stubs 未标注
+                decrypted: bytes = AESGCM(aes_key).decrypt(nonce, ct, None)  # cryptography stubs 未标注
+                return decrypted
             except Exception as exc:  # 非新格式 (12B nonce + AES-GCM) → 回退旧 CTR+HMAC blob
                 log.debug("安全路径 fallback 降级: %s", exc)
                 return _audit_decrypt(blob, key)

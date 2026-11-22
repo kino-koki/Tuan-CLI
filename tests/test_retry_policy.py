@@ -72,7 +72,7 @@ def test_call_raises_after_exhaustion():
     def fn():
         raise RuntimeError("always")
 
-    with pytest.raises(RuntimeError, match="已重试 2 次"):
+    with pytest.raises(RuntimeError, match="共尝试 2 次"):
         p.call(fn)
 
 

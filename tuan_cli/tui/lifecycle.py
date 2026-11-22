@@ -29,7 +29,9 @@ class LifecycleMixin:
     _slogan_lock: Any
     _slogan_log: Any
     _slogan_owner: Any
-    _slogan_sealed: Tuple[Dict[str, Any], ...]
+    # close() 封存的是 mapping.take_owner_log 的 SloganDecision 快照，
+    # 与 _release_slogan_owner 的 dict 行共存 —— 元素类型按 Any 声明
+    _slogan_sealed: Tuple[Any, ...]
     _streaming: Any
 
     def close(self) -> None:

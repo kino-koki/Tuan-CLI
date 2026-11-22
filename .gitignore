@@ -115,6 +115,13 @@ logs/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ===== 历史遗留空目录 (构建产物 / 临时截图 / 本地技能草稿) =====
+# 根目录这三者均为空壳, 历史上短暂被填充; 显式忽略, 避免误把产物 add 进版本库。
+/screenshots
+/.screenshots
+/x
+/skills
 .vscode/
 .idea/
 .vs/

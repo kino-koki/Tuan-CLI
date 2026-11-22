@@ -268,8 +268,12 @@ def probe_async_question_reply() -> dict:
     chk(a.register("q3", "取消?", created_at=0.0), "q3 登记失败")
     chk(a.cancel("q3"), "取消失败")
     chk(not a.reply("q3", "x", now=1.0), "取消后回复被放行")
-    chk(not a.reply("q1", 123), "非字符串答案未拒绝")
-    chk(AsyncQuestionReply(ttl_secs="10")._ttl == 30.0, "脏 ttl 未回落")
+    # 故意传非字符串答案，验证运行时类型守卫
+    chk(not a.reply("q1", 123),  # type: ignore[arg-type]
+        "非字符串答案未拒绝")
+    # 故意传字符串 ttl，验证回落到默认 30.0 的守卫
+    chk(AsyncQuestionReply(ttl_secs="10")._ttl == 30.0,  # type: ignore[arg-type]
+        "脏 ttl 未回落")
     return {"ok": not p, "checks": n, "evidence":
             "AsyncQuestionReply: 登记/超时/取消/重复/不覆盖/绝不代答/脏时钟",
             "problems": p}
@@ -364,16 +368,17 @@ def probe_exec_command() -> dict:
     r2 = run_bounded(cmd, lambda argv, t: "x" * 9000)
     chk(r2["truncated"] and len(r2["output"]) == 4096, "输出上限失效")
 
-    def slow(argv, t):
+    def slow(argv: Any, t: Any) -> None:
         raise TimeoutError()
     chk(run_bounded(cmd, slow)["reason"] == "timeout", "超时未结构化")
 
-    def boom(argv, t):
+    def boom(argv: Any, t: Any) -> None:
         raise RuntimeError("x")
     chk(run_bounded(cmd, boom)["reason"].startswith("runner:"), "异常未结构化")
     chk(run_bounded(cmd, lambda a, t: "x", timeout_secs=float("inf"))["ok"] is False,
         "脏超时未拒绝")
-    chk(run_bounded("not-typed", lambda a, t: "")["ok"] is False,
+    # 故意传非类型化命令（str），验证 not_typed 运行时守卫
+    chk(run_bounded("not-typed", lambda a, t: "")["ok"] is False,  # type: ignore[arg-type]
         "非类型化命令未拒绝")
     return {"ok": not p, "checks": n, "evidence":
             "ExecCommand: argv 强制/元字符拒绝/无 shell/输出与超时上限/异常结构化",

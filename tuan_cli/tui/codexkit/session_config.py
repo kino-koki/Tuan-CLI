@@ -206,7 +206,8 @@ def probe_clock_format() -> dict:
     chk(c.seconds_since(10.0, 25.0) == 15.0, "正向差值不对")
     chk(c.seconds_since(25.0, 10.0) == 0.0, "倒退差值未钳 0")
     chk(c.seconds_since(float("inf"), 1.0) == 0.0, "脏差值未钳 0")
-    c2 = ClockFormat(utc_offset_minutes="480")
+    # 故意传入脏值（str），验证构造器回落到 0；类型层面按设计放行
+    c2 = ClockFormat(utc_offset_minutes="480")  # type: ignore[arg-type]
     chk(c2.format(0.0).endswith("+00:00"), "脏 offset 未回落")
     return {"ok": not p, "checks": n, "evidence":
             "ClockFormat: 注入/脏值/单调钳制/显式时区/纯函数格式",
@@ -311,7 +312,9 @@ def probe_external_agent_config_migration() -> dict:
         "bool 冒充 int 未拒绝")
     chk(migrate_external_agent_config("not-a-dict").ok is False,
         "非 mapping 未拒绝")
-    chk(fill_template_once(None, {}) == "", "非字符串模板未返回空")
+    # 故意传入非字符串模板，验证返回空串的运行时守卫
+    chk(fill_template_once(None, {}) == "",  # type: ignore[arg-type]
+        "非字符串模板未返回空")
     return {"ok": not p, "checks": n, "evidence":
             "migrate: 单次模板替换 / 未知键留痕 / 类型守卫 / 控制字符拒绝",
             "problems": p}

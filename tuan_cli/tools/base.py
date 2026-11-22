@@ -619,8 +619,17 @@ class ToolRegistry:
                 _snaps = None
         try:
             result = tool.handler(ctx, **args)
-            out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
             elapsed = time.monotonic() - started
+            if isinstance(result, ToolResult):
+                # 工具直接返回结构化结果 (可携带 images 等富通道):
+                # 补全元数据后透传, 不再二次包装/丢字段。
+                if not result.tool_name:
+                    result.tool_name = name
+                if not result.elapsed:
+                    result.elapsed = elapsed
+                out = result.content
+            else:
+                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
             if ledger is not None and _snaps is not None:
                 try:
                     ledger.record(name, targets, _snaps,
@@ -631,7 +640,8 @@ class ToolRegistry:
             if self.cache is not None:
                 if tool.dangerous:
                     self.cache.clear()
-                else:
+                elif not (isinstance(result, ToolResult) and result.images):
+                    # 携带图片的结果不进缓存 (缓存只存文本, 命中会丢图片)
                     self.cache.put(name, arguments_json, out, dangerous=tool.dangerous,
                                    workspace=getattr(ctx, "workspace", "") or "")
             self._emit_exec(ctx, name, "ok", elapsed=elapsed)
@@ -643,6 +653,8 @@ class ToolRegistry:
                 except Exception as exc:
                     log.warning("ToolRegistry._exec_and_record(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
                     pass
+            if isinstance(result, ToolResult):
+                return result
             return ToolResult(status="ok", content=out, tool_name=name, elapsed=elapsed)
         except Exception as exc:  # noqa: BLE001
             elapsed = time.monotonic() - started

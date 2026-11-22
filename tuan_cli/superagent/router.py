@@ -106,7 +106,7 @@ class Router:
         content = (text or "").strip()
         if not content:
             return
-        entry = {
+        entry: Dict[str, Any] = {
             "role": "user",
             "content": content[:500],
             "sender": sender or "你",
@@ -190,8 +190,8 @@ class Router:
             return EventStatus.ASSESSED if decision.get("would_accept", False) else EventStatus.IGNORED
 
         # 开单 (明确请求 或 满足 auto/observe 模式的推断候选)
-        ticket = self._dispatch_ticket(trg, decision)
-        if ticket is not None:
+        new_ticket = self._dispatch_ticket(trg, decision)
+        if new_ticket is not None:
             self._dispatch_count += 1
             return EventStatus.ROUTED
 
@@ -519,7 +519,7 @@ class Router:
 
     def ticket_summary(self) -> List[Dict[str, Any]]:
         """工单状态快照 (面板用)。"""
-        out = []
+        out: List[Dict[str, Any]] = []
         for t in self.tickets.values():
             out.append({
                 "ticket_id": t.ticket_id,

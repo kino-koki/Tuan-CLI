@@ -1,6 +1,6 @@
 # Provenance & Auditability Statement
 
-> 中文摘要：本仓库的 git 提交历史并**非"有意隐藏/覆盖"**——真实情况是：早期项目未纳入 Git 版本管理，代码在其他机器上开发，后因该机器损坏导致部分早期记录丢失，之后重建了 Git 历史；**所幸硬盘未损坏**，当前代码完整可审查。git 历史不可考对几乎所有人无影响，不必揪着不放。该日期之前的逐提交演进已不可审计；
+> 中文摘要：本仓库的 git 提交历史并**非"有意隐藏/覆盖"**——真实情况是：早期项目未纳入 Git 版本管理，代码在其他机器上开发，后因该机器损坏导致部分早期记录丢失，之后重建了 Git 历史；**所幸硬盘未损坏**，当前代码完整可审查。该不可审计区间的具体影响在 §5 逐项界定，补强措施见 §6。该日期之前的逐提交演进已不可审计；
 > 工作区至今保留着两个历史 `.git` 备份目录，其中 `.git.broken-20261015` 仍是一个合法仓库，
 > 且含有一段与主线矛盾（版本号倒退）的提交序列。本文只记录可复现的证据、其影响，以及可执行的补强措施。
 
@@ -27,8 +27,13 @@ given; nothing here presents inference as fact.
 > was not under Git version control in its early days; the code was developed on a different
 > machine. That machine later failed, causing some early records to be lost, and the Git history
 > was rebuilt afterwards. **Fortunately the disk was not damaged**, and the current code is fully
-> reviewable. The unverifiable early history has no impact on virtually anyone; we ask readers
-> not to dwell on it.
+> reviewable. **Impact:** per-commit attribution is unavailable before 2026-09-26 and only weakly
+> available afterwards (single-author squashes) — see PROVENANCE.md for the exact scope, the
+> evidence, and the remediation plan.
+
+*(修订 2026-11-20：README 旧版自述末尾「the unverifiable early Git history has no impact on
+virtually anyone; we ask readers not to dwell on it」的倾向性表述已移除，改为上述中性的事实与
+影响说明。本节引用已同步更新。)*
 
 This document does not re-litigate that decision. It records its consequences and the
 concrete gaps it leaves.
@@ -45,6 +50,11 @@ $ git log --all --format='%ad' --date=short | sort -u | sed -n '1p;$p'
 2026-10-24
 ```
 
+> **口径说明 (2026-11-20)：** 上面的 68 是本文审计时点 (2026-10-24) 的全 refs 快照计数。
+> 此后开发仍在继续，GitHub 主分支页面在 2026-11-18 显示 377 commits、CHANGELOG 记录到
+> 2026-11-18 —— 两个数字的统计截止日期不同，不构成矛盾。需要当前数字时请重跑 §7 命令，
+> 不要引用本文的时点计数当作最新值。
+
 **Two author identities, non-contiguous ranges:**
 
 | Author identity | Commits | Date range |
@@ -52,7 +62,9 @@ $ git log --all --format='%ad' --date=short | sort -u | sed -n '1p;$p'
 | `Qingnai-Tech <1736306360@qq.com>` | 31 | 2026-09-26 → 2026-10-06 |
 | `kino-koki <kino-koki@users.no-repo.github.com>` | 37 | 2026-10-17 → 2026-10-24 |
 
-No commits exist between 2026-10-06 and 2026-10-17 — a ten-day gap.
+No commits exist between 2026-10-06 and 2026-10-17 — a ten-day gap. The identity change
+coincides with the 2026-10-17 rebuild boundary documented below (the day the five `init`
+commits cluster); the commit graph itself carries no further evidence about the reason.
 
 ```
 $ git log --all --format='%an <%ae>' | sort | uniq -c
@@ -80,6 +92,10 @@ The rebuild and the archiving of the discarded repository therefore happened in 
 session, which is consistent with the working tree still carrying those directories.
 
 ## 4. Evidence on disk
+
+> **状态更新 (2026-11-20)：** 对当前工作树的文件系统检查确认，`.git.broken-20260926` 与
+> `.git.broken-20261015` 均已**不在**工作树中（remediation 第 5 项已执行）。以下对两个备份
+> 存储的记录保留作为历史证据，描述的是 2026-10-24 审计时点的状态。
 
 Two backup stores sit at the repository root. They are covered by `.gitignore:150`
 (`.git.broken-*/`), so they are not tracked.

@@ -169,7 +169,7 @@ async def _run_base_handler(
                     is_error=True,
                 )
             # 检查类型（简单 str/number/boolean/int）
-            _TYPE_MAP = {"string": str, "number": (int, float), "integer": int, "boolean": bool}
+            _TYPE_MAP: dict[str, Any] = {"string": str, "number": (int, float), "integer": int, "boolean": bool}
             for k, v in filtered.items():
                 expected = props.get(k, {}).get("type")
                 py_type = _TYPE_MAP.get(expected)

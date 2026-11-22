@@ -47,14 +47,16 @@ def extract_json(text: str) -> Optional[Dict[str, Any]]:
     if fence:
         t = fence.group(1).strip()
     try:
-        return json.loads(t)
+        loaded: Dict[str, Any] = json.loads(t)
+        return loaded
     except (ValueError, TypeError):
         pass
     start = t.find("{")
     end = t.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(t[start:end + 1])
+            parsed_tail: Dict[str, Any] = json.loads(t[start:end + 1])
+            return parsed_tail
         except (ValueError, TypeError):
             return None
     return None
@@ -92,7 +94,7 @@ class ModelGateway:
 
     # 阶段 19: 本地模型探测结果缓存 (monotonic 时间戳, provider_id) —— 模块级共享,
     # 避免每次 llm_call 未指定 provider 时都 ping 本地端口 (Ollama/llama.cpp)。
-    _local_probe_cache: Optional[tuple] = None
+    _local_probe_cache: Optional[tuple[float, Optional[str]]] = None
 
     def set_adapter_factory(self, factory: Callable[..., ModelAdapter]) -> None:
         self._adapter_factory = factory
@@ -214,7 +216,7 @@ class ModelGateway:
         也能经 ``llm_call`` 节点直连, 无需磁盘配置。
         """
         if provider_id:
-            ptype: Optional[str] = provider_id
+            ptype: str = provider_id
             model: Optional[str] = None
             if ":" in provider_id:
                 ptype, model = provider_id.split(":", 1)
@@ -291,7 +293,7 @@ class ModelGateway:
     def _supports_json(adapter: ModelAdapter) -> bool:
         caps = getattr(adapter, "capabilities", None)
         if isinstance(caps, ModelCapabilities):
-            return caps.json_mode
+            return bool(caps.json_mode)
         return bool(getattr(caps, "json_mode", True)) if caps else True
 
 

@@ -29,13 +29,13 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, Iterator, List
 
 from . import catalog, evidence
 
 
 @contextmanager
-def _quiet_logger(name: str):
+def _quiet_logger(name: str) -> Iterator[None]:
     """探针故意构造损坏策略/失败 hook；临时静音其告警，避免污染 CLI 输出。"""
     lg = logging.getLogger(name)
     old = lg.level
@@ -242,7 +242,7 @@ def _probe_verifiable_parity() -> ProbeResult:
         if problems:
             return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,
                                f"parity_validate 有问题: {problems[:2]}", checks)
-        s = matrix.summary()
+        s: Dict[str, Any] = matrix.summary()
         checks.append(f"Codex TUI 模块树 {s['total_modules']} 个")
         if s["total_modules"] != 165:
             return ProbeResult(catalog.SUPERIORITY_DIMENSIONS[5], False,

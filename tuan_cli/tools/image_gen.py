@@ -233,7 +233,8 @@ def generate_image(
             base_url = ctx.config("tools.image_gen.stability_base_url")
         except Exception:  # noqa: BLE001
             base_url = None
-        result = _generate_stability(prompt, size, base_url=base_url)
+        # 修复: 旧调用漏传 api_key, size 被当成 api_key → Bearer "1024x1024" 必 401
+        result = _generate_stability(prompt, api_key, size, base_url=base_url)
     else:
         return f"[image_gen] 不支持的后端: {provider} (可选: openai, stability)"
 
@@ -292,7 +293,10 @@ class ImageGenPlugin(Plugin):
     """AI 图片生成工具插件。"""
 
     name = "tools.image_gen"
-    provides = ["image_generate"]
+    # 修复: 旧代码声明 provides=["image_generate"] 但从未 kernel.provide,
+    # 全仓也无任何 require("image_generate") 消费者 —— 属死声明, 改为如实空表。
+    # (image_generate 是工具名, 不是内核服务; 工具经 tool_registry 注册。)
+    provides = []
 
     def __init__(self) -> None:
         super().__init__()

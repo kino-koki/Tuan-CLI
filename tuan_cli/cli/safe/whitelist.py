@@ -102,7 +102,18 @@ def _cmd_whitelist_check(args: Any) -> int:
         from ...ext.safety_engine import is_redline
         from ...core.whitelist import WhitelistManager
         wl = WhitelistManager()
-        entry = wl.matched_entry(command)
+        # WhitelistManager 未暴露 matched_entry(); 用公开 list() + 与
+        # is_whitelisted 一致的匹配规则 (完全匹配 / 前缀匹配) 找回命中条目。
+        cmd_norm = command.strip().lower()
+        entry = None
+        for item in wl.list():
+            pattern = item.get("command", "").strip().lower()
+            if not pattern:
+                continue
+            if (cmd_norm == pattern or cmd_norm.startswith(pattern + " ")
+                    or cmd_norm.startswith(pattern + "\t")):
+                entry = item
+                break
         allowed = entry is not None
         matched = entry["command"] if entry else None
         redline = is_redline(command)

@@ -57,7 +57,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence
 
 import logging
 log = logging.getLogger(__name__)
@@ -310,7 +310,7 @@ class AltScreenGuard:
         self.entered = True
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> bool:
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> Literal[False]:
         try:
             self.tui.leave_alt_screen()
         except Exception as _fb_exc:  # noqa: BLE001 - 异常路径也必须恢复

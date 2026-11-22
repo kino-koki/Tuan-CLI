@@ -462,7 +462,9 @@ def test_safety_score_critical_firewall_lockout():
     from tuan_cli.ext.safety_engine import SafetyEngine
 
     eng = SafetyEngine()
-    for cmd in ["ufw disable", "ufw delete rule 22/tcp", "ufw default deny incoming"]:
+    for cmd in ["ufw disable", "ufw delete rule 22/tcp", "ufw default deny incoming",
+                "iptables -F", "iptables --flush", "nft flush ruleset", "ufw reset",
+                "systemctl disable sshd"]:
         res = eng.score({"command": cmd})
         assert res["risk"] == "critical", f"防火墙锁死漏判: {cmd}"
         assert res["block"] is True, f"防火墙锁死未拦截: {cmd}"
@@ -474,7 +476,8 @@ def test_safety_score_high_docker_kubectl_git_clean():
 
     注: `ufw disable` 已移出本组 —— 它属防火墙锁死类, 判 critical (见
     test_safety_score_critical_firewall_lockout)。`systemctl disable sshd`
-    则从 medium 升为 high (CHANGELOG 0.3.3: 远程访问锁死, 有控制台可恢复故列 high)。
+    与 `iptables -F` 同理已升 critical (P1 审计轮: 服务级防护破坏 = 硬红线,
+    见 safety_redline._P1_NEW_PATTERNS), 不再属 high 组。
     """
     from tuan_cli.ext.safety_engine import SafetyEngine
 
@@ -485,8 +488,6 @@ def test_safety_score_high_docker_kubectl_git_clean():
         "kubectl delete pod mypod",
         "git clean -fd",
         "git checkout -- .",
-        "iptables -F",
-        "systemctl disable sshd",
         "service sshd stop",
     ]
     for cmd in high_cmds:

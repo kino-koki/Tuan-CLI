@@ -85,7 +85,8 @@ class GroupStateStore:
             return None
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data: Dict[str, Any] = json.load(f)
+                return data
         except (json.JSONDecodeError, OSError):
             return None
 

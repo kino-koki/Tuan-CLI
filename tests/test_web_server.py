@@ -135,13 +135,17 @@ def test_frontend_html(server):
 
 def test_asset_css(server):
     css = _get(_url(server, "/assets/tuan-web.css"))
-    assert "--color-accent: #1783ff" in css      # 品牌蓝 (TUI 同色)
-    assert "--radius-composer: 28px" in css      # 输入面板圆角 (圆润化)
-    # Claude 色系: 亮色米色底 / 暗色软灰底
-    assert "--color-sidebar-bg: #efe9db" in css  # 侧栏底色 (亮色)
-    assert "--color-bg: #f6f2e9" in css          # 页面底色 (亮色米色)
-    assert "--color-sidebar-bg: #232321" in css  # 侧栏底色 (暗色)
+    assert "--color-accent: #7A9C22" in css      # 青奈 olive (官网同色)
+    assert "--color-send-bg: #B8D640" in css     # 蜜黄主行动 (lime)
+    assert "--radius-composer: 3px" in css       # 雕版统一 3px 小圆角
+    assert "--radius-full: 3px" in css           # 禁药丸
+    # 青奈色系: 亮色暖纸底 / 暗色暖黑底
+    assert "--color-bg: #FCFCFA" in css          # 页面底色 (亮色 paper)
+    assert "--color-sidebar-bg: #F6F6F1" in css  # 侧栏底色 (亮色 panel-2)
+    assert "--color-sidebar-bg: #14140F" in css  # 侧栏底色 (暗色暖黑)
     assert "--p-sidebar-w: 264px" in css         # 侧栏宽度
+    # 字体三骨架 (Georgia + 苹方/雅黑 · IBM Plex Mono)
+    assert "Georgia" in css and "IBM Plex Mono" in css
     # 深色主题覆盖齐全
     assert '[data-color-scheme="dark"]' in css
     assert "@media (prefers-color-scheme: dark)" in css  # system 模式

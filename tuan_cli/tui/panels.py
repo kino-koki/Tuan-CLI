@@ -67,6 +67,22 @@ class PanelsMixin:
             self._diff_visible = not self._diff_visible
             if self._diff_visible:
                 self._diff_fetched_at = 0.0        # 立刻刷新一次
+                # 与任务清单执行面板互斥: 同一右侧栏位只展开一个, 避免互相挤压
+                self._todo_visible = False
+            if self._app and self._app.is_running:
+                self._app.invalidate()
+
+    def toggle_todo(self) -> None:
+            """F3 开合右侧任务清单执行面板 (Agent todo 进度只读展示)。
+
+            数据源与 todo_write/todo_list 工具同一份持久化文件
+            (<workspace>/.tuan/todo.json), Agent 每次更新清单面板即同步。
+            """
+            self._todo_visible = not getattr(self, "_todo_visible", False)
+            if self._todo_visible:
+                self._todo_fetched_at = 0.0        # 立刻刷新一次
+                # 与 diff 面板互斥 (同一右侧栏位)
+                self._diff_visible = False
             if self._app and self._app.is_running:
                 self._app.invalidate()
 

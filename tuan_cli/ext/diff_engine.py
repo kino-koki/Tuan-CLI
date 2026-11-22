@@ -137,7 +137,7 @@ class DiffEngine:
 
             return {"result": "".join(result), "applied": True}
         except Exception as e:
-            log.debug("DiffEngine.patch(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
+            log.debug("DiffEngine.patch(): 非致命异常已忽略(设计内降级, 不改控制流): %s", e)
             return {"result": source, "applied": False, "error": str(e)}
 
     def merge3(self, params: Any) -> Any:

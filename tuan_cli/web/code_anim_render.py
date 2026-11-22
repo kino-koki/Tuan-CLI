@@ -578,10 +578,10 @@ def _render_code_node(draw: Any, node: Dict[str, Any], t: float,
 def _text_width(font: Any, text: str) -> float:
     """测量文本宽度 (兼容不同 PIL)。"""
     try:
-        return font.getlength(text)
+        return float(font.getlength(text))
     except Exception:  # noqa: BLE001
         try:
-            return font.getsize(text)[0]
+            return float(font.getsize(text)[0])
         except Exception:  # noqa: BLE001
             return len(text) * 8.0
 
@@ -1207,7 +1207,7 @@ def _shape_vertices(name: str, size: float, n: int) -> List[Tuple[float, float]]
                           size * (c[1] + (nxt[1] - c[1]) * frac)))
         return verts
     if name == "triangle":
-        angs = [90, 210, 330]
+        angs: List[float] = [90, 210, 330]
     elif name == "hex":
         angs = [0, 60, 120, 180, 240, 300]
     elif name == "star":
@@ -1226,12 +1226,12 @@ def _shape_vertices(name: str, size: float, n: int) -> List[Tuple[float, float]]
         if name in ("triangle", "hex"):
             # 多边形: 顶点落在对应角, 其余点在边间 (插值到最近角之间的边)
             k = len(angs)
-            seg = n / k
-            idx = min(k - 1, int(i / seg))
-            nxt = (idx + 1) % k
-            frac = (i % seg) / max(1, seg)
+            segf = n / k
+            idx = min(k - 1, int(i / segf))
+            nxt_i = (idx + 1) % k
+            frac = (i % segf) / max(1, segf)
             a0 = _m.radians(angs[idx])
-            a1 = _m.radians(angs[nxt])
+            a1 = _m.radians(angs[nxt_i])
             ang = a0 + (a1 - a0) * frac
             verts.append((size * _m.cos(ang), size * _m.sin(ang)))
         else:
@@ -1683,7 +1683,8 @@ def _probe_encoder(ffmpeg: str) -> Optional[str]:
         proc = subprocess.Popen([ffmpeg, "-hide_banner", "-encoders"],
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 shell=False)
-        out = (proc.stdout.read() or b"").decode("utf-8", "replace")
+        stdout = proc.stdout
+        out = ((stdout.read() if stdout is not None else b"") or b"").decode("utf-8", "replace")
         proc.wait()
     except OSError:
         return None
@@ -1870,7 +1871,7 @@ def _mix_audio_tracks(ffmpeg: str, project_json: Dict[str, Any],
         return {"mixed": False, "tracks": 0}
     root = Path(workspace).resolve() if workspace else None
     # 逐条解析
-    resolved = []
+    resolved: List[Dict[str, Any]] = []
     for tr in tracks:
         if not isinstance(tr, dict):
             raise RuntimeError("audio 轨道必须是对象 (fail-closed)")
@@ -1894,16 +1895,16 @@ def _mix_audio_tracks(ffmpeg: str, project_json: Dict[str, Any],
         })
     tmp = video_path + ".audiotmp.mp4"
     argv = [ffmpeg, "-y", "-i", video_path]
-    for tr in resolved:
-        argv += ["-i", tr["path"]]
+    for rtr in resolved:
+        argv += ["-i", rtr["path"]]
     n = len(resolved)
     # 每个音频输入: 循环→延迟→音量
     filters = []
     for i in range(n):
-        tr = resolved[i]
-        pre = "aloop=loop=-1:size=2e9,atrim=duration=%.3f," % max(0.1, duration) if tr["loop"] else ""
-        filters.append(f"[{i+1}:a]{pre}adelay={int(tr['start']*1000)}|{int(tr['start']*1000)},"
-                       f"volume={tr['volume']:.4f}[a{i}]")
+        rtr = resolved[i]
+        pre = "aloop=loop=-1:size=2e9,atrim=duration=%.3f," % max(0.1, duration) if rtr["loop"] else ""
+        filters.append(f"[{i+1}:a]{pre}adelay={int(rtr['start']*1000)}|{int(rtr['start']*1000)},"
+                       f"volume={rtr['volume']:.4f}[a{i}]")
     # 合并
     amix_inputs = "".join(f"[a{i}]" for i in range(n))
     filters.append(f"{amix_inputs}amix=inputs={n}:duration=longest:dropout_transition=0"

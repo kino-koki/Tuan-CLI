@@ -25,7 +25,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
 <title>TUAN · Web Workbench</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231783FF'/%3E%3Ctext x='32' y='44' font-family='Arial,sans-serif' font-size='30' font-weight='bold' fill='%23FFFFFF' text-anchor='middle'%3ET%3C/text%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='3' fill='%237A9C22'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='30' font-weight='bold' fill='%23FCFCFA' text-anchor='middle'%3ET%3C/text%3E%3C/svg%3E">
 <script>
 /* 预涂 color-scheme, 避免首屏闪烁; 顺带从旧键 kimi-web.color-scheme 迁移一次 */
 (function(){try{
@@ -40,7 +40,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 <link rel="stylesheet" href="/assets/tuan-web.css">
 <style>
   /* =================================================================
-     TUAN 工作台骨架 —— 全部引用官方 Kimi 设计系统变量, 深浅自动适配
+     TUAN 工作台骨架 —— 全部引用青奈设计系统令牌 (官网同款暖纸底/深青柠),
+     深浅自动适配; 令牌真源在 assets/tuan-web.css
      ================================================================= */
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:100%;height:100%}
@@ -55,7 +56,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   ::-webkit-scrollbar-thumb:hover{background:var(--color-text-muted)}
   ::-webkit-scrollbar-track{background:transparent}
 
-  /* ===== 左栏 (官方: --color-sidebar-bg / --p-sidebar-w 264px) ===== */
+  /* ===== 左栏 (青奈: --color-sidebar-bg panel-2 / --p-sidebar-w 264px) ===== */
   #sidebar{width:var(--p-sidebar-w);min-width:var(--p-sidebar-w);background:var(--color-sidebar-bg);
            border-right:var(--p-hairline) solid var(--color-line);
            display:flex;flex-direction:column;position:relative}
@@ -466,24 +467,24 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
           padding:2px var(--space-2);cursor:pointer;font-family:var(--font-ui);transition:all var(--duration-base) var(--ease-out)}
   .code-block>.code-head .code-copy:hover{color:var(--color-accent);border-color:var(--color-accent)}
   .code-block>.md pre{border-radius:0 0 var(--radius-md) var(--radius-md);margin:0}
-  /* 语法高亮 token (TUI 蓝调; 浅色主题用下方规则覆盖) */
-  .tk-c{color:#8c8475;font-style:italic}
-  .tk-s{color:#7fbf95}
-  .tk-n{color:#79c0ff}
-  .tk-k{color:#c89fe0}
-  .tk-b{color:#79c0ff}
-  .tk-f{color:#7fa8e0}
-  .tk-o{color:#79c0ff}
-  :root[data-color-scheme="light"] .md pre{background:var(--color-code-bg,#f6f8fa)}
-  :root[data-color-scheme="light"] .code-block>.code-head{background:var(--color-code-bg,#f6f8fa);border-color:var(--color-line)}
-  :root[data-color-scheme="light"] .md pre code{color:var(--color-code,#24292f)}
-  :root[data-color-scheme="light"] .tk-c{color:#998f7e}
-  :root[data-color-scheme="light"] .tk-s{color:#3f7d5a}
-  :root[data-color-scheme="light"] .tk-n{color:#0550ae}
-  :root[data-color-scheme="light"] .tk-k{color:#9b5fb0}
-  :root[data-color-scheme="light"] .tk-b{color:#0550ae}
-  :root[data-color-scheme="light"] .tk-f{color:#3563a8}
-  :root[data-color-scheme="light"] .tk-o{color:#0550ae}
+  /* 语法高亮 token (青奈暖黑底: lime/amber/zhu 调; 浅色主题用下方规则覆盖) */
+  .tk-c{color:#7d7a6e;font-style:italic}
+  .tk-s{color:#b8d640}
+  .tk-n{color:#d6a23e}
+  .tk-k{color:#f0603f}
+  .tk-b{color:#a6c532}
+  .tk-f{color:#d8e4a9}
+  .tk-o{color:#a8a496}
+  :root[data-color-scheme="light"] .md pre{background:var(--color-code-bg,#f0f0e9)}
+  :root[data-color-scheme="light"] .code-block>.code-head{background:var(--color-code-bg,#f0f0e9);border-color:var(--color-line)}
+  :root[data-color-scheme="light"] .md pre code{color:var(--color-code,#16160f)}
+  :root[data-color-scheme="light"] .tk-c{color:#8a8a7d}
+  :root[data-color-scheme="light"] .tk-s{color:#4f6b12}
+  :root[data-color-scheme="light"] .tk-n{color:#b2620a}
+  :root[data-color-scheme="light"] .tk-k{color:#b92a15}
+  :root[data-color-scheme="light"] .tk-b{color:#7a9c22}
+  :root[data-color-scheme="light"] .tk-f{color:#3e5210}
+  :root[data-color-scheme="light"] .tk-o{color:#6a6a5e}
 
   /* ===== 斜杠命令面板 (对标 TUI /cmd 补全) ===== */
   #slash{display:none;position:absolute;left:0;right:0;bottom:calc(100% + var(--space-1));
@@ -879,7 +880,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   .tm-msg { background: var(--color-bg-elev); border: var(--p-hairline) solid var(--color-line);
             border-radius: var(--radius-sm); padding: 10px 12px; }
   .tm-msg-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-  .tm-msg-type { font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  .tm-msg-type { font-size: 10px; padding: 1px 6px; border-radius: var(--radius-xs);
                  background: var(--color-accent); color: #fff; text-transform: uppercase; }
   .tm-msg-key { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text); font-weight: 600; }
   .tm-msg-from { font-size: var(--text-xs); color: var(--color-text-faint); }
@@ -907,7 +908,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   .tg-panel[hidden] { display: none; }
   .tg-head { display: flex; align-items: center; justify-content: space-between; }
   .tg-title { font-weight: 700; font-size: var(--text-md); display: flex; align-items: center; gap: 8px; }
-  .tg-badge { font-size: 10px; padding: 2px 7px; border-radius: 8px;
+  .tg-badge { font-size: 10px; padding: 2px 7px; border-radius: var(--radius-xs);
               background: var(--color-accent); color: #fff; font-weight: 600; }
   .tg-empty { display: flex; flex-direction: column; gap: 12px; }
   .tg-create-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -922,7 +923,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
              padding: 5px 8px; background: var(--color-bg); border: var(--p-hairline) solid var(--color-line);
              border-radius: var(--radius-sm); }
   .tg-item .tg-mono { font-family: var(--font-mono); }
-  .tg-item .tg-role { margin-left: auto; font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  .tg-item .tg-role { margin-left: auto; font-size: 10px; padding: 1px 6px; border-radius: var(--radius-xs);
                       background: var(--color-accent); color: #fff; }
   .tg-item .tg-revoked { color: var(--color-danger); }
   .tg-item button { margin-left: 6px; }
@@ -1301,8 +1302,8 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   /* ---- TUAN 呼吸粒子 (欢迎屏, 替换原 KIMI 标识) ----
      粒子采样 "TUAN" 文字像素, 各自围绕锚点呼吸脉动,
      鼠标靠近时被推开 (斥力), 移开后弹簧回位。
-     颜色取自官方 token: 浅色文字 rgba(0,0,0,.9) / 品牌蓝 #1783ff;
-     深色文字 rgba(255,255,255,.84) / 品牌蓝 #1a88ff。 */
+     颜色取自青奈 token: 浅色文字 ink #16160F / olive #7A9C22;
+     深色文字 暖白 #F4F2E8 / lime #B8D640。 */
   var particle = {raf:null, cv:null, ctx:null, parts:[], mouse:{x:-9999,y:-9999}, run:false};
   function buildParticleTargets(W,H){
     var off=document.createElement('canvas');
@@ -1363,9 +1364,9 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       var w=welcomeEl.clientWidth, h=welcomeEl.clientHeight;
       ctx.clearRect(0,0,w,h);
       var dark=document.documentElement.getAttribute('data-color-scheme')==='dark';
-      /* 主题 token: 浅色 text rgba(0,0,0,.9) + accent #1783ff ; 深色 text rgba(255,255,255,.84) + accent #1a88ff */
-      var base=dark?'255,255,255':'0,0,0';
-      var brand=dark?'26,136,255':'23,131,255';
+      /* 主题 token (青奈): 浅色 ink #16160F + olive #7A9C22 ; 深色 暖白 #F4F2E8 + lime #B8D640 */
+      var base=dark?'244,242,232':'22,22,15';
+      var brand=dark?'184,214,64':'122,156,34';
       var t=performance.now()/1000;
       var mx=particle.mouse.x, my=particle.mouse.y;
       var parts=particle.parts;
@@ -3865,9 +3866,9 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
       mhRenderNodes(); mhRenderInspector();
       mhApi('/api/mh/status').then(function(j){
         if(!j.available){
-          mhSetBanner('MotionHarness 未就绪: '+(j.reason||'未找到 mh')+' — 请安装 mh 或设置 TUAN_MH_HOME / TUAN_MH_NODE', 'err');
+          mhSetBanner('视频渲染未就绪: '+(j.reason||'未找到 ffmpeg')+' — 请安装 ffmpeg 并加入 PATH (或设置 TUAN_FFMPEG)', 'err');
         } else {
-          mhSetBanner('MotionHarness 就绪', 'ok');
+          mhSetBanner('视频渲染就绪 (自研 ffmpeg 渲染)', 'ok');
           mhLoadProjects();
         }
       });

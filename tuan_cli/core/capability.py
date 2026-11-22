@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class CapabilityRegistry:
 
     # ---------------------------------------------------------- 启停/模式
 
-    def iter_callables(self):
+    def iter_callables(self) -> List[Tuple[str, Callable[[Dict[str, Any]], Any]]]:
         """返回有 handler 的能力列表 [(name, handler), ...]，供协调器安全接入。
 
         快照返回 (不持锁迭代)，只暴露可调用入口，不泄漏内部字典结构。
@@ -224,9 +224,9 @@ class CapabilityRegistry:
 _CAPABILITY_ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {}
 
 
-def _register_route(name: str):
+def _register_route(name: str) -> Callable:
     """装饰器: 注册一个能力的内置运行时路由。"""
-    def deco(fn):
+    def deco(fn: Callable[[Dict[str, Any]], Any]) -> Callable[[Dict[str, Any]], Any]:
         _CAPABILITY_ROUTES[name] = fn
         return fn
     return deco
@@ -245,7 +245,7 @@ def _route_team_group(payload: Dict[str, Any]) -> Any:
     """团组状态查询 (只读, 不需要敏感参数)。"""
     from .team_group import load_team_group
     from ..config import home_dir
-    ws = payload.get("workspace") or home_dir()
+    ws = str(payload.get("workspace") or home_dir())
     store = load_team_group(ws)
     return {"group": store.export_public()}
 
@@ -256,7 +256,7 @@ def _route_team_security(payload: Dict[str, Any]) -> Any:
     from .team_group import load_team_group
     from .team_security import load_team_security
     from ..config import home_dir
-    ws = payload.get("workspace") or home_dir()
+    ws = str(payload.get("workspace") or home_dir())
     store = load_team_group(ws)
     if store.group is None:
         raise RuntimeError("团组未创建, 无安全状态可查")
@@ -275,7 +275,7 @@ def _route_team_agents(payload: Dict[str, Any]) -> Any:
     from .team_security import load_team_security
     from .team_agents import TeamAgentCoordinator, WorkerSpec
     from ..config import home_dir
-    ws = payload.get("workspace") or home_dir()
+    ws = str(payload.get("workspace") or home_dir())
     store = load_team_group(ws)
     if store.group is None:
         raise RuntimeError("团组未创建")
@@ -306,7 +306,7 @@ def _route_external_expert_team(payload: Dict[str, Any]) -> Any:
     from .team_lead import make_audited_team_lead
     from .team_group import load_team_group
     from ..config import home_dir
-    ws = payload.get("workspace") or home_dir()
+    ws = str(payload.get("workspace") or home_dir())
     store = None
     try:
         s = load_team_group(ws)

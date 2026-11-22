@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Dict
 
 from ..i18n import t
@@ -80,6 +81,7 @@ _HELP = """
 ── 专家层 (Expert, 折叠; 输入 /<首字母> 前缀或 /help 可查全部) ──
   [...]/add-dir   把工作区外目录纳入本会话可读上下文 ( /add-dir <路径>; 无参列出 )
   [...]/agents    会话/Agent 管理面板 ( /agents [view|watch|kill <id>]; 同 tuan agents )
+  [...]/approvals 审批三档切换 (Codex 同款): read-only / auto / full-access
   [...]/audit     审计报告 (统计/查看/导出合规报告)
   [...]/blast     Blast Radius 交互式可视化 (影响半径/安全风险/工具统计)
   [...]/budget    查看/设置成本预算上限 ( /budget <USD> )
@@ -104,6 +106,7 @@ _HELP = """
   [...]/personality 人设管理 ( /personality [list|show|set <人设名>|auto] )
   [...]/provider  查看/设置/清除 API Key 与供应商 ( /provider set <ENV> <KEY> · /provider clear [ENV] )
   [...]/quit      退出
+  [...]/reach     多平台联网读取能力层 (/reach <URL> | /reach doctor | /reach channels)
   [...]/resume    恢复历史会话 (编号/会话id/latest)
   [...]/session   会话管理 (无参列出; /session <编号|会话id|latest> 恢复)
   [...]/route     智能模型路由建议 (咨询式, 输入 /route <任务>)
@@ -114,6 +117,7 @@ _HELP = """
   [...]/superagent  Super-Agent: DeepSeek 双层架构 (start/stop/status/panel/ingest/speculate)
   [...]/swarm     多 Agent 协作 (强模型规划 -> 弱模型并发执行 -> 强模型验收)
   [...]/verify    编码验证闭环 (自动跑 test/typecheck/lint, 失败自修复)
+  [...]/watch     观看视频: 字幕优先转写 + 档位抽帧 (/watch <路径|URL> [问题] [--detail 档位])
   [...]/worktree  git worktree 并行实验 ( create/list/remove/switch )
   [...]/workflow  动态并行工作流管理 ( list/status <wf>/result <wf>/cancel <wf>/retry <wf> )
   [...]/workflow-authoring  工作流编排模式 ( /workflow-authoring <主题>; /workflow authoring 别名 )
@@ -162,6 +166,7 @@ SLASH_COMMAND_NAMES: tuple = (
     "/status", "/subagent", "/superagent", "/swarm", "/tasks", "/theme", "/tools", "/undo", "/usage", "/verify",
     "/rewind", "/handoff", "/worktree",
     "/web", "/workflow", "/workflow-authoring", "/deep-research", "/code",
+    "/watch", "/reach", "/approvals",
     "/personality",
     "/batch", "/dataviz", "/design", "/artifacts",
     "/language",
@@ -229,6 +234,9 @@ _CMD_META: Dict[str, str] = {
     "/session": "会话管理 (无参列出; /session <编号|会话id|latest> 恢复)",
     "/checkpoint": "会话检查点 (save/restore/list)",
     "/web": "启动本地 Web 工作台 (无参数) 或快捷联网",
+    "/watch": "观看视频: 字幕优先转写 + 档位抽帧 (/watch <路径|URL> [问题] [--detail 档位])",
+    "/reach": "多平台联网读取能力层 (/reach <URL> | /reach doctor | /reach channels)",
+    "/approvals": "审批三档切换 (Codex 同款): read-only / auto / full-access",
     "/code": "代码感知问答: 检索工作区后带上下文执行",
     "/commands": "热插拔命令管理: list/reload/enable/disable",
     "/verify": "编码验证闭环 (test/typecheck/lint 失败自修复)",
@@ -587,6 +595,129 @@ def _launch_web_workbench(agent: Any) -> None:
         ui.error(f"Web 工作台启动失败: {exc}")
 
 
+def _cmd_watch(agent: Any, arg: str) -> None:
+    """/watch <路径|URL> [问题] [--detail transcript|swift|balanced|deep]
+    [--start 秒] [--end 秒] [--no-dedup] — 观看视频 (tuan-watch 能力)。"""
+    if not arg.strip():
+        ui.info("用法: /watch <视频路径或URL> [问题] [--detail transcript|swift|balanced|deep]"
+                " [--start 秒] [--end 秒] [--no-dedup]")
+        ui.info("  示例: /watch demo.mp4 重点讲了什么   ·   /watch https://youtu.be/xxx --detail transcript")
+        return
+    from ..videowatch import summarize, watch_video
+
+    # 轻量参数解析: 位置参数 = 源 + 可选问题; --flag 走选项
+    tokens = arg.strip().split()
+    flags: dict = {}
+    positional: list = []
+    i = 0
+    while i < len(tokens):
+        t = tokens[i]
+        if t == "--detail" and i + 1 < len(tokens):
+            flags["detail"] = tokens[i + 1]
+            i += 2
+        elif t == "--start" and i + 1 < len(tokens):
+            flags["start"] = float(tokens[i + 1])
+            i += 2
+        elif t == "--end" and i + 1 < len(tokens):
+            flags["end"] = float(tokens[i + 1])
+            i += 2
+        elif t == "--no-dedup":
+            flags["no_dedup"] = True
+            i += 1
+        else:
+            positional.append(t)
+            i += 1
+    if not positional:
+        ui.error("缺少视频源 (路径或 URL)")
+        return
+    source = positional[0]
+    question = " ".join(positional[1:]) if len(positional) > 1 else ""
+    ws = getattr(getattr(agent, "ctx", None), "workspace", "") or "."
+    ui.info(f"[tuan-watch] 正在观看: {source}")
+    try:
+        result = watch_video(source, workspace=ws, question=question or None, **flags)
+        ui.answer_md(summarize(result))
+    except ValueError as exc:
+        ui.error(f"观看失败: {exc}")
+    except Exception as exc:  # noqa: BLE001 - 工具层契约: 不炸 Agent 循环
+        ui.error(f"观看异常: {type(exc).__name__}: {exc}")
+
+
+def _cmd_reach(agent: Any, arg: str) -> None:
+    """/reach <URL> | /reach doctor | /reach channels — 多平台联网读取 (tuan-reach 能力层)。"""
+    from ..reach import doctor as _doctor
+    from ..reach import fetch as _fetch
+    from ..reach import list_channels as _channels
+    from ..reach import render as _render
+
+    sub = arg.strip()
+    if not sub:
+        ui.info("用法: /reach <URL>  读取目标 (自动路由 GitHub/YouTube/B站/RSS/网页)")
+        ui.info("     /reach doctor    全频道健康自检")
+        ui.info("     /reach channels  列出频道与后端回退链")
+        return
+    if sub.lower() == "doctor":
+        ui.info(_render(_doctor()))
+        return
+    if sub.lower() == "channels":
+        for c in _channels():
+            ui.info(f"  {c['name']:10} {c['description']}  [{' -> '.join(c['backends'])}]")
+        return
+    ui.info(f"[tuan-reach] 读取: {sub}")
+    res = _fetch(sub)
+    if res.ok:
+        ui.answer_md(res.summary())
+    else:
+        ui.error(res.summary())
+
+
+def _cmd_approvals(agent: Any, arg: str) -> None:
+    """/approvals [read-only|auto|full-access] — Codex 同款审批三档切换。
+
+    会话级生效, 映射到内部闸门:
+      read-only    → Plan 只读 (修改类工具拦截)
+      auto         → 标准: 写操作按风险分级确认 (默认)
+      full-access  → YOLO: 危险操作自动批准 (红线工具仍强制确认)
+    """
+    plan = bool(getattr(agent, "plan_mode", False))
+    yolo = bool(getattr(agent, "yolo", False))
+    current = "read-only" if plan else ("full-access" if yolo else "auto")
+
+    arg_l = arg.strip().lower()
+    aliases = {"readonly": "read-only", "ro": "read-only",
+               "标准": "auto", "自动": "auto",
+               "完全": "full-access", "全部": "full-access", "fa": "full-access",
+               "只读": "read-only"}
+    target = aliases.get(arg_l, arg_l)
+
+    if not target:
+        ui.info(f"  当前审批档: {current}")
+        ui.info("  可选: /approvals read-only   只读分析 (修改类工具拦截)")
+        ui.info("        /approvals auto        标准确认 (默认; 按风险分级确认)")
+        ui.info("        /approvals full-access 全自动批准 (YOLO; 红线工具仍强制确认)")
+        return
+
+    def _sync(p: bool, y: bool) -> None:
+        # agent 与 ctx 双写: 工具执行器读 ctx.yolo / ctx.plan_mode,
+        # TUI/审计读 agent.yolo / agent.plan_mode, 两侧必须一致。
+        agent.plan_mode = p
+        agent.yolo = y
+        agent.ctx.plan_mode = p
+        agent.ctx.yolo = y
+
+    if target == "read-only":
+        _sync(True, False)
+        ui.success("审批档 → read-only: 只读分析, 修改类工具将被拦截。")
+    elif target == "auto":
+        _sync(False, False)
+        ui.success("审批档 → auto: 写操作按风险分级确认 (标准档)。")
+    elif target in ("full-access", "fullaccess"):
+        _sync(False, True)
+        ui.success("审批档 → full-access: 危险操作自动批准 (YOLO; 红线工具仍强制确认)。")
+    else:
+        ui.error(f"未知审批档: {arg.strip()!r} (可选 read-only / auto / full-access)")
+
+
 def _cmd_code(agent: Any, arg: str, config: Any, workspace: str) -> None:
     """/code <任务> — 代码感知问答: ContextForge 检索工作区后带上下文执行。"""
     from ..codedev import CodeDevEngine
@@ -790,14 +921,14 @@ def _cmd_teamlead(agent: Any, arg: str) -> None:
     if sub in ("status", "discover"):
         infos = _run(lead.discover())
         from ..agents.discovery import summarize
-        s = summarize(infos)
-        ui.info(f"[专家团] 本机外部 Agent ({s['line']}, {s['verified']} 校验通过)")
+        summary = summarize(infos)
+        ui.info(f"[专家团] 本机外部 Agent ({summary['line']}, {summary['verified']} 校验通过)")
         for i in infos:
             mark = "●" if i.healthy else "○"
             ver = f" v{i.version}" if i.version else ""
             reason = f" ({i.reason})" if (i.reason and not i.healthy) else ""
             ui.info(f"  {mark} {i.name} [{i.id}]{ver}{reason}")
-        if s["online"] == 0:
+        if summary["online"] == 0:
             ui.info("  未检测到外部 agent。请安装 claude / codex / gemini /"
                     " aider / qwen-code / doubao / hermes / dsh / kimi-code 之一。")
         return
@@ -806,7 +937,7 @@ def _cmd_teamlead(agent: Any, arg: str) -> None:
         _run(lead.discover())
         plan = lead.plan()
         ui.info("[专家团] 分配计划")
-        for r in lead.roles:
+        for r in lead.lead.roles:
             agent_id = plan.get(r.key)
             shown = agent_id if agent_id else "缺位"
             ui.info(f"  {r.title} ({r.key}) -> {shown}  偏好: {', '.join(r.preferred) or '-'}")
@@ -846,9 +977,13 @@ def _cmd_workflow(agent: Any, arg: str) -> None:
     from ..config import home_dir
 
     eng = get_engine(home_dir())
+    # getattr 默认 None 会推出 Any | None, 与 configure 的具体参数类型不兼容;
+    # 先落到 Any 变量再传参, 语义不变。
+    kernel_arg: Any = getattr(agent, "kernel", None)
+    config_arg: Any = agent.config if hasattr(agent, "config") else None
     eng.configure(
-        kernel=getattr(agent, "kernel", None),  # type: ignore[arg-type]
-        config=agent.config if hasattr(agent, "config") else None,  # type: ignore[arg-type]
+        kernel=kernel_arg,
+        config=config_arg,
         workspace=getattr(getattr(agent, "ctx", None), "workspace", "") or "",
         main_agent=agent,
     )
@@ -1057,7 +1192,8 @@ def _cmd_personality(agent: Any, config: Any, arg: str) -> None:
 
 def _detect_project_type(workspace: str) -> str:
     from ..core.verify_loop import detect_project_type
-    return detect_project_type(workspace)
+    project_type: str = detect_project_type(workspace)
+    return project_type
 
 
 def _cmd_log(agent: Any, arg: str) -> None:
@@ -1499,6 +1635,12 @@ def _handle_slash(cmd: str, agent: Any, config: Any, workspace: str) -> bool:
         _cmd_add_dir(agent, arg)
     elif head == "/web":
         _cmd_web(agent, arg)
+    elif head == "/watch":
+        _cmd_watch(agent, arg)
+    elif head == "/reach":
+        _cmd_reach(agent, arg)
+    elif head == "/approvals":
+        _cmd_approvals(agent, arg)
     elif head == "/commands":
         _cmd_commands(agent, arg, config, workspace)
     elif head == "/code":

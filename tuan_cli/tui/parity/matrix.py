@@ -256,7 +256,8 @@ def gaps(limit: int = 0) -> List[Tuple[str, str]]:
             if m in pending:
                 out.append((group, m))
     seen = set()
-    uniq = [(g, m) for g, m in out if not (m in seen or seen.add(m))]
+    # 惯用去重写法：seen.add 仅作短路副作用（返回 None），不改写以免行为漂移
+    uniq = [(g, m) for g, m in out if not (m in seen or seen.add(m))]  # type: ignore[func-returns-value]
     return uniq[:limit] if limit else uniq
 
 

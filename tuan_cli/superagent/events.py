@@ -165,7 +165,7 @@ class EventBus:
             self._notify(trg, EventStatus.IGNORED)
             return EventStatus.IGNORED
         try:
-            status = router.on_event(trg)
+            status: EventStatus = router.on_event(trg)
         except Exception:  # noqa: BLE001
             log.exception("router.on_event failed")
             status = EventStatus.IGNORED

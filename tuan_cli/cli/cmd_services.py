@@ -10,7 +10,7 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional
 
 from ..config import Config
 from ..memory import MemoryStore
@@ -76,9 +76,9 @@ def _get_plugin_manager(config: Any = None) -> Any:
         except Exception:  # noqa: BLE001
             home = None
     if home is None:
-        from ..paths import get_home  # 保守尝试
+        from ..config import home_dir  # 保守尝试
 
-        home = Path(get_home())  # type: ignore[misc]
+        home = Path(home_dir())
     return PluginManager(Path(home) / "plugins")
 
 
@@ -110,24 +110,24 @@ def cmd_plugin(args: Any) -> int:
 
     if plugin_cmd == "install":
         source = getattr(args, "source", None) or getattr(args, "path", "")
-        name = getattr(args, "name", None)
+        install_name = getattr(args, "name", None)
         if not source:
             console.print("[red]缺少插件源目录路径[/red]")
             return 1
         # --config JSON 字符串 → 校验并持久化 (DSH 原生插件)
-        config = None
+        plugin_config: Optional[Dict[str, Any]] = None
         config_raw = getattr(args, "config", None)
         if config_raw:
             try:
-                config = json.loads(config_raw)
-                if not isinstance(config, dict):
+                plugin_config = json.loads(config_raw)
+                if not isinstance(plugin_config, dict):
                     raise ValueError("config 必须是 JSON 对象")
             except (json.JSONDecodeError, ValueError) as exc:
                 console.print(f"[red]config 解析失败:[/red] {exc}")
                 return 1
         try:
             info = manager.install_from_directory(
-                Path(source).expanduser(), name=name, config=config
+                Path(source).expanduser(), name=install_name, config=plugin_config
             )
         except Exception as exc:  # noqa: BLE001
             console.print(f"[red]安装失败:[/red] {exc}")

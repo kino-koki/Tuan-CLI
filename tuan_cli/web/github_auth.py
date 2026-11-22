@@ -121,9 +121,12 @@ def start_device_flow(config: Optional[Dict[str, str]] = None) -> DeviceAuthoriz
 
 
 def _device_auth_lenient(data: Dict[str, Any]) -> DeviceAuthorization:
-    user_code = data.get("user_code") if isinstance(data.get("user_code"), str) else ""
-    device_code = data.get("device_code") if isinstance(data.get("device_code"), str) else ""
-    verification_uri = data.get("verification_uri") if isinstance(data.get("verification_uri"), str) else ""
+    raw_user_code = data.get("user_code")
+    user_code = raw_user_code if isinstance(raw_user_code, str) else ""
+    raw_device_code = data.get("device_code")
+    device_code = raw_device_code if isinstance(raw_device_code, str) else ""
+    raw_verification_uri = data.get("verification_uri")
+    verification_uri = raw_verification_uri if isinstance(raw_verification_uri, str) else ""
     if not user_code or not device_code:
         raise OAuthError("GitHub 设备授权响应缺少 user_code/device_code")
     raw_expires = data.get("expires_in")
@@ -152,12 +155,14 @@ def _token_from_payload(payload: Dict[str, Any]) -> TokenInfo:
     raw_expires_in = payload.get("expires_in")
     expires_in = int(raw_expires_in) if isinstance(raw_expires_in, (int, float)) else 0
 
+    raw_scope = payload.get("scope")
+    raw_token_type = payload.get("token_type")
     return TokenInfo(
         access_token=access_token,
         refresh_token="",
         expires_at=int(time.time()) + expires_in if expires_in else 0,
-        scope=payload.get("scope") if isinstance(payload.get("scope"), str) else "",
-        token_type=payload.get("token_type") if isinstance(payload.get("token_type"), str) else "bearer",
+        scope=raw_scope if isinstance(raw_scope, str) else "",
+        token_type=raw_token_type if isinstance(raw_token_type, str) else "bearer",
         expires_in=expires_in,
     )
 

@@ -109,10 +109,11 @@ class KernelAcpBridge:
                     return None  # 显式已注销 → stale, 不返回
                 owner = getattr(ctx, "session_owner", None)
                 if owner:
-                    return owner
+                    return str(owner)
         try:
             from ...hooks.triggers import current_session_owner
-            return current_session_owner()
+            ctx_owner: Optional[str] = current_session_owner()
+            return ctx_owner
         except Exception as exc:  # noqa: BLE001 - 取不到 contextvar 就返回 None
             logger.debug("KernelAcpBridge._resolve_owner(): 非致命异常已忽略(设计内降级, 不改控制流): %s", exc)
             return None
@@ -212,6 +213,7 @@ class KernelAcpBridge:
         _o = self._resolve_owner()
         # B3 续轮 VII: owner 已解析 → 按 owner 分桶查表；否则回落实例 hooks。
         # 决策类事件必须显式传 hooks 或 owner（无参 HookTrigger 已禁止）。
+        _trigger: Optional[HookTrigger]
         if _o:
             _trigger = HookTrigger(owner=_o)
         else:

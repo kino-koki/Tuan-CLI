@@ -243,6 +243,9 @@ class GenerateOptions:
     max_completion_tokens: Optional[int] = None
     thinking: Optional[bool] = None
     cache_key: Optional[str] = None  # 部分厂商支持 prompt 缓存键（nvidia 不支持 → 发送前剔除）
+    # 稳定前缀（SOUL + 稳定规范段）。Anthropic provider 用它在 system 块数组中
+    # 打 cache_control:{"type":"ephemeral"} 断点；其它 provider 忽略此字段。
+    cache_stable_prefix: Optional[str] = None
     on_request_start: Optional[Callable[[], None]] = None
     on_request_sent: Optional[Callable[[], None]] = None
     on_stream_end: Optional[Callable[[], None]] = None

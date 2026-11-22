@@ -23,7 +23,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from ..hooks import lifecycle as _LC
 from ..sandbox.worktree_boundary import assert_worktree_target, sanitize_git_env

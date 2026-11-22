@@ -28,7 +28,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from .team_security import TeamGroupSecurity
 
@@ -214,9 +214,10 @@ class TeamAgentCoordinator:
 
     def _authorize(self, w: WorkerSpec) -> Dict[str, Any]:
         """涉供应商 worker 的授权前置 (加固版, fail-closed)。"""
-        return self._sec.verify_grant_hardened(
-            self._resolve_grant_id(w), w.provider, model=w.model, nonce=w.nonce,
+        verdict: Dict[str, Any] = self._sec.verify_grant_hardened(
+            self._resolve_grant_id(w), cast(str, w.provider), model=w.model, nonce=w.nonce,
         )
+        return verdict
 
     def _resolve_grant_id(self, w: WorkerSpec) -> str:
         """从 worker 解析出要验证的 grant_id (meta.grant_id 优先)。"""
@@ -275,10 +276,10 @@ def load_team_coordinator(
     if capability_registry is not None:
         try:
             for name, handler in capability_registry.iter_callables():
-                coord.register_executor(
-                    name, lambda spec, ctx, _h=handler: _h(
-                        {"prompt": spec.prompt, "meta": spec.meta, "ctx": ctx}),
-                )
+                def _exec(spec: WorkerSpec, ctx: Dict[str, Any],
+                          _h: Any = handler) -> Any:
+                    return _h({"prompt": spec.prompt, "meta": spec.meta, "ctx": ctx})
+                coord.register_executor(name, _exec)
         except Exception as exc:  # noqa: BLE001
             log.debug("从能力注册表接入执行器失败 (不阻断): %s", exc)
     return coord

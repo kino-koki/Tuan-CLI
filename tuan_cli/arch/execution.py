@@ -369,7 +369,7 @@ class ToolPipeline:
         self.post_stages.append(fn)
 
     @property
-    def schema_resolver(self):
+    def schema_resolver(self) -> Optional[Callable[[str], Optional[Dict[str, Any]]]]:
         return self._schema_resolver
 
     def run(self, call: ToolCall, ctx: LoopContext) -> ToolOutcome:

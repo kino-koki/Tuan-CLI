@@ -308,7 +308,51 @@ ModelRouter.decide(task, difficulty, available_providers)
 
 ---
 
-## 7. 扩展点（贡献指南）
+## 7. 能力层（0.5.0）：视频观看 · 多平台读取 · 审批三档 · TUI 执行面板
+
+v0.5.0 在五大子系统之上加了一条**纯能力层**：不触碰 Kernel / Loop / Security 的判定口径，
+只把「外部世界的内容」变成 Agent 可消费的结构化输入，并把「人机协作节奏」显式化。
+
+### 7.1 `videowatch/` — 看视频（字幕优先 + 抽帧）
+- 文件：`videowatch/probe.py`（探测容器/时长/音轨）、`videowatch/frames.py`（按档位抽帧）、
+  `videowatch/transcript.py`（字幕优先：内嵌字幕 → 外挂 `.srt/.vtt` → ASR 兜底）、
+  `videowatch/watch.py`（编排：转写 + 抽帧 + 定位问题所在时间轴）。
+- 设计口径：**字幕优先、抽帧补充**。能拿到文字绝不靠看帧猜；抽帧只是给「转写没覆盖的段落」
+  提供画面证据，避免把视频问答做成纯图像问答。
+- 工具入口：`tools/video_watch_tool.py`；斜杠命令：`/watch <路径|URL> [问题] [--detail 档位]`。
+
+### 7.2 `reach/` — 多平台联网读取
+- 文件：`reach/channels.py`（渠道实现：网页正文 / 社交平台 / 文档站等按渠道分派）、
+  `reach/registry.py`（渠道注册与能力声明）、`reach/base.py`（渠道基类契约）、
+  `reach/doctor.py`（渠道自检：凭证 / 依赖 / 连通性，对应 `/reach doctor`）。
+- 设计口径：**渠道即插拔 + 能力自声明**。每个渠道声明自己读什么、缺什么前置条件，
+  `doctor` 直接把缺口说清楚，而不是让 Agent 在失败里反复撞墙。
+- 工具入口：`tools/reach_tool.py`；斜杠命令：`/reach <URL>` · `/reach channels` · `/reach doctor`。
+
+### 7.3 `/approvals` — 审批三档
+- 交互范式对齐 Codex CLI：**read-only / auto / full-access** 三档审批口径可会话内切换。
+  档位只改变「哪些操作需要人点头」，**永不改变 Security 的硬红线判定**（硬红线在任何档位下都拦）。
+- 实现位于 TUI 面板与斜杠命令层（`cli/cmd_slash.py` + `tui/panels.py`），审计照常落盘。
+
+### 7.4 TUI F3 执行面板 — Agent 的 todo 进度可见
+- F3 开合右侧「执行清单」面板（与 Ctrl+D diff 面板互斥，共用右栏位）：
+  `_fetch_todos()` 读 `<workspace>/.tuan/todo.json`（与 `tools/todo_tool.py` 同一数据源），
+  失败只降级为错误提示，绝不抛异常打断渲染循环。
+- 面板按 `in_progress → pending → completed` 排序，进行中条目走 `class:accent` 高亮，
+  宽度复用 `_diff_panel_width()`（终端宽 40%，钳制 `[32,64]`），列宽不足时面板整体隐藏。
+
+### 7.5 `/web` 设计语言 — 青奈令牌表
+- `/web` 呼出的 Web 前端设计语言统一收敛到 `web/assets/tuan-web.css` 的 CSS 令牌表
+  （`frontend.py` 里的 `FRONTEND_HTML` 只引用 `var(--*)`，不再自带硬编码取值）：
+  暖纸底 `#FCFCFA`、极细发丝线、mono 大写标签、统一 3px 圆角、olive `#7A9C22` +
+  lime `#B8D640` 青橄榄主行动色、`Georgia + 苹方 + IBM Plex Mono` 字体栈；
+  三主题（light 默认 / `[data-color-scheme="dark"]` / `prefers-color-scheme: dark` 下的 system 派生）。
+- 令牌缺失会由测试门禁兜住：`tests/test_web_server.py` 断言关键令牌取值，
+  渲染端引用 `var(--*)` 而 CSS 未定义时会在视觉回归中暴露。
+
+---
+
+## 8. 扩展点（贡献指南）
 
 | 想加什么 | 怎么做 | 入口文件 |
 | --- | --- | --- |
@@ -317,11 +361,13 @@ ModelRouter.decide(task, difficulty, available_providers)
 | 本地黑名单减负 | 用户侧 `tuan safe reduce <label关键字>`，无需改代码 | `core/blacklist_override.py` |
 | 新模型供应商 | 在 `provider_catalog.py` 加 `ProviderPreset`（含 `category="本地部署"` 可标本地） | `models/provider_catalog.py` |
 | 新插件能力 | `@plugin("svc", provides=[...], requires=[...])` + `activate` 里 `provide` | `core/kernel.py` |
+| 新 reach 渠道 | 在 `reach/channels.py` 实现渠道并注册（含能力/前置条件自声明），`/reach doctor` 自动覆盖 | `reach/registry.py` |
+| 新能力层（视频等） | 参照 `videowatch/`：探测 → 转写/抽帧 → 编排，再挂 `tools/*_tool.py` + 斜杠命令 | `videowatch/watch.py` |
 | 新 CLI 子命令 | 在 `cli/parser.py` 加 subparser + `_resolve_func` 分支 + `cli/cmd_*.py` | `tuan_cli/cli/` |
 
 ---
 
-## 8. 本地化与配置
+## 9. 本地化与配置
 
 - 主目录：`~/.tuan`（可用环境变量 `TUAN_HOME` 覆盖，便于测试隔离）。
 - 关键文件：
@@ -334,12 +380,13 @@ ModelRouter.decide(task, difficulty, available_providers)
 
 ---
 
-## 9. 相关文档
+## 10. 相关文档
 - `tuan help` — 完整子命令与参数。
 - `tuan others` — 友好能力目录（新手入口）。
 - `tuan safe` — 安全总入口（状态 / 白名单 / 黑名单减负 / 更新）。
 - `tuan models` — 模型与本地 LLM 管理。
 - `tuan ecosystem` — 生态互操作（Claude Code / Hermes 资产双向搬运）。
+- `/watch` · `/reach` — 看视频（字幕优先 + 抽帧）· 多平台联网读取（见第 7 节）。
 - `docs/ecosystem_bridge.md` — 生态互操作层详解（格式对照 / 安全设计 / 目录结构）。
 - `SECURITY.md` · `CONTRIBUTING.md` · `CHANGELOG.md` — 安全策略 / 贡献规范 / 变更记录。
 - `HARDENING.md` — 加固模块启用与配置速查。

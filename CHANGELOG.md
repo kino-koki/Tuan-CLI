@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一月一大更新**: 主版本号 `+0.1` (如 0.3.x → 0.4.0), 承载新模块/架构级改动。
 - **每周一小更新**: 补丁号 `+0.0.1` (如 0.3.1 → 0.3.2), 承载修复/小功能/依赖治理。
 
+## [0.5.0] - 2026-11-22 (大更新 · 视频观看 + 多平台读取 + 审批三档 + 青奈 Web 设计语言)
+
+### 新增
+- **tuan-watch 视频观看能力** (`tuan_cli/videowatch/`): 字幕优先转写 (可选本地
+  Whisper)、档位抽帧 (`--detail low/medium/high`)、16×16 灰度帧去重省视觉预算;
+  `video_watch` 工具 + `/watch` 斜杠命令 + `tuan-watch` 内置技能。
+- **tuan-reach 多平台读取能力层** (`tuan_cli/reach/`): web/rank/search/docs/code/media
+  六通道有序后端回退、免 key 优先; `reach_fetch` / `reach_doctor` 工具 +
+  `/reach` 斜杠命令 (`/reach doctor` 自检 · `/reach channels` 通道清单) +
+  `tuan-reach` 内置技能。
+- **`/approvals` 审批三档** (Codex 同款): `read-only` → plan 模式 / `auto` →
+  默认策略 / `full-access` → YOLO (硬红线仍生效); agent 与 TUI 状态双向同步。
+- **TUI F3 任务清单执行面板**: 右侧只读展示 Agent todo 进度 (进行中 > 待办 >
+  已完成 + 进度计数), 数据源为 `.tuan/todo.json` 持久化清单, 1s 节流轮询;
+  与 Ctrl+D diff 面板互斥复用右侧栏位; 快捷键帮助浮层同步收录 F3。
+- **`/web` 青奈设计语言**: 工作台设计令牌全面对齐官网 —— 暖纸底 #FCFCFA /
+  纯白面板 / 墨色三阶文本 / olive #7A9C22 + lime #B8D640 品牌色 / 中国红
+  #DE2910 点缀 / 统一 3px 圆角 (禁药丸) / 发丝线 #ECECE5·#DDDDD3 /
+  Georgia+苹方·雅黑 + IBM Plex Mono 字体三骨架 / 极淡分层阴影; 深色主题派生
+  暖黑, light/dark/system 三主题机制不变; 语法高亮、欢迎屏粒子取色、favicon、
+  徽标同步换装。
+- 斜杠命令 88 → 91 (新增 /watch /reach /approvals), /help 全量收录。
+
+### 测试
+- 新增 `tests/test_video_watch.py`、`tests/test_reach.py` (34 例)、
+  `tests/test_tui_todo_panel.py` (12 例); `test_web_server` CSS 断言更新为
+  青奈令牌; 版本号单一源 `tuan_cli/version.py` → 0.5.0。
+
 ## [0.4.5] - 2026-11-18 (小更新 · 安全审计修复轮 + 工具面真实接入补齐)
 
 本版本落地《0.4.4 完整安全审计总报告》的全部可修复发现 (P0 6/6、P1 12 项、P2 7 项)，

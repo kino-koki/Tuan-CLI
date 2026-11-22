@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, cast
 
 from .upstream_spec import spec_identity, normalize_key_spec, KeySpecError
 
@@ -144,7 +144,8 @@ class KeymapConflict(ValueError):
 
 def _normalize_binding(raw: str, *, path: str) -> str:
     try:
-        return spec_identity(raw)
+        # str() 恒等包装：skip 模式下 spec_identity 为 Any，全量模式下为 str
+        return str(spec_identity(raw))
     except KeySpecError as exc:
         raise KeymapConflict(f"{path}: {exc}") from exc
 
@@ -189,17 +190,17 @@ class RuntimeKeymap:
                 {k: list(v) for k, v in actions.items()})
 
         errors: List[str] = []
-        for ctx, actions in list(merged.items()):
+        for ctx, merged_actions in list(merged.items()):
             ctx_ov = dict(ov.get(ctx, {}) or {})
             ctx_ov_original = set(ctx_ov)
             global_ov_original = set(global_ov)
-            for action in list(actions.keys()):
+            for action in list(merged_actions.keys()):
                 if action in ctx_ov:
                     raw = ctx_ov.pop(action)
                 elif action in global_ov:
                     raw = global_ov[action]
                 else:
-                    raw = actions[action]
+                    raw = merged_actions[action]
                 path = f"tui.keymap.{ctx}.{action}"
                 if raw is None:
                     merged[ctx][action] = ()
@@ -229,12 +230,12 @@ class RuntimeKeymap:
         for unknown in global_ov:
             if not any(unknown in acts for acts in merged.values()):
                 errors.append(f"tui.keymap.global.{unknown}: 未知动作。")
-        for ctx, actions in ov.items():
+        for ctx, _ in ov.items():
             if ctx not in merged:
                 errors.append(f"tui.keymap.{ctx}: 未知 context。")
 
         resolved = cls(
-            bindings={c: {a: tuple(v) for a, v in acts.items()}
+            bindings={c: {a: tuple(cast(Sequence[str], v)) for a, v in acts.items()}
                       for c, acts in merged.items()},
             errors=errors,
         )

@@ -340,6 +340,12 @@ class InteractMixin:
                 self.toggle_mcp_status()
                 event.app.invalidate()
 
+            @kb.add("f3")
+            def _(event: Any) -> None:
+                """F3: 开合右侧任务清单执行面板 (Agent todo 进度只读展示)。"""
+                self.toggle_todo()
+                event.app.invalidate()
+
             # ---- 面板内单键: 会话选择器 Ctrl+A 切范围 / 任务浏览器 A 切过滤、X 停止 ----
             @kb.add("c-a")
             def _(event: Any) -> None:

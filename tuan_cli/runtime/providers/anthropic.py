@@ -20,7 +20,12 @@ from ._http import build_client, iter_sse, raise_for_status, strip_prompt_cache_
 
 
 def _convert_messages_anthropic(system_prompt: str, history: List[Message]) -> Dict[str, Any]:
-    """返回 {"system": ..., "messages": [...]}。Anthropic 的 system 是独立顶层字段。"""
+    """返回 {"system": system_prompt, "messages": [...]}。Anthropic 的 system 是独立顶层字段。
+
+    Note: ``_build_body`` 会把这里的字符串 system 重写为块数组 + cache_control 断点
+    (当 ``options.cache_stable_prefix`` 显式声明时)。此处保持字符串形式是为了让
+    单元测试/调试路径可以直接检查原始 system 文本。
+    """
     messages: List[Dict[str, Any]] = []
     for m in history:
         if m.role == Role.TOOL:
@@ -91,6 +96,9 @@ class AnthropicChatProvider(ChatProvider):
     """Anthropic Messages 协议适配。"""
 
     name = "anthropic"
+    # kernel 后端能力位: _convert_messages_anthropic 已做 image_url→base64
+    # image 块翻译, 视觉输入真实可用。
+    supports_vision = True
 
     def __init__(
         self,
@@ -133,8 +141,28 @@ class AnthropicChatProvider(ChatProvider):
             "stream": True,
             "messages": conv["messages"],
         }
-        if conv["system"]:
-            body["system"] = conv["system"]
+        # Anthropic system 是块数组: 对稳定前缀打 cache_control:ephemeral 断点,
+        # 让 Anthropic 缓存 SOUL + 稳定规范段 (5 分钟 TTL, API 侧管理);
+        # 动态后缀 (Git/记忆/代码库地图等) 不打断点, 每轮重新计费。
+        # 仅当调用方通过 options.cache_stable_prefix 显式声明了稳定前缀时才打断点;
+        # 否则退回纯字符串 system (避免把整段动态后缀打上断点 → 每轮写入缓存费用白花)。
+        stable = (getattr(options, "cache_stable_prefix", None) or "") if options else ""
+        if not stable:
+            if system_prompt:
+                body["system"] = system_prompt
+        elif system_prompt:
+            blocks: List[Dict[str, Any]] = [
+                {
+                    "type": "text",
+                    "text": stable,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+            if len(system_prompt) > len(stable):
+                tail = system_prompt[len(stable):].lstrip("\n")
+                if tail:
+                    blocks.append({"type": "text", "text": tail})
+            body["system"] = blocks
         if tools:
             body["tools"] = _convert_tools_anthropic(tools)
         # Anthropic 不支持 prompt_cache_key（其缓存走 cache_control），防御性剔除（空值保护）

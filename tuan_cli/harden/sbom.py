@@ -152,7 +152,7 @@ def sbom_hash(data: dict) -> str:
 
 
 def generate_cyclonedx_sbom(project_name: str = "tuan_cli",
-                            project_version: Optional[str] = None) -> dict:
+                            project_version: Optional[str] = None) -> Any:
     """若安装了 ``cyclonedx`` 库则生成 CycloneDX 格式; 否则给出清晰错误。"""
     try:
         from cyclonedx.model.bom import Bom
@@ -163,10 +163,11 @@ def generate_cyclonedx_sbom(project_name: str = "tuan_cli",
         ) from exc
     project_version = project_version or _TUAN_VERSION
     bom = Bom()
-    bom.add_component(Component(name=project_name, version=project_version,
-                                type=ComponentType.APPLICATION))
+    # cyclonedx-python-lib v3+: 组件经 Bom.components 仓库添加 (无 add_component)
+    bom.components.add(Component(name=project_name, version=project_version,
+                                 type=ComponentType.APPLICATION))
     for pkg in _iter_installed():
-        bom.add_component(Component(name=pkg["name"], version=pkg["version"],
-                                    type=ComponentType.LIBRARY))
-    # cyclonedx 序列化需额外依赖, 这里仅返回对象供上层使用
-    return bom  # type: ignore[no-any-return]  # 构造路径产生 Any
+        bom.components.add(Component(name=pkg["name"], version=pkg["version"],
+                                     type=ComponentType.LIBRARY))
+    # cyclonedx 序列化需额外依赖, 这里仅返回 Bom 对象供上层使用
+    return bom

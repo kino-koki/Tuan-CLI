@@ -84,6 +84,21 @@ def _print_welcome() -> None:
     print("  一个会成长、插件容器化的跨平台 Agent CLI。")
     print("  我能读代码、跑测试、改文件、提交 git —— 边做边学, 越用越顺手。")
     print()
+    _print_safety_boundaries()
+
+
+def _print_safety_boundaries() -> None:
+    """首屏安全边界提示 (审计 #18): 把「能力 ≠ 边界」在第一次使用前讲清楚。"""
+    print("  ── 安全边界 (务必了解) ────────────────────")
+    print("    · 隔离执行 (--isolation / sandbox) 是进程级隔离,")
+    print("      不是完整 OS 级沙箱, 不能替代系统安全边界。")
+    print("    · 出网默认不拦 (deny_network_by_default=false);")
+    print("      处理不可信内容时建议显式开启网络白名单。")
+    print("    · MCP / 浏览器 / ecosystem 互操作等外部工具面会引入")
+    print("      额外越权面, 请按需最小开放 (ecosystem.*.enabled)。")
+    print("    · 危险命令会先确认; 硬红线 (毁灭性操作) 无法被 YOLO 跳过。")
+    print("    详见 README「Security」与 docs/threat_model.md。")
+    print()
 
 
 def _print_quick_start() -> None:

@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Sequence, Tuple
 
 
 # ---------------------------------------------------------------- 宽度
@@ -415,7 +415,7 @@ class Terminal:
     def __enter__(self) -> "Terminal":
         return self
 
-    def __exit__(self, *exc) -> bool:
+    def __exit__(self, *exc: object) -> Literal[False]:
         self.close()
         return False
 

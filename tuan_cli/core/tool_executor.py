@@ -296,6 +296,7 @@ class ToolExecutor:
         messages: Optional[List[Dict[str, Any]]] = None,
         session_append: Optional[Callable[..., None]] = None,
         tool_content_fn: Optional[Callable[[Any], Any]] = None,
+        vision_ctx_fn: Optional[Callable[[], tuple]] = None,
         timeout: float = DEFAULT_TOOL_TIMEOUT,
         max_workers: int = MAX_PARALLEL_WORKERS,
         telemetry: Any = None,
@@ -306,6 +307,8 @@ class ToolExecutor:
         self.messages = messages  # Agent 的消息列表 (tool 结果写入此列表)
         self._session_append = session_append or (lambda *a, **kw: None)
         self._tool_content_fn = tool_content_fn or (lambda x: x)
+        # 视觉上下文: 返回 (vision_capable, provider), 工具结果带图片时用
+        self._vision_ctx_fn = vision_ctx_fn or (lambda: (False, "openai"))
         # B3: 可选执行通道 (只读并行策略用)，schema 从 registry 解析
         from tuan_cli.arch.execution import ToolPipeline
         self.pipeline = ToolPipeline(
@@ -676,7 +679,8 @@ class ToolExecutor:
                 log.warning("统一安全闸门拦截 (parallel): %s", fn_name)
             else:
                 try:
-                    result_text = self.registry.dispatch(fn_name, fn_args, ctx)
+                    # _dispatch: 优先 dispatch_result 保留富通道 (images 等)
+                    result_text = self._dispatch(fn_name, fn_args, ctx)
                 except Exception as exc:  # noqa: BLE001
                     result_text = f"[错误] {fn_name}: {exc}"
             elapsed = (_time.monotonic() - st) * 1000
@@ -726,7 +730,7 @@ class ToolExecutor:
                 "role": "tool",
                 "tool_call_id": tc_id,
                 "name": fn_name,
-                "content": self._tool_content_fn(result_text),
+                "content": self._tool_msg_content(result_text),
                 "status": _status_of(result_text),
             }
             if self.messages is not None:
@@ -812,7 +816,8 @@ class ToolExecutor:
                 if on_tool_result:
                     on_tool_result(fn_name, result_text)
                 return
-            result_text = self.registry.dispatch(fn_name, fn_args, ctx)
+            # _dispatch: 优先 dispatch_result 保留 ToolResult 富通道 (images 等)
+            result_text = self._dispatch(fn_name, fn_args, ctx)
         _elapsed = _time.monotonic() - _t0
         if _elapsed > 0.5:
             log.debug("tool %s completed in %.2fs", fn_name, _elapsed)
@@ -850,7 +855,7 @@ class ToolExecutor:
             "role": "tool",
             "tool_call_id": tc.get("id", ""),
             "name": fn_name,
-            "content": self._tool_content_fn(result_text),
+            "content": self._tool_msg_content(result_text),
             "status": _status_of(result_text),
         }
         if self.messages is not None:
@@ -860,6 +865,46 @@ class ToolExecutor:
         if self._telemetry is not None:
             status = tool_msg.get("status", _status_of(result_text))
             self._telemetry.record_tool_call(fn_name, _elapsed * 1000, success=(status == "ok"))
+
+    def _dispatch(self, fn_name: str, fn_args: str, ctx: Any) -> Any:
+        """统一分发入口: 优先 dispatch_result (保留 images 等富通道)。
+
+        旧测试桩/极简 registry 可能只实现 dispatch() —— 此时回退,
+        保证执行链永不因缺少富通道接口而中断。注意 MagicMock 会为任意
+        属性生成子 Mock, 所以这里要求 dispatch_result 真实定义在类或
+        实例上 (vars 检查), 而不是仅凭 getattr 探测。
+        """
+        reg = self.registry
+        dr = getattr(reg, "dispatch_result", None)
+        if callable(dr) and ("dispatch_result" in vars(type(reg))
+                             or "dispatch_result" in getattr(reg, "__dict__", {})):
+            return dr(fn_name, fn_args, ctx)
+        return reg.dispatch(fn_name, fn_args, ctx)
+
+    def _tool_msg_content(self, result_text: Any) -> Any:
+        """工具结果 → tool 消息 content。
+
+        默认走 tool_content_fn (Agent 的既有文本管线); 当结果携带图片
+        (ToolResult.images) 时, 按 模型视觉能力 经 build_tool_content 转成
+        文本块+图片块 —— 打通「工具回传图片 → 视觉模型看图」的多模态通道。
+        """
+        content = self._tool_content_fn(result_text)
+        try:
+            imgs = getattr(result_text, "images", None)
+            if imgs:
+                from ..vision.builder import build_tool_content
+                vision, _provider = self._vision_ctx_fn()
+                text = getattr(result_text, "content", None)
+                if not isinstance(text, str):
+                    text = str(result_text)
+                content = build_tool_content(text, imgs, vision)
+        except Exception as exc:  # noqa: BLE001 - 富通道失败降级为纯文本, 不炸主流程
+            log.debug("_tool_msg_content(): 图片通道降级: %s", exc)
+        # 兜底: tool 消息 content 必须可 JSON 序列化 (str 或内容块列表)。
+        # 自定义 tool_content_fn 若原样放行 ToolResult, 在此收敛为文本。
+        if type(content).__name__ == "ToolResult":
+            content = str(content)
+        return content
 
     def _check_write_storm(self, fn_name: str, fn_args: Any) -> Optional[str]:
         """E5: 检查写操作风暴。返回拦截消息 (None=允许)。"""

@@ -198,6 +198,13 @@ def _ask_user_handler(ctx: ToolContext, question: Any = "", options: Any = None,
         from tuan_cli.hooks.triggers import HookTrigger
         d = HookTrigger(hooks).elicitation(question=q, options=opts)
         if d.block:
+            if d.failure_kind == "exit_2":
+                # CC exit-code-2 官方语义（exit_semantics.py: Elicitation
+                # exit2=blocks, hookSpecificOutput 被忽略）：effective
+                # action = **decline** —— 用户/hook 明确拒绝本次提问，
+                # 不是通道故障。反馈给模型的是「被拒绝」，而非「被阻断」。
+                return ("用户拒绝了本次提问 (decline, hook exit 2)。"
+                        "请勿重复提问，基于现有信息继续并在回复中说明该假设。")
             return f"Elicitation Hook 阻断 ({d.failure_kind or 'deny'}): 取消提问 {d.reason or '（hook 未给原因）'}"
 
     # 扩展点: TUI 在 ctx.ui 上注入 ask_user 钩子 (QxtTUI.attach_ui -> TuiUI),
@@ -211,6 +218,12 @@ def _ask_user_handler(ctx: ToolContext, question: Any = "", options: Any = None,
                 from tuan_cli.hooks.triggers import HookTrigger
                 d2 = HookTrigger(hooks).elicitation_result(answer=str(ans))
                 if d2.block:
+                    if d2.failure_kind == "exit_2":
+                        # CC exit-code-2 官方语义：ElicitationResult 的
+                        # effective action = decline —— 本次回答按「用户
+                        # 拒绝」处理，不是通道故障。
+                        return ("本次回答被 hook 判为 decline (exit 2)，未采纳。"
+                                "请基于现有信息继续并在回复中说明该假设。")
                     return f"ElicitationResult Hook 阻断 ({d2.failure_kind or 'deny'}): 作废本次回答 {d2.reason or '（hook 未给原因）'}"
             return f"用户回答: {ans}" if ans else "用户未回答本次提问 (已跳过), 请基于现有信息继续并说明你的假设。"
         except Exception as exc:  # noqa: BLE001 - 钩子失效时走下面的安全分支

@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from .common import *  # noqa: F401,F403
 
 import logging
@@ -39,6 +41,10 @@ class RenderMixin:
     _diff_fetched_at: float
     _diff_summary: str
     _diff_visible: bool
+    _todo_cache: List[Dict[str, Any]]
+    _todo_error: str
+    _todo_fetched_at: float
+    _todo_visible: bool
     _events: List[Any]
     _history_dirty: bool
     _history_screen: Optional[List[List[Tuple[str, str]]]]
@@ -177,6 +183,68 @@ class RenderMixin:
             # 双重保险: _fetch_diff 已按显示宽度裁过, 这里再裁一次以覆盖
             # 外部直接写入 _diff_cache 的路径 (测试/未来功能)。
             out.append(row(cls, seg))
+        return out
+
+    # ============================================================ 任务清单执行面板
+    def _fetch_todos(self) -> None:
+        """同步读一次工作区任务清单 (<workspace>/.tuan/todo.json)。
+
+        与 todo_write/todo_list 工具共享同一份持久化数据: Agent 每次更新
+        清单都会落盘, 面板按 1s 节流轮询即可与执行进度保持同步。
+        读取失败只降级显示错误行, 绝不影响主界面。
+        """
+        self._todo_fetched_at = time.monotonic()
+        try:
+            from pathlib import Path
+            from ..tools.todo_tool import load_disk_todos
+            self._todo_cache = load_disk_todos(
+                Path(getattr(self, "workspace", ".") or "."))
+            self._todo_error = ""
+        except Exception as exc:  # noqa: BLE001 - 面板失败不能影响主界面
+            self._todo_cache = []
+            self._todo_error = f"任务清单读取失败: {exc}"
+
+    def _render_todo_panel(self) -> Any:
+        """右侧任务清单执行面板内容 (Codex/Claude Code 式 todo 进度只读展示)。
+
+        该面板与 diff 面板共用右侧栏位 (互斥展开, 见 toggle_todo/toggle_diff),
+        Window 是 `wrap_lines=False`, 每行按显示宽度硬裁防溢出。
+        """
+        if not getattr(self, "_todo_visible", False):
+            return []
+        if time.monotonic() - getattr(self, "_todo_fetched_at", 0.0) > 1.0:
+            self._fetch_todos()
+        width = max(1, self._diff_panel_width())
+
+        def row(cls: str, text: str) -> Tuple[str, str]:
+            return (cls, self._clip_dw(text, width))
+
+        out: List[Tuple[str, str]] = [row("class:primary", " 执行清单")]
+        err = getattr(self, "_todo_error", "")
+        if err:
+            out.append(("", "\n"))
+            out.append(row("class:textdim", err))
+            return out
+        todos = list(getattr(self, "_todo_cache", None) or [])
+        done = sum(1 for x in todos if x.get("status") == "completed")
+        total = len(todos)
+        out.append(row("class:textdim", f" {done}/{total} 已完成"))
+        out.append(("", "\n"))
+        out.append(row("class:textdim", "  F3 开关 · Agent 经 todo_write 更新"))
+        out.append(("", "\n"))
+        if not todos:
+            out.append(row("class:textdim", "  (暂无任务; 多步骤任务会自动列出)"))
+            return out
+        icons = {"pending": "☐", "in_progress": "◔", "completed": "☑"}
+        # 展示顺序: 进行中 > 待办 > 已完成 (执行面板聚焦"正在做什么")
+        order = {"in_progress": 0, "pending": 1, "completed": 2}
+        for item in sorted(todos, key=lambda x: order.get(str(x.get("status")), 1)):
+            status = str(item.get("status", "pending"))
+            cls = ("class:accent" if status == "in_progress"
+                   else "class:textdim" if status == "completed"
+                   else "class:text")
+            out.append(("", "\n"))
+            out.append(row(cls, f" {icons.get(status, '☐')} {item.get('content', '')}"))
         return out
 
     def _render_sp_rows(self) -> None:
@@ -368,7 +436,7 @@ class RenderMixin:
         ]),
         ("Transcript (open first)", [
             ("ctrl+t", "Open transcript"),
-            ("f3", "Find text"),
+            ("f3", "Todo board"),
             ("pgup / pgdn", "Scroll"),
             ("ctrl+space", "Start selection"),
             ("ctrl+home / ctrl+end", "Top / latest"),
@@ -1082,7 +1150,8 @@ class RenderMixin:
                 status_cls = "class:success"
             left.append(("class:primary", f" {model}"))
             if status is not None:
-                left.append((status_cls, f" {status}"))
+                # status 与 status_cls 同步赋值；mypy 无法跨变量收窄，cast 标注
+                left.append((cast(str, status_cls), f" {status}"))
 
             # 工作目录 (语义色 green)
             cwd = os.path.basename(os.path.normpath(self.workspace)) or self.workspace

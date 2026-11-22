@@ -1,7 +1,7 @@
 ﻿# Tuan-CLI
 
 > **„Model + Harness = Agent."** — Trenne „wie denken" von „wie sicher ausführen" und bekomm beide Schlüssel.
-> Ein sicherheitsorientiertes, modellneutrales, rein-python Agent-Harness. `v0.4.5` · MIT · Python ≥ 3.10
+> Ein sicherheitsorientiertes, modellneutrales, rein-python Agent-Harness. `v0.5.0` · MIT · Python ≥ 3.10
 
 > ### Positionierung: ein Sicherheits-agent — ohne Entwickler-Erlebnis zu opfern
 >
@@ -37,8 +37,8 @@ Die Kernidee: **das Modell denkt, der Harness lässt es sicher und kontrolliert 
 | Was | Details |
 |---|---|
 | 🛡️ **Sicherheit zuerst** | Vier Tore: statisches Risikoscoring, Wirkradius-Pre-Block, YOLO-Redline-Fußboden, transaktionales Hauptbuch mit exaktem `/undo` |
-| 🎯 **Entwickler-Erlebnis** | Harmlose Dev-Befehle passieren ohne Bestätigung, `/undo` hat deinen Rücken, 40+ Slash-Befehle, `tuan safe allow` für explizite Opt-outs, YOLO für Wiederholungen |
-| 🔌 **Modellneutral** | 58 Anbieter + lokales Ollama + Hot-Swap zur Laufzeit + automatisches Routing (`router.*`) |
+| 🎯 **Entwickler-Erlebnis** | Harmlose Dev-Befehle passieren ohne Bestätigung, `/undo` hat deinen Rücken, 91 Slash-Befehle, `tuan safe allow` für explizite Opt-outs, YOLO für Wiederholungen |
+| 🔌 **Modellneutral** | 63 Anbieter + lokales Ollama + Hot-Swap zur Laufzeit + automatisches Routing (`router.*`) |
 | 🧠 **Drei Hauptschleifen** | ReAct / Planner-Execute / DevLoop — austauschbar; ein Kernel, verschiedene „Denkrhythmen" |
 | 🔧 **Plugin-Container** | Einzeiliges `@plugin`, Service-Registry, append-only Event-Bus, Hook-Middleware |
 | 🗂️ **Gedächtnis** | SQLite FTS5 + Session-Event-Stream; dreistufiger Speicher, `/undo`, Checkpoint, Replay, Trajectory-Export |
@@ -86,11 +86,11 @@ class MyTool(Plugin):
 
 ## Versionsnummer
 
-**Warum `0.4.2` und nicht `1.0`?** Ehrliche [SemVer](https://semver.org/)-Semantik: **eine `0.x`-Version bedeutet, dass die öffentliche API (CLI-Oberfläche, Konfigurationsschema, Tool-Protokoll, Plugin-Vertrag) noch nicht eingefroren ist** und sich zwischen Releases noch ändern kann. Tuan-CLI bietet bereits einen breiten Funktionsumfang — Sicherheits-Gating / transaktionales Rollback, modellneutraler Hot-Swap (58 Anbieter + lokales Ollama), drei Hauptschleifen, Plugin-Container-Architektur, dreistufiger Speicher, Ökosystem-Interop (MCP / ACP / Claude Code / Hermes-Brücke), Subagents & Swarm, Cron & Hintergrundaufgaben, Goal-Modus & präzise Berechtigungen — alles durch Tests abgedeckt. Aber **die Versionsnummer spiegelt die Stabilität der Schnittstelle, nicht die Vollständigkeit der Funktionen**: ein vollständiger Funktionsumfang heißt nicht, dass die API eingefroren werden sollte. `1.0` ist für den Zeitpunkt reserviert, an dem die öffentliche API wirklich stabil ist und wir Rückwärtskompatibilität zusagen können. Bis dahin: Breaking Changes heben MINOR innerhalb von `0.x` (mit Migrationshinweisen), kompatible Funktionen MINOR, Fixes PATCH (siehe [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Warum `0.5.0` und nicht `1.0`?** Ehrliche [SemVer](https://semver.org/)-Semantik: **eine `0.x`-Version bedeutet, dass die öffentliche API (CLI-Oberfläche, Konfigurationsschema, Tool-Protokoll, Plugin-Vertrag) noch nicht eingefroren ist** und sich zwischen Releases noch ändern kann. Tuan-CLI bietet bereits einen breiten Funktionsumfang — Sicherheits-Gating / transaktionales Rollback, modellneutraler Hot-Swap (63 Anbieter + lokales Ollama), drei Hauptschleifen, Plugin-Container-Architektur, dreistufiger Speicher, Ökosystem-Interop (MCP / ACP / Claude Code / Hermes-Brücke), Subagents & Swarm, Cron & Hintergrundaufgaben, Goal-Modus & präzise Berechtigungen — alles durch Tests abgedeckt. Aber **die Versionsnummer spiegelt die Stabilität der Schnittstelle, nicht die Vollständigkeit der Funktionen**: ein vollständiger Funktionsumfang heißt nicht, dass die API eingefroren werden sollte. `1.0` ist für den Zeitpunkt reserviert, an dem die öffentliche API wirklich stabil ist und wir Rückwärtskompatibilität zusagen können. Bis dahin: Breaking Changes heben MINOR innerhalb von `0.x` (mit Migrationshinweisen), kompatible Funktionen MINOR, Fixes PATCH (siehe [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Versionssemantik | Bedeutung |
 |---|---|
-| `0.4.2` (aktuell) | **API noch nicht eingefroren**: `0.x` erlaubt Breaking-Anpassungen, angekündigt mit Migrationshinweisen; keine Rückwärtskompatibilität zugesagt |
+| `0.5.0` (aktuell) | **API noch nicht eingefroren**: `0.x` erlaubt Breaking-Anpassungen, angekündigt mit Migrationshinweisen; keine Rückwärtskompatibilität zugesagt |
 | `1.0` (reserviert) | Wird aktiviert, sobald die öffentliche API eingefroren ist und Rückwärtskompatibilität zugesagt wird; erst dann heben Breaking Changes MAJOR (`2.0`) |
 
 ---
@@ -141,7 +141,7 @@ tuan --print run "Hallo, stell dich in einem Satz vor."
 | Befehl | Wofür |
 |---|---|
 | `tuan` | Interaktives TUI (Kimi-Code-Skin) |
-| `tuan setup` / `tuan models` | Anbieter konfigurieren / 58 Anbieter & 1400+ Modelle listen |
+| `tuan setup` / `tuan models` | Anbieter konfigurieren / 63 Anbieter & 1400+ Modelle listen |
 | `tuan sessions` / `--continue` / `--resume <id>` / `setup --skip` | Gespeicherte Sessions auflisten/fortsetzen/löschen; direkt aus der CLI fortsetzen; beim ersten Start läuft der Setup-Assistent automatisch (`setup --skip` überspringt) |
 | `tuan models update` | Modell-/Anbieter-Katalog lokal aktualisieren: eingebaute Listen in `~/.tuan/models_catalog.json` mergen (offline, behält Benutzer-Einträge; `--check` zeigt nur Diffs, `--background` läuft asynchron) |
 | `tuan agent` | Benannte Agents (`.claude/agents`-kompatibel, 3-Ebenen-Discovery) |
@@ -151,7 +151,7 @@ tuan --print run "Hallo, stell dich in einem Satz vor."
 | `tuan doctor [--compact]` | Gesundheitscheck (`--compact` für Context-Compaction-Self-Check) |
 | `tuan dev codedev ...` | Code-Dev-Subsystem (Retrieval / Verifikation / Dekomposition) |
 
-Alltags-Slash-Befehle: `/plan`·`/model`·`/undo`·`/impact`·`/swarm`·`/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help` — volle Liste über `Ctrl-G` im TUI.
+Alltags-Slash-Befehle: `/plan`·`/model`·`/undo`·`/impact`·`/swarm`·`/watch`·`/reach`·`/approvals`·`/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help` — volle Liste über `Ctrl-G` im TUI.
 
 ---
 
@@ -258,7 +258,8 @@ tuan --print run "Hallo. Eine Zeile." # Smoke
 ```
 
 - **i18n-Disziplin**: README_zh-CN ist die maßgebliche Master-Version; jede Sprache ist eine lebendige, driftfreie Lokalisierung — **keine maschinelle Übersetzung.**
-- **Version**: `v0.4.5` (eine `0.x`-Linie — die API ist noch nicht eingefroren); Breaking-Anpassungen mit Vorankündigung + Migrationshinweisen, `1.0` ist für den API-Freeze reserviert.
+- **Version**: `v0.5.0` (eine `0.x`-Linie — die API ist noch nicht eingefroren); Breaking-Anpassungen mit Vorankündigung + Migrationshinweisen, `1.0` ist für den API-Freeze reserviert.
+- **Neu in 0.5.0**: `/watch` (Videos ansehen), `/reach` (Multiplattform-Lesen), `/approvals` (dreistufige Freigabe im Codex-Stil), F3-Aufgabenpanel in der TUI und die Web-Workbench im Qingnai-Design der Website.
 - **Tiefgang**: Engine-Signaturen und ein Schritt-für-Schritt-Tool-Walkthrough stehen im Anhang von `README_zh-CN.md`.
 
 ---

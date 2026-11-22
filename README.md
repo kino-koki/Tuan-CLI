@@ -1,7 +1,7 @@
-﻿# Tuan-CLI
+# Tuan-CLI
 
 > **"Model + Harness = Agent."** — Split "how to think" from "how to run it safely," and hand you both keys.
-> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.4.5` · MIT · Python ≥ 3.10
+> A safety-first, model-agnostic, pure-Python AI Agent harness. `v0.5.0` · MIT · Python ≥ 3.10
 
 > ### Positioning: a safety-first agent — without sacrificing developer experience
 >
@@ -10,12 +10,14 @@
 > - **Safety first**: dangerous commands are blocked *before* they run (blast-radius preview → hard redline → multi-stage confirmation). Every write is journaled in a transactional ledger for exact `/undo`.
 > - **Safety semantics**: YOLO/`--yolo` automatically approves operations that would normally require confirmation, but does **not** bypass hard redlines. `--isolation` provides engine/process-level isolation to reduce blast radius and contain failures; it is *not* a full OS sandbox and does not replace command approval.
 > - **Developer experience preserved**: file reads/writes, routine `git` operations, package installs, test runs and linters are scored `none` — **zero confirmation, zero blocking** (`safety_engine.is_benign_dev_command`). Only genuinely dangerous actions escalate to advice or blocking.
-> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,497 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `tuan safe bench`, reproduces everything locally** (no network, no model); `tuan safe report` emits a self-contained HTML security report. Current code measured (2026-10): adversarial 10k → block recall 100% / flag recall 100% / false-positive 0.45% (5) / bypass 0; PowerShell 5k → accuracy 100% / misses 0 / false positives 0; bypass matrix 2,497 payloads → bypass 0 / false positive 1 / disaster-intent classes 100% blocked. Some deliberately fail-closed conservative escalations remain (e.g. `nc` port probes, `tar|ssh` exfil-shaped payloads) and explain the false-positive figures; please re-run locally.
+> - **Reproducible measurements**: our goal is "fewer dangerous commands slip through, fewer benign commands nag," and any number we publish **must be reproducible by a third party** — no unverifiable absolute promises. Benchmarks live in [`bench/`](bench/README.md): 10k adversarial bash/generic samples + 5k PowerShell samples + 2,497 hand-crafted bypass payloads (with consequence-level disaster assertions). **One command, `tuan safe bench`, reproduces everything locally** (no network, no model). Current archive (`bench/security-bench.json`, 2026-11-20, Windows 10 / Python 3.12): bypass matrix 2,497 payloads → **bypass 0 / false positive 3 / disaster-intent classes 100% blocked**. The 10k / 5k-PS / realistic-usage suites **timed out at this machine's 600–900 s per-suite limit** and are recorded as errors in the archive — the older 2026-10 "100% recall" figures came from a different machine and are **not reproducible here today**; treat them as historical, not as current claims. Known false positives are documented per-payload in the archive's `anomalies` (e.g. benign `LD_LIBRARY_PATH=… ./app` env-prefix commands). Per-suite timeouts are tunable via `TUAN_SAFE_BENCH_TIMEOUT`; please re-run locally and cite your own numbers.
 > - **Ecosystem interop**: we don't rebuild ecosystems — we **reuse what Claude Code / Hermes Agent already accumulated** on this machine (skills, named agents, memory, SOUL persona, MCP configs). `tuan ecosystem` moves assets both ways in one command; `tuan ecosystem link` mounts tuan back into them over MCP. One harness, three ecosystems' worth of assets.
 
 **Language:** **English** · [简体中文](README_zh-CN.md) · [繁體中文](README_zh-GAT.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Português (Brasil)](README_pt-BR.md) · [Français](README_fr.md) · [Deutsch](README_de.md) · [Русский](README_ru.md)
 
 **Must-reads:** [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · `tuan models list-providers`
+
+> **Identity note**: this repository (`kino-koki/Tuan-CLI`) is the only canonical home of the project. The former name `Qingxiaotuan-Agent-CLI` (and the `Qingnai-Technology-kino-koki` owner, now offline) redirects here historically; unrelated same-name repositories are not affiliated. See [PROVENANCE.md](PROVENANCE.md) for history and attribution.
 
 **Quick Start:**
 - 🚀 **Get started in 3 steps:** `pip install tuan-cli` → `tuan setup` → `tuan "your task"`
@@ -37,8 +39,8 @@ The core idea: **the model does the thinking; the harness makes that thinking ru
 | The thing | Details |
 |---|---|
 | 🛡️ **Safety-first** | Four gates: static risk scoring, blast-radius pre-blocking, YOLO-redline floor, transactional ledger with exact `/undo` |
-| 🎯 **Developer experience** | Benign dev commands pass with zero confirmation, `/undo` has your back, 88 slash commands, `tuan safe allow` for explicit opt-outs, YOLO to skip repeat prompts |
-| 🔌 **Model-agnostic** | 58 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
+| 🎯 **Developer experience** | Benign dev commands pass with zero confirmation, `/undo` has your back, 91 slash commands, `tuan safe allow` for explicit opt-outs, YOLO to skip repeat prompts |
+| 🔌 **Model-agnostic** | 63 providers + local Ollama + runtime hot-swap + automatic routing (`router.*`) |
 | 🧠 **Three main loops** | ReAct / Planner-Execute / DevLoop — pluggable; one kernel, different "thinking rhythms" |
 | 🔧 **Plugin Container** | One-line `@plugin`, service registry, append-only event bus, hook middleware |
 | 🗂️ **Memory** | SQLite FTS5 + session event stream; three-tier memory, `/undo`, checkpoint, replay, Trajectory export |
@@ -87,16 +89,16 @@ class MyTool(Plugin):
 
 ## Version number
 
-**Why `0.4.2` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (58 providers + local Ollama), three main loops, plugin container architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
+**Why `0.5.x` and not `1.0`?** Honest [SemVer](https://semver.org/) semantics: **a `0.x` version means the public API (CLI surface, config schema, tool protocol, plugin contract) is not yet frozen** and may still change between releases. Tuan-CLI already ships a broad feature set — safety gating / transactional rollback, model-neutral hot-swap (63 providers + local Ollama), three main loops, plugin container architecture, three-tier memory, ecosystem interop (MCP / ACP / Claude Code / Hermes bridge), subagents & Swarm, cron & background tasks, Goal mode & precise permissions — all covered by tests. But **the version number reflects interface stability, not feature completeness**: a full feature set does not mean the API should be frozen. `1.0` is reserved for when the public API is genuinely stable and we can promise backward compatibility. Until then: breaking changes bump MINOR within `0.x` (with migration hints), backward-compatible features bump MINOR, fixes bump PATCH (see [VERSION_POLICY.md](VERSION_POLICY.md)).
 
 | Version semantics | Meaning |
 |---|---|
-| `0.4.2` (current) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
+| `0.5.x` (current line) | **API not yet frozen**: `0.x` allows breaking adjustments, announced with migration hints; backward compatibility is not promised |
 | `1.0` (reserved) | Enabled once the public API is frozen and backward compatibility is promised; only then do breaking changes bump MAJOR (`2.0`) |
 
-**Git history note (open-source transparency):** This repository's Git commit history was **not "deliberately hidden/overwritten"** — the truth is simpler: **the project was not under Git version control in its early days; the code was developed on a different machine. That machine later failed, which caused some early records to be lost, and we rebuilt the Git history afterwards. Fortunately the disk was not damaged.** The current code is fully reviewable from architecture to implementation. So: **the unverifiable early Git history has no impact on virtually anyone** — the code is complete and reviewable; for feature evolution, rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We disclose this plainly — no polishing, no hiding — and we ask you **not to dwell on it**.
+**Git history note (open-source transparency):** This repository's Git commit history was **not "deliberately hidden/overwritten"** — the truth is simpler: **the project was not under Git version control in its early days; the code was developed on a different machine. That machine later failed, which caused some early records to be lost, and we rebuilt the Git history afterwards. Fortunately the disk was not damaged.** The current code is fully reviewable from architecture to implementation. **Impact:** per-commit attribution is unavailable before 2026-09-26 and only weakly available afterwards (single-author squashes) — see [PROVENANCE.md](PROVENANCE.md) for the exact scope, the verifiable evidence, and the remediation plan (signed tags, build provenance, per-fix security advisories). For feature evolution, rely on the version records in [CHANGELOG.md](CHANGELOG.md) (version discipline is unaffected). We disclose this as a neutral statement of fact and impact — no polishing, no hiding.
 
-**Provenance & auditability:** the rebuild above has concrete audit consequences (five `init` commits interleaved with feature work, two author identities on non-contiguous ranges, two unsigned tags, an empty reflog, and two discarded `.git` backup stores still present in the working tree). See [PROVENANCE.md](PROVENANCE.md) for the verifiable evidence and the remediation items.
+**Provenance & auditability:** the rebuild above has concrete audit consequences (five `init` commits interleaved with feature work, two author identities on non-contiguous ranges, two unsigned tags, an empty reflog, and two discarded `.git` backup stores — no longer present in the working tree as of 2026-11-20). See [PROVENANCE.md](PROVENANCE.md) for the verifiable evidence and the remediation items.
 
 ---
 
@@ -107,14 +109,14 @@ Tuan-CLI isn't born from nothing — its design explicitly builds on the followi
 | Source | What we borrowed |
 |---|---|
 | **DeepSeek Harness / Cordis** | Plugin container + service registry + append-only event bus architecture (annotated in `core/kernel.py`) |
-| **Kimi Code** | Terminal TUI interaction feel & palette (see [NOTICE](NOTICE)) |
+| **Kimi Code** | Terminal TUI visual tokens — **reused as-is** under MIT (`#4FA8FF` primary color, moon-phase spinner, two-line status bar, diff palette, ASCII logo; functional TUI logic is independently implemented). Also: `ports/protocol/`, `ports/oauth/`, `ports/migration_legacy/`, `ports/transcript/`, `ports/telemetry/` are Python ports aligned to Kimi Code's TypeScript reference implementations (see [NOTICE](NOTICE)) |
 | **Claude Code** | `/` slash-command system, named agents (`.claude/agents`-compatible), Goal mode, DevLoop — interface alignment |
 | **Hermes Agent** | Three-tier memory, skill self-evolution loop, SOUL identity, self-registering tools, cron semantics — aligned; `tuan ecosystem` two-way-syncs memory/skills/SOUL with it |
 | **ACP (Agent Client Protocol)** | As client/server, aligned message & handshake semantics so an IDE can drive Tuan-CLI |
 | **MCP (Model Context Protocol)** | As a client, aligned protocol to plug into the tools ecosystem |
 | **OpenAI / Anthropic / Google etc. APIs** | Provider adapters implemented per official REST semantics — protocol adaptation only, no internal replication |
 
-> Boundary: **code** is self-developed; **protocols/interfaces** are aligned; **ideas/designs** are borrowed and fused. Where concrete implementation detail is referenced, it's declared in the source comments and [NOTICE](NOTICE).
+> Boundary: the **core** (safety engine, agent loops, tools, TUI logic, CLI) is self-developed; **`ports/*` protocol/oauth/migration/transcript/telemetry layers are Python ports of Kimi Code's TypeScript reference implementations**, independently written but aligned for interoperability; other **protocols/interfaces** are aligned; **ideas/designs** are borrowed and fused. Every subsystem is labeled "self-developed / ported / protocol-aligned" in [NOTICE](NOTICE), which is the authoritative attribution record.
 
 ---
 
@@ -142,12 +144,12 @@ tuan --print run "Hi, describe yourself in one sentence."
 
 ---
 
-## The command surface: 92 core subcommands + 88 slash commands
+## The command surface: 92 core subcommands + 91 slash commands
 
 | Command | What it's for |
 |---|---|
 | `tuan` | Interactive TUI (Kimi Code skin) |
-| `tuan setup` / `tuan models` | Configure providers / list 58 providers & 1400+ models |
+| `tuan setup` / `tuan models` | Configure providers / list 63 providers & 1400+ models |
 | `tuan sessions` / `--continue` / `--resume <id>` / `setup --skip` | List/resume/remove saved sessions; resume right from the CLI; first run auto-launches the setup wizard (bypass with `setup --skip`) |
 | `tuan models update` | Update the model/provider catalog locally: merge the built-in lists into `~/.tuan/models_catalog.json` (offline, preserves user-added entries; `--check` reports diffs only, `--background` runs async) |
 | `tuan agent` | Named agents (`.claude/agents`-compatible, 3-tier discovery) |
@@ -157,7 +159,21 @@ tuan --print run "Hi, describe yourself in one sentence."
 | `tuan doctor [--compact]` | Health check (add `--compact` for context-compaction survival self-check) |
 | `tuan dev codedev ...` | Code-dev subsystem (retrieval / verification / decomposition) |
 
-Slash commands you'll live in: `/plan` · `/model` · `/undo`·`/impact` · `/swarm` · `/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help` — full list via `Ctrl-G` in the TUI.
+Slash commands you'll live in: `/plan` · `/model` · `/undo`·`/impact` · `/swarm` · `/watch`·`/reach`·`/approvals` · `/log`·`/stats`·`/cost`·`/budget`·`/goal`·`/sandbox`·`/offline`·`/verify`·`/audit`·`/more`·`/help` — full list via `Ctrl-G` in the TUI.
+
+> The "91 slash commands" figure is reproducible, not folklore: `python scripts/count_slash_commands.py` derives it from the authoritative list `SLASH_COMMAND_NAMES` in `tuan_cli/cli/cmd_slash.py` (which mirrors the `_handle_slash` dispatch branches 1:1) — currently 91 commands, 20 core + 34 expert tier + 37 additional.
+
+---
+
+## Watch videos, reach the web, approve with intent
+
+Three Codex/Claude-grade capability layers, fully self-developed:
+
+- **`/watch <file|URL> [question]`** — the agent can actually *watch* video: subtitle-first transcription (optional local Whisper), tiered frame sampling (`--detail low/medium/high`) with 16×16 grayscale dedup so near-identical frames don't burn the vision budget. Ships as the `video_watch` tool + `tuan-watch` skill.
+- **`/reach <URL>`** — a multi-platform reading capability layer: ordered backend fallback per channel (web / rank / search / docs / code / media), keyless backends first, plus `/reach doctor` self-check and `/reach channels` to list coverage. Ships as `reach_fetch` / `reach_doctor` tools + `tuan-reach` skill.
+- **`/approvals read-only|auto|full-access`** — Codex-style three-tier approval switch: read-only maps to plan mode, auto is the default policy, full-access enables YOLO (redlines still apply). Synced both ways between the TUI and the agent context.
+- **F3 execution panel** — the TUI renders the agent's live todo list (persisted in `.tuan/todo.json`) as a right-side board: in-progress first, three-state icons, progress counter — toggle with F3, mutually exclusive with the Ctrl+D diff panel.
+- **`/web` in the house style** — the local web workbench now speaks the same Qingnai design language as the website: warm-paper background, olive/lime accent pair, hairline borders, uniform 3px corners, Georgia + PingFang body and IBM Plex Mono labels (light/dark/system themes preserved).
 
 ---
 
@@ -287,7 +303,7 @@ tuan --print run "Hi, one line."   # smoke
 ```
 
 - **i18n discipline**: README_zh-CN is the authoritative master; every locale is a vivid, zero-drift localization — **no mechanical translation.**
-- **Version**: `v0.4.5` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
+- **Version**: `v0.5.0` (a `0.x` line — the API is not yet frozen); breaking adjustments come with a heads-up + migration notes, and `1.0` is reserved for the API freeze.
 - **Deep dive**: engine signatures & a step-by-step tool walkthrough live in the appendix of `README_zh-CN.md`.
 
 ---

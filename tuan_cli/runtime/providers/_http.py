@@ -21,6 +21,19 @@ log = logging.getLogger(__name__)
 # NVIDIA 兼容端点的主机后缀（用于按 baseUrl 判定 nvidia，兼顾“OpenAI 兼容方式指向 NVIDIA”的情况）
 _NVIDIA_HOST_RE = re.compile(r"(^|\.)nvidia\.(com|net|io|ai)$", re.IGNORECASE)
 
+# OpenAI 推理模型 (o1/o3/o4/gpt-5/codex-mini 系列) 的 Chat Completions 参数限制:
+# temperature 只能取默认值 (1)、max_tokens 必须换成 max_completion_tokens, 否则 400。
+# 网关模型名常带 "openai/" 前缀, 判定前先剥离。
+_OPENAI_REASONING_RE = re.compile(r"^(?:o[1-9]|gpt-5|codex-mini)(?:$|[-._])")
+
+
+def is_openai_reasoning_model(model: Optional[str]) -> bool:
+    """按模型名判定是否需要使用推理模型的参数口径。"""
+    name = (model or "").strip().lower()
+    if "/" in name:
+        name = name.rsplit("/", 1)[-1]
+    return bool(_OPENAI_REASONING_RE.match(name))
+
 
 def is_nvidia_provider(type_: Optional[str], base_url: Optional[str]) -> bool:
     """判定 provider 是否为 nvidia（上游缺陷修复的触发条件）。

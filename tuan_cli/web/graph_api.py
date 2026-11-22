@@ -90,7 +90,8 @@ class GraphStore:
         if not fp.exists():
             return None
         try:
-            return json.loads(fp.read_text(encoding="utf-8"))
+            loaded: Dict[str, Any] = json.loads(fp.read_text(encoding="utf-8"))
+            return loaded
         except (OSError, ValueError):
             return None
 
@@ -183,7 +184,8 @@ class RunLog:
         if not fp.exists():
             return None
         try:
-            return json.loads(fp.read_text(encoding="utf-8"))
+            loaded: Dict[str, Any] = json.loads(fp.read_text(encoding="utf-8"))
+            return loaded
         except (OSError, ValueError):
             return None
 

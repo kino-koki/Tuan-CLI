@@ -43,6 +43,8 @@
 """
 from __future__ import annotations
 
+from typing import Any
+
 from . import (
     additional_dirs, collaboration_modes, model_migration,
     sidebar_chooser, sidebar_tab_strip,
@@ -120,7 +122,7 @@ def configkit_validate() -> list[str]:
         problems.append("迁移模板仍存在链式二次替换")
 
     # 2) 发现失败不冒充空
-    def boom(_rid, _params):
+    def boom(_rid: Any, _params: Any) -> None:
         raise RuntimeError("network down")
     r = collaboration_modes.discover(requester=boom)
     if r.usable or r.status is not collaboration_modes.DiscoveryStatus.UNAVAILABLE:

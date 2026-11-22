@@ -26,7 +26,14 @@ from ..contract import (
     Tool,
     Usage,
 )
-from ._http import build_client, is_nvidia_provider, iter_sse, raise_for_status, strip_prompt_cache_key
+from ._http import (
+    build_client,
+    is_nvidia_provider,
+    is_openai_reasoning_model,
+    iter_sse,
+    raise_for_status,
+    strip_prompt_cache_key,
+)
 
 
 def _convert_tool(tool: Tool) -> Dict[str, Any]:
@@ -222,6 +229,9 @@ class OpenAILegacyChatProvider(ChatProvider):
     """OpenAI chat/completions 协议适配。"""
 
     name = "openai-legacy"
+    # kernel 后端能力位 (kernel_adapter 读取): 与 legacy OpenAICompatAdapter
+    # 的 capabilities.vision=True 保持一致 —— 图片消息按 OpenAI 兼容格式透传。
+    supports_vision = True
 
     def __init__(
         self,
@@ -257,19 +267,26 @@ class OpenAILegacyChatProvider(ChatProvider):
         history: List[Message],
         options: Optional[GenerateOptions],
     ) -> Dict[str, Any]:
+        max_tokens = (
+            options.max_completion_tokens if options and options.max_completion_tokens
+            else self._max_tokens
+        )
         body: Dict[str, Any] = {
             "model": self.model_name,
             "messages": _convert_messages(system_prompt, history),
-            "temperature": self._temperature,
-            "max_tokens": self._max_tokens,
             "stream": True,
             "stream_options": {"include_usage": True},
         }
+        # 推理模型 (o 系列 / gpt-5) 拒收 temperature 与 max_tokens → 直接 400,
+        # 统一改用 max_completion_tokens 作为输出上限。
+        if is_openai_reasoning_model(self.model_name):
+            body["max_completion_tokens"] = max_tokens
+        else:
+            body["temperature"] = self._temperature
+            body["max_tokens"] = max_tokens
         if tools:
             body["tools"] = [_convert_tool(t) for t in tools]
             body["tool_choice"] = "auto"
-        if options and options.max_completion_tokens:
-            body["max_tokens"] = options.max_completion_tokens
         # prompt 缓存键：nvidia 不支持 → 由下方 strip 处理；其它 provider 注入
         if options and options.cache_key and not self._is_nvidia:
             body["prompt_cache_key"] = options.cache_key

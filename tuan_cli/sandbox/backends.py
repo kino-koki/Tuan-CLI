@@ -12,7 +12,7 @@ import logging
 import shutil
 import subprocess
 import sys
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 

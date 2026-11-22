@@ -8,9 +8,15 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(r"G:\Tuan-CLI-Official")
-sys.path.insert(0, str(ROOT / "_shared" / "scripts"))
+_shared_scripts = ROOT / "_shared" / "scripts"
+if _shared_scripts.is_dir():
+    sys.path.insert(0, str(_shared_scripts))
 
-import validate  # noqa: E402
+try:
+    import validate  # noqa: E402
+except ModuleNotFoundError:  # pragma: no cover - 外部工作区不存在时整体跳过
+    pytest.skip("外部工作区 G:\\Tuan-CLI-Official 不存在, 跳过 validate 测试",
+                allow_module_level=True)
 
 
 def test_manifest_references_ok() -> None:

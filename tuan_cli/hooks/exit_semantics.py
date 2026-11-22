@@ -48,7 +48,7 @@ hooks-events-reference、Claude Wiki hooks-system）。CC 事件面随版本
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, Optional
+from typing import Any, Dict, FrozenSet, Optional
 
 # ---------------------------------------------------------------- 行为枚举
 # exit2 取值（官方逐事件表）:
@@ -91,7 +91,7 @@ class EventSemantics:
         return self.exit2.startswith("blocks") or self.any_nonzero_fails
 
 
-def _row(event, exit2, dest, **kw) -> EventSemantics:
+def _row(event: str, exit2: str, dest: str, **kw: Any) -> EventSemantics:
     return EventSemantics(event=event, exit2=exit2,
                           stderr_destination=dest, **kw)
 
@@ -311,6 +311,8 @@ def classify(event: str, rc: int, stderr: str = "",
                            else "unknown_event_no_failure",
                            False)
 
+    # known 为真 ⇒ sem 必非空；断言仅供 mypy 收窄类型，不改变行为。
+    assert sem is not None
     # 1) exit code 完全忽略的事件
     if sem.exit_ignored:
         return ExitVerdict(event, rc, False, "", STDERR_IGNORED,

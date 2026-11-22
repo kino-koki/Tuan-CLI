@@ -259,7 +259,14 @@ class OpenAI:
             "Accept": "text/event-stream",
         }
         if self._api_key:
-            h["Authorization"] = f"Bearer {self._api_key}"
+            # Azure OpenAI 的 API key 走 "api-key" 头; 发 Bearer 会被 401 拒绝。
+            # 其余端点维持 OpenAI 惯例的 Bearer。
+            from urllib.parse import urlparse
+            host = urlparse(self._base_url).hostname or ""
+            if host.endswith(".openai.azure.com"):
+                h["api-key"] = self._api_key
+            else:
+                h["Authorization"] = f"Bearer {self._api_key}"
         return h
 
     def _request(self, path: str, body: Dict[str, Any]) -> _http.Response:

@@ -34,6 +34,15 @@ from .tool_search import ToolSearchPlugin
 from .consolidate import ConsolidatePlugin
 from .browser import BrowserPlugin
 from .notebook import NotebookPlugin
+from .artifact_tool import ArtifactPlugin
+from .messaging_tool import MessagingPlugin
+from .subagent_tool import SubagentPlugin
+from .workflow_tool import WorkflowPlugin
+from .cron_tool import CronToolPlugin
+from .gh_tool import GhToolPlugin
+from .ecosystem_tool import EcosystemToolPlugin
+from .audit_tool import AuditToolPlugin
+from .dispatch_tool import DispatchToolPlugin
 
 __all__ = [
     "Tool", "ToolContext", "ToolRegistry",
@@ -71,6 +80,23 @@ def builtin_tool_plugins() -> list[Any]:
         BrowserPlugin(),
         MonitorToolPlugin(),
         NotebookPlugin(),
+        # 审计「真实接入」轮: 以下 4 个插件早已实现 (各自有对应 CLI 命令)，
+        # 但从未接入 builtin_tool_plugins() —— Agent 侧工具面缺失。现补齐接线。
+        ArtifactPlugin(),
+        MessagingPlugin(),
+        SubagentPlugin(),
+        WorkflowPlugin(),
+        # cron 子系统此前仅 CLI 可用 (cmd_cron.py); 现接入 Agent 工具面。
+        CronToolPlugin(),
+        # gh 子系统 (gh_borrow + REST 回退) 接入 Agent 工具面。
+        GhToolPlugin(),
+        # ecosystem 互操作 (Claude Code / Hermes 资产盘点与导入导出) 接入 Agent 工具面。
+        EcosystemToolPlugin(),
+        # 内核审计归档只读查询接入 Agent 工具面。
+        AuditToolPlugin(),
+        # external_dispatch: tuan dispatch (Agent-of-Agents) 调度层接入 Agent 工具面。
+        # 注意插件名是 tools.external_dispatch —— tools.dispatch 已被 DispatchPlugin 占用。
+        DispatchToolPlugin(),
         # 必须最后: 在全部工具注册完之后做合并 (成员降级为隐藏别名)
         ConsolidatePlugin(),
     ]

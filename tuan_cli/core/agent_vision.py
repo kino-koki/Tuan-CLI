@@ -59,13 +59,17 @@ class VisionMixin:
         """把工具返回结果转成 tool 消息的 content。
 
         工具返回图片且模型支持视觉 -> [text 块, image_url 块, ...];
-        否则原样 (文字或 ToolResult, 由下游 str 化)。
+        其余一律收敛为文本 —— tool 消息的 content 最终要随请求 JSON 序列化,
+        ToolResult 对象绝不能原样放进 messages (会导致
+        "Object of type ToolResult is not JSON serializable")。
         """
         from ..tools.base import ToolResult as _ToolResult
         from ..vision import build_tool_content
 
-        if isinstance(result, _ToolResult) and result.images:
-            vision = getattr(self.model.capabilities, "vision", False)
-            if vision:
-                return build_tool_content(result.content, result.images, vision)
+        if isinstance(result, _ToolResult):
+            if result.images:
+                vision = getattr(self.model.capabilities, "vision", False)
+                if vision:
+                    return build_tool_content(result.content, result.images, vision)
+            return str(result)
         return result

@@ -32,7 +32,8 @@ class AnthropicAdapter(ModelAdapter):
 
     def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None,
              stream: bool = False, on_token: Optional[Callable[[str], None]] = None,
-             on_reason: Optional[Callable[[str], None]] = None) -> ModelResponse:
+             on_reason: Optional[Callable[[str], None]] = None,
+             response_format: Optional[Dict[str, Any]] = None) -> ModelResponse:
         if not self.api_key:
             raise RuntimeError("未配置 Anthropic API Key，请设置 ANTHROPIC_API_KEY。")
         system, converted = self._convert_messages(messages)

@@ -151,6 +151,67 @@ def merge_catalog(builtin: Dict[str, Any], local: Dict[str, Any]) -> Dict[str, A
     return merged
 
 
+# ---------------------------------------------------------------- 自定义供应商
+
+# 自定义供应商的分类标签 (一等公民, 独立于内置 A-G 分区)
+CUSTOM_PROVIDER_CATEGORY = "自定义供应商"
+DEFAULT_CUSTOM_API_KEY_ENV = "CUSTOM_API_KEY"
+
+
+def add_custom_provider(entry: Any, *, home: Optional[Path] = None) -> Dict[str, Any]:
+    """把自定义供应商持久化进本地目录 (一等公民)。
+
+    复用 ``ports.oauth.custom_registry.CustomRegistryProviderEntry`` (含 .id/.api/
+    .env/.models); 也接受任意带 name/api 的简易对象。构造的 provider dict 带
+    ``custom=True`` 标记 —— ``merge_catalog`` 保证本地新增保留、同名本地优先,
+    后续 ``refresh_catalog`` 不会用内置基线冲掉它。返回写入的 provider dict。
+    """
+    local = load_catalog(home)
+    if local is None:
+        local = export_catalog()
+
+    provider_id = str(getattr(entry, "id", None) or getattr(entry, "name", "") or "custom")
+    base_url = str(getattr(entry, "api", "") or "")
+    model_entries = getattr(entry, "models", None) or {}
+    env_list = getattr(entry, "env", None) or []
+    env_name = (env_list[0] if isinstance(env_list, list) and env_list and isinstance(env_list[0], str)
+                else DEFAULT_CUSTOM_API_KEY_ENV)
+    display_name = str(getattr(entry, "name", "") or provider_id)
+
+    model_ids: List[str] = []
+    for m in model_entries.values() if hasattr(model_entries, "values") else model_entries:
+        mid = getattr(m, "id", m) if not isinstance(m, str) else m
+        if isinstance(mid, str) and mid:
+            model_ids.append(mid)
+    default_model = model_ids[0] if model_ids else ""
+
+    provider_dict = {
+        "name": provider_id,
+        "base_url": base_url,
+        "model": default_model,
+        "api_key_env": env_name,
+        "desc": f"自定义供应商 {display_name} (api.json)",
+        "tier": "cheap",
+        "free_tier": False,
+        "region": "global",
+        "category": CUSTOM_PROVIDER_CATEGORY,
+        "recommended_models": list(model_ids),
+        "docs_url": "",
+        "key_hint": "",
+        "custom": True,
+    }
+
+    providers = [p for p in local.get("providers", []) if not (isinstance(p, dict) and p.get("name") == provider_id)]
+    providers.append(provider_dict)
+    local["providers"] = providers
+
+    model_lists = local.setdefault("model_lists", {})
+    model_lists[provider_id] = list(model_ids)
+
+    write_catalog(local, home)
+    return provider_dict
+
+
 def refresh_catalog(home: Optional[Path] = None) -> Tuple[int, int]:
     """把内置最新清单合并进本地目录并写盘。返回 (供应商数, 模型数)。"""
     local = load_catalog(home)

@@ -111,9 +111,11 @@ def run_probe(module: str) -> ProbeResult:
                            str(r.get("evidence") or ""), problems,
                            (time.perf_counter() - t0) * 1000)
     except Exception as exc:  # noqa: BLE001 - 探针异常即不通过
+        # 历史运行时行为：此分支 problems 传入的是 str（非 tuple）；改成
+        # tuple 会改变 to_dict()/报告输出，故仅做类型层面豁免
         return ProbeResult(module, False, 0,
                            "探针抛出 %s" % type(exc).__name__,
-                           ("probe_raised: %s: %s" % (type(exc).__name__, exc)),
+                           ("probe_raised: %s: %s" % (type(exc).__name__, exc)),  # type: ignore[arg-type]
                            (time.perf_counter() - t0) * 1000)
 
 

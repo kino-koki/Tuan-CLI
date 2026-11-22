@@ -53,7 +53,7 @@ import logging
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional, cast
 
 from .manager import HookDecision
 
@@ -589,6 +589,8 @@ class HookTrigger:
     """
 
     __slots__ = ("_hooks", "_owner", "_kind")
+    # "default" 归属下 _owner 为 None；仅 owner 归属分支会读取它。
+    _owner: Optional[str]
 
     def __init__(self, hooks: Any = None, *, owner: Optional[str] = None) -> None:
         """**冻结归属**，而不是一律冻结 hooks 值。
@@ -630,9 +632,12 @@ class HookTrigger:
         """
         if self._kind != "owner":
             return self._hooks
-        h = resolve_session(self._owner)
+        # _kind == "owner" 时构造必已赋予非空 owner；断言仅供 mypy 收窄类型。
+        owner = self._owner
+        assert owner is not None
+        h = resolve_session(owner)
         if h is None:
-            _bump_owner_miss(self._owner)
+            _bump_owner_miss(owner)
         return h
 
     @staticmethod
@@ -720,7 +725,8 @@ class HookTrigger:
             if d is None:
                 return self._failed_closed(
                     RuntimeError("run_decision 返回 None（契约违约）"))
-            return d
+            # run 来自 getattr(...)，返回类型为 Any；cast 仅为类型收窄。
+            return cast(HookDecision, d)
         finally:
             inflight.discard(event)
 

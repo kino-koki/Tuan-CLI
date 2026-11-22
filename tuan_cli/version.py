@@ -44,4 +44,11 @@
 #         强化、服务级破坏升红线等); 「真实接入」补齐 (Notebook/Artifact/
 #         Messaging/Subagent/Workflow 五个工具插件接入 Agent 工具面);
 #         构建/测试文件内容预扫描 (P1-07)。
-__version__ = "0.4.5"
+# v0.5.0: 能力面三轮升级 —— tuan-watch 视频观看 (字幕优先转写 + 档位抽帧 +
+#         16×16 灰度去重, /watch + video_watch 工具 + tuan-watch 技能);
+#         tuan-reach 多平台读取能力层 (六通道有序回退 + doctor 自检, /reach +
+#         reach_fetch/reach_doctor 工具 + tuan-reach 技能); /approvals 审批三档
+#         (Codex 同款 read-only/auto/full-access); TUI F3 任务清单执行面板
+#         (.tuan/todo.json 持久化 todo 只读展示); /web 工作台全面换装青奈
+#         设计语言 (暖纸底/olive+lime/3px 圆角/Georgia+苹方+IBM Plex Mono)。
+__version__ = "0.5.0"
