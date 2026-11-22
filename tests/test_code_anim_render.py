@@ -633,6 +633,7 @@ def test_http_contact_route(server):
     assert job["out_path"].endswith(".png")
 
 
+@pytest.mark.flaky(reruns=2, reruns_delay=0.5)  # Windows 套接字偶发 WinError 10053
 def test_http_render_profile_flag(server):
     """POST /api/codeanim/render?profile=true → job 结果含 perf。"""
     import urllib.request
